@@ -24,6 +24,7 @@ mod model_relink;
 mod optimize;
 mod planner;
 mod post_mirror;
+mod rapid_collision_verdict_g_rapidframe;
 mod rest_cascade_parity_g_restres;
 mod rest_dependency;
 mod rest_sim_reads_core_results_g_reststale;

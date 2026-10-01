@@ -700,92 +700,33 @@ impl ProjectSession {
 
         // Per-TP context collected in the toolpath loop for later verdict
         // emission. We index by `toolpath_id` (which equals `tc.id`).
-        struct RapidWorst {
-            move_index: usize,
-            z: f64,
-        }
         let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize)> = Vec::new();
         let mut failed_checks_by_tp: Vec<(ToolpathId, String)> = Vec::new();
-        let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, usize, RapidWorst)> = Vec::new();
+        let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, RapidAttribution)> = Vec::new();
         let mut empty_results_by_tp: Vec<(ToolpathId, String, &str)> = Vec::new();
 
-        // Build per-boundary maps from the simulation result. Each boundary
-        // maps to one toolpath via its `id`.
-        type RapidCountsByBoundary = Vec<(ToolpathId, usize)>;
-        type RapidWorstByBoundary = Vec<(ToolpathId, RapidWorst)>;
-        let (rapid_counts_by_boundary, rapid_worst_by_boundary): (
-            RapidCountsByBoundary,
-            RapidWorstByBoundary,
-        ) = {
-            let counts = evidence
-                .boundaries
-                .iter()
-                .map(|&(id, start, end)| {
-                    let count = evidence
-                        .rapid_collision_move_indices
-                        .iter()
-                        .filter(|&&mi| mi >= start && mi < end)
-                        .count();
-                    (id, count)
-                })
-                .collect();
-
-            // Pick the worst (lowest end.z = deepest descent) rapid collision
-            // per boundary so the verdict layer can cite a representative
-            // move for the fix hint.
-            let worst = evidence
-                .boundaries
-                .iter()
-                .filter_map(|&(id, start, end)| {
-                    evidence
-                        .rapid_collisions
-                        .iter()
-                        .filter(|rc| rc.move_index >= start && rc.move_index < end)
-                        .min_by(|a, c| {
-                            a.end
-                                .z
-                                .partial_cmp(&c.end.z)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .map(|rc| {
-                            (
-                                id,
-                                RapidWorst {
-                                    move_index: rc.move_index,
-                                    z: rc.end.z,
-                                },
-                            )
-                        })
-                })
-                .collect();
-
-            (counts, worst)
-        };
+        // G-RAPIDFRAME: ONE attribution gives the count and the worst hit
+        // of each toolpath. See `rapid_attribution_by_boundary`.
+        let rapid_by_boundary = rapid_attribution_by_boundary(evidence);
 
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
-                // Look up rapid collision count + worst move from simulation
-                // boundaries.
-                let rapid_count = rapid_counts_by_boundary
+                // A toolpath can own more than one boundary (one per
+                // setup group), so the attribution merges them.
+                let rapid = rapid_by_boundary
                     .iter()
                     .filter(|(id, _)| *id == tc.id)
-                    .map(|(_, count)| *count)
-                    .sum::<usize>();
+                    .fold(RapidAttribution::default(), |acc, (_, item)| {
+                        acc.merge(item)
+                    });
+                let rapid_count = rapid.count;
                 total_rapid_collision_count += rapid_count;
 
-                if rapid_count > 0
-                    && let Some((_, worst)) =
-                        rapid_worst_by_boundary.iter().find(|(id, _)| *id == tc.id)
-                {
-                    rapid_collisions_by_tp.push((
-                        tc.id,
-                        tc.name.clone(),
-                        rapid_count,
-                        RapidWorst {
-                            move_index: worst.move_index,
-                            z: worst.z,
-                        },
-                    ));
+                // The verdict depends on the count only. The worst hit only
+                // adds detail to the headline, so a missing worst hit never
+                // hides the safety finding.
+                if rapid_count > 0 {
+                    rapid_collisions_by_tp.push((tc.id, tc.name.clone(), rapid));
                 }
 
                 // Holder/shank collisions come from the supplied evidence
@@ -1042,15 +983,25 @@ impl ProjectSession {
 
         // Critical: rapid-through-stock collisions per TP, with worst-move
         // context for the fix hint.
-        for (id, name, count, worst) in &rapid_collisions_by_tp {
+        //
+        // The move index in the headline is the toolpath's OWN move index,
+        // the number MCP `inspect_collisions` reports as `local_move`.
+        for (id, name, rapid) in &rapid_collisions_by_tp {
+            let count = rapid.count;
+            let worst = rapid.worst;
+            let detail = match worst {
+                Some(worst) => format!(
+                    ", worst at local move {move_index}, z={z:.3}",
+                    move_index = worst.local_move,
+                    z = worst.z,
+                ),
+                None => String::new(),
+            };
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Critical,
                 kind: VerdictKind::RapidCollision,
                 headline: format!(
-                    "WARNING: rapid collisions on TP{id} '{name}' ({count} collisions, \
-                     worst at move {move_index}, z={z:.3})",
-                    move_index = worst.move_index,
-                    z = worst.z,
+                    "WARNING: rapid collisions on TP{id} '{name}' ({count} collisions{detail})"
                 ),
                 offender_toolpath_ids: vec![*id],
                 fix_hint: "Likely cause: inter-region rapid moves not lifting to safe-Z. \
@@ -1059,9 +1010,9 @@ impl ProjectSession {
                            clears already-cut regions."
                     .to_owned(),
                 evidence: VerdictEvidence {
-                    move_index: Some(worst.move_index),
-                    z_value: Some(worst.z),
-                    count: Some(*count),
+                    move_index: worst.map(|worst| worst.local_move),
+                    z_value: worst.map(|worst| worst.z),
+                    count: Some(count),
                 },
             });
         }
@@ -1205,4 +1156,86 @@ impl ProjectSession {
     }
 
     // ── Export ──────────────────────────────────────────────────────
+}
+
+/// The rapid-collision evidence of one toolpath: the count and the deepest
+/// hit.
+#[derive(Debug, Clone, Copy, Default)]
+struct RapidAttribution {
+    count: usize,
+    worst: Option<RapidWorst>,
+}
+
+/// The deepest rapid collision of one toolpath (lowest `end.z`).
+#[derive(Debug, Clone, Copy)]
+struct RapidWorst {
+    /// The toolpath's own move index (`RapidCollision::move_index`).
+    local_move: usize,
+    z: f64,
+}
+
+impl RapidAttribution {
+    /// Add the evidence of a second boundary of the same toolpath.
+    fn merge(self, other: &Self) -> Self {
+        let worst = match (self.worst, other.worst) {
+            (Some(a), Some(b)) => Some(if b.z < a.z { b } else { a }),
+            (a, b) => a.or(b),
+        };
+        Self {
+            count: self.count + other.count,
+            worst,
+        }
+    }
+}
+
+/// G-RAPIDFRAME: attribute every rapid collision to the boundary that holds
+/// it, in ONE frame.
+///
+/// The simulator writes two parallel lists
+/// (`compute::simulate::collect_rapid_hits`, `record_pre_carve`):
+/// - `RapidCollision::move_index` is the toolpath's OWN (local) move index;
+/// - `rapid_collision_move_indices` holds the run-global index,
+///   `start_move + local`, at the same position.
+///
+/// The boundaries are in the global frame, so this function compares only
+/// the global index with them. The count reads the global list alone. The
+/// worst hit pairs each global index with its collision by position.
+///
+/// Before this function, the worst hit compared the LOCAL index with the
+/// GLOBAL range. Only a toolpath at `start_move == 0` matched. Every other
+/// toolpath got a count and no verdict, so `get_project_diagnostics` and
+/// `get_toolpath_diagnostics` did not list a rapid collision that
+/// `inspect_collisions` and `get_diagnostics` reported.
+fn rapid_attribution_by_boundary(
+    evidence: &ProjectEvidence<'_>,
+) -> Vec<(ToolpathId, RapidAttribution)> {
+    evidence
+        .boundaries
+        .iter()
+        .map(|&(id, start, end)| {
+            let in_range = |global: usize| global >= start && global < end;
+            let count = evidence
+                .rapid_collision_move_indices
+                .iter()
+                .filter(|&&global| in_range(global))
+                .count();
+            let worst = evidence
+                .rapid_collision_move_indices
+                .iter()
+                .zip(evidence.rapid_collisions)
+                .filter(|&(&global, _)| in_range(global))
+                .map(|(_, rc)| rc)
+                .min_by(|a, c| {
+                    a.end
+                        .z
+                        .partial_cmp(&c.end.z)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|rc| RapidWorst {
+                    local_move: rc.move_index,
+                    z: rc.end.z,
+                });
+            (id, RapidAttribution { count, worst })
+        })
+        .collect()
 }

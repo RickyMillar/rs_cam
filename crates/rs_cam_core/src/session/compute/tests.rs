@@ -841,6 +841,75 @@ fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
     assert_eq!(verdict.offender_toolpath_ids, vec![tp0_id]);
 }
 
+/// G-RAPIDFRAME: the rapid-collision verdict of a toolpath that does not
+/// start at move 0 appears, cites the toolpath's own move index, and does
+/// not depend on the worst-hit detail.
+#[test]
+fn rapid_collision_verdict_attributes_by_the_global_index_g_rapidframe() {
+    use crate::geo::P3;
+    use crate::stock::collision::RapidCollision;
+    let mut s = make_session_with_two_tps();
+    for index in 0..2 {
+        let mut r = empty_result();
+        r.stats.cutting_distance = 100.0;
+        s.results.insert(index, r);
+    }
+    let tp0 = s.toolpath_configs()[0].id;
+    let tp1 = s.toolpath_configs()[1].id;
+    let boundaries = vec![(tp0, 0, 50), (tp1, 50, 120)];
+    // The simulator's shape: a LOCAL index on each collision, the GLOBAL
+    // index (50 + local) at the same position of the parallel list.
+    let collisions = vec![
+        RapidCollision {
+            move_index: 5,
+            start: P3::new(0.0, 0.0, 5.0),
+            end: P3::new(0.0, 0.0, -1.0),
+        },
+        RapidCollision {
+            move_index: 30,
+            start: P3::new(0.0, 0.0, 5.0),
+            end: P3::new(0.0, 0.0, -4.0),
+        },
+    ];
+    let globals = vec![55, 80];
+    let evidence = ProjectEvidence {
+        boundaries: boundaries.clone(),
+        rapid_collisions: &collisions,
+        rapid_collision_move_indices: &globals,
+        ..ProjectEvidence::default()
+    };
+    let diag = s.diagnostics_with_evidence(&evidence);
+    let rapid: Vec<_> = diag
+        .verdicts
+        .iter()
+        .filter(|v| matches!(v.kind, crate::session::VerdictKind::RapidCollision))
+        .collect();
+    assert_eq!(rapid.len(), 1, "{rapid:?}");
+    assert_eq!(rapid[0].offender_toolpath_ids, vec![tp1]);
+    assert_eq!(rapid[0].evidence.count, Some(2));
+    assert_eq!(rapid[0].evidence.move_index, Some(30), "the local move");
+    assert!(
+        rapid[0].headline.contains("local move 30"),
+        "{}",
+        rapid[0].headline
+    );
+
+    // A count without the collision records still gives the verdict.
+    let evidence = ProjectEvidence {
+        boundaries,
+        rapid_collision_move_indices: &globals,
+        ..ProjectEvidence::default()
+    };
+    let diag = s.diagnostics_with_evidence(&evidence);
+    let verdict = diag
+        .verdicts
+        .iter()
+        .find(|v| matches!(v.kind, crate::session::VerdictKind::RapidCollision))
+        .expect("the count alone raises the safety verdict");
+    assert_eq!(verdict.evidence.count, Some(2));
+    assert_eq!(verdict.evidence.move_index, None);
+}
+
 /// CMP-24: the holder-collision sweep builds ONE spatial index per
 /// DISTINCT model, not one per toolpath.
 ///
