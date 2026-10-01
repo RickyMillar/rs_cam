@@ -674,9 +674,16 @@ fn measure(mut session: ProjectSession, resolution: f64) -> ProjectAggregate {
         holder_collision_total,
         triage_safety_count: triage.safety.len(),
         triage_action_count: triage.actions.len(),
-        project_air_cut_pct_of_total_runtime: diagnostics.air_cut_pct_of_total_runtime,
-        project_air_cut_pct_of_cutting_time: diagnostics.air_cut_pct_of_cutting_time,
-        project_average_engagement: diagnostics.average_engagement,
+        // U2: `None` means no cut trace. This fixture always captures one.
+        project_air_cut_pct_of_total_runtime: diagnostics
+            .air_cut_pct_of_total_runtime
+            .expect("U2: the golden run captures a cut trace"),
+        project_air_cut_pct_of_cutting_time: diagnostics
+            .air_cut_pct_of_cutting_time
+            .expect("U2: the golden run captures a cut trace"),
+        project_average_engagement: diagnostics
+            .average_engagement
+            .expect("U2: the golden run captures a cut trace"),
         project_total_removed_volume_est_mm3: trace.summary.total_removed_volume_est_mm3,
         per_toolpath,
     }

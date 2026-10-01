@@ -110,10 +110,11 @@ fn the_two_air_cut_denominators_disagree() {
 #[test]
 fn project_diagnostics_wire_names_both_denominators() {
     let diag = rs_cam_core::session::ProjectDiagnostics {
-        total_runtime_s: 100.0,
-        air_cut_pct_of_total_runtime: 10.0,
-        air_cut_pct_of_cutting_time: 40.0,
-        average_engagement: 0.31,
+        total_runtime_s: Some(100.0),
+        air_cut_pct_of_total_runtime: Some(10.0),
+        air_cut_pct_of_cutting_time: Some(40.0),
+        average_engagement: Some(0.31),
+        cut_metrics_not_measured: None,
         collision_count: 0,
         collision_checks_failed: 0,
         rapid_collision_count: 0,

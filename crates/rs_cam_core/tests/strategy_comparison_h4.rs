@@ -741,7 +741,10 @@ fn run_single_op_arm(
         .unwrap_or_else(|| panic!("{label}: no column_deviations (no reference model mesh?)"))
         .clone();
 
-    let runtime_s = session.diagnostics().total_runtime_s;
+    let runtime_s = session
+        .diagnostics()
+        .total_runtime_s
+        .expect("U2: a simulation with a cut trace measures the runtime");
     let op_report = measure_op(&session, 0, label, gen_s, runtime_s);
 
     ArmResult {
@@ -829,7 +832,10 @@ fn run_cascade_arm(
     // per-toolpath kinematics-integrated time from the production path;
     // re-deriving it a second way would be the kind of unchecked-arithmetic
     // risk this wave exists to close).
-    let op0_runtime_s = session.diagnostics().total_runtime_s;
+    let op0_runtime_s = session
+        .diagnostics()
+        .total_runtime_s
+        .expect("U2: a simulation with a cut trace measures the runtime");
     let op0_report = measure_op(&session, 0, &format!("{label} op0"), gen0_s, op0_runtime_s);
 
     // op1: generated AFTER op0's simulation snapshot exists — the mandatory
@@ -843,7 +849,10 @@ fn run_cascade_arm(
         .run_simulation(&opts, &cancel)
         .unwrap_or_else(|e| panic!("{label}: final simulation failed: {e:?}"));
 
-    let whole_arm_time_s = session.diagnostics().total_runtime_s;
+    let whole_arm_time_s = session
+        .diagnostics()
+        .total_runtime_s
+        .expect("U2: a simulation with a cut trace measures the runtime");
     let op1_runtime_s = (whole_arm_time_s - op0_runtime_s).max(0.0);
     let op1_report = measure_op(
         &session,

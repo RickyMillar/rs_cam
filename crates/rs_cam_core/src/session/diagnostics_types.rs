@@ -260,23 +260,57 @@ pub struct Verdict {
     pub evidence: VerdictEvidence,
 }
 
+/// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None`, when
+/// no simulation exists.
+///
+/// The MCP `get_diagnostics` response publishes the same text under the
+/// same key (`cut_metrics_not_measured`), so that two surfaces give one
+/// answer for one project state.
+pub(crate) const CUT_METRICS_NOT_MEASURED_NO_SIMULATION: &str = "no simulation has run";
+
+/// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None`, when a
+/// simulation exists but it kept no cut trace (U2, 2026-10-01).
+///
+/// The GUI control that captures the trace is Simulation ▸ Setup & run ▸
+/// "Capture cutting metrics". The MCP `run_simulation` call and the CLI
+/// always capture it.
+pub(crate) const CUT_METRICS_NOT_MEASURED_NO_TRACE: &str = "the simulation ran without cutting \
+     metrics, so it kept no cut trace; run_simulation captures them";
+
 /// Project-level diagnostics summary.
 ///
 /// The derive IS the wire contract — see [`ToolpathDiagnostic`].
+///
+/// U2 (2026-10-01): the four cut-trace figures are `None` when the
+/// evidence has no cut trace. `None` serialises as `null`, which means NOT
+/// MEASURED. A measured, clean run is `Some(0.0)`. The old wire published
+/// 0.0 for both, so a run with no trace read as a clean measurement.
+/// [`Self::cut_metrics_not_measured`] names the reason beside them.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ProjectDiagnostics {
-    pub total_runtime_s: f64,
+    /// Total simulated runtime (s), from the cut trace. `None` when the
+    /// evidence has no cut trace.
+    pub total_runtime_s: Option<f64>,
     /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
     /// The measure every shipped threshold is tuned against — the GUI's 40%
     /// banner, the CLI's 40% verdict, and
     /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`].
-    pub air_cut_pct_of_total_runtime: f64,
+    /// `None` when the evidence has no cut trace.
+    pub air_cut_pct_of_total_runtime: Option<f64>,
     /// Air-cut time ÷ **cutting runtime (rapids excluded)** × 100 — always
     /// ≥ [`Self::air_cut_pct_of_total_runtime`]. This is what the MCP
     /// `narrate_toolpath` air-cut line reports and what `CLAUDE.md`'s metric
-    /// caveats describe. No threshold is applied to it.
-    pub air_cut_pct_of_cutting_time: f64,
-    pub average_engagement: f64,
+    /// caveats describe. No threshold is applied to it. `None` when the
+    /// evidence has no cut trace.
+    pub air_cut_pct_of_cutting_time: Option<f64>,
+    /// Mean engagement over the cut trace. `None` when the evidence has no
+    /// cut trace.
+    pub average_engagement: Option<f64>,
+    /// Why the four cut-trace figures above are `None`:
+    /// `CUT_METRICS_NOT_MEASURED_NO_SIMULATION` or
+    /// `CUT_METRICS_NOT_MEASURED_NO_TRACE`. `None` when the figures are
+    /// measured.
+    pub cut_metrics_not_measured: Option<&'static str>,
     /// Holder/shank collisions summed over every toolpath the evidence
     /// MEASURED. It is not the whole project's answer unless
     /// [`Self::collision_checks_failed`] is zero — read the two together.

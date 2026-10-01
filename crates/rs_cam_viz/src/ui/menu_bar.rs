@@ -4,6 +4,32 @@ use crate::state::job::SetupId;
 use crate::state::selection::Selection;
 use crate::ui_command::{NoArgs, UiCommand};
 
+/// Optimize needs a baseline, and no simulation exists.
+pub const OPTIMIZE_NEEDS_SIMULATION: &str =
+    "Run a simulation first \u{2014} the optimizer needs a baseline cut trace.";
+
+/// Optimize needs a baseline cut trace, and the simulation kept none (U3).
+///
+/// A simulation exists, so "Run a simulation first" names the wrong cause.
+/// The control and the step come from the cycle-time remedy for
+/// `MissingInput::NoCutTrace` (`ui::readiness`).
+pub const OPTIMIZE_NEEDS_CUT_TRACE: &str = "The simulation ran without cutting metrics, \
+     so it kept no cut trace, and the optimizer needs that trace as a baseline. Turn on Simulation \u{25B8} Setup & run \
+     \u{25B8} \"Capture cutting metrics\", then re-run the simulation.";
+
+/// Why Optimize cannot start from this simulation state, or `None` when a
+/// baseline cut trace exists.
+///
+/// The menu item and the `OpenOptimizeProject` handler read this one
+/// decision, so the hover text and the notification name the same cause.
+pub fn optimize_baseline_missing(state: &AppState) -> Option<&'static str> {
+    match state.simulation.results.as_ref() {
+        None => Some(OPTIMIZE_NEEDS_SIMULATION),
+        Some(results) if results.cut_trace.is_none() => Some(OPTIMIZE_NEEDS_CUT_TRACE),
+        Some(_) => None,
+    }
+}
+
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let ctx = ui.ctx().clone();
     // Keyboard shortcuts
@@ -174,11 +200,15 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close();
                     events.push(AppEvent::GenerateAll);
                 }
-                let optimize_enabled = state.simulation.has_results() && !state.is_optimizing();
+                // U3: the item needs a cut trace, not only a simulation. A
+                // run with no trace used to enable the item, and the click
+                // then said "Run a simulation first" after a run.
+                let baseline_missing = optimize_baseline_missing(state);
+                let optimize_enabled = baseline_missing.is_none() && !state.is_optimizing();
                 if ui
                     .add_enabled(optimize_enabled, egui::Button::new("Optimize project…"))
                     .on_disabled_hover_text(
-                        "Run a simulation first — the optimizer needs a baseline cut trace.",
+                        baseline_missing.unwrap_or("An Optimize run is already in progress."),
                     )
                     .clicked()
                 {

@@ -48,10 +48,11 @@ use rs_cam_core::session::{
 /// cannot tell two keys apart if their order swaps.
 fn populated() -> ProjectDiagnostics {
     ProjectDiagnostics {
-        total_runtime_s: 11.0,
-        air_cut_pct_of_total_runtime: 12.0,
-        air_cut_pct_of_cutting_time: 13.0,
-        average_engagement: 14.0,
+        total_runtime_s: Some(11.0),
+        air_cut_pct_of_total_runtime: Some(12.0),
+        air_cut_pct_of_cutting_time: Some(13.0),
+        average_engagement: Some(14.0),
+        cut_metrics_not_measured: Some("not measured"),
         collision_count: 15,
         collision_checks_failed: 16,
         rapid_collision_count: 17,
@@ -99,11 +100,16 @@ fn populated() -> ProjectDiagnostics {
 }
 
 /// The JSON the four impls produced before the swap, byte for byte.
+///
+/// U2 (2026-10-01) adds one key, `cut_metrics_not_measured`, after
+/// `average_engagement`. The four cut-trace figures became `Option`; a
+/// measured value writes the same number as before.
 const PINNED: &str = concat!(
     r#"{"total_runtime_s":11.0,"#,
     r#""air_cut_pct_of_total_runtime":12.0,"#,
     r#""air_cut_pct_of_cutting_time":13.0,"#,
     r#""average_engagement":14.0,"#,
+    r#""cut_metrics_not_measured":"not measured","#,
     r#""collision_count":15,"#,
     r#""collision_checks_failed":16,"#,
     r#""rapid_collision_count":17,"#,
@@ -154,6 +160,10 @@ fn the_diagnostics_json_surface_does_not_move() {
 #[test]
 fn an_unmeasured_field_writes_null_and_keeps_its_key() {
     let mut diagnostics = populated();
+    diagnostics.total_runtime_s = None;
+    diagnostics.air_cut_pct_of_total_runtime = None;
+    diagnostics.air_cut_pct_of_cutting_time = None;
+    diagnostics.average_engagement = None;
     let tp = &mut diagnostics.per_toolpath[0];
     tp.collision_count = None;
     tp.truncated_core_mm2 = None;
@@ -167,6 +177,10 @@ fn an_unmeasured_field_writes_null_and_keeps_its_key() {
 
     let json = serde_json::to_string(&diagnostics).expect("the diagnostics serialise");
     for key in [
+        "\"total_runtime_s\":null",
+        "\"air_cut_pct_of_total_runtime\":null",
+        "\"air_cut_pct_of_cutting_time\":null",
+        "\"average_engagement\":null",
         "\"collision_count\":null",
         "\"truncated_core_mm2\":null",
         "\"untouched_material_mm2\":null",
