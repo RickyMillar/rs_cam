@@ -109,6 +109,74 @@
 //! Every assertion the law moved is restated in place with the old value
 //! and the reason quoted, never deleted.
 //!
+//! ## RE-PREMISED 2026-10-01: Parallel finishing on the printed Ø1 row
+//!
+//! The Scallop premise above has no band now. Two commits removed it:
+//!
+//! 1. **42192d6e** (2026-09-23) loaded the printed Onsrud 77-100 tapered
+//!    rows. From that commit the Scallop query matched
+//!    `onsrud-hardwood-77-100-1_4-scallop` (Ø6.35, no `ae` window), not
+//!    the recorded row `amana-tapered-hardwood-scallop-3175-2f`. The gate
+//!    still gave `Within`, but `explain` panicked at "row publishes
+//!    ae_min" in five tests. Measured: at 331e6fa6 (the parent) all seven
+//!    tests pass; at 42192d6e five fail.
+//! 2. **87027060** (2026-09-24) added the size rule "a tool under 1.5 mm
+//!    refuses a row more than 2x its size" (`feeds::support`,
+//!    `micro_extrapolation_refusal`), on the Suggest side only. The gate
+//!    took the rule in **90aaf54b** (the G1 size claim: a `Refused` size
+//!    basis has no band, and the gate abstains). Measured: the gate gives
+//!    `Within` at 87027060 and at 04f11dd6, and `Unmodeled(NoVendorData)`
+//!    at 90aaf54b. The recorded row is Ø3.175, 3.2x the Ø1 tip, so it
+//!    refuses too. Reading it by its id does not bring the band back.
+//!
+//! [`the_old_scallop_premise_is_refused_by_the_size_rule`] pins that
+//! refusal, so it is a recorded behaviour, not a silent loss.
+//!
+//! **The new premise.** The same tool, material, feed, RPM, sample depth
+//! and achieved-feed fraction, on **Parallel finishing** (`DropCutter`,
+//! `(Parallel, Finish)`). That query matches
+//! `amana-tapered-hardwood-parallel-1000-2f-zrn-v8`, a printed row at
+//! the tip (`size_basis` `Exact`):
+//!
+//! - band 0.00075"–0.002" per tooth = **0.01905–0.0508 mm**
+//!   (`data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`, column "1mm",
+//!   row "Wood, MDF, Sign-Foam"; × 25.4; transcribed at
+//!   `data/vendor_lut/observations/amana_zrn_tapered_v8.json:78-79`);
+//! - the chart RPM is 18 000 and its depth rule is 1 x D
+//!   (`amana_zrn_3d_v8.txt:3`), the fixture's RPM;
+//! - d-scale 1.0 (row Ø1.0, `amana_zrn_tapered_v8.json:75`, at the tip
+//!   key of ruling A1); h-scale 1.0 (row Janka 1450,
+//!   `amana_zrn_tapered_v8.json:74`, = hard maple); depth de-rate 1.0
+//!   (DOC 0.35 / engaged Ø0.954 = 0.37 ≤ 1, `feeds/geometry.rs:156-157`);
+//! - the row has no `ae` window, so the source is `VendorLutMissingAe`
+//!   (`tool_load/chipload.rs:650-651`) and the low side is advisory
+//!   (`tool_load/verdict.rs:1301-1307`).
+//!
+//! No printed tapered-ball or ball row in the LUT has an `ae` window. Every
+//! wood row with one is grade c and repo-authored (`chipload.rs:31-37`).
+//! The deleted stage is therefore read off the recorded row by its id
+//! ([`RECORDED_ROW`]). It is the factor the census measured on that row,
+//! kept as a record; the gate does not compute it.
+//!
+//! The fixture's feed numbers are the live session's and do not change,
+//! as the rule above says: the fixture is not adjusted to reproduce a
+//! verdict. The band moves, so the band positions move:
+//!
+//! | | Scallop, recorded row (to 42192d6e) | Parallel, printed Ø1 row |
+//! |---|---:|---:|
+//! | band | 0.005763–0.011525 | **0.01905–0.0508** |
+//! | extrapolated | yes (3.175 → 0.954) | **no** (printed at the tip) |
+//! | achieved 0.009153 | 79 % of MAX | **48.0 % of MIN** |
+//! | verdict | `Within`, no advisory | **`Within` + burn advisory** |
+//! | commanded 0.0714 vs band max | 6.20x | **1.41x** |
+//! | pre-conversion 0.000737 | 12.8 % of MIN | **3.9 % of MIN** |
+//!
+//! Read the new row as it is: on the vendor's printed band the live
+//! operation's achieved feed is **under the floor**. The pre-conversion
+//! gate put it 12.4x further under. The conversion moved the reading to
+//! the correct unit; it did not move it to the correct side, because on
+//! this row both readings are on the low side.
+//!
 //! A hand-checked arithmetic identity is not evidence a gate change can be
 //! re-measured against. This file re-derives the same identity **through
 //! the shipped code**, with no generator, arc fitter, lead-in, dressup or
@@ -154,6 +222,9 @@
 //!    can diverge "on ball tools at shallow DOC". Measured here through
 //!    `feeds::calculate`, that is **false**; the reachable case is
 //!    narrower and is a different geometry.
+//! 8. [`the_old_scallop_premise_is_refused_by_the_size_rule`] — the
+//!    record of the premise this file left on 2026-10-01: the gate
+//!    abstains on the Ø1 Scallop cell, and why.
 //!
 //! **Nothing here proposes a fix.** Every number this file prints is
 //! reported under the stage that produced it.
@@ -218,6 +289,29 @@ const SAMPLE_ARC_B_RAD: f64 = 0.4;
 const SAMPLE_COUNT: usize = 9;
 const TOOLPATH: ToolpathId = ToolpathId(0);
 
+// ── The premise (re-premised 2026-10-01, see the module header) ─────────
+
+/// Parallel finishing: the `DropCutter` raster, queried as
+/// `(Parallel, Finish)` (`vendor_normalize::lut_query_for` keeps it).
+const OPERATION_KIND: OperationType = OperationType::DropCutter;
+const OPERATION_FAMILY: LutOperationFamily = LutOperationFamily::Parallel;
+const PASS_ROLE: LutPassRole = LutPassRole::Finish;
+
+/// The row the new premise matches.
+const PREMISE_ROW: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
+
+/// Printed chip load per tooth, inches: `0.00075" - 0.002"`,
+/// `crates/rs_cam_core/data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`
+/// (2 Flute Ball Nose, column 1mm, row "Wood, MDF, Sign-Foam").
+const PRINTED_MIN_IN: f64 = 0.000_75;
+const PRINTED_MAX_IN: f64 = 0.002;
+/// Inches to millimetres, by definition.
+const MM_PER_IN: f64 = 25.4;
+
+/// The row the census and the 2026-08-06 flip were measured on. The
+/// deleted stage reads its `ae` window by this id.
+const RECORDED_ROW: &str = "amana-tapered-hardwood-scallop-3175-2f";
+
 fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(TaperedBallEndmill::new(
@@ -238,7 +332,9 @@ fn tool() -> ToolDefinition {
 /// Hard maple: Janka 1450, the exact hardness the matched row publishes,
 /// so the hardness scale is 1.00 and the diameter scale is the only one
 /// moving — mirroring the live evidence string
-/// `"diameter scale x0.42, hardness scale x1.00"`.
+/// `"diameter scale x0.42, hardness scale x1.00"`. The premise row of
+/// 2026-10-01 also publishes 1450 (`amana_zrn_tapered_v8.json:74`), so
+/// both scales are 1.00 on it.
 fn material() -> Material {
     Material::SolidWood {
         species: WoodSpecies::HardMaple,
@@ -273,9 +369,9 @@ struct FeedExplanation {
     extrapolated: bool,
     bounds_source: ChipBoundsSource,
     /// **The deleted stage.** `mean_chip / feed_per_tooth` at the
-    /// engagement arc the matched row's repo-authored `ae` window
-    /// implies, measured through `MillingCutter::chip_geometry`.
-    /// Dimensionless.
+    /// engagement arc the recorded row's repo-authored `ae` window
+    /// implies ([`RECORDED_ROW`], read by its id since 2026-10-01),
+    /// measured through `MillingCutter::chip_geometry`. Dimensionless.
     ///
     /// Kept in this record as the **exhibit of what the gate used to
     /// multiply by** — it is what turns 0.009153 into 0.000737 — and is
@@ -367,6 +463,18 @@ impl FeedExplanation {
 /// Stage 2 — resolve the row the gate will match, through the same public
 /// entry point the gate's private `matched_chip_envelope` uses.
 fn matched_row(tool: &ToolDefinition, lookup_diameter_mm: f64) -> LookupResult {
+    matched_row_for(tool, lookup_diameter_mm, OPERATION_FAMILY, PASS_ROLE)
+        .expect("the embedded LUT publishes a tapered-ball parallel finish row in hardwood")
+}
+
+/// [`matched_row`] for any `(family, role)`. The old Scallop premise reads
+/// it too (test 8).
+fn matched_row_for(
+    tool: &ToolDefinition,
+    lookup_diameter_mm: f64,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+) -> Option<LookupResult> {
     let query = LookupQuery {
         tool_family: ToolFamily::TaperedBallNose,
         tool_subfamily: None,
@@ -375,28 +483,39 @@ fn matched_row(tool: &ToolDefinition, lookup_diameter_mm: f64) -> LookupResult {
         material_family: MaterialFamily::Hardwood,
         hardness_kind: Some(HardnessKind::Janka),
         hardness_value: Some(1450.0),
-        operation_family: LutOperationFamily::Scallop,
-        pass_role: LutPassRole::Finish,
+        operation_family,
+        pass_role,
     };
     find_best_chip_envelope_row(
         rs_cam_core::feeds::embedded_vendor_lut(),
         &query,
         &tool.to_geometry_hint(),
     )
-    .expect("the embedded LUT publishes a tapered-ball scallop row in hardwood")
 }
 
-/// Stage 3 — the engagement arc the row was authored against, from its
-/// calibrated `ae` window. Mirrors `chipload::lut_nominal_arc_rad`, which
-/// is private; the *factor* below is then measured through production
-/// code rather than mirrored.
-fn lut_nominal_arc_rad(row: &LookupResult) -> f64 {
-    let ae_mid = (row.ae_min_mm.expect("row publishes ae_min")
-        + row.ae_max_mm.expect("row publishes ae_max"))
+/// Stage 3 — the engagement arc the recorded row was authored against,
+/// from its `ae` window. Mirrors the deleted `chipload::lut_nominal_arc_rad`;
+/// the *factor* below is then measured through production code rather
+/// than mirrored.
+///
+/// The arc is read off [`RECORDED_ROW`], the row the census measured, by
+/// its id. The premise row of 2026-10-01 publishes no `ae` window, and no
+/// printed tapered-ball row does, so the matched row implies no arc. The
+/// deleted stage is a record of what the gate multiplied by on the
+/// recorded row; it is not a property of the row that matches today.
+fn lut_nominal_arc_rad() -> f64 {
+    let row = rs_cam_core::feeds::embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == RECORDED_ROW)
+        .expect("the recorded row still ships in the embedded LUT");
+    let ae_mid = (row.ae_min_mm.expect("the recorded row publishes ae_min")
+        + row.ae_max_mm.expect("the recorded row publishes ae_max"))
         * 0.5;
-    (1.0 - 2.0 * ae_mid / row.row_diameter_mm)
-        .clamp(-1.0, 1.0)
-        .acos()
+    let diameter = row
+        .diameter_mm
+        .expect("the recorded row publishes a diameter");
+    (1.0 - 2.0 * ae_mid / diameter).clamp(-1.0, 1.0).acos()
 }
 
 /// Stage 3 — `mean_chip / feed_per_tooth` at `arc`, measured by driving
@@ -471,22 +590,27 @@ fn trace(sample_arc_rad: f64, with_predicted_feeds: bool) -> SimulationCutTrace 
     }
 }
 
-/// Run the shipped gate over the fixture and assemble the five stages.
-fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
+/// Run the shipped gate over the fixture trace for one premise.
+fn gate_verdict(
+    sample_arc_rad: f64,
+    with_predicted_feeds: bool,
+    operation_kind: OperationType,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+) -> ChiploadVerdict {
     let tool = tool();
     let material = material();
     let trace = trace(sample_arc_rad, with_predicted_feeds);
     let tolerance = ToleranceBands::default();
-
-    let verdict = chipload::evaluate(
+    chipload::evaluate(
         &ToolpathLoadContext {
             toolpath_id: TOOLPATH,
             tool: &tool,
             material: &material,
-            operation_family: LutOperationFamily::Scallop,
-            pass_role: LutPassRole::Finish,
+            operation_family,
+            pass_role,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
-            operation_kind: OperationType::Scallop,
+            operation_kind,
             spans: None,
             drill_op: None,
         },
@@ -495,6 +619,18 @@ fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
             machine: None,
             tolerance: &tolerance,
         },
+    )
+}
+
+/// Run the shipped gate over the fixture and assemble the five stages.
+fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
+    let tool = tool();
+    let verdict = gate_verdict(
+        sample_arc_rad,
+        with_predicted_feeds,
+        OPERATION_KIND,
+        OPERATION_FAMILY,
+        PASS_ROLE,
     );
 
     // The gate's own lookup key at the peak steady-state axial DOC. Since
@@ -504,7 +640,7 @@ fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
     let lookup_diameter =
         rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter(&tool, SAMPLE_AXIAL_DOC_MM);
     let row = matched_row(&tool, lookup_diameter);
-    let lut_arc = lut_nominal_arc_rad(&row);
+    let lut_arc = lut_nominal_arc_rad();
 
     let (gate_observed_mm, band_min, band_max, source, verdict_label, burn_advisory) =
         match &verdict {
@@ -672,9 +808,42 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
         100.0 * residual
     );
 
+    // RE-PREMISED 2026-10-01. This read
+    //     assert!(e.extrapolated,
+    //             "the fixture is meant to reproduce an extrapolated row");
+    // and it was true of the Scallop premise: a Ø0.954 key on the Ø3.175
+    // recorded row. That premise has no band now (42192d6e, then the size
+    // rule of 87027060 in the gate since 90aaf54b; test 8 pins it). On
+    // Parallel finishing the Ø1 tip key (ruling A1) meets a row printed at
+    // Ø1.0 (`amana_zrn_tapered_v8.json:75`) and Janka 1450 (`:74`), so the
+    // raw transfer ratio is 1.0 and the row is not extrapolated. The band
+    // is the printed band, to the last digit.
+    assert_eq!(e.row_id, PREMISE_ROW, "the premise row must match");
     assert!(
-        e.extrapolated,
-        "the fixture is meant to reproduce an extrapolated row"
+        !e.extrapolated,
+        "a row printed at the tip is not extrapolated (d-scale {}, h-scale {})",
+        e.diameter_scale, e.hardness_scale
+    );
+    assert!(
+        (e.diameter_scale - 1.0).abs() < 1e-12 && (e.hardness_scale - 1.0).abs() < 1e-12,
+        "both scales must be 1.0 at the printed size and hardness; got d {} h {}",
+        e.diameter_scale,
+        e.hardness_scale
+    );
+    let printed_min = PRINTED_MIN_IN * MM_PER_IN;
+    let printed_max = PRINTED_MAX_IN * MM_PER_IN;
+    assert!(
+        (e.band_min_mm.expect("the printed row has a floor") / printed_min - 1.0).abs() < 1e-12
+            && (e.band_max_mm / printed_max - 1.0).abs() < 1e-12,
+        "the gate band must be the printed 0.00075\"-0.002\" = {printed_min}-{printed_max} mm \
+         (amana_zrn_3d_v8.txt:9; no scale, no depth de-rate at DOC/D 0.37); got {:?}-{}",
+        e.band_min_mm,
+        e.band_max_mm
+    );
+    assert_eq!(
+        e.bounds_source,
+        ChipBoundsSource::VendorLutMissingAe,
+        "the printed row has no ae window (chipload.rs:650-651), so its low side is advisory"
     );
 
     // ── THE FLIP ────────────────────────────────────────────────────
@@ -703,51 +872,64 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
     //     (12.43×) and that is unaffected;
     //   * the diameter law moved the BAND and that is what un-trips it.
     // What is no longer true is "this operation is over its breakage
-    // ceiling". What is still true, and is the finding the file exists
-    // for, is that the pre-conversion reading sat five times under the
-    // floor while the corrected one sits comfortably inside the band —
-    // asserted below, unchanged.
+    // ceiling". What was still true then, and was the finding the file
+    // exists for, is that the pre-conversion reading sat five times under
+    // the floor while the corrected one sat comfortably inside the band.
+    //
+    // RE-PREMISED 2026-10-01 (the module header has the causes). These
+    // three assertions read
+    //     assert_eq!(e.verdict_label, "Within", ...);
+    //     assert!(!e.burn_advisory, "no burn advisory: ...");
+    //     assert!(of_max < 1.0 && e.gate_observed_mm > band_min, ...);
+    // on the 0.005763-0.011525 band of the Scallop premise. On the printed
+    // Ø1 band, 0.01905-0.0508 (amana_zrn_3d_v8.txt:9), the SAME
+    // observation 0.009153 is under the floor, at
+    //     0.0714 x 0.1282 / 0.01905 = 48.0 % of MIN.
+    // The verdict stays `Within`, because the low side of a row with no
+    // ae window is advisory (verdict.rs:1301-1307), and the burn advisory
+    // fires. The finding moves with the band: the conversion put the
+    // reading on the vendor's axis; on this row that axis says "too slow".
+    // The side the pre-conversion reading took is kept below.
     let band_min = e.band_min_mm.expect("row publishes a floor");
     let of_max = e.gate_observed_mm / e.band_max_mm;
+    let of_min = e.gate_observed_mm / band_min;
     assert_eq!(
         e.verdict_label,
         "Within",
-        "the operation is at {:.1} % of its band MAXIMUM ({:.6}). Under the retired \
-         ^1.0 diameter law this read `Exceeds` at 127 %; the ^0.61 law widened the \
-         band by 1.598x on this Ø1 query and the trip went away.",
-        100.0 * of_max,
-        e.band_max_mm
+        "the operation is at {:.1} % of its band MINIMUM ({band_min:.6}); the low side of \
+         a row with no ae window is advisory, so the verdict must stay Within",
+        100.0 * of_min,
     );
     assert!(
-        !e.burn_advisory,
-        "no burn advisory: the observation {:.9} is above the floor {band_min:.9}. \
-         (Pre-conversion it was BELOW the floor and the advisory fired — that \
-         inversion is what the unit deletion removed, and it stays removed.)",
+        e.burn_advisory,
+        "the observation {:.9} is under the printed floor {band_min:.9}, so the demoted \
+         low-side trip must surface as a burn advisory (F3.3)",
         e.gate_observed_mm
     );
+    let expected_of_min = COMMANDED_FEED_MM_MIN / (f64::from(RPM) * f64::from(FLUTES))
+        * PREDICTED_FEED_FRACTION
+        / (PRINTED_MIN_IN * MM_PER_IN);
     assert!(
-        of_max < 1.0 && e.gate_observed_mm > band_min,
-        "observed {:.6} must sit inside the band {band_min:.6}..{:.6}; got {:.4}x of max",
+        (of_min / expected_of_min - 1.0).abs() < 1e-9 && of_min < 1.0 && of_max < 1.0,
+        "observed {:.9} must sit at 0.0714 x 0.1282 / 0.01905 = {:.4} of the printed \
+         floor, under the band {band_min:.6}..{:.6}; got {of_min:.6} of min, {of_max:.6} of max",
         e.gate_observed_mm,
+        expected_of_min,
         e.band_max_mm,
-        of_max
     );
 
-    // And the size of what was deleted, on this row, as a number.
+    // And the size of what was deleted, on the recorded row, as a number.
     let pre = e.pre_conversion_gate_observation();
     eprintln!(
-        "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of band MIN {band_min:.6} \
-         (Within + BURN advisory); post-conversion observed {:.9} = {:.1} % of band MAX \
-         {:.6}. Deleted factor {:.6}x on this row. Under the retired ^1.0 diameter law \
-         this was Exceeds(High) at 127 % of a 0.003605-0.007211 band; the ^0.61 law \
-         widened it by 1.598x (d-scale {:.4}) and the verdict returned to Within. \
-         The observation itself did not move.",
+        "  FLIP: pre-conversion observed {pre:.9} = {:.1} % of band MIN {band_min:.6}; \
+         post-conversion observed {:.9} = {:.1} % of band MIN (Within + BURN advisory). \
+         Deleted factor {:.6}x, read off the recorded row {RECORDED_ROW}. On the Scallop \
+         premise (to 42192d6e) the post-conversion reading sat at 79 % of a \
+         0.005763-0.011525 band; on the printed Ø1 band both readings are under the floor.",
         100.0 * pre / band_min,
         e.gate_observed_mm,
-        100.0 * of_max,
-        e.band_max_mm,
+        100.0 * of_min,
         e.lut_arc_factor,
-        e.diameter_scale,
     );
     assert!(
         pre < band_min,
@@ -871,20 +1053,35 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
          apart on this row; got {convention_ratio}"
     );
     eprintln!(
-        "MEASURED: on row {} the pre-conversion gate reported mm of CHIP against a band of \
-         ADVANCE, differing by {convention_ratio:.2}x (arc {:.5} rad from a repo-authored \
-         ae window, factor {:.6}). T4.1 answered: the column is an advance per tooth.",
-        e.row_id, e.lut_arc_rad, e.lut_arc_factor
+        "MEASURED: on the recorded row {RECORDED_ROW} the pre-conversion gate reported mm of \
+         CHIP against a band of ADVANCE, differing by {convention_ratio:.2}x (arc {:.5} rad \
+         from a repo-authored ae window, factor {:.6}). T4.1 answered: the column is an \
+         advance per tooth. The premise row today is {}.",
+        e.lut_arc_rad, e.lut_arc_factor, e.row_id
     );
 
-    // And the consequence, restated: the live session read this
-    // operation as below its floor. It is not.
+    // And the consequence, restated.
+    //
+    // RE-PREMISED 2026-10-01. This read
+    //     assert!(e.gate_observed_mm > min,
+    //             "observed ... must now sit ABOVE the floor — the live
+    //              session's below-floor reading was the unit defect");
+    // and it was true of the 0.005763-0.011525 band of the Scallop
+    // premise. That premise has no band now (module header; test 8). On
+    // the printed Ø1 band, 0.01905-0.0508 (amana_zrn_3d_v8.txt:9), the
+    // SAME observation sits under the floor. The unit finding (the
+    // assertions above) does not depend on the band; the side does. The
+    // assertion below states the side the printed band gives, at its
+    // exact position.
     let min = e.band_min_mm.expect("row publishes a floor");
+    let expected = e.commanded_fpt_mm * e.predicted_feed_factor;
     assert!(
-        e.gate_observed_mm > min,
-        "observed {:.9} must now sit ABOVE the floor {min:.9} — the live session's \
-         below-floor reading was the unit defect",
-        e.gate_observed_mm
+        e.gate_observed_mm < min
+            && (e.gate_observed_mm / min - expected / (PRINTED_MIN_IN * MM_PER_IN)).abs() < 1e-9,
+        "on the printed Ø1 band the observation {:.9} must sit UNDER the floor {min:.9}, at \
+         0.0714 x 0.1282 / 0.01905 = {:.4} of it",
+        e.gate_observed_mm,
+        expected / (PRINTED_MIN_IN * MM_PER_IN)
     );
     // RE-PINNED 2026-08-06 (laws). This read
     //     assert!(e.gate_observed_mm > e.band_max_mm,
@@ -897,11 +1094,14 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
     // was below the floor and the corrected one is not, which is the
     // inversion — but the corrected reading is no longer past the
     // ceiling on this fixture.
+    //
+    // RE-PREMISED 2026-10-01: the ceiling is now the printed 0.0508
+    // (amana_zrn_3d_v8.txt:9); the observation is 0.180x of it. The
+    // assertion is unchanged.
     assert!(
         e.gate_observed_mm < e.band_max_mm,
-        "under the ^0.61 diameter law the observation {:.9} sits BELOW the widened \
-         ceiling {:.9}. If it is above again, the band moved back and the whole \
-         re-pin below is stale.",
+        "the observation {:.9} sits BELOW the ceiling {:.9}. If it is above, the band \
+         moved and the re-pins above are stale.",
         e.gate_observed_mm,
         e.band_max_mm
     );
@@ -928,10 +1128,21 @@ fn the_gate_observation_and_the_band_are_now_the_same_quantity() {
 fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
     let e = explain(SAMPLE_ARC_A_RAD, true);
     let overshoot = e.commanded_fpt_mm / e.band_max_mm;
+    // RE-PREMISED 2026-10-01. This read
+    //     assert!(overshoot > 2.0, "... well above the band max ...");
+    // on the 0.011525 ceiling of the Scallop premise (6.20x). That premise
+    // has no band now (module header; test 8). The printed Ø1 ceiling is
+    // 0.002" = 0.0508 mm (amana_zrn_3d_v8.txt:9), so the same commanded
+    // 0.0714 is 0.0714 / 0.0508 = 1.4055x over it. The claim keeps its
+    // property (the commanded advance is over the band maximum) and is now
+    // pinned at the exact printed ratio, so it cannot drift either way.
+    let expected_overshoot =
+        COMMANDED_FEED_MM_MIN / (f64::from(RPM) * f64::from(FLUTES)) / (PRINTED_MAX_IN * MM_PER_IN);
     assert!(
-        overshoot > 2.0,
-        "the fixture must reproduce a commanded feed-per-tooth well above the band max, or the \
-         missing comparison has nothing to surface; got {overshoot}x"
+        overshoot > 1.0 && (overshoot / expected_overshoot - 1.0).abs() < 1e-9,
+        "the fixture must reproduce a commanded feed-per-tooth above the band max, at \
+         0.0714 / 0.0508 = {expected_overshoot:.4}x, or the missing comparison has nothing to \
+         surface; got {overshoot}x"
     );
     // This assertion has now been written three ways, and the third is
     // the first one's value with a different reason behind it — which is
@@ -950,17 +1161,30 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
     //     0.005763–0.011525 on this Ø1 query, so the achieved feed is
     //     inside it at 0.79×.
     //
-    // The P-10 finding the test carries is untouched by all three: no
+    //  4. Re-premised (2026-10-01): `"Within"`, now with a burn
+    //     advisory — the printed Ø1 band 0.01905–0.0508 puts the achieved
+    //     feed under the floor at 0.48x of it, and the low side of a row
+    //     with no ae window is advisory.
+    //
+    // The P-10 finding the test carries is untouched by all four: no
     // verdict compares the COMMANDED feed-per-tooth to the band, and the
-    // commanded value here is still 6.20× over the maximum while the
-    // verdict says nothing about it. That comparison is a diagnostic
-    // (`load.chipload.commanded_above_band`, T1.5), and the assertion
-    // above (`overshoot > 2.0`) is the part that must never soften.
+    // commanded value here is 1.41× over the printed maximum (6.20× over
+    // the Scallop premise's) while the verdict says nothing about it.
+    // That comparison is a diagnostic (`load.chipload.commanded_above_band`,
+    // T1.5), and the assertion above is the part that must never soften.
     assert_eq!(
         e.verdict_label, "Within",
-        "the gate reads the ACHIEVED feed, which is inside the ^0.61-widened band, \
+        "the gate reads the ACHIEVED feed, which is under the printed ceiling, \
          while the COMMANDED value sits {overshoot:.2}x over the same maximum and no \
          verdict says so — that gap is P-10 and it survives every re-pin"
+    );
+    // On the printed band the gap is wider than "says nothing": the only
+    // advice the gate gives is the burn advisory (feed too LOW), on an
+    // operation whose commanded feed is over the band MAXIMUM.
+    assert!(
+        e.burn_advisory,
+        "on the printed Ø1 band the gate's only advice must be the burn advisory, while \
+         the commanded value sits {overshoot:.2}x over the maximum"
     );
     let achieved_over_band = e.gate_observed_mm / e.band_max_mm;
     eprintln!(
@@ -1124,5 +1348,90 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
          vbit_width_at_depth includes. Combined with pick_axial_envelope setting dpp_mutated on \
          Adaptive3d ONLY (suggest.rs:1348-1356; VCarve declines it, the finish-3D family is \
          warning-only), the reachable case is Adaptive3d + V-bit."
+    );
+}
+
+// ── 8. The premise this file left, recorded ─────────────────────────────
+
+/// The Scallop premise of tests 2-6 until 2026-10-01: the same Ø1 tapered
+/// tip, the same hard maple, the same trace, on `(Scallop, Finish)`. The
+/// gate abstains on it. This test pins that refusal and its reason, so
+/// the loss of the band is a recorded behaviour, not a silent one.
+///
+/// - The query matches `onsrud-hardwood-77-100-1_4-pocket` (Ø6.35, the
+///   G3 family rule carries it to Scallop) since 42192d6e and 5ca7fedf.
+/// - Its G1 size basis is `Refused`: a key under 1.5 mm may read only a
+///   row inside 0.5x-2x of it (`feeds::support::micro_extrapolation_refusal`,
+///   87027060), and 6.35 / 1.0 = 6.35x. Since 90aaf54b a refused basis
+///   has no band and the gate reports `Unmodeled(NoVendorData)`.
+/// - The recorded row (Ø3.175) is 3.175x the tip, so it refuses too:
+///   reading it by its id cannot bring the band back.
+#[test]
+fn the_old_scallop_premise_is_refused_by_the_size_rule() {
+    use rs_cam_core::feeds::extrapolation::{Gap, SizeBasis};
+    use rs_cam_core::feeds::support::micro_extrapolation_refusal;
+    use rs_cam_core::tool_load::UnmodeledReason;
+
+    let verdict = gate_verdict(
+        SAMPLE_ARC_A_RAD,
+        true,
+        OperationType::Scallop,
+        LutOperationFamily::Scallop,
+        LutPassRole::Finish,
+    );
+    assert!(
+        matches!(
+            verdict,
+            ChiploadVerdict::Unmodeled {
+                reason: UnmodeledReason::NoVendorData
+            }
+        ),
+        "the Ø1 tapered Scallop cell in hard maple must stay unjudged under the size rule; \
+         got {verdict:?}"
+    );
+
+    let tool = tool();
+    let key = rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter(&tool, SAMPLE_AXIAL_DOC_MM);
+    assert!(
+        (key - TIP_DIAMETER_MM).abs() < 1e-12,
+        "ruling A1: a tapered ball is keyed at its tip; got {key}"
+    );
+    let row = matched_row_for(&tool, key, LutOperationFamily::Scallop, LutPassRole::Finish)
+        .expect("the envelope resolver still names a row; the size rule refuses it");
+    assert_eq!(row.observation_id, "onsrud-hardwood-77-100-1_4-pocket");
+    let expected_reason = "no published figure for a 1.00 mm tapered ball nose; the nearest \
+                           chart row is 6.35 mm, 6.3x the tool, outside the 0.5x to 2x window \
+                           a tool under 1.5 mm needs (ruling R1 applied to size)";
+    match &row.size_basis {
+        SizeBasis::Refused { gap, reason } => {
+            assert!(
+                matches!(gap, Gap::Size),
+                "the refusal must be a size gap; got {gap:?}"
+            );
+            assert_eq!(reason, expected_reason);
+        }
+        other => panic!("the Ø1 Scallop row must be size-refused; got {other:?}"),
+    }
+    assert!(
+        row.chip_load_min_mm.is_none() && row.chip_load_max_mm.is_none(),
+        "a refused row publishes no band"
+    );
+
+    // The recorded row would refuse too: Ø3.175 is 3.175x the Ø1 tip.
+    let recorded_diameter = rs_cam_core::feeds::embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == RECORDED_ROW)
+        .and_then(|o| o.diameter_mm)
+        .expect("the recorded row ships with a diameter");
+    assert!(
+        micro_extrapolation_refusal(
+            ToolFamily::TaperedBallNose,
+            TIP_DIAMETER_MM,
+            key,
+            recorded_diameter
+        )
+        .is_some(),
+        "the recorded row (Ø{recorded_diameter}) must be outside the micro window of a Ø1 tip"
     );
 }
