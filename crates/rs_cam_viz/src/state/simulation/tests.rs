@@ -553,6 +553,7 @@ fn evidence_movement_invalidates_the_cached_triage() {
         }],
         min_safe_stickout: 42.0,
     });
+    sim.checks.checked_scope.toolpath_id = Some(ToolpathId(1));
     sim.checks.holder_collision_count = 1;
     assert_ne!(
         sim.cached_simulation_triage(&session, 3)

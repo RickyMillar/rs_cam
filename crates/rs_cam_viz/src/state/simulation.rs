@@ -3,6 +3,7 @@
 // `SimulationState::method(..)`, so no name needs a re-export.
 mod issue_triage;
 mod playback_state;
+pub use playback_state::LocatedHolderCollision;
 mod semantic_trace;
 
 use std::collections::{HashMap, HashSet};
@@ -1029,6 +1030,14 @@ pub struct HolderCheckScope {
     /// 1-based position, in the operation list, of the one toolpath examined.
     /// `None` when the verdict covers none, or more than one.
     pub position: Option<usize>,
+    /// The id of the one toolpath examined. `None` when no check has run.
+    ///
+    /// G-RAPIDFRAME: the check walks ONE toolpath, so every
+    /// `CollisionEvent::move_index` in its report is that toolpath's OWN
+    /// move index, not a run-global one. This id is the only way to place a
+    /// holder collision on the simulation timeline. Read
+    /// [`SimulationState::located_holder_collisions`], not the raw index.
+    pub toolpath_id: Option<ToolpathId>,
 }
 
 impl HolderCheckScope {

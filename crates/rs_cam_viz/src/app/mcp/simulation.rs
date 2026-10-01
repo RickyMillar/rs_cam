@@ -108,95 +108,16 @@ impl RsCamApp {
     /// each move belongs to. Localizes the project-wide
     /// `rapid_collision_count` from `run_simulation` so the user can drill
     /// to the specific lift/retract that's clipping uncleared stock.
+    ///
+    /// G-RAPIDFRAME: every move appears in both frames. `global_move` is the
+    /// run move index (the simulation timeline); `local_move` is the
+    /// toolpath's own move index (the number diagnostics and the triage
+    /// cite). The attribution is the core's
+    /// `ProjectEvidence::attributed_rapid_collisions`, the same one
+    /// `get_diagnostics` and `get_project_diagnostics` read, so the surfaces
+    /// cannot name two toolpaths for one collision.
     pub(super) fn mcp_inspect_collisions(&self) -> String {
-        let state = self.controller.state();
-        let sim = &state.simulation;
-
-        if !sim.has_results() {
-            return json_str(serde_json::json!({
-                "error": "No simulation results. Call run_simulation first."
-            }));
-        }
-
-        let mut holder_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
-            std::collections::BTreeMap::new();
-        let mut rapid_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
-            std::collections::BTreeMap::new();
-
-        // Holder/shank collisions live in collision_report. Their
-        // `move_index` is in global move space; map back to
-        // (toolpath_id, local_move).
-        if let Some(report) = sim.checks.collision_report.as_ref() {
-            for c in &report.collisions {
-                let (tp_id, local_move) = sim
-                    .move_to_local_toolpath_move(c.move_index)
-                    .map(|(_, id, local)| (id.0, local))
-                    .unwrap_or((usize::MAX, c.move_index));
-                holder_by_tp
-                    .entry(tp_id)
-                    .or_default()
-                    .push(serde_json::json!({
-                        "global_move": c.move_index,
-                        "local_move": local_move,
-                        "segment": c.segment.as_str(),
-                    }));
-            }
-        }
-
-        // Rapid collisions are stored as bare global move indices.
-        for &global_move in &sim.checks.rapid_collision_move_indices {
-            let (tp_id, local_move) = sim
-                .move_to_local_toolpath_move(global_move)
-                .map(|(_, id, local)| (id.0, local))
-                .unwrap_or((usize::MAX, global_move));
-            rapid_by_tp
-                .entry(tp_id)
-                .or_default()
-                .push(serde_json::json!({
-                    "global_move": global_move,
-                    "local_move": local_move,
-                }));
-        }
-
-        // Build the per-toolpath rollup. Include every TP that has at least
-        // one of either kind so the agent doesn't have to merge two maps.
-        let all_tps: std::collections::BTreeSet<usize> = holder_by_tp
-            .keys()
-            .chain(rapid_by_tp.keys())
-            .copied()
-            .collect();
-
-        let session = &state.simulation;
-        let by_toolpath: Vec<serde_json::Value> = all_tps
-            .iter()
-            .map(|tp_id| {
-                let name = session
-                    .boundaries()
-                    .iter()
-                    .find(|b| b.id.0 == *tp_id)
-                    .map(|b| b.name.clone())
-                    .unwrap_or_else(|| format!("(unknown {tp_id})"));
-                let holder = holder_by_tp.get(tp_id).cloned().unwrap_or_default();
-                let rapid = rapid_by_tp.get(tp_id).cloned().unwrap_or_default();
-                serde_json::json!({
-                    "toolpath_id": tp_id,
-                    "toolpath_name": name,
-                    "holder_collision_count": holder.len(),
-                    "rapid_collision_count": rapid.len(),
-                    "holder_collisions": holder,
-                    "rapid_collisions": rapid,
-                })
-            })
-            .collect();
-
-        let total_holder: usize = holder_by_tp.values().map(|v| v.len()).sum();
-        let total_rapid: usize = rapid_by_tp.values().map(|v| v.len()).sum();
-
-        json_str(serde_json::json!({
-            "holder_collision_count": total_holder,
-            "rapid_collision_count": total_rapid,
-            "by_toolpath": by_toolpath,
-        }))
+        json_str(inspect_collisions_json(&self.controller.state().simulation))
     }
 
     pub(super) fn mcp_run_simulation(
@@ -459,11 +380,13 @@ impl RsCamApp {
         let total = sim.total_moves();
         let clamped = move_index.min(total);
 
-        // Find which toolpath is active at this move index.
+        // Find which toolpath is active at this cursor. The same rule as the
+        // GUI's `current_boundary`: at a boundary edge the LATER toolpath is
+        // active (G-RAPIDFRAME). A forward `find` with `<=` used to name the
+        // earlier one.
         let active_toolpath = sim
-            .boundaries()
-            .iter()
-            .find(|b| clamped >= b.start_move && clamped <= b.end_move)
+            .cursor_to_local_toolpath_move(clamped)
+            .and_then(|(boundary_index, _, _)| sim.boundaries().get(boundary_index))
             .map(|b| {
                 serde_json::json!({
                     "name": b.name,
@@ -1154,4 +1077,101 @@ fn render_per_kinematics_json(
         );
     }
     serde_json::Value::Object(map)
+}
+
+/// The MCP `inspect_collisions` answer for one simulation view. See
+/// `RsCamApp::mcp_inspect_collisions`. A free function, so a controller test
+/// can compare it with the core diagnostics (G-RAPIDFRAME).
+pub(crate) fn inspect_collisions_json(
+    sim: &crate::state::simulation::SimulationState,
+) -> serde_json::Value {
+    if !sim.has_results() {
+        return serde_json::json!({
+            "error": "No simulation results. Call run_simulation first."
+        });
+    }
+
+    let mut holder_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    let mut rapid_by_tp: std::collections::BTreeMap<usize, Vec<serde_json::Value>> =
+        std::collections::BTreeMap::new();
+
+    // Holder/shank collisions: the check walks ONE toolpath, so the
+    // event's `move_index` is that toolpath's own move index. The
+    // located list adds the run move (`null` when the run does not hold
+    // the checked toolpath).
+    for hit in sim.located_holder_collisions() {
+        let tp_id = hit.toolpath_id.map_or(usize::MAX, |id| id.0);
+        holder_by_tp
+            .entry(tp_id)
+            .or_default()
+            .push(serde_json::json!({
+                "global_move": hit.global_move,
+                "local_move": hit.local_move,
+                "segment": hit.event.segment.as_str(),
+            }));
+    }
+
+    // Rapid collisions: the run-global index finds the toolpath.
+    let evidence = sim.project_evidence();
+    for hit in evidence.attributed_rapid_collisions() {
+        let (tp_id, local_move) = match hit.toolpath {
+            Some((id, local)) => (id.0, Some(local)),
+            None => (usize::MAX, None),
+        };
+        let mut entry = serde_json::json!({
+            "global_move": hit.global_move,
+            "local_move": local_move,
+        });
+        if let (Some(c), Some(obj)) = (hit.collision.as_ref(), entry.as_object_mut()) {
+            obj.insert(
+                "start".to_owned(),
+                serde_json::json!([c.start.x, c.start.y, c.start.z]),
+            );
+            obj.insert(
+                "end".to_owned(),
+                serde_json::json!([c.end.x, c.end.y, c.end.z]),
+            );
+        }
+        rapid_by_tp.entry(tp_id).or_default().push(entry);
+    }
+
+    // Build the per-toolpath rollup. Include every TP that has at least
+    // one of either kind so the agent doesn't have to merge two maps.
+    let all_tps: std::collections::BTreeSet<usize> = holder_by_tp
+        .keys()
+        .chain(rapid_by_tp.keys())
+        .copied()
+        .collect();
+
+    let by_toolpath: Vec<serde_json::Value> = all_tps
+        .iter()
+        .map(|tp_id| {
+            let name = sim
+                .boundaries()
+                .iter()
+                .find(|b| b.id.0 == *tp_id)
+                .map(|b| b.name.clone())
+                .unwrap_or_else(|| format!("(unknown {tp_id})"));
+            let holder = holder_by_tp.get(tp_id).cloned().unwrap_or_default();
+            let rapid = rapid_by_tp.get(tp_id).cloned().unwrap_or_default();
+            serde_json::json!({
+                "toolpath_id": tp_id,
+                "toolpath_name": name,
+                "holder_collision_count": holder.len(),
+                "rapid_collision_count": rapid.len(),
+                "holder_collisions": holder,
+                "rapid_collisions": rapid,
+            })
+        })
+        .collect();
+
+    let total_holder: usize = holder_by_tp.values().map(|v| v.len()).sum();
+    let total_rapid: usize = rapid_by_tp.values().map(|v| v.len()).sum();
+
+    serde_json::json!({
+        "holder_collision_count": total_holder,
+        "rapid_collision_count": total_rapid,
+        "by_toolpath": by_toolpath,
+    })
 }

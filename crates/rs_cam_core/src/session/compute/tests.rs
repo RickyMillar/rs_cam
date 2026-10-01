@@ -910,6 +910,119 @@ fn rapid_collision_verdict_attributes_by_the_global_index_g_rapidframe() {
     assert_eq!(verdict.evidence.move_index, None);
 }
 
+/// G-RAPIDFRAME sentry: on a toolpath that starts after move 0, the triage
+/// line names the toolpath and its LOCAL move, and a collision at the
+/// boundary edge (global move == `end_move` of the previous toolpath) has ONE
+/// owner in the helper, the verdict and the triage.
+///
+/// A boundary is the half-open range `[start_move, end_move)`, so the edge
+/// move is the first move of the LATER toolpath.
+#[test]
+fn rapid_collision_frames_agree_at_the_boundary_edge_g_rapidframe() {
+    use crate::compute::simulate::MoveLocation;
+    use crate::diagnostics::{DiagnosticEvidence, Scope, ids};
+    use crate::stock::collision::RapidCollision;
+    use crate::stock::simulation_cut::SimulationCutTrace;
+    let mut s = make_session_with_two_tps();
+    for index in 0..2 {
+        let mut r = empty_result();
+        r.stats.cutting_distance = 100.0;
+        s.results.insert(index, r);
+    }
+    let tp0 = s.toolpath_configs()[0].id;
+    let tp1 = s.toolpath_configs()[1].id;
+    let tp1_name = s.toolpath_configs()[1].name.clone();
+    let boundaries = vec![(tp0, 0, 50), (tp1, 50, 120)];
+    // Local 0 on tp1 is global 50: the edge move. Local 30 is global 80.
+    let collisions = vec![
+        RapidCollision {
+            move_index: 0,
+            start: P3::new(1.0, 2.0, 5.0),
+            end: P3::new(1.0, 2.0, -1.0),
+        },
+        RapidCollision {
+            move_index: 30,
+            start: P3::new(3.0, 4.0, 5.0),
+            end: P3::new(3.0, 4.0, -4.0),
+        },
+    ];
+    let globals = vec![50, 80];
+    let trace = SimulationCutTrace::from_samples(0.5, Vec::new());
+    let evidence = ProjectEvidence {
+        boundaries,
+        rapid_collisions: &collisions,
+        rapid_collision_move_indices: &globals,
+        cut_trace: Some(&trace),
+        ..ProjectEvidence::default()
+    };
+
+    // The one helper: half-open ranges, the edge move is the later toolpath's.
+    assert_eq!(
+        evidence.locate_move(50),
+        Some(MoveLocation {
+            boundary_index: 1,
+            toolpath_id: tp1,
+            local_move: 0,
+        })
+    );
+    assert_eq!(evidence.locate_move(49).map(|l| l.toolpath_id), Some(tp0));
+    assert_eq!(evidence.locate_move(120), None, "end_move is not a move");
+
+    // The verdict: both collisions on tp1, none on tp0.
+    let diag = s.diagnostics_with_evidence(&evidence);
+    let rapid: Vec<_> = diag
+        .verdicts
+        .iter()
+        .filter(|v| matches!(v.kind, VerdictKind::RapidCollision))
+        .collect();
+    assert_eq!(rapid.len(), 1, "{rapid:?}");
+    assert_eq!(rapid[0].offender_toolpath_ids, vec![tp1]);
+    assert_eq!(rapid[0].evidence.count, Some(2));
+    assert_eq!(rapid[0].evidence.move_index, Some(30), "the deepest hit");
+    assert!(
+        rapid[0].headline.contains("local move 30 (run move 80)"),
+        "{}",
+        rapid[0].headline
+    );
+    assert!(
+        !rapid[0].fix_hint.contains("retract_z"),
+        "the hint gives no invented fix: {}",
+        rapid[0].fix_hint
+    );
+
+    // The triage: each line names the toolpath and the local move.
+    let triage = s.simulation_triage(&evidence);
+    let lines: Vec<_> = triage
+        .safety
+        .iter()
+        .filter(|f| f.diagnostic.id.as_str() == ids::PROJECT_RAPID_COLLISION)
+        .collect();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    for f in &lines {
+        assert_eq!(f.diagnostic.scope, Scope::Toolpath { id: tp1 });
+        assert_eq!(f.dedup_key.toolpath_id, Some(tp1));
+    }
+    let messages: Vec<&str> = lines
+        .iter()
+        .map(|f| f.diagnostic.message.as_str())
+        .collect();
+    let edge = format!("on TP{tp1} '{tp1_name}' at local move 0 (run move 50)");
+    let deep = format!("on TP{tp1} '{tp1_name}' at local move 30 (run move 80)");
+    assert!(messages.iter().any(|m| m.contains(&edge)), "{messages:?}");
+    assert!(messages.iter().any(|m| m.contains(&deep)), "{messages:?}");
+    assert!(
+        lines.iter().any(|f| matches!(
+            f.diagnostic.evidence,
+            Some(DiagnosticEvidence::Move {
+                toolpath_id,
+                move_index: 0,
+                ..
+            }) if toolpath_id == tp1
+        )),
+        "the evidence names the toolpath and the local move"
+    );
+}
+
 /// CMP-24: the holder-collision sweep builds ONE spatial index per
 /// DISTINCT model, not one per toolpath.
 ///
@@ -1189,11 +1302,18 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         "evidence.z_value: {:?}",
         v.evidence.z_value
     );
-    // Fix hint mentions retract_z (the operator's lever).
-    let hint_lc = v.fix_hint.to_lowercase();
+    // G-RAPIDFRAME: the hint states what was measured and gives no
+    // invented fix. A live case lifted to safe Z and then made a G0
+    // descent into uncut stock, so "raise retract_z" was wrong advice.
     assert!(
-        hint_lc.contains("retract_z") || hint_lc.contains("safe-z") || hint_lc.contains("boundary"),
-        "fix_hint must point at retract_z / safe-Z / boundary: {}",
+        v.fix_hint
+            .contains("Measured: a rapid (G0) move passes through stock"),
+        "fix_hint states the measurement: {}",
+        v.fix_hint
+    );
+    assert!(
+        !v.fix_hint.contains("retract_z") && !v.fix_hint.contains("Likely cause"),
+        "fix_hint gives no speculative cause or fix: {}",
         v.fix_hint
     );
     assert_eq!(v.offender_toolpath_ids, vec![tp_id]);

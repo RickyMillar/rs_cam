@@ -204,17 +204,13 @@ impl SimulationState {
         true
     }
 
-    /// Find which toolpath boundary contains the current move. Boundaries
-    /// touch at a point (one's `end_move` equals the next's `start_move`),
-    /// so we scan in reverse and pick the **later** boundary on a tie. That
-    /// way, jumping to a boundary's `start_move` lands focus on that
-    /// boundary rather than the one that just ended.
+    /// The boundary under the playback CURSOR.
+    ///
+    /// The cursor is a count of played moves, `0..=total_moves`, not a move
+    /// index. See [`Self::cursor_to_local_toolpath_move`] for the rule.
     pub fn current_boundary(&self) -> Option<&ToolpathBoundary> {
-        let current = self.playback.current_move;
-        self.boundaries()
-            .iter()
-            .rev()
-            .find(|b| current >= b.start_move && current <= b.end_move)
+        self.cursor_to_local_toolpath_move(self.playback.current_move)
+            .and_then(|(boundary_index, _, _)| self.boundaries().get(boundary_index))
     }
 
     /// The toolpath in focus for graph filtering and viewport-marker
@@ -226,36 +222,98 @@ impl SimulationState {
         self.current_boundary().map(|b| b.id)
     }
 
-    #[allow(clippy::indexing_slicing)] // boundary_index from position() is always in bounds
-    pub fn move_to_local_toolpath_move(
+    /// G-RAPIDFRAME: the boundary, toolpath and local move of the run-global
+    /// MOVE INDEX `global_move`.
+    ///
+    /// This is the one attribution of a move number to a toolpath
+    /// ([`rs_cam_core::compute::simulate::locate_global_move`]), the same
+    /// function core diagnostics and the triage use. A boundary is the
+    /// half-open range `[start_move, end_move)`: the move at `end_move` is
+    /// the first move of the NEXT toolpath. Use this for every collision,
+    /// issue and marker move.
+    pub fn locate_move(
         &self,
-        move_idx: usize,
+        global_move: usize,
+    ) -> Option<rs_cam_core::compute::simulate::MoveLocation> {
+        rs_cam_core::compute::simulate::locate_global_move(
+            self.boundaries().iter().map(ToolpathBoundary::range),
+            global_move,
+        )
+    }
+
+    /// The boundary, toolpath and local move of the playback CURSOR.
+    ///
+    /// The cursor counts played moves, so it runs to `total_moves`. Below
+    /// that value, the cursor at `c` shows move `c` next, and the mapping is
+    /// [`Self::locate_move`]. At `total_moves` no move is next: the cursor
+    /// stays on the last boundary, at local move `end_move - start_move`.
+    /// Do not use this for a move index; use [`Self::locate_move`].
+    pub fn cursor_to_local_toolpath_move(
+        &self,
+        cursor: usize,
     ) -> Option<(usize, ToolpathId, usize)> {
-        // Same tie-breaking as `current_boundary`: at a boundary point
-        // (where one ends and the next begins) prefer the *later* boundary.
-        let count = self.boundaries().len();
-        let boundary_index = self
-            .boundaries()
-            .iter()
-            .rev()
-            .position(|boundary| move_idx >= boundary.start_move && move_idx <= boundary.end_move)
-            .map(|rev_idx| count - 1 - rev_idx)?;
-        let boundary = &self.boundaries()[boundary_index];
-        let local_move = move_idx.saturating_sub(boundary.start_move);
-        Some((boundary_index, boundary.id, local_move))
+        if let Some(loc) = self.locate_move(cursor) {
+            return Some((loc.boundary_index, loc.toolpath_id, loc.local_move));
+        }
+        let last_index = self.boundaries().len().checked_sub(1)?;
+        let last = self.boundaries().get(last_index)?;
+        (cursor == last.end_move).then(|| {
+            (
+                last_index,
+                last.id,
+                last.end_move.saturating_sub(last.start_move),
+            )
+        })
     }
 
     pub fn current_local_toolpath_move(&self) -> Option<(usize, ToolpathId, usize)> {
-        self.move_to_local_toolpath_move(self.playback.current_move)
+        self.cursor_to_local_toolpath_move(self.playback.current_move)
+    }
+
+    /// G-RAPIDFRAME: every holder/shank collision of the last dedicated
+    /// check, with its toolpath and both move frames.
+    ///
+    /// The check walks ONE toolpath, so `CollisionEvent::move_index` is
+    /// that toolpath's own move index. The toolpath comes from the check's
+    /// scope ([`HolderCheckScope::toolpath_id`]), and the run-global move
+    /// from [`rs_cam_core::compute::simulate::global_move_of_local`].
+    /// `global_move` is `None` when the simulated run holds no such move,
+    /// for example when the checked toolpath is disabled. Every consumer
+    /// reads this list; none treats the raw index as a run move.
+    pub fn located_holder_collisions(&self) -> Vec<LocatedHolderCollision<'_>> {
+        let Some(report) = self.checks.collision_report.as_ref() else {
+            return Vec::new();
+        };
+        let toolpath_id = self.checks.checked_scope.toolpath_id;
+        report
+            .collisions
+            .iter()
+            .map(|event| LocatedHolderCollision {
+                event,
+                toolpath_id,
+                local_move: event.move_index,
+                global_move: toolpath_id.and_then(|id| {
+                    rs_cam_core::compute::simulate::global_move_of_local(
+                        self.boundaries().iter().map(ToolpathBoundary::range),
+                        id,
+                        event.move_index,
+                    )
+                }),
+            })
+            .collect()
     }
 
     /// Per-toolpath holder/shank collision counts from the last
-    /// dedicated collision check, attributed via simulation boundaries.
+    /// dedicated collision check, attributed by the check's own toolpath.
     /// Empty when no check has run. This is the holder evidence the
     /// core's `diagnostics_with_evidence` consumes — derived from the
     /// stored report (O(collisions)), never recomputed, so it is safe
     /// to call at frame rate (the 2026-06-11 setup-tab lag was the
     /// diagnostics path re-running the full collision sweep per frame).
+    ///
+    /// G-RAPIDFRAME: the count does not need the timeline. It used to look
+    /// up the toolpath's LOCAL move index in the run-global boundaries,
+    /// which gave the hits to whichever toolpath held that run move.
     pub(crate) fn holder_collision_counts_by_tp(
         &self,
     ) -> Vec<(
@@ -263,24 +321,18 @@ impl SimulationState {
         rs_cam_core::stock::collision::HolderCollisionCheck,
     )> {
         use rs_cam_core::stock::collision::HolderCollisionCheck;
-        let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
-        if let Some(report) = self.checks.collision_report.as_ref() {
-            for collision in &report.collisions {
-                if let Some((_, id, _)) = self.move_to_local_toolpath_move(collision.move_index) {
-                    match counts.iter_mut().find(|(cid, _)| *cid == id) {
-                        Some((_, count)) => *count += 1,
-                        None => counts.push((id, 1)),
-                    }
-                }
-            }
-        }
-        // Only toolpaths the report found HITS on appear here. A toolpath
+        let count = self
+            .checks
+            .collision_report
+            .as_ref()
+            .map_or(0, |report| report.collisions.len());
+        // Only a toolpath the report found HITS on appears here. A toolpath
         // the GUI never checked is absent, and core reads absence as "not
         // measured" — it must not be listed as a measured zero (CMP-14).
-        counts
-            .into_iter()
-            .map(|(id, count)| (id, HolderCollisionCheck::Measured(count)))
-            .collect()
+        match self.checks.checked_scope.toolpath_id {
+            Some(id) if count > 0 => vec![(id, HolderCollisionCheck::Measured(count))],
+            _ => Vec::new(),
+        }
     }
 
     pub(crate) fn boundary_for_toolpath_id(
@@ -323,4 +375,17 @@ impl SimulationState {
             .iter()
             .position(|c| c.boundary_index == boundary_idx - 1)
     }
+}
+
+/// One holder/shank collision in both move frames. See
+/// [`SimulationState::located_holder_collisions`].
+#[derive(Debug, Clone, Copy)]
+pub struct LocatedHolderCollision<'a> {
+    pub event: &'a rs_cam_core::stock::collision::CollisionEvent,
+    /// The checked toolpath. `None` when the report carries no scope.
+    pub toolpath_id: Option<ToolpathId>,
+    /// The toolpath's own move index (`CollisionEvent::move_index`).
+    pub local_move: usize,
+    /// The run-global move index. `None` when the run holds no such move.
+    pub global_move: Option<usize>,
 }

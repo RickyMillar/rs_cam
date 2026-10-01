@@ -373,7 +373,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     let mut controller = parity_controller();
     drain_one_result(&mut controller);
     // Holder evidence exactly as the GUI holds it: a stored collision report
-    // plus the simulation boundary that attributes each event to a toolpath.
+    // plus the checked toolpath in the check's scope.
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
         mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
@@ -410,6 +410,8 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
             }],
             min_safe_stickout: 30.0,
         });
+    // The check's scope names the toolpath it walked (G-RAPIDFRAME).
+    controller.state.simulation.checks.checked_scope.toolpath_id = Some(ToolpathId(0));
 
     let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
     let core = controller

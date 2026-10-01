@@ -541,7 +541,7 @@ impl RsCamApp {
             .controller
             .state()
             .simulation
-            .move_to_local_toolpath_move(current);
+            .cursor_to_local_toolpath_move(current);
         let Some((_boundary_index, toolpath_id, local_idx)) = active else {
             clear_playback_tool(&mut self.controller.state_mut().simulation.playback);
             return;

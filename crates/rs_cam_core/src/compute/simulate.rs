@@ -383,6 +383,79 @@ pub struct SimBoundary {
     pub direction: StockCutDirection,
 }
 
+/// Where one run-global move sits: its boundary, its toolpath and the
+/// toolpath's own (local) move index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveLocation {
+    /// The position of the boundary in the run's boundary list.
+    pub boundary_index: usize,
+    pub toolpath_id: ToolpathId,
+    /// The toolpath's own move index: `global - start_move`.
+    pub local_move: usize,
+}
+
+/// G-RAPIDFRAME: the ONE map from a run-global move index to the boundary
+/// that holds it.
+///
+/// The simulator sets `start_move` to the run's move count before a
+/// toolpath and `end_move` to the count after it (`run_simulation_memoized`),
+/// so a boundary is the half-open range `[start_move, end_move)`. Its last
+/// move is `end_move - 1`, and `end_move` is the next toolpath's first move.
+/// An empty toolpath holds no move.
+///
+/// Every consumer that attributes a move number to a toolpath (diagnostics,
+/// the triage, MCP `inspect_collisions`, the GUI issue list and timeline)
+/// calls this function. Do not compare a move with a boundary anywhere else.
+///
+/// `boundaries` gives `(toolpath_id, start_move, end_move)` per boundary,
+/// in run order.
+pub fn locate_global_move<I>(boundaries: I, global_move: usize) -> Option<MoveLocation>
+where
+    I: IntoIterator<Item = (ToolpathId, usize, usize)>,
+{
+    boundaries
+        .into_iter()
+        .enumerate()
+        .find_map(|(boundary_index, (toolpath_id, start, end))| {
+            if start <= global_move && global_move < end {
+                Some(MoveLocation {
+                    boundary_index,
+                    toolpath_id,
+                    local_move: global_move - start,
+                })
+            } else {
+                None
+            }
+        })
+}
+
+/// The inverse of [`locate_global_move`]: the run-global index of the
+/// toolpath's own move `local_move`.
+///
+/// A toolpath can own more than one boundary. This function uses the first
+/// boundary of the toolpath that holds `local_move`. It gives `None` when no
+/// boundary of the toolpath is that long.
+pub fn global_move_of_local<I>(
+    boundaries: I,
+    toolpath_id: ToolpathId,
+    local_move: usize,
+) -> Option<usize>
+where
+    I: IntoIterator<Item = (ToolpathId, usize, usize)>,
+{
+    boundaries.into_iter().find_map(|(id, start, end)| {
+        (id == toolpath_id && local_move < end.saturating_sub(start)).then(|| start + local_move)
+    })
+}
+
+impl SimBoundary {
+    /// The `(toolpath_id, start_move, end_move)` view that
+    /// [`locate_global_move`] reads.
+    pub fn range(&self) -> (ToolpathId, usize, usize) {
+        (self.id, self.start_move, self.end_move)
+    }
+}
+
 /// A per-toolpath checkpoint capturing the stock state after simulation.
 ///
 /// # The display mesh is built on demand (M2, memory programme 2026-10-01)

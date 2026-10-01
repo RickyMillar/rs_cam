@@ -150,14 +150,12 @@ fn draw_verdict_hud(
     // (audit §4.4, fix §6.12). The field is deleted; the seek is what these
     // clicks always really did.
     let first_exceed_move = tool_load_marker_moves(sim, load_report).into_iter().min();
-    let first_collision_move = std::iter::empty::<usize>()
-        .chain(
-            sim.checks
-                .collision_report
-                .as_ref()
-                .into_iter()
-                .flat_map(|r| r.collisions.iter().map(|c| c.move_index)),
-        )
+    // G-RAPIDFRAME: run moves only. A holder event's own index is local to
+    // the checked toolpath; the located list gives its run move.
+    let first_collision_move = sim
+        .located_holder_collisions()
+        .iter()
+        .filter_map(|hit| hit.global_move)
         .chain(sim.checks.rapid_collision_move_indices.iter().copied())
         .min();
 
@@ -501,23 +499,28 @@ fn draw_boundary_timeline(
 
     // Inspector focus filters the op-band markers (segments stay project-wide).
     let focused_id = sim.focused_toolpath();
+    // G-RAPIDFRAME: the one attribution (half-open boundaries). A forward
+    // `find` with `<=` gave the edge move to the EARLIER toolpath.
     let in_focus = |move_idx: usize| -> bool {
         let Some(focus) = focused_id else {
             return true;
         };
-        sim.boundaries()
-            .iter()
-            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
-            .map(|b| b.id == focus)
+        sim.locate_move(move_idx)
+            .map(|loc| loc.toolpath_id == focus)
             .unwrap_or(false)
     };
-    if let Some(ref report) = sim.checks.collision_report {
+    {
+        // G-RAPIDFRAME: the holder event's run move, not its local index.
         let holder_color = crate::ui::tokens::DANGER;
-        for col in &report.collisions {
-            if !in_focus(col.move_index) {
+        for move_index in sim
+            .located_holder_collisions()
+            .iter()
+            .filter_map(|hit| hit.global_move)
+        {
+            if !in_focus(move_index) {
                 continue;
             }
-            let x = global_x(col.move_index);
+            let x = global_x(move_index);
             painter.line_segment(
                 [egui::pos2(x, op_rect.min.y), egui::pos2(x, op_rect.max.y)],
                 egui::Stroke::new(2.0_f32, holder_color),
@@ -1094,20 +1097,19 @@ fn nearest_marker_tooltip(
     focused_id: Option<crate::state::toolpath::ToolpathId>,
 ) -> Option<String> {
     const HOVER_PX: f32 = 6.0;
+    // G-RAPIDFRAME: the one attribution (half-open boundaries). A forward
+    // `find` with `<=` gave the edge move to the EARLIER toolpath.
     let in_focus = |move_idx: usize| -> bool {
         let Some(focus) = focused_id else {
             return true;
         };
-        sim.boundaries()
-            .iter()
-            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
-            .map(|b| b.id == focus)
+        sim.locate_move(move_idx)
+            .map(|loc| loc.toolpath_id == focus)
             .unwrap_or(false)
     };
     let tp_name_for_move = |move_idx: usize| -> String {
-        sim.boundaries()
-            .iter()
-            .find(|b| move_idx >= b.start_move && move_idx <= b.end_move)
+        sim.locate_move(move_idx)
+            .and_then(|loc| sim.boundaries().get(loc.boundary_index))
             .map_or_else(|| "(no toolpath)".to_owned(), |b| b.name.clone())
     };
     let x_for_move =
@@ -1122,20 +1124,24 @@ fn nearest_marker_tooltip(
     };
 
     // Holder collisions
-    if let Some(report) = sim.checks.collision_report.as_ref() {
-        for col in &report.collisions {
-            if !in_focus(col.move_index) {
-                continue;
-            }
-            consider(
-                col.move_index,
-                format!(
-                    "{}: holder collision at move {} — click to navigate",
-                    tp_name_for_move(col.move_index),
-                    col.move_index
-                ),
-            );
+    // G-RAPIDFRAME: each tooltip gives the move in both frames: the
+    // toolpath's own (local) move and the run move this timeline plots.
+    for hit in sim.located_holder_collisions() {
+        let Some(move_index) = hit.global_move else {
+            continue;
+        };
+        if !in_focus(move_index) {
+            continue;
         }
+        consider(
+            move_index,
+            format!(
+                "{}: holder collision at local move {} (run move {move_index}) — click to \
+                 navigate",
+                tp_name_for_move(move_index),
+                hit.local_move,
+            ),
+        );
     }
 
     // Rapid collisions
@@ -1143,12 +1149,15 @@ fn nearest_marker_tooltip(
         if !in_focus(idx) {
             continue;
         }
+        let local = sim
+            .locate_move(idx)
+            .map_or_else(|| "?".to_owned(), |loc| loc.local_move.to_string());
         consider(
             idx,
             format!(
-                "{}: rapid collision at move {} — click to navigate",
+                "{}: rapid collision at local move {local} (run move {idx}) — click to \
+                 navigate",
                 tp_name_for_move(idx),
-                idx
             ),
         );
     }
@@ -1188,7 +1197,7 @@ fn nearest_marker_tooltip(
                 consider(
                     move_idx,
                     format!(
-                        "{}: {} at move {} — click to navigate",
+                        "{}: {} at run move {} — click to navigate",
                         tp_name_for_move(move_idx),
                         reason,
                         move_idx
