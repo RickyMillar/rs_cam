@@ -320,7 +320,7 @@ fn draw_toolpath_rows(
     let boundaries = sim.boundaries().to_vec();
     let setup_boundaries = sim.setup_boundaries().to_vec();
     let issues = sim.issues(gui, max_feed);
-    let load_report = sim.cached_load_report(session, gui.edit_counter);
+    let load_report = sim.cached_load_report(session);
     sim.sync_debug_state(gui);
     let active_item = sim.active_semantic_item(gui);
     let active_item_id = active_item

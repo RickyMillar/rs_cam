@@ -1673,12 +1673,13 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(sim_results) = self.state.simulation.results.as_ref() else {
             return;
         };
-        let Some(trace) = sim_results.cut_trace.as_deref() else {
+        let Some(trace) = sim_results.cut_trace.as_ref() else {
             return;
         };
 
-        // Compute per-toolpath verdicts off the new trace.
-        let load_report = rs_cam_core::gcode::project_load_report(&self.state.session, Some(trace));
+        // Compute per-toolpath verdicts off the new trace, through the
+        // session memo that the panels read.
+        let load_report = self.state.session.tool_load_report_for(Some(trace));
         // Map toolpath_id -> verdict for fast lookup. Index by id
         // (not toolpath_index) because the report uses ids.
         let mut verdict_by_id: std::collections::HashMap<

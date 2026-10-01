@@ -39,7 +39,7 @@ pub fn draw(
     ui.heading("Inspector");
     ui.separator();
 
-    let load_report = sim.cached_load_report(session, gui.edit_counter);
+    let load_report = sim.cached_load_report(session);
 
     // DC6 — the page is summary-first. ONE verdict line here, and every dense
     // section below it is closed until the operator opens it. The line also

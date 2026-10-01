@@ -348,7 +348,14 @@ pub(crate) struct ToolpathPanelInputs {
     pub model_is_step_missing_brep: bool,
     pub height_ctx: Option<crate::state::toolpath::HeightContext>,
     pub stale_default_defects: Vec<rs_cam_core::compute::validate::StaleDefault>,
-    pub load_verdict: Option<rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    /// The project load report, shared with every other surface through
+    /// the session memo. The panel reads one row of it through
+    /// [`Self::load_verdict`]. The row is not cloned: a verdict carries the
+    /// kinematic move rows, and a clone per frame cost more than the frame.
+    pub load_report: std::sync::Arc<rs_cam_core::tool_load::ToolLoadReport>,
+    /// The index of this toolpath's row in `load_report`, or `None` when
+    /// the report holds no row for it (disabled, or no tool).
+    pub load_verdict_index: Option<usize>,
     pub tab_override: Option<ToolpathTab>,
     pub drill_layers: Vec<String>,
     pub drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget>,
@@ -357,6 +364,15 @@ pub(crate) struct ToolpathPanelInputs {
     /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
     /// which cannot say "generated, then edited".
     pub freshness: crate::state::freshness::FreshnessState,
+}
+
+impl ToolpathPanelInputs {
+    /// This toolpath's row of the project load report, or `None` when the
+    /// report holds no row for it.
+    pub fn load_verdict(&self) -> Option<&rs_cam_core::tool_load::ToolpathLoadVerdict> {
+        self.load_verdict_index
+            .and_then(|index| self.load_report.per_toolpath.get(index))
+    }
 }
 
 /// Assemble [`ToolpathPanelInputs`] from the session, the GUI store and the
@@ -371,7 +387,7 @@ pub(crate) fn toolpath_panel_inputs(
     id: crate::state::toolpath::ToolpathId,
     session: &rs_cam_core::session::ProjectSession,
     gui: &crate::state::runtime::GuiState,
-    sim_cut_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
+    sim_cut_trace: Option<&std::sync::Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>>,
     tab_override: Option<ToolpathTab>,
     rest_heatmap_on: bool,
 ) -> ToolpathPanelInputs {
@@ -522,12 +538,11 @@ pub(crate) fn toolpath_panel_inputs(
     // surface chipload / power / deflection / drill-gate
     // diagnostics in the unified ribbon rather than only in the
     // separate tool-load surface.
-    let load_report = rs_cam_core::gcode::project_load_report(session, sim_cut_trace);
-    let load_verdict_for_tp = load_report
+    let load_report = session.tool_load_report_for(sim_cut_trace);
+    let load_verdict_index = load_report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == id)
-        .cloned();
+        .position(|v| v.toolpath_id == id);
 
     // P5 — the reach map for THIS toolpath, if the overlay is holding
     // one. An overlay pointed at another toolpath reads `Idle`: the
@@ -585,7 +600,8 @@ pub(crate) fn toolpath_panel_inputs(
         model_is_step_missing_brep,
         height_ctx,
         stale_default_defects,
-        load_verdict: load_verdict_for_tp,
+        load_report,
+        load_verdict_index,
         tab_override,
         drill_layers,
         drill_targets,
@@ -1259,7 +1275,7 @@ fn draw_toolpath_selection(
             .simulation
             .results
             .as_ref()
-            .and_then(|r| r.cut_trace.as_deref()),
+            .and_then(|r| r.cut_trace.as_ref()),
         tab_override,
         state.viewport.show_rest_heatmap,
     );

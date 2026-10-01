@@ -19,6 +19,7 @@ pub mod dependencies;
 mod diagnostics_types;
 mod eval_context;
 pub mod generation_plan;
+mod load_report;
 pub mod multitool;
 mod mutation;
 pub mod project_file;
@@ -1424,6 +1425,9 @@ pub struct ProjectSession {
     /// rest-stock identity rule is not enforced there. See
     /// [`Self::what_if_copy`].
     pub(crate) rest_identity_enforced: bool,
+    /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
+    /// starts empty, and the key reads the inputs, not a counter.
+    pub(crate) load_report_memo: load_report::LoadReportMemo,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1465,6 +1469,7 @@ impl ProjectSession {
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
             rest_identity_enforced: true,
+            load_report_memo: load_report::LoadReportMemo::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
