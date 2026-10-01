@@ -403,7 +403,10 @@ impl TriDexelStock {
     /// every prior move of this one has left behind — which is what makes a
     /// profile-aware disc query usable without over-flagging the op's own
     /// already-cut rows.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    ///
+    /// This entry always records the cut samples. The caller that does not
+    /// read them uses [`Self::simulate_toolpath_with_lut_metric_walk`] with
+    /// `record_samples = false`.
     #[allow(clippy::too_many_arguments)]
     pub fn simulate_toolpath_with_lut_metrics_rapid_checked(
         &mut self,
@@ -424,6 +427,71 @@ impl TriDexelStock {
         cancel: &dyn CancelCheck,
         rapid_check: Option<&mut RapidClearanceCheck<'_>>,
     ) -> Result<Vec<SimulationCutSample>, Cancelled> {
+        self.simulate_toolpath_with_lut_metric_walk(
+            toolpath,
+            lut,
+            cutter,
+            radius,
+            direction,
+            toolpath_id,
+            spindle_rpm,
+            flute_count,
+            rapid_feed_mm_min,
+            sample_step_mm,
+            semantic_trace,
+            span_paths_by_move,
+            transit_moves,
+            capture_arc_engagement,
+            cancel,
+            rapid_check,
+            true,
+        )
+    }
+
+    /// The metric walk: the ONE milling carve, with or without its cut
+    /// samples.
+    ///
+    /// M8 (memory budget 2026-10-01). With `record_samples = false` the walk
+    /// constructs no `SimulationCutSample`, reserves no sample buffer and
+    /// returns an empty `Vec`. The carve stays bit-identical to the recording
+    /// walk, because the switch changes only what the walk keeps:
+    ///
+    /// - The stamps, their order and their batch splits are the same. Each
+    ///   cutting subsegment still takes a slot from `SampleSink::push_with`,
+    ///   so the swept chunk test `first_slot + bins == slot` sees the same
+    ///   contiguous slots. The metric patch finds no sample and does nothing.
+    /// - The coalescer still counts the same runs, so `is_due` fires at the
+    ///   same moves and the walk flushes the stamp queues at the same points.
+    ///   Only the compaction is replaced by `SampleCoalescer::forget`.
+    /// - The rapid and `Retract` feed samples feed only the clock and the
+    ///   sample index. Neither one feeds a stamp, so the walk skips them.
+    ///
+    /// `compute/simulate.rs::carve_entry` calls this with
+    /// `record_samples = false` when cutting metrics are off
+    /// (`tests/metric_and_plain_carve_agree_g_restres.rs`,
+    /// `tests/unrecorded_metric_walk_carves_the_same_m8.rs`).
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[allow(clippy::too_many_arguments)]
+    pub fn simulate_toolpath_with_lut_metric_walk(
+        &mut self,
+        toolpath: &Toolpath,
+        lut: &RadialProfileLUT,
+        cutter: &dyn MillingCutter,
+        radius: f64,
+        direction: StockCutDirection,
+        toolpath_id: ToolpathId,
+        spindle_rpm: u32,
+        flute_count: u32,
+        rapid_feed_mm_min: f64,
+        sample_step_mm: f64,
+        semantic_trace: Option<&ToolpathSemanticTrace>,
+        span_paths_by_move: &[Vec<SpanId>],
+        transit_moves: &[bool],
+        capture_arc_engagement: bool,
+        cancel: &dyn CancelCheck,
+        rapid_check: Option<&mut RapidClearanceCheck<'_>>,
+        record_samples: bool,
+    ) -> Result<Vec<SimulationCutSample>, Cancelled> {
         if toolpath.moves.len() < 2 {
             return Ok(Vec::new());
         }
@@ -437,7 +505,14 @@ impl TriDexelStock {
         let semantic_lookup = build_move_semantic_lookup(toolpath.moves.len(), semantic_trace);
         let empty_span_path: Vec<SpanId> = Vec::new();
 
-        let mut samples = Vec::with_capacity(estimate_sample_count(toolpath, sample_step_mm));
+        let mut samples = if record_samples {
+            SampleSink::recording(reserve_samples(estimate_sample_count(
+                toolpath,
+                sample_step_mm,
+            )))
+        } else {
+            SampleSink::discarding()
+        };
         let mut cumulative_time_s = 0.0;
         let mut next_sample_index = 0usize;
         let mut arc_buf = Vec::new();
@@ -504,12 +579,18 @@ impl TriDexelStock {
                     &mut air_mip,
                     &mut dispatch,
                     &mut swept,
-                    &mut samples,
+                    samples.slice_mut(),
                     cutter,
                     flute_length,
                     cancel,
                 )?;
-                next_sample_index = coalescer.compact(&mut samples);
+                match samples.recorded_mut() {
+                    Some(recorded) => next_sample_index = coalescer.compact(recorded),
+                    // No sample exists to compact. The flush above is the
+                    // part that touches the stock, and it ran at this same
+                    // move in the recording walk.
+                    None => coalescer.forget(),
+                }
             }
             let start = toolpath.moves[move_index - 1].target;
             let end = toolpath.moves[move_index].target;
@@ -537,27 +618,31 @@ impl TriDexelStock {
 
             match toolpath.moves[move_index].move_type {
                 MoveType::Rapid => {
-                    sample_segment_runtime(
-                        start,
-                        end,
-                        &SegmentSampleParams {
-                            move_index,
-                            toolpath_id,
-                            sample_step_mm,
-                            feed_rate_mm_min: rapid_feed_mm_min.max(1.0),
-                            is_cutting: false,
-                            cut_kinematics: CutKinematics::Rapid,
-                            spindle_rpm,
-                            flute_count,
-                            semantic_item_id,
-                            span_path,
-                            in_transit_span,
-                            source_intent: Some(intent),
-                        },
-                        &mut cumulative_time_s,
-                        &mut next_sample_index,
-                        &mut samples,
-                    );
+                    // A rapid sample feeds only the clock and the sample
+                    // index, never a stamp, so the discarding walk skips it.
+                    if let Some(recorded) = samples.recorded_mut() {
+                        sample_segment_runtime(
+                            start,
+                            end,
+                            &SegmentSampleParams {
+                                move_index,
+                                toolpath_id,
+                                sample_step_mm,
+                                feed_rate_mm_min: rapid_feed_mm_min.max(1.0),
+                                is_cutting: false,
+                                cut_kinematics: CutKinematics::Rapid,
+                                spindle_rpm,
+                                flute_count,
+                                semantic_item_id,
+                                span_path,
+                                in_transit_span,
+                                source_intent: Some(intent),
+                            },
+                            &mut cumulative_time_s,
+                            &mut next_sample_index,
+                            recorded,
+                        );
+                    }
                     // S2: the rapid is judged against the stock as it stands
                     // HERE, mid-walk. Queued stamps can only REMOVE material,
                     // so a rapid that clears the un-flushed grid clears the
@@ -574,7 +659,7 @@ impl TriDexelStock {
                             &mut air_mip,
                             &mut dispatch,
                             &mut swept,
-                            &mut samples,
+                            samples.slice_mut(),
                             cutter,
                             flute_length,
                             cancel,
@@ -587,27 +672,30 @@ impl TriDexelStock {
                     }
                 }
                 MoveType::Linear { feed_rate } if is_retract_feed => {
-                    sample_segment_runtime(
-                        start,
-                        end,
-                        &SegmentSampleParams {
-                            move_index,
-                            toolpath_id,
-                            sample_step_mm,
-                            feed_rate_mm_min: feed_rate.max(1.0),
-                            is_cutting: false,
-                            cut_kinematics: CutKinematics::Linear,
-                            spindle_rpm,
-                            flute_count,
-                            semantic_item_id,
-                            span_path,
-                            in_transit_span,
-                            source_intent: Some(intent),
-                        },
-                        &mut cumulative_time_s,
-                        &mut next_sample_index,
-                        &mut samples,
-                    );
+                    // Same as the rapid arm: no stamp reads this sample.
+                    if let Some(recorded) = samples.recorded_mut() {
+                        sample_segment_runtime(
+                            start,
+                            end,
+                            &SegmentSampleParams {
+                                move_index,
+                                toolpath_id,
+                                sample_step_mm,
+                                feed_rate_mm_min: feed_rate.max(1.0),
+                                is_cutting: false,
+                                cut_kinematics: CutKinematics::Linear,
+                                spindle_rpm,
+                                flute_count,
+                                semantic_item_id,
+                                span_path,
+                                in_transit_span,
+                                source_intent: Some(intent),
+                            },
+                            &mut cumulative_time_s,
+                            &mut next_sample_index,
+                            recorded,
+                        );
+                    }
                 }
                 MoveType::Linear { feed_rate } => {
                     let first = samples.len();
@@ -642,7 +730,14 @@ impl TriDexelStock {
                         &mut swept,
                         flute_length,
                     )?;
-                    record_segment(&mut coalescer, &samples, first, start, end, sample_step_mm);
+                    record_segment(
+                        &mut coalescer,
+                        first,
+                        samples.len(),
+                        start,
+                        end,
+                        sample_step_mm,
+                    );
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
@@ -682,8 +777,8 @@ impl TriDexelStock {
                         )?;
                         record_segment(
                             &mut coalescer,
-                            &samples,
                             first,
+                            samples.len(),
                             window[0],
                             window[1],
                             sample_step_mm,
@@ -736,8 +831,8 @@ impl TriDexelStock {
                         )?;
                         record_segment(
                             &mut coalescer,
-                            &samples,
                             first,
+                            samples.len(),
                             window[0],
                             window[1],
                             sample_step_mm,
@@ -762,7 +857,7 @@ impl TriDexelStock {
                 capture_arc_engagement,
                 &mut air_mip,
                 cancel,
-                &mut samples,
+                samples.slice_mut(),
                 cutter,
                 flute_length,
             )?;
@@ -784,7 +879,7 @@ impl TriDexelStock {
                 capture_arc_engagement,
                 &mut air_mip,
                 cancel,
-                &mut samples,
+                samples.slice_mut(),
                 cutter,
                 flute_length,
             )?;
@@ -793,9 +888,11 @@ impl TriDexelStock {
             self.last_stamp_dispatch = queue.stats();
         }
         // Every queue is drained: every sample is final.
-        coalescer.compact(&mut samples);
+        if let Some(recorded) = samples.recorded_mut() {
+            coalescer.compact(recorded);
+        }
 
-        Ok(samples)
+        Ok(samples.into_samples())
     }
 
     /// Drain both stamp queues into the grid so the stock reflects every move
@@ -919,7 +1016,7 @@ impl TriDexelStock {
         cancel: &dyn CancelCheck,
         cumulative_time_s: &mut f64,
         next_sample_index: &mut usize,
-        samples: &mut Vec<SimulationCutSample>,
+        samples: &mut SampleSink,
         air_mip: &mut Option<TileMaxTop>,
         band_scratch: &mut Vec<StampPartial>,
         dispatch: &mut Option<BandDispatch>,
@@ -1015,7 +1112,7 @@ impl TriDexelStock {
                         air_mip,
                         band_scratch,
                     );
-                    if let Some(sample) = samples.get_mut(slot) {
+                    if let Some(sample) = samples.slice_mut().get_mut(slot) {
                         apply_subsegment_metrics(sample, cutter, flute_length, metrics);
                     }
                 }
@@ -1047,7 +1144,7 @@ impl TriDexelStock {
                             params.capture_arc_engagement,
                             air_mip,
                             cancel,
-                            samples,
+                            samples.slice_mut(),
                             cutter,
                             flute_length,
                         )?;
@@ -1067,9 +1164,12 @@ impl TriDexelStock {
 /// its timings are identical between them by construction rather than by
 /// keeping two loops in step — which `DELTA_sim_w2.md` §3f called the hardest
 /// part of the restructure, correctly.
+///
+/// M8: a discarding sink constructs no sample here. It still hands out the
+/// slot, so the stamp queues see the same slots in both modes.
 #[allow(clippy::too_many_arguments)]
 fn push_cutting_sample(
-    samples: &mut Vec<SimulationCutSample>,
+    samples: &mut SampleSink,
     next_sample_index: &mut usize,
     params: &CuttingCaptureParams<'_>,
     midpoint: P3,
@@ -1077,11 +1177,11 @@ fn push_cutting_sample(
     cumulative_time_s: f64,
     chipload_mm_per_tooth: f64,
 ) -> usize {
-    let slot = samples.len();
-    samples.push(SimulationCutSample {
+    let sample_index = *next_sample_index;
+    let slot = samples.push_with(|| SimulationCutSample {
         toolpath_id: params.toolpath_id,
         move_index: params.move_index,
-        sample_index: *next_sample_index,
+        sample_index,
         position: [midpoint.x, midpoint.y, midpoint.z],
         cumulative_time_s,
         segment_time_s,
@@ -1110,14 +1210,18 @@ fn push_cutting_sample(
     slot
 }
 
-/// Tell the coalescer which samples one cutting segment pushed
-/// (`samples[first..]`) and how it was subdivided. The subdivision is
+/// Tell the coalescer which slots one cutting segment took
+/// (`first..len_after`) and how it was subdivided. The subdivision is
 /// recomputed from the same endpoints and the same `cutting_subdivision` the
 /// capture route stamped with.
+///
+/// `len_after` is [`SampleSink::len`] after the segment. A discarding sink
+/// counts the same slots, so the coalescer's `is_due` schedule, and with it
+/// the walk's queue flushes, is the same in both modes.
 fn record_segment(
     coalescer: &mut SampleCoalescer,
-    samples: &[SimulationCutSample],
     first: usize,
+    len_after: usize,
     start: P3,
     end: P3,
     sample_step_mm: f64,
@@ -1127,7 +1231,109 @@ fn record_segment(
         return;
     }
     let (subsegments, by_length) = cutting_subdivision(start, end, segment_length, sample_step_mm);
-    coalescer.record(first, samples.len() - first, subsegments, by_length);
+    coalescer.record(first, len_after - first, subsegments, by_length);
+}
+
+/// Where the metric walk puts its cut samples (M8).
+///
+/// A recording sink is the old `Vec`. A discarding sink keeps no sample: it
+/// only counts the slots it hands out. The count is what the stamp queues
+/// and the coalescer read, so the carve does not see which mode it is in.
+struct SampleSink {
+    samples: Vec<SimulationCutSample>,
+    record: bool,
+    /// Slots handed out by a discarding sink. Not used when recording.
+    discarded: usize,
+}
+
+impl SampleSink {
+    fn recording(samples: Vec<SimulationCutSample>) -> Self {
+        Self {
+            samples,
+            record: true,
+            discarded: 0,
+        }
+    }
+
+    fn discarding() -> Self {
+        Self {
+            samples: Vec::new(),
+            record: false,
+            discarded: 0,
+        }
+    }
+
+    /// The next slot. For a recording sink this is the `Vec` length, as
+    /// before; for a discarding sink it is the count of slots handed out.
+    fn len(&self) -> usize {
+        if self.record {
+            self.samples.len()
+        } else {
+            self.discarded
+        }
+    }
+
+    /// Take the next slot. A recording sink calls `make` and keeps the
+    /// sample; a discarding sink does not call `make`, so the 280-byte
+    /// sample and its `span_path` heap copy are never built.
+    fn push_with(&mut self, make: impl FnOnce() -> SimulationCutSample) -> usize {
+        let slot = self.len();
+        if self.record {
+            self.samples.push(make());
+        } else {
+            self.discarded += 1;
+        }
+        slot
+    }
+
+    /// The samples a stamp batch patches. Empty for a discarding sink, so
+    /// every `get_mut(slot)` finds nothing and the patch does nothing.
+    fn slice_mut(&mut self) -> &mut [SimulationCutSample] {
+        &mut self.samples
+    }
+
+    /// The recorded `Vec`, or `None` for a discarding sink.
+    fn recorded_mut(&mut self) -> Option<&mut Vec<SimulationCutSample>> {
+        if self.record {
+            Some(&mut self.samples)
+        } else {
+            None
+        }
+    }
+
+    fn into_samples(self) -> Vec<SimulationCutSample> {
+        self.samples
+    }
+}
+
+/// Reserve the sample buffer without an abort on allocation failure.
+///
+/// `Vec::with_capacity` aborts the whole process when the allocator refuses.
+/// On the 350 mm terrain repro this reservation was the largest single
+/// request of the simulation (G-SIMMEM). `try_reserve_exact` returns
+/// the refusal instead. The walk then asks for half, and so on down to zero;
+/// below the estimate the `Vec` grows on demand as it did before
+/// PERF_REVIEW S6. The estimate is never an over-estimate
+/// (`estimate_sample_count`), so a smaller reservation changes only how
+/// often the `Vec` grows, never the samples.
+///
+/// On Linux with memory overcommit a large request usually succeeds here and
+/// the shortage shows later as a page fault, so this fallback is a guard for
+/// the refusals the allocator does report, not a memory budget.
+///
+/// GROUP G HOOK (memory budget 2026-10-01): the `Err` arm below is where a
+/// refused reservation becomes known. Group G maps it to an `OverBudget`
+/// simulation error; until then the walk degrades to on-demand growth.
+fn reserve_samples(estimate: usize) -> Vec<SimulationCutSample> {
+    let mut samples = Vec::new();
+    let mut want = estimate;
+    while want > 0 {
+        match samples.try_reserve_exact(want) {
+            Ok(()) => break,
+            Err(_refused) => want /= 2,
+        }
+    }
+    samples
 }
 
 /// Write one subsegment's four published stamp metrics, and everything derived
@@ -1289,7 +1495,7 @@ impl TriDexelStock {
         cancel: &dyn CancelCheck,
         cumulative_time_s: &mut f64,
         next_sample_index: &mut usize,
-        samples: &mut Vec<SimulationCutSample>,
+        samples: &mut SampleSink,
         air_mip: &mut Option<TileMaxTop>,
         queue: &mut SweptDispatch,
         flute_length: f64,
@@ -1339,7 +1545,7 @@ impl TriDexelStock {
                         params.capture_arc_engagement,
                         air_mip,
                         cancel,
-                        samples,
+                        samples.slice_mut(),
                         cutter,
                         flute_length,
                     )?;
@@ -1384,7 +1590,7 @@ impl TriDexelStock {
                         params.capture_arc_engagement,
                         air_mip,
                         cancel,
-                        samples,
+                        samples.slice_mut(),
                         cutter,
                         flute_length,
                     )?;
@@ -1411,7 +1617,7 @@ impl TriDexelStock {
                 params.capture_arc_engagement,
                 air_mip,
                 cancel,
-                samples,
+                samples.slice_mut(),
                 cutter,
                 flute_length,
             )?;
