@@ -82,8 +82,7 @@ impl AppState {
 
     /// Apply the values of `self.app_settings` that take effect at once.
     pub fn apply_live_settings(&mut self) {
-        self.history
-            .set_limit(self.app_settings.general.undo_depth);
+        self.history.set_limit(self.app_settings.general.undo_depth);
         rs_cam_core::settings::install_paths(&self.app_settings.paths);
     }
 

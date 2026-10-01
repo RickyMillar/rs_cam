@@ -148,7 +148,11 @@ mod tests {
     }
 
     fn prefs(controller: &mut AppController<ThreadedComputeBackend>) -> &mut PreferencesState {
-        controller.state.preferences.as_mut().expect("the window is open")
+        controller
+            .state
+            .preferences
+            .as_mut()
+            .expect("the window is open")
     }
 
     /// Apply writes the file AND changes the budget of the running backend
@@ -223,7 +227,11 @@ mod tests {
         assert!(controller.state.preferences.is_none(), "Apply closes");
         let live = &controller.state.app_settings;
         assert_eq!(live.general.undo_depth, 7);
-        assert_eq!(controller.state.history.limit(), 7, "the undo depth is live");
+        assert_eq!(
+            controller.state.history.limit(),
+            7,
+            "the undo depth is live"
+        );
         assert!(!live.general.confirm_unsaved_quit);
         assert!(live.diagnostics.save_cut_trace);
         assert_eq!(
@@ -242,12 +250,8 @@ mod tests {
         // Apply installed do not reach another test.
         open_on(&mut controller, &path);
         prefs(&mut controller).draft = AppSettings::default();
-        prefs(&mut controller).texts = PreferencesState::new(
-            &LoadedSettings::default(),
-            MemoryBudget::UNLIMITED,
-            None,
-        )
-        .texts;
+        prefs(&mut controller).texts =
+            PreferencesState::new(&LoadedSettings::default(), MemoryBudget::UNLIMITED, None).texts;
         prefs(&mut controller).memory_choice = MemoryChoice::Default;
         controller.handle_internal_event(AppEvent::ApplyPreferences);
         assert_eq!(controller.state.app_settings, AppSettings::default());
@@ -283,7 +287,11 @@ mod tests {
         prefs(&mut controller).texts.undo_depth = "none".to_owned();
         controller.handle_internal_event(AppEvent::ApplyPreferences);
         let p = controller.state.preferences.as_ref().expect("stays open");
-        assert!(p.apply_error.as_deref().is_some_and(|e| e.contains("Undo steps")));
+        assert!(
+            p.apply_error
+                .as_deref()
+                .is_some_and(|e| e.contains("Undo steps"))
+        );
         assert!(!path.exists(), "a bad draft writes no file");
         std::fs::remove_dir_all(&dir).unwrap();
     }

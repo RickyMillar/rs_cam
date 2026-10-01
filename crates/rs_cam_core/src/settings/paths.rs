@@ -297,7 +297,12 @@ mod tests {
         );
         assert_eq!(
             tool_library_dir_from(env(&[("HOME", "/h")]), None),
-            Some(PathBuf::from("/h").join(".config").join("rs_cam").join("tools"))
+            Some(
+                PathBuf::from("/h")
+                    .join(".config")
+                    .join("rs_cam")
+                    .join("tools")
+            )
         );
         assert_eq!(
             tool_library_dir_from(env(&[("APPDATA", "C:/A")]), None),

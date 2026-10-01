@@ -5,7 +5,10 @@ fn main() -> eframe::Result {
     // window-system work. `run` repeats the guard for library callers.
     #[cfg(not(feature = "mcp"))]
     if mcp_mode {
-        return rs_cam_viz::run(true, rs_cam_viz::io::app_settings::LoadedSettings::default());
+        return rs_cam_viz::run(
+            true,
+            rs_cam_viz::io::app_settings::LoadedSettings::default(),
+        );
     }
 
     // The settings file is read ONCE, here, before the log subscriber

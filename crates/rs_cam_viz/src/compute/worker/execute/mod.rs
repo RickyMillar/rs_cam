@@ -140,7 +140,10 @@ where
     // only when `[diagnostics] save_cut_trace` is on (default off: operator
     // ruling 2026-10-02). Nothing in the product reads the file back; the
     // in-memory trace in `core_result` does not depend on it.
-    let cut_trace_path = match (core_result.cut_trace.as_ref(), req.artifacts.cut_trace_dir()) {
+    let cut_trace_path = match (
+        core_result.cut_trace.as_ref(),
+        req.artifacts.cut_trace_dir(),
+    ) {
         (Some(trace), Some(dir)) => {
             write_cut_trace_file(&req.core, trace, &dir, req.artifacts.cut_trace_retain)
         }
@@ -317,9 +320,7 @@ fn write_trace_artifact(
     let artifact = build_trace_artifact(req, debug_trace.cloned(), semantic_trace.cloned());
     let file_stem = format!("{}-{}", req.viz.toolpath_id.0, req.handle.toolpath_name());
     match rs_cam_core::trace::semantic_trace::write_toolpath_trace_artifact(
-        &dir,
-        &file_stem,
-        &artifact,
+        &dir, &file_stem, &artifact,
     ) {
         Ok(path) => Some(path),
         Err(error) => {

@@ -522,7 +522,11 @@ mod tests {
         let file = load_from(&settings_file).settings.paths;
         let home = |name: &str| (name == "HOME").then(|| "/nowhere".to_owned());
         let dir = machine_library_dir_from(home, file.machine_library.as_deref());
-        assert_eq!(dir.as_deref(), Some(library.as_path()), "the file wins over HOME");
+        assert_eq!(
+            dir.as_deref(),
+            Some(library.as_path()),
+            "the file wins over HOME"
+        );
         let resolved = resolve_machine_in(dir.as_deref(), Some("prefs_router")).unwrap();
         assert_eq!(resolved.label, "prefs_router");
 

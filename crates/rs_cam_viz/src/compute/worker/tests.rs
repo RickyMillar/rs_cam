@@ -1850,7 +1850,10 @@ fn the_cut_trace_file_follows_the_switch() {
         cut_trace_retain: 5,
         dir: Some(off.clone()),
     });
-    assert!(result.core.cut_trace.is_some(), "the trace is still captured");
+    assert!(
+        result.core.cut_trace.is_some(),
+        "the trace is still captured"
+    );
     assert!(result.cut_trace_path.is_none());
     assert_eq!(files_in(&off), 0, "the switch is off: no file");
     assert!(!off.exists(), "the folder is not even made");

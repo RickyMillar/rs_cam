@@ -1025,7 +1025,10 @@ fn a_preference_overlay_value_is_the_default_of_every_viewport_workspace() {
     let mut state = AppState::new();
     let mut settings = rs_cam_core::settings::AppSettings::default();
     settings.display.overlays.insert("grid".to_owned(), false);
-    settings.display.overlays.insert("height_planes".to_owned(), true);
+    settings
+        .display
+        .overlays
+        .insert("height_planes".to_owned(), true);
     // Not a preference overlay: a scalar-field colour row.
     settings
         .display

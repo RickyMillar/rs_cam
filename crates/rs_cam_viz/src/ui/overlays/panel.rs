@@ -763,10 +763,8 @@ fn matches_filter(
         query.is_empty() || row.label.to_lowercase().contains(&query) || row.id.contains(&query);
     let filter_ok = match filter {
         CatalogueFilter::All => true,
-        CatalogueFilter::Changed => {
-            super::registry::effective_default(state, row, state.workspace)
-                .is_some_and(|default| (row.get)(state) != default)
-        }
+        CatalogueFilter::Changed => super::registry::effective_default(state, row, state.workspace)
+            .is_some_and(|default| (row.get)(state) != default),
         CatalogueFilter::CannotDraw => !(row.precondition)(state).is_ready(),
     };
     text_ok && filter_ok

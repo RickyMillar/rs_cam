@@ -82,7 +82,10 @@ fn every_key_changed() -> AppSettings {
 fn the_defaults_are_the_behaviour_before_the_keys_existed() {
     let d = AppSettings::default();
     assert_eq!(d.memory_limit, MemoryLimit::Default);
-    assert_eq!([d.general.window_width, d.general.window_height], [1400.0, 900.0]);
+    assert_eq!(
+        [d.general.window_width, d.general.window_height],
+        [1400.0, 900.0]
+    );
     assert_eq!(d.general.undo_depth, 100);
     assert_eq!(
         [
@@ -94,7 +97,10 @@ fn the_defaults_are_the_behaviour_before_the_keys_existed() {
     );
     assert!(d.general.confirm_unsaved_quit);
     assert!(!d.display.show_all_toolpaths, "WP27: selected only");
-    assert_eq!(d.display.toolpath_colour_mode, ToolpathColourDefault::Normal);
+    assert_eq!(
+        d.display.toolpath_colour_mode,
+        ToolpathColourDefault::Normal
+    );
     assert!(d.display.overlays.is_empty());
     assert_eq!(d.simulation.playback_speed, 500.0);
     assert_eq!(d.simulation.stock_view, StockViewDefault::Solid);

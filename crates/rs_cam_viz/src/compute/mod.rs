@@ -6,10 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use worker::{
-    CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, JobRequest, JobResult,
-    OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult,
-    ArtifactPolicy, SetupTransformInfo, SimulationRequest, SimulationResult,
-    ThreadedComputeBackend, VizExtras,
+    ArtifactPolicy, CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, JobRequest,
+    JobResult, OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult,
+    SetupTransformInfo, SimulationRequest, SimulationResult, ThreadedComputeBackend, VizExtras,
 };
 
 /// Identifies one [`JobRequest`] submit, so the drain routes its answer

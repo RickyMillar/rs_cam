@@ -690,19 +690,52 @@ fn caption(ui: &mut egui::Ui, sentence: &str) {
 
 fn draw_general(ui: &mut egui::Ui, prefs: &mut PreferencesState) {
     let t = &mut prefs.texts;
-    text_row(ui, "Window width", &mut t.window_width, NUMBER_FIELD_WIDTH, "1400");
-    text_row(ui, "Window height", &mut t.window_height, NUMBER_FIELD_WIDTH, "900");
+    text_row(
+        ui,
+        "Window width",
+        &mut t.window_width,
+        NUMBER_FIELD_WIDTH,
+        "1400",
+    );
+    text_row(
+        ui,
+        "Window height",
+        &mut t.window_height,
+        NUMBER_FIELD_WIDTH,
+        "900",
+    );
     caption(ui, "The size of the window at start, in points.");
     caption(ui, RESTART_NOTE);
 
     ui.add_space(tokens::SPACE_3);
-    text_row(ui, "Undo steps", &mut t.undo_depth, NUMBER_FIELD_WIDTH, "100");
-    caption(ui, "The number of edits that Undo can reverse. Applies at once.");
+    text_row(
+        ui,
+        "Undo steps",
+        &mut t.undo_depth,
+        NUMBER_FIELD_WIDTH,
+        "100",
+    );
+    caption(
+        ui,
+        "The number of edits that Undo can reverse. Applies at once.",
+    );
 
     ui.add_space(tokens::SPACE_3);
     text_row(ui, "Info toast", &mut t.toast_info, NUMBER_FIELD_WIDTH, "4");
-    text_row(ui, "Warning toast", &mut t.toast_warning, NUMBER_FIELD_WIDTH, "6");
-    text_row(ui, "Error toast", &mut t.toast_error, NUMBER_FIELD_WIDTH, "8");
+    text_row(
+        ui,
+        "Warning toast",
+        &mut t.toast_warning,
+        NUMBER_FIELD_WIDTH,
+        "6",
+    );
+    text_row(
+        ui,
+        "Error toast",
+        &mut t.toast_error,
+        NUMBER_FIELD_WIDTH,
+        "8",
+    );
     caption(
         ui,
         "How long each toast stays, in seconds. Applies to the next toast.",
@@ -1062,9 +1095,7 @@ fn draw_automation(ui: &mut egui::Ui, prefs: &PreferencesState) {
     } else {
         "Off: start the app with --mcp to turn it on"
     };
-    ui.add(
-        KeyValueRow::new("MCP server", KeyValue::Text(mcp.to_owned())).label_width(LABEL_WIDTH),
-    );
+    ui.add(KeyValueRow::new("MCP server", KeyValue::Text(mcp.to_owned())).label_width(LABEL_WIDTH));
     let text_or_unknown = |value: Option<String>, label: &str| match value {
         Some(value) => KeyValueRow::new(label, KeyValue::Text(value)),
         None => KeyValueRow::not_measured(label),
@@ -1203,7 +1234,10 @@ mod tests {
 
         let s = state.chosen_settings().unwrap();
         assert_eq!(s.memory_limit, MemoryLimit::Bytes(8 * GIB));
-        assert_eq!([s.general.window_width, s.general.window_height], [1920.0, 1080.0]);
+        assert_eq!(
+            [s.general.window_width, s.general.window_height],
+            [1920.0, 1080.0]
+        );
         assert_eq!(s.general.undo_depth, 250);
         assert_eq!(s.general.toast_info_seconds, 2.5);
         assert_eq!(s.general.toast_warning_seconds, 10.0);
@@ -1211,14 +1245,24 @@ mod tests {
         assert!(!s.general.confirm_unsaved_quit);
         assert!(s.display.show_all_toolpaths);
         assert_eq!(s.display.overlays.get("grid"), Some(&false));
-        assert_eq!(s.display.overlays.get("rapids"), None, "back to the workspace");
+        assert_eq!(
+            s.display.overlays.get("rapids"),
+            None,
+            "back to the workspace"
+        );
         assert_eq!(s.simulation.playback_speed, 2000.0);
         assert_eq!(s.paths.tool_library, Some(PathBuf::from("/lib/tools")));
-        assert_eq!(s.paths.machine_library, None, "an empty field is the default");
+        assert_eq!(
+            s.paths.machine_library, None,
+            "an empty field is the default"
+        );
         assert_eq!(s.paths.screenshots, Some(PathBuf::from("/shots")));
         assert!(s.diagnostics.save_cut_trace);
         assert_eq!(s.diagnostics.cut_trace_retain, 12);
-        assert_eq!(s.diagnostics.artifact_dir, Some(PathBuf::from("/artifacts")));
+        assert_eq!(
+            s.diagnostics.artifact_dir,
+            Some(PathBuf::from("/artifacts"))
+        );
         assert_eq!(s.diagnostics.log_level, LogLevel::Debug);
         assert!(needs_restart(&AppSettings::default(), &s));
     }

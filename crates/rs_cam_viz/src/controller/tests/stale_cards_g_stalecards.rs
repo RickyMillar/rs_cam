@@ -196,6 +196,11 @@ fn stale_cards(controller: &mut AppController, toolpath_id: ToolpathId) -> Vec<S
 /// controller and the id of the rest rough.
 fn generated_fixture() -> (AppController, ToolpathId) {
     let mut controller = AppController::new();
+    // The fixture turns on the debug trace of each toolpath. A scratch
+    // artifact folder keeps those files out of the operator's cache folder.
+    controller.state.app_settings.diagnostics.artifact_dir = Some(std::env::temp_dir().join(
+        format!("rs_cam_stale_cards_artifacts_{}", std::process::id()),
+    ));
     controller
         .open_job_from_path(&stale_cards_fixture())
         .expect("the fixture opens");

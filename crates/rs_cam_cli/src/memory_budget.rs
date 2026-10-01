@@ -20,8 +20,8 @@
 use std::sync::OnceLock;
 
 use rs_cam_core::budget::settings as limit_text;
-use rs_cam_core::settings::{self, LoadedSettings};
 use rs_cam_core::budget::{BudgetGuard, MemoryBudget, MemoryLimit, StopReason, format_bytes};
+use rs_cam_core::settings::{self, LoadedSettings};
 
 /// The budget of this process, set once by `main`.
 static BUDGET: OnceLock<MemoryBudget> = OnceLock::new();
