@@ -111,8 +111,11 @@ fn function_source<'a>(src: &'a str, signature: &str) -> &'a str {
         .find(signature)
         .unwrap_or_else(|| panic!("{signature} is gone; the sentry's anchor is stale"));
     let rest = &src[start + signature.len()..];
+    // A brace at the very end of the text also closes it: the comment strip
+    // joins lines without a final newline.
     let end = rest
         .find("\n}\n")
+        .or_else(|| rest.ends_with("\n}").then(|| rest.len() - 1))
         .unwrap_or_else(|| panic!("{signature} never closes at column zero"));
     &rest[..end]
 }
