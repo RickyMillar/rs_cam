@@ -45,6 +45,28 @@ pub fn draw(
         });
         ui.add_space(2.0);
     }
+    // Degrade 4b (memory programme 2026-10-01): the budget built the display
+    // meshes of this run on a coarser stride. Say so while the run is shown,
+    // not only during playback; the sentence comes from core, so MCP and the
+    // diagnostics give the same words. Read the stride from the view's
+    // checkpoints: an edit drops the session's result, not the shown run.
+    let shown_stride = sim
+        .results
+        .as_ref()
+        .and_then(|results| results.checkpoints.first())
+        .map_or(1, |checkpoint| checkpoint.core.display_stride);
+    let degrade = rs_cam_core::stock::stock_mesh::DisplayMeshDegrade::for_stride(shown_stride);
+    if let Some(degrade) = degrade {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new(degrade.describe())
+                    .small()
+                    .strong()
+                    .color(crate::ui::tokens::CAUTION),
+            );
+        });
+        ui.add_space(2.0);
+    }
     // W0.5/TIM-009 — the spine + strips keep rendering the last trace, so
     // flag staleness here too; otherwise the bottom panel's concrete metrics
     // read as fresh after an edit while only the left/right panels say stale.

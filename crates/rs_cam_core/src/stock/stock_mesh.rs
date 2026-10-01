@@ -80,3 +80,100 @@ impl StockMesh {
         self.append_transformed(other, |x, y, z| (x, y, z));
     }
 }
+
+/// Why a display mesh is coarser than the simulation grid.
+///
+/// A reason of its own, not a `MeasurabilityReason`: a coarse display mesh
+/// does not make any metric unmeasurable. The simulation, the collision
+/// checks, the cut trace and the column deviations run on the full grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DisplayDegradeReason {
+    /// The full-resolution mesh did not fit the memory budget (memory
+    /// programme 2026-10-01, degrade 4b).
+    MemoryBudget,
+}
+
+/// A display mesh built on every `stride`-th row and column of the
+/// simulation grid (memory programme 2026-10-01, degrade 4b).
+///
+/// A simulation result carries `Some` of this only when `stride > 1`.
+/// `None` means the display mesh has the full resolution of the grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DisplayMeshDegrade {
+    /// The display stride: the mesh samples every `stride`-th cell on each
+    /// axis. Always more than 1.
+    pub stride: u32,
+    pub reason: DisplayDegradeReason,
+}
+
+impl DisplayMeshDegrade {
+    /// The degrade record for a requested display stride. A stride of 0 or
+    /// 1 is the full resolution and gives `None`. Only the memory budget
+    /// asks for a stride above 1, so the reason is
+    /// [`DisplayDegradeReason::MemoryBudget`].
+    #[must_use]
+    pub fn for_stride(stride: u32) -> Option<Self> {
+        (stride > 1).then_some(Self {
+            stride,
+            reason: DisplayDegradeReason::MemoryBudget,
+        })
+    }
+
+    /// One sentence for the operator, the MCP reply and the diagnostics.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self.reason {
+            DisplayDegradeReason::MemoryBudget => format!(
+                "Display mesh reduced to every {} cell to stay inside the memory budget; the simulation itself runs at full resolution.",
+                ordinal(self.stride)
+            ),
+        }
+    }
+}
+
+/// `2` → `"2nd"`, `3` → `"3rd"`, `4` → `"4th"`, `11` → `"11th"`.
+fn ordinal(n: u32) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DisplayDegradeReason, DisplayMeshDegrade};
+
+    #[test]
+    fn full_resolution_has_no_degrade_record() {
+        assert_eq!(DisplayMeshDegrade::for_stride(0), None);
+        assert_eq!(DisplayMeshDegrade::for_stride(1), None);
+    }
+
+    #[test]
+    fn a_stride_names_the_budget_and_the_full_resolution_simulation() {
+        let degrade = DisplayMeshDegrade::for_stride(2);
+        assert_eq!(
+            degrade,
+            Some(DisplayMeshDegrade {
+                stride: 2,
+                reason: DisplayDegradeReason::MemoryBudget
+            })
+        );
+        let text = degrade.map(|d| d.describe()).unwrap_or_default();
+        assert_eq!(
+            text,
+            "Display mesh reduced to every 2nd cell to stay inside the memory budget; the simulation itself runs at full resolution."
+        );
+        for (stride, word) in [(3, "3rd"), (4, "4th"), (11, "11th"), (21, "21st")] {
+            let text = DisplayMeshDegrade::for_stride(stride)
+                .map(|d| d.describe())
+                .unwrap_or_default();
+            assert!(text.contains(&format!("every {word} cell")), "{text}");
+        }
+    }
+}

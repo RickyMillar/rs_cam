@@ -78,9 +78,315 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         }
     }
 
-    // ── 2. Per-corner bilinear top/bottom (rows+1) × (cols+1). Out-of-grid
-    //       and effectively-empty cells contribute `stock_bot` so the
-    //       corner-average dives at boundaries → sub-cell-accurate walls.
+    // ── 2. Per-corner bilinear top/bottom (see [`corner_envelope`]).
+    let (corner_top, corner_bot, corner_empty) =
+        corner_envelope(rows, cols, &cell_top, &cell_bot, &cell_empty, stock_top, stock_bot);
+
+    // Corner world position helper. Cell-corner (ci, cj) sits at
+    // `(origin_u + (cj - 0.5) * cs, origin_v + (ci - 0.5) * cs)` — exactly the
+    // stock bbox boundary at ci=0, cj=0, etc.
+    let corner_xy = |ci: usize, cj: usize| -> (f32, f32) {
+        let u = grid.origin_u + (cj as f64 - 0.5) * grid.cell_size;
+        let v = grid.origin_v + (ci as f64 - 0.5) * grid.cell_size;
+        (u as f32, v as f32)
+    };
+
+    let (mut vertices, mut colors, mut indices) = emit_envelope(
+        &EnvelopeGrid {
+            rows,
+            cols,
+            cell_empty: &cell_empty,
+            corner_top: &corner_top,
+            corner_bot: &corner_bot,
+            corner_empty: &corner_empty,
+        },
+        corner_xy,
+        stock_top,
+        stock_bot,
+        z_range,
+    );
+
+    // ── 7. Multi-segment cavity fallback (per-gap pass). Only runs when at
+    //       least one ray has >1 segment.
+    if max_segments > 1 {
+        let cell_gaps: Vec<Vec<[f32; 2]>> = grid.rays.iter().map(ray_gaps).collect();
+        emit_cavity_surfaces(
+            rows,
+            cols,
+            &cell_gaps,
+            |row, col, z| cell_center(grid, row, col, z),
+            &mut vertices,
+            &mut indices,
+            &mut colors,
+            stock_top,
+            stock_bot,
+            z_range,
+        );
+    }
+
+    StockMesh {
+        vertices,
+        indices,
+        colors,
+    }
+}
+
+/// Build the display mesh of a Z-grid on every `stride`-th row and column
+/// (memory programme 2026-10-01, degrade 4b).
+///
+/// The simulation grid does not change. Only the display mesh is coarser:
+/// it has about `1 / stride²` of the vertices and indices of
+/// [`z_grid_marching_cubes`]. A `stride` of 0 or 1 gives the full-resolution
+/// build, bit for bit (the `strided_one_is_the_full_build` test).
+///
+/// # The sampling rule
+///
+/// A display cell `(bi, bj)` covers the fine rows `bi·k .. min((bi+1)·k,
+/// rows)` and the fine columns `bj·k .. min((bj+1)·k, cols)`. The last block
+/// on each axis can be partial. Per block:
+///
+/// - the top is the MAXIMUM top of its non-empty fine cells;
+/// - the bottom is the MINIMUM bottom of its non-empty fine cells;
+/// - the block is empty only when every fine cell in it is empty.
+///
+/// The rule keeps material. A rib or a peak narrower than `k` cells stays
+/// visible at its full height, and the display never shows a cut deeper
+/// than a cell of the block really has. The cost: a groove or a through-hole
+/// narrower than `k` cells can disappear from the display. The simulation,
+/// the collision checks and the column deviations still see it.
+///
+/// A multi-segment block takes its cavity gaps and its cavity position from
+/// one representative fine cell: the non-empty cell with the highest top
+/// (the first one in row-major order on a tie), else the first cell.
+///
+/// The corner positions are fine-grid corners: display corner `bj` sits at
+/// fine corner `min(bj·k, cols)`. So the bounding box is the same as the
+/// full-resolution mesh, also when `k` does not divide the grid.
+pub fn z_grid_marching_cubes_strided(
+    grid: &DexelGrid,
+    stock_top_z: f64,
+    stock_bottom_z: f64,
+    stride: u32,
+) -> StockMesh {
+    let k = usize::try_from(stride.max(1)).unwrap_or(usize::MAX);
+    if k == 1 {
+        return z_grid_marching_cubes(grid, stock_top_z, stock_bottom_z);
+    }
+    marching_cubes_on_blocks(grid, stock_top_z, stock_bottom_z, k)
+}
+
+/// The body of [`z_grid_marching_cubes_strided`] for a block size `k >= 1`.
+///
+/// The public function sends `k = 1` to [`z_grid_marching_cubes`]. The
+/// `stride_tests` module calls this function with `k = 1` directly, and
+/// checks that the block path gives the full-resolution mesh bit for bit.
+// SAFETY: every index is below rows x cols by the block bounds.
+#[allow(clippy::indexing_slicing)]
+fn marching_cubes_on_blocks(
+    grid: &DexelGrid,
+    stock_top_z: f64,
+    stock_bottom_z: f64,
+    k: usize,
+) -> StockMesh {
+    let k = k.max(1);
+    let rows = grid.rows;
+    let cols = grid.cols;
+    if rows < 1 || cols < 1 {
+        return StockMesh::empty();
+    }
+
+    let stock_top = stock_top_z as f32;
+    let stock_bot = stock_bottom_z as f32;
+    let z_range = (stock_top - stock_bot).max(1e-6);
+
+    // ── 1. Per-block envelope (the sampling rule above).
+    let block_rows = rows.div_ceil(k);
+    let block_cols = cols.div_ceil(k);
+    let blocks = block_rows * block_cols;
+    let mut cell_top: Vec<f32> = Vec::with_capacity(blocks);
+    let mut cell_bot: Vec<f32> = Vec::with_capacity(blocks);
+    let mut cell_empty: Vec<bool> = Vec::with_capacity(blocks);
+    // The fine-cell index that represents each block for the cavity pass.
+    let mut representative: Vec<usize> = Vec::with_capacity(blocks);
+    let mut max_segments = 1usize;
+    for bi in 0..block_rows {
+        let r_end = ((bi + 1) * k).min(rows);
+        for bj in 0..block_cols {
+            let c_end = ((bj + 1) * k).min(cols);
+            let mut highest: Option<(f32, usize)> = None;
+            let mut lowest_bot = f32::INFINITY;
+            for r in (bi * k)..r_end {
+                for c in (bj * k)..c_end {
+                    let idx = r * cols + c;
+                    let ray = &grid.rays[idx];
+                    let (Some(top), Some(bot)) = (ray_top(ray), ray_bottom(ray)) else {
+                        continue;
+                    };
+                    if (top - bot) < MIN_MATERIAL_THICKNESS {
+                        continue;
+                    }
+                    if highest.is_none_or(|(best, _)| top > best) {
+                        highest = Some((top, idx));
+                    }
+                    lowest_bot = lowest_bot.min(bot);
+                }
+            }
+            match highest {
+                Some((top, idx)) => {
+                    cell_empty.push(false);
+                    cell_top.push(top);
+                    cell_bot.push(lowest_bot);
+                    representative.push(idx);
+                }
+                None => {
+                    cell_empty.push(true);
+                    cell_top.push(stock_bot);
+                    cell_bot.push(stock_bot);
+                    representative.push(bi * k * cols + bj * k);
+                }
+            }
+            let rep_len = representative.last().map_or(0, |&idx| grid.rays[idx].len());
+            max_segments = max_segments.max(rep_len);
+        }
+    }
+
+    // ── 2. Per-corner bilinear top/bottom over the blocks.
+    let (corner_top, corner_bot, corner_empty) = corner_envelope(
+        block_rows,
+        block_cols,
+        &cell_top,
+        &cell_bot,
+        &cell_empty,
+        stock_top,
+        stock_bot,
+    );
+
+    // Display corner (ci, cj) sits at fine corner (min(ci·k, rows),
+    // min(cj·k, cols)); the fine corner formula is the one of
+    // `z_grid_marching_cubes`.
+    let corner_xy = |ci: usize, cj: usize| -> (f32, f32) {
+        let fine_cj = (cj * k).min(cols);
+        let fine_ci = (ci * k).min(rows);
+        let u = grid.origin_u + (fine_cj as f64 - 0.5) * grid.cell_size;
+        let v = grid.origin_v + (fine_ci as f64 - 0.5) * grid.cell_size;
+        (u as f32, v as f32)
+    };
+
+    // ── 3 to 7. The same triangulation as the full-resolution build.
+    let (mut vertices, mut colors, mut indices) = emit_envelope(
+        &EnvelopeGrid {
+            rows: block_rows,
+            cols: block_cols,
+            cell_empty: &cell_empty,
+            corner_top: &corner_top,
+            corner_bot: &corner_bot,
+            corner_empty: &corner_empty,
+        },
+        corner_xy,
+        stock_top,
+        stock_bot,
+        z_range,
+    );
+
+    // ── 7. Cavities, from the representative fine cell of each block.
+    if max_segments > 1 {
+        let cell_gaps: Vec<Vec<[f32; 2]>> = representative
+            .iter()
+            .map(|&idx| ray_gaps(&grid.rays[idx]))
+            .collect();
+        emit_cavity_surfaces(
+            block_rows,
+            block_cols,
+            &cell_gaps,
+            |bi, bj, z| {
+                let idx = representative[bi * block_cols + bj];
+                cell_center(grid, idx / cols, idx % cols, z)
+            },
+            &mut vertices,
+            &mut indices,
+            &mut colors,
+            stock_top,
+            stock_bot,
+            z_range,
+        );
+    }
+
+    StockMesh {
+        vertices,
+        indices,
+        colors,
+    }
+}
+
+/// The smallest display stride whose mesh fits `allowance_bytes`
+/// (memory programme 2026-10-01, degrade 4b).
+///
+/// `cells` is the cell count of the simulation grid. `bytes_per_cell` is the
+/// display-mesh cost of one cell: pass
+/// [`crate::budget::estimate::mesh_cell_bytes`] for the CPU mesh, or a sum
+/// with a GPU term when the caller counts the GPU copy too.
+///
+/// A stride `k` keeps `ceil(cells / k²)` cells, so the start value is
+/// `k = ceil(sqrt(cells · bytes_per_cell / allowance_bytes))`. An integer
+/// check then makes `k` the smallest stride that fits. The count ignores
+/// the partial blocks at the grid edge and the `(rows + 1) x (cols + 1)`
+/// corner layout, as the estimator does.
+///
+/// Returns:
+/// - `Some(1)` when the full mesh fits, or when `cells` or
+///   `bytes_per_cell` is 0;
+/// - `Some(k)` with `k > 1` when a coarser mesh fits;
+/// - `None` when not even a one-cell mesh fits (`allowance_bytes <
+///   bytes_per_cell`, including an allowance of 0). The caller then drops
+///   the display mesh or refuses; no stride helps.
+#[must_use]
+pub fn display_stride_for(allowance_bytes: u64, cells: u64, bytes_per_cell: u64) -> Option<u32> {
+    if cells == 0 || bytes_per_cell == 0 {
+        return Some(1);
+    }
+    let fits = |k: u64| -> bool {
+        let kept = cells.div_ceil(k.saturating_mul(k));
+        kept.saturating_mul(bytes_per_cell) <= allowance_bytes
+    };
+    if fits(1) {
+        return Some(1);
+    }
+    if allowance_bytes < bytes_per_cell {
+        return None;
+    }
+    let need = cells.saturating_mul(bytes_per_cell);
+    // A float start value; the integer loops below correct any rounding.
+    let start = (need as f64 / allowance_bytes as f64).sqrt().ceil();
+    let mut k = if start.is_finite() && start >= 1.0 {
+        start as u64
+    } else {
+        1
+    };
+    while k > 1 && fits(k - 1) {
+        k -= 1;
+    }
+    while !fits(k) {
+        k += 1;
+    }
+    u32::try_from(k).ok()
+}
+
+/// Step 2 of the extraction: the per-corner bilinear top and bottom,
+/// `(rows + 1) x (cols + 1)` corners. Out-of-grid and effectively-empty
+/// cells take no part in a corner average, so the corner-average dives at
+/// boundaries and gives sub-cell-accurate walls. Returns `(corner_top,
+/// corner_bot, corner_empty)`.
+// SAFETY: every index is below (rows + 1) x (cols + 1) or rows x cols by the loop bounds.
+#[allow(clippy::indexing_slicing)]
+fn corner_envelope(
+    rows: usize,
+    cols: usize,
+    cell_top: &[f32],
+    cell_bot: &[f32],
+    cell_empty: &[bool],
+    stock_top: f32,
+    stock_bot: f32,
+) -> (Vec<f32>, Vec<f32>, Vec<bool>) {
     let corner_rows = rows + 1;
     let corner_cols = cols + 1;
     let corner_count = corner_rows * corner_cols;
@@ -123,15 +429,51 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             }
         }
     }
+    (corner_top, corner_bot, corner_empty)
+}
 
-    // Corner world position helper. Cell-corner (ci, cj) sits at
-    // `(origin_u + (cj - 0.5) * cs, origin_v + (ci - 0.5) * cs)` — exactly the
-    // stock bbox boundary at ci=0, cj=0, etc.
-    let corner_xy = |ci: usize, cj: usize| -> (f32, f32) {
-        let u = grid.origin_u + (cj as f64 - 0.5) * grid.cell_size;
-        let v = grid.origin_v + (ci as f64 - 0.5) * grid.cell_size;
-        (u as f32, v as f32)
-    };
+/// The per-cell and per-corner envelope that [`emit_envelope`] reads.
+///
+/// `cell_empty` has `rows x cols` entries. The three corner arrays have
+/// `(rows + 1) x (cols + 1)` entries, row-major.
+#[derive(Clone, Copy)]
+struct EnvelopeGrid<'a> {
+    rows: usize,
+    cols: usize,
+    cell_empty: &'a [bool],
+    corner_top: &'a [f32],
+    corner_bot: &'a [f32],
+    corner_empty: &'a [bool],
+}
+
+/// Steps 3 to 7 of the extraction: the shared corner vertices, the top and
+/// bottom faces, the perimeter skirt and the hole walls.
+///
+/// The full-resolution build and the strided build (memory programme
+/// 2026-10-01, degrade 4b) both call this function, so the two builds
+/// triangulate in the same way. `corner_xy(ci, cj)` gives the planar world
+/// position of a corner. Returns `(vertices, colors, indices)`.
+// SAFETY: every index is below the corner or cell count by the loop bounds.
+#[allow(clippy::indexing_slicing)]
+fn emit_envelope(
+    env: &EnvelopeGrid<'_>,
+    corner_xy: impl Fn(usize, usize) -> (f32, f32),
+    stock_top: f32,
+    stock_bot: f32,
+    z_range: f32,
+) -> (Vec<f32>, Vec<f32>, Vec<u32>) {
+    let EnvelopeGrid {
+        rows,
+        cols,
+        cell_empty,
+        corner_top,
+        corner_bot,
+        corner_empty,
+    } = *env;
+    let cells = rows * cols;
+    let corner_rows = rows + 1;
+    let corner_cols = cols + 1;
+    let corner_count = corner_rows * corner_cols;
 
     // ── 3. Shared-vertex emit: build vertices at each non-empty corner once
     //       (top + bottom), record their indices, then emit triangles by
@@ -318,35 +660,45 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         }
     }
 
-    // ── 7. Multi-segment cavity fallback (per-gap pass). Only runs when at
-    //       least one ray has >1 segment.
-    if max_segments > 1 {
-        emit_cavity_surfaces(
-            grid,
-            &mut vertices,
-            &mut indices,
-            &mut colors,
-            stock_top,
-            stock_bot,
-            z_range,
-        );
-    }
-
-    StockMesh {
-        vertices,
-        indices,
-        colors,
-    }
+    (vertices, colors, indices)
 }
 
-/// Multi-segment cavity emission. Walks each ray with >1 segment; per gap
+/// The gap intervals `[gap_bottom, gap_top]` between the segments of one
+/// ray. A ray with fewer than two segments has none.
+// SAFETY: `windows(2)` gives slices of length two.
+#[allow(clippy::indexing_slicing)]
+fn ray_gaps(ray: &crate::stock::dexel::DexelRay) -> Vec<[f32; 2]> {
+    if ray.len() < 2 {
+        return Vec::new();
+    }
+    let mut gaps = Vec::with_capacity(ray.len() - 1);
+    for w in ray.windows(2) {
+        let (lo, hi) = (&w[0], &w[1]);
+        let gap_bot = lo.exit;
+        let gap_top = hi.enter;
+        if gap_top - gap_bot > 1e-6 {
+            gaps.push([gap_bot, gap_top]);
+        }
+    }
+    gaps
+}
+
+/// Multi-segment cavity emission. Walks each cell with gaps; per gap
 /// between segments, emits a ceiling face (at gap_bot, normal −Z) and a floor
 /// face (at gap_top, normal +Z) for the 2x2 cell block sharing the gap.
 /// Vertical cavity walls are emitted where adjacent cells differ in gap
 /// topology.
-#[allow(clippy::indexing_slicing)]
+///
+/// `cell_gaps` has `rows x cols` entries (see [`ray_gaps`]). `centre(row,
+/// col, z)` gives the world position of a cell at height `z`.
+// SAFETY: the indices stay inside `cell_gaps` (rows x cols) by the loop
+// bounds; the ten arguments are the mesh buffers and the colour ramp.
+#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn emit_cavity_surfaces(
-    grid: &DexelGrid,
+    rows: usize,
+    cols: usize,
+    cell_gaps: &[Vec<[f32; 2]>],
+    centre: impl Fn(usize, usize, f32) -> (f32, f32, f32),
     vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
     colors: &mut Vec<f32>,
@@ -354,29 +706,6 @@ fn emit_cavity_surfaces(
     stock_bot: f32,
     z_range: f32,
 ) {
-    let rows = grid.rows;
-    let cols = grid.cols;
-    // Phase 1: per-cell gap intervals.
-    let cell_gaps: Vec<Vec<[f32; 2]>> = grid
-        .rays
-        .iter()
-        .map(|ray| {
-            if ray.len() < 2 {
-                return Vec::new();
-            }
-            let mut gaps = Vec::with_capacity(ray.len() - 1);
-            for w in ray.windows(2) {
-                let (lo, hi) = (&w[0], &w[1]);
-                let gap_bot = lo.exit;
-                let gap_top = hi.enter;
-                if gap_top - gap_bot > 1e-6 {
-                    gaps.push([gap_bot, gap_top]);
-                }
-            }
-            gaps
-        })
-        .collect();
-
     // Phase 2: 2x2 quad floors/ceilings.
     for row in 0..rows.saturating_sub(1) {
         for col in 0..cols.saturating_sub(1) {
@@ -391,10 +720,10 @@ fn emit_cavity_surfaces(
                 let br_m = find_matching_gap(br_gaps, tl_gap);
                 if let (Some(tr_g), Some(bl_g), Some(br_g)) = (tr_m, bl_m, br_m) {
                     let pts = [
-                        cell_center(grid, row, col, tl_gap[0]),
-                        cell_center(grid, row, col + 1, tr_g[0]),
-                        cell_center(grid, row + 1, col, bl_g[0]),
-                        cell_center(grid, row + 1, col + 1, br_g[0]),
+                        centre(row, col, tl_gap[0]),
+                        centre(row, col + 1, tr_g[0]),
+                        centre(row + 1, col, bl_g[0]),
+                        centre(row + 1, col + 1, br_g[0]),
                     ];
                     let base = (vertices.len() / 3) as u32;
                     for &p in &pts {
@@ -416,10 +745,10 @@ fn emit_cavity_surfaces(
                     ]);
 
                     let pts2 = [
-                        cell_center(grid, row, col, tl_gap[1]),
-                        cell_center(grid, row, col + 1, tr_g[1]),
-                        cell_center(grid, row + 1, col, bl_g[1]),
-                        cell_center(grid, row + 1, col + 1, br_g[1]),
+                        centre(row, col, tl_gap[1]),
+                        centre(row, col + 1, tr_g[1]),
+                        centre(row + 1, col, bl_g[1]),
+                        centre(row + 1, col + 1, br_g[1]),
                     ];
                     let base2 = (vertices.len() / 3) as u32;
                     for &p in &pts2 {
@@ -473,6 +802,9 @@ fn wood_color_at_z(z: f32, stock_top: f32, _stock_bot: f32, range: f32) -> (f32,
         UNCUT_B + (CUT_B - UNCUT_B) * depth_t,
     )
 }
+
+#[cfg(test)]
+mod stride_tests;
 
 #[cfg(test)]
 #[allow(
