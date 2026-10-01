@@ -14,6 +14,40 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-01/02 (local runner session) — memory programme, Preferences, MCP proxy
+
+The 2026-09-29/30 safety defect below (large-project simulation memory) is
+CLOSED by the memory programme, `planning/memory_budget_2026-10-01/`
+(`PLAN.md`, measured `BASELINES.md`). rivmap350 at 0.2 mm in the GUI:
+re-simulate peak 14.64 -> about 5 GiB; with cutting metrics on it now
+fits (generate + simulate 7.32 GiB, rest 6.72 GiB; it was OOM-killed at
+16 GiB). CLI with metrics: 9.74 -> 6.95 GiB, `simulation.json`
+byte-identical. Root cause: held results (checkpoint meshes, deep copies,
+the old result alive during a re-run), not generation.
+
+Operator rulings 2026-10-02: always capture cutting metrics (the checkbox
+and the core flag are deleted); the memory budget defaults to half of the
+system RAM and is set in File > Preferences; cut-trace files are not
+written by default (Preferences > Diagnostics; folder
+`~/.cache/rs_cam/artifacts`).
+
+Shipped on master (fd4c841c, 38cf0677): the memory budget (core
+`budget/`: estimate, guard with a typed OverBudget stop, ledger queueing,
+preflight refusal, display-mesh stride with a banner); File > Preferences
+with a category bar and a core `settings/` module; cut-metric cards flip to
+a sparkline (median over a band, cutting samples only, air is a gap) with a
+zoomable trace modal (the bottom time-series drawer is deleted);
+`SimulationCutSample::is_air()` names the gates' air rule;
+`crates/rs_cam_mcp_proxy`: the agent restarts its own GUI (`gui_status`,
+`gui_restart`) without `/mcp`.
+
+Open: MCP `get_project_diagnostics` / `get_toolpath_diagnostics` omit the
+rapid collisions that `inspect_collisions` reports (fix in progress);
+rivmap350 "3D Rough 8" has 8 REAL rapid collisions (G0 descents into uncut
+stock, persist at 0.2/0.25/0.125 mm; comms job 009) — do not run that
+G-code; the budget is not in MCP `generation_status`; follow-ups in
+`BASELINES.md`.
+
 ## Update 2026-09-29/30 (session rs-cam-13, local) — read before the 2026-09-25 hand-off
 
 **First priority, a safety defect: the simulation of a large project takes

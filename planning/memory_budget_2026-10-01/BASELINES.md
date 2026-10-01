@@ -110,3 +110,17 @@ invalidates the session's result). Two clean re-runs did not show it.
 Follow-up: during a re-run after that state the panel read "Ready to
 simulate", not "Running — previous result released", because the session
 held no run.
+
+## W4: master fd4c841c lineage (waves 1-4; metrics always on; 2026-10-02 UTC 03:30-03:37)
+
+Protocol P1, GUI branch eccd71d8 build (wave 4: the capture checkbox is
+deleted, so every run keeps the cut trace). Kinematics imported BEFORE
+generate_all (no overlap with a run).
+
+| Step | W3 (metrics OFF) | W4 (always ON) |
+|---|---|---|
+| generate_all end | 4.03 GiB | 5.77 GiB (the closing simulation keeps the trace) |
+| generate + simulate, peak | 5.08 GiB | 7.32 GiB (03:34:35) |
+| rest | 4.8 GiB | 6.72 GiB |
+
+Log: the runner's scratchpad `w4_rss.log` (not copied; same protocol).
