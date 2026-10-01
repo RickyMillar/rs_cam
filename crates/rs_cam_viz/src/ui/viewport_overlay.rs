@@ -1,6 +1,8 @@
 //! The viewport dock: a floating bar at the bottom centre of the 3D view,
-//! with the target line and the legend rail above it (viewport redesign,
-//! `planning/viewport_interaction_redesign/MOCKUPS.md` §2–§8).
+//! with the target line above it (viewport redesign,
+//! `planning/viewport_interaction_redesign/MOCKUPS.md` §2–§8). The legend
+//! is a separate area in the bottom-right corner
+//! (`crate::ui::overlays::legend_rail`); it never covers the dock.
 //!
 //! The dock has four text-labelled sections in a fixed order: `View`,
 //! `Scene`, `Paths` and `Inspect`. A click on a section opens its upward
@@ -44,14 +46,13 @@ use crate::state::selection::Selection;
 use crate::state::{AppState, Workspace};
 use crate::ui::automation;
 use crate::ui::components;
-use crate::ui::overlays::legend_rail::{self, RailLayout};
+use crate::ui::overlays::legend_rail;
 use crate::ui::overlays::panel::{self, RowControl, RowState};
 use crate::ui::overlays::registry::{self, OverlaySurface};
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 
-/// The egui id of the dock area. It also holds the target line and the
-/// legend rail.
+/// The egui id of the dock area. It also holds the target line.
 pub const DOCK_AREA_ID: &str = "viewport_dock";
 
 /// The egui id of the popover area.
@@ -73,8 +74,8 @@ pub const POPOVER_MAX_WIDTH: f32 = 320.0;
 /// side of the viewport.
 pub const DOCK_GUTTER: f32 = tokens::SPACE_5;
 
-/// The highest share of the viewport height that the target line, the
-/// legend rail and the dock bar may take together. The phase 4 sentry
+/// The highest share of the viewport height that the target line and the
+/// dock bar may take together. The phase 4 sentry
 /// measures the stack at 320 × 600 pt against this budget.
 pub const DOCK_STACK_MAX_HEIGHT_FRACTION: f32 = 0.6;
 
@@ -247,7 +248,7 @@ pub fn section_button_text(state: &AppState, section: DockSection, layout: DockL
     }
 }
 
-/// The target line above the rail (MOCKUPS §2).
+/// The target line above the dock bar (MOCKUPS §2).
 pub fn target_text(state: &AppState) -> String {
     let numbered = |id: crate::state::toolpath::ToolpathId| {
         state
@@ -285,8 +286,8 @@ pub struct DockOutcome {
     pub closed_popover_on_click: bool,
 }
 
-/// Draw the dock, the target line, the legend rail and the open popover
-/// over `viewport_rect`.
+/// Draw the dock, the target line, the legend and the open popover over
+/// `viewport_rect`.
 pub fn draw(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -296,7 +297,7 @@ pub fn draw(
     viewport_rect: egui::Rect,
 ) -> DockOutcome {
     let ctx = ui.ctx().clone();
-    // Two settles before anything draws, so the dock, the rail and the
+    // Two settles before anything draws, so the dock, the legend and the
     // viewport callback that the frame builds after the dock all read one
     // state. Both write view state only; neither starts compute.
     registry::settle_exclusive_surfaces(state);
@@ -305,7 +306,6 @@ pub fn draw(
         closed_popover_on_click: close_on_outside_click(&ctx, state),
     };
     let layout = DockLayout::for_viewport_width(viewport_rect.width());
-    let rail = RailLayout::for_viewport(viewport_rect);
     let max_width = (viewport_rect.width() - 2.0 * DOCK_GUTTER).max(1.0);
 
     let bar = egui::Area::new(egui::Id::new(DOCK_AREA_ID))
@@ -329,10 +329,13 @@ pub fn draw(
                 .truncate(),
             )
             .on_hover_text(target.as_str());
-            legend_rail::draw(ui, state, rail);
             dock_bar(ui, state, lanes, events, layout)
-        })
-        .inner;
+        });
+    // The legend reads the dock rect of THIS frame, so it can never sit on
+    // the dock bar.
+    let dock_rect = bar.response.rect;
+    let bar = bar.inner;
+    legend_rail::draw(&ctx, state, viewport_rect, dock_rect);
 
     if let Some(section) = state.overlays.open_section
         && let Some(button) = bar.open_button
