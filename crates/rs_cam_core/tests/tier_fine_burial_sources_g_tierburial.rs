@@ -12,8 +12,10 @@
 //! cells and reads `column_deviations`. Other arms are `_`-separated flags
 //! that bisect the relink and the dressups: `nohookup`, `norapid`,
 //! `nofeedopt`, `nodressups` (`ARMS=sim,nohookup_norapid`,
-//! comma-separated). `FIND=x,y` prints the moves around the move nearest
-//! (x, y) in each arm.
+//! comma-separated). The flag `arcs` keeps the fixture's own arc fitting
+//! (F4a); `sim_arcs` simulates with it. The burial samples read linear moves
+//! only, so with `arcs` the simulation is the measure of the arcs.
+//! `FIND=x,y` prints the moves around the move nearest (x, y) in each arm.
 //!
 //! `ARMS=sim cargo test --profile release-fast -p rs_cam_core --test
 //! tier_fine_burial_sources_g_tierburial -- --ignored --nocapture` (about
@@ -32,7 +34,7 @@ mod common;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{BoundarySource, StockSource};
+use rs_cam_core::compute::config::{ArcFitParams, BoundarySource, StockSource};
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
 use rs_cam_core::geo::P3;
@@ -182,7 +184,9 @@ fn report(label: &str, s: &[Sample], probe: &EntrySurfaceProbe<'_>) -> Vec<(P3, 
     pen
 }
 
-fn load() -> (ProjectSession, usize) {
+/// The fixture with the fine tier on fresh stock and arcs off, its index,
+/// and the arc fitting the fixture emitted (the `arcs` flag restores it).
+fn load() -> (ProjectSession, usize, Option<ArcFitParams>) {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../planning/fixtures/rivmap100/rivmap100_tiered_finish.toml");
     let mut session = ProjectSession::load(&path).expect("load");
@@ -204,21 +208,21 @@ fn load() -> (ProjectSession, usize) {
         }))
         .unwrap();
     let mut dressups = session.get_toolpath_config(index).unwrap().dressups.clone();
-    dressups.arc_fitting = None;
+    let emitted = dressups.arc_fitting.take();
     let _ = session
         .apply(Command::SetDressupConfig(SetDressupConfigArgs {
             index,
             dressups: Box::new(dressups),
         }))
         .unwrap();
-    (session, index)
+    (session, index, emitted)
 }
 
 #[test]
 #[ignore = "generates the rivmap100 fine tier per arm (minutes); run with --ignored --nocapture"]
 fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
     let arms = std::env::var("ARMS").unwrap_or_else(|_| "base".into());
-    let (mut session, index) = load();
+    let (mut session, index, _) = load();
     let tc = session.get_toolpath_config(index).unwrap().clone();
     let tool = session
         .tools()
@@ -273,7 +277,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         }
     }
     for arm in arms.split(',') {
-        let (mut s2, i2) = load();
+        let (mut s2, i2, emitted_arcs) = load();
         let s = if arm == "base" || arm == "sim" {
             &mut session
         } else {
@@ -287,11 +291,16 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         let tc = s.get_toolpath_config(index).unwrap().clone();
         // An arm is `_`-separated flags: `nohookup` (intra_region_hookup_mm
         // 0), `norapid` (rapid order off), `nofeedopt` (feed optimisation
-        // off), `nodressups` (both).
+        // off), `nodressups` (both), `arcs` (the fixture's own arc fitting,
+        // F4a), `sim` (simulate the tier).
         let flags: Vec<&str> = arm.split('_').collect();
         let has = |f: &str| flags.contains(&f);
-        if has("nodressups") || has("norapid") || has("nofeedopt") {
+        if has("nodressups") || has("norapid") || has("nofeedopt") || has("arcs") {
             let mut d = tc.dressups.clone();
+            if has("arcs") {
+                d.arc_fitting = emitted_arcs;
+                eprintln!("arm {arm}: arc fitting as the fixture emits it: {emitted_arcs:?}");
+            }
             if has("nodressups") || has("norapid") {
                 d.optimize_rapid_order = false;
             }
@@ -442,7 +451,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
                 );
             }
         }
-        if arm != "sim" {
+        if !has("sim") {
             continue;
         }
         let skip: Vec<_> = s

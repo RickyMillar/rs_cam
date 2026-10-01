@@ -6,8 +6,10 @@
 //!
 //! `dressup::arcfit` accepts a run when every point is within the arc
 //! tolerance of the circle in XY and within the tolerance of the helical Z
-//! interpolation. The Finish role turns arcs on at 0.05 mm, and the planner's
-//! tier ops inherit that role's dressups. So an arc can pass up to 0.05 mm
+//! interpolation. The Finish role turns arcs on at 0.05 mm, and until F4a
+//! (2026-10-01) the planner's tier ops inherited that role's dressups; they
+//! now carry cusp / 2 (`tests/tier_ops_fit_arcs_within_half_the_cusp_f4a.rs`).
+//! At 0.05 an arc can pass up to 0.05 mm
 //! into a wall in XY and 0.05 mm below the source in Z, against a planned
 //! cusp of 0.03 mm. The competing source is the sag of the source polyline
 //! itself, which is present with arcs off.
@@ -23,9 +25,9 @@
 //! its boundary off and stock Fresh, so only the dressup changes between
 //! arms:
 //!
-//! - A: arcs at 0.05 mm (as the planner emits);
+//! - A: arcs at 0.05 mm (as the planner emitted before F4a);
 //! - B: arcs off;
-//! - C: arcs at 0.015 mm (cusp height / 2).
+//! - C: arcs at 0.015 mm (cusp height / 2, as the planner emits since F4a).
 //!
 //! Primary measure: `dressup::entry_audit::buried_fed_chords` on every fed
 //! move, 0.05 mm samples, floor = the fine tool's drop-cutter surface.
@@ -276,6 +278,38 @@ fn sample_burial(tp: &Toolpath, probe: &EntrySurfaceProbe<'_>) -> SampleBurial {
         }
     }
     out
+}
+
+/// Links and cycle time of one generated tier op: fed `Linking` moves,
+/// rapid runs (one per air link), and the F-034 cycle time with the
+/// machine's kinematics and rapid = max feed (as
+/// `tier_fine_burial_sources_g_tierburial` reads it).
+fn print_links_and_time(label: &str, session: &ProjectSession, tp: &Toolpath) {
+    use rs_cam_core::toolpath::MoveIntent;
+
+    let fed_links = tp
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::Linking && !matches!(m.move_type, MoveType::Rapid))
+        .count();
+    let rapid_runs = tp
+        .moves
+        .windows(2)
+        .filter(|w| {
+            matches!(w[1].move_type, MoveType::Rapid) && !matches!(w[0].move_type, MoveType::Rapid)
+        })
+        .count();
+    let machine = session.machine();
+    let cycle_s = rs_cam_core::machine::kinematics::compute_cycle_time(
+        tp,
+        &machine.kinematics.unwrap_or_default(),
+        machine.max_feed_mm_min,
+        machine.max_feed_mm_min.max(1.0),
+    );
+    eprintln!(
+        "    {label:>6} links: {fed_links} fed Linking moves, {rapid_runs} rapid runs; \
+         cycle time {cycle_s:.1} s"
+    );
 }
 
 fn print_sample_burial(label: &str, b: &SampleBurial) {
@@ -605,5 +639,6 @@ fn arc_fit_burial_on_the_rivmap100_fine_tier() {
             b.over_0_05,
         );
         print_sample_burial(label, &sample_burial(&tp, &probe));
+        print_links_and_time(label, &session, &tp);
     }
 }

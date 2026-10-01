@@ -590,7 +590,7 @@ link_moves = false
 link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = true
-arc_tolerance = 0.05
+arc_tolerance = 0.015
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = true
@@ -692,7 +692,7 @@ link_moves = false
 link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = true
-arc_tolerance = 0.05
+arc_tolerance = 0.015
 segment_merge = false
 segment_merge_tolerance = 0.3
 feed_optimization = true
@@ -738,7 +738,7 @@ coarseness = 1.0
 overlap_mm = 2.0
 max_regions_per_tier = 24
 rim_erosion_mm = 0.0
-max_close_raises = 3
+max_close_raises = 0
 
 [setups.toolpaths.debug_options]
 enabled = false
