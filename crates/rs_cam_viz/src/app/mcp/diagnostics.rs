@@ -575,6 +575,9 @@ impl RsCamApp {
                 .into_iter()
                 .filter_map(|diag| serde_json::to_value(diag).ok()),
         );
+        // The project list above already holds every safety finding, so
+        // the per-toolpath half takes the trace-only route. The evidence
+        // route would publish each collision finding twice.
         for index in 0..state.session.toolpath_count() {
             if let Ok(diags) = state.session.diagnose_toolpath_with_trace(index, sim_trace) {
                 values.extend(
@@ -624,15 +627,17 @@ impl RsCamApp {
     /// canonical view.
     pub(super) fn mcp_get_toolpath_diagnostics(&self, index: usize) -> String {
         let state = self.controller.state();
-        // The active sim trace lives on the viz-side state, not on
-        // the core session — pass it explicitly so the load gates
-        // see fresh evidence rather than `NeedsSimulation`.
-        let sim_trace = state
-            .simulation
-            .results
-            .as_ref()
-            .and_then(|r| r.cut_trace.as_deref());
-        match state.session.diagnose_toolpath_with_trace(index, sim_trace) {
+        // The active sim evidence (the cut trace, the rapid collisions and
+        // the holder checks) lives on the viz-side state, not on the core
+        // session. Pass it explicitly so the load gates see fresh evidence
+        // rather than `NeedsSimulation`. G-RAPIDFRAME: the evidence also
+        // carries the collisions, so this list names the rapid and holder
+        // collisions of this toolpath, as `get_project_diagnostics` does.
+        let evidence = viz_project_evidence(state);
+        match state
+            .session
+            .diagnose_toolpath_with_evidence(index, &evidence)
+        {
             Ok(diagnostics) => {
                 json_str(serde_json::to_value(&diagnostics).unwrap_or(serde_json::Value::Null))
             }

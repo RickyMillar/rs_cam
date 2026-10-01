@@ -184,6 +184,48 @@ impl ProjectSession {
         Ok(crate::diagnostics::diagnose_toolpath_inputs(&inputs))
     }
 
+    /// The per-toolpath list of [`Self::diagnose_toolpath_with_trace`], plus
+    /// every project SAFETY finding that names this toolpath.
+    ///
+    /// G-RAPIDFRAME (2026-10-01): the per-toolpath route took no collision
+    /// evidence, so MCP `get_toolpath_diagnostics` never listed a rapid or
+    /// holder collision, the findings that must stop a cut. This route reads
+    /// the same [`ProjectEvidence`] as
+    /// [`Self::diagnose_project_with_evidence`], so the two lists cannot
+    /// disagree about one collision. The cut trace comes from the evidence
+    /// too.
+    ///
+    /// A caller that also publishes the project list must use
+    /// [`Self::diagnose_toolpath_with_trace`] for the per-toolpath half, or
+    /// it publishes each safety finding twice.
+    pub fn diagnose_toolpath_with_evidence(
+        &self,
+        index: usize,
+        evidence: &ProjectEvidence<'_>,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        use crate::diagnostics::{Category, DiagnosticEvidence, Scope};
+        let mut out = self.diagnose_toolpath_with_trace(index, evidence.cut_trace)?;
+        let id = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?
+            .id;
+        let names_this_toolpath = |diag: &crate::diagnostics::Diagnostic| {
+            diag.scope == (Scope::Toolpath { id })
+                || matches!(
+                    &diag.evidence,
+                    Some(DiagnosticEvidence::Counts { offender_toolpath_ids, .. })
+                        if offender_toolpath_ids.contains(&id)
+                )
+        };
+        out.extend(
+            self.diagnose_project_with_evidence(evidence)
+                .into_iter()
+                .filter(|diag| diag.category == Category::Safety && names_this_toolpath(diag)),
+        );
+        Ok(out)
+    }
+
     /// Build a [`ModelRefContext`] for a single toolpath (F-023).
     /// Captures whether the toolpath's `model_id` resolves against the
     /// project's loaded models so the unified diagnostic stream emits
