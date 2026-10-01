@@ -38,7 +38,9 @@ Inspect the CLI surface:
 cargo run -p rs_cam_cli -- --help
 ```
 
-The CLI `project` command needs `--output-dir <DIR>`. The memory budget of
+The CLI `project` command needs `--output-dir <DIR>`. It writes the large
+per-sample `simulation.json` only with `--sim-artifact` (default off, as the
+GUI cut-trace file). The memory budget of
 the GUI and the CLI is half of the system RAM by default. To change it, use
 **File ▸ Preferences** in the GUI, or set `[memory] limit` in
 `~/.config/rs_cam/settings.toml` (`"24GiB"`, `"unlimited"` or `"default"`).

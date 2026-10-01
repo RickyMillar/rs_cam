@@ -34,7 +34,9 @@ use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use rs_cam_core::budget::{BudgetGuard, MemoryBudget, ProcessRss, StopReason, UsageProbe};
+use rs_cam_core::budget::{
+    BudgetGuard, MemoryBudget, MemoryLimit, ProcessRss, StopReason, UsageProbe,
+};
 use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::stock::collision::CollisionReport;
@@ -43,10 +45,32 @@ use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 use super::{
     CancelOutcome, ComputeBackend, ComputeError, ComputeLane, ComputeMessage, GenerationControl,
-    JobRequestId, LaneControl, LaneSnapshot, LaneState, ToolpathSubmitOutcome,
+    JobRequestId, LaneControl, LaneSnapshot, LaneState, MemoryControl, MemoryStatus,
+    MemoryStatusSource, ToolpathSubmitOutcome,
 };
 use crate::state::job::ToolConfig;
 use crate::state::toolpath::{ToolpathId, ToolpathResult};
+
+/// The artifact folder for the settings value `file`: the production
+/// resolver (`rs_cam_core::settings::paths::artifact_dir`).
+#[cfg(not(test))]
+fn default_artifact_dir(file: Option<&std::path::Path>) -> Option<PathBuf> {
+    rs_cam_core::settings::paths::artifact_dir(file)
+}
+
+/// The artifact folder for the settings value `file` in a unit-test build:
+/// the file value, else [`test_artifact_dir`]. Never the user cache.
+#[cfg(test)]
+fn default_artifact_dir(file: Option<&std::path::Path>) -> Option<PathBuf> {
+    Some(file.map_or_else(test_artifact_dir, std::path::Path::to_path_buf))
+}
+
+/// The per-process scratch artifact folder of a unit-test build, under
+/// `std::env::temp_dir()`.
+#[cfg(test)]
+pub(crate) fn test_artifact_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("rs_cam_viz_test_artifacts_{}", std::process::id()))
+}
 
 /// One generation job, on its way to the toolpath lane.
 ///
@@ -119,12 +143,17 @@ pub struct ArtifactPolicy {
 impl ArtifactPolicy {
     /// The policy of `[diagnostics]`. The folder is the file's value, else
     /// the per-user cache folder (`rs_cam_core::settings::paths`).
+    ///
+    /// In a unit-test build the default folder is [`test_artifact_dir`],
+    /// not the user cache. Every controller job reads its folder here, so
+    /// no test with default settings can write into the operator's cache
+    /// folder. A file value still wins.
     #[must_use]
     pub fn from_settings(diagnostics: &rs_cam_core::settings::DiagnosticsSettings) -> Self {
         Self {
             save_cut_trace: diagnostics.save_cut_trace,
             cut_trace_retain: diagnostics.cut_trace_retain,
-            dir: rs_cam_core::settings::paths::artifact_dir(diagnostics.artifact_dir.as_deref()),
+            dir: default_artifact_dir(diagnostics.artifact_dir.as_deref()),
         }
     }
 
@@ -415,9 +444,26 @@ pub struct JobResult {
 /// job reads the new one.
 #[derive(Clone)]
 pub struct JobBudget {
-    budget: Arc<Mutex<MemoryBudget>>,
+    budget: Arc<Mutex<BudgetCell>>,
     probe: Arc<dyn UsageProbe>,
     interval: Duration,
+}
+
+/// The one shared budget cell: the budget that the lanes enforce, and the
+/// setting that gave it. Only `generation_status` reads the setting; it
+/// names the source of the limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BudgetCell {
+    budget: MemoryBudget,
+    setting: MemoryLimit,
+}
+
+/// The setting that gives exactly `budget`: no limit is `Unlimited`, a
+/// limit is `Bytes`. A caller that knows the real setting gives it instead.
+fn setting_of(budget: MemoryBudget) -> MemoryLimit {
+    budget
+        .limit_bytes
+        .map_or(MemoryLimit::Unlimited, MemoryLimit::Bytes)
 }
 
 impl JobBudget {
@@ -438,7 +484,10 @@ impl JobBudget {
         interval: Duration,
     ) -> Self {
         Self {
-            budget: Arc::new(Mutex::new(budget)),
+            budget: Arc::new(Mutex::new(BudgetCell {
+                budget,
+                setting: setting_of(budget),
+            })),
             probe,
             interval,
         }
@@ -446,13 +495,24 @@ impl JobBudget {
 
     /// The budget this value enforces now.
     pub fn budget(&self) -> MemoryBudget {
+        self.cell().budget
+    }
+
+    fn cell(&self) -> BudgetCell {
         *self.budget.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Change the budget for every job that starts after this call. A job
-    /// that runs keeps the guard it started with.
+    /// that runs keeps the guard it started with. The setting becomes the
+    /// one that gives exactly `budget` ([`Self::set_configured`] names the
+    /// real one).
     pub fn set(&self, budget: MemoryBudget) {
-        *self.budget.lock().unwrap_or_else(|e| e.into_inner()) = budget;
+        self.set_configured(budget, setting_of(budget));
+    }
+
+    /// Change the budget, and record the `setting` that gave it.
+    pub fn set_configured(&self, budget: MemoryBudget, setting: MemoryLimit) {
+        *self.budget.lock().unwrap_or_else(|e| e.into_inner()) = BudgetCell { budget, setting };
     }
 
     /// One guard for one job, over the flag that job polls. The guard holds
@@ -465,6 +525,29 @@ impl JobBudget {
             Box::new(SharedProbe(Arc::clone(&self.probe))),
             self.interval,
         ))
+    }
+}
+
+/// The [`MemoryStatusSource`] of the threaded backend: the shared budget
+/// cell, the ledger and the probe. Every read takes one short lock at a
+/// time, so the MCP thread never waits for a job.
+struct LedgerMemoryStatus {
+    budget: JobBudget,
+    ledger: Arc<BudgetLedger>,
+}
+
+impl MemoryStatusSource for LedgerMemoryStatus {
+    fn read(&self) -> MemoryStatus {
+        // The budget lock and the ledger lock are taken one after the
+        // other, never nested (the order rule of `BudgetLedger::admit`).
+        let cell = self.budget.cell();
+        let reserved_bytes = self.ledger.reserved_bytes();
+        MemoryStatus {
+            limit_bytes: cell.budget.limit_bytes,
+            setting: cell.setting,
+            reserved_bytes,
+            process_rss_bytes: self.budget.probe.used_bytes(),
+        }
     }
 }
 
@@ -526,7 +609,7 @@ fn over_budget_stop(guard: &BudgetGuard) -> Option<ComputeError> {
 /// that waits checks again at once (`ThreadedComputeBackend::set_memory_budget`
 /// wakes it).
 pub(crate) struct BudgetLedger {
-    budget: Arc<Mutex<MemoryBudget>>,
+    budget: Arc<Mutex<BudgetCell>>,
     probe: Arc<dyn UsageProbe>,
     state: Mutex<LedgerState>,
     /// Signalled when a ticket drops, and at shutdown.
@@ -624,6 +707,7 @@ impl BudgetLedger {
             .budget
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+            .budget
             .limit_bytes;
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if let (Some(limit_bytes), Some(estimate)) = (limit, estimate_bytes)
@@ -1032,6 +1116,15 @@ impl ThreadedComputeBackend {
         Self::with_job_budget(JobBudget::new(budget))
     }
 
+    /// A backend whose heavy lanes stop a job over `budget`, which the
+    /// settings value `setting` gave. The app starts with this, so the MCP
+    /// `generation_status` names the true source of the limit.
+    pub fn with_configured_budget(budget: MemoryBudget, setting: MemoryLimit) -> Self {
+        let job_budget = JobBudget::new(budget);
+        job_budget.set_configured(budget, setting);
+        Self::with_job_budget(job_budget)
+    }
+
     /// The memory budget the heavy lanes enforce.
     pub fn memory_budget(&self) -> MemoryBudget {
         self.budget.budget()
@@ -1199,8 +1292,8 @@ impl ComputeBackend for ThreadedComputeBackend {
     /// has a limit. A change from no limit to a limit reads it here, else
     /// the simulation preflight could never refuse. That reading is late,
     /// so it can count a loaded project; the guard stays the net.
-    fn set_memory_budget(&mut self, budget: MemoryBudget) {
-        self.budget.set(budget);
+    fn set_memory_budget(&mut self, budget: MemoryBudget, setting: MemoryLimit) {
+        self.budget.set_configured(budget, setting);
         if self.baseline_bytes.is_none() && budget.is_limited() {
             self.baseline_bytes = self.budget.probe.used_bytes();
         }
@@ -1209,6 +1302,13 @@ impl ComputeBackend for ThreadedComputeBackend {
 
     fn memory_reserved_bytes(&self) -> u64 {
         self.ledger.reserved_bytes()
+    }
+
+    fn memory_control(&self) -> MemoryControl {
+        MemoryControl::new(Arc::new(LedgerMemoryStatus {
+            budget: self.budget.clone(),
+            ledger: Arc::clone(&self.ledger),
+        }))
     }
 
     fn preflight_simulation(

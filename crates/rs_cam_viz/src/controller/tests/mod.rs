@@ -36,6 +36,7 @@ mod simulation_state;
 mod smoke;
 mod stale_cards_g_stalecards;
 mod stock_frame;
+mod test_artifacts_stay_in_temp_g_testcache;
 mod undo;
 mod view_simulation;
 mod workspace;

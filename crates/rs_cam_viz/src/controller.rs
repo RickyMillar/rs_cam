@@ -491,6 +491,13 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.generation_control()
     }
 
+    /// A `Send + Sync` handle onto the memory budget, for the embedded MCP
+    /// server thread: `generation_status` reports the budget without the
+    /// GUI frame loop.
+    pub fn memory_control(&self) -> crate::compute::MemoryControl {
+        self.compute.memory_control()
+    }
+
     pub fn load_warnings(&self) -> &[String] {
         &self.load_warnings
     }

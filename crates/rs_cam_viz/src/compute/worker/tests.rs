@@ -2850,7 +2850,11 @@ fn set_memory_budget_changes_the_next_job_and_not_a_running_guard() {
     let running = job_budget.guard(Arc::new(AtomicBool::new(false)));
 
     let new_budget = MemoryBudget::with_limit(FAKE_LIMIT * 4);
-    ComputeBackend::set_memory_budget(&mut backend, new_budget);
+    ComputeBackend::set_memory_budget(
+        &mut backend,
+        new_budget,
+        rs_cam_core::budget::MemoryLimit::Bytes(FAKE_LIMIT * 4),
+    );
 
     assert_eq!(ComputeBackend::memory_budget(&backend), new_budget);
     assert_eq!(
@@ -2866,7 +2870,11 @@ fn set_memory_budget_changes_the_next_job_and_not_a_running_guard() {
     );
 
     // To no limit and back: each change reaches the next guard.
-    ComputeBackend::set_memory_budget(&mut backend, MemoryBudget::UNLIMITED);
+    ComputeBackend::set_memory_budget(
+        &mut backend,
+        MemoryBudget::UNLIMITED,
+        rs_cam_core::budget::MemoryLimit::Unlimited,
+    );
     assert_eq!(
         job_budget.guard(Arc::new(AtomicBool::new(false))).budget(),
         MemoryBudget::UNLIMITED
@@ -2939,7 +2947,11 @@ fn set_memory_budget_from_no_limit_reads_the_baseline() {
         Duration::ZERO,
     ));
     assert_eq!(backend.baseline_bytes, None);
-    ComputeBackend::set_memory_budget(&mut backend, MemoryBudget::with_limit(FAKE_LIMIT));
+    ComputeBackend::set_memory_budget(
+        &mut backend,
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        rs_cam_core::budget::MemoryLimit::Bytes(FAKE_LIMIT),
+    );
     assert_eq!(backend.baseline_bytes, Some(FAKE_LIMIT / 2));
 }
 
@@ -3271,5 +3283,57 @@ fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
     assert_eq!(
         controller.state().simulation.submitted_simulation_epoch,
         None
+    );
+}
+
+/// MCP parity: `generation_status` reads the budget through
+/// `memory_control`. The handle shares the backend's budget cell and
+/// ledger, so a Preferences change and a running reservation reach it at
+/// once, and the setting names the source.
+#[test]
+fn memory_control_reads_the_shared_cell_and_the_ledger() {
+    use rs_cam_core::budget::MemoryLimit;
+    let mut backend = ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        Arc::new(FixedProbe(FAKE_LIMIT / 8)),
+        Duration::ZERO,
+    ));
+    let control = backend.memory_control();
+    let first = control.read();
+    assert_eq!(first.limit_bytes, Some(FAKE_LIMIT));
+    assert_eq!(first.source_text(), "settings file");
+    assert_eq!(first.reserved_bytes, 0);
+    assert_eq!(first.process_rss_bytes, Some(FAKE_LIMIT / 8));
+
+    // A running reservation shows in the SAME handle, taken before it.
+    let ticket = match backend.ledger.admit(Some(4096)) {
+        Admission::Run(ticket) => ticket,
+        Admission::Wait(wait) => panic!("nothing runs, so nothing waits: {}", wait.phase()),
+    };
+    assert_eq!(control.read().reserved_bytes, 4096);
+    drop(ticket);
+    assert_eq!(control.read().reserved_bytes, 0);
+
+    // File ▸ Preferences ▸ Apply with the default reaches the handle.
+    let half = MemoryBudget::with_limit(FAKE_LIMIT * 2);
+    ComputeBackend::set_memory_budget(&mut backend, half, MemoryLimit::Default);
+    let after = control.read();
+    assert_eq!(after.limit_bytes, Some(FAKE_LIMIT * 2));
+    assert_eq!(after.source_text(), "default half of RAM");
+
+    ComputeBackend::set_memory_budget(
+        &mut backend,
+        MemoryBudget::UNLIMITED,
+        MemoryLimit::Unlimited,
+    );
+    let none = control.read();
+    assert_eq!(none.limit_bytes, None);
+    assert_eq!(none.source_text(), "unlimited");
+
+    // The app's start constructor records the setting it was given.
+    let started = ThreadedComputeBackend::with_configured_budget(half, MemoryLimit::Default);
+    assert_eq!(
+        started.memory_control().read().source_text(),
+        "default half of RAM"
     );
 }

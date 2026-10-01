@@ -216,7 +216,10 @@ impl RsCamApp {
             "memory budget from the settings file"
         );
         let mut controller = AppController::with_backend(
-            crate::compute::ThreadedComputeBackend::with_budget(memory_budget),
+            crate::compute::ThreadedComputeBackend::with_configured_budget(
+                memory_budget,
+                settings.settings.memory_limit,
+            ),
         );
         controller.apply_startup_settings(settings.settings);
         if let Some(warning) = settings.warning {
@@ -241,6 +244,7 @@ impl RsCamApp {
             // here, on the GUI thread, because the backend lives on the
             // controller — but usable from any thread thereafter.
             let generation = controller.generation_control();
+            let memory = controller.memory_control();
             let reads = mcp_reads.clone();
 
             if let Some(exit_signal) = mcp_exit {
@@ -268,7 +272,8 @@ impl RsCamApp {
                                 let server = crate::mcp_server::EmbeddedCamServer::new(
                                     tx, egui_ctx, generation, reads,
                                 )
-                                .with_waker(waker);
+                                .with_waker(waker)
+                                .with_memory(memory);
                                 let tool_router =
                                     crate::mcp_server::EmbeddedCamServer::into_tool_router();
 

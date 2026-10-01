@@ -268,6 +268,19 @@ enum Commands {
         /// the loaded project's post config is used.
         #[arg(long, value_parser = ["match_chart", "max_speed"])]
         spindle_strategy: Option<String>,
+
+        /// Write `simulation.json`, the per-sample cut-trace artifact, into
+        /// the output directory. Default off.
+        ///
+        /// The file holds every cut-trace sample and is gigabytes on a large
+        /// project (6.7 GB on rivmap350). The GUI cut-trace file is off by
+        /// default (operator ruling 2026-10-02); this flag gives the CLI the
+        /// same default. Breaking (2026-10-02): a run without the flag
+        /// writes no `simulation.json`. `summary.json` and the `tp_*.json`
+        /// files do not change, and the cut-trace figures in them are still
+        /// measured: the run captures the trace in memory either way.
+        #[arg(long)]
+        sim_artifact: bool,
     },
 
     /// Run the F-037 smoke baseline suite.
@@ -477,6 +490,7 @@ fn main() -> Result<()> {
             inject_shapeoko_kinematics,
             apply_suggest,
             spindle_strategy,
+            sim_artifact,
         } => {
             let skip_ids: Vec<rs_cam_core::ToolpathId> = skip
                 .as_deref()
@@ -511,6 +525,7 @@ fn main() -> Result<()> {
                 inject_shapeoko_kinematics,
                 apply_suggest,
                 spindle_strat_override,
+                sim_artifact,
             )?;
         }
         Commands::Smoke {

@@ -197,7 +197,7 @@ subcommands were replaced by the registry-driven generic `run`):
 - `job` — TOML job file (multi-tool/multi-op batch; executes through the session pipeline)
 - `run` — ANY of the 23 operations: `run <op> --input model --tool type:diameter --set k=v --output out.nc`; `run --list-ops` / `run <op> --list-params` print the registry
 - `sweep` — parameter sweep over a job file with fingerprint diffs
-- `project` — GUI project file (format_version=3) full-diagnostics executor. `--output-dir <DIR>` is REQUIRED (memory programme U5, 2026-10-01; breaking): the command wrote into `./diagnostics` by default, and its `simulation.json` holds the whole cut trace, gigabytes on a large project. Without a cut trace the cut-trace figures in its report (`total_runtime_s`, the two air-cut percentages, `average_engagement`, the triage counts) are `null` / NOT MEASURED, never 0, and `cut_metrics_not_measured` names the reason (U2)
+- `project` — GUI project file (format_version=3) full-diagnostics executor. `--output-dir <DIR>` is REQUIRED (memory programme U5, 2026-10-01; breaking): the command wrote into `./diagnostics` by default, and its `simulation.json` holds the whole cut trace, gigabytes on a large project. `simulation.json` is written only with `--sim-artifact` (default off, 2026-10-02; breaking: a caller that reads the file must pass the flag), the same default as the GUI cut-trace file; `summary.json` and the `tp_*.json` files are written on every run, and their cut-trace figures are still measured. Without a cut trace the cut-trace figures in its report (`total_runtime_s`, the two air-cut percentages, `average_engagement`, the triage counts) are `null` / NOT MEASURED, never 0, and `cut_metrics_not_measured` names the reason (U2)
 - `smoke` — F-037 smoke baseline suite
 - `nc-time` — G-code cycle-time prediction
 
@@ -210,6 +210,11 @@ When the process uses more, the generation plan stops and names the two
 values and the remedies, before the system kills the process. The flag
 overrides `[memory] limit` in the settings file. With neither, the limit is
 half of the system RAM.
+
+The MCP `generation_status` reply carries the GUI's budget as `budget`:
+`limit_bytes` (null for no limit), `source` (`default half of RAM`,
+`settings file` or `unlimited`), `reserved_bytes` and `process_rss_bytes`.
+The MCP server thread reads it, so the reply does not wait for the GUI.
 
 ## Settings file
 

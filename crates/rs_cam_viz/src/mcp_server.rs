@@ -11,7 +11,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Meta, ProgressNotificationParam, ServerInfo};
 use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
-use crate::compute::GenerationControl;
+use crate::compute::{GenerationControl, MemoryControl};
 use crate::mcp_bridge::{
     CoreRequest, GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
     build_cancel_generation_response, build_generation_status_response,
@@ -79,6 +79,9 @@ pub struct EmbeddedCamServer {
     generation: GenerationControl,
     /// Last-published read payloads, for answering during a stalled frame loop.
     reads: McpReadCache,
+    /// Read the memory budget without the GUI frame loop
+    /// (`generation_status`). Detached until [`Self::with_memory`].
+    memory: MemoryControl,
     /// G-LV.1: the wakeup that survives a park. `None` in tests and in any
     /// caller that has no event loop to wake — the server then behaves
     /// exactly as it did before B-4.
@@ -100,6 +103,7 @@ impl EmbeddedCamServer {
             egui_ctx,
             generation,
             reads,
+            memory: MemoryControl::detached(),
             waker: None,
             tool_router,
         }
@@ -111,6 +115,15 @@ impl EmbeddedCamServer {
     #[must_use]
     pub fn with_waker(mut self, waker: GuiWaker) -> Self {
         self.waker = Some(waker);
+        self
+    }
+
+    /// Attach the memory budget of the compute backend. Kept off
+    /// [`Self::new`] for the same reason as [`Self::with_waker`]; a server
+    /// without it reports no limit and nothing reserved.
+    #[must_use]
+    pub fn with_memory(mut self, memory: MemoryControl) -> Self {
+        self.memory = memory;
         self
     }
 
@@ -1348,13 +1361,14 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generation_status",
-        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress. ALSO carries `frame_loop`: an idle lane does NOT mean your call finished — if `frame_loop.healthy` is false, the GUI window is not repainting and every MCP request plus every generate_all round handoff is stranded until it is visible again. `plan` reports the step a Generate All is on, and whether that step is a simulation. A null `plan` means no plan runs."
+        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress. ALSO carries `frame_loop`: an idle lane does NOT mean your call finished — if `frame_loop.healthy` is false, the GUI window is not repainting and every MCP request plus every generate_all round handoff is stranded until it is visible again. `plan` reports the step a Generate All is on, and whether that step is a simulation. A null `plan` means no plan runs. `budget` reports the memory budget of the heavy lanes: `limit_bytes` (null means no limit), `source` (\"default half of RAM\", \"settings file\" or \"unlimited\"; File > Preferences writes the settings file), `reserved_bytes` (the estimates of the running heavy jobs in the ledger) and `process_rss_bytes` (the resident size of the GUI process now; null when the platform gives no reading). A heavy job with an estimate waits while RSS + reserved + estimate is over the limit."
     )]
     pub async fn generation_status(&self) -> String {
         build_generation_status_response(
             &self.generation.snapshot(),
             self.reads.frame_loop(),
             self.reads.plan().read(),
+            &self.memory.read(),
         )
     }
 

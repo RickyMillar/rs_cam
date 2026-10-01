@@ -945,10 +945,15 @@ fn parked_frame_loop_warning(frame_loop: &FrameLoopBeat) -> Option<String> {
 /// [`PlanBeat`] the GUI thread stamps, not the compute lane, because the plan
 /// cursor lives on the GUI thread and a lane field would always read null. A
 /// null `plan` means no plan runs.
+///
+/// `budget` is the memory budget of the heavy lanes (memory programme MCP
+/// parity). The server thread reads it from the backend's shared budget
+/// cell and ledger, so it is live and does not wait for the frame loop.
 pub fn build_generation_status_response(
     snapshot: &crate::compute::LaneSnapshot,
     frame_loop: &FrameLoopBeat,
     plan: Option<PlanBeatRow>,
+    budget: &crate::compute::MemoryStatus,
 ) -> String {
     use crate::compute::LaneState;
 
@@ -1001,6 +1006,12 @@ pub fn build_generation_status_response(
             "simulating": p.simulating,
         })),
         "frame_loop": frame_loop.report(),
+        "budget": {
+            "limit_bytes": budget.limit_bytes,
+            "source": budget.source_text(),
+            "reserved_bytes": budget.reserved_bytes,
+            "process_rss_bytes": budget.process_rss_bytes,
+        },
         "note": "Live: read straight off the compute lane on the MCP server thread, \
                  never through the GUI frame loop. `stage` is whatever the planner \
                  last reported — a null means the op reports no stages, NOT that it \
@@ -1724,6 +1735,7 @@ mod tests {
             &LaneSnapshot::idle(ComputeLane::Toolpath),
             &parked_beat_with_generate_all(),
             None,
+            &crate::compute::MemoryControl::detached().read(),
         );
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
 
@@ -1773,6 +1785,7 @@ mod tests {
             &LaneSnapshot::idle(ComputeLane::Toolpath),
             &beat,
             None,
+            &crate::compute::MemoryControl::detached().read(),
         );
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
         assert_eq!(

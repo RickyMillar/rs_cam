@@ -87,7 +87,8 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let budget = prefs.budget_for(settings.memory_limit);
         let restart = needs_restart(&self.state.app_settings, &settings);
-        self.compute.set_memory_budget(budget);
+        self.compute
+            .set_memory_budget(budget, settings.memory_limit);
         self.state.app_settings = settings;
         self.state.apply_live_settings();
         self.state.preferences = None;
