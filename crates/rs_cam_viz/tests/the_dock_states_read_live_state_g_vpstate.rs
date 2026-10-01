@@ -1308,3 +1308,109 @@ fn the_legend_settles_without_a_slide_g_legend() {
         );
     }
 }
+
+/// The reach key shows the WHOLE reach colour key (operator, 2026-10-02:
+/// "it does not have green on the scale which is the 'can reach' state"):
+/// the reached green, the miss ramp, the unresolved grey and the
+/// not-measured colour, each from `reach_color`, in the hover key and in
+/// the chip swatch.
+#[test]
+fn the_reach_key_shows_reached_miss_and_unresolved_g_legend() {
+    use rs_cam_core::maps::reach_map::{ReachRamp, reach_color};
+    let state = legend_fixture();
+    let ramp = ReachRamp {
+        tolerance_mm: 0.1,
+        floor_mm: 0.567,
+        max_gap_mm: 5.05,
+    };
+    let line = RailLine::Scale(registry::Legend::Reach(ramp));
+    let key = legend_rail::key_colours(&state, &line);
+    let swatch = legend_rail::swatch_colours(&state, &line);
+
+    let reached = reach_color(0.05, f32::NAN, ramp);
+    assert!(
+        reached[1] > reached[0] && reached[1] > reached[2],
+        "non-vacuity: the reached colour {reached:?} is not green"
+    );
+    let unresolved = reach_color(0.3, 0.3, ramp);
+    let not_measured = reach_color(f32::NAN, f32::NAN, ramp);
+    let shallow_miss = reach_color(0.6, f32::NAN, ramp);
+    let deep_miss = reach_color(5.05, f32::NAN, ramp);
+    assert_ne!(unresolved, not_measured, "non-vacuity: two greys");
+
+    let green = |c: &[f32; 3]| c[1] > c[0] && c[1] > c[2];
+    assert!(key.iter().any(green), "the reach key has no green: {key:?}");
+    assert!(
+        key.contains(&reached),
+        "the reach key lacks the reached colour {reached:?}"
+    );
+    for (what, colour) in [("unresolved", unresolved), ("not measured", not_measured)] {
+        assert!(
+            key.contains(&colour),
+            "the reach key lacks the {what} colour {colour:?}: {key:?}"
+        );
+        assert!(
+            swatch.contains(&tokens::from_linear_rgb(colour)),
+            "the reach chip swatch lacks the {what} colour"
+        );
+    }
+    assert!(
+        swatch.contains(&tokens::from_linear_rgb(reached)),
+        "the reach chip swatch lacks the reached green"
+    );
+    // The miss ramp: yellow at the bar end, dark red at the deep end.
+    let near = |a: &[f32; 3], b: &[f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.08);
+    assert!(
+        key.iter().any(|c| near(c, &shallow_miss)) && key.iter().any(|c| near(c, &deep_miss)),
+        "the reach key lacks its miss ramp ends {shallow_miss:?} … {deep_miss:?}"
+    );
+    // Order: green first, the greys last, so the swatch reads left to right
+    // from reached to deeper misses.
+    assert_eq!(key.first(), Some(&reached));
+    assert_eq!(key.last(), Some(&not_measured));
+}
+
+/// Every chip swatch paints every colour its overlay draws.
+#[test]
+fn every_chip_swatch_shows_every_colour_of_its_key_g_legend() {
+    let state = legend_fixture();
+    let lines = legend_rail::active_lines(&state);
+    let mut checked = 0;
+    for line in &lines {
+        let name = legend_rail::line_name(&state, line);
+        let swatch = legend_rail::swatch_colours(&state, line);
+        for colour in legend_rail::key_colours(&state, line) {
+            assert!(
+                swatch.contains(&tokens::from_linear_rgb(colour)),
+                "the `{name}` chip swatch lacks {colour:?}"
+            );
+        }
+        if let RailLine::Categories(kind) = line {
+            let entries = legend_rail::category_entries(&state, *kind);
+            for (label, colour) in entries {
+                if let Some(colour) = colour {
+                    assert!(
+                        swatch.contains(&tokens::from_linear_rgb(colour)),
+                        "the `{name}` chip swatch lacks the `{label}` colour"
+                    );
+                }
+            }
+        }
+        checked += 1;
+    }
+    assert!(checked >= 5, "non-vacuity: only {checked} lines");
+    let heights = lines
+        .iter()
+        .find(|line| {
+            matches!(
+                line,
+                RailLine::Categories(legend_rail::Categories::HeightPlanes)
+            )
+        })
+        .expect("the fixture draws height planes");
+    assert_eq!(
+        legend_rail::swatch_colours(&state, heights).len(),
+        5,
+        "the height-plane chip must show all five planes"
+    );
+}

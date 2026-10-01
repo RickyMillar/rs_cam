@@ -76,8 +76,8 @@ pub const COLLAPSED_WORD: &str = "Legend";
 /// The glyph of the button that folds the legend.
 pub const FOLD_GLYPH: &str = "\u{25BE}";
 
-/// The size of the swatch on a chip.
-const CHIP_SWATCH: egui::Vec2 = egui::vec2(18.0, 8.0);
+/// The height of the swatch on a chip.
+const CHIP_SWATCH_HEIGHT: f32 = 8.0;
 
 /// The number of colour samples in a gradient.
 const RAMP_SAMPLES: usize = 24;
@@ -507,39 +507,64 @@ pub fn draw(
     Some(rect)
 }
 
-/// The swatch on a chip.
+/// The width of one single-colour cell in a chip swatch.
+const SWATCH_CELL: f32 = 5.0;
+
+/// The width of the gradient part of a chip swatch.
+const SWATCH_RAMP: f32 = 18.0;
+
+/// The swatch on a chip: cells side by side, each `(colour, width)`. It
+/// shows EVERY colour its overlay draws: each single colour as a cell, and
+/// a gradient as a strip of its samples.
 enum Swatch {
     None,
-    /// A gradient, drawn as a strip of these colours.
-    Ramp(Vec<egui::Color32>),
-    /// The first few category colours, drawn side by side.
-    Colours(Vec<egui::Color32>),
+    Cells(Vec<(egui::Color32, f32)>),
+}
+
+impl Swatch {
+    fn width(&self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Cells(cells) => cells.iter().map(|(_, width)| width).sum(),
+        }
+    }
 }
 
 fn chip_swatch(state: &AppState, line: &RailLine) -> Swatch {
-    let key = match line {
-        RailLine::Scale(legend) => scale_key(*legend),
-        RailLine::Categories(kind) => categories_key(state, *kind),
-        RailLine::Status(_) => return Swatch::None,
+    let Some(key) = line_key(state, line) else {
+        return Swatch::None;
     };
-    match key {
-        Key::Ramp { colours, .. } => {
-            let step = (colours.len() / 6).max(1);
-            Swatch::Ramp(
-                colours
-                    .iter()
-                    .step_by(step)
-                    .map(|c| tokens::from_linear_rgb(*c))
-                    .collect(),
-            )
+    let single = |entries: &[LegendEntry]| -> Vec<(egui::Color32, f32)> {
+        let mut cells: Vec<(egui::Color32, f32)> = Vec::new();
+        for colour in entries.iter().filter_map(|(_, colour)| *colour) {
+            let colour = tokens::from_linear_rgb(colour);
+            // A palette that repeats paints one colour once.
+            if !cells.iter().any(|(c, _)| *c == colour) {
+                cells.push((colour, SWATCH_CELL));
+            }
         }
-        Key::Entries(entries) => Swatch::Colours(
-            entries
-                .iter()
-                .filter_map(|(_, colour)| colour.map(tokens::from_linear_rgb))
-                .take(4)
-                .collect(),
-        ),
+        cells
+    };
+    let cells = match &key {
+        Key::Ramp {
+            lead,
+            colours,
+            tail,
+            ..
+        } => {
+            let step = SWATCH_RAMP / RAMP_SAMPLES as f32;
+            single(lead)
+                .into_iter()
+                .chain(colours.iter().map(|c| (tokens::from_linear_rgb(*c), step)))
+                .chain(single(tail))
+                .collect()
+        }
+        Key::Entries(entries) => single(entries),
+    };
+    if cells.is_empty() {
+        Swatch::None
+    } else {
+        Swatch::Cells(cells)
     }
 }
 
@@ -573,7 +598,7 @@ fn chip_layout(ui: &egui::Ui, state: &AppState, line: &RailLine, max_width: f32)
     let swatch = chip_swatch(state, line);
     let swatch_width = match &swatch {
         Swatch::None => 0.0,
-        Swatch::Ramp(_) | Swatch::Colours(_) => CHIP_SWATCH.x + pad,
+        Swatch::Cells(_) => swatch.width() + pad,
     };
     let glyph = chip_glyph(state, line).map(|(glyph, colour)| {
         ui.painter()
@@ -622,33 +647,18 @@ fn paint_chip(ui: &mut egui::Ui, chip: ChipLayout) -> egui::Response {
     };
     painter.rect_filled(rect, tokens::RADIUS_SM, fill);
     let mut x = rect.left() + pad;
-    let swatch_rect = |x: f32| {
-        egui::Rect::from_center_size(
-            egui::pos2(x + CHIP_SWATCH.x * 0.5, rect.center().y),
-            CHIP_SWATCH,
-        )
-    };
-    match &swatch {
-        Swatch::None => {}
-        Swatch::Ramp(colours) => {
-            paint_ramp(painter, swatch_rect(x), colours);
-            x += swatch_width;
+    if let Swatch::Cells(cells) = &swatch {
+        let top = rect.center().y - CHIP_SWATCH_HEIGHT * 0.5;
+        let mut left = x;
+        for (colour, width) in cells {
+            let cell = egui::Rect::from_min_size(
+                egui::pos2(left, top),
+                egui::vec2(*width, CHIP_SWATCH_HEIGHT),
+            );
+            painter.rect_filled(cell, 0.0, *colour);
+            left += width;
         }
-        Swatch::Colours(colours) => {
-            let area = swatch_rect(x);
-            let count = colours.len().max(1) as f32;
-            let width = area.width() / count;
-            for (index, colour) in colours.iter().enumerate() {
-                let left = area.left() + index as f32 * width;
-                let cell = egui::Rect::from_min_max(
-                    egui::pos2(left, area.top()),
-                    egui::pos2(left + width, area.bottom()),
-                )
-                .shrink2(egui::vec2(0.5, 0.0));
-                painter.rect_filled(cell, 0.0, *colour);
-            }
-            x += swatch_width;
-        }
+        x += swatch_width;
     }
     let text_top = rect.center().y - text.size().y * 0.5;
     let text_right = x + text.size().x;
@@ -806,12 +816,16 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
 /// The colour key of one legend.
 enum Key {
     /// A gradient with its end labels. `colours` are samples of the
-    /// overlay's OWN colour function at `i / RAMP_SAMPLES`, so a legend
-    /// cannot drift from what is drawn.
+    /// overlay's OWN colour function at `i / (RAMP_SAMPLES - 1)`, so a legend
+    /// cannot drift from what is drawn. `lead` and `tail` are the single
+    /// colours the same function paints outside the gradient (the reach
+    /// green before it, its greys after it), from the same function.
     Ramp {
+        lead: Vec<LegendEntry>,
         left: String,
         right: String,
         colours: Vec<[f32; 3]>,
+        tail: Vec<LegendEntry>,
     },
     /// A set of classes or categories.
     Entries(Vec<LegendEntry>),
@@ -823,21 +837,98 @@ fn ramp(
     sample: impl Fn(f32) -> [f32; 3],
 ) -> Key {
     Key::Ramp {
+        lead: Vec::new(),
         left: left.into(),
         right: right.into(),
         colours: (0..RAMP_SAMPLES)
-            .map(|i| sample(i as f32 / RAMP_SAMPLES as f32))
+            // Both ends: t runs 0 to 1 inclusive, so the far-end colour
+            // (the deepest miss, the clustered red) is in the key.
+            .map(|i| sample(i as f32 / (RAMP_SAMPLES - 1) as f32))
             .collect(),
+        tail: Vec::new(),
+    }
+}
+
+/// `key` with single colours before and after its gradient.
+fn with_ends(key: Key, before: Vec<LegendEntry>, after: Vec<LegendEntry>) -> Key {
+    match key {
+        Key::Ramp {
+            left,
+            right,
+            colours,
+            ..
+        } => Key::Ramp {
+            lead: before,
+            left,
+            right,
+            colours,
+            tail: after,
+        },
+        Key::Entries(entries) => Key::Entries(entries),
+    }
+}
+
+impl Key {
+    /// Every colour the key shows, in key order: the lead colours, the
+    /// gradient samples, the tail colours, or each entry colour.
+    fn colours(&self) -> Vec<[f32; 3]> {
+        match self {
+            Self::Ramp {
+                lead,
+                colours,
+                tail,
+                ..
+            } => lead
+                .iter()
+                .filter_map(|(_, colour)| *colour)
+                .chain(colours.iter().copied())
+                .chain(tail.iter().filter_map(|(_, colour)| *colour))
+                .collect(),
+            Self::Entries(entries) => entries.iter().filter_map(|(_, colour)| *colour).collect(),
+        }
+    }
+}
+
+/// The colour key of `line`, or `None` for a status line.
+fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
+    match line {
+        RailLine::Scale(legend) => Some(scale_key(*legend)),
+        RailLine::Categories(kind) => Some(categories_key(state, *kind)),
+        RailLine::Status(_) => None,
+    }
+}
+
+/// Every colour the hover detail of `line` shows, in key order. A status
+/// line shows none.
+pub fn key_colours(state: &AppState, line: &RailLine) -> Vec<[f32; 3]> {
+    line_key(state, line).map_or_else(Vec::new, |key| key.colours())
+}
+
+/// Every colour the chip swatch of `line` paints, in order.
+pub fn swatch_colours(state: &AppState, line: &RailLine) -> Vec<egui::Color32> {
+    match chip_swatch(state, line) {
+        Swatch::None => Vec::new(),
+        Swatch::Cells(cells) => cells.into_iter().map(|(colour, _)| colour).collect(),
     }
 }
 
 fn draw_key(ui: &mut egui::Ui, key: &Key) {
     match key {
         Key::Ramp {
+            lead,
             left,
             right,
             colours,
-        } => gradient_strip(ui, left, right, colours),
+            tail,
+        } => {
+            if !lead.is_empty() {
+                entry_row(ui, lead);
+            }
+            gradient_strip(ui, left, right, colours);
+            if !tail.is_empty() {
+                entry_row(ui, tail);
+            }
+        }
         Key::Entries(entries) => entry_row(ui, entries),
     }
 }
@@ -895,23 +986,33 @@ fn scale_key(legend: Legend) -> Key {
             use rs_cam_core::maps::rest_heatmap_mesh::rest_ramp_color;
             let threshold = threshold as f32;
             let top = top.max(threshold + 1e-6);
-            ramp(
+            let strip = ramp(
                 format!("{threshold:.2} mm"),
                 format!("p95 {top:.2} mm"),
                 |t| rest_ramp_color(threshold + t * (top - threshold), threshold, top),
+            );
+            with_ends(
+                strip,
+                vec![(
+                    format!("\u{2264} {threshold:.2} mm"),
+                    Some(rest_ramp_color(threshold, threshold, top)),
+                )],
+                Vec::new(),
             )
         }
         Legend::Reach(reach) => {
             use rs_cam_core::maps::reach_map::reach_color;
-            // The strip draws the DEPTH band only — the bar to the deepest
-            // gap, on the ramp's own log scale — because that is the part
-            // with structure in it. Green and grey are single colours and
-            // are named on the caveat line under it rather than given ramp
-            // width.
+            // The strip draws the DEPTH band — the bar to the deepest gap,
+            // on the ramp's own log scale. Green (reached), grey
+            // (unresolved) and the neutral colour (not measured) are single
+            // colours, so they are entries before and after the strip.
+            // Every colour is a call to `reach_color`, the overlay's own
+            // function.
             let bar = reach.bar_mm();
             let top = reach.max_gap_mm.max(bar);
             let ratio = (top / bar).max(1.0);
-            ramp(
+            let tolerance = reach.tolerance_mm;
+            let miss = ramp(
                 format!("miss {bar:.3} mm"),
                 format!("{top:.2} mm"),
                 move |t| {
@@ -920,6 +1021,26 @@ fn scale_key(legend: Legend) -> Key {
                     let gap = bar * ratio.powf(f64::from(t)) * 1.001;
                     reach_color(gap as f32, f32::NAN, reach)
                 },
+            );
+            // A gap over the bar and at or under its cell's floor paints the
+            // unresolved grey.
+            let unresolved_gap = (tolerance * 2.0).max(1e-3) as f32;
+            with_ends(
+                miss,
+                vec![(
+                    format!("reached \u{2264} {tolerance:.3} mm"),
+                    Some(reach_color((tolerance * 0.5) as f32, f32::NAN, reach)),
+                )],
+                vec![
+                    (
+                        "unresolved".to_owned(),
+                        Some(reach_color(unresolved_gap, unresolved_gap, reach)),
+                    ),
+                    (
+                        "not measured".to_owned(),
+                        Some(reach_color(f32::NAN, f32::NAN, reach)),
+                    ),
+                ],
             )
         }
         Legend::Deviation => {
