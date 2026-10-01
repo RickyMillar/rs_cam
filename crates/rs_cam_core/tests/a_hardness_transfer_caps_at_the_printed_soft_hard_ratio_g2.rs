@@ -6,9 +6,12 @@
 //! `(row / query)^0.5`. For a hardwood row (1450) on a generic softwood
 //! query (600) the law gives x1.55. No chart prints a softwood/hardwood
 //! ratio that high: the largest printed ratio is 1.50 on a ball nose, 1.43
-//! on a flat end mill, 1.42 on a V-bit, 1.30 on a facing bit and 1.00 on a
+//! on a flat end mill, 1.00 on a V-bit, 1.30 on a facing bit and 1.00 on a
 //! tapered ball (EXTRAPOLATION_G2 §1.2, table T2, the upper end of each
-//! "softwood / hardwood" range). A3 step 4 (orchestrator decision 3) gives
+//! "softwood / hardwood" range). The V-bit cap was 1.42 until 2026-10-01:
+//! that ratio came from the insert V-groove v16 rows, which finding G5 D1
+//! showed are not on their chart. The rows are retired, and every printed
+//! V-bit pair that remains (the stored v16 chart text included) is 1.00. A3 step 4 (orchestrator decision 3) gives
 //! the bull nose its own printed value, 1.33, from the Amana corner-radius
 //! chart (EXTRAPOLATION_G3 §1.6: mid ratios 1.33 at 1/4 in and 1.25 at 1/2
 //! in); before A3 it borrowed the flat-end 1.43.
@@ -277,7 +280,8 @@ fn the_caps_are_the_largest_printed_soft_hard_ratios_g2() {
         &[
             (ToolFamily::BallNose, 1.50),
             (ToolFamily::FlatEnd, 1.43),
-            (ToolFamily::ChamferVbit, 1.42),
+            // 1.42 until 2026-10-01; the G5 D1 rows that printed it are retired.
+            (ToolFamily::ChamferVbit, 1.00),
             (ToolFamily::TaperedBallNose, 1.00),
             (ToolFamily::FacingBit, 1.30),
             (ToolFamily::BullNose, 1.33),

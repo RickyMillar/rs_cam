@@ -1582,15 +1582,18 @@ mod tests {
     }
 
     #[test]
-    fn vbit_90deg_matches_insert_vgroove_not_120() {
-        // A 90° V-bit must select an Amana insert-vgroove (90°) row and
-        // never the Whiteside 120° row, whose cone angle is 30° away —
-        // past the 20° tolerance.
+    fn vbit_90deg_matches_a_90_row_not_120() {
+        // A 90° V-bit must select a 90° row and never the Whiteside 120°
+        // row, whose cone angle is 30° away — past the 20° tolerance.
+        // Since 2026-10-01 the 90° hardwood row is the printed Onsrud 37-50
+        // 1/4 in row of the Hard Wood sheet (the nearest printed key to
+        // 6.0 mm). Before, it was `amana-vbit-hardwood-trace-6000-2f`,
+        // retired because it is not on its cited chart (finding G5 D1).
         let lut = embedded_lut();
         let query = vbit_query(6.0, MaterialFamily::Hardwood, 1450.0);
         let result =
             find_best_vbit_row(&lut, &query, Some(90.0)).expect("90° V-bit must match a 90° row");
-        assert_eq!(result.observation_id, "amana-vbit-hardwood-trace-6000-2f");
+        assert_eq!(result.observation_id, "onsrud-hardwood-37-50-1_4-trace");
     }
 
     #[test]

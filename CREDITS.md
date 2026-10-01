@@ -275,6 +275,27 @@ Added 2026-09-24 (extrapolation A3 step 4, G3):
   come from the Toolstoday product pages, which are not stored; the rows mark
   them as derived.
 
+Onsrud 37-series V-bit rows (`onsrud_vbit_37.json`, trace / finish, exact,
+grade a), transcribed from the stored sheet text. The flute counts and the
+included angles come from the LMT Onsrud *Production Cutting Tools Catalog
+PCT-19* —
+<https://onsrud.com/images/LMT%20Onsrud%20Product%20Cutting%20Tools%20Catalog%20PCT-19.pdf>
+(stored excerpt `sources/onsrud_pct19_catalog.txt`, pages 20-22 and 119):
+
+- Added 2026-09-24 (extrapolation P2, G2): the MDF, Hard Plywood, Soft Plywood
+  and Laminated Chipboard rows (40 rows).
+- Added 2026-10-01 (operator: "yes to loading the rows"): the 37-50 and 37-60
+  rows of the *Soft Wood* and *Hard Wood* sheets (90°, 2 flutes; 14 rows). They
+  were parked at P2. `planning/extrapolation_2026-09-24/scripts/check_onsrud_vbit_37.py`
+  asserts each value of the 54 rows against the stored text.
+
+Retired 2026-10-01: the six `amana-vbit-*` rows that cited the Amana *Insert
+V-Groove Speed Chart v16*. No number in them is on that chart (finding G5 D1,
+`planning/extrapolation_2026-09-24/fetch/G5/lut_discrepancies.md`). The chart
+prints one chip load per cell for 1- and 2-flute insert tools, with no
+diameter. With the rows gone, the V-bit soft/hard cap is 1.00, the ratio that
+every remaining printed V-bit pair shows (it was 1.42, from those rows).
+
 Rows that cite a chart but are not printed on it are kept with
 `row_kind: derived`, `evidence_grade: c` and a `notes` field that names the
 nearest printed line and the reduction or origin: the reduced Amana ball rows
