@@ -1588,6 +1588,12 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
         "ok": summary.failed == 0 && summary.loop_error.is_none(),
         "summary": headline,
         "generated": summary.generated,
+        // Wave 3: an operation that already held a current result is not
+        // generated again. Without this count "generated" read 5 or 7 for
+        // one project, by the time the GUI's auto-regeneration had taken.
+        "already_current": summary.already_current,
+        // Enabled operations in the plan's scope: the whole project here.
+        "enabled": summary.enabled,
         "failed": summary.failed,
         "errors": errors,
         // W1 tail: the array rows are `BlockedRow`, the one shape every

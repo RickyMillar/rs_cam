@@ -157,6 +157,9 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - **GUI-path toolpath add and the toast stack** (F3.1 / F3.5, 2026-09-10) — `add_toolpath_via_gui(operation_type, setup_index?)` adds a toolpath by dispatching the Add menu's own `AppEvent::AddToolpath` through `handle_add_toolpath`, so the GUI's binding (`tools().first()`, `models().first()`) and its add-time Suggest refusal run rather than being reimplemented; where that path refuses, nothing is created. It is the route that makes "what would the operator see" answerable from a test, and it is what the refusal contract will be driven from. Because the GUI add path reports a refusal only by pushing a toast, the reply reads it back off the notification stack: `created` with the new index, id and bound tool/model, or `created: null` plus `refusal` and the toasts the call pushed. `get_notifications` publishes that stack — newest first, with severity, age since the push, TTL by severity and whether it is still visible — and is **read-only**, so a reader cannot consume what the operator is still looking at. The stack is not persisted and is empty after a restart. Sentries: `add_toolpath_via_gui_g_guiadd.rs`, `get_notifications_g_toastread.rs`
 - **toolpath rebinding** (F3.7 / F3.8, 2026-09-10) — `set_toolpath_tool(index, tool_id)` and `set_toolpath_model(index, model_id)` change a toolpath's cutter and its geometry input over MCP. Before them the two fields were reachable only from the GUI inspector's Tool: / Input: combos, so an operation blocked on its tool shape or holding a missing model reference was a dead end for an agent: `set_toolpath_param` writes the OPERATION's params and refuses both keys ("unknown parameter 'tool_id' for Pocket operation…"), and that refusal is kept — the two namespaces stay disjoint. Both take a project-assigned **id**, not a positional index, and echo the resolved tool / model in the reply. A rebind invalidates the toolpath's own result and every downstream operation that machines the stock it leaves (`ProjectSession::set_toolpath_tool` / `set_toolpath_model` → `invalidate_result_chain`), which is strictly more than the GUI combos do today — they write the same fields and invalidate nothing. `set_toolpath_tool` deliberately allows a tool the operation's shape constraint rejects, so a blocked operation stays repairable; the generator is still the one that refuses. Sentries: `toolpath_rebind_g_mcprebind.rs` (core behaviour), `mcp_rebind_surface_g_mcprebind.rs` (registration and schema)
 
+- **`generate_all` counts what it did not generate** (memory programme wave 3, 2026-10-01). An operation that already holds a current result is not generated again. The reply carries `already_current` and `enabled` beside `generated`, and the GUI toast reads "Generated 5 toolpaths, 2 already current (7 enabled; …)". Before, one project read "Generated 5" or "Generated 7", by whether the GUI's auto-regeneration after load had already run. The call does not change any toolpath's `debug_options` (U4, 2026-10-01; before, it set `debug_options.enabled = true` on every enabled toolpath, and a save wrote that change); `get_generation_debug_trace` answers after it anyway
+- **cut-trace figures are `null` without a trace** (U2, 2026-10-01) — MCP `get_diagnostics` and the CLI `project` report give `total_runtime_s`, `air_cut_pct_of_total_runtime`, `air_cut_pct_of_cutting_time`, `average_engagement` and every `triage.counts` tally as `null` (NOT MEASURED) when the simulation kept no cut trace, and `cut_metrics_not_measured` names the reason. A GUI run with "Capture cutting metrics" off keeps no trace; MCP `run_simulation` always captures one. After such a run, Optimize (project and per toolpath) and the tool-load rows name the missing trace and the capture control, not "run a simulation first"
+
 ### Provenance gates
 
 - source-freshness reporter — flags warn/stale vendor citations in `crates/rs_cam_core/tests/literature_matrix/sources.toml`, plus offline `citation_url` shape validation. The clock runs: it was frozen until 2026-08-04 because its default "today" equalled the seed date of 30 of 32 rows, so no row could ever age
@@ -192,9 +195,39 @@ subcommands were replaced by the registry-driven generic `run`):
 - `job` — TOML job file (multi-tool/multi-op batch; executes through the session pipeline)
 - `run` — ANY of the 23 operations: `run <op> --input model --tool type:diameter --set k=v --output out.nc`; `run --list-ops` / `run <op> --list-params` print the registry
 - `sweep` — parameter sweep over a job file with fingerprint diffs
-- `project` — GUI project file (format_version=3) full-diagnostics executor
+- `project` — GUI project file (format_version=3) full-diagnostics executor. `--output-dir <DIR>` is REQUIRED (memory programme U5, 2026-10-01; breaking): the command wrote into `./diagnostics` by default, and its `simulation.json` holds the whole cut trace, gigabytes on a large project. Without a cut trace the cut-trace figures in its report (`total_runtime_s`, the two air-cut percentages, `average_engagement`, the triage counts) are `null` / NOT MEASURED, never 0, and `cut_metrics_not_measured` names the reason (U2)
 - `smoke` — F-037 smoke baseline suite
 - `nc-time` — G-code cycle-time prediction
 
 Every operation in the registry is reachable from the CLI; a new
 operation appears in `run` with zero CLI code.
+
+The global flag `--memory-limit <SIZE>` (a binary size such as `12GiB`, a
+byte count, or `unlimited`) sets the memory budget of the run. When the
+process uses more, the generation plan stops and names the two values and
+the remedies, before the system kills the process. The flag overrides
+`[memory] limit` in the settings file; with neither, the run has no limit.
+
+## Settings file
+
+`settings.toml` holds the memory budget that the GUI and the CLI share
+(memory programme B5, 2026-10-01). One loader in core
+(`rs_cam_core::budget::settings`) reads it for both surfaces:
+
+```toml
+[memory]
+limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count, or "unlimited"
+```
+
+- The path: `$RS_CAM_SETTINGS` (a file), else
+  `$XDG_CONFIG_HOME/rs_cam/settings.toml`, else
+  `~/.config/rs_cam/settings.toml`. On Windows with no `HOME`:
+  `%APPDATA%\rs_cam\settings.toml`, else
+  `%USERPROFILE%\.config\rs_cam\settings.toml`.
+- A missing file or a missing `limit` gives the default. The default limit
+  is a fraction of the system memory that is RULING PENDING, so today the
+  default is no limit.
+- A file that does not read or parse gives the default and a warning: a
+  toast in the GUI, a log line in the CLI.
+- The GUI reads the file at start. The CLI flag `--memory-limit` overrides
+  the file.

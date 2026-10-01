@@ -12,10 +12,13 @@
 //!   implements [`crate::interrupt::CancelCheck`].
 //! - [`estimate`] says what a simulation will hold before it runs.
 //! - [`grid`] is the one source of every dexel grid cap.
+//! - [`settings`] reads `~/.config/rs_cam/settings.toml`. The GUI and the CLI
+//!   share this one loader; a surface flag overrides the file.
 
 pub mod estimate;
 pub mod grid;
 pub mod guard;
+pub mod settings;
 
 use std::fmt;
 

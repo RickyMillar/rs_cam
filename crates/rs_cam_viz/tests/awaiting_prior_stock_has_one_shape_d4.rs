@@ -148,6 +148,8 @@ fn the_generate_all_reply_renders_the_one_row_shape() {
 
     let summary = GenerateAllSummary {
         generated: 1,
+        already_current: 0,
+        enabled: 2,
         failed: 0,
         errors: Vec::new(),
         blocked: vec![BlockedRow {

@@ -1,11 +1,9 @@
 # `compute/` — dispatch, catalogue, configuration, simulation
 
-The title names the scope. The entry is `compute::execute_operation_annotated`.
-
 ## Files
 
-- `execute.rs` + `execute/` — the dispatch for all operations, by family;
-  `catalog.rs` + `catalog/` — `OperationType`, `OperationConfig`, registry.
+- `execute.rs` + `execute/` — the dispatch, by family; the entry is
+  `execute_operation_annotated`. `catalog.rs` + `catalog/` — the registry.
 - `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`,
   `cutter.rs`, `transform.rs` — the configuration model.
 - `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs` —
@@ -28,6 +26,8 @@ The title names the scope. The entry is `compute::execute_operation_annotated`.
   (<= the cut feed). `DefaultHelix` is read by `for_op` only (D3).
 - G-SIMMEM: the loop holds the cut trace ONCE. The memo asks `admits` BEFORE
   it clones a snapshot; share the trace by `Arc`, never `clone()` it.
+- A checkpoint keeps its mesh inputs; `build_mesh` builds on demand (M2).
+  Checkpoint k's `mesh_stock` is prior k+1: one `Arc`, same group (M3).
 
 ## Sentries
 
