@@ -255,7 +255,9 @@ fn lut_nominal_engagement_sample_within_published_envelope_passes() {
 /// axis the vendor publishes, 0.18 mm/tooth is **3.3× the band
 /// maximum** — a hardwood pocket rough commanded at more than three
 /// times the published limit, which the pre-fix gate reported as
-/// `Within`.
+/// `Within`. That band was the 0.032-0.055 row; since 7271f3d4 the fixture
+/// matches the printed Spektra v24 point, 0.127 mm/tooth, and the same feed
+/// is 1.42x it. The test pins the 1.42x.
 ///
 /// This is the breakage-side twin of the B3 finding (which ran the other
 /// way: an operation at 99.9 % of its ceiling reported as 16 % of its
@@ -276,7 +278,7 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
     } = verdict
     else {
         panic!(
-            "0.18 mm/tooth of advance against a 0.032-0.055 band must now trip \
+            "0.18 mm/tooth of advance against the printed 0.127 point must trip \
              Exceeds(High); got {verdict:?}"
         )
     };
@@ -286,9 +288,26 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
         "  EXHIBIT: the pre-conversion 'safe' feed 0.18 mm/tooth is {over:.2}x the \
          band maximum {max:.4} mm/tooth. The pre-fix gate reported Within."
     );
+    // The 3.3x in the doc comment was measured against the 0.032-0.055
+    // band that this fixture matched until 7271f3d4 (2026-09-23, feeds
+    // matrix ruling R5). That commit added the printed Amana Spektra v24
+    // rows; a 2F 6 mm tool in hardwood pocket roughing now matches the
+    // printed one-value row, .0050 in = 0.127 mm/tooth, with no minimum.
+    // Against the printed value the same 0.18 mm/tooth is 0.18 / 0.127 =
+    // 1.42x. The pin is that exact ratio and that exact row maximum, so a
+    // later row change shows up as a named move.
     assert!(
-        over > 3.0,
-        "the exhibit is only worth keeping if the overshoot is large; got {over:.2}x"
+        triggering.bounds.min_mm_per_tooth.is_none(),
+        "the printed Spektra row is a point with no minimum; got {:?}",
+        triggering.bounds.min_mm_per_tooth
+    );
+    assert!(
+        (max - 0.127).abs() < 1e-9,
+        "the band maximum left the printed Spektra v24 value 0.127; got {max}"
+    );
+    assert!(
+        (over - 0.18 / 0.127).abs() < 1e-9,
+        "the exhibit ratio left 0.18 / 0.127; got {over:.6}x"
     );
 }
 

@@ -125,7 +125,16 @@ fn report(session: &ProjectSession, arm: &str) {
 /// Captured on the PRE-FIX binary, 2026-09-10, with the trace collapsed.
 /// The fix touches the annotation reconcile only, so this must not move.
 /// If it does, the change reached emitted motion and the claim is false.
-const STAGE_ON_MOVE_DIGEST: u64 = 0x4512_f8cc_b89d_9097;
+///
+/// RE-PINNED for ab2e5e9e (2026-09-18, "R1, R2: the silhouette boundary is
+/// the outer loop, plus one tool diameter on a new 3D op", which also
+/// carries the P5 `for_role` hunk: no entry style for the finishing roles).
+/// That commit moved this fixture's emitted motion on purpose:
+/// `0x4512_f8cc_b89d_9097` -> `0xb590_6eb1_87c2_07c6`. Bisected on a clean
+/// worktree; the value at ab2e5e9e equals the value at 5cf7a1ea. The
+/// G-LINKTRACE claim is unchanged: the reconcile fix moves no motion, so
+/// the digest moves only with a named generator change.
+const STAGE_ON_MOVE_DIGEST: u64 = 0xb590_6eb1_87c2_07c6;
 
 #[test]
 fn the_link_stage_keeps_the_scallop_trace_and_moves_no_motion() {

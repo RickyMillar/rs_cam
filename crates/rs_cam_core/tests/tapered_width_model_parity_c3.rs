@@ -291,11 +291,28 @@ fn the_c3_feed_delta_is_pinned() {
     // that was C3's actual subject, and it still feeds the chipload band's DOC
     // derate, the cutter-trait parity sentries and the reported geometry. What
     // this test can no longer pin is a feed *delta*, because there is none.
+    //
+    // **RE-PINNED for 7af7d76b (2026-09-24, ruling R4): the rubbing floor
+    // warns and never lifts a feed.** Every 1200.00 above was the floor
+    // LIFTING a lower feed. With the lift gone, each row ships the feed the
+    // calculator computes below the floor, and the floor only warns. The
+    // rows now differ by depth because the formula chipload and the RPM
+    // read the engaged cone diameter at the DOC (`effective_d` before the
+    // Step 5 shadow in feeds/mod.rs), as they did before the floor masked
+    // them. The chip-thinning multiplier stays deleted: the ball twin at
+    // the same contact circle reads one feed at every depth.
+    //
+    // Two commits set the values below, both bisected on a clean worktree.
+    // 7af7d76b took the first row from 1200.00 to 555.34 (the ball twin to
+    // 921.60). 87027060 (2026-09-24, ruling R4 WP3: the machine
+    // aggressiveness dial replaces the safety factor; the Shapeoko presets'
+    // 0.80 was a feed factor and is gone) multiplied every row by 1 / 0.80:
+    // 555.34 -> 694.18, and the ball twin 921.60 -> 1152.00.
     let rows: &[(f64, f64, f64, f64, f64)] = &[
-        (0.05, 1.0, 1200.00, 0.435890, 1200.00),
-        (0.10, 1.0, 1200.00, 0.600000, 1200.00),
-        (0.25, 1.0, 1406.97, 0.866025, 1200.00),
-        (0.50, 1.0, 1539.96, 1.004229, 1200.00),
+        (0.05, 1.0, 1200.00, 0.435890, 694.18),
+        (0.10, 1.0, 1200.00, 0.600000, 843.58),
+        (0.25, 1.0, 1406.97, 0.866025, 1055.23),
+        (0.50, 1.0, 1539.96, 1.004229, 1154.97),
     ];
 
     for &(doc, eff_before, feed_before, eff_after, feed_after) in rows {
@@ -308,11 +325,12 @@ fn the_c3_feed_delta_is_pinned() {
         );
         assert!(
             (r.feed_rate_mm_min - feed_after).abs() < 0.01,
-            "doc={doc}: feed {} left its pinned value {feed_after}. Since \
-             G-CHIPTHIN-HALFFIX (2026-08-19) that value is also the pre-C3 one \
-             ({feed_before}) — effective diameter no longer reaches the feed, so if \
-             these have diverged again, something is multiplying the feed by a \
-             geometry term. See the Step 5 note in feeds/mod.rs.",
+            "doc={doc}: feed {} left its pinned value {feed_after} (pre-C3 \
+             {feed_before}). Since 7af7d76b the rubbing floor no longer lifts this \
+             feed, so the pin is the computed feed below the floor. If it moved, \
+             a feeds change reached this row; if the ball twin moved with depth \
+             too, something multiplies the feed by a geometry term again. See \
+             the Step 5 note in feeds/mod.rs.",
             r.feed_rate_mm_min
         );
     }

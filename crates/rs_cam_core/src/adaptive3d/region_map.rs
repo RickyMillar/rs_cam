@@ -180,8 +180,10 @@ impl AreaRegionMap {
         }
     }
 
-    /// The label of the cell at `(row, col)`; 0 outside the grid.
-    pub fn label_at(&self, row: usize, col: usize) -> u16 {
+    /// The region order (label) of the cell at `(row, col)`; 0 outside the
+    /// grid. It is not named `label_at`, because that name is the gated
+    /// `TierMap` test door (`the_test_doors_are_gated_fld0405`).
+    pub fn region_order_at(&self, row: usize, col: usize) -> u16 {
         if row >= self.rows || col >= self.cols {
             return 0;
         }
@@ -195,9 +197,9 @@ impl AreaRegionMap {
         for row in 0..self.rows {
             let mut col = 0;
             while col < self.cols {
-                let order = self.label_at(row, col);
+                let order = self.region_order_at(row, col);
                 let start = col;
-                while col < self.cols && self.label_at(row, col) == order {
+                while col < self.cols && self.region_order_at(row, col) == order {
                     col += 1;
                 }
                 if order != 0 {

@@ -547,10 +547,25 @@ fn production_unified_finish_output_is_byte_identical() {
         //
         //   taper 1481 0x5748d2a216607e5c -> 951 0x4b4666eba3afa7ab
         //   ball  1025 0xd32f5976312a7ec4 -> 659 0xb506292bc14e7e38
+        //
+        // Re-pinned 2026-10-01 for G-TIERBURIAL. Two consecutive commits
+        // moved both arms on purpose, and each value was read on a clean
+        // worktree at that commit:
+        //
+        //   5b34e710 (a continuous scallop's ring connector rides the
+        //   surface or retracts; UnifiedFinish embeds scallop for MidSteep)
+        //     taper 951 0x4b4666eba3afa7ab -> 952 0xfb81b05411cf5b98
+        //     ball  659 0xb506292bc14e7e38 -> 660 0x3c0937d6984eb555
+        //   fd06f407 (drop-cutter edge contact takes the uphill point; fed
+        //   chords ride the surface; arc fit holds 3D tolerance)
+        //     taper 952 0xfb81b05411cf5b98 -> 957 0x852bad70cb78873c
+        //     ball  660 0x3c0937d6984eb555 -> 660 0xea1a57708b12fb52
+        //
+        // No later commit moves either value (5cf7a1ea reads the same).
         (
             "taper",
             tapered_ball_tool(),
-            (951usize, 0x4b46_66eb_a3af_a7abu64),
+            (957usize, 0x852b_ad70_cb78_873cu64),
         ),
         // Re-pinned again 2026-09-01, same day, on the MERGE of the C2
         // default flip and the always-on shallow slope derate. Each side
@@ -562,7 +577,7 @@ fn production_unified_finish_output_is_byte_identical() {
         //      -> 983 0x2350977058f01265 (flip only)
         //      -> 1013 0x5e2f61dfd9d79f74 (derate only)
         //      -> 1025 0xd32f5976312a7ec4 (flip + derate, this pin)
-        ("ball", ball_tool(), (659usize, 0xb506_292b_c14e_7e38u64)),
+        ("ball", ball_tool(), (660usize, 0xea1a_5770_8b12_fb52u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");

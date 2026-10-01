@@ -183,8 +183,11 @@ fn the_derivation_reproduces_the_two_undisputed_faces() {
 /// read as an oversight, and this is the exact table that has produced
 /// two recorded defects (G-LATERALSIGN, G-FRONTNAME).
 ///
-/// The rule is now `session::compute::simulation::group_stock_cut_direction`,
-/// with its six arms written out and its reason in the doc comment. The
+/// The rule is now `compute::simulate::group_stock_cut_direction` (it moved
+/// out of `session/compute/simulation.rs` before the 6bdc0899 graft; the
+/// session calls it from `session/compute/simulation.rs` and
+/// `session/compute.rs`), with its six arms written out and its reason in
+/// the doc comment. The
 /// in-crate tests `the_group_stock_rule_answers_for_every_face` and
 /// `the_group_rule_and_the_global_accessor_diverge_on_the_laterals` pin
 /// what it returns; this scan pins that nothing writes it again.
@@ -193,7 +196,29 @@ fn the_derivation_reproduces_the_two_undisputed_faces() {
 /// see a copy that agrees with the original today and drifts tomorrow.
 #[test]
 fn no_session_file_open_codes_the_group_stock_rule() {
-    let session = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/session");
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Non-vacuity: the needle this scan hunts must be PRESENT in the one
+    // place that is allowed to write it, the named rule's home. Otherwise an
+    // empty read would pass as a clean tree.
+    let home = root.join("src/compute/simulate.rs");
+    let home_text: String = std::fs::read_to_string(&home)
+        .expect("read the rule's home")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        home_text.contains("pub fn group_stock_cut_direction"),
+        "the named rule must live in {}",
+        home.display()
+    );
+    assert!(
+        home_text.contains("StockCutDirection::FromBottom"),
+        "the rule must still write the FromBottom arm in {}, or this scan \
+         hunts a needle that exists nowhere",
+        home.display()
+    );
+    let session = root.join("src/session");
     assert!(session.is_dir(), "{} no longer exists", session.display());
 
     let mut scanned = 0usize;
@@ -230,24 +255,10 @@ fn no_session_file_open_codes_the_group_stock_rule() {
                 );
                 continue;
             }
-            // The named rule is allowed to write the arm. Nothing else is.
-            if path.ends_with("compute/simulation.rs") {
-                // Non-vacuity: the needle this scan hunts must be PRESENT
-                // here, in the one place that is allowed to write it.
-                // Otherwise an empty read would pass as a clean tree.
-                assert!(
-                    text.contains("pub(crate) fn group_stock_cut_direction"),
-                    "the named rule must live in {}",
-                    path.display()
-                );
-                assert!(
-                    text.contains("StockCutDirection::FromBottom"),
-                    "the rule must still write the FromBottom arm in {}, or \
-                     this scan hunts a needle that exists nowhere",
-                    path.display()
-                );
+            // The session reaches the group stock through the named rule:
+            // at least one session file must CALL it.
+            if text.contains("group_stock_cut_direction(") {
                 found_rule = true;
-                continue;
             }
             // The name, not one spelling of the arm: a second copy
             // written with a fully qualified path is the same defect.
@@ -259,8 +270,8 @@ fn no_session_file_open_codes_the_group_stock_rule() {
 
     assert!(
         found_rule,
-        "the scan never read session/compute/simulation.rs, so it proved \
-         nothing about where the rule lives"
+        "no session file calls `group_stock_cut_direction`, so the scan \
+         proved nothing about how the session reaches the rule"
     );
     assert!(
         scanned >= 8,

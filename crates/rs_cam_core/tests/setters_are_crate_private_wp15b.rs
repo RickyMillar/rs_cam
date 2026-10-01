@@ -17,8 +17,9 @@
 //! # The three arms
 //!
 //! 1. Every `fn … (&mut self` declared inside an `impl ProjectSession`
-//!    block under `crates/rs_cam_core/src/session/` reads
-//!    `pub(crate) fn`. Three doors and five compute doors are exempt.
+//!    block under `crates/rs_cam_core/src/session/` (sub-folders
+//!    included) reads
+//!    `pub(crate) fn`. Three doors and six compute doors are exempt.
 //! 2. No `.rs` file in any crate outside `crates/rs_cam_core/src` names
 //!    `.<setter>(`.
 //! 3. The walk is not vacuous: it visits enough files, it finds enough
@@ -112,16 +113,22 @@ use std::path::{Path, PathBuf};
 /// names.
 const DOORS: &[&str] = &["apply", "query", "start"];
 
-/// The five compute entry points.
+/// The six compute entry points.
 ///
 /// Each one runs a generation, a simulation or a plan rather than
 /// writing a field. §25 ruling 4 assigns them to the `Job` programme and
 /// keeps them public. WP15a's `setters_have_rows_wp15a.rs` exempts the
-/// same five.
+/// same six.
 const COMPUTE_DOORS: &[&str] = &[
     "generate_toolpath",
     "generate_all",
     "run_simulation",
+    // CMP-23: the S5-memoized twin of `run_simulation`. It runs a
+    // simulation with a held prefix snapshot and writes nothing else.
+    // WP15a exempts it too. The flat session walk never read
+    // `session/compute/simulation.rs`, so this list missed it until the
+    // walk descended.
+    "run_simulation_memoized",
     "modulate_simulation_trace",
     "plan_multitool_finishing",
 ];
@@ -139,6 +146,10 @@ const SCANNER_FILES: &[&str] = &[
     "hatches_are_crate_private_wp7.rs",
     "production_writes_go_through_apply_wp15a.rs",
     "setters_are_crate_private_wp15b.rs",
+    // 4eb46da8: `the_rest_confirm_says_may_g_vpstate` reads the body of
+    // `auto_enable_rest_analysis_for_source` and holds
+    // `session.drop_result(idx)` in a string literal as its needle.
+    "the_dock_states_read_live_state_g_vpstate.rs",
 ];
 
 /// The lowest number of files the walk must visit.
@@ -184,17 +195,18 @@ fn is_scanner(path: &Path) -> bool {
 
 // ── arm 1: the declarations ─────────────────────────────────────────────
 
-/// Every `.rs` file directly under `crates/rs_cam_core/src/session/`.
+/// Every `.rs` file under `crates/rs_cam_core/src/session/`, sub-folders
+/// included.
+///
+/// The setters moved into `session/mutation/` and `session/compute/`
+/// before the 6bdc0899 graft. A flat walk of `session/` then read 12
+/// methods and arm 3 went red. The walk now descends, as
+/// `setters_have_rows_wp15a.rs` does.
 fn session_sources() -> Vec<PathBuf> {
     let dir = core_root().join("src/session");
     assert!(dir.is_dir(), "{} no longer exists", dir.display());
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("read_dir session").flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
+    collect_rs(&dir, &mut out);
     out.sort();
     assert!(
         out.len() >= MIN_SESSION_FILES,

@@ -102,7 +102,7 @@ fn near_label(map: &AreaRegionMap, row: usize, col: usize, order: u16) -> bool {
     (-1i64..=1).any(|dr| {
         (-1i64..=1).any(|dc| {
             let (r, c) = (row as i64 + dr, col as i64 + dc);
-            r >= 0 && c >= 0 && map.label_at(r as usize, c as usize) == order
+            r >= 0 && c >= 0 && map.region_order_at(r as usize, c as usize) == order
         })
     })
 }
@@ -177,7 +177,7 @@ fn by_area_jobs_cut_only_their_own_cells() {
             if !near_label(map, row, col, job) {
                 stray.push((i, job, m.target.x, m.target.y));
             }
-            if job == 1 && map.label_at(row, col) == 2 {
+            if job == 1 && map.region_order_at(row, col) == 2 {
                 region1_on_region2 += 1;
             }
             if job == 2 {

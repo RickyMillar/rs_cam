@@ -262,8 +262,21 @@ fn vendor_sidebyside_chipload_spotcheck() {
                     commanded_fpt / raw_max
                 );
             }
+            (Some(row), None) if result.chipload_point_mm.is_some() => {
+                // fe1fbbd3 (ruling A2): a row that prints one value is
+                // held as a point, `chipload_point_mm`, and never as a
+                // band, so `chipload_bounds` is `None` for it.
+                vendor_backed += 1;
+                println!(
+                    "  row = {}   printed point (A2), derated = {:.6} mm/tooth",
+                    row.observation_id,
+                    result.chipload_point_mm.unwrap_or(f64::NAN)
+                );
+            }
             _ => {
-                println!("  NO vendor band (matched_lut_row or chipload_bounds absent)");
+                println!(
+                    "  NO vendor band or point (matched_lut_row absent, or neither published)"
+                );
             }
         }
         for w in &result.warnings {
@@ -284,7 +297,8 @@ fn vendor_sidebyside_chipload_spotcheck() {
 
     assert!(
         vendor_backed >= 5,
-        "expected at least 5 of 6 probes to resolve to a banded vendor LUT row, got {vendor_backed}"
+        "expected at least 5 of 6 probes to resolve to a vendor LUT row that publishes a \
+         band or a printed point (A2, fe1fbbd3), got {vendor_backed}"
     );
 }
 
@@ -347,9 +361,10 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
     let mut checked = 0usize;
     for probe in probes() {
         let result = run(&probe);
-        if result.chipload_bounds.is_none()
-            || !matches!(result.chipload_source, ChiploadSource::VendorLut { .. })
-        {
+        // fe1fbbd3 (ruling A2): a one-value row is a point, not a band, and
+        // its midpoint is the point itself. Both carry the identity.
+        let vendor_value = result.chipload_bounds.is_some() || result.chipload_point_mm.is_some();
+        if !vendor_value || !matches!(result.chipload_source, ChiploadSource::VendorLut { .. }) {
             continue;
         }
         // Only the unclamped, unlimited arms: the machine feed ceiling
@@ -373,8 +388,8 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
     }
     assert!(
         checked >= 4,
-        "expected at least 4 unclamped vendor-banded probes to exercise the identity, \
-         got {checked}"
+        "expected at least 4 unclamped vendor-backed probes (band or printed point) to \
+         exercise the identity, got {checked}"
     );
 }
 
