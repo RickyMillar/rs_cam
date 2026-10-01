@@ -4,6 +4,7 @@
 
 mod command;
 mod job;
+mod memory_budget;
 mod nc_replay;
 mod project;
 mod rough_score;
@@ -18,6 +19,20 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
 struct Cli {
+    /// The memory budget of this run: a binary size ("12GiB", "512MiB"),
+    /// a byte count, or "unlimited".
+    ///
+    /// When the process uses more than the budget, the generation plan
+    /// stops and says so, before the system kills the process. With no
+    /// flag the run has no limit (the default fraction is RULING PENDING).
+    #[arg(
+        long,
+        global = true,
+        value_name = "SIZE",
+        value_parser = memory_budget::parse_memory_limit
+    )]
+    memory_limit: Option<rs_cam_core::budget::MemoryLimit>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -354,6 +369,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    memory_budget::set(cli.memory_limit);
 
     // `rough-score` prints JSON records on stdout, so its log goes to
     // stderr. The other commands keep the stdout log they always had.
@@ -541,4 +557,58 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    // SAFETY: test module; a failed unwrap is a failed test.
+    #![allow(clippy::unwrap_used)]
+
+    use super::{Cli, Commands};
+    use clap::Parser;
+    use rs_cam_core::budget::{MemoryBudget, MemoryLimit};
+
+    const GIB: u64 = 1 << 30;
+
+    #[test]
+    fn memory_limit_parses_a_size_a_byte_count_and_unlimited() {
+        let cli = Cli::try_parse_from(["rs_cam", "--memory-limit", "12GiB", "version"]).unwrap();
+        assert_eq!(cli.memory_limit, Some(MemoryLimit::Bytes(12 * GIB)));
+        assert!(matches!(cli.command, Commands::Version));
+
+        // `global = true`: the flag also goes after the subcommand.
+        let cli = Cli::try_parse_from(["rs_cam", "version", "--memory-limit", "4096"]).unwrap();
+        assert_eq!(cli.memory_limit, Some(MemoryLimit::Bytes(4096)));
+
+        let cli =
+            Cli::try_parse_from(["rs_cam", "--memory-limit", "Unlimited", "version"]).unwrap();
+        assert_eq!(cli.memory_limit, Some(MemoryLimit::Unlimited));
+    }
+
+    #[test]
+    fn memory_limit_refuses_a_decimal_unit_and_junk() {
+        assert!(Cli::try_parse_from(["rs_cam", "--memory-limit", "12GB", "version"]).is_err());
+        assert!(Cli::try_parse_from(["rs_cam", "--memory-limit", "lots", "version"]).is_err());
+    }
+
+    #[test]
+    fn no_memory_limit_flag_means_no_limit() {
+        let cli = Cli::try_parse_from(["rs_cam", "version"]).unwrap();
+        assert_eq!(cli.memory_limit, None);
+        // RULING PENDING: while the default fraction is `None`, the default
+        // budget has no limit, so a run with no flag behaves as before.
+        assert!(rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION.is_none());
+        assert_eq!(
+            MemoryBudget::from_setting(cli.memory_limit.unwrap_or_default()),
+            MemoryBudget::UNLIMITED
+        );
+    }
+
+    #[test]
+    fn the_over_budget_sentence_names_both_values_and_the_remedy() {
+        let message = super::memory_budget::over_budget_message(2 * GIB, GIB);
+        assert!(message.contains("2.00 GiB"), "{message}");
+        assert!(message.contains("1.00 GiB"), "{message}");
+        assert!(message.contains("--memory-limit"), "{message}");
+    }
 }

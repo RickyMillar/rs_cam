@@ -2576,3 +2576,190 @@ fn the_lane_prologue_records_what_the_caller_states_shl06() {
     );
     assert_eq!(snapshot.active_toolpath_index, Some(2));
 }
+
+// ── Memory budget, wave 2 group G (plan B3, B5) ─────────────────────────
+//
+// `planning/memory_budget_2026-10-01/PLAN.md`. A heavy lane builds one
+// `BudgetGuard` per job over the flag the job polls. These tests give the
+// backend a FAKE probe, so no test depends on the real resident size, and
+// no test types a memory number of the machine: the limit and the reading
+// are arbitrary values on the two sides of each other.
+
+/// A probe that always reads the same value.
+struct FixedProbe(u64);
+
+impl rs_cam_core::budget::UsageProbe for FixedProbe {
+    fn used_bytes(&self) -> Option<u64> {
+        Some(self.0)
+    }
+}
+
+/// An arbitrary limit for the fake probe. It is not a memory claim.
+const FAKE_LIMIT: u64 = 1 << 20;
+
+fn budgeted_backend(reading: u64) -> ThreadedComputeBackend {
+    ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        Arc::new(FixedProbe(reading)),
+        Duration::ZERO,
+    ))
+}
+
+#[test]
+fn a_budget_stop_reports_over_budget_not_cancelled_on_the_simulation_lane() {
+    let mut backend = budgeted_backend(FAKE_LIMIT * 2);
+    backend.submit_simulation(long_simulation_request());
+
+    let message = wait_for(&mut backend, Duration::from_secs(10), |message| {
+        matches!(message, ComputeMessage::Simulation(Err(_)))
+    });
+    match message {
+        Some(ComputeMessage::Simulation(Err(ComputeError::OverBudget {
+            need_bytes,
+            limit_bytes,
+        }))) => {
+            assert_eq!(need_bytes, FAKE_LIMIT * 2, "the probe reading is the need");
+            assert_eq!(limit_bytes, FAKE_LIMIT);
+        }
+        Some(ComputeMessage::Simulation(Err(other))) => {
+            panic!("a budget stop must report OverBudget, not {other:?}")
+        }
+        _ => panic!("expected the simulation lane to stop on the budget"),
+    }
+}
+
+#[test]
+fn an_operator_cancel_under_the_budget_still_reports_cancelled() {
+    // The probe reads UNDER the limit, so only the operator stops the job.
+    let mut backend = budgeted_backend(FAKE_LIMIT / 2);
+    backend.submit_simulation(long_simulation_request());
+    thread::sleep(Duration::from_millis(20));
+    backend.cancel_lane(ComputeLane::Analysis);
+
+    let message = wait_for(&mut backend, Duration::from_secs(5), |message| {
+        matches!(message, ComputeMessage::Simulation(_))
+    });
+    assert!(
+        matches!(
+            message,
+            Some(ComputeMessage::Simulation(Err(ComputeError::Cancelled)))
+        ),
+        "an operator cancel keeps its own answer under a budget"
+    );
+}
+
+#[test]
+fn a_budget_stop_on_the_toolpath_lane_reports_over_budget() {
+    let mut backend = budgeted_backend(FAKE_LIMIT * 2);
+    backend.submit_toolpath(build_request(heavy_dropcutter_spec(41)));
+
+    let message = wait_for(&mut backend, Duration::from_secs(10), |message| {
+        matches!(message, ComputeMessage::Toolpath(_))
+    });
+    let Some(ComputeMessage::Toolpath(result)) = message else {
+        panic!("expected a toolpath lane result");
+    };
+    assert!(
+        matches!(result.result, Err(ComputeError::OverBudget { .. })),
+        "a budget stop must report OverBudget, not {:?}",
+        result.result.as_ref().err()
+    );
+}
+
+#[test]
+fn with_no_settings_the_budget_has_no_limit() {
+    // RULING PENDING: no default fraction, so the default has no limit.
+    assert!(rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION.is_none());
+    assert_eq!(
+        crate::io::app_settings::AppSettings::default().memory_budget(),
+        MemoryBudget::UNLIMITED
+    );
+    let missing = std::env::temp_dir().join(format!(
+        "rs_cam_settings_w2g_missing_{}.toml",
+        std::process::id()
+    ));
+    let loaded = crate::io::app_settings::load_from(&missing);
+    assert_eq!(loaded.warning, None);
+    assert_eq!(loaded.settings.memory_budget(), MemoryBudget::UNLIMITED);
+    // The startup path gives that budget to the backend; `new()` is the
+    // same value.
+    assert_eq!(
+        ThreadedComputeBackend::with_budget(loaded.settings.memory_budget()).memory_budget(),
+        MemoryBudget::UNLIMITED
+    );
+    assert_eq!(
+        ThreadedComputeBackend::new().memory_budget(),
+        MemoryBudget::UNLIMITED
+    );
+}
+
+/// A backend that hands back the messages a test queues.
+#[derive(Default)]
+struct ScriptedDrain {
+    queued: Vec<ComputeMessage>,
+}
+
+impl ComputeBackend for ScriptedDrain {
+    fn submit_toolpath(&mut self, _request: ComputeRequest) -> ToolpathSubmitOutcome {
+        ToolpathSubmitOutcome::Queued
+    }
+    fn submit_simulation(&mut self, _request: SimulationRequest) {}
+    fn submit_collision(&mut self, _request: CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+    fn cancel_lane(&mut self, _lane: ComputeLane) {}
+    fn drain_results(&mut self) -> Vec<ComputeMessage> {
+        std::mem::take(&mut self.queued)
+    }
+    fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {
+        LaneSnapshot::idle(lane)
+    }
+    fn generation_control(&self) -> GenerationControl {
+        GenerationControl::detached()
+    }
+}
+
+#[test]
+fn an_over_budget_simulation_posts_a_warning_not_cancelled() {
+    use crate::controller::{AppController, Severity};
+
+    let mut controller = AppController::with_backend(ScriptedDrain {
+        queued: vec![ComputeMessage::Simulation(Err(ComputeError::OverBudget {
+            need_bytes: FAKE_LIMIT * 2,
+            limit_bytes: FAKE_LIMIT,
+        }))],
+    });
+    controller.drain_compute_results();
+
+    let notifications = controller.notifications();
+    let warning = notifications
+        .iter()
+        .find(|note| note.severity == Severity::Warning && note.message.contains("memory budget"))
+        .unwrap_or_else(|| {
+            let messages: Vec<&str> = notifications
+                .iter()
+                .map(|note| note.message.as_str())
+                .collect();
+            panic!("no budget warning among {messages:?}")
+        });
+    assert!(
+        warning.message.starts_with("Simulation stopped"),
+        "{}",
+        warning.message
+    );
+    assert!(
+        warning.message.contains("2.00 MiB") && warning.message.contains("1.00 MiB"),
+        "the warning names the need and the limit: {}",
+        warning.message
+    );
+    assert!(
+        warning.message.contains("settings.toml") || warning.message.contains("[memory] limit"),
+        "the warning names the remedy: {}",
+        warning.message
+    );
+    assert!(
+        notifications
+            .iter()
+            .all(|note| !note.message.eq_ignore_ascii_case("cancelled")),
+        "an over-budget stop never reads as a plain cancel"
+    );
+}

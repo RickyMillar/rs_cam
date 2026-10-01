@@ -135,8 +135,10 @@ where
 
     // `memo` carries the analysis lane's S5 prefix cache; `None` is the
     // pre-S5 behaviour.
+    // `From<SimulationError>` keeps an `OverBudget` from core; the lane
+    // also reads its guard after the run (B3).
     let core_result = simulate::run_simulation_memoized(&req.core, cancel, set_phase, memo)
-        .map_err(|_cancelled| ComputeError::Cancelled)?;
+        .map_err(ComputeError::from)?;
 
     // Build viz-only playback data (global-frame toolpaths for viewport replay).
     let playback_data = build_playback_data(&req.core);

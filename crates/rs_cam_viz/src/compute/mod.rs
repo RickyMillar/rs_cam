@@ -193,15 +193,86 @@ impl std::fmt::Debug for GenerationControl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComputeError {
+    /// The operator cancelled the job, or a resubmit superseded it.
     Cancelled,
+    /// The memory budget stopped the job (plan B3,
+    /// `planning/memory_budget_2026-10-01/PLAN.md`).
+    ///
+    /// A lane gives this variant when its job's
+    /// `rs_cam_core::budget::BudgetGuard` records
+    /// `StopReason::OverBudget`. It is never shown as a plain "Cancelled":
+    /// the operator must see why the job stopped and what to change.
+    OverBudget {
+        /// The bytes the job needs: an estimate before the job, or the
+        /// resident size that the probe read during it.
+        need_bytes: u64,
+        /// The limit, in bytes.
+        limit_bytes: u64,
+    },
     Message(String),
+}
+
+impl ComputeError {
+    /// The sentence a surface shows for an over-budget stop of `job`, for
+    /// example `"Simulation"`.
+    ///
+    /// It names the two values and the two remedies: a larger budget in the
+    /// settings file, or a coarser simulation cell.
+    #[must_use]
+    pub fn over_budget_message(job: &str, need_bytes: u64, limit_bytes: u64) -> String {
+        let settings = crate::io::app_settings::settings_path().map_or_else(
+            || "~/.config/rs_cam/settings.toml".to_owned(),
+            |path| path.display().to_string(),
+        );
+        format!(
+            "{job} stopped: the job needs about {}, but the memory budget is {}. \
+             Set a larger [memory] limit in {settings} or use a coarser simulation cell.",
+            rs_cam_core::budget::format_bytes(need_bytes),
+            rs_cam_core::budget::format_bytes(limit_bytes),
+        )
+    }
 }
 
 impl std::fmt::Display for ComputeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Cancelled"),
+            Self::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => f.write_str(&Self::over_budget_message("Job", *need_bytes, *limit_bytes)),
             Self::Message(message) => f.write_str(message),
+        }
+    }
+}
+
+impl From<rs_cam_core::budget::StopReason> for ComputeError {
+    fn from(reason: rs_cam_core::budget::StopReason) -> Self {
+        match reason {
+            rs_cam_core::budget::StopReason::User => Self::Cancelled,
+            rs_cam_core::budget::StopReason::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => Self::OverBudget {
+                need_bytes,
+                limit_bytes,
+            },
+        }
+    }
+}
+
+impl From<rs_cam_core::compute::simulate::SimulationError> for ComputeError {
+    fn from(error: rs_cam_core::compute::simulate::SimulationError) -> Self {
+        use rs_cam_core::compute::simulate::SimulationError;
+        match error {
+            SimulationError::Cancelled => Self::Cancelled,
+            SimulationError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => Self::OverBudget {
+                need_bytes,
+                limit_bytes,
+            },
         }
     }
 }
@@ -244,6 +315,13 @@ impl From<OperationError> for ComputeError {
     fn from(e: OperationError) -> Self {
         match e {
             OperationError::Cancelled => ComputeError::Cancelled,
+            OperationError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => ComputeError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            },
             other => ComputeError::Message(other.to_string()),
         }
     }

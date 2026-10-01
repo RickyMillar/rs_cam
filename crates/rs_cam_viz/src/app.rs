@@ -196,7 +196,25 @@ impl RsCamApp {
             .ok()
             .and_then(|v| v.parse::<u32>().ok());
 
-        let mut controller = AppController::new();
+        // B5: the settings file gives the memory budget of the heavy lanes
+        // (`crate::io::app_settings`). A missing file gives the defaults,
+        // and while `rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION` is
+        // `None` (RULING PENDING) the default has no limit, so the lanes
+        // behave as before. A file that did not parse gives the defaults
+        // and a Warning toast.
+        let settings = crate::io::app_settings::load();
+        let memory_budget = settings.settings.memory_budget();
+        tracing::info!(
+            limit = ?memory_budget.limit_bytes,
+            path = ?settings.path,
+            "memory budget from the settings file"
+        );
+        let mut controller = AppController::with_backend(
+            crate::compute::ThreadedComputeBackend::with_budget(memory_budget),
+        );
+        if let Some(warning) = settings.warning {
+            controller.push_notification(warning, crate::controller::Severity::Warning);
+        }
 
         // Set up MCP channel and spawn server thread if requested.
         #[cfg(feature = "mcp")]

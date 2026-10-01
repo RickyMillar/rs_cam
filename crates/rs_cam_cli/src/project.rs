@@ -389,7 +389,16 @@ pub(crate) fn run_generation_plan(
     // list is finite and no step is retried, so the GUI, the MCP server and
     // this command cannot disagree about what "make the project current"
     // means.
-    let cancel = AtomicBool::new(false);
+    //
+    // B3: one budget guard for the whole walk. Its watch thread sets the
+    // flag when the process goes over `--memory-limit`, so every step stops
+    // at its next flag read. With no limit, no thread starts and the flag
+    // stays a plain cancel flag that nothing sets.
+    let guard = std::sync::Arc::new(rs_cam_core::budget::BudgetGuard::new(
+        crate::memory_budget::current(),
+    ));
+    let _watch = guard.watch();
+    let cancel: &AtomicBool = guard.flag();
     let sim_opts = SimulationOptions {
         resolution: resolution.mm,
         skip_ids: combined_skip.clone(),
@@ -420,20 +429,31 @@ pub(crate) fn run_generation_plan(
                     continue;
                 }
                 simulations += 1;
-                session.run_simulation_memoized(
-                    &sim_opts,
-                    &cancel,
-                    Some(rs_cam_core::compute::sim_prefix::SimMemo {
-                        cache: &mut sim_cache,
-                        store: true,
-                    }),
-                )?;
+                session
+                    .run_simulation_memoized(
+                        &sim_opts,
+                        cancel,
+                        Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                            cache: &mut sim_cache,
+                            store: true,
+                        }),
+                    )
+                    .map_err(|error| {
+                        crate::memory_budget::over_budget(&guard)
+                            .unwrap_or_else(|| anyhow::Error::from(error))
+                    })?;
             }
             generation_plan::Step::Generate { toolpath, index } => {
                 if combined_skip.contains(&toolpath) {
                     continue;
                 }
-                if let Err(error) = session.generate_toolpath(index, &cancel) {
+                if let Err(error) = session.generate_toolpath(index, cancel) {
+                    // A budget stop ends the walk. Warn-and-continue would
+                    // run the next steps, and the closing simulation, over
+                    // the stop.
+                    if let Some(stop) = crate::memory_budget::over_budget(&guard) {
+                        return Err(stop);
+                    }
                     match blocked_entry(session, toolpath, index, &error) {
                         Some(entry) => {
                             warn!(
@@ -454,14 +474,19 @@ pub(crate) fn run_generation_plan(
     // from one simulation over the whole project.
     if opts.closing_simulation {
         simulations += 1;
-        session.run_simulation_memoized(
-            &sim_opts,
-            &cancel,
-            Some(rs_cam_core::compute::sim_prefix::SimMemo {
-                cache: &mut sim_cache,
-                store: true,
-            }),
-        )?;
+        session
+            .run_simulation_memoized(
+                &sim_opts,
+                cancel,
+                Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                    cache: &mut sim_cache,
+                    store: true,
+                }),
+            )
+            .map_err(|error| {
+                crate::memory_budget::over_budget(&guard)
+                    .unwrap_or_else(|| anyhow::Error::from(error))
+            })?;
     }
     info!(
         steps = steps.len(),
