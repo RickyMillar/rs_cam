@@ -1071,16 +1071,10 @@ impl<B: ComputeBackend> AppController<B> {
                 // change. MCP `get_notifications` reads the same toast.
                 let message =
                     ComputeError::over_budget_message("Simulation", need_bytes, limit_bytes);
-                tracing::warn!("{message}");
-                self.push_notification(message.clone(), super::super::Severity::Warning);
-                // M1: the submit released the previous run's view.
+                // M1: the submit released the previous run's view. Posted
+                // before the report, which can close the plan.
                 self.note_simulation_did_not_land("stopped by the memory budget");
-                #[cfg(feature = "mcp")]
-                self.notify_mcp_simulation_error(&message);
-                // A failure, not a cancel: `generate_all` names the cause.
-                self.plan_simulation_landed(
-                    crate::controller::generate_all::PlanSimOutcome::Failed(message),
-                );
+                self.report_simulation_over_budget(message);
             }
             Err(ComputeError::Message(error)) => {
                 let _ = (
@@ -1105,6 +1099,103 @@ impl<B: ComputeBackend> AppController<B> {
                 );
             }
         }
+    }
+
+    /// Report a simulation that the memory budget stopped or refused.
+    ///
+    /// The ONE path for both: the lane `OverBudget` result above, and the
+    /// preflight refusal in `submit_simulation_for_groups` (memory programme
+    /// wave 3), which reaches here before the run is submitted. It posts a
+    /// Warning toast (MCP `get_notifications` reads it), answers a waiting
+    /// MCP `run_simulation`, and closes the plan's simulation step as a
+    /// failure that names the cause. It does not touch the submit stamps:
+    /// the lane arm takes its own, and a refusal set none.
+    pub(crate) fn report_simulation_over_budget(&mut self, message: String) {
+        tracing::warn!("{message}");
+        self.push_notification(message.clone(), super::super::Severity::Warning);
+        #[cfg(feature = "mcp")]
+        self.notify_mcp_simulation_error(&message);
+        // A failure, not a cancel: `generate_all` names the cause.
+        self.plan_simulation_landed(crate::controller::generate_all::PlanSimOutcome::Failed(
+            message,
+        ));
+    }
+
+    /// The memory preflight of a plan, at its start (memory programme wave
+    /// 3).
+    ///
+    /// A plan generates first and simulates later, so its moves are not
+    /// known yet. This check uses a LOWER bound of its largest simulation:
+    /// the grid at the stored cell, the enabled operations the largest
+    /// simulation step covers, the moves of the results held now, and no
+    /// trace. When even that does not fit beside the idle baseline, no
+    /// simulation of the plan can run, so the plan is refused before it
+    /// generates anything. Each simulation step is checked again at its own
+    /// submit with its real moves.
+    ///
+    /// `None` when the plan runs no simulation, when the budget has no
+    /// limit, when the plan names one target operation, or when the lower
+    /// bound fits.
+    fn plan_preflight_refusal(
+        &self,
+        plan: &crate::controller::generate_all::GenerationPlan,
+    ) -> Option<String> {
+        use crate::controller::generate_all::PlanStep;
+        use rs_cam_core::budget::estimate::{SimulationLoad, SimulationNeed};
+
+        if !self.compute.memory_budget().is_limited() {
+            return None;
+        }
+        // A plan for ONE named operation can hold an MCP waiter on that
+        // operation, which only a toolpath completion resolves. Its
+        // simulation steps meet the preflight at their own submit, which
+        // closes the plan through the drain path, so this start check does
+        // not refuse it.
+        if plan.target.is_some() {
+            return None;
+        }
+        let session = &self.state.session;
+        let setups = session.list_setups();
+        // The last setup position that the largest simulation step covers.
+        let mut last_setup: Option<usize> = None;
+        for step in &plan.steps {
+            let covers = match step {
+                PlanStep::SimulateAll => setups.len().checked_sub(1),
+                PlanStep::SimulatePrefix { setup, .. } => session
+                    .find_setup_by_id(setup.0)
+                    .map(|(position, _)| position),
+                PlanStep::Generate(_) => None,
+            };
+            last_setup = last_setup.max(covers);
+        }
+        let last_setup = last_setup?;
+        let configs = session.toolpath_configs();
+        let mut load = SimulationLoad::default();
+        for setup in setups.iter().take(last_setup.saturating_add(1)) {
+            let mut enabled_here = false;
+            for &index in &setup.toolpath_indices {
+                if !configs.get(index).is_some_and(|config| config.enabled) {
+                    continue;
+                }
+                enabled_here = true;
+                load.simulated_toolpaths = load.simulated_toolpaths.saturating_add(1);
+                let moves = session
+                    .get_result(index)
+                    .map_or(0, |result| result.toolpath().moves.len());
+                load.moves = load
+                    .moves
+                    .saturating_add(u64::try_from(moves).unwrap_or(u64::MAX));
+            }
+            if enabled_here {
+                load.setup_groups = load.setup_groups.saturating_add(1);
+            }
+        }
+        let bbox = super::simulation::build_world_stock_bbox(session);
+        let need = SimulationNeed::over_largest([&bbox], session.simulation_resolution_mm(), load);
+        self.compute
+            .preflight_simulation(&need)
+            .err()
+            .map(|refusal| ComputeError::preflight_refusal_message("Generate All", &refusal))
     }
 
     /// Adopt one collision-lane result.
@@ -1814,6 +1905,17 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn start_plan(&mut self, mut plan: crate::controller::generate_all::GenerationPlan) {
         if self.plan.is_some() {
             plan.loop_error = Some("a generation plan was already running".to_owned());
+            let summary = plan.completed_summary();
+            self.report_plan(plan.sink, &summary);
+            return;
+        }
+        // Memory programme wave 3: a plan whose simulations cannot fit is
+        // refused before it generates anything, on its own sink, so an MCP
+        // oneshot resolves. The Warning toast carries the whole sentence.
+        if let Some(message) = self.plan_preflight_refusal(&plan) {
+            tracing::warn!("{message}");
+            self.push_notification(message.clone(), super::super::Severity::Warning);
+            plan.loop_error = Some(message);
             let summary = plan.completed_summary();
             self.report_plan(plan.sink, &summary);
             return;

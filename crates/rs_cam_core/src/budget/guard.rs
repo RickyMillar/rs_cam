@@ -12,6 +12,30 @@
 //!   The guard sets that flag when the budget trips, so the algorithm stops
 //!   at its next flag read with no signature change. Something must poll the
 //!   probe for such a job: [`BudgetGuard::watch`] starts a thread that does.
+//!
+//! # The stop rule (memory programme wave 3)
+//!
+//! The probe reads the RESIDENT SIZE OF THE WHOLE PROCESS, not the memory of
+//! one job. So the guard does not ask "is the process over the limit?". It
+//! asks "did the process CROSS the limit while this job ran?":
+//!
+//! - A reading at or under the limit ARMS the guard.
+//! - A reading over the limit stops the job only when the guard is armed.
+//! - A job that starts while the process is already over the limit (memory
+//!   that earlier results hold, not this job) is NOT stopped at its first
+//!   reading. The guard logs one warning and waits for a reading at or under
+//!   the limit before it arms. The preflight and the ledger decide whether a
+//!   job may start; the guard stops a job that the process outgrows during
+//!   the run. The cgroup stays the outer net (plan, "Architecture" 7).
+//!
+//! # The reason ordering
+//!
+//! The FIRST write of `true` to the flag owns the reason. [`BudgetGuard::stop`]
+//! swaps the flag; when the flag was already `true`, something other than
+//! this guard set it (the operator's cancel button, or a resubmit that
+//! supersedes the job), and the guard records [`StopReason::User`], not the
+//! reason it was about to record. So an operator cancel always wins over a
+//! LATER probe reading, also when that reading is over the limit.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,6 +78,10 @@ impl UsageProbe for ProcessRss {
 pub struct BudgetGuard {
     flag: Arc<AtomicBool>,
     reason: OnceLock<StopReason>,
+    /// True after a reading at or under the limit. See "The stop rule".
+    armed: AtomicBool,
+    /// True after the one warning for a job that started over the limit.
+    warned: AtomicBool,
     budget: MemoryBudget,
     probe: Box<dyn UsageProbe>,
     interval: Duration,
@@ -98,6 +126,8 @@ impl BudgetGuard {
         Self {
             flag,
             reason: OnceLock::new(),
+            armed: AtomicBool::new(false),
+            warned: AtomicBool::new(false),
             budget,
             probe,
             interval,
@@ -126,10 +156,21 @@ impl BudgetGuard {
 
     /// Stop the job for `reason`. The first reason stays; a later one only
     /// sets the flag again.
+    ///
+    /// The flag swap orders the writers. When the flag was already `true`
+    /// and no reason is recorded, some other code set the flag first (the
+    /// operator or a resubmit), so the guard records [`StopReason::User`].
+    /// Between the swap and the record, [`Self::stop_reason`] can read
+    /// `User` for a budget stop; a lane reads the reason only after the job
+    /// and its watcher have stopped, so it never sees that interval.
     pub fn stop(&self, reason: StopReason) {
+        let was_set = self.flag.swap(true, Ordering::SeqCst);
         // The first reason wins, so a failed `set` is the expected case.
-        let _ = self.reason.set(reason);
-        self.flag.store(true, Ordering::SeqCst);
+        if was_set {
+            let _ = self.reason.set(StopReason::User);
+        } else {
+            let _ = self.reason.set(reason);
+        }
     }
 
     /// The operator cancelled the job.
@@ -162,19 +203,44 @@ impl BudgetGuard {
     }
 
     /// Read the probe now, with no rate limit. Stops the job with
-    /// [`StopReason::OverBudget`] when the process uses more than the
-    /// limit. Returns true when the job must stop.
+    /// [`StopReason::OverBudget`] when the process crossed the limit during
+    /// the job (module doc, "The stop rule"). Returns true when the job must
+    /// stop.
+    ///
+    /// A flag that is already set is not probed: the job stops for the
+    /// reason of the first writer ("The reason ordering").
     pub fn probe_now(&self) -> bool {
+        if self.flag.load(Ordering::SeqCst) {
+            return true;
+        }
         if let Some(limit_bytes) = self.budget.limit_bytes
             && let Some(used) = self.probe.used_bytes()
-            && used > limit_bytes
         {
-            self.stop(StopReason::OverBudget {
-                need_bytes: used,
-                limit_bytes,
-            });
+            if used <= limit_bytes {
+                self.armed.store(true, Ordering::SeqCst);
+            } else if self.armed.load(Ordering::SeqCst) {
+                self.stop(StopReason::OverBudget {
+                    need_bytes: used,
+                    limit_bytes,
+                });
+            } else if !self.warned.swap(true, Ordering::SeqCst) {
+                tracing::warn!(
+                    used_bytes = used,
+                    limit_bytes,
+                    "memory budget: the process was over the limit when this job started; \
+                     the guard stops the job only after the process goes under the limit and \
+                     crosses it again"
+                );
+            }
         }
         self.flag.load(Ordering::SeqCst)
+    }
+
+    /// True after a reading at or under the limit (module doc, "The stop
+    /// rule").
+    #[must_use]
+    pub fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::SeqCst)
     }
 
     /// The preflight door: stop the job before it allocates when the
@@ -268,5 +334,80 @@ impl Drop for BudgetWatch {
                 tracing::warn!("memory budget watcher panicked");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod wave3_tests {
+    //! The stop rule and the reason ordering of memory programme wave 3.
+    //! The limit and the readings are arbitrary values on the two sides of
+    //! each other. They are not memory claims.
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Duration;
+
+    use super::{BudgetGuard, UsageProbe};
+    use crate::budget::{MemoryBudget, StopReason};
+
+    const LIMIT: u64 = 100;
+
+    struct Reading(Arc<AtomicU64>);
+
+    impl UsageProbe for Reading {
+        fn used_bytes(&self) -> Option<u64> {
+            Some(self.0.load(Ordering::SeqCst))
+        }
+    }
+
+    fn guard(first: u64) -> (BudgetGuard, Arc<AtomicU64>, Arc<AtomicBool>) {
+        let reading = Arc::new(AtomicU64::new(first));
+        let flag = Arc::new(AtomicBool::new(false));
+        let guard = BudgetGuard::with_probe(
+            Arc::clone(&flag),
+            MemoryBudget::with_limit(LIMIT),
+            Box::new(Reading(Arc::clone(&reading))),
+            Duration::ZERO,
+        );
+        (guard, reading, flag)
+    }
+
+    #[test]
+    fn an_operator_cancel_wins_over_a_later_over_limit_reading() {
+        let (guard, reading, flag) = guard(LIMIT / 2);
+        assert!(!guard.probe_now(), "under the limit: the guard arms");
+        assert!(guard.is_armed());
+        // The operator's cancel button sets the lane flag directly.
+        flag.store(true, Ordering::SeqCst);
+        // A later reading is over the limit.
+        reading.store(LIMIT * 2, Ordering::SeqCst);
+        assert!(guard.probe_now());
+        // The watcher may still try to record its reason.
+        guard.stop(StopReason::OverBudget {
+            need_bytes: LIMIT * 2,
+            limit_bytes: LIMIT,
+        });
+        assert_eq!(guard.stop_reason(), Some(StopReason::User));
+    }
+
+    #[test]
+    fn a_job_that_starts_over_the_limit_is_not_stopped_at_once() {
+        let (guard, reading, _flag) = guard(LIMIT * 2);
+        assert!(!guard.probe_now(), "no crossing yet: the job runs");
+        assert!(!guard.is_armed());
+        assert_eq!(guard.stop_reason(), None);
+        // The process goes under the limit, then crosses it again.
+        reading.store(LIMIT, Ordering::SeqCst);
+        assert!(!guard.probe_now());
+        assert!(guard.is_armed());
+        reading.store(LIMIT + 1, Ordering::SeqCst);
+        assert!(guard.probe_now(), "a crossing during the job stops it");
+        assert_eq!(
+            guard.stop_reason(),
+            Some(StopReason::OverBudget {
+                need_bytes: LIMIT + 1,
+                limit_bytes: LIMIT,
+            })
+        );
     }
 }

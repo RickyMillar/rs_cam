@@ -14,10 +14,12 @@
 use std::mem::size_of;
 
 use super::MemoryBudget;
-use super::grid::{floor_cell, grid_cells};
+use super::grid::{effective_cell, effective_grid_cells, floor_cell, grid_cells};
+use crate::compute::simulate::SimulationRequest;
+use crate::geo::BoundingBox3;
 use crate::stock::dexel::DexelRay;
 use crate::stock::simulation_cut::SimulationCutSample;
-use crate::toolpath::Move;
+use crate::toolpath::{Move, Toolpath};
 
 /// Bytes as `u64`. `usize` is never wider than 64 bits on a supported
 /// target; a wider value saturates.
@@ -268,4 +270,274 @@ pub fn largest_cell_that_fits(
         }
     }
     CellFit::Fits(hi)
+}
+
+// ── Wave 3: the request load, the trace count and the preflight ─────────
+
+/// The smallest trace sample step, in mm.
+///
+/// COPY of the literal in `compute/simulate.rs` (`run_simulation_memoized`:
+/// `let sample_step_mm = request.resolution.max(0.25);`). The simulator does
+/// not call [`trace_sample_step_mm`] yet; a change there must change this
+/// value too.
+pub const TRACE_SAMPLE_STEP_FLOOR_MM: f64 = 0.25;
+
+/// The trace sample step the simulator uses at `resolution_mm`.
+#[must_use]
+pub fn trace_sample_step_mm(resolution_mm: f64) -> f64 {
+    resolution_mm.max(TRACE_SAMPLE_STEP_FLOOR_MM)
+}
+
+/// The cut-trace samples one toolpath keeps, about one per sample step of
+/// path length.
+///
+/// G-SIMMEM (`75aa2869`): "the cut trace keeps one sample per sample step".
+/// Each move with a length counts `max(1, ceil(length / step))`; a move with
+/// no length counts nothing. The walk's own reservation
+/// (`dexel_stock/simulation.rs`, `estimate_sample_count`) is private and
+/// coalesces Z-subdivided moves differently, so this count is an estimate
+/// for the budget, not the walk's exact count.
+#[must_use]
+pub fn estimate_trace_samples(toolpath: &Toolpath, sample_step_mm: f64) -> u64 {
+    let step = floor_cell(sample_step_mm);
+    let mut total = 0u64;
+    for pair in toolpath.moves.windows(2) {
+        let [from, to] = pair else { continue };
+        let length = (to.target - from.target).norm();
+        if length.is_nan() || length <= 0.0 {
+            continue;
+        }
+        let by_length = (length / step).ceil();
+        let count = if by_length.is_finite() && by_length >= 1.0 {
+            by_length as u64
+        } else {
+            1
+        };
+        total = total.saturating_add(count);
+    }
+    total
+}
+
+/// What one simulation request will hold: its grid footprint, its cell and
+/// its load. The preflight and the worker ledger read the same value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SimulationNeed {
+    /// The X extent of the largest grid of the run, in mm.
+    pub footprint_w: f64,
+    /// The Y extent of the largest grid of the run, in mm.
+    pub footprint_d: f64,
+    /// The requested cell, in mm, before the ceiling clamp.
+    pub cell_mm: f64,
+    /// Everything that does not depend on the cell.
+    pub load: SimulationLoad,
+}
+
+impl SimulationNeed {
+    /// The need of `request`.
+    ///
+    /// - E: the toolpath entries of every group.
+    /// - G: the groups (a group with no entry still builds its stock).
+    /// - moves: every entry's moves.
+    /// - trace: [`estimate_trace_samples`] at [`trace_sample_step_mm`],
+    ///   counted only when `metric_options.enabled`.
+    /// - footprint: the grid with the most columns among the request's
+    ///   `stock_bbox` and each group's `local_stock_bbox`. The model R uses
+    ///   ONE cell count for every grid; this takes the largest.
+    #[must_use]
+    pub fn of_request(request: &SimulationRequest) -> Self {
+        let step = trace_sample_step_mm(request.resolution);
+        let metrics_on = request.metric_options.enabled;
+        let mut load = SimulationLoad {
+            setup_groups: bytes(request.groups.len()),
+            metrics_on,
+            ..SimulationLoad::default()
+        };
+        for entry in request
+            .groups
+            .iter()
+            .flat_map(|group| group.toolpaths.iter())
+        {
+            let toolpath = &entry.annotated.toolpath;
+            load.simulated_toolpaths = load.simulated_toolpaths.saturating_add(1);
+            load.moves = load.moves.saturating_add(bytes(toolpath.moves.len()));
+            if metrics_on {
+                load.trace_samples = load
+                    .trace_samples
+                    .saturating_add(estimate_trace_samples(toolpath, step));
+            }
+        }
+        let boxes = std::iter::once(&request.stock_bbox).chain(
+            request
+                .groups
+                .iter()
+                .filter_map(|group| group.local_stock_bbox.as_ref()),
+        );
+        Self::over_largest(boxes, request.resolution, load)
+    }
+
+    /// The need of `load` over the largest of `boxes` at `cell_mm`.
+    #[must_use]
+    pub fn over_largest<'a>(
+        boxes: impl IntoIterator<Item = &'a BoundingBox3>,
+        cell_mm: f64,
+        load: SimulationLoad,
+    ) -> Self {
+        let mut best = (0.0, 0.0, 0usize);
+        for bbox in boxes {
+            let w = (bbox.max.x - bbox.min.x).max(0.0);
+            let d = (bbox.max.y - bbox.min.y).max(0.0);
+            let cells = effective_grid_cells(w, d, cell_mm);
+            if cells > best.2 {
+                best = (w, d, cells);
+            }
+        }
+        Self {
+            footprint_w: best.0,
+            footprint_d: best.1,
+            cell_mm,
+            load,
+        }
+    }
+
+    /// The columns of the largest grid, after the floor and the ceiling
+    /// clamp.
+    #[must_use]
+    pub fn cells(&self) -> u64 {
+        bytes(effective_grid_cells(
+            self.footprint_w,
+            self.footprint_d,
+            self.cell_mm,
+        ))
+    }
+
+    /// The cell the grid really uses, in mm, after the clamp.
+    #[must_use]
+    pub fn effective_cell_mm(&self) -> f64 {
+        effective_cell(self.cell_mm, self.footprint_w, self.footprint_d)
+    }
+
+    /// The estimate in bytes (the plan's R for this run).
+    #[must_use]
+    pub fn bytes(&self) -> u64 {
+        self.load.estimate(self.cells()).total()
+    }
+}
+
+/// Why the preflight refused a simulation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreflightRefusal {
+    /// The estimate of the run, in bytes.
+    pub need_bytes: u64,
+    /// The limit, in bytes.
+    pub limit_bytes: u64,
+    /// The resident size of an otherwise idle process, in bytes.
+    pub baseline_bytes: u64,
+    /// The finest cell whose estimate fits beside the baseline.
+    pub fit: CellFit,
+    /// The cell the refused run asked for, after the ceiling clamp, in mm.
+    pub requested_cell_mm: f64,
+}
+
+/// The preflight: `Ok` when `baseline_bytes + need` fits the budget, or
+/// when the budget has no limit.
+///
+/// `baseline_bytes` is the resident size of an otherwise IDLE process, not
+/// the live reading: a live reading also counts the result this run
+/// replaces and the jobs the ledger is about to finish. So a refusal means
+/// that even an idle process cannot hold the run. A run that passes can
+/// still meet the guard during the run.
+///
+/// The refusal carries the finest cell that fits the room beside the
+/// baseline ([`largest_cell_that_fits`]). The grid is never coarsened
+/// here; the caller names the cell, and the operator decides.
+///
+/// # Errors
+/// [`PreflightRefusal`] when the run does not fit.
+pub fn preflight_simulation(
+    budget: &MemoryBudget,
+    baseline_bytes: u64,
+    need: &SimulationNeed,
+) -> Result<(), PreflightRefusal> {
+    let Some(limit_bytes) = budget.limit_bytes else {
+        return Ok(());
+    };
+    let need_bytes = need.bytes();
+    if baseline_bytes.saturating_add(need_bytes) <= limit_bytes {
+        return Ok(());
+    }
+    let room = MemoryBudget::with_limit(limit_bytes.saturating_sub(baseline_bytes));
+    let fit = largest_cell_that_fits(&room, need.footprint_w, need.footprint_d, &need.load);
+    Err(PreflightRefusal {
+        need_bytes,
+        limit_bytes,
+        baseline_bytes,
+        fit,
+        requested_cell_mm: need.effective_cell_mm(),
+    })
+}
+
+// SAFETY: test module; a failed `let ... else` is a failed test.
+#[allow(clippy::panic)]
+#[cfg(test)]
+mod wave3_tests {
+    //! The preflight arithmetic. The limits are arbitrary values on the two
+    //! sides of an estimate that the real types give; none is a memory
+    //! claim.
+
+    use super::{
+        CellFit, MemoryBudget, SimulationLoad, SimulationNeed, estimate_trace_samples,
+        preflight_simulation,
+    };
+    use crate::geo::{BoundingBox3, P3};
+    use crate::toolpath::Toolpath;
+
+    fn need() -> SimulationNeed {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 50.0, 10.0),
+        };
+        let load = SimulationLoad {
+            simulated_toolpaths: 3,
+            setup_groups: 1,
+            moves: 10,
+            trace_samples: 0,
+            metrics_on: false,
+        };
+        SimulationNeed::over_largest([&bbox], 0.5, load)
+    }
+
+    #[test]
+    fn the_trace_count_is_one_sample_per_step_of_length() {
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
+        toolpath.feed_to(P3::new(0.0, 0.0, 5.0), 100.0);
+        toolpath.feed_to(P3::new(10.0, 0.0, 5.0), 100.0);
+        // 0 for the zero-length move, ceil(10 / 0.3) = 34 for the cut.
+        assert_eq!(estimate_trace_samples(&toolpath, 0.3), 34);
+    }
+
+    #[test]
+    fn the_preflight_refuses_only_past_the_room_beside_the_baseline() {
+        let need = need();
+        let bytes = need.bytes();
+        let baseline = bytes / 4;
+        let fits = MemoryBudget::with_limit(baseline + bytes);
+        assert_eq!(preflight_simulation(&fits, baseline, &need), Ok(()));
+        assert_eq!(
+            preflight_simulation(&MemoryBudget::UNLIMITED, u64::MAX, &need),
+            Ok(())
+        );
+
+        let tight = MemoryBudget::with_limit(baseline + bytes - 1);
+        let Err(refusal) = preflight_simulation(&tight, baseline, &need) else {
+            panic!("one byte short must refuse");
+        };
+        assert_eq!(refusal.need_bytes, bytes);
+        assert_eq!(refusal.limit_bytes, baseline + bytes - 1);
+        assert_eq!(refusal.baseline_bytes, baseline);
+        let CellFit::Fits(cell) = refusal.fit else {
+            panic!("a coarser cell fits: {:?}", refusal.fit);
+        };
+        assert!(cell > refusal.requested_cell_mm, "the fit is coarser");
+    }
 }

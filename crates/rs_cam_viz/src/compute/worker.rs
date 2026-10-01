@@ -259,7 +259,10 @@ pub enum OptimizeResultKind {
 
 #[allow(clippy::large_enum_variant)]
 enum AnalysisRequest {
-    Simulation(SimulationRequest),
+    /// A simulation and its memory estimate for the ledger, in bytes.
+    /// `None` means NOT ESTIMATED: the budget has no limit, so the submit
+    /// does not spend the time to count.
+    Simulation(SimulationRequest, Option<u64>),
     Collision(CollisionRequest),
 }
 
@@ -405,32 +408,164 @@ fn over_budget_stop(guard: &BudgetGuard) -> Option<ComputeError> {
     }
 }
 
-/// The ledger hook of plan B4 ("Architecture" 3). The next wave fills it.
+/// The memory ledger of the heavy lanes (plan B4, "Architecture" 3,
+/// `planning/memory_budget_2026-10-01/PLAN.md`).
 ///
-/// [`LaneQueue::dequeue_running`] calls this once for each job, after it
-/// takes the job off the queue and before the lane runs it. It is the one
-/// point that all five lanes pass through, so it is the one place to sum
-/// what the running jobs hold. Today no ledger exists, and every job runs
-/// at once, as before.
+/// The toolpath, analysis and optimize lanes share ONE ledger. Each of their
+/// jobs takes a [`LedgerTicket`] in [`LaneQueue::dequeue_reserved`] before
+/// it runs, and the ticket gives the reservation back when it drops. The
+/// lane loop holds the ticket in a local, so it drops at the end of the job
+/// on every path: a result, a cancel, an error and a caught panic.
 ///
-/// The next wave must:
+/// **The wait rule.** A job WAITS in its queue (state `Queued`, visible to
+/// the status bar and to MCP `generation_status`) when ALL of these are
+/// true:
 ///
-/// 1. fill [`RunningJob::estimate_bytes`] in the `describe` closure of each
-///    heavy lane (`rs_cam_core::budget::estimate_simulation_bytes` for a
-///    simulation);
-/// 2. move this call before `pop_front`, and keep the job in its queue
-///    (state `Queued`, visible) while its estimate does not fit beside the
-///    other reservations; wait on `wake` for a release;
-/// 3. release the reservation where each lane goes idle;
-/// 4. refuse a job whose estimate alone is over the limit, through
-///    `BudgetGuard::check_estimate`, BEFORE it allocates (the preflight).
-fn reserve_in_ledger(lane: ComputeLane, estimate_bytes: Option<u64>) {
-    tracing::trace!(
-        ?lane,
-        ?estimate_bytes,
-        "memory ledger: no ledger yet; the job runs at once"
-    );
+/// 1. the budget has a limit;
+/// 2. the job has an estimate (`RunningJob::estimate_bytes` is `Some`);
+/// 3. another heavy job runs now;
+/// 4. the probe reading + the reserved bytes + the estimate is over the
+///    limit.
+///
+/// Rule 3 makes the ledger an ORDER, never a refusal: when nothing else
+/// runs, nothing can give memory back, so the job runs and the preflight and
+/// the guard decide. Rule 2 means an unknown estimate never blocks. The
+/// reading counts what the running jobs hold so far, and the reserved bytes
+/// count their full estimates again, so the sum is on the safe side: two
+/// jobs that would fit can run one after the other.
+///
+/// A budget with no limit never waits, so the lanes keep today's
+/// concurrency.
+pub(crate) struct BudgetLedger {
+    budget: MemoryBudget,
+    probe: Arc<dyn UsageProbe>,
+    state: Mutex<LedgerState>,
+    /// Signalled when a ticket drops, and at shutdown.
+    released: Condvar,
 }
+
+#[derive(Debug, Default, Clone, Copy)]
+struct LedgerState {
+    /// The sum of the estimates of the running heavy jobs, in bytes.
+    reserved_bytes: u64,
+    /// The heavy jobs that run now, with an estimate or without.
+    running: usize,
+}
+
+/// Why a job waits for the ledger. The lane shows it as the job's phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LedgerWait {
+    estimate_bytes: u64,
+    used_bytes: u64,
+    reserved_bytes: u64,
+    limit_bytes: u64,
+}
+
+impl LedgerWait {
+    /// The phase text of a waiting job.
+    fn phase(&self) -> String {
+        use rs_cam_core::budget::format_bytes;
+        format!(
+            "Waiting for memory: needs about {}; {} in use and {} reserved by running jobs; \
+             the limit is {}",
+            format_bytes(self.estimate_bytes),
+            format_bytes(self.used_bytes),
+            format_bytes(self.reserved_bytes),
+            format_bytes(self.limit_bytes),
+        )
+    }
+}
+
+/// The ledger's answer to one job.
+enum Admission {
+    Run(LedgerTicket),
+    Wait(LedgerWait),
+}
+
+/// One running heavy job's reservation. Dropping it gives the bytes back
+/// and wakes every waiting lane.
+pub(crate) struct LedgerTicket {
+    ledger: Arc<BudgetLedger>,
+    bytes: u64,
+}
+
+impl Drop for LedgerTicket {
+    fn drop(&mut self) {
+        {
+            let mut state = self.ledger.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.reserved_bytes = state.reserved_bytes.saturating_sub(self.bytes);
+            state.running = state.running.saturating_sub(1);
+        }
+        self.ledger.released.notify_all();
+    }
+}
+
+impl BudgetLedger {
+    pub(crate) fn new(budget: MemoryBudget, probe: Arc<dyn UsageProbe>) -> Arc<Self> {
+        Arc::new(Self {
+            budget,
+            probe,
+            state: Mutex::new(LedgerState::default()),
+            released: Condvar::new(),
+        })
+    }
+
+    /// The bytes the running heavy jobs reserved.
+    pub(crate) fn reserved_bytes(&self) -> u64 {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .reserved_bytes
+    }
+
+    /// Admit a job with `estimate_bytes`, or say why it must wait. See the
+    /// wait rule on the type.
+    fn admit(self: &Arc<Self>, estimate_bytes: Option<u64>) -> Admission {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if let (Some(limit_bytes), Some(estimate)) = (self.budget.limit_bytes, estimate_bytes)
+            && state.running > 0
+            && let Some(used) = self.probe.used_bytes()
+            && used
+                .saturating_add(state.reserved_bytes)
+                .saturating_add(estimate)
+                > limit_bytes
+        {
+            return Admission::Wait(LedgerWait {
+                estimate_bytes: estimate,
+                used_bytes: used,
+                reserved_bytes: state.reserved_bytes,
+                limit_bytes,
+            });
+        }
+        let bytes = estimate_bytes.unwrap_or(0);
+        state.reserved_bytes = state.reserved_bytes.saturating_add(bytes);
+        state.running = state.running.saturating_add(1);
+        Admission::Run(LedgerTicket {
+            ledger: Arc::clone(self),
+            bytes,
+        })
+    }
+
+    /// Wait until a ticket drops, or `timeout` passes. The timeout is the
+    /// backstop for a release between the admission and this wait, and for
+    /// a reading that falls without a release.
+    fn wait_for_release(&self, timeout: Duration) {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let (_state, _timed_out) = self
+            .released
+            .wait_timeout(state, timeout)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+
+    /// Wake every waiting lane, for a shutdown.
+    fn wake_all(&self) {
+        self.released.notify_all();
+    }
+}
+
+/// How often a waiting job checks the ledger again when no ticket drops.
+/// The core probe rate limit; not a memory number.
+const LEDGER_RECHECK: Duration = rs_cam_core::budget::guard::PROBE_INTERVAL;
 
 struct LaneInner<Request> {
     queue: VecDeque<Request>,
@@ -502,11 +637,14 @@ struct RunningJob {
     /// `None` on a lane whose requests carry no per-job flag; a cancel
     /// there sets the lane flag alone.
     active_cancel: Option<Arc<AtomicBool>>,
-    /// The memory the job is estimated to hold, in bytes, for the ledger
-    /// hook [`reserve_in_ledger`]. `None` means NOT ESTIMATED.
+    /// The memory the job is estimated to hold, in bytes, for the
+    /// [`BudgetLedger`]. `None` means NOT ESTIMATED, and such a job never
+    /// waits.
     ///
-    /// No lane fills it yet. The next wave sets it from
-    /// `rs_cam_core::budget::estimate_simulation_bytes` for a simulation.
+    /// The analysis lane fills it for a simulation
+    /// (`rs_cam_core::budget::estimate::SimulationNeed`). A generation, a
+    /// collision check and a project optimize have no sourced estimate yet,
+    /// so they stay `None`; they still count as running heavy jobs.
     estimate_bytes: Option<u64>,
 }
 
@@ -534,6 +672,12 @@ impl RunningJob {
         self.active_cancel = Some(cancel);
         self
     }
+
+    /// State the memory the job is estimated to hold.
+    fn reserving(mut self, estimate_bytes: Option<u64>) -> Self {
+        self.estimate_bytes = estimate_bytes;
+        self
+    }
 }
 
 struct LaneQueue<Request> {
@@ -545,6 +689,9 @@ struct LaneQueue<Request> {
     /// budget stops the job.
     cancel: Arc<AtomicBool>,
     shutdown: AtomicBool,
+    /// The shared ledger of the heavy lanes. `None` on the reach and job
+    /// lanes, which run no heavy job.
+    ledger: Option<Arc<BudgetLedger>>,
 }
 
 impl<Request> LaneQueue<Request> {
@@ -556,41 +703,95 @@ impl<Request> LaneQueue<Request> {
     /// held its own copy, so a fix or a new `LaneInner` field had to be
     /// applied five times by hand — `active_toolpath_id`, `active_cancel`
     /// and `current_phase` each arrived that way.
-    fn dequeue_running(&self, describe: impl FnOnce(&Request) -> RunningJob) -> Option<Request> {
-        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        while inner.queue.is_empty() {
+    ///
+    /// For a lane with a ledger this DROPS the ledger ticket at once. A heavy
+    /// lane calls [`Self::dequeue_reserved`] and keeps the ticket.
+    fn dequeue_running(&self, describe: impl Fn(&Request) -> RunningJob) -> Option<Request> {
+        self.dequeue_reserved(describe)
+            .map(|(request, _ticket)| request)
+    }
+
+    /// [`Self::dequeue_running`], plus the ledger ticket of the job.
+    ///
+    /// The job stays at the FRONT of the queue while the ledger tells it to
+    /// wait (wait rule: [`BudgetLedger`]). The lane then reads `Queued`, its
+    /// current job is the waiting job, and its phase says what the job waits
+    /// for. The lane lock is NOT held during the wait, so a submit or a
+    /// cancel on the frame loop never blocks on it. After each wake the
+    /// prologue reads the queue again, so a submit that replaced the waiting
+    /// job is honoured.
+    ///
+    /// The caller keeps the ticket until the job has finished. Dropping it
+    /// gives the reservation back.
+    fn dequeue_reserved(
+        &self,
+        describe: impl Fn(&Request) -> RunningJob,
+    ) -> Option<(Request, Option<LedgerTicket>)> {
+        loop {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            while inner.queue.is_empty() {
+                if self.shutdown.load(Ordering::SeqCst) {
+                    return None;
+                }
+                inner.go_idle();
+                inner = self.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+            }
             if self.shutdown.load(Ordering::SeqCst) {
                 return None;
             }
-            inner.go_idle();
-            inner = self.wake.wait(inner).unwrap_or_else(|e| e.into_inner());
+            let Some(front) = inner.queue.front() else {
+                continue;
+            };
+            let running = describe(front);
+            let ticket = match self.ledger.as_ref() {
+                None => None,
+                Some(ledger) => match ledger.admit(running.estimate_bytes) {
+                    Admission::Run(ticket) => Some(ticket),
+                    Admission::Wait(wait) => {
+                        tracing::debug!(lane = ?self.lane, ?wait, "memory ledger: the job waits");
+                        inner.state = LaneState::Queued;
+                        inner.current_job = Some(running.label);
+                        inner.current_phase = Some(wait.phase());
+                        drop(inner);
+                        ledger.wait_for_release(LEDGER_RECHECK);
+                        continue;
+                    }
+                },
+            };
+            // `front` above proved the queue is not empty, and the lock has
+            // been held since.
+            // SAFETY: the queue is not empty here.
+            #[allow(clippy::expect_used)]
+            let request = inner.queue.pop_front().expect("queue checked");
+            self.cancel.store(false, Ordering::SeqCst);
+            inner.state = LaneState::Running;
+            inner.current_job = Some(running.label);
+            inner.current_phase = None;
+            inner.started_at = Some(Instant::now());
+            inner.active_toolpath_id = running.active_toolpath_id;
+            inner.active_toolpath_index = running.active_toolpath_index;
+            inner.active_cancel = running.active_cancel;
+            return Some((request, ticket));
         }
-        if self.shutdown.load(Ordering::SeqCst) {
-            return None;
-        }
-        // SAFETY: the loop above returns only with a non-empty queue.
-        #[allow(clippy::expect_used)]
-        let request = inner.queue.pop_front().expect("queue checked");
-        let running = describe(&request);
-        reserve_in_ledger(self.lane, running.estimate_bytes);
-        self.cancel.store(false, Ordering::SeqCst);
-        inner.state = LaneState::Running;
-        inner.current_job = Some(running.label);
-        inner.current_phase = None;
-        inner.started_at = Some(Instant::now());
-        inner.active_toolpath_id = running.active_toolpath_id;
-        inner.active_toolpath_index = running.active_toolpath_index;
-        inner.active_cancel = running.active_cancel;
-        Some(request)
     }
 
     fn new(lane: ComputeLane) -> Arc<Self> {
+        Self::build(lane, None)
+    }
+
+    /// A heavy lane: its jobs take tickets from `ledger`.
+    fn with_ledger(lane: ComputeLane, ledger: Arc<BudgetLedger>) -> Arc<Self> {
+        Self::build(lane, Some(ledger))
+    }
+
+    fn build(lane: ComputeLane, ledger: Option<Arc<BudgetLedger>>) -> Arc<Self> {
         Arc::new(Self {
             lane,
             inner: Mutex::new(LaneInner::new()),
             wake: Condvar::new(),
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: AtomicBool::new(false),
+            ledger,
         })
     }
 
@@ -694,6 +895,20 @@ pub struct ThreadedComputeBackend {
     sim_prefix_cache: Arc<Mutex<rs_cam_core::compute::sim_prefix::SimPrefixCache>>,
     /// The memory budget of the heavy lanes (plan B1, B3).
     budget: JobBudget,
+    /// The shared ledger of the heavy lanes (plan B4).
+    ledger: Arc<BudgetLedger>,
+    /// The resident size of the process when the backend started, in
+    /// bytes: the "otherwise idle" baseline of the simulation preflight.
+    /// `None` when the budget has no limit or the platform gives no
+    /// reading.
+    ///
+    /// It is a LOWER bound of what an idle session holds: it does not count
+    /// a project that was loaded later. A live reading would also count the
+    /// previous simulation, which the new run replaces, and a running
+    /// generation, which the ledger waits for; on rivmap350 that double
+    /// count alone would refuse a run that fits (BASELINES.md, W1). The
+    /// guard stays the net for what the baseline does not count.
+    baseline_bytes: Option<u64>,
 }
 
 impl ThreadedComputeBackend {
@@ -720,9 +935,15 @@ impl ThreadedComputeBackend {
     /// A backend with a given budget AND usage probe. Tests give a fake
     /// probe here.
     pub(crate) fn with_job_budget(budget: JobBudget) -> Self {
-        let toolpath_lane = LaneQueue::new(ComputeLane::Toolpath);
-        let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
-        let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
+        let ledger = BudgetLedger::new(budget.budget, Arc::clone(&budget.probe));
+        let baseline_bytes = if budget.budget.is_limited() {
+            budget.probe.used_bytes()
+        } else {
+            None
+        };
+        let toolpath_lane = LaneQueue::with_ledger(ComputeLane::Toolpath, Arc::clone(&ledger));
+        let analysis_lane = LaneQueue::with_ledger(ComputeLane::Analysis, Arc::clone(&ledger));
+        let optimize_lane = LaneQueue::with_ledger(ComputeLane::Optimize, Arc::clone(&ledger));
         let reach_lane = LaneQueue::new(ComputeLane::Reach);
         let job_lane = LaneQueue::new(ComputeLane::Job);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
@@ -766,6 +987,8 @@ impl ThreadedComputeBackend {
             job_handle: Some(job_handle),
             sim_prefix_cache,
             budget,
+            ledger,
+            baseline_bytes,
         }
     }
 }
@@ -782,6 +1005,8 @@ impl Drop for ThreadedComputeBackend {
         self.optimize_lane.wake.notify_all();
         self.reach_lane.wake.notify_all();
         self.job_lane.wake.notify_all();
+        // A heavy lane that waits for the ledger waits on the ledger.
+        self.ledger.wake_all();
         if let Some(h) = self.toolpath_handle.take() {
             let _ = h.join();
         }
@@ -846,7 +1071,32 @@ impl ComputeBackend for ThreadedComputeBackend {
     }
 
     fn submit_simulation(&mut self, request: SimulationRequest) {
-        self.submit_analysis(AnalysisRequest::Simulation(request));
+        // The ledger reads the estimate. With no limit the ledger never
+        // waits, so the submit does not count.
+        let estimate = self.budget.budget().is_limited().then(|| {
+            rs_cam_core::budget::estimate::SimulationNeed::of_request(&request.core).bytes()
+        });
+        self.submit_analysis(AnalysisRequest::Simulation(request, estimate));
+    }
+
+    fn memory_budget(&self) -> MemoryBudget {
+        self.budget.budget()
+    }
+
+    fn memory_reserved_bytes(&self) -> u64 {
+        self.ledger.reserved_bytes()
+    }
+
+    fn preflight_simulation(
+        &self,
+        need: &rs_cam_core::budget::estimate::SimulationNeed,
+    ) -> Result<(), rs_cam_core::budget::estimate::PreflightRefusal> {
+        // No baseline: no limit, or no reading on this platform. Then there
+        // is nothing to judge, and the run goes ahead as it does today.
+        let Some(baseline) = self.baseline_bytes else {
+            return Ok(());
+        };
+        rs_cam_core::budget::estimate::preflight_simulation(&self.budget.budget(), baseline, need)
     }
 
     fn clear_sim_prefix_cache(&mut self) {
@@ -1044,7 +1294,7 @@ fn toolpath_job_label(request: &ComputeRequest) -> String {
 
 fn analysis_job_label(request: &AnalysisRequest) -> String {
     match request {
-        AnalysisRequest::Simulation(request) => {
+        AnalysisRequest::Simulation(request, _) => {
             let count: usize = request.core.groups.iter().map(|g| g.toolpaths.len()).sum();
             format!("Simulation ({count} toolpaths)")
         }
@@ -1102,7 +1352,9 @@ fn spawn_toolpath_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let Some(request) = lane.dequeue_running(|request| {
+            // The ticket lives to the end of this iteration: the ledger
+            // reservation ends with the job, on every path.
+            let Some((request, _ticket)) = lane.dequeue_reserved(|request| {
                 RunningJob::labelled(toolpath_job_label(request))
                     .generating(request.viz.toolpath_id, request.handle.index)
                     .cancelled_by(Arc::clone(&request.viz.cancel))
@@ -1214,9 +1466,15 @@ fn spawn_analysis_lane(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
-            let Some(request) =
-                lane.dequeue_running(|request| RunningJob::labelled(analysis_job_label(request)))
-            else {
+            // The ticket lives to the end of this iteration: the ledger
+            // reservation ends with the job, on every path.
+            let Some((request, _ticket)) = lane.dequeue_reserved(|request| {
+                let estimate = match request {
+                    AnalysisRequest::Simulation(_, estimate) => *estimate,
+                    AnalysisRequest::Collision(_) => None,
+                };
+                RunningJob::labelled(analysis_job_label(request)).reserving(estimate)
+            }) else {
                 return;
             };
 
@@ -1233,7 +1491,7 @@ fn spawn_analysis_lane(
             // we log the error, reset lane state to Idle, and continue.
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let result = match request {
-                    AnalysisRequest::Simulation(request) => {
+                    AnalysisRequest::Simulation(request, _) => {
                         let set_phase = |phase: &str| {
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_owned());
@@ -1332,8 +1590,11 @@ fn spawn_optimize_lane(
 
     std::thread::spawn(move || {
         loop {
-            let Some(request) =
-                lane.dequeue_running(|request| RunningJob::labelled(optimize_job_label(request)))
+            // The ticket lives to the end of this iteration. This lane has
+            // no `catch_unwind`; a panic unwinds the thread and drops the
+            // ticket with it, so the ledger does not keep a dead job.
+            let Some((request, _ticket)) =
+                lane.dequeue_reserved(|request| RunningJob::labelled(optimize_job_label(request)))
             else {
                 return;
             };
