@@ -11,6 +11,7 @@ pub mod multitool_planner;
 pub mod optimize_modal;
 pub mod optimize_project;
 pub mod overlays;
+pub mod preferences;
 pub mod preflight;
 pub mod properties;
 pub mod readiness;
@@ -98,6 +99,13 @@ pub enum AppEvent {
     ExportSvgPreview,
     SaveJob,
     OpenJob,
+    /// File ▸ Preferences: open the settings window. The controller reads
+    /// the settings file and the backend budget once, on open.
+    OpenPreferences,
+    /// File ▸ Preferences ▸ Apply: write `[memory] limit` to the settings
+    /// file and give the new budget to the running compute backend. The
+    /// window validated the limit (`ui::preferences::validate_custom_size`).
+    ApplyPreferences(rs_cam_core::budget::MemoryLimit),
     /// Toggle generator-trace capture on every toolpath (sets
     /// `debug_options.enabled` across the whole project).
     SetGeneratorTraceCaptureAll(bool),

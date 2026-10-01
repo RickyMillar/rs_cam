@@ -20,7 +20,7 @@ use std::path::PathBuf;
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
 struct Cli {
     /// The memory budget of this run: a binary size ("12GiB", "512MiB"),
-    /// a byte count, or "unlimited".
+    /// a byte count, "unlimited", or "default" (half of the system RAM).
     ///
     /// When the process uses more than the budget, the generation plan
     /// stops and says so, before the system kills the process.
@@ -28,7 +28,8 @@ struct Cli {
     /// Precedence: this flag overrides `[memory] limit` in the settings
     /// file (`$RS_CAM_SETTINGS`, else `$XDG_CONFIG_HOME/rs_cam/settings.toml`,
     /// else `~/.config/rs_cam/settings.toml`). With no flag and no file the
-    /// run has no limit (the default fraction is RULING PENDING).
+    /// limit is half of the system RAM. The GUI sets the file in
+    /// File > Preferences.
     #[arg(
         long,
         global = true,
@@ -600,17 +601,30 @@ mod tests {
         assert!(Cli::try_parse_from(["rs_cam", "--memory-limit", "lots", "version"]).is_err());
     }
 
+    /// Operator ruling 2026-10-02: with no flag and no file the limit is
+    /// half of the system RAM. This test replaces
+    /// `no_memory_limit_flag_means_no_limit`, which pinned the pending "no
+    /// limit".
     #[test]
-    fn no_memory_limit_flag_means_no_limit() {
+    fn no_memory_limit_flag_means_half_of_the_system_memory() {
         let cli = Cli::try_parse_from(["rs_cam", "version"]).unwrap();
         assert_eq!(cli.memory_limit, None);
-        // RULING PENDING: while the default fraction is `None`, the default
-        // budget has no limit, so a run with no flag behaves as before.
-        assert!(rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION.is_none());
+        assert_eq!(rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION, Some(0.5));
+        let total = rs_cam_core::budget::system_memory_bytes();
         assert_eq!(
             MemoryBudget::from_setting(cli.memory_limit.unwrap_or_default()),
-            MemoryBudget::UNLIMITED
+            MemoryBudget::from_setting_on(MemoryLimit::Default, total)
         );
+        assert_eq!(
+            MemoryBudget::from_setting_on(MemoryLimit::Default, Some(16 * GIB)),
+            MemoryBudget::with_limit(8 * GIB)
+        );
+        // "unlimited" still removes the limit, and "default" names it.
+        let cli =
+            Cli::try_parse_from(["rs_cam", "--memory-limit", "unlimited", "version"]).unwrap();
+        assert_eq!(cli.memory_limit, Some(MemoryLimit::Unlimited));
+        let cli = Cli::try_parse_from(["rs_cam", "--memory-limit", "default", "version"]).unwrap();
+        assert_eq!(cli.memory_limit, Some(MemoryLimit::Default));
     }
 
     /// B5: the flag overrides the settings file, and with a flag the CLI

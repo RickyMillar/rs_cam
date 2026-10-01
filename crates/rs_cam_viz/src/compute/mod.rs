@@ -460,6 +460,14 @@ pub trait ComputeBackend: Send {
         rs_cam_core::budget::MemoryBudget::UNLIMITED
     }
 
+    /// Change the memory budget of the heavy lanes at run time (File ▸
+    /// Preferences ▸ Apply). A job that runs keeps its old guard; the next
+    /// job uses `budget`.
+    ///
+    /// Defaulted to a no-op: a scripted test backend runs no lane and has
+    /// no budget to change.
+    fn set_memory_budget(&mut self, _budget: rs_cam_core::budget::MemoryBudget) {}
+
     /// The bytes that the running heavy jobs reserved in the ledger (plan
     /// B4). Defaulted to zero for a backend with no ledger.
     fn memory_reserved_bytes(&self) -> u64 {

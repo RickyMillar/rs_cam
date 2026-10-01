@@ -7,7 +7,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 - `../controller.rs` — the type, the apply path, the plan progress accessor
   and `PlanResolutionConfirm`.
 - `events/` — the handlers by area: compute, model, toolpath, simulation,
-  planner, undo. `events/compute.rs` holds the plan driver.
+  planner, preferences, undo. `events/compute.rs` holds the plan driver.
 - `generate_all.rs` — the plan's state: steps, outcomes, progress, sink. The
   ORDER is core's, at `session::generation_plan::plan`.
 - `io.rs` — project open, save and import at the controller level.

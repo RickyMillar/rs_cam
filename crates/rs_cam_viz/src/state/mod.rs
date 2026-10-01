@@ -223,6 +223,10 @@ pub struct AppState {
     /// one-file-per-machine library directly each frame (cheap), so a bool
     /// is enough.
     pub machine_library_open: bool,
+    /// The File ▸ Preferences window and its draft (the memory choice and
+    /// the typed size). `None` when the window is closed. The controller
+    /// builds it on open (`AppEvent::OpenPreferences`).
+    pub preferences: Option<crate::ui::preferences::PreferencesState>,
     /// Multi-tool finishing planner dialog (Phase U). `None` until it is
     /// first opened, and then **never dropped**: closing sets
     /// `open = false` and keeps the ladder, the dials and any held preview,
@@ -624,6 +628,7 @@ impl AppState {
             project_feeds: ProjectFeedsState::default(),
             tool_library_modal: None,
             machine_library_open: false,
+            preferences: None,
             multitool_planner: None,
             panel_side_effects: PanelSideEffects::default(),
         }
@@ -702,6 +707,7 @@ impl AppState {
         self.feeds_modal = None;
         self.tool_library_modal = None;
         self.machine_library_open = false;
+        self.preferences = None;
         self.show_export_wizard = false;
         self.show_preflight = false;
         self.show_shortcuts = false;
@@ -747,6 +753,11 @@ mod tests {
         state.tool_library_modal = Some(ToolLibraryModalState { catalogs: vec![] });
         state.show_export_wizard = true;
         state.show_preflight = true;
+        state.preferences = Some(crate::ui::preferences::PreferencesState::new(
+            &rs_cam_core::budget::settings::LoadedSettings::default(),
+            rs_cam_core::budget::MemoryBudget::UNLIMITED,
+            None,
+        ));
         state.optimize_project = Some(OptimizeProjectState {
             status: OptimizeProjectStatus::Loading,
             row_selected: Vec::new(),
@@ -758,6 +769,7 @@ mod tests {
         assert!(state.tool_library_modal.is_none());
         assert!(!state.show_export_wizard);
         assert!(!state.show_preflight);
+        assert!(state.preferences.is_none(), "the Preferences window closes");
         assert!(state.optimize_project.is_none(), "settled optimize closes");
     }
 

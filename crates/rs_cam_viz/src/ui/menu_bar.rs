@@ -153,6 +153,15 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     events.push(AppEvent::ExportSvgPreview);
                 }
                 ui.separator();
+                if ui
+                    .button("Preferences...")
+                    .on_hover_text("The memory budget of the app")
+                    .clicked()
+                {
+                    ui.close();
+                    events.push(AppEvent::OpenPreferences);
+                }
+                ui.separator();
                 if ui.button("Quit").clicked() {
                     events.push(AppEvent::Ui(UiCommand::Quit(NoArgs)));
                 }

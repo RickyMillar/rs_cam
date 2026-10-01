@@ -337,9 +337,16 @@ pub struct JobResult {
 /// [`ComputeError::OverBudget`], not [`ComputeError::Cancelled`].
 ///
 /// A budget with no limit starts no thread and records no reason.
+///
+/// **The budget can change at run time** (File ▸ Preferences, operator
+/// ruling 2026-10-02). Every clone of a `JobBudget` and the
+/// [`BudgetLedger`] share ONE cell, so [`Self::set`] reaches every lane at
+/// once. A job copies the budget into its guard when it starts
+/// ([`Self::guard`]), so a running job keeps its old limit, and the next
+/// job reads the new one.
 #[derive(Clone)]
 pub struct JobBudget {
-    budget: MemoryBudget,
+    budget: Arc<Mutex<MemoryBudget>>,
     probe: Arc<dyn UsageProbe>,
     interval: Duration,
 }
@@ -362,22 +369,30 @@ impl JobBudget {
         interval: Duration,
     ) -> Self {
         Self {
-            budget,
+            budget: Arc::new(Mutex::new(budget)),
             probe,
             interval,
         }
     }
 
-    /// The budget this value enforces.
+    /// The budget this value enforces now.
     pub fn budget(&self) -> MemoryBudget {
-        self.budget
+        *self.budget.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// One guard for one job, over the flag that job polls.
+    /// Change the budget for every job that starts after this call. A job
+    /// that runs keeps the guard it started with.
+    pub fn set(&self, budget: MemoryBudget) {
+        *self.budget.lock().unwrap_or_else(|e| e.into_inner()) = budget;
+    }
+
+    /// One guard for one job, over the flag that job polls. The guard holds
+    /// a COPY of the budget now, so a later [`Self::set`] does not change
+    /// it.
     fn guard(&self, flag: Arc<AtomicBool>) -> Arc<BudgetGuard> {
         Arc::new(BudgetGuard::with_probe(
             flag,
-            self.budget,
+            self.budget(),
             Box::new(SharedProbe(Arc::clone(&self.probe))),
             self.interval,
         ))
@@ -436,8 +451,13 @@ fn over_budget_stop(guard: &BudgetGuard) -> Option<ComputeError> {
 ///
 /// A budget with no limit never waits, so the lanes keep today's
 /// concurrency.
+///
+/// The ledger reads the budget from the cell of the backend's
+/// [`JobBudget`], so a budget change applies to the next admission. A job
+/// that waits checks again at once (`ThreadedComputeBackend::set_memory_budget`
+/// wakes it).
 pub(crate) struct BudgetLedger {
-    budget: MemoryBudget,
+    budget: Arc<Mutex<MemoryBudget>>,
     probe: Arc<dyn UsageProbe>,
     state: Mutex<LedgerState>,
     /// Signalled when a ticket drops, and at shutdown.
@@ -502,9 +522,14 @@ impl Drop for LedgerTicket {
 
 impl BudgetLedger {
     pub(crate) fn new(budget: MemoryBudget, probe: Arc<dyn UsageProbe>) -> Arc<Self> {
+        Self::sharing(&JobBudget::with_probe(budget, probe, Duration::ZERO))
+    }
+
+    /// A ledger that reads the budget cell and the probe of `budget`.
+    fn sharing(budget: &JobBudget) -> Arc<Self> {
         Arc::new(Self {
-            budget,
-            probe,
+            budget: Arc::clone(&budget.budget),
+            probe: Arc::clone(&budget.probe),
             state: Mutex::new(LedgerState::default()),
             released: Condvar::new(),
         })
@@ -521,8 +546,15 @@ impl BudgetLedger {
     /// Admit a job with `estimate_bytes`, or say why it must wait. See the
     /// wait rule on the type.
     fn admit(self: &Arc<Self>, estimate_bytes: Option<u64>) -> Admission {
+        // Read the budget cell BEFORE the state lock: the two locks never
+        // nest.
+        let limit = self
+            .budget
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .limit_bytes;
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if let (Some(limit_bytes), Some(estimate)) = (self.budget.limit_bytes, estimate_bytes)
+        if let (Some(limit_bytes), Some(estimate)) = (limit, estimate_bytes)
             && state.running > 0
             && let Some(used) = self.probe.used_bytes()
             && used
@@ -900,7 +932,8 @@ pub struct ThreadedComputeBackend {
     /// The resident size of the process when the backend started, in
     /// bytes: the "otherwise idle" baseline of the simulation preflight.
     /// `None` when the budget has no limit or the platform gives no
-    /// reading.
+    /// reading. A change from no limit to a limit reads it then
+    /// (`set_memory_budget`).
     ///
     /// It is a LOWER bound of what an idle session holds: it does not count
     /// a project that was loaded later. A live reading would also count the
@@ -935,8 +968,8 @@ impl ThreadedComputeBackend {
     /// A backend with a given budget AND usage probe. Tests give a fake
     /// probe here.
     pub(crate) fn with_job_budget(budget: JobBudget) -> Self {
-        let ledger = BudgetLedger::new(budget.budget, Arc::clone(&budget.probe));
-        let baseline_bytes = if budget.budget.is_limited() {
+        let ledger = BudgetLedger::sharing(&budget);
+        let baseline_bytes = if budget.budget().is_limited() {
             budget.probe.used_bytes()
         } else {
             None
@@ -1081,6 +1114,25 @@ impl ComputeBackend for ThreadedComputeBackend {
 
     fn memory_budget(&self) -> MemoryBudget {
         self.budget.budget()
+    }
+
+    /// File ▸ Preferences ▸ Apply. The ONE cell changes, so:
+    ///
+    /// - a job that runs keeps the guard it started with;
+    /// - a queued job, and every job after it, meets the new limit in the
+    ///   ledger and in its new guard;
+    /// - a job that waits for the ledger checks again at once.
+    ///
+    /// The backend reads the idle baseline at start only when the budget
+    /// has a limit. A change from no limit to a limit reads it here, else
+    /// the simulation preflight could never refuse. That reading is late,
+    /// so it can count a loaded project; the guard stays the net.
+    fn set_memory_budget(&mut self, budget: MemoryBudget) {
+        self.budget.set(budget);
+        if self.baseline_bytes.is_none() && budget.is_limited() {
+            self.baseline_bytes = self.budget.probe.used_bytes();
+        }
+        self.ledger.wake_all();
     }
 
     fn memory_reserved_bytes(&self) -> u64 {
