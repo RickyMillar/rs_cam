@@ -13,13 +13,13 @@
 //! | Reach | `ReachStatus::Computing` for the selection | — | `ReachStatus::Failed` for the selection |
 //! | Rest | `FreshnessState::Regenerating` | `FreshnessState::EditedSince` with a grid | `FreshnessState::Error` |
 //! | Collision | `submitted_collision_epoch` is set | `collision_check_is_stale` | — |
-//! | Simulation | `SimFreshness::Running` | `AppState::simulation_is_stale` | — |
+//! | Simulation | `SimFreshness::is_in_flight` (Running or Released in flight) | `AppState::simulation_is_stale` | — |
 //!
 //! The collision check and the simulation store no error text: the drain
 //! clears the submit stamp and shows a toast. So neither one has a Failed
 //! answer here.
 
-use crate::state::freshness::{FreshnessState, SimFreshness, freshness_at};
+use crate::state::freshness::{FreshnessState, freshness_at};
 use crate::state::runtime::ReachStatus;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
@@ -243,7 +243,7 @@ fn simulation(state: &AppState, row: &OverlayRow) -> Live {
         return Live::Idle;
     }
     let freshness = state.simulation_freshness();
-    if freshness == SimFreshness::Running {
+    if freshness.is_in_flight() {
         Live::Computing(JobLane::Analysis)
     } else if freshness.is_stale() {
         Live::Stale {

@@ -135,7 +135,14 @@ fn the_session_copy_holds_no_mesh_checkpoints_or_deviations_after_adopt_w2e() {
         .expect("the control: the view holds the run");
     assert!(!view.mesh.indices.is_empty());
     assert_eq!(view.checkpoints.len(), 1);
-    assert!(controller.state.simulation.playback.display_deviations.is_some());
+    assert!(
+        controller
+            .state
+            .simulation
+            .playback
+            .display_deviations
+            .is_some()
+    );
 
     let session = controller
         .state
@@ -150,14 +157,21 @@ fn the_session_copy_holds_no_mesh_checkpoints_or_deviations_after_adopt_w2e() {
         session.checkpoints.is_empty(),
         "no session reader reads a checkpoint; the view keeps its own"
     );
-    assert!(session.deviations.is_none(), "the view keeps the per-vertex deviations");
+    assert!(
+        session.deviations.is_none(),
+        "the view keeps the per-vertex deviations"
+    );
     assert!(
         session.column_deviations.is_none(),
         "no reader in the GUI process reads the per-column deviations"
     );
     // The memory claim: only the test and the view hold the mesh and the
     // checkpoint. A third holder would pin them across a release.
-    assert_eq!(Arc::strong_count(&artifacts.mesh), 2, "test + view, no session");
+    assert_eq!(
+        Arc::strong_count(&artifacts.mesh),
+        2,
+        "test + view, no session"
+    );
     assert_eq!(
         Arc::strong_count(&artifacts.checkpoint),
         2,
@@ -187,13 +201,20 @@ fn a_released_view_reads_released_during_a_run_and_after_a_cancel_w2e() {
     let freshness = controller.state.simulation_freshness();
     assert_eq!(freshness, SimFreshness::Released { in_flight: true });
     assert!(freshness.is_in_flight(), "a re-run is a run in flight");
-    assert!(freshness.is_stale(), "the core run is not the run asked for");
+    assert!(
+        freshness.is_stale(),
+        "the core run is not the run asked for"
+    );
     assert_eq!(
         crate::ui::preflight::simulation_detail(&controller.state),
         "Running — previous result released"
     );
     // After the release only the test holds the mesh and the checkpoint.
-    assert_eq!(Arc::strong_count(&artifacts.mesh), 1, "the release frees the mesh");
+    assert_eq!(
+        Arc::strong_count(&artifacts.mesh),
+        1,
+        "the release frees the mesh"
+    );
     assert_eq!(
         Arc::strong_count(&artifacts.checkpoint),
         1,

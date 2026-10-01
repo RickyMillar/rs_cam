@@ -14,7 +14,7 @@
 //! Red before the fix: 15 Z rays differed, by up to 2.2 mm, on the ring the
 //! pocket's first plunge leaves at (8, 32). The metric-off group carve took
 //! the playback replay route; it now takes the one milling carve, and the
-//! samples are dropped instead (`compute/simulate.rs::carve_entry`).
+//! walk records no samples instead (`compute/simulate.rs::carve_entry`, M8).
 
 #![allow(
     clippy::unwrap_used,

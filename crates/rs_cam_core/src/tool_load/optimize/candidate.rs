@@ -563,10 +563,13 @@ pub(crate) fn refine_stage2(
             cancel,
         ) {
             Ok(candidate) => refined.push(candidate),
-            Err(SessionError::Simulation(crate::compute::simulate::SimulationError::Cancelled)) => {
-                return Err(SessionError::Simulation(
-                    crate::compute::simulate::SimulationError::Cancelled,
-                ));
+            // A budget stop ends the search as a cancel does; it is not a
+            // dropped candidate.
+            Err(SessionError::Simulation(
+                stop @ (crate::compute::simulate::SimulationError::Cancelled
+                | crate::compute::simulate::SimulationError::OverBudget { .. }),
+            )) => {
+                return Err(SessionError::Simulation(stop));
             }
             Err(e) => {
                 tracing::warn!(
