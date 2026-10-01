@@ -500,11 +500,13 @@ fn draw_tool_load_overrides(
             );
             ui.add_space(2.0);
 
+            // U3: a simulation with no cut trace is not "no simulation".
+            let trace_less = simulation_kept_no_trace(state);
             for verdict in &report.per_toolpath {
                 if !verdict.any_exceeded() && !verdict.any_unmodeled() {
                     continue;
                 }
-                let line = format_verdict_line(verdict);
+                let line = format_verdict_line(verdict, trace_less);
                 ui.label(egui::RichText::new(line).small().color(theme::TEXT_MUTED));
             }
             ui.add_space(4.0);
@@ -541,9 +543,32 @@ fn draw_tool_load_overrides(
         });
 }
 
-fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &'static str {
+/// A simulation result exists, and it kept no cut trace: the run had
+/// "Capture cutting metrics" off.
+pub(crate) fn simulation_kept_no_trace(state: &AppState) -> bool {
+    state
+        .simulation
+        .results
+        .as_ref()
+        .is_some_and(|results| results.cut_trace.is_none())
+}
+
+/// The short reason of an unmodelled criterion in the gate panel.
+///
+/// `trace_less` is [`simulation_kept_no_trace`]. Core reports
+/// `SimulationRequired` for any missing cut trace, and after a run with no
+/// trace "run simulation first" names the wrong cause (U3).
+pub(crate) fn unmodeled_reason_label(
+    reason: &rs_cam_core::tool_load::UnmodeledReason,
+    trace_less: bool,
+) -> &'static str {
     use rs_cam_core::tool_load::UnmodeledReason;
     match reason {
+        UnmodeledReason::SimulationRequired if trace_less => {
+            "the simulation ran without cutting metrics \u{2014} turn on Simulation \
+             \u{25B8} Setup & run \u{25B8} \"Capture cutting metrics\", then re-run the \
+             simulation"
+        }
         UnmodeledReason::SimulationRequired => "run simulation first",
         UnmodeledReason::StaleSimulation => "re-run stale simulation",
         UnmodeledReason::ArcEngagementNotCaptured => {
@@ -564,7 +589,7 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
     }
 }
 
-fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
+fn format_verdict_line(verdict: &ToolpathLoadVerdict, trace_less: bool) -> String {
     use rs_cam_core::tool_load::verdict::{
         ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict,
     };
@@ -580,7 +605,7 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
         ChiploadVerdict::Unmodeled { reason } => {
             parts.push(format!(
                 "advance/tooth: unmodeled ({})",
-                unmodeled_reason_label(reason)
+                unmodeled_reason_label(reason, trace_less)
             ));
         }
         ChiploadVerdict::Within { .. } => {}
@@ -592,7 +617,7 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
         PowerVerdict::Unmodeled { reason } => {
             parts.push(format!(
                 "power: unmodeled ({})",
-                unmodeled_reason_label(reason)
+                unmodeled_reason_label(reason, trace_less)
             ));
         }
         PowerVerdict::Within { .. } => {}
@@ -604,10 +629,35 @@ fn format_verdict_line(verdict: &ToolpathLoadVerdict) -> String {
         DeflectionVerdict::Unmodeled { reason } => {
             parts.push(format!(
                 "deflection: unmodeled ({})",
-                unmodeled_reason_label(reason)
+                unmodeled_reason_label(reason, trace_less)
             ));
         }
         DeflectionVerdict::Within { .. } => {}
     }
     format!("TP {}: {}", verdict.toolpath_id, parts.join(" \u{00B7} "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unmodeled_reason_label;
+    use rs_cam_core::tool_load::UnmodeledReason;
+
+    /// U3: after a run with no cut trace, the gate panel names the capture
+    /// control, not "run simulation first".
+    #[test]
+    fn a_trace_less_run_names_the_capture_control() {
+        let text = unmodeled_reason_label(&UnmodeledReason::SimulationRequired, true);
+        assert!(!text.to_lowercase().contains("simulation first"), "{text}");
+        assert!(text.contains("without cutting metrics"), "{text}");
+        assert!(text.contains("\"Capture cutting metrics\""), "{text}");
+        assert!(text.contains("re-run the simulation"), "{text}");
+    }
+
+    #[test]
+    fn no_simulation_keeps_run_simulation_first() {
+        assert_eq!(
+            unmodeled_reason_label(&UnmodeledReason::SimulationRequired, false),
+            "run simulation first"
+        );
+    }
 }

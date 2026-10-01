@@ -1,6 +1,6 @@
 # `budget/` — the memory budget, the job guard, the estimators, the grid caps
 
-Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3).
+Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3, B5).
 
 ## Files
 
@@ -13,6 +13,8 @@ Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3).
   and `largest_cell_that_fits` for a refusal message.
 - `grid.rs` — the ONE source of every dexel grid cap (`GridCapRole`) and the
   dexel rounding (`grid_cells`).
+- `settings.rs` — the ONE `settings.toml` loader for the GUI and the CLI.
+  `resolve_limit`: a surface flag overrides the file. Tests never `set_var`.
 
 ## Invariants
 

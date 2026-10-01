@@ -1365,10 +1365,20 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
 
 /// Core's reason for an `Unmodeled` verdict, in the words every surface of
 /// this panel uses. The limit rows and the cut-metric cards share it.
+///
+/// U3: core reports `SimulationRequired` when the gate has no cut trace.
+/// That is also the state after a run with "Capture cutting metrics" off,
+/// and the Inspector draws these rows only while a simulation exists. So the
+/// text names the missing trace and the control. It does not say "has not
+/// been run", which was false directly after a run. The Readiness page also
+/// draws these rows with no simulation, and there "run the simulation" in
+/// the same sentence is the remedy.
 fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
     match reason {
         Some(UnmodeledReason::SimulationRequired) => {
-            "Unmodeled: simulation has not been run".to_owned()
+            "Unmodeled: no cut trace \u{2014} run the simulation with Simulation \u{25B8} \
+             Setup & run \u{25B8} \"Capture cutting metrics\" on"
+                .to_owned()
         }
         Some(UnmodeledReason::StaleSimulation) => {
             "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
@@ -2662,5 +2672,19 @@ mod tests {
             "a criterion that does not apply is not a limit that was not \
              measured, and it must not take a row"
         );
+    }
+
+    /// U3: the `SimulationRequired` row names the missing cut trace and the
+    /// capture control. It never says "run a simulation first" or "has not
+    /// been run": the Inspector draws it while a simulation exists.
+    #[test]
+    fn a_simulation_required_row_names_the_trace_not_a_missing_run() {
+        let text = unmodeled_text(Some(&UnmodeledReason::SimulationRequired));
+        let lower = text.to_lowercase();
+        assert!(!lower.contains("simulation first"), "{text}");
+        assert!(!lower.contains("has not been run"), "{text}");
+        assert!(text.contains("no cut trace"), "{text}");
+        assert!(text.contains("\"Capture cutting metrics\""), "{text}");
+        assert!(text.contains("Setup & run"), "{text}");
     }
 }

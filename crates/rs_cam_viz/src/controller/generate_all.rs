@@ -234,6 +234,15 @@ pub struct GenerationPlan {
     /// it already holds a result; its ancestors do not.
     pub target: Option<ToolpathId>,
     pub generated: usize,
+    /// `Generate` steps that submitted nothing because the operation already
+    /// held a current result. The driver counts them through
+    /// [`Self::note_already_current`].
+    ///
+    /// Wave 2 found that the headline read "Generated 5" or "Generated 7"
+    /// for one project. The GUI's auto-regeneration (500 ms after load) had
+    /// made two operations current or had not, and the plan counted only the
+    /// operations it generated.
+    pub already_current: usize,
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
     pub errors: Vec<(usize, String)>,
@@ -268,6 +277,7 @@ impl GenerationPlan {
             edit_counter: 0,
             target: None,
             generated: 0,
+            already_current: 0,
             failed: 0,
             errors: Vec::new(),
             blocked: Vec::new(),
@@ -310,6 +320,29 @@ impl GenerationPlan {
         )
     }
 
+    /// Count one `Generate` step that submitted nothing, because its
+    /// operation already held a current result.
+    ///
+    /// The driver calls this at the one skip site, in
+    /// `controller::events::compute::submit_plan_step`, before it records
+    /// `StepOutcome::Skipped("it already holds a current result")`.
+    pub fn note_already_current(&mut self) {
+        self.already_current += 1;
+    }
+
+    /// How many enabled operations the plan covers: one `Generate` step each.
+    ///
+    /// Core's plan emits a `Generate` step for every enabled operation in
+    /// scope, current or not, so the step list is the one source of this
+    /// count.
+    #[must_use]
+    pub fn enabled_in_scope(&self) -> usize {
+        self.steps
+            .iter()
+            .filter(|step| matches!(step, PlanStep::Generate(_)))
+            .count()
+    }
+
     /// Did any step generate an operation?
     ///
     /// The closing full simulation runs only when something moved; a plan
@@ -324,6 +357,8 @@ impl GenerationPlan {
     pub fn completed_summary(&self) -> GenerateAllSummary {
         GenerateAllSummary {
             generated: self.generated,
+            already_current: self.already_current,
+            enabled: self.enabled_in_scope(),
             failed: self.failed,
             errors: self.errors.clone(),
             blocked: self.blocked.clone(),
@@ -338,6 +373,13 @@ impl GenerationPlan {
 /// The outcome of one plan, ready to render.
 pub struct GenerateAllSummary {
     pub generated: usize,
+    /// Operations the plan did not generate, because each already held a
+    /// current result. Not a failure and not a skip for a missing input.
+    pub already_current: usize,
+    /// Enabled operations in the plan's scope (the whole project for Generate
+    /// All and MCP `generate_all`). `generated + already_current + failed +
+    /// blocked.len()` is at most this count.
+    pub enabled: usize,
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
     pub errors: Vec<(usize, String)>,
@@ -359,6 +401,9 @@ pub struct GenerateAllSummary {
 #[must_use]
 pub fn generate_all_headline(summary: &GenerateAllSummary) -> String {
     let mut headline = format!("Generated {} toolpaths", summary.generated);
+    if summary.already_current > 0 {
+        headline.push_str(&format!(", {} already current", summary.already_current));
+    }
     if summary.failed > 0 {
         headline.push_str(&format!(", {} failed", summary.failed));
     }
@@ -369,7 +414,8 @@ pub fn generate_all_headline(summary: &GenerateAllSummary) -> String {
         ));
     }
     headline.push_str(&format!(
-        " (in {} step{}, {} simulation{})",
+        " ({} enabled; {} step{}, {} simulation{})",
+        summary.enabled,
         summary.steps,
         if summary.steps == 1 { "" } else { "s" },
         summary.simulations,

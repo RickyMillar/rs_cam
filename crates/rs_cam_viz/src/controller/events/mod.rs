@@ -707,8 +707,21 @@ impl<B: ComputeBackend> AppController<B> {
         let mut handle = match started {
             Ok(handle) => handle,
             Err(rs_cam_core::session::SessionError::SimulationRequired(_)) => {
-                // Surface the typed Skipped the modal already renders as
-                // "run a simulation first", rather than a toast.
+                // U3: a simulation that kept no cut trace is a different
+                // cause. The modal's card says "no simulation has been run
+                // yet", which is false directly after a run, so this case
+                // names the capture control in the toast the project-level
+                // Optimize gives (`menu_bar::OPTIMIZE_NEEDS_CUT_TRACE`).
+                use crate::ui::menu_bar::{OPTIMIZE_NEEDS_CUT_TRACE, optimize_baseline_missing};
+                if optimize_baseline_missing(&self.state) == Some(OPTIMIZE_NEEDS_CUT_TRACE) {
+                    self.push_notification(
+                        OPTIMIZE_NEEDS_CUT_TRACE.to_owned(),
+                        crate::controller::Severity::Warning,
+                    );
+                    return;
+                }
+                // No simulation: surface the typed Skipped the modal already
+                // renders as "run a simulation first", rather than a toast.
                 self.state.close_modals_for_exclusivity();
                 self.state.optimize_modal = Some(crate::state::OptimizeModalState {
                     toolpath_id,

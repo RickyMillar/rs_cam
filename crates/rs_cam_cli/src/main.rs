@@ -23,8 +23,12 @@ struct Cli {
     /// a byte count, or "unlimited".
     ///
     /// When the process uses more than the budget, the generation plan
-    /// stops and says so, before the system kills the process. With no
-    /// flag the run has no limit (the default fraction is RULING PENDING).
+    /// stops and says so, before the system kills the process.
+    ///
+    /// Precedence: this flag overrides `[memory] limit` in the settings
+    /// file (`$RS_CAM_SETTINGS`, else `$XDG_CONFIG_HOME/rs_cam/settings.toml`,
+    /// else `~/.config/rs_cam/settings.toml`). With no flag and no file the
+    /// run has no limit (the default fraction is RULING PENDING).
     #[arg(
         long,
         global = true,
@@ -369,7 +373,9 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    memory_budget::set(cli.memory_limit);
+    // The log subscriber starts below, so the settings-file warning waits
+    // for it.
+    let settings_warning = memory_budget::set(cli.memory_limit);
 
     // `rough-score` prints JSON records on stdout, so its log goes to
     // stderr. The other commands keep the stdout log they always had.
@@ -384,6 +390,9 @@ fn main() -> Result<()> {
         subscriber.with_writer(std::io::stderr).init();
     } else {
         subscriber.init();
+    }
+    if let Some(warning) = settings_warning {
+        tracing::warn!("{warning}");
     }
 
     match cli.command {
@@ -561,8 +570,8 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    // SAFETY: test module; a failed unwrap is a failed test.
-    #![allow(clippy::unwrap_used)]
+    // SAFETY: test module; a failed unwrap or a panic is a failed test.
+    #![allow(clippy::unwrap_used, clippy::panic)]
 
     use super::{Cli, Commands};
     use clap::Parser;
@@ -602,6 +611,62 @@ mod tests {
             MemoryBudget::from_setting(cli.memory_limit.unwrap_or_default()),
             MemoryBudget::UNLIMITED
         );
+    }
+
+    /// B5: the flag overrides the settings file, and with a flag the CLI
+    /// does not read the file at all.
+    #[test]
+    fn the_flag_overrides_the_settings_file() {
+        use rs_cam_core::budget::settings::{AppSettings, LoadedSettings};
+
+        let file = || LoadedSettings {
+            settings: AppSettings {
+                memory_limit: MemoryLimit::Bytes(3 * GIB),
+            },
+            path: None,
+            warning: None,
+        };
+
+        let (limit, warning) = super::memory_budget::limit_from(None, file);
+        assert_eq!(limit, MemoryLimit::Bytes(3 * GIB), "no flag: the file");
+        assert_eq!(warning, None);
+
+        let cli = Cli::try_parse_from(["rs_cam", "--memory-limit", "1GiB", "version"]).unwrap();
+        let (limit, _) = super::memory_budget::limit_from(cli.memory_limit, || {
+            panic!("a flag must not read the settings file")
+        });
+        assert_eq!(limit, MemoryLimit::Bytes(GIB), "the flag wins");
+
+        let (limit, _) = super::memory_budget::limit_from(Some(MemoryLimit::Unlimited), || {
+            panic!("a flag must not read the settings file")
+        });
+        assert_eq!(limit, MemoryLimit::Unlimited);
+    }
+
+    /// A bad file gives the default limit, and its warning reaches `main`.
+    #[test]
+    fn a_bad_settings_file_warns_and_gives_the_default() {
+        use rs_cam_core::budget::settings::load_from;
+
+        let path = std::env::temp_dir().join(format!(
+            "rs_cam_cli_settings_bad_{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "[memory]\nlimit = \"lots\"\n").unwrap();
+        let (limit, warning) = super::memory_budget::limit_from(None, || load_from(&path));
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(limit, MemoryLimit::Default);
+        assert!(warning.is_some_and(|w| w.contains("[memory] limit")));
+    }
+
+    #[test]
+    fn the_help_states_the_precedence() {
+        use clap::CommandFactory;
+
+        let help = Cli::command().render_long_help().to_string();
+        for token in ["overrides", "settings.toml", "RS_CAM_SETTINGS"] {
+            assert!(help.contains(token), "--help lacks {token}: {help}");
+        }
     }
 
     #[test]

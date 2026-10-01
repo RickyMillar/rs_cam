@@ -37,6 +37,11 @@ Inspect the CLI surface:
 cargo run -p rs_cam_cli -- --help
 ```
 
+The CLI `project` command needs `--output-dir <DIR>`. The memory budget of
+the GUI and the CLI comes from `~/.config/rs_cam/settings.toml`
+(`[memory] limit = "12GiB"`); the CLI flag `--memory-limit` overrides it.
+See [`FEATURE_CATALOG.md`](FEATURE_CATALOG.md#settings-file).
+
 Run the test suite:
 
 ```bash
