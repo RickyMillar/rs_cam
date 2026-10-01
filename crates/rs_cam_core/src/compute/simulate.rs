@@ -17,13 +17,13 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::stock::collision::{
     RapidClearanceCheck, RapidCollision, check_rapid_collisions_against_stock,
 };
-use crate::stock::dexel_mesh::dexel_stock_to_mesh;
+use crate::stock::dexel_mesh::dexel_stock_to_mesh_strided;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{
     SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutTrace, SimulationMetricOptions,
     SimulationProvenance,
 };
-use crate::stock::stock_mesh::StockMesh;
+use crate::stock::stock_mesh::{DisplayMeshDegrade, StockMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticTrace;
@@ -335,6 +335,18 @@ pub struct SimulationRequest {
     /// `max_feed_mm_min` cap so the integrator can clamp commanded
     /// feeds inside the same envelope the controller would.
     pub kinematics: Option<KinematicsContext>,
+    /// The display-mesh stride (memory programme 2026-10-01, degrade 4b).
+    ///
+    /// `1` (and `0`) builds the composite and checkpoint display meshes at
+    /// the full grid resolution, bit for bit as before. `k > 1` builds them
+    /// on every k-th row and column (see
+    /// `stock::dexel_mesh_mc::z_grid_marching_cubes_strided`), about `1/k²`
+    /// of the mesh bytes. The simulation grid, the stock, the collisions,
+    /// the cut trace and the column deviations do NOT change. Only the
+    /// memory budget sets `k > 1`; the preflight picks it with
+    /// `stock::dexel_mesh_mc::display_stride_for`. The result says so in
+    /// [`SimulationResult::display_degrade`].
+    pub display_stride: u32,
 }
 
 /// F-034 cycle-time integrator inputs. Bundles the kinematics limits
@@ -435,6 +447,14 @@ pub struct SimCheckpointMesh {
     /// holds — and playback replays that group's setup-local toolpaths into
     /// it with `StockCutDirection::FromTop`.
     pub stock_local_to_global: Option<SetupTransformInfo>,
+    /// The request's [`SimulationRequest::display_stride`]: the stride
+    /// [`Self::build_mesh`] samples the Z-grid on (memory programme
+    /// 2026-10-01, degrade 4b). `1` is the full resolution.
+    ///
+    /// The checkpoint carries it because a reader can outlive the session's
+    /// result: an edit drops `ProjectSession`'s simulation, and the view
+    /// keeps its checkpoints for scrub. Read the stride of a shown run here.
+    pub display_stride: u32,
 }
 
 impl SimCheckpointMesh {
@@ -449,9 +469,13 @@ impl SimCheckpointMesh {
     ///
     /// The cost is one marching-cubes pass over the grid. A caller that
     /// shows the mesh keeps it; do not call this once per frame.
+    ///
+    /// Degrade 4b (memory programme 2026-10-01): the build samples the Z-grid
+    /// on every [`Self::display_stride`]-th row and column. At stride 1 the
+    /// mesh is the full-resolution mesh, bit for bit.
     #[must_use]
     pub fn build_mesh(&self) -> StockMesh {
-        let mut local_mesh = dexel_stock_to_mesh(&self.mesh_stock);
+        let mut local_mesh = dexel_stock_to_mesh_strided(&self.mesh_stock, self.display_stride);
         // §6.E append analytic drill cylinders so checkpoint frames show
         // clean circular hole walls even at low dexel resolution. The
         // cylinders are in local-frame coordinates; the transform below
@@ -591,6 +615,24 @@ pub struct SimulationResult {
     /// as `prior_stocks`. See [`crate::compute::source_stock`].
     pub prior_stock_sources:
         std::collections::HashMap<ToolpathId, crate::compute::source_stock::SourceStock>,
+    /// `Some` when [`Self::mesh`] (and every checkpoint mesh) is coarser than
+    /// the simulation grid (memory programme 2026-10-01, degrade 4b). `None`
+    /// means the full resolution. [`DisplayMeshDegrade::describe`] gives the sentence for
+    /// the banner, the MCP reply and the diagnostics.
+    ///
+    /// [`Self::deviations`] are per vertex of [`Self::mesh`], so they follow
+    /// the stride. [`Self::column_deviations`] read the grid and do not.
+    pub display_degrade: Option<DisplayMeshDegrade>,
+}
+
+impl SimulationResult {
+    /// The display stride this run built its meshes with: `1` for the full
+    /// resolution. Every checkpoint carries the same value in
+    /// [`SimCheckpointMesh::display_stride`].
+    #[must_use]
+    pub fn display_stride(&self) -> u32 {
+        self.display_degrade.map_or(1, |d| d.stride)
+    }
 }
 
 /// Error type for simulation failures.
@@ -1171,7 +1213,9 @@ fn finish_group<F>(
     }
 
     // After all toolpaths in this group, extract mesh and composite.
-    let mut group_mesh = dexel_stock_to_mesh(group_stock);
+    // Degrade 4b: a display stride above 1 samples the Z-grid coarser; the
+    // stock itself is untouched.
+    let mut group_mesh = dexel_stock_to_mesh_strided(group_stock, request.display_stride);
     if !group_drill_ops.is_empty() {
         let refs: Vec<&crate::ops::drill_op::DrillOp> =
             group_drill_ops.iter().map(|d| d.as_ref()).collect();
@@ -1278,6 +1322,7 @@ fn push_checkpoint(
         mesh_stock_min: request.stock_bbox.min,
         stock: checkpoint_stock,
         stock_local_to_global: checkpoint_frame,
+        display_stride: request.display_stride,
     }));
     run.boundary_index += 1;
     mesh_stock
@@ -1891,6 +1936,7 @@ where
         column_grid_cell_mm,
         prior_stocks,
         prior_stock_sources,
+        display_degrade: DisplayMeshDegrade::for_stride(request.display_stride),
     })
 }
 
@@ -2253,6 +2299,7 @@ mod tests {
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         }
     }
 
@@ -2268,6 +2315,69 @@ mod tests {
             result.column_deviations.is_none(),
             "no model mesh -> no column deviations"
         );
+    }
+
+    /// Degrade 4b (memory programme 2026-10-01): a display stride changes
+    /// the display meshes only. The stock every checkpoint and prior stock
+    /// holds, the move count and the collisions stay the same; the
+    /// composite mesh gets smaller and the result names the degrade.
+    #[test]
+    fn a_display_stride_changes_the_display_mesh_only() {
+        let full_req = simple_request();
+        let mut strided_req = simple_request();
+        strided_req.display_stride = 2;
+        let cancel = AtomicBool::new(false);
+        let full = run_simulation(&full_req, &cancel).unwrap();
+        let strided = run_simulation(&strided_req, &cancel).unwrap();
+
+        assert_eq!(full.display_degrade, None);
+        assert_eq!(full.display_stride(), 1);
+        assert_eq!(strided.display_stride(), 2);
+        assert_eq!(
+            strided.display_degrade.map(|d| d.reason),
+            Some(crate::stock::stock_mesh::DisplayDegradeReason::MemoryBudget)
+        );
+
+        // The display mesh: smaller, and the checkpoint build follows the
+        // stride the result names.
+        assert!(
+            strided.mesh.vertex_count() < full.mesh.vertex_count(),
+            "strided composite {} vs full {}",
+            strided.mesh.vertex_count(),
+            full.mesh.vertex_count()
+        );
+        assert_eq!(strided.checkpoints[0].display_stride, 2);
+        assert_eq!(full.checkpoints[0].display_stride, 1);
+        let strided_cp = strided.checkpoints[0].build_mesh();
+        assert_eq!(strided_cp.vertices, strided.mesh.vertices);
+        assert_eq!(strided_cp.indices, strided.mesh.indices);
+
+        // The simulation: unchanged.
+        assert_eq!(full.total_moves, strided.total_moves);
+        assert_eq!(
+            full.rapid_collision_move_indices,
+            strided.rapid_collision_move_indices
+        );
+        assert_eq!(
+            full.column_grid_cell_mm.to_bits(),
+            strided.column_grid_cell_mm.to_bits()
+        );
+        assert_eq!(full.checkpoints.len(), strided.checkpoints.len());
+        for (a, b) in full.checkpoints.iter().zip(&strided.checkpoints) {
+            assert_eq!(a.mesh_stock.z_grid.rays, b.mesh_stock.z_grid.rays);
+            assert_eq!(a.stock.z_grid.rays, b.stock.z_grid.rays);
+        }
+        let mut keys: Vec<_> = full.prior_stocks.keys().copied().collect();
+        keys.sort_unstable_by_key(|id| id.0);
+        let mut strided_keys: Vec<_> = strided.prior_stocks.keys().copied().collect();
+        strided_keys.sort_unstable_by_key(|id| id.0);
+        assert_eq!(keys, strided_keys);
+        for id in keys {
+            assert_eq!(
+                full.prior_stocks[&id].z_grid.rays,
+                strided.prior_stocks[&id].z_grid.rays
+            );
+        }
     }
 
     /// P2.g sentry: `column_deviations` samples each dexel column's top
@@ -2520,6 +2630,7 @@ mod tests {
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         };
 
         let cancel = AtomicBool::new(false);
@@ -2649,6 +2760,7 @@ mod tests {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         };
 
         let cancel = AtomicBool::new(false);

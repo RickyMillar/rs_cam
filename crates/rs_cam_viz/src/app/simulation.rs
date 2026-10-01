@@ -13,6 +13,10 @@ impl RsCamApp {
     /// build is the one the simulator ran eagerly before, so the picture is
     /// the same. This path keeps ONE checkpoint mesh in the cache: it releases
     /// every other checkpoint's mesh before it reads the one it shows.
+    ///
+    /// Degrade 4b (memory programme 2026-10-01): a checkpoint builds its mesh
+    /// at the display stride of its run (`SimCheckpointMesh::display_stride`),
+    /// so a scrub mesh matches the composite mesh with no change here.
     pub(super) fn load_checkpoint_for_move(&mut self, move_idx: usize, frame: &mut eframe::Frame) {
         if let Some(cp_idx) = self
             .controller
@@ -104,7 +108,7 @@ impl RsCamApp {
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
         use rs_cam_core::dexel_stock::TriDexelStock;
         use rs_cam_core::stock::dexel_mesh::{
-            dexel_stock_to_entry_surface_mesh, dexel_stock_to_mesh,
+            dexel_stock_to_entry_surface_mesh, dexel_stock_to_mesh_strided,
         };
 
         let target_move = self.controller.state().simulation.playback.current_move;
@@ -357,7 +361,9 @@ impl RsCamApp {
             let mut mesh = if use_preview_mesh {
                 dexel_stock_to_entry_surface_mesh(stock, preview_direction)
             } else {
-                dexel_stock_to_mesh(stock)
+                // Degrade 4b: the paused live mesh takes the run's display
+                // stride, as the composite and the checkpoint meshes do.
+                dexel_stock_to_mesh_strided(stock, self.display_stride())
             };
 
             // Append analytical drill cylinders for drill ops whose TP the
@@ -468,6 +474,22 @@ impl RsCamApp {
                 );
             }
         }
+    }
+
+    /// The display stride of the shown simulation: `1` for the full
+    /// resolution (memory programme 2026-10-01, degrade 4b). The live mesh
+    /// takes it, so it agrees with the composite and the checkpoint meshes.
+    ///
+    /// It reads the view's checkpoints, not `ProjectSession`'s result: an
+    /// edit drops the session's result while the view still shows the run.
+    pub(super) fn display_stride(&self) -> u32 {
+        self.controller
+            .state()
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|results| results.checkpoints.first())
+            .map_or(1, |checkpoint| checkpoint.core.display_stride)
     }
 
     /// Return the (FaceUp, ZRotation, needs_transform) for the setup whose

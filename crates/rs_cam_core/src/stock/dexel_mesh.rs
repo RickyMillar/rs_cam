@@ -149,17 +149,48 @@ pub fn dexel_stock_to_mesh(stock: &TriDexelStock) -> StockMesh {
         stock.stock_bbox.min.z,
     );
 
+    append_side_grids(stock, &mut mesh);
+    mesh
+}
+
+/// [`dexel_stock_to_mesh`] with the Z-grid sampled on every `stride`-th row
+/// and column (memory programme 2026-10-01, degrade 4b).
+///
+/// A `stride` of 0 or 1 calls [`dexel_stock_to_mesh`], so the mesh is the
+/// same bit for bit. A larger stride builds the Z-grid solid with
+/// [`crate::stock::dexel_mesh_mc::z_grid_marching_cubes_strided`]; that
+/// function documents the sampling rule.
+///
+/// The side grids (X and Y) keep their full resolution. Only a stock with a
+/// lateral setup has them, and they cover a side face, not the top. This is
+/// a known gap of the degrade: a side grid emits one vertex per cell and per
+/// segment layer, so a large side face still costs its full mesh.
+pub fn dexel_stock_to_mesh_strided(stock: &TriDexelStock, stride: u32) -> StockMesh {
+    if stride <= 1 {
+        return dexel_stock_to_mesh(stock);
+    }
+    let mut mesh = crate::stock::dexel_mesh_mc::z_grid_marching_cubes_strided(
+        &stock.z_grid,
+        stock.stock_bbox.max.z,
+        stock.stock_bbox.min.z,
+        stride,
+    );
+
+    append_side_grids(stock, &mut mesh);
+    mesh
+}
+
+/// Append the open side-grid surfaces (Y, then X) of a stock to `mesh`.
+fn append_side_grids(stock: &TriDexelStock, mesh: &mut StockMesh) {
     if let Some(y_grid) = &stock.y_grid {
         let y_mesh = side_grid_to_mesh(y_grid, stock.stock_bbox.max.y, stock.stock_bbox.min.y);
-        append_mesh(&mut mesh, &y_mesh);
+        append_mesh(mesh, &y_mesh);
     }
 
     if let Some(x_grid) = &stock.x_grid {
         let x_mesh = side_grid_to_mesh(x_grid, stock.stock_bbox.max.x, stock.stock_bbox.min.x);
-        append_mesh(&mut mesh, &x_mesh);
+        append_mesh(mesh, &x_mesh);
     }
-
-    mesh
 }
 
 /// Build a closed solid mesh from a Z-grid via marching cubes
