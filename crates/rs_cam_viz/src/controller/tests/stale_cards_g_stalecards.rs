@@ -43,28 +43,131 @@ fn pump_once(controller: &mut AppController) {
     }
 }
 
+/// The wall-clock budget of ONE test, shared by all its pumps.
+///
+/// Measured 2026-10-02: the three tests of this file (the ignored control
+/// included) finish in 3.5 s to 3.8 s together on an idle machine, and in
+/// 15 s to 34 s beside 24 busy processes and a cargo build. 120 s keeps a
+/// margin of more than 3x over the worst loaded run. A wait that stays busy for longer is a hang, and the test must
+/// fail with the lane state, not hold the cargo lane for minutes.
+const TEST_BUDGET: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// The time that the controller must stay settled before a pump returns.
+///
+/// A lane writes `Idle` BEFORE it sends its result, so an idle lane can
+/// still have one result in the channel. The pump drains on each pass, and
+/// this hold gives a late send time to arrive.
+const SETTLE_HOLD: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// The deadline that all pumps of one test share.
+struct SettleBudget {
+    deadline: std::time::Instant,
+}
+
+impl SettleBudget {
+    fn start() -> Self {
+        Self {
+            deadline: std::time::Instant::now() + TEST_BUDGET,
+        }
+    }
+}
+
 fn lanes_idle(controller: &AppController) -> bool {
     controller
         .lane_snapshots()
         .iter()
-        .all(|snapshot| snapshot.state == LaneState::Idle)
+        .all(|snapshot| snapshot.state == LaneState::Idle && snapshot.queue_depth == 0)
 }
 
-/// Pump until no plan runs and every lane is idle, twice in a row.
-fn pump_until_settled(controller: &mut AppController, what: &str) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
-    let mut quiet = 0;
+/// The toolpaths whose runtime row still reads `Computing`.
+fn computing_toolpaths(controller: &AppController) -> Vec<ToolpathId> {
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .iter()
+        .filter(|(_, rt)| matches!(rt.status, crate::state::runtime::ComputeStatus::Computing))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// True when no work is in flight on the controller side or on a lane.
+///
+/// - No plan runs and no plan waits for the resolution question.
+/// - Every lane is idle with an empty queue.
+/// - No toolpath row waits for a result (`Computing`).
+/// - No simulation waits for a result. Every adopt arm takes the submit
+///   stamp, so a stamp that stays set means that a result has not landed.
+fn settled(controller: &AppController) -> bool {
+    !controller.plan_is_busy()
+        && lanes_idle(controller)
+        && computing_toolpaths(controller).is_empty()
+        && controller
+            .state
+            .simulation
+            .submitted_simulation_epoch
+            .is_none()
+}
+
+/// The state of each lane and of the controller, for a timeout message.
+fn settle_evidence(controller: &AppController) -> String {
+    let mut out = String::new();
+    for snapshot in controller.lane_snapshots() {
+        out.push_str(&format!(
+            "lane {:?}: state={:?} queue={} job={:?} phase={:?} elapsed={:?}\n",
+            snapshot.lane,
+            snapshot.state,
+            snapshot.queue_depth,
+            snapshot.current_job,
+            snapshot.current_phase,
+            snapshot.elapsed(),
+        ));
+    }
+    out.push_str(&format!(
+        "plan: busy={} pending_confirm={} cursor={:?} steps={:?} in_flight={:?}\n",
+        controller.plan_is_busy(),
+        controller.pending_plan_confirm.is_some(),
+        controller.plan.as_ref().map(|plan| plan.cursor),
+        controller.plan.as_ref().map(|plan| plan.steps.len()),
+        controller.plan.as_ref().map(|plan| plan.in_flight),
+    ));
+    out.push_str(&format!(
+        "toolpaths computing: {:?}\nsimulation submit stamp: {:?}\n",
+        computing_toolpaths(controller),
+        controller.state.simulation.submitted_simulation_epoch,
+    ));
+    out
+}
+
+/// Pump until the controller is settled (see [`settled`]) for
+/// [`SETTLE_HOLD`] and for at least three pumps.
+///
+/// The pump panics when `budget` runs out. Before the panic it cancels every
+/// lane: the backend `Drop` joins each lane thread and does not cancel the
+/// job that runs, so without the cancel the unwind waits for that job.
+fn pump_until_settled(controller: &mut AppController, budget: &SettleBudget, what: &str) {
+    let mut quiet_pumps = 0;
+    let mut quiet_since: Option<std::time::Instant> = None;
     loop {
         pump_once(controller);
-        if !controller.plan_is_busy() && lanes_idle(controller) {
-            quiet += 1;
-            if quiet >= 3 {
+        if settled(controller) {
+            quiet_pumps += 1;
+            let since = *quiet_since.get_or_insert_with(std::time::Instant::now);
+            if quiet_pumps >= 3 && since.elapsed() >= SETTLE_HOLD {
                 return;
             }
         } else {
-            quiet = 0;
+            quiet_pumps = 0;
+            quiet_since = None;
         }
-        assert!(std::time::Instant::now() < deadline, "{what}: timed out");
+        if std::time::Instant::now() >= budget.deadline {
+            let evidence = settle_evidence(controller);
+            controller.compute.cancel_all();
+            panic!(
+                "{what}: the controller did not settle within the {TEST_BUDGET:?} test \
+                 budget\n{evidence}"
+            );
+        }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
 }
@@ -193,8 +296,9 @@ fn stale_cards(controller: &mut AppController, toolpath_id: ToolpathId) -> Vec<S
 }
 
 /// Open the fixture at 0.5 mm and run Generate All to the end. Returns the
-/// controller and the id of the rest rough.
-fn generated_fixture() -> (AppController, ToolpathId) {
+/// controller, the id of the rest rough and the budget of the test.
+fn generated_fixture() -> (AppController, ToolpathId, SettleBudget) {
+    let budget = SettleBudget::start();
     // The fixture turns on the debug trace of each toolpath. A unit-test
     // build resolves the default artifact folder under the temp folder
     // (`ArtifactPolicy::from_settings`), so those files never reach the
@@ -211,7 +315,7 @@ fn generated_fixture() -> (AppController, ToolpathId) {
     if controller.pending_plan_confirm.is_some() {
         controller.accept_plan_resolution();
     }
-    pump_until_settled(&mut controller, "generate all");
+    pump_until_settled(&mut controller, &budget, "generate all");
     let rough = controller
         .state
         .session
@@ -220,7 +324,7 @@ fn generated_fixture() -> (AppController, ToolpathId) {
         .find(|tc| tc.stock_source == rs_cam_core::compute::config::StockSource::FromRemainingStock)
         .map(|tc| tc.id)
         .expect("the fixture holds a rest rough");
-    (controller, rough)
+    (controller, rough, budget)
 }
 
 /// Operator ruling 2026-10-02 ("always capture"): a simulation that the GUI
@@ -228,9 +332,9 @@ fn generated_fixture() -> (AppController, ToolpathId) {
 /// in the core. No capture control exists, and no state can switch it off.
 #[test]
 fn a_gui_simulation_always_keeps_the_cut_trace_w4l() {
-    let (mut controller, _rough) = generated_fixture();
+    let (mut controller, _rough, budget) = generated_fixture();
     controller.handle_internal_event(AppEvent::RunSimulation);
-    pump_until_settled(&mut controller, "run simulation");
+    pump_until_settled(&mut controller, &budget, "run simulation");
 
     let results = controller
         .state
@@ -267,10 +371,10 @@ fn a_gui_simulation_always_keeps_the_cut_trace_w4l() {
 #[test]
 #[ignore = "slow real-lane control for G-STALECARDS"]
 fn a_plain_generate_and_simulate_gives_measured_cards_g_stalecards() {
-    let (mut controller, rough) = generated_fixture();
+    let (mut controller, rough, budget) = generated_fixture();
     for run in 1..=2 {
         controller.handle_internal_event(AppEvent::RunSimulation);
-        pump_until_settled(&mut controller, "run simulation");
+        pump_until_settled(&mut controller, &budget, "run simulation");
         let evidence = freshness_evidence(&controller);
         assert!(
             !controller.state.simulation_is_stale(),
@@ -290,12 +394,12 @@ fn a_plain_generate_and_simulate_gives_measured_cards_g_stalecards() {
 /// agree. Stage 2 decides which side moves.
 #[test]
 fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
-    let (mut controller, rough) = generated_fixture();
+    let (mut controller, rough, budget) = generated_fixture();
     panel_edit(&mut controller, rough, |entry| {
         let feed = entry.operation.feed_rate();
         entry.operation.set_feed_rate(feed + 100.0);
     });
-    pump_until_settled(&mut controller, "after the edit");
+    pump_until_settled(&mut controller, &budget, "after the edit");
     let index = index_of(&controller, rough);
     let runtime = controller.state.gui.toolpath_rt.get(&rough).expect("row");
     assert!(
@@ -307,7 +411,7 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
 
     for run in 1..=2 {
         controller.handle_internal_event(AppEvent::RunSimulation);
-        pump_until_settled(&mut controller, "run simulation");
+        pump_until_settled(&mut controller, &budget, "run simulation");
         let evidence = freshness_evidence(&controller);
         let gui_current = !controller.state.simulation_is_stale();
         let stale = stale_cards(&mut controller, rough);

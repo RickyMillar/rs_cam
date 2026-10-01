@@ -321,13 +321,26 @@ fn project_curve_spec(id: usize) -> RequestSpec {
 }
 
 fn long_simulation_request() -> SimulationRequest {
+    layered_simulation_request(1)
+}
+
+/// A raster simulation of `layers` layers of 80 000 moves each.
+///
+/// Each layer is a 400 x 200 raster at 0.2 mm over the 100 mm stock. Layer
+/// `n` (from 0) cuts at `z = -1 - 0.1 n`, so every layer removes material.
+/// The stock bottom is at `z = -2`, so `layers` must be 10 or fewer.
+fn layered_simulation_request(layers: usize) -> SimulationRequest {
+    assert!((1..=10).contains(&layers), "the stock holds 10 layers");
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
-    for i in 0..80_000 {
-        let x = (i % 400) as f64 * 0.2;
-        let y = (i / 400) as f64 * 0.2;
-        toolpath.feed_to(P3::new(x, y, -1.0), 600.0);
+    for layer in 0..layers {
+        let z = -1.0 - 0.1 * layer as f64;
+        for i in 0..80_000 {
+            let x = (i % 400) as f64 * 0.2;
+            let y = (i / 400) as f64 * 0.2;
+            toolpath.feed_to(P3::new(x, y, z), 600.0);
+        }
     }
 
     let stock_bbox = BoundingBox3 {
@@ -468,6 +481,35 @@ where
         thread::sleep(Duration::from_millis(10));
     }
     None
+}
+
+/// The longest time a test waits for a lane to take its job.
+///
+/// A lane takes a job in microseconds on an idle machine. Under load the
+/// worker thread can wait for a core, so a fixed sleep is not proof that
+/// the job runs. 30 s is a hang bound, not an expected time.
+const LANE_START_BUDGET: Duration = Duration::from_secs(30);
+
+/// Wait until `lane` runs a job, then return its snapshot.
+///
+/// A cancel acts only on a RUNNING job (`cancel_lane` checks
+/// `started_at`), so a test that cancels must first see the job start.
+fn wait_until_running(
+    backend: &ThreadedComputeBackend,
+    lane: ComputeLane,
+) -> crate::compute::LaneSnapshot {
+    let start = Instant::now();
+    loop {
+        let snapshot = backend.lane_snapshot(lane);
+        if snapshot.state == LaneState::Running {
+            return snapshot;
+        }
+        assert!(
+            start.elapsed() < LANE_START_BUDGET,
+            "lane {lane:?} did not start its job within {LANE_START_BUDGET:?}: {snapshot:?}"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
 }
 
 fn assert_toolpaths_match(left: &Toolpath, right: &Toolpath) {
@@ -650,10 +692,10 @@ fn cancelled_toolpath_reports_cancelled_and_no_partial_trace() {
     let mut backend = ThreadedComputeBackend::new();
     let request = build_request(heavy_dropcutter_spec(88).with_debug_trace());
     backend.submit_toolpath(request);
-    thread::sleep(Duration::from_millis(20));
+    wait_until_running(&backend, ComputeLane::Toolpath);
     backend.cancel_lane(ComputeLane::Toolpath);
 
-    let cancelled = wait_for(&mut backend, Duration::from_secs(5), |message| {
+    let cancelled = wait_for(&mut backend, Duration::from_secs(30), |message| {
         matches!(
             message,
             ComputeMessage::Toolpath(result)
@@ -1284,22 +1326,73 @@ fn analysis_lane_snapshot_reports_current_phase() {
 #[test]
 fn analysis_cancel_completes_quickly() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_simulation(long_simulation_request());
-    thread::sleep(Duration::from_millis(20));
+    backend.submit_simulation(layered_simulation_request(CANCEL_TEST_LAYERS));
+    wait_until_running(&backend, ComputeLane::Analysis);
 
     let start = Instant::now();
     backend.cancel_lane(ComputeLane::Analysis);
-    let result = wait_for(&mut backend, Duration::from_secs(5), |message| {
-        matches!(
-            message,
-            ComputeMessage::Simulation(Err(ComputeError::Cancelled))
-        )
+    let result = wait_for(&mut backend, CANCEL_LATENCY_BOUND, |message| {
+        matches!(message, ComputeMessage::Simulation(_))
     });
-    assert!(result.is_some(), "expected cancelled simulation result");
+    let latency = start.elapsed();
     assert!(
-        start.elapsed() < Duration::from_millis(250),
-        "analysis cancel exceeded 250 ms: {:?}",
-        start.elapsed()
+        matches!(
+            result,
+            Some(ComputeMessage::Simulation(Err(ComputeError::Cancelled)))
+        ),
+        "expected a cancelled simulation result within {CANCEL_LATENCY_BOUND:?}, got \
+         {:?} after {latency:?}",
+        result.as_ref().map(|message| match message {
+            ComputeMessage::Simulation(Ok(_)) => "Simulation(Ok)",
+            ComputeMessage::Simulation(Err(_)) => "Simulation(Err)",
+            _ => "another message",
+        }),
+    );
+    assert!(
+        latency < CANCEL_LATENCY_BOUND,
+        "analysis cancel took {latency:?}, over the {CANCEL_LATENCY_BOUND:?} bound"
+    );
+}
+
+/// The bound on the time from `cancel_lane` to the `Cancelled` result.
+///
+/// The simulation reads the lane flag while it cuts, so the latency is the
+/// time to the next flag read plus the scheduling delay of the worker
+/// thread. The old
+/// bound was 250 ms, which a loaded machine exceeds by scheduling alone.
+/// 2 s still proves an early stop: the uncancelled simulation of
+/// `layered_simulation_request(CANCEL_TEST_LAYERS)` runs much longer. On
+/// 2026-10-02 it took 26.7 s on an idle machine (debug build).
+/// `the_cancel_test_simulation_outlives_the_cancel_bound` asserts the gap.
+const CANCEL_LATENCY_BOUND: Duration = Duration::from_secs(2);
+
+/// The layers of the simulation that `analysis_cancel_completes_quickly`
+/// cancels. One layer (`long_simulation_request`) ran in 1.9 s, which is
+/// below [`CANCEL_LATENCY_BOUND`] and would prove nothing.
+const CANCEL_TEST_LAYERS: usize = 10;
+
+/// The claim under [`CANCEL_LATENCY_BOUND`]: the uncancelled simulation
+/// runs for more than five times the bound. Ignored because it runs the
+/// whole simulation (about 27 s).
+#[test]
+#[ignore = "slow: runs the full cancel-test simulation to prove the bound has meaning"]
+fn the_cancel_test_simulation_outlives_the_cancel_bound() {
+    let mut backend = ThreadedComputeBackend::new();
+    backend.submit_simulation(layered_simulation_request(CANCEL_TEST_LAYERS));
+    wait_until_running(&backend, ComputeLane::Analysis);
+    let start = Instant::now();
+    let result = wait_for(&mut backend, Duration::from_secs(600), |message| {
+        matches!(message, ComputeMessage::Simulation(_))
+    });
+    let elapsed = start.elapsed();
+    assert!(
+        matches!(result, Some(ComputeMessage::Simulation(Ok(_)))),
+        "the uncancelled simulation must complete"
+    );
+    assert!(
+        elapsed > CANCEL_LATENCY_BOUND * 5,
+        "the simulation ran in {elapsed:?}; the cancel bound of \
+         {CANCEL_LATENCY_BOUND:?} must be far below that to prove an early stop"
     );
 }
 
@@ -1457,9 +1550,13 @@ fn analysis_requests_replace_stale_work() {
 #[test]
 fn cancel_all_marks_both_lanes_cancelling() {
     let mut backend = ThreadedComputeBackend::new();
+    // The simulation goes first and is the long one (about 27 s), so it
+    // still runs when the short generation (about 0.3 s) starts. The cancel
+    // follows the second start at once, so the generation is still running.
+    backend.submit_simulation(layered_simulation_request(CANCEL_TEST_LAYERS));
+    wait_until_running(&backend, ComputeLane::Analysis);
     backend.submit_toolpath(build_request(heavy_dropcutter_spec(4)));
-    backend.submit_simulation(long_simulation_request());
-    thread::sleep(Duration::from_millis(20));
+    wait_until_running(&backend, ComputeLane::Toolpath);
 
     backend.cancel_all();
 
