@@ -765,7 +765,7 @@ impl<B: ComputeBackend> AppController<B> {
                 if simulation.core.resolution_clamped {
                     self.push_notification(
                         "Sim resolution was coarsened to fit grid limits — \
-                     consider reducing stock size or increasing resolution"
+                     use a smaller stock or a larger Resolution (cell size)"
                             .to_owned(),
                         crate::controller::Severity::Warning,
                     );

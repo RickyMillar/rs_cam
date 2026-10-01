@@ -204,7 +204,7 @@ fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
 
     for reading in [
         "unreachable {unreachable_pct:.1} %",
-        "grid_note.clone()",
+        "grid_line.clone()",
         "over_statement_note.clone()",
     ] {
         assert!(
@@ -223,7 +223,7 @@ fn the_reach_readings_are_constructed_wrapped() {
     let block = reach_block(&src);
     for reading in [
         "unreachable {unreachable_pct:.1} %",
-        "grid_note.clone()",
+        "grid_line.clone()",
         "over_statement_note.clone()",
         "reach: {message}",
     ] {
@@ -354,4 +354,26 @@ fn every_sentence_in_the_header_is_wrapped() {
             "header line {idx} draws a sentence through a bare ui.label: {line}"
         );
     }
+}
+
+/// Audit WRONG #2 (2026-10-02): the inspector reach footer prints the area
+/// base on the percentage line and the over-statement sentence on its own
+/// line. The grid line between them is `ReachMap::grid_line`, which holds
+/// neither. `ReachMap::grid_note` holds both, so a footer that prints it
+/// says each sentence twice. The core sentry `reach_map_p5` pins what
+/// `grid_line` holds; this pins that the footer reads it.
+#[test]
+fn the_reach_footer_prints_the_grid_line_not_the_grid_note() {
+    let src = properties_src();
+    let block = reach_block(&src);
+    assert!(
+        block.contains("grid_line.clone()"),
+        "the reach footer no longer prints the grid line:\n{block}"
+    );
+    assert!(
+        !block.contains("grid_note"),
+        "the reach footer prints `grid_note`, which already holds the area base \
+         and the over-statement sentence that the footer prints on their own \
+         lines:\n{block}"
+    );
 }

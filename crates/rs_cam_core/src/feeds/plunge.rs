@@ -26,8 +26,10 @@ use super::provenance::ValueProvenance;
 use super::{FeedsInput, OperationFamily, ToolGeometryHint};
 use crate::tool_load::plunge_stress;
 
-/// The named repo rule when no G10 claim covers the tool.
-pub const PLUNGE_BASE_RULE_TEXT: &str = "no source; repo rule: material base 1000/h (wood), \
+/// The named repo rule when no G10 claim covers the tool. The headline
+/// says "no source; repo rule", so this detail text starts at the rule
+/// itself and does not say it again (audit WRONG #11, 2026-10-02).
+pub const PLUNGE_BASE_RULE_TEXT: &str = "material base 1000/h (wood), \
      900/h (plywood, sheet) at 6 mm, x clamp(D/6, 0.25, 3), h = (Janka/600)^0.4 (a port of the \
      Shapeoko reference calculator)";
 
@@ -195,7 +197,7 @@ impl PlungeBasis {
                 );
                 let cap = tip_cap.map_or_else(String::new, |c| format!(" The {}.", c.text()));
                 let detail = format!(
-                    "{PLUNGE_BASE_RULE_TEXT}. {}{cap} {DOWN_CUT_PLUNGE_TEXT}",
+                    "The rule: {PLUNGE_BASE_RULE_TEXT}. {}{cap} {DOWN_CUT_PLUNGE_TEXT}",
                     reason.text()
                 );
                 (headline, detail)
@@ -421,7 +423,10 @@ mod tests {
         let (headline, detail) = base.card_text();
         assert!(headline.contains("no source; repo rule"), "{headline}");
         assert!(headline.contains("bull nose"), "{headline}");
-        assert!(detail.starts_with(PLUNGE_BASE_RULE_TEXT), "{detail}");
+        assert!(detail.contains(PLUNGE_BASE_RULE_TEXT), "{detail}");
+        // Audit WRONG #11: the headline says "no source; repo rule"; the
+        // detail must not say it again.
+        assert!(!detail.contains("no source; repo rule"), "{detail}");
         assert!(detail.ends_with(DOWN_CUT_PLUNGE_TEXT), "{detail}");
     }
 

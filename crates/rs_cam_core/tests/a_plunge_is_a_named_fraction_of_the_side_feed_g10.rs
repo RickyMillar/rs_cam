@@ -356,10 +356,10 @@ fn a_refused_tool_plunges_at_the_named_repo_rule_g10() {
             headline.contains("no source; repo rule"),
             "{name}: {headline}"
         );
-        assert!(
-            detail.starts_with(PLUNGE_BASE_RULE_TEXT),
-            "{name}: {detail}"
-        );
+        assert!(detail.contains(PLUNGE_BASE_RULE_TEXT), "{name}: {detail}");
+        // The headline says "no source; repo rule"; the detail does not
+        // say it again (audit WRONG #11, 2026-10-02).
+        assert!(!detail.contains("no source; repo rule"), "{name}: {detail}");
         let feed = result.feed_rate_mm_min;
         let mut expected = *base_mm_min;
         if let Some(cap) = tip_cap {
