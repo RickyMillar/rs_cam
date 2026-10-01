@@ -1268,8 +1268,8 @@ struct CarveEnv<'a> {
 /// - a drill entry removes its cone/cylinder envelope analytically and
 ///   emits the drill-native per-peck samples and per-toolpath summary;
 /// - a milling entry takes the ONE milling carve, the metric route. With
-///   metrics off the samples are dropped, not the route: metrics OBSERVE
-///   the carve and never choose it.
+///   metrics off the walk records no samples (M8), but the route stays:
+///   metrics OBSERVE the carve and never choose it.
 ///
 /// G-RESTRES (operator ruling 2026-09-24, "mcp and gui should cut the
 /// same"). A metric-disabled entry used to take the playback replay
@@ -1342,8 +1342,13 @@ fn carve_entry(
             )
         };
         let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
+        // Metrics observe: with capture off the walk is the same carve and
+        // records no samples (M8). Before M8 the walk built every sample and
+        // this function dropped it. Each kept sample cost 280 bytes and one
+        // `span_path` heap copy, and the walk reserved the estimated count.
+        let record_samples = env.request.metric_options.enabled;
         let samples = group_stock
-            .simulate_toolpath_with_lut_metrics_rapid_checked(
+            .simulate_toolpath_with_lut_metric_walk(
                 entry_toolpath,
                 env.lut,
                 entry.tool.as_ref(),
@@ -1360,11 +1365,10 @@ fn carve_entry(
                 env.request.metric_options.capture_arc_engagement,
                 &|| env.cancel.load(Ordering::SeqCst),
                 Some(&mut rapid_check),
+                record_samples,
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
-        // Metrics observe: with capture off the carve is the same, and the
-        // samples go nowhere.
-        if env.request.metric_options.enabled {
+        if record_samples {
             append_samples(&mut run.cut_samples, samples);
         }
         collect_rapid_hits(
