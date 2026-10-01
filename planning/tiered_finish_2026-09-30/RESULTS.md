@@ -704,11 +704,11 @@ with the gate features clean.
 
 ## Changes that wait for approval, with the measured effect
 
-1. F1: `TierIslandParams::max_close_raises` default 3 → 0. 350 mm proxy:
+1. (Applied 2026-10-01, "Defaults applied".) F1: `TierIslandParams::max_close_raises` default 3 → 0. 350 mm proxy:
    owned 47 901 → 17 538 mm² (−63 %), machining 90 152 → 57 241 mm²
    (−37 %); 87 islands (2 981 mm²) go back to the coarse tier. 100 mm
    proxy: no change (the cap does not act).
-2. F4a: tier-op arc tolerance 0.05 → cusp/2 = 0.015 (in
+2. (Applied 2026-10-01, "Defaults applied".) F4a: tier-op arc tolerance 0.05 → cusp/2 = 0.015 (in
    `plan_tier_operation`'s dressups only). Mesa: burial 0.0882 → 0.0531 mm,
    simulated gouge 0.082 → 0.026 mm. rivmap100: fed samples deeper than
    0.05 mm 2.30 % → 1.59 %.
@@ -721,3 +721,125 @@ with the gate features clean.
    taper's tip branch.
 6. (Resolved without F4a, part 3.) `tier_arcfit_burial_f4` is green at 0.05
    and 0.015: the arc fitter now holds its tolerance in 3D.
+
+## Defaults applied (2026-10-01)
+
+Operator approval 2026-10-01 ("I'll take your recommendations on the
+finishing work"). Two default changes, each its own commit. Working tree
+over `a0f75b27`. Every number below comes from ONE release-fast build of
+that tree. A "before" arm writes the old value explicitly, which runs the
+same code path as the old default.
+
+**F1.** `TierIslandParams::max_close_raises` defaults to
+`DEFAULT_MAX_CLOSE_RAISES` = 0 (was `MAX_CLOSE_RAISES` = 3, which stays
+the ceiling). The struct-level `#[serde(default)]` reads `Default`, so a
+file without the key reads 0, and a file that states the key keeps it
+(`a_saved_raise_bound_survives_the_default_change`). The key is always
+written, so every project saved since the dial landed states 3. In the
+repo that is one file, `planning/fixtures/rivmap100/rivmap100_tiered_finish.toml`
+(changed to 0 here, see "Fixture"). These files carry tier recipes without
+the key, and now read 0: `planning/multitool_2026-08-23/wanaka200_mt2.toml`,
+`wanaka200_mt2_overlap02.toml`, `wanaka200_iso_scallop.toml`,
+`planning/deep_doc_modulation_2026-09-08/T3b_r10_scallop_islands_relink3.toml`,
+`crates/rs_cam_core/tests/fixtures/t3b_r10_scallop_islands_2026-09-08_e4d817e9.toml`.
+
+**F4a.** A planner tier op fits arcs at `cusp_height_mm / 2`
+(`session::multitool::tier_arc_tolerance_mm`, applied by
+`plan_tier_dressups` in `build_tier_config`): 0.015 mm at the planner's
+0.03 mm. A cusp height that is not positive and finite turns the tier's
+arcs off. The Finish role and every op that is not a tier op keep 0.05.
+Sentry `tests/tier_ops_fit_arcs_within_half_the_cusp_f4a.rs`: red with
+`DressupConfig::for_op` put back (tier 0 reads 0.05, want 0.015).
+
+**Fixture.** `rivmap100_tiered_finish.toml` holds "the tier ops the
+planner emits". The writer (`write_rivmap100_tiered_finish_fixture`) now
+emits `max_close_raises = 0` and `arc_tolerance = 0.015` on both tier
+ops. It also gives the ops new ids and new Suggest feeds for tier 1 (the
+vendor table moved after 09-30). So only the three values the two changes
+own were changed in the file: 1 line for F1, 2 lines for F4a. The feeds
+stay as measured on 09-30.
+
+### Territory (`rivmap100_tiered_finish_step0`, `rivmap350_tiered_finish_step0_preview`)
+
+Areas in mm². The 350 mm map is not the map of the 09-30 table (raw
+19 659 → 14 531, raw islands 14 594 → 5 268): the part 3 drop-cutter
+kernel fix moved the tier map.
+
+| board | raise bound | owned | machining | kept | raises | final radius | dropped (area) | holes owned → machining |
+|---|---|---:|---:|---:|---:|---:|---|---|
+| 100 mm | 3 (before) | 1 543 | 7 563 | 11 | 0 | 0.500 | 0 (0) | 38 → 49 |
+| 100 mm | 0 (F1) | 1 543 | 7 563 | 11 | 0 | 0.500 | 0 (0) | 38 → 49 |
+| 350 mm | 3 (before) | 39 543 | 80 991 | 6 | 3 | 1.688 | 0 (0) | 463 → 602 |
+| 350 mm | 0 (F1) | 7 193 | 30 145 | 24 | 0 | 0.500 | 99 (4 599.5) | 185 → 63 |
+
+On the 100 mm board the cap does not act at either bound (11 islands), so
+F1 changes nothing there. On the 350 mm board F1 cuts owned area by 82 %
+and machining area by 63 %; 99 islands (4 599.5 mm²) go back to the
+coarse tier. The band ratio grows from 2.05x to 4.19x of the smaller owned
+set (plan F2). The 350 mm tier was not generated in this round, so its
+link, move and time effect is not measured.
+
+### Toolpaths
+
+CLI: `rs_cam_cli project rivmap100_tiered_finish.toml` (the whole chain:
+tier ops on remaining stock, simulation 0.2 mm, modulation on). The CLI
+gives move counts and the project runtime. It gives no per-op time or
+link count. Those come from `arc_fit_burial_on_the_rivmap100_fine_tier`
+and `tier_fine_burial_sources_g_tierburial`: the fine tier alone, stock
+Fresh, cycle time from `compute_cycle_time` (machine kinematics, rapid =
+max feed). Arm A (0.05) is before F4a, arm C (0.015) is after; the arm
+`sim_arcs` (new flag `arcs`) simulates with the fixture's own arcs.
+Links: fed `Linking` moves, and rapid runs (one per air link).
+
+| measure | before | after F1 | after F1 + F4a |
+|---|---:|---:|---:|
+| CLI project runtime (s) | 12 180.8 | 12 180.8 | 12 624.8 (+3.6 %) |
+| CLI moves, tier 0 / tier 1 | 38 791 / 40 624 | 38 791 / 40 624 | 42 280 / 54 434 |
+| CLI cutting / rapid distance (mm) | 172 196 / 109 095 | 172 196 / 109 095 | 172 321 / 109 092 |
+| CLI holder collisions / rapid collisions | 0 / 0 | 0 / 0 | 0 / 0 |
+| fine tier: moves (arcs) | 40 621 (14 523) | same | 54 406 (10 892) |
+| fine tier: fed `Linking` moves / rapid runs | 3 399 / 149 | same | 3 410 / 149 |
+| fine tier: cycle time (s) | 2 022.6 | same | 2 353.4 (+16.4 %) |
+| fine tier: fed samples > 0.05 mm (arc + cut + other) | 3 405 (3 400 + 5 + 0) | same | 60 (54 + 6 + 0) |
+| fine tier: fed samples > 0.1 mm | 256 (255 + 1 + 0) | same | 1 (0 + 1 + 0) |
+| fine tier: deepest fed sample (mm) | 0.287 (arc) | same | 0.1125 (line) |
+| fine tier sim, 0.1 mm: gouge (−min dev, mm) | 0.256 | same | 0.111 |
+| fine tier sim: columns below −0.05 / −0.1 mm | 604 / 51 | same | 32 / 6 |
+| fine tier: `check_collisions` strikes / body strikes | 0 / 0 | 0 / 0 | not run |
+
+"same": on this board the F1 territory is identical (table above), so the
+fine tier is the same op. Reference, arcs off: 68 935 moves, 2 659.1 s,
+6 samples > 0.05 mm, 1 > 0.1 mm, sim gouge 0.111 (29 / 6 columns). The
+one sample over 0.1 mm and the six columns are the open waterline vertex
+at (68.500, 88.036); every arm has them.
+
+40 x 40 mm knoll and wall fixture
+(`arc_fit_burial_against_arcs_off_on_knolls_and_a_wall`, R1.0 ball,
+0.2 mm simulation, 13 347 mask columns):
+
+| arm | moves | arcs | burial max | on arcs | sim gouge | dev p0.1 | dev p1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 0.05 (before) | 14 143 | 443 | 0.0560 | 0.0560 | 0.0477 | −0.0400 | −0.0212 |
+| 0.015 (F4a) | 14 573 | 220 | 0.0346 | 0.0134 | 0.0214 | −0.0152 | −0.0110 |
+| off | 15 044 | 0 | 0.0346 | — | 0.0214 | −0.0152 | −0.0107 |
+
+**The cost of F4a.** At 0.015 the fitter makes fewer arcs, and more of
+the path stays linear: the fine tier gains 13 785 moves and 330.8 s
+(+16.4 %), the chain 444 s (+3.6 %). In return it removes 3 345 of the
+3 405 fed samples deeper than 0.05 mm and every arc sample deeper than
+0.1 mm, and the simulated gouge falls to the arcs-off value. Arcs off
+would cost a further 305.7 s for 54 fewer samples over 0.05 mm.
+
+### Moved pins
+
+| pin | cause |
+|---|---|
+| `tier_islands_speck_weld`: the green arm now reads the default (no explicit bound) and asserts `DEFAULT_MAX_CLOSE_RAISES` = 0. `the_dial_cannot_raise_the_bound_past_the_ceiling` asserts default = 0 (was "= `MAX_CLOSE_RAISES`, no default change in this round") | F1 |
+| MCP `max_regions_per_tier` description (`rs_cam_mcp/src/server.rs`, two specs), `rs_cam_viz/tests/snapshots/mcp_wire_surface.json`, and the GUI hover text of "Max islands / tier" | F1: by default the cap no longer raises the merge radius |
+
+`tier_islands_i1` set the bound explicitly on 09-30 and did not move. No
+assert was weakened. The instruments `tier_band_overlap_g_overlapfill`
+(both step-0 tests now print the bound 3 and bound 0 arms explicitly),
+`tier_arcfit_burial_f4` (prints links and cycle time per arm) and
+`tier_fine_burial_sources_g_tierburial` (flag `arcs`) changed their
+output only.
