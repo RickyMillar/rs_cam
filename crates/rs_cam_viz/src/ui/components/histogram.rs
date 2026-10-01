@@ -57,20 +57,20 @@ const BAR_GAP: f32 = 1.0;
 const CAP_HEIGHT: f32 = tokens::SPACE_2;
 
 /// The half width of a limit cap and of an off-scale arrow, in points.
-const CAP_HALF_WIDTH: f32 = 3.0;
+pub(crate) const CAP_HALF_WIDTH: f32 = 3.0;
 
 /// A bound this far outside the data range, as a share of the range, stays
 /// to scale. A bound farther out is drawn off scale at the edge.
 pub const NEAR_BOUND_SHARE: f64 = 0.15;
 
 /// The alpha factor of the in-band wash.
-const WASH_OK: f32 = 0.07;
+pub(crate) const WASH_OK: f32 = 0.07;
 
 /// The alpha factor of the out-of-band washes.
-const WASH_OUT: f32 = 0.12;
+pub(crate) const WASH_OUT: f32 = 0.12;
 
 /// The contrast factor of a limit marker against its token.
-const MARKER_TONE: f32 = 0.7;
+pub(crate) const MARKER_TONE: f32 = 0.7;
 
 /// A histogram chart for a narrow panel.
 pub struct DistributionChart<'a> {
@@ -141,13 +141,8 @@ impl<'a> DistributionChart<'a> {
         let label_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
         let width = ui.available_width().max(STUB_WIDTH * 4.0);
         let top_strip = CAP_HEIGHT + tokens::SPACE_1;
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(
-                width,
-                top_strip + BAR_HEIGHT + tokens::SPACE_1 + label_height,
-            ),
-            egui::Sense::click(),
-        );
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, chart_height(ui)), egui::Sense::click());
         let hist = self.histogram;
         let bins = hist.weights_s.len();
         let bar_area = egui::Rect::from_min_size(
@@ -288,7 +283,7 @@ impl<'a> DistributionChart<'a> {
             }
         };
         // `gamma_multiply` scales all four channels, so the result stays
-        // premultiplied (the UP4 note in `sim_timeline.rs`).
+        // premultiplied.
         if floor.is_some() {
             zone(
                 area.left(),
@@ -364,10 +359,8 @@ fn paint_bars(
             egui::pos2((right - BAR_GAP).max(left + 1.0), bar_area.bottom()),
         );
         let colour = match bin_side(hist, bin) {
-            BinSide::Below => tokens::CAUTION,
-            BinSide::Above => tokens::DANGER,
             BinSide::InBand if hovered_bin == Some(bin) => tokens::TEXT_MUTED,
-            BinSide::InBand => tokens::TEXT_FAINT,
+            side => side_colour(side),
         };
         if is_overflow_bin(bin, bins) {
             painter.rect_stroke(
@@ -447,6 +440,44 @@ fn paint_off_scale(
     ));
 }
 
+/// The full height of the chart, in points: the cap strip, the bar area and
+/// the label row. The sparkline (`super::sparkline`) takes the same height,
+/// so a card does not change height when it flips.
+#[must_use]
+pub fn chart_height(ui: &egui::Ui) -> f32 {
+    let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
+    let label_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
+    CAP_HEIGHT + tokens::SPACE_1 + BAR_HEIGHT + tokens::SPACE_1 + label_height
+}
+
+/// The colour of a value on `side` of the bounds. This is the ONE band
+/// colour rule: the bars and the sparkline line both read it.
+///
+/// - Below the floor: `CAUTION`.
+/// - Above the ceiling: `DANGER`.
+/// - In the band: the neutral `TEXT_FAINT`.
+#[must_use]
+pub fn side_colour(side: BinSide) -> egui::Color32 {
+    match side {
+        BinSide::Below => tokens::CAUTION,
+        BinSide::Above => tokens::DANGER,
+        BinSide::InBand => tokens::TEXT_FAINT,
+    }
+}
+
+/// Where `value` sits against the gate's bounds. A bound that is `None`
+/// does not exist and sorts nothing.
+#[must_use]
+pub fn value_side(floor: Option<f64>, ceiling: Option<f64>, value: f64) -> BinSide {
+    if floor.is_some_and(|floor| value < floor) {
+        BinSide::Below
+    } else if ceiling.is_some_and(|ceiling| value > ceiling) {
+        BinSide::Above
+    } else {
+        BinSide::InBand
+    }
+}
+
 /// True when `bin` is the underflow or the overflow bin.
 #[must_use]
 pub fn is_overflow_bin(bin: usize, bins: usize) -> bool {
@@ -490,6 +521,15 @@ fn ranges(hist: &Histogram) -> ((f64, f64), (f64, f64)) {
         }
     }
     ((inner_lo, inner_hi), (display_lo, display_hi))
+}
+
+/// The display range of the chart, in core's unit: core's inner range (a
+/// percentile range of the population), widened to include each bound
+/// within [`NEAR_BOUND_SHARE`] of it. The histogram's x axis and the
+/// sparkline's y axis both use it.
+#[must_use]
+pub fn display_range(hist: &Histogram) -> (f64, f64) {
+    ranges(hist).1
 }
 
 /// Where the chart draws `value`: to scale, or off scale at one edge.
@@ -583,14 +623,7 @@ pub fn bin_side(hist: &Histogram, bin: usize) -> BinSide {
     let (Some(lo), Some(hi)) = (hist.edges.get(bin), hist.edges.get(bin + 1)) else {
         return BinSide::InBand;
     };
-    let mid = 0.5 * (lo + hi);
-    if hist.floor.is_some_and(|floor| mid < floor) {
-        BinSide::Below
-    } else if hist.ceiling.is_some_and(|ceiling| mid > ceiling) {
-        BinSide::Above
-    } else {
-        BinSide::InBand
-    }
+    value_side(hist.floor, hist.ceiling, 0.5 * (lo + hi))
 }
 
 /// The hover line of one bin:

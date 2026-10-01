@@ -82,9 +82,7 @@ impl SimulationState {
                 issue_cache: IssueListCache::default(),
                 semantic_indexes: HashMap::new(),
             },
-            hovered_x: None,
-            time_series_open: false,
-            time_series_scroll_to: None,
+            cut_metric_over_time: Vec::new(),
         }
     }
 

@@ -601,34 +601,15 @@ impl RsCamApp {
         // Highlight / Record trace — was consolidated into the right-panel
         // Inspector's "View" section. One place for all display settings.)
 
-        // Bottom panel: transport, verdict pills and the boundary timeline,
-        // plus the time-series drawer when the Inspector opens it (PLAN
-        // §3.3). The two states use two panel ids: egui stores one size per
-        // id and clamps it to the current range, so one shared id would
-        // forget the open height while the drawer is closed.
-        //
-        // Open: `max_size` is required because the drawer's ScrollArea
-        // uses `auto_shrink([false, false])` — without a panel cap the two
-        // form a feedback loop where the panel sizes to the ScrollArea's
-        // requested max height, the ScrollArea then sees more space and
-        // requests more, and so on until the panel takes the whole window.
-        //
-        // Closed: the panel is not resizable and follows its content, the
-        // transport bar and the timeline.
-        let time_series_open = self.controller.state().simulation.time_series_open;
-        let bottom_panel = if time_series_open {
-            egui::Panel::bottom("sim_timeline")
-                .min_size(60.0)
-                .max_size(480.0)
-                .resizable(true)
-                .default_size(360.0)
-        } else {
-            egui::Panel::bottom("sim_transport")
-                .min_size(60.0)
-                .max_size(240.0)
-                .resizable(false)
-                .default_size(120.0)
-        };
+        // Bottom panel: transport, verdict pills and the boundary timeline.
+        // The panel is not resizable and follows its content. The cut-metric
+        // lines over time are on the Inspector's cards (operator request
+        // 2026-10-02); the bottom time-series drawer is deleted.
+        let bottom_panel = egui::Panel::bottom("sim_transport")
+            .min_size(60.0)
+            .max_size(240.0)
+            .resizable(false)
+            .default_size(120.0);
         bottom_panel.show(ui, |ui| {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::sim_timeline::draw(

@@ -9,8 +9,8 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `components/`, `feeds/`, `overlays/`, `properties/` — see each child file.
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the
   Setup rail and the toolpath rows, with the card's gutter connector.
-- `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The time-
-  series drawer opens only from the Inspector's Cut metrics toggle.
+- `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. A cut-metric
+  card flips to its line over time; there is no time-series drawer.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
 - `export_wizard.rs`, `optimize_*.rs`, `multitool_planner.rs`, `*_modal.rs`.
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs` — the

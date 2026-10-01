@@ -1,24 +1,31 @@
-//! G-CUTCARDS: the Inspector's cut-metric cards read the gate, and the time
-//! series is a drawer that starts closed.
+//! G-CUTCARDS: the Inspector's cut-metric cards read the gate, and each card
+//! flips between its histogram and its own line over time.
 //!
-//! Packages C and E of `planning/sim_cut_metrics_2026-09-23/PLAN.md`.
+//! Packages C and E of `planning/sim_cut_metrics_2026-09-23/PLAN.md`, and the
+//! operator request of 2026-10-02 that replaced the time-series drawer with a
+//! flip per card.
 //!
 //! # The defect this exists to catch
 //!
 //! The operator found the cut metrics hard to read (§1). Five co-equal time
 //! series sat in the bottom panel with no limit on four of them, and the
 //! limit rows stated one number. The fix puts one histogram per metric in
-//! the Inspector, binned from the GATE's own population, and moves the time
-//! series behind one toggle.
+//! the Inspector, binned from the GATE's own population.
 //!
-//! Three things can break it silently:
+//! The drawer that held the time series fitted badly at the bottom, and its
+//! tracks always included the bounds, so a far limit pressed the line flat
+//! (operator, 2026-10-02). Each card now flips to a small line of the same
+//! population, on the histogram's own scale and in its band colours.
+//!
+//! Four things can break it silently:
 //!
 //! 1. A card that bins its own samples instead of the gate's. The card then
 //!    shows mass outside the band while the badge says `Within` (§5).
 //! 2. A chart built on `egui_plot`, which keeps its bounds per id from frame
 //!    to frame and grows the 240 point rail.
-//! 3. The "Signal graphs" disclosure or the normalised summary track coming
-//!    back, or the drawer opening by default.
+//! 3. The drawer, or its state, coming back.
+//! 4. A line whose scale includes a far bound, whose decimation drops a
+//!    spike, or that draws a gap as a zero.
 //!
 //! # The arms
 //!
@@ -28,8 +35,12 @@
 //! - Arm B (behavioural): the chart draws in a headless `egui::Context` at
 //!   the rail width, stays inside it, and a click on a bar returns that bin.
 //!   The pure helpers word a bin and place it against the bounds.
-//! - Arm C: `SimulationState::new()` has the drawer closed, and the
-//!   timeline holds no "Signal graphs" disclosure and no summary track.
+//! - Arm C: the drawer and its state are gone. A card starts on its
+//!   histogram, and a flip changes that one card only.
+//! - Arm D: the line in a real pass fits the rail at the histogram's height
+//!   and a click names a move. The pure helpers keep a spike and a dip,
+//!   break the line at a gap, split a piece at a bound and colour it with
+//!   the histogram's band colour.
 //!
 //! # What arm B does not cover
 //!
@@ -49,16 +60,20 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::tool_load::{Histogram, PopulationSample};
-use rs_cam_viz::state::simulation::SimulationState;
+use rs_cam_viz::state::simulation::{CUT_METRIC_ORDER, SimulationState};
 use rs_cam_viz::ui::components::histogram::{
     self, BAR_HEIGHT, BinSide, DistributionChart, STUB_WIDTH,
 };
+use rs_cam_viz::ui::components::sparkline::{self, ChartFace, Sparkline};
 use rs_cam_viz::ui::tokens;
 
 const DIAGNOSTICS: &str = "ui/sim_diagnostics.rs";
 const TIMELINE: &str = "ui/sim_timeline.rs";
 const CHART: &str = "ui/components/histogram.rs";
+const LINE: &str = "ui/components/sparkline.rs";
 const STATE: &str = "state/simulation.rs";
+const PLAYBACK: &str = "state/simulation/playback_state.rs";
+const APP: &str = "app.rs";
 
 /// The rail width the Inspector opens at.
 const RAIL_WIDTH: f32 = 240.0;
@@ -102,17 +117,28 @@ fn function_source<'a>(src: &'a str, signature: &str) -> &'a str {
 
 /// A population from 0.01 to 0.10 mm/tooth: 10 samples below a 0.02
 /// floor, 80 in the band and 10 above a 0.08 ceiling. Each sample weighs
-/// 0.1 s and sits on its own move.
-fn fixture() -> Histogram {
-    let samples: Vec<PopulationSample> = (0..100)
+/// 0.1 s and sits on its own move, 1000 to 1099.
+fn fixture_samples() -> Vec<PopulationSample> {
+    (0..100)
         .map(|i| PopulationSample {
             value: 0.01 + 0.09 * f64::from(i) / 99.0,
             weight_s: 0.1,
             move_index: 1000 + i as usize,
             sample_index: i as usize,
         })
-        .collect();
-    Histogram::build(&samples, Some(0.02), Some(0.08), 24)
+        .collect()
+}
+
+fn fixture() -> Histogram {
+    Histogram::build(&fixture_samples(), Some(0.02), Some(0.08), 24)
+}
+
+/// The card's series of the fixture: `(move, value)` in trace order.
+fn fixture_series() -> Vec<(usize, f64)> {
+    fixture_samples()
+        .iter()
+        .map(|sample| (sample.move_index, sample.value))
+        .collect()
 }
 
 fn ctx() -> egui::Context {
@@ -165,9 +191,13 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         );
     }
     assert!(
-        card_fn.contains("ShowSeries(") && !card_fn.contains("See time series"),
-        "the card title opens the metric's track; the card has no second \
-         \"See time series\" link (the section keeps its one toggle)"
+        card_fn.contains("ChartFlip::new(") && card_fn.contains("Sparkline::new("),
+        "each measured card has a flip button, and its other face is the \
+         shared line component"
+    );
+    assert!(
+        !section.contains("time series") && !card_fn.contains("time series"),
+        "the \"See time series\" link is back; the drawer it opened is deleted"
     );
     assert!(
         section.contains("Play or select a toolpath."),
@@ -459,44 +489,283 @@ fn a_far_bound_is_off_scale_and_a_near_bound_is_to_scale_g_cutcards() {
 }
 
 // ---------------------------------------------------------------------------
-// Arm C — the drawer
+// Arm C — the drawer is gone, and the flip is per card
 // ---------------------------------------------------------------------------
 
 #[test]
-fn the_time_series_drawer_starts_closed_g_cutcards() {
-    let sim = SimulationState::new();
-    assert!(
-        !sim.time_series_open,
-        "the time-series drawer is closed by default (PLAN §3.3)"
-    );
-    assert!(sim.time_series_scroll_to.is_none());
-
+fn the_time_series_drawer_is_gone_g_cutcards() {
+    let state = code_only(&read(STATE));
+    let playback = code_only(&read(PLAYBACK));
+    for gone in ["time_series_open", "time_series_scroll_to", "hovered_x"] {
+        assert!(
+            !state.contains(gone) && !playback.contains(gone),
+            "the drawer state `{gone}` is back. The drawer is deleted; a card \
+             keeps its own face in `cut_metric_over_time`."
+        );
+    }
     let timeline = code_only(&read(TIMELINE));
-    assert!(
-        timeline.contains("fn draw_time_series("),
-        "{TIMELINE} no longer defines draw_time_series; the sentry is stale"
-    );
-    let drawer = function_source(&timeline, "fn draw_time_series(");
-    assert!(
-        drawer.contains("time_series_open"),
-        "the drawer must draw nothing unless the Inspector opened it"
-    );
     for gone in [
+        "fn draw_time_series(",
+        "fn draw_signal_track(",
+        "egui_plot",
         "Signal graphs",
         "advance/tooth vs band max",
-        "CollapsingHeader",
     ] {
         assert!(
             !timeline.contains(gone),
-            "{TIMELINE} holds {gone:?} again. The drawer has one scroll area \
-             and no disclosure, and the normalised summary track moved to \
-             the chipload card."
+            "{TIMELINE} holds {gone:?} again. The bottom panel holds the \
+             transport bar and the boundary timeline only."
         );
     }
+    let app = code_only(&read(APP));
     assert!(
-        !drawer.contains("Polygon::new(") && timeline.matches("Polygon::new(").count() == 1,
-        "the drawer shades no limit zone (PLAN §7 Q1); the file's one polygon \
-         is the DepthPass band in draw_signal_track"
+        app.contains("Panel::bottom(\"sim_transport\")"),
+        "{APP} no longer opens the transport panel; the sentry is stale"
+    );
+    assert!(
+        !app.contains("Panel::bottom(\"sim_timeline\")"),
+        "{APP} opens the resizable drawer panel again"
+    );
+}
+
+#[test]
+fn a_card_starts_on_its_histogram_and_flips_alone_g_cutcards() {
+    let mut sim = SimulationState::new();
+    for metric in CUT_METRIC_ORDER {
+        assert!(
+            !sim.shows_over_time(metric),
+            "every card starts on its histogram"
+        );
+    }
+    let [first, second, ..] = CUT_METRIC_ORDER;
+    sim.flip_cut_metric(first);
+    assert!(sim.shows_over_time(first), "a flip shows the line");
+    assert!(
+        !sim.shows_over_time(second),
+        "a flip changes its own card only"
+    );
+    sim.flip_cut_metric(first);
+    assert!(
+        !sim.shows_over_time(first),
+        "a second flip shows the histogram again"
+    );
+    assert!(sim.cut_metric_over_time.is_empty());
+
+    assert_eq!(ChartFace::Distribution.flipped(), ChartFace::OverTime);
+    assert_eq!(ChartFace::Distribution.flip_hover(), "Show over time");
+    assert_eq!(ChartFace::OverTime.flip_hover(), "Show distribution");
+}
+
+// ---------------------------------------------------------------------------
+// Arm D — the line
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_line_is_painted_in_the_band_colours_g_cutcards() {
+    let line = code_only(&read(LINE));
+    assert!(
+        line.contains("pub struct Sparkline"),
+        "{LINE} no longer defines Sparkline; the sentry is stale"
+    );
+    assert!(
+        !line.contains("egui_plot"),
+        "{LINE} uses egui_plot. A plot keeps its bounds per id from frame to \
+         frame and brings axes the rail does not need."
+    );
+    assert!(
+        !line.contains("Color32::from_rgb("),
+        "{LINE} names a colour literal; a component reads tokens only"
+    );
+    for shared in ["histogram::side_colour(", "histogram::display_range("] {
+        assert!(
+            line.contains(shared),
+            "the line must read `{shared}`, so the two faces of a card share \
+             one colour rule and one scale"
+        );
+    }
+
+    assert_eq!(histogram::side_colour(BinSide::Below), tokens::CAUTION);
+    assert_eq!(histogram::side_colour(BinSide::Above), tokens::DANGER);
+    assert_eq!(histogram::side_colour(BinSide::InBand), tokens::TEXT_FAINT);
+
+    // A piece from 0.01 to 0.05 crosses a 0.02 floor and a 0.04 ceiling.
+    let pieces = sparkline::split_at_bounds(0.01, 0.05, Some(0.02), Some(0.04));
+    let sides: Vec<BinSide> = pieces.iter().map(|piece| piece.2).collect();
+    assert_eq!(
+        sides,
+        vec![BinSide::Below, BinSide::InBand, BinSide::Above],
+        "a piece that crosses both bounds is split into three colours"
+    );
+    assert!((pieces[0].1 - 0.25).abs() < 1e-12 && (pieces[1].1 - 0.75).abs() < 1e-12);
+    assert_eq!(
+        sparkline::split_at_bounds(0.03, 0.03, Some(0.02), Some(0.04)).len(),
+        1,
+        "a flat piece in the band is one piece"
+    );
+}
+
+#[test]
+fn the_line_keeps_spikes_and_breaks_at_gaps_g_cutcards() {
+    // 1000 flat samples at 0.03, one spike and one dip.
+    let mut series: Vec<(usize, f64)> = (0..1000).map(|i| (i, 0.03)).collect();
+    series[500].1 = 0.5;
+    series[700].1 = 0.001;
+    let columns = sparkline::columns(&series, 50).unwrap();
+    assert_eq!(columns.columns.len(), 50);
+    let max = columns
+        .columns
+        .iter()
+        .flatten()
+        .map(|column| column.max)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min = columns
+        .columns
+        .iter()
+        .flatten()
+        .map(|column| column.min)
+        .fold(f64::INFINITY, f64::min);
+    assert_eq!(max, 0.5, "a one-sample spike survives the decimation");
+    assert_eq!(min, 0.001, "a one-sample dip survives the decimation");
+
+    // A NaN sample breaks the line; it is not a zero.
+    let gap: Vec<(usize, f64)> = vec![(0, 0.03), (1, 0.03), (2, f64::NAN), (3, 0.03), (4, 0.03)];
+    let columns = sparkline::columns(&gap, 100).unwrap();
+    assert_eq!(
+        columns.columns.len(),
+        5,
+        "no more columns than moves, so a short toolpath has no false gap"
+    );
+    assert!(columns.columns[2].is_none(), "the NaN column is a gap");
+    assert!(columns.columns[1].unwrap().joined);
+    assert!(
+        !columns.columns[3].unwrap().joined,
+        "the line does not join across a NaN"
+    );
+    assert!(
+        columns
+            .columns
+            .iter()
+            .flatten()
+            .all(|column| column.min > 0.0),
+        "a gap is never drawn as zero"
+    );
+    // A move with no sample is a gap too.
+    let sparse = vec![(0, 0.03), (1, 0.03), (4, 0.03)];
+    let columns = sparkline::columns(&sparse, 100).unwrap();
+    assert!(columns.columns[2].is_none() && !columns.columns[4].unwrap().joined);
+    assert!(
+        sparkline::columns(&[(0, f64::NAN)], 10).is_none(),
+        "a series with no finite value draws nothing"
+    );
+}
+
+/// The operator's main complaint: the drawer drew the line "off the scale".
+/// A spindle-power limit forty times the peak widened the axis, so the line
+/// lay flat on the floor. The line reads the histogram's display range,
+/// which follows the data.
+#[test]
+fn a_far_bound_does_not_flatten_the_line_g_cutcards() {
+    let mut samples: Vec<PopulationSample> = (0..200)
+        .map(|i| PopulationSample {
+            value: 0.01 + 0.01 * f64::from(i) / 199.0,
+            weight_s: 0.1,
+            move_index: i as usize,
+            sample_index: i as usize,
+        })
+        .collect();
+    // One spike, far above the rest.
+    samples[100].value = 0.3;
+    let far = Histogram::build(&samples, None, Some(0.84), 24);
+    let (lo, hi) = histogram::display_range(&far);
+    assert!(
+        hi < 0.84,
+        "the far ceiling must not widen the y range ({lo}..{hi})"
+    );
+    assert!(
+        hi < 0.3,
+        "one spike must not widen the y range: the line clamps it to the \
+         edge with a marker ({lo}..{hi})"
+    );
+    assert!(
+        hi - lo < 0.02,
+        "the range fits the data's percentile range ({lo}..{hi})"
+    );
+    let near = Histogram::build(&samples, None, Some(0.0205), 24);
+    assert!(
+        histogram::display_range(&near).1 >= 0.0205,
+        "a bound just past the data stays to scale on the line"
+    );
+}
+
+#[test]
+fn the_line_fits_the_rail_and_a_click_names_its_move_g_cutcards() {
+    let hist = fixture();
+    let series = fixture_series();
+    let ctx = ctx();
+    let mut line_rect = egui::Rect::NOTHING;
+    let mut chart_height = 0.0_f32;
+    let mut target = egui::Pos2::ZERO;
+    let mut clicked: Option<usize> = None;
+
+    // Passes 0-2 settle the layout and name the target. Pass 3 presses and
+    // pass 4 releases.
+    for pass in 0..5 {
+        let mut events = Vec::new();
+        if pass >= 3 {
+            events.push(egui::Event::PointerMoved(target));
+            events.push(egui::Event::PointerButton {
+                pos: target,
+                button: egui::PointerButton::Primary,
+                pressed: pass == 3,
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(RAIL_WIDTH, 400.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            ui.set_max_width(RAIL_WIDTH);
+            let shown = Sparkline::new(&series, &hist, "mm/tooth")
+                .playhead(Some(1050))
+                .show(ui);
+            line_rect = shown.response.rect;
+            if shown.clicked_move.is_some() {
+                clicked = shown.clicked_move;
+            }
+            chart_height = DistributionChart::new(&hist, "mm/tooth")
+                .show(ui)
+                .response
+                .rect
+                .height();
+        });
+        out.textures_delta.clear();
+        if pass == 2 {
+            // The last column: the right edge of the line.
+            target = egui::pos2(line_rect.right() - 1.0, line_rect.center().y);
+        }
+    }
+
+    assert!(
+        line_rect.width() <= RAIL_WIDTH + SLACK,
+        "the line is {} points wide in a {RAIL_WIDTH} point rail",
+        line_rect.width()
+    );
+    assert!(
+        (line_rect.height() - chart_height).abs() <= SLACK,
+        "the line is {} points high and the histogram {chart_height}; a card \
+         must not change height when it flips",
+        line_rect.height()
+    );
+    assert_eq!(
+        clicked,
+        Some(1099),
+        "a click on the last column must name the last move, so the panel \
+         can seek to it"
     );
 }
 
@@ -507,7 +776,10 @@ fn the_scan_is_not_vacuous_g_cutcards() {
         (DIAGNOSTICS, 20_000),
         (TIMELINE, 20_000),
         (CHART, 2_000),
+        (LINE, 2_000),
         (STATE, 10_000),
+        (PLAYBACK, 2_000),
+        (APP, 10_000),
     ] {
         let src = read(rel);
         assert!(
