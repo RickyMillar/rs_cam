@@ -1,0 +1,93 @@
+{
+  "project": "rivmap350",
+  "setup_count": 2,
+  "toolpath_count": 7,
+  "total_cutting_distance_mm": 729095.9074666072,
+  "total_rapid_distance_mm": 450586.83807375625,
+  "total_runtime_s": 35683.69639059665,
+  "air_cut_pct_of_total_runtime": 17.819287966397955,
+  "air_cut_pct_of_cutting_time": 21.91343176878833,
+  "average_engagement": 0.3750894094076328,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 8,
+  "default_findings": [
+    {
+      "rule_id": "project_curve_negative_depth",
+      "toolpath_id": 10,
+      "toolpath_name": "Rivers (copy)",
+      "title": "Project-curve depth is negative — toolpath will cut air",
+      "detail": "ProjectCurve `depth` is -2.000 mm (negative). The geometric convention is \"positive depth = into material\" — with `direction = From Below`, a negative depth lifts the cutter into air for the whole toolpath (0 mm of in-material cut). Flipping to +2.000 mm restores the intended 2.0 mm-deep cut.",
+      "new_value": 2.0,
+      "current_value": -2.0
+    }
+  ],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.2,
+    "mode": "fixed",
+    "source": "override",
+    "project_mm": 0.2
+  },
+  "per_toolpath": [
+    {
+      "id": 0,
+      "name": "3D Rough",
+      "operation": "3D Rough",
+      "status": "ok",
+      "move_count": 40888,
+      "collision_count": 0
+    },
+    {
+      "id": 2,
+      "name": "Drill Holes 6 mm",
+      "operation": "Drill",
+      "status": "ok",
+      "move_count": 644,
+      "collision_count": 0
+    },
+    {
+      "id": 1,
+      "name": "Scallop Finish",
+      "operation": "Scallop Finish",
+      "status": "ok",
+      "move_count": 515146,
+      "collision_count": 0
+    },
+    {
+      "id": 11,
+      "name": "Pin Drill (flip)",
+      "operation": "Pin Drill",
+      "status": "ok",
+      "move_count": 20,
+      "collision_count": 0
+    },
+    {
+      "id": 9,
+      "name": "3D Rough 8",
+      "operation": "3D Rough",
+      "status": "error",
+      "move_count": 37408,
+      "collision_count": 8
+    },
+    {
+      "id": 3,
+      "name": "Rivers",
+      "operation": "Project Curve",
+      "status": "ok",
+      "move_count": 11650,
+      "collision_count": 0
+    },
+    {
+      "id": 4,
+      "name": "Lakes",
+      "operation": "Project Curve",
+      "status": "ok",
+      "move_count": 1861,
+      "collision_count": 0
+    }
+  ],
+  "verdict": "WARNING: 8 rapid-through-stock collisions",
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)"
+}

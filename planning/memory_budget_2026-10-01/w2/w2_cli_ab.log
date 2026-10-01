@@ -1,0 +1,37 @@
+== build branch b3a4a7ac 00:55:21
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+== A_master_fd06f407 /home/ricky/personal_repos/rs_cam/target/release/rs_cam_cli 00:59:47
+rc=0 wall=237s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:57.14
+	Maximum resident set size (kbytes): 10211048
+	Exit status: 0
+Counts: 5159038 samples | 668595 flagged-air + 294054 flagged-low (per SAMPLE) | 251495 issue runs (COALESCED, the legacy "issue_count") | 4043 hotspots
+Toolpaths: 7  |  Cutting: 729096mm  |  Rapid: 450587mm  |  Time: 35684s
+Air cutting: 17.8% of total runtime  |  Avg engagement: 0.38  |  Peak commanded advance/tooth: 0.092 mm/tooth
+  [ ] #0 3D Rough (3D Rough) — 40888 moves, 0 collisions
+  [ ] #2 Drill Holes 6 mm (Drill) — 644 moves, 0 collisions
+  [ ] #1 Scallop Finish (Scallop Finish) — 515146 moves, 0 collisions
+  [ ] #11 Pin Drill (flip) (Pin Drill) — 20 moves, 0 collisions
+  [!] #9 3D Rough 8 (3D Rough) — 37408 moves, 8 collisions
+  [ ] #3 Rivers (Project Curve) — 11650 moves, 0 collisions
+  [ ] #4 Lakes (Project Curve) — 1861 moves, 0 collisions
+Verdict: WARNING: 8 rapid-through-stock collisions
+6.3G
+== B_branch /home/ricky/personal_repos/rs_cam/target/mem-integration/release/rs_cam_cli 01:03:44
+rc=0 wall=235s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:55.03
+	Maximum resident set size (kbytes): 7286720
+	Exit status: 0
+Counts: 5159038 samples | 668595 flagged-air + 294054 flagged-low (per SAMPLE) | 251495 issue runs (COALESCED, the legacy "issue_count") | 4043 hotspots
+Toolpaths: 7  |  Cutting: 729096mm  |  Rapid: 450587mm  |  Time: 35684s
+Air cutting: 17.8% of total runtime  |  Avg engagement: 0.38  |  Peak commanded advance/tooth: 0.092 mm/tooth
+  [ ] #0 3D Rough (3D Rough) — 40888 moves, 0 collisions
+  [ ] #2 Drill Holes 6 mm (Drill) — 644 moves, 0 collisions
+  [ ] #1 Scallop Finish (Scallop Finish) — 515146 moves, 0 collisions
+  [ ] #11 Pin Drill (flip) (Pin Drill) — 20 moves, 0 collisions
+  [!] #9 3D Rough 8 (3D Rough) — 37408 moves, 8 collisions
+  [ ] #3 Rivers (Project Curve) — 11650 moves, 0 collisions
+  [ ] #4 Lakes (Project Curve) — 1861 moves, 0 collisions
+Verdict: WARNING: 8 rapid-through-stock collisions
+6.3G
+DONE 01:07:39

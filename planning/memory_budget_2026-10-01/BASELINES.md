@@ -53,11 +53,29 @@ Rapid collisions: 8 in both, all in "3D Rough 8". `get_diagnostics` now
 publishes null plus `cut_metrics_not_measured` for the trace figures
 (group D, U2), where W0 published 0.0.
 
-OPEN before W1 is called output-neutral: the per-toolpath move counts
-(Scallop 515 146 moves / 307.7 km) were not recorded at W0 (fd06f407), and
-they differ from the 5b34e710 runs (798 560 / 350.1 km). fd06f407 changed
-the fed-chord refinement and the arc fit, which can explain that, but a
-generation A/B fd06f407 vs branch is still needed. The perf goldens pass.
+CLOSED (W2 CLI A/B below): fd06f407 itself emits the 515 146-move
+scallop; the branch does not change generation.
 
-Also open: generate_all reported "5 generated" on this run and "7" at W0
-with the same steps.
+CLOSED (wave-2 group H): "5 generated" vs "7" depends only on whether the
+GUI auto-regeneration (500 ms after load) made two 2.5D operations current
+before generate_all arrived; the plan skips them without counting them.
+
+## W2 (CLI, metrics ON): master fd06f407 vs branch b3a4a7ac (2026-10-02 UTC 00:59-01:07)
+
+Protocol P2: `rs_cam_cli project rivmap350.toml --resolution 0.2
+--output-dir <dir> --summary` under the same cgroup (16 GB), wrapped in
+`/usr/bin/time -v`. The CLI always captures cutting metrics and full
+debug traces. Runs were sequential on an otherwise idle lane.
+
+| | A: master fd06f407 | B: branch b3a4a7ac |
+|---|---|---|
+| Max RSS | 10 211 048 kB (9.74 GiB) | 7 286 720 kB (6.95 GiB), -29 % |
+| Wall | 3:57 | 3:55 |
+| Samples / air % / time | 5 159 038 / 17.8 % / 35 684 s | identical |
+| Rapid collisions | 8 (3D Rough 8) | identical |
+
+Output neutrality: `simulation.json` (6.76 GB) is byte-identical (`cmp`).
+`summary.json` differs only by the new `cut_metrics_not_measured: null`
+key (U2). The `tp_*.json` files differ only in `elapsed_us` timing fields.
+Logs and summaries: `w2/`. The CLI has no GUI copies, so this isolates the
+core part of M2/M3/M8.
