@@ -35,6 +35,13 @@
   `planning/feeds_matrix_2026-09-23/RETAKE_2026-10-01.md`. The GUI default
   V-bit (12.7 mm, 90 degrees) now ships VCarve and Trace in solid wood; the
   2026-09-26 note below that it refuses is superseded.
+- **Amana ZrN v8 tapered rows serve every 3D finish** (operator ruling
+  2026-10-01, "yes"; working tree): a third `FAMILY_RULES` entry carries the
+  v8 (Parallel, Finish) rows to Contour, Scallop and Trace. A Ø1 tapered tip
+  in hardwood on Scallop ships the printed 0.01905-0.0508 mm band; before,
+  it refused on the size rule. 16 MDF tapered FM1 cells moved; see
+  `planning/feeds_matrix_2026-09-23/RETAKE_2026-10-01b.md`. Sentry
+  `the_printed_tip_row_serves_every_3d_finish_g3v8`.
 
 ## Update 2026-10-01/02 (local runner session) — memory programme, Preferences, MCP proxy
 
