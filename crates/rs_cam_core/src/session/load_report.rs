@@ -21,6 +21,12 @@
 //! - the simulation trace, by `Weak` identity.
 //!
 //! The key is `O(toolpaths)` to build and compare. It never reads a move.
+//!
+//! The memo gives a new `Arc` only when the key misses. The identity of
+//! the answer is therefore the shared key of every view that reads only
+//! inputs of this key: [`LoadReportStamp`]. The GUI's cut-metric cards,
+//! simulation triage and viewport chipload colouring key on the stamp, so
+//! no view keeps a second copy of this key, and no view keys on a counter.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -45,6 +51,33 @@ fn same_allocation<T>(stored: Option<&Weak<T>>, live: Option<&Arc<T>>) -> bool {
         (None, None) => true,
         (Some(weak), Some(arc)) => weak.upgrade().is_some_and(|up| Arc::ptr_eq(&up, arc)),
         _ => false,
+    }
+}
+
+/// The identity of one report that [`ProjectSession::tool_load_report_for`]
+/// gave, as the cache key of a view derived from the same inputs.
+///
+/// The memo gives the same `Arc` while no input of its key moves, and a
+/// new `Arc` after any input moves (a result adoption, an edit, a new
+/// trace). A view that reads only those inputs keys on this stamp and on
+/// nothing else. The stamp holds a `Weak`, so the address stays reserved
+/// while the stamp lives, and a later report cannot get it (no ABA).
+///
+/// When a key part does not serialize, the memo stores nothing, and each
+/// call gives a new `Arc`. A view keyed on the stamp then rebuilds on each
+/// call. That is slow, but it is never stale.
+#[derive(Debug, Clone)]
+pub struct LoadReportStamp(Weak<ToolLoadReport>);
+
+impl LoadReportStamp {
+    /// The stamp of `report`.
+    pub fn of(report: &Arc<ToolLoadReport>) -> Self {
+        Self(Arc::downgrade(report))
+    }
+
+    /// Is `report` the report this stamp was taken from?
+    pub fn answers(&self, report: &Arc<ToolLoadReport>) -> bool {
+        same_allocation(Some(&self.0), Some(report))
     }
 }
 
@@ -443,6 +476,78 @@ mod tests {
         let _ = s.tool_load_report_for(None);
         assert_eq!(s.tool_load_report_builds(), 4);
         assert_same_as_fresh(&s, None);
+    }
+
+    /// Vertical fed descents above the pocket's 500 mm/min plunge rate, so
+    /// the triage has a plunge-class finding to read from the kinematics.
+    fn plunges(feed: f64) -> Toolpath {
+        let mut tp = Toolpath::new();
+        for hole in 0..6 {
+            let x = f64::from(hole) * 10.0;
+            tp.rapid_to(P3::new(x, 0.0, 5.0));
+            tp.feed_to(P3::new(x, 0.0, -3.0), feed);
+            tp.feed_to(P3::new(x + 5.0, 0.0, -3.0), feed);
+            tp.rapid_to(P3::new(x + 5.0, 0.0, 5.0));
+        }
+        tp
+    }
+
+    fn has_plunge_finding(triage: &crate::stock::sim_triage::SimulationTriage) -> bool {
+        triage.actions.iter().any(|finding| {
+            finding.diagnostic.id.as_str() == crate::diagnostics::ids::PROJECT_PLUNGE_CLASS_LOAD
+        })
+    }
+
+    /// The triage that borrows the report's kinematic rows equals the
+    /// triage that analyses the moves again, and it builds no report. The
+    /// second arm is the row the report leaves out (its tool is missing).
+    #[test]
+    fn the_triage_from_the_report_equals_the_fresh_triage() {
+        let mut s = session();
+        s.insert_result(0, result_of(plunges(1200.0))).unwrap();
+        for tool_id in [s.tools[0].id.0, 999] {
+            s.toolpath_configs[0].tool_id = tool_id;
+            let trace = Arc::new(fresh_trace(&s));
+            let evidence = crate::session::ProjectEvidence {
+                cut_trace: Some(trace.as_ref()),
+                ..Default::default()
+            };
+            let report = s.tool_load_report_for(Some(&trace));
+            let builds = s.tool_load_report_builds();
+            let from_report = s.simulation_triage_with_report(&evidence, &report);
+            assert_eq!(
+                s.tool_load_report_builds(),
+                builds,
+                "the triage built a report"
+            );
+            let fresh = s.simulation_triage(&evidence);
+            assert!(
+                has_plunge_finding(&fresh),
+                "the fixture must give a plunge finding (tool {tool_id})"
+            );
+            assert_eq!(format!("{from_report:?}"), format!("{fresh:?}"));
+        }
+    }
+
+    /// The triage key covers what the triage reads beside the report key.
+    #[test]
+    fn the_triage_session_key_moves_with_a_name_a_source_the_stock_and_a_face() {
+        use crate::session::TriageSessionKey;
+        let mut s = session();
+        let key = TriageSessionKey::of(&s);
+        assert!(key.matches(&s));
+        s.toolpath_configs[0].name.push('x');
+        assert!(!key.matches(&s), "a name edit was missed");
+        let key = TriageSessionKey::of(&s);
+        s.toolpath_configs[0].stock_source = crate::session::StockSource::FromRemainingStock;
+        assert!(!key.matches(&s), "a stock source edit was missed");
+        let key = TriageSessionKey::of(&s);
+        s.stock.x += 1.0;
+        assert!(!key.matches(&s), "a stock edit was missed");
+        let key = TriageSessionKey::of(&s);
+        s.setups[0].face_up = crate::compute::transform::FaceUp::Bottom;
+        assert!(!key.matches(&s), "a setup face edit was missed");
+        assert_eq!(key.clone(), key);
     }
 
     #[test]

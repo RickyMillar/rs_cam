@@ -270,13 +270,12 @@ fn freshness_evidence(controller: &AppController) -> String {
 /// The cards of `toolpath_id` that read `StaleSimulation`. Asserts that
 /// the set is not empty, so the check is not vacuous.
 fn stale_cards(controller: &mut AppController, toolpath_id: ToolpathId) -> Vec<String> {
-    let edit_counter = controller.state.gui.edit_counter;
     let AppState {
         session,
         simulation,
         ..
     } = &mut controller.state;
-    let set = simulation.cached_cut_metrics(session, edit_counter, toolpath_id);
+    let set = simulation.cached_cut_metrics(session, toolpath_id);
     assert!(
         !set.cards.is_empty(),
         "no cards: the check would be vacuous"

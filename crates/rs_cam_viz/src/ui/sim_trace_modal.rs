@@ -29,7 +29,6 @@ use super::AppEvent;
 use super::components::{Button, Sparkline, sparkline, text};
 use super::sim_diagnostics::{CutMetricSpec, is_advisory};
 use crate::state::freshness::simulation_freshness;
-use crate::state::runtime::GuiState;
 use crate::state::simulation::SimulationState;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
@@ -58,7 +57,6 @@ pub fn draw(
     ctx: &egui::Context,
     sim: &mut SimulationState,
     session: &ProjectSession,
-    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
     let Some(metric) = sim.open_trace else {
@@ -73,7 +71,7 @@ pub fn draw(
         sim.open_trace = None;
         return;
     };
-    let set = sim.cached_cut_metrics(session, gui.edit_counter, toolpath_id);
+    let set = sim.cached_cut_metrics(session, toolpath_id);
     let measured = set.cards.iter().find_map(|card| match &card.outcome {
         DistributionOutcome::Measured(distribution) if card.metric == metric => {
             Some((card, distribution))

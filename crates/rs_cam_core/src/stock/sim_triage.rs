@@ -282,11 +282,12 @@ pub struct TriageInputs<'a> {
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
     /// Phase 4 — the per-toolpath kinematic reading, keyed by toolpath id.
-    /// Built by [`crate::session::ProjectSession::kinematic_utilizations`].
+    /// Built by [`crate::session::ProjectSession::kinematic_utilizations`], or
+    /// borrowed from the load report's rows.
     /// An EMPTY map means the caller measured nothing, so
     /// `project.plunge_class_load` is simply absent — it never reads as
     /// clean.
-    pub kinematic_utilization: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
+    pub kinematic_utilization: &'a BTreeMap<ToolpathId, &'a ToolpathKinematicUtilization>,
     pub region_of: Option<RegionResolver<'a>>,
 }
 
@@ -1240,7 +1241,7 @@ mod tests {
         rapids: &'a [AttributedRapidCollision],
         holders: &'a [(ToolpathId, HolderCollisionCheck)],
         diameters: &'a BTreeMap<ToolpathId, f64>,
-        kinematics: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
+        kinematics: &'a BTreeMap<ToolpathId, &'a ToolpathKinematicUtilization>,
     ) -> TriageInputs<'a> {
         TriageInputs {
             trace,

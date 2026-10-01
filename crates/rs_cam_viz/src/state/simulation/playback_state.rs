@@ -11,8 +11,8 @@ use std::sync::Arc;
 use rs_cam_core::dexel_stock::TriDexelStock;
 
 use super::{
-    ChiploadEnvelopeCache, CutMetricCache, HolderCheckScope, IssueListCache, SetupBoundary,
-    SimCheckpoint, SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
+    CutMetricCache, HolderCheckScope, IssueListCache, SetupBoundary, SimCheckpoint,
+    SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
     SimulationTriageCache, SpanAggregateCache, SpanScope, StockVizMode, ToolpathBoundary,
 };
 use crate::state::toolpath::ToolpathId;
@@ -70,7 +70,6 @@ impl SimulationState {
                 pending_inspect_toolpath: None,
                 span_scope: SpanScope::default(),
                 span_aggregates: SpanAggregateCache::default(),
-                chipload_envelope_cache: ChiploadEnvelopeCache::default(),
                 triage_cache: SimulationTriageCache::default(),
                 cut_metric_cache: CutMetricCache::default(),
                 issue_cache: IssueListCache::default(),

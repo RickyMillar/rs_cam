@@ -275,9 +275,14 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
     }
     let memo = function_source(&state, "pub fn cached_cut_metrics(");
     assert!(
-        memo.contains("weak_matches(") && memo.contains("edit_counter"),
-        "the memo is keyed by the trace identity and the edit counter, the \
-         rule of cached_load_report"
+        memo.contains("cached_load_report(") && memo.contains(".answers(&report)"),
+        "the memo is keyed by the load report it read (LoadReportStamp), so a \
+         result adoption, an edit and a new trace each rebuild it"
+    );
+    assert!(
+        !memo.contains("edit_counter"),
+        "the memo must not key on the GUI edit counter: a result adoption \
+         moves no counter"
     );
 }
 
