@@ -1058,21 +1058,16 @@ impl RsCamApp {
             )> = None;
 
             // Identity of everything the AdvancePerTooth colouring reads that
-            // is not the toolpath itself: the cut trace it measures, and the
-            // session edit counter standing in for the tool/material config
-            // the vendor band is matched from.
+            // is not the toolpath itself: the load report the session memo
+            // gives for this trace. Its key holds the trace identity and the
+            // tool, material and operation config the vendor band is matched
+            // from, so it moves on each of them and on no counter.
             let advance_source: Option<upload_cache::AdvanceSource> = matches!(
                 state.viewport.toolpath_color_mode,
                 crate::state::viewport::ToolpathColorMode::AdvancePerTooth
             )
             .then(|| upload_cache::AdvanceSource {
-                trace: state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|r| r.cut_trace.as_ref())
-                    .map(upload_cache::ArcId::new),
-                edit_counter: gui.edit_counter,
+                report: upload_cache::ArcId::new(&state.simulation.cached_load_report(session)),
             });
 
             // WP27 — which toolpaths the viewport draws. One rule, one

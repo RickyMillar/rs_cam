@@ -7,7 +7,6 @@ pub use playback_state::LocatedHolderCollision;
 mod semantic_trace;
 
 use std::collections::{HashMap, HashSet};
-use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 
@@ -15,6 +14,7 @@ use super::job::SetupId;
 use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::dexel_stock::TriDexelStock;
+use rs_cam_core::session::{LoadReportStamp, TriageSessionKey};
 use rs_cam_core::stock::collision::{CollisionReport, RapidCollision};
 use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::stock::stock_mesh::StockMesh;
@@ -103,20 +103,16 @@ pub struct SimulationDebugState {
     /// frame. Without this cache the Selected section rescans the full
     /// sample list every frame — see `SpanAggregateCache::ensure_built`.
     pub(crate) span_aggregates: SpanAggregateCache,
-    /// Cached chipload envelope LUT matches keyed by sim trace + edit counter.
-    /// The lookup needs per-toolpath peak axial DOC and otherwise scans the
-    /// full sample trace for every toolpath if rebuilt per frame.
-    pub(crate) chipload_envelope_cache: ChiploadEnvelopeCache,
-    /// Cached simulation triage keyed by sim trace + edit counter, matching
-    /// the `chipload_envelope_cache` staleness rule.
-    /// Building it walks the full cut trace per toolpath twice (diagnostics
-    /// then triage) with a per-toolpath height sort, so the inspector's
-    /// measurability strip must not rebuild it every frame.
+    /// Cached simulation triage, keyed on the inputs it reads (see
+    /// [`SimulationTriageCache`]). Building it walks the full cut trace per
+    /// toolpath twice (diagnostics then triage) with a per-toolpath height
+    /// sort, so the inspector's measurability strip must not rebuild it
+    /// every frame.
     pub(crate) triage_cache: SimulationTriageCache,
     /// The cut-metric distributions of the focused toolpath, keyed by the
-    /// sim trace, the toolpath and the edit counter. The Inspector's "Cut
-    /// metrics" section reads them on every frame; the build walks the
-    /// trace once per metric.
+    /// load report it read and the toolpath. The Inspector's "Cut metrics"
+    /// section reads them on every frame; the build walks the trace once
+    /// per metric.
     pub(crate) cut_metric_cache: CutMetricCache,
     /// Cached sorted issue list keyed by sim/debug trace fingerprints.
     /// Avoids rebuilding + sorting the same air-cut/hotspot/collision list
@@ -140,7 +136,7 @@ pub struct SimulationDebugState {
 /// The doctrine and its full argument live in `rs_cam_core::maps::geom_cache` (module
 /// doc) and `rs_cam_core::compute::sim_prefix` (`weak_matches`, copied here
 /// because the viz caches key on viz-side state). Pairing a bare pointer with
-/// an element count or an edit counter — what these four caches used to do —
+/// an element count or an edit counter — what these caches used to do —
 /// narrows the collision window rather than closing it; for the cut trace it
 /// narrows it barely at all, because every `ArcInner<SimulationCutTrace>` is
 /// the same fixed size (the sample `Vec`s hang off it), so every trace in the
@@ -155,15 +151,6 @@ fn weak_matches<T>(stored: Option<&Weak<T>>, live: Option<&Arc<T>>) -> bool {
         (Some(w), Some(a)) => w.upgrade().is_some_and(|up| Arc::ptr_eq(&up, a)),
         _ => false,
     }
-}
-
-#[derive(Default)]
-pub(crate) struct ChiploadEnvelopeCache {
-    /// Weak-pinned identity of the trace these envelopes were built from.
-    /// See [`weak_matches`].
-    trace: Option<Weak<SimulationCutTrace>>,
-    edit_counter: u64,
-    envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
 }
 
 /// The metrics the Inspector's "Cut metrics" section shows, in the order it
@@ -200,14 +187,21 @@ pub struct CutMetricSet {
     pub cards: Vec<CutMetricCard>,
 }
 
-/// The memo behind [`SimulationState::cached_cut_metrics`]. The key is the
-/// trace identity (see [`weak_matches`]), the toolpath and the edit counter.
+/// The memo behind [`SimulationState::cached_cut_metrics`].
+///
+/// The key is the load report the set was built against and the toolpath.
+/// The build reads the report's verdict, and otherwise only inputs of the
+/// report key: the row's operation and tool, the material, the result's
+/// spans and drill op, the machine and the trace. The report stamp
+/// ([`LoadReportStamp`]) therefore moves on each of them, a result adoption
+/// included. No counter is in the key.
 #[derive(Default)]
 pub(crate) struct CutMetricCache {
-    trace: Option<Weak<SimulationCutTrace>>,
+    report: Option<LoadReportStamp>,
     toolpath_id: Option<ToolpathId>,
-    edit_counter: u64,
     set: Option<Arc<CutMetricSet>>,
+    /// How many times the memo built a set. Read by the sentries.
+    pub(crate) builds: u64,
 }
 
 impl SimulationState {
@@ -227,35 +221,31 @@ impl SimulationState {
         }
     }
 
-    /// The cut-metric distributions of `toolpath_id`, built once per trace,
-    /// toolpath and edit counter. Never per frame.
+    /// The cut-metric distributions of `toolpath_id`, built once per load
+    /// report and toolpath. Never per frame.
     ///
     /// The verdict comes from [`Self::cached_load_report`], so the cards and
     /// the limit rows read one gate answer. The population comes from
     /// `rs_cam_core::tool_load::metric_distribution`, which runs the gate's
-    /// own filters.
+    /// own filters. A hit costs the report memo's key compare, which reads
+    /// no move.
     pub fn cached_cut_metrics(
         &mut self,
         session: &rs_cam_core::session::ProjectSession,
-        edit_counter: u64,
         toolpath_id: ToolpathId,
     ) -> Arc<CutMetricSet> {
-        let live = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref());
+        let report = self.cached_load_report(session);
         let cache = &self.debug.cut_metric_cache;
-        if weak_matches(cache.trace.as_ref(), live)
-            && cache.edit_counter == edit_counter
+        if cache
+            .report
+            .as_ref()
+            .is_some_and(|stamp| stamp.answers(&report))
             && cache.toolpath_id == Some(toolpath_id)
             && let Some(set) = &cache.set
         {
             return Arc::clone(set);
         }
-        let stored_trace = live.map(Arc::downgrade);
-        let trace = live.map(Arc::clone);
-
-        let report = self.cached_load_report(session);
+        let trace = self.cut_trace_arc().map(Arc::clone);
         let verdict = report
             .per_toolpath
             .iter()
@@ -275,10 +265,10 @@ impl SimulationState {
             );
         }
         let cache = &mut self.debug.cut_metric_cache;
-        cache.trace = stored_trace;
+        cache.report = Some(LoadReportStamp::of(&report));
         cache.toolpath_id = Some(toolpath_id);
-        cache.edit_counter = edit_counter;
         cache.set = Some(Arc::clone(&set));
+        cache.builds += 1;
         set
     }
 }
@@ -485,43 +475,47 @@ fn lut_pass_role(
 
 /// Cached [`rs_cam_core::stock::sim_triage::SimulationTriage`] for the inspector.
 ///
-/// `built` distinguishes "never built" from "built for a project with no cut
-/// trace", because `trace == None` is itself a legitimate cached state.
+/// The key is the inputs the triage reads, in three parts, and no counter:
 ///
-/// `evidence_fp` closes a second, larger staleness hole that is not ABA:
-/// [`SimulationState::project_evidence`] feeds the triage from collision and
-/// resolution state that is *not* the trace — and the holder-collision report
-/// in particular is written by a separate async job that bumps no counter and
-/// replaces no trace. The sibling `issue_cache_key` has folded a
-/// `collision_fingerprint` in since it was written; this cache had not, so a
-/// holder report arriving after the triage was cached left the panel showing
-/// safety findings built without it.
+/// - `report` — the load report the triage read its kinematic rows from
+///   ([`LoadReportStamp`]). It moves on a row, result, tool, material,
+///   post, machine or trace change, a result adoption included.
+/// - `session` — the session parts the triage reads beside the report key
+///   ([`TriageSessionKey`]): names, stock sources, the stock and the
+///   setup faces.
+/// - `evidence_fp` — the evidence that is not the trace (see
+///   [`SimulationState::evidence_fingerprint`]). The holder-collision
+///   report comes from a separate async job that replaces no trace, so the
+///   trace identity alone does not see it.
 #[derive(Default)]
 pub(crate) struct SimulationTriageCache {
-    built: bool,
-    /// Weak-pinned identity of the trace this triage was built from. See
-    /// [`weak_matches`].
-    trace: Option<Weak<SimulationCutTrace>>,
-    edit_counter: u64,
+    report: Option<LoadReportStamp>,
+    session: Option<TriageSessionKey>,
     /// Fingerprint over the non-trace [`rs_cam_core::session::ProjectEvidence`]
     /// inputs — see [`SimulationState::evidence_fingerprint`].
-    evidence_fp: u64,
-    triage: rs_cam_core::stock::sim_triage::SimulationTriage,
+    pub(crate) evidence_fp: u64,
+    pub(crate) triage: rs_cam_core::stock::sim_triage::SimulationTriage,
+    /// How many times the cache built a triage. Read by the sentries.
+    pub(crate) builds: u64,
 }
 
 impl SimulationTriageCache {
-    /// True when this entry answers for exactly this trace, edit version and
-    /// evidence fingerprint.
+    /// True when this entry answers for exactly this report, session and
+    /// evidence fingerprint. It allocates nothing and reads no move.
     fn matches(
         &self,
-        live: Option<&Arc<SimulationCutTrace>>,
-        edit_counter: u64,
+        report: &Arc<rs_cam_core::tool_load::ToolLoadReport>,
+        session: &rs_cam_core::session::ProjectSession,
         evidence_fp: u64,
     ) -> bool {
-        self.built
-            && weak_matches(self.trace.as_ref(), live)
-            && self.edit_counter == edit_counter
+        self.report
+            .as_ref()
+            .is_some_and(|stamp| stamp.answers(report))
             && self.evidence_fp == evidence_fp
+            && self
+                .session
+                .as_ref()
+                .is_some_and(|key| key.matches(session))
     }
 }
 

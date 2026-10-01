@@ -11,7 +11,7 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - `diagnostics_types.rs` — the diagnostic types. Keep the `mod.rs` re-export.
 - `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs` — context,
   cycle time, reach, the planner. `rest_stock.rs` — the stored resolution.
-- `load_report.rs` — the load-report memo (sentry: `--lib session::load_report`).
+- `load_report.rs` — the memo and `LoadReportStamp` (`--lib session::load_report`).
 
 ## Invariants
 

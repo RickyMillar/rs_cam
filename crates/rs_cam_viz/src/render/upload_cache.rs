@@ -228,12 +228,10 @@ pub struct ReachOverlayUploadKey {
 ///   builder runs and which segments it emits.
 /// - `shift` — the identity-setup emission → display translation.
 /// - `feed_rate` — nominal feed for the Engagement colour mode.
-/// - `advance_source` — AdvancePerTooth mode only: the cut-trace identity the
-///   per-move advance map is derived from, paired with the session edit
-///   counter. The vendor band comes from `chipload_envelopes_for_session`,
-///   which reads tool and material config; the edit counter is this
-///   codebase's established staleness signal for session config and is
-///   cheaper than recomputing the band just to compare it.
+/// - `advance_source` — AdvancePerTooth mode only: the identity of the load
+///   report the session memo gave (see [`AdvanceSource`]). The memo key
+///   holds the cut trace and the tool, material and operation config the
+///   vendor band is matched from, and a compare reads no move.
 /// - `entry_preview` / `tool_profile` — the selected toolpath's overlay
 ///   inputs, `None` when the overlay is not drawn.
 #[derive(Debug, Clone, PartialEq)]
@@ -252,18 +250,15 @@ pub struct ToolpathUploadKey {
 
 /// Everything the AdvancePerTooth colouring reads that is not the toolpath.
 ///
-/// Split out of `(usize, u64)` when the pointer became an [`ArcId`]: the
-/// old shape used `0` for "no simulation has run", which an identity type
-/// cannot express — and could not distinguish from a trace that happened to
-/// live at address 0.
+/// The colouring reads the per-move advance map of the cut trace and the
+/// vendor band (`chipload_envelopes_for_session`: tool, material and
+/// operation config, and the trace). The session's load-report memo keys on
+/// all of these, and gives a new report `Arc` when one moves. The identity
+/// of that report is therefore the key, and no counter is in it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdvanceSource {
-    /// Identity of the cut trace the per-move advance map is derived from;
-    /// `None` when there is no cut trace.
-    pub trace: Option<ArcId<rs_cam_core::stock::simulation_cut::SimulationCutTrace>>,
-    /// Session edit counter — stands in for the tool/material config the
-    /// vendor band is matched from.
-    pub edit_counter: u64,
+    /// Identity of the load report the session memo gave for this trace.
+    pub report: ArcId<rs_cam_core::tool_load::ToolLoadReport>,
 }
 
 /// Compare a cache slot against the key this pass needs, adopt the new
@@ -463,45 +458,35 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    /// AdvancePerTooth colouring reads the cut trace and the session's tool /
-    /// material config; both must move the key.
+    /// AdvancePerTooth colouring keys on the load report identity: a new
+    /// report (new trace, edit or result adoption) moves the key, and the
+    /// same report keeps it.
     #[test]
     fn advance_per_tooth_sources_are_keyed() {
         let tp = annotated();
-        let trace = Arc::new(
-            rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
-        );
+        let report = Arc::new(rs_cam_core::tool_load::ToolLoadReport {
+            per_toolpath: Vec::new(),
+        });
         let mut a = key_for(&tp);
         a.color_mode = ToolpathColorMode::AdvancePerTooth;
         a.advance_source = Some(AdvanceSource {
-            trace: Some(ArcId::new(&trace)),
-            edit_counter: 7,
+            report: ArcId::new(&report),
         });
 
-        let resimulated = Arc::new(
-            rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(0.5, Vec::new()),
-        );
-        let mut new_trace = a.clone();
-        new_trace.advance_source = Some(AdvanceSource {
-            trace: Some(ArcId::new(&resimulated)),
-            edit_counter: 7,
+        let mut same = a.clone();
+        same.advance_source = Some(AdvanceSource {
+            report: ArcId::new(&report),
         });
-        assert_ne!(a, new_trace);
+        assert_eq!(a, same);
 
-        let mut edited_session = a.clone();
-        edited_session.advance_source = Some(AdvanceSource {
-            trace: Some(ArcId::new(&trace)),
-            edit_counter: 8,
+        let rebuilt = Arc::new(rs_cam_core::tool_load::ToolLoadReport {
+            per_toolpath: Vec::new(),
         });
-        assert_ne!(a, edited_session);
-
-        // "No simulation has run" is its own state, not address 0.
-        let mut unsimulated = a.clone();
-        unsimulated.advance_source = Some(AdvanceSource {
-            trace: None,
-            edit_counter: 7,
+        let mut new_report = a.clone();
+        new_report.advance_source = Some(AdvanceSource {
+            report: ArcId::new(&rebuilt),
         });
-        assert_ne!(a, unsimulated);
+        assert_ne!(a, new_report, "an equal report in a new Arc is a new key");
     }
 
     /// V13's hover input: the enriched key moves with the hovered face, and
