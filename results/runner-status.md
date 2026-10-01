@@ -109,3 +109,25 @@ restarts its own GUI via gui_status / gui_restart, no /mcp).
 Open defect found (runner fixing first): MCP get_project_diagnostics returns
 [] on master while inspect_collisions / get_diagnostics report the 8 real
 rapid collisions in rivmap350 "3D Rough 8".
+
+## 2026-10-02 ~10:00 UTC: safety fix pushed (origin/master 54e91d0d)
+
+FIXED (pre-existing since at least fd06f407, not from the memory programme):
+the rapid-collision SAFETY verdict was silently dropped for every toolpath
+that does not start at move 0. ProjectSession::diagnostics_with_evidence
+counted collisions from the run-global index list but looked up the worst
+collision by comparing the toolpath-LOCAL RapidCollision::move_index with
+the GLOBAL boundary range; the verdict needed both. Now one attribution in
+global indices, the verdict needs only the count, and get_toolpath_diagnostics
+lists the project safety findings for its toolpath. Sentry
+controller::tests::rapid_collision_verdict_g_rapidframe (fails before, passes
+after). Live on rivmap350: get_project_diagnostics now returns a CRITICAL
+project.rapid_collision for "3D Rough 8" (8, worst at local move 33874);
+before it returned []. The CLI's verdict list was affected too (its summary
+printed only the count).
+Note for the lead: the finding's built-in text says "Likely cause:
+inter-region rapid moves not lifting to safe-Z" — for these 8 that is wrong
+(they lift to safe-Z, then G0 into the r-wide boundary band; see 009 addendum).
+Also pushed: budget in MCP generation_status; test artifacts default to a temp
+dir; BREAKING CLI: `project` writes simulation.json only with --sim-artifact.
+The runner restarts its own GUI via the proxy (3 unattended restarts OK).
