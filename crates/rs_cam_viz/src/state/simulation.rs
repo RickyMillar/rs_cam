@@ -519,13 +519,65 @@ impl SimulationTriageCache {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The inputs the issue list reads, and nothing else.
+///
+/// The list reads the accepted run (its cut trace, its boundaries and its
+/// collision checks), the per-toolpath debug and semantic traces in
+/// `GuiState::toolpath_rt`, and the feed bound. It reads no session state,
+/// so `GuiState::edit_counter` is not in the key: that counter misses each
+/// MCP edit and each result adoption, and it moved on edits that change no
+/// issue.
+///
+/// Every trace is keyed by [`Weak`] identity, compared with
+/// [`Weak::ptr_eq`]. The held `Weak` keeps the allocation reserved, so a new
+/// trace cannot get the address of a dropped one (the ABA hazard that a bare
+/// `Arc::as_ptr` key has; see [`weak_matches`]). The held `Weak` also makes
+/// `Arc::make_mut` move a trace that the feed modulation rewrites into a new
+/// allocation, so an in-place rewrite changes the identity too.
+#[derive(Clone, Debug)]
 struct IssueListCacheKey {
-    cut_trace_ptr: Option<usize>,
-    gui_edit_counter: u64,
-    debug_trace_fingerprint: u64,
+    cut_trace: Option<Weak<rs_cam_core::stock::simulation_cut::SimulationCutTrace>>,
+    /// One entry per boundary, in boundary order.
+    toolpath_traces: Vec<IssueTraceIdentity>,
+    /// The boundary ids and move ranges. The list maps each local move to a
+    /// run move through them.
+    boundary_fingerprint: u64,
     max_feed_bits: u64,
     collision_fingerprint: u64,
+}
+
+/// The debug and semantic trace identities of one toolpath.
+#[derive(Clone, Debug)]
+struct IssueTraceIdentity {
+    debug: Option<Weak<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+    semantic: Option<Weak<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
+}
+
+/// Identity of two optional `Weak`s. Sound without an upgrade because the
+/// stored side holds its allocation reserved (see [`IssueListCacheKey`]).
+fn same_weak<T>(left: Option<&Weak<T>>, right: Option<&Weak<T>>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(l), Some(r)) => Weak::ptr_eq(l, r),
+        _ => false,
+    }
+}
+
+impl PartialEq for IssueTraceIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        same_weak(self.debug.as_ref(), other.debug.as_ref())
+            && same_weak(self.semantic.as_ref(), other.semantic.as_ref())
+    }
+}
+
+impl PartialEq for IssueListCacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        same_weak(self.cut_trace.as_ref(), other.cut_trace.as_ref())
+            && self.toolpath_traces == other.toolpath_traces
+            && self.boundary_fingerprint == other.boundary_fingerprint
+            && self.max_feed_bits == other.max_feed_bits
+            && self.collision_fingerprint == other.collision_fingerprint
+    }
 }
 
 /// Cached issue list. Held behind an `Arc<[_]>` rather than a `Vec` because

@@ -385,6 +385,10 @@ pub struct ReachResult {
     /// The toolpath the walk was resolved for. The controller drops a result
     /// whose id no longer matches the selection rather than reporting it.
     pub toolpath_id: ToolpathId,
+    /// The memo key of the request the walk answered. The controller drops a
+    /// result whose key is not the overlay's current key: a walk sent before
+    /// a tool or parameter edit must not show the previous tool's map.
+    pub key: rs_cam_core::maps::reach_map_cache::ReachRequestKey,
     pub result: Result<Arc<rs_cam_core::maps::reach_map::ReachMap>, ComputeError>,
     /// One colour per vertex of the mesh the map was measured over, in that
     /// mesh's vertex order. Empty when the walk failed.
@@ -2015,6 +2019,7 @@ fn spawn_reach_lane(
             // Same guard the toolpath and analysis lanes carry: a panic in
             // the walk must not kill the worker or poison the lane mutex.
             let toolpath_id = request.toolpath_id;
+            let key = rs_cam_core::maps::reach_map_cache::ReachRequestKey::of(&request.spec);
             let mesh = Arc::clone(&request.spec.mesh);
             let index = Arc::clone(&request.spec.index);
             // `AtomicBool` does not implement `CancelCheck`; the trait has a
@@ -2063,6 +2068,7 @@ fn spawn_reach_lane(
 
                 let _ = result_tx.send(ComputeMessage::Reach(Box::new(ReachResult {
                     toolpath_id,
+                    key,
                     result: built,
                     colors: Arc::new(colors),
                 })));
