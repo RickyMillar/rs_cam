@@ -226,7 +226,6 @@ fn collisions_at(session: &mut ProjectSession, resolution: f64) -> usize {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution,
-        metrics_enabled: true,
         auto_resolution: false,
         ..SimulationOptions::default()
     };

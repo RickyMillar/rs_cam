@@ -175,7 +175,7 @@ impl RefuseReason {
                 "no simulation has been run yet — Optimize needs a baseline sim to score against"
             }
             Self::ArcEngagementNotCaptured => {
-                "simulation trace lacks per-sample arc engagement — re-run sim with metrics enabled"
+                "simulation trace lacks per-sample arc engagement — re-run the simulation"
             }
             Self::MaterialUnvalidated => {
                 "stock material has no measured force line — Optimize cannot model power against an unknown material"

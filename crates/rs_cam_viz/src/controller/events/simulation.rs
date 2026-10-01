@@ -30,7 +30,6 @@ impl<B: ComputeBackend> AppController<B> {
         sim.playback = Default::default();
         sim.checks = Default::default();
         sim.last_run = None;
-        sim.submitted_metric_options_revision = None;
         sim.submitted_edit_counter = None;
         sim.submitted_simulation_epoch = None;
         self.collision_positions.clear();
@@ -353,10 +352,6 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .find_map(|m| m.mesh.clone());
 
-        if self.state.simulation.metric_options.enabled {
-            self.state.simulation.metric_options.capture_arc_engagement = true;
-        }
-
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
         // F-034/F-035 — build core's own context here, so the worker
@@ -377,7 +372,6 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: request_resolution,
-            metric_options: self.state.simulation.metric_options,
             spindle_rpm: self.state.gui.post.spindle_speed,
             rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
                 self.state.gui.post.high_feedrate.max(1.0)
@@ -424,8 +418,6 @@ impl<B: ComputeBackend> AppController<B> {
         // to read the live counter when the result landed, which quietly
         // absorbed every edit made while the simulation ran.
         self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
-        self.state.simulation.submitted_metric_options_revision =
-            Some(self.state.simulation.metric_options_revision);
         // D7 (W0c): the core's own half of the same rule. Every edit that
         // clears the simulation bumps the epoch, so a run that lands after
         // one carries a stamp the session refuses.
@@ -799,9 +791,7 @@ mod release_for_new_run_m1 {
             column_grid_cell_mm: 1.0,
             prior_stocks,
         });
-        sim.last_run = Some(SimulationRunMeta {
-            accepted_metric_options_revision: Some(sim.metric_options_revision),
-        });
+        sim.last_run = Some(SimulationRunMeta);
         sim.playback.live_stock = Some(TriDexelStock::from_bounds(&bbox(), 1.0));
         sim.playback.live_stock_group = Some(0);
         sim.playback.live_sim_move = 4;

@@ -23,8 +23,9 @@
 //! A basis says WHAT a number measures. It does not say WHY the number is
 //! not a better one. On a real project the GUI showed "cutting only, no
 //! accel" and told the operator to "Run a simulation" directly after a
-//! simulation ran. The two real causes were a run with no cut trace
-//! (metric capture was off) and a machine profile with no kinematics.
+//! simulation ran. The two real causes were a run with no cut trace (the
+//! GUI capture checkbox, deleted 2026-10-02, was off) and a machine profile
+//! with no kinematics.
 //! [`CycleTimeBasis::worse`] folds both into one basis, so the basis alone
 //! cannot name them. [`MissingInputs`] records each cause beside the
 //! number, and [`CycleTime::with_evidence`] fills it from
@@ -128,9 +129,10 @@ pub enum MissingInput {
     /// include this toolpath. The toolpath was added, or enabled, after
     /// the run.
     NotInSimulation,
-    /// A simulation ran, but it did not capture cutting metrics. The run
-    /// kept no cut trace, and the cut trace is where the simulator writes
-    /// the time it measures.
+    /// A simulation result exists, but it holds no cut trace, and the cut
+    /// trace is where the simulator writes the time it measures. Every
+    /// simulation captures the trace (operator ruling 2026-10-02, "always
+    /// capture"), so this marks evidence that a caller built without one.
     NoCutTrace,
     /// The machine profile has kinematics now, but the simulation ran
     /// before they were set, so the run has no machine-model time.
@@ -420,8 +422,8 @@ mod tests {
         missing.iter().collect()
     }
 
-    /// The operator's case (U3): a simulation ran with metric capture off,
-    /// and the profile has no kinematics. Both causes are named, and
+    /// The operator's case (U3): a simulation result with no cut trace, and
+    /// the profile has no kinematics. Both causes are named, and
     /// "not simulated" is not one of them.
     #[test]
     fn a_trace_less_run_names_the_trace_and_the_kinematics() {

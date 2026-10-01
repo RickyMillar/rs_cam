@@ -244,7 +244,7 @@ fn simulate(session: &mut ProjectSession, cell_mm: f64) {
             &SimulationOptions {
                 resolution: cell_mm,
                 auto_resolution: false,
-                metrics_enabled: false,
+                adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
             &cancel,

@@ -1,7 +1,7 @@
 //! U3 (memory programme 2026-10-01): a weak cycle time names each cause,
 //! and each remedy names the control that removes it.
 //!
-//! The operator simulated with "Capture cutting metrics" off, on a machine
+//! The operator simulated with the old capture checkbox off, on a machine
 //! profile with no kinematics. The GUI showed "8:13:19 (cutting only, no
 //! accel)" and the remedy "Run a simulation to get a modelled estimate"
 //! directly after a simulation ran. The basis alone folds both causes into
@@ -45,7 +45,8 @@ fn the_operators_row_names_both_causes() {
 }
 
 /// After a trace-less run, no remedy says "Run a simulation". The trace
-/// remedy names the control path and says to re-run.
+/// remedy says to re-run, and it names no capture control: every run
+/// captures the trace (operator ruling 2026-10-02, "always capture").
 #[test]
 fn a_trace_less_run_never_says_run_a_simulation() {
     let cycle = CycleTime::of(29_599.0, CycleTimeBasis::CuttingOnly)
@@ -60,11 +61,15 @@ fn a_trace_less_run_never_says_run_a_simulation() {
     }
 
     let trace = remedies[0];
+    assert!(trace.contains("no cut trace"), "{trace}");
     assert!(
-        trace.contains("Simulation \u{25B8} Setup & run \u{25B8} \"Capture cutting metrics\""),
-        "the remedy must name the control as the GUI shows it (sim_op_list.rs): {trace}"
+        !trace.contains("Capture cutting metrics"),
+        "the remedy must not name the deleted checkbox: {trace}"
     );
-    assert!(trace.contains("re-run the simulation"), "{trace}");
+    assert!(
+        trace.contains("Simulation \u{25B8} Re-run Simulation"),
+        "the remedy must name the re-run as the GUI shows it: {trace}"
+    );
 
     let kinematics = remedies[1];
     assert!(

@@ -185,7 +185,6 @@ fn run_as013_simulation() -> ProjectSession {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

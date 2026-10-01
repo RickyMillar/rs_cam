@@ -571,7 +571,6 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids,
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: true,

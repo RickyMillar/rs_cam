@@ -91,7 +91,6 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -298,7 +297,7 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
             .expect("simulation result stored on session");
         sim.cut_trace
             .clone()
-            .expect("cut trace populated when metrics_enabled")
+            .expect("every simulation keeps a cut trace")
     };
 
     let peak_axial_doc = cut_trace

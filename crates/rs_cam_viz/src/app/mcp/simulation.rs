@@ -219,15 +219,9 @@ impl RsCamApp {
             return;
         }
 
-        // Always enable metrics when MCP triggers simulation — the standalone
-        // MCP server hardcodes this, and diagnostics/cut_trace require it.
-        // `capture_arc_engagement` is also forced on so the tool-load `power`
-        // criterion can evaluate against the run.
-        self.controller
-            .state_mut()
-            .simulation
-            .set_metric_capture_enabled(true);
-
+        // Every GUI run captures the cut trace and the arc engagement
+        // (operator ruling 2026-10-02, "always capture"), so MCP sets no
+        // capture option before the run.
         // Push the simulation event
         self.controller
             .events_mut()

@@ -1,12 +1,13 @@
 //! U3 (memory programme 2026-10-01): Optimize names the real cause when a
 //! simulation exists but kept no cut trace.
 //!
-//! The operator simulated with "Capture cutting metrics" off. The run kept
-//! no cut trace, so "Optimize project…" had no baseline. The menu item was
-//! enabled (it read only "a simulation exists"), and the click pushed "Run
-//! a simulation first", directly after a run. The cause is the trace, and
-//! the remedy is the capture control. The true "no simulation" case keeps
-//! its old text.
+//! A GUI run with the old capture checkbox off kept no cut trace, so
+//! "Optimize project…" had no baseline. The menu item was enabled (it read
+//! only "a simulation exists"), and the click pushed "Run a simulation
+//! first", directly after a run. The cause is the trace. Every run captures
+//! the trace since the operator ruling of 2026-10-02 ("always capture"), so
+//! the remedy is a re-run, and no text names the deleted checkbox. The true
+//! "no simulation" case keeps its old text.
 
 #![allow(
     clippy::unwrap_used,
@@ -47,8 +48,7 @@ impl ComputeBackend for SilentBackend {
     }
 }
 
-/// A simulation result with no cut trace: the shape a run with metric
-/// capture off leaves in the view state.
+/// A simulation result with no cut trace in the view state.
 fn trace_less_results() -> SimulationResults {
     SimulationResults {
         mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
@@ -82,7 +82,7 @@ fn notification_texts(controller: &AppController<SilentBackend>) -> Vec<String> 
 }
 
 #[test]
-fn a_trace_less_run_names_the_capture_control_not_run_a_simulation() {
+fn a_trace_less_run_names_the_missing_trace_not_run_a_simulation() {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.simulation.results = Some(trace_less_results());
 
@@ -102,9 +102,12 @@ fn a_trace_less_run_names_the_capture_control_not_run_a_simulation() {
         !text.contains("Run a simulation first"),
         "a simulation exists, so this names the wrong cause: {text}"
     );
-    assert!(text.contains("without cutting metrics"), "{text}");
-    assert!(text.contains("\"Capture cutting metrics\""), "{text}");
-    assert!(text.contains("re-run the simulation"), "{text}");
+    assert!(text.contains("no cut trace"), "{text}");
+    assert!(!text.contains("Capture cutting metrics"), "{text}");
+    assert!(
+        text.to_lowercase().contains("re-run the simulation"),
+        "{text}"
+    );
 }
 
 #[test]

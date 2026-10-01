@@ -483,8 +483,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     }
 
     if !any_arc_captured {
-        // No samples carried arc data — likely capture_arc_engagement was
-        // off when the trace was recorded.
+        // No sample carried arc data, so the power cannot be modelled.
         tracing::debug!(
             reason = "ArcEngagementNotCaptured",
             "power gate refuses: trace lacks arc_engagement_radians on all samples"

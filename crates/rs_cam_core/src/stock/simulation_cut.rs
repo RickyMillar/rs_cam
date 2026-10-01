@@ -18,13 +18,6 @@ pub use reporting::{
     write_simulation_cut_artifact_to,
 };
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SimulationMetricOptions {
-    pub enabled: bool,
-    #[serde(default)]
-    pub capture_arc_engagement: bool,
-}
-
 // v6 (2026-09-17, STK-04 + STK-05): `Engagement` loses
 // `leading_edge_speed_mm_min` (an unconditional copy of `feed_rate_mm_min`)
 // and `direction` (an `EngagementDirection` that only ever said `Mixed`), and

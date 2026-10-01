@@ -20,8 +20,7 @@ use crate::stock::collision::{
 use crate::stock::dexel_mesh::dexel_stock_to_mesh_strided;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{
-    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutTrace, SimulationMetricOptions,
-    SimulationProvenance,
+    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutTrace, SimulationProvenance,
 };
 use crate::stock::stock_mesh::{DisplayMeshDegrade, StockMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -309,7 +308,6 @@ pub struct SimulationRequest {
     pub stock_bbox: BoundingBox3,
     pub stock_top_z: f64,
     pub resolution: f64,
-    pub metric_options: SimulationMetricOptions,
     pub spindle_rpm: u32,
     pub rapid_feed_mm_min: f64,
     /// Optional model mesh for deviation computation (sim_z vs model_z).
@@ -797,7 +795,9 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
     });
     SimulationProvenance {
         trace_schema_version: SIMULATION_CUT_TRACE_SCHEMA_VERSION,
-        captured_arc_engagement: request.metric_options.capture_arc_engagement,
+        // Every simulation captures the arc engagement (operator ruling
+        // 2026-10-02, "always capture").
+        captured_arc_engagement: true,
         toolpath_hashes,
         tool_hashes,
         operation_config_hashes,
@@ -1041,11 +1041,11 @@ fn collect_rapid_hits(
 /// This is the headless (no GUI) version of the simulation pipeline:
 ///
 /// 1. Creates per-setup local stocks (always simulated FromTop)
-/// 2. Simulates each toolpath, collecting metrics if enabled
+/// 2. Simulates each toolpath and collects its cut metrics
 /// 3. Transforms local meshes to global frame and composites them
 /// 4. Maintains a parallel global stock for checkpoint/playback support
 /// 5. Checks for rapid-through-stock collisions
-/// 6. Assembles cut trace from samples (if metrics enabled)
+/// 6. Assembles the cut trace from the samples
 /// 7. Computes per-vertex deviation against a reference model (if provided)
 ///
 /// When `local_stock_bbox` is `None` for a group (old callers that
@@ -1350,18 +1350,16 @@ struct CarveEnv<'a> {
 ///
 /// - a drill entry removes its cone/cylinder envelope analytically and
 ///   emits the drill-native per-peck samples and per-toolpath summary;
-/// - a milling entry takes the ONE milling carve, the metric route. With
-///   metrics off the walk records no samples (M8), but the route stays:
-///   metrics OBSERVE the carve and never choose it.
+/// - a milling entry takes the ONE milling carve, the metric route, and
+///   records its cut samples. Metrics OBSERVE the carve and never choose it.
 ///
 /// G-RESTRES (operator ruling 2026-09-24, "mcp and gui should cut the
 /// same"). A metric-disabled entry used to take the playback replay
 /// (`simulate_toolpath_with_lut_cancel_rapid_checked`), a different
 /// stamping route that also stamps `Retract` feeds. The two left different
-/// stock: 15 Z rays by up to 2.2 mm on the parity fixture's plunge ring
-/// (`tests/metric_and_plain_carve_agree_g_restres.rs`). The GUI's
-/// "Capture cutting metrics" toggle therefore changed the stock a rest
-/// operation read, and the CLI and MCP always carve with metrics.
+/// stock: 15 Z rays by up to 2.2 mm on a plunge ring. Since the operator
+/// ruling of 2026-10-02 ("always capture") every surface records the
+/// samples, so no switch is left that can choose a carve.
 ///
 /// Every kernel appends its rapid hits to the run. The caller advances
 /// `total_moves` afterwards, so `run.total_moves` still reads as this
@@ -1425,13 +1423,10 @@ fn carve_entry(
             )
         };
         let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
-        // Metrics observe: with capture off the walk is the same carve and
-        // records no samples (M8). Before M8 the walk built every sample and
-        // this function dropped it. Each kept sample cost 280 bytes and one
-        // `span_path` heap copy, and the walk reserved the estimated count.
-        let record_samples = env.request.metric_options.enabled;
+        // Every simulation records the cut samples and the arc engagement
+        // (operator ruling 2026-10-02, "always capture").
         let samples = group_stock
-            .simulate_toolpath_with_lut_metric_walk(
+            .simulate_toolpath_with_lut_metrics_rapid_checked(
                 entry_toolpath,
                 env.lut,
                 entry.tool.as_ref(),
@@ -1445,15 +1440,12 @@ fn carve_entry(
                 entry.semantic_trace.as_deref(),
                 &span_paths_by_move,
                 &transit_moves,
-                env.request.metric_options.capture_arc_engagement,
+                true,
                 &|| env.cancel.load(Ordering::SeqCst),
                 Some(&mut rapid_check),
-                record_samples,
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
-        if record_samples {
-            append_samples(&mut run.cut_samples, samples);
-        }
+        append_samples(&mut run.cut_samples, samples);
         collect_rapid_hits(
             rapid_check,
             run.total_moves,
@@ -1864,8 +1856,8 @@ where
         boundaries,
         checkpoints,
         cut_samples,
-        mut drill_samples_all,
-        mut drill_summaries_all,
+        drill_samples_all,
+        drill_summaries_all,
         composite_mesh,
         global_stock: _,
         column_deviations,
@@ -1884,17 +1876,16 @@ where
     // cylinders, so no additional append is needed here.
     let _ = global_drill_ops;
 
-    let cut_trace = if request.metric_options.enabled {
-        Some(Arc::new(assemble_cut_trace(
-            request,
-            sample_step_mm,
-            cut_samples,
-            std::mem::take(&mut drill_samples_all),
-            std::mem::take(&mut drill_summaries_all),
-        )))
-    } else {
-        None
-    };
+    // Every simulation keeps its cut trace (operator ruling 2026-10-02,
+    // "always capture"). The memory budget governs the trace size, through
+    // the trace sample step.
+    let cut_trace = Some(Arc::new(assemble_cut_trace(
+        request,
+        sample_step_mm,
+        cut_samples,
+        drill_samples_all,
+        drill_summaries_all,
+    )));
 
     set_phase("Build simulation mesh");
     let mesh = Arc::new(composite_mesh);
@@ -2295,7 +2286,6 @@ mod tests {
             },
             stock_top_z: 5.0,
             resolution: 1.0,
-            metric_options: SimulationMetricOptions::default(),
             spindle_rpm: 18000,
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
@@ -2455,10 +2445,6 @@ mod tests {
         // the request-level default. When `None`, the request-level default
         // is used.
         let mut req = simple_request();
-        req.metric_options = SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: false,
-        };
         // Request default is 18_000 (set in `simple_request`); override the
         // single entry to 12_000.
         req.groups[0].toolpaths[0].spindle_rpm = Some(12_000);
@@ -2482,10 +2468,6 @@ mod tests {
 
         // And the inverse: with `None`, samples report the request default.
         let mut req = simple_request();
-        req.metric_options = SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: false,
-        };
         req.groups[0].toolpaths[0].spindle_rpm = None;
         let cancel = AtomicBool::new(false);
         let result = run_simulation(&req, &cancel).unwrap();
@@ -2521,7 +2503,7 @@ mod tests {
     /// This test exercises the full chain:
     ///   2D polygon bbox → update_from_bbox → stock at [−z, 0]
     ///   → pocket_toolpath at cut_depth=−3 → run_simulation with
-    ///     metric_options.enabled → cut_trace → average_engagement > 0
+    ///     the cut trace → average_engagement > 0
     ///
     /// See planning/adaptive_review_2026-04.md F-2.
     #[test]
@@ -2623,10 +2605,6 @@ mod tests {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: 0.5,
-            metric_options: SimulationMetricOptions {
-                enabled: true,
-                capture_arc_engagement: true,
-            },
             spindle_rpm: 18000,
             rapid_feed_mm_min: 5000.0,
             model_mesh: None,
@@ -2640,7 +2618,7 @@ mod tests {
         let trace = result
             .cut_trace
             .as_ref()
-            .expect("metric_options.enabled=true should produce a cut_trace");
+            .expect("every simulation produces a cut_trace");
 
         // Core F-2 assertion: the simulator SEES the tool engaging material.
         // Before Package N these were all exactly 0.
@@ -2756,7 +2734,6 @@ mod tests {
             stock_bbox,
             stock_top_z: 20.0,
             resolution: 0.5,
-            metric_options: SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,

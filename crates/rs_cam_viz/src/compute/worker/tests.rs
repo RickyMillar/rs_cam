@@ -360,7 +360,6 @@ fn long_simulation_request() -> SimulationRequest {
             stock_bbox,
             stock_top_z: 10.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -371,7 +370,7 @@ fn long_simulation_request() -> SimulationRequest {
     }
 }
 
-fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
+fn small_simulation_request_with_metrics() -> SimulationRequest {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(2.0, 2.0, 8.0));
@@ -409,10 +408,6 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             stock_bbox,
             stock_top_z: 10.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-                enabled,
-                capture_arc_engagement: enabled,
-            },
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -423,8 +418,8 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
     }
 }
 
-fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRequest {
-    let mut req = small_simulation_request_with_metrics(enabled);
+fn small_simulation_request_with_semantic_metrics() -> SimulationRequest {
+    let mut req = small_simulation_request_with_metrics();
     let recorder =
         rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("Metrics", "Metrics");
     let root = recorder.root_context();
@@ -1569,7 +1564,6 @@ fn multi_setup_top_bottom_simulation() {
             stock_bbox,
             stock_top_z: 20.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -1726,7 +1720,6 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             stock_bbox,
             stock_top_z: 10.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -1786,7 +1779,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
 #[test]
 fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_simulation(small_simulation_request_with_metrics(true));
+    backend.submit_simulation(small_simulation_request_with_metrics());
 
     let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
@@ -1888,7 +1881,6 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             stock_bbox,
             stock_top_z: 10.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -1996,7 +1988,6 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             stock_bbox,
             stock_top_z: 10.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -2101,7 +2092,6 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
             stock_bbox,
             stock_top_z: 8.0,
             resolution: 0.5,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -2166,7 +2156,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
 #[test]
 fn simulation_metrics_capture_emits_semantic_cut_summaries() {
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_simulation(small_simulation_request_with_semantic_metrics(true));
+    backend.submit_simulation(small_simulation_request_with_semantic_metrics());
 
     let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
@@ -2282,10 +2272,6 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             stock_bbox: world_stock_bbox,
             stock_top_z: 0.0,
             resolution: 1.0,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-                enabled: true,
-                capture_arc_engagement: true,
-            },
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
@@ -3133,9 +3119,9 @@ fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
     use rs_cam_core::budget::estimate::{SimulationNeed, preflight_simulation};
 
     // The run the controller will build: the long request's groups, at the
-    // cell this test stores, with metric capture off.
-    let mut expected = long_simulation_request().core;
-    expected.metric_options.enabled = false;
+    // cell this test stores. Every GUI run captures the cut trace, so the
+    // need counts the trace.
+    let expected = long_simulation_request().core;
     let need = SimulationNeed::of_request(&expected);
     let need_bytes = need.bytes();
     // The idle baseline is a quarter of the need; the limit is half of the
@@ -3162,10 +3148,6 @@ fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
             expected.resolution,
         ))
         .expect("a positive cell");
-    controller
-        .state_mut()
-        .simulation
-        .set_metric_capture_enabled(false);
 
     // The same groups again: `SimGroupEntry` is not `Clone`.
     let reported = controller.submit_simulation_for_groups(

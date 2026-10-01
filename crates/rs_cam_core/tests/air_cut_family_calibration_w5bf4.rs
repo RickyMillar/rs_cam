@@ -146,7 +146,6 @@ fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
         resolution,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         // A feed-modulation pass between the toolpath and the numbers
@@ -214,7 +213,7 @@ fn measure(family: &'static str, mut session: ProjectSession, cell_mm: f64) -> R
     let trace = sim
         .cut_trace
         .as_ref()
-        .ok_or_else(|| "metrics_enabled but no cut trace".to_owned())?;
+        .ok_or_else(|| "every simulation keeps a cut trace".to_owned())?;
     let summary = trace
         .toolpath_summaries
         .first()

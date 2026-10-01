@@ -131,9 +131,7 @@ fn verdict_line(
                 tokens::GLYPH_UNKNOWN
             ),
             color: tokens::UNKNOWN,
-            // U2: the hover names the control as the GUI shows it. The
-            // old text sent the operator to "the timeline panel", which
-            // holds no capture control.
+            // U2: the hover names the cause and the step that removes it.
             hover: MissingInput::NoCutTrace.remedy().to_owned(),
         };
     }
@@ -1366,26 +1364,26 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
 /// Core's reason for an `Unmodeled` verdict, in the words every surface of
 /// this panel uses. The limit rows and the cut-metric cards share it.
 ///
-/// U3: core reports `SimulationRequired` when the gate has no cut trace.
-/// That is also the state after a run with "Capture cutting metrics" off,
-/// and the Inspector draws these rows only while a simulation exists. So the
-/// text names the missing trace and the control. It does not say "has not
-/// been run", which was false directly after a run. The Readiness page also
-/// draws these rows with no simulation, and there "run the simulation" in
-/// the same sentence is the remedy.
+/// U3: core reports `SimulationRequired` when the gate has no cut trace. The
+/// Inspector draws these rows only while a simulation exists, so the text
+/// names the missing trace. It does not say "has not been run", which can
+/// be false there. The Readiness page also draws these rows with no
+/// simulation, and there "run the simulation" in the same sentence is the
+/// remedy. Every run captures the cut trace (operator ruling 2026-10-02,
+/// "always capture"), so no text names a capture control.
 fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
     match reason {
         Some(UnmodeledReason::SimulationRequired) => {
-            "Unmodeled: no cut trace \u{2014} run the simulation with Simulation \u{25B8} \
-             Setup & run \u{25B8} \"Capture cutting metrics\" on"
+            "Unmodeled: no cut trace \u{2014} run the simulation (Simulation \u{25B8} \
+             Run Simulation)"
                 .to_owned()
         }
         Some(UnmodeledReason::StaleSimulation) => {
             "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
         }
         Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-            "Unmodeled: arc-engagement metric not captured — turn on Simulation ▸ Setup & run ▸ \
-             \"Capture cutting metrics\" and re-run the simulation"
+            "Unmodeled: the cut trace holds no arc engagement \u{2014} re-run the \
+             simulation (Simulation \u{25B8} Re-run Simulation)"
                 .to_owned()
         }
         Some(UnmodeledReason::NoVendorData) => {
@@ -1627,8 +1625,7 @@ fn cut_metrics_view(
         .as_ref()
         .is_some_and(|results| results.cut_trace.is_some());
     if !has_trace {
-        // U2: one remedy text for every no-trace surface, with the control
-        // path (Simulation ▸ Setup & run ▸ "Capture cutting metrics").
+        // U2: one remedy text for every no-trace surface.
         return CutMetricsView::Empty(MissingInput::NoCutTrace.remedy());
     }
     if simulation_freshness(session, sim).is_stale() {
@@ -1809,9 +1806,9 @@ fn draw_hairline(ui: &mut egui::Ui) {
 /// mark with its reason.
 ///
 /// This is the empty state the bottom panel used to draw (DC6, package A).
-/// It shows state only. It starts no work and it changes no recording: the
-/// one capture control is "Capture cutting metrics" in `sim_op_list.rs`, and
-/// the workspace primary is the only run route.
+/// It shows state only. It starts no work and it changes no recording: every
+/// run captures the cutting metrics, and the workspace primary is the only
+/// run route.
 fn draw_cut_metrics_empty(ui: &mut egui::Ui, reason: &str) {
     crate::ui::components::SectionHeader::new("Cut metrics").show(ui);
     ui.horizontal_wrapped(|ui| {
@@ -2614,7 +2611,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arc_engagement_unmodeled_tooltip_points_to_cut_metrics() {
+    fn arc_engagement_unmodeled_tooltip_says_re_run() {
         let reason = UnmodeledReason::ArcEngagementNotCaptured;
         let status = CriterionStatus {
             kind: CriterionKind::Chipload,
@@ -2639,8 +2636,9 @@ mod tests {
             burn_risk: false,
             source: None,
         });
-        // U2: the tooltip names the control exactly as the GUI shows it.
-        assert!(tooltip.contains("\"Capture cutting metrics\""), "{tooltip}");
+        // The capture checkbox is deleted (operator ruling 2026-10-02), so
+        // the tooltip names the re-run, not a control that does not exist.
+        assert!(tooltip.contains("re-run the simulation"), "{tooltip}");
     }
 
     /// A toolpath whose every criterion says "does not apply" — the optimizer
@@ -2674,9 +2672,10 @@ mod tests {
         );
     }
 
-    /// U3: the `SimulationRequired` row names the missing cut trace and the
-    /// capture control. It never says "run a simulation first" or "has not
-    /// been run": the Inspector draws it while a simulation exists.
+    /// U3: the `SimulationRequired` row names the missing cut trace. It never
+    /// says "run a simulation first" or "has not been run": the Inspector
+    /// draws it while a simulation exists. It names no capture control,
+    /// because every run captures the trace (operator ruling 2026-10-02).
     #[test]
     fn a_simulation_required_row_names_the_trace_not_a_missing_run() {
         let text = unmodeled_text(Some(&UnmodeledReason::SimulationRequired));
@@ -2684,7 +2683,7 @@ mod tests {
         assert!(!lower.contains("simulation first"), "{text}");
         assert!(!lower.contains("has not been run"), "{text}");
         assert!(text.contains("no cut trace"), "{text}");
-        assert!(text.contains("\"Capture cutting metrics\""), "{text}");
-        assert!(text.contains("Setup & run"), "{text}");
+        assert!(text.contains("run the simulation"), "{text}");
+        assert!(!text.contains("Setup & run"), "{text}");
     }
 }

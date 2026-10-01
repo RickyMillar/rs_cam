@@ -85,7 +85,7 @@ use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::material::Material;
 use rs_cam_core::ops::drill::DrillCycle;
 use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
-use rs_cam_core::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
+use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -203,10 +203,6 @@ fn run(with_kinematics: bool) -> SimulationResult {
         stock_bbox: stock_bbox(),
         stock_top_z: STOCK_Z,
         resolution: 1.0,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: false,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,

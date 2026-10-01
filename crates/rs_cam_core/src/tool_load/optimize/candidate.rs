@@ -161,7 +161,6 @@ pub(crate) fn candidate_sim_options(sim_resolution_mm: f64) -> SimulationOptions
     SimulationOptions {
         resolution: sim_resolution_mm,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

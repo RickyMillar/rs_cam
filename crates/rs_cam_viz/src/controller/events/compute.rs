@@ -689,10 +689,6 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Adopt one simulation-lane result.
     ///
-    /// Revision check: the accepted run's capture revision decides
-    /// whether the metric evidence is stale, and a run stamped for a
-    /// superseded revision does not clear the marker.
-    ///
     /// Epoch rule (G-LATESIM with WP28):
     ///
     /// - A result whose boundaries name a toolpath the session no longer
@@ -738,10 +734,6 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = (
                         self.state.simulation.submitted_edit_counter.take(),
                         self.state.simulation.submitted_simulation_epoch.take(),
-                        self.state
-                            .simulation
-                            .submitted_metric_options_revision
-                            .take(),
                     );
                     #[cfg(feature = "mcp")]
                     self.notify_mcp_simulation_error(
@@ -1008,18 +1000,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // not-current.
                 let _ = self.state.simulation.submitted_simulation_epoch.take();
                 let _ = self.state.simulation.submitted_edit_counter.take();
-                self.state.simulation.last_run = Some(SimulationRunMeta {
-                    // Recording preferences are runtime-only. This
-                    // result carries the capture revision it was
-                    // SUBMITTED with; a toggle while the worker ran
-                    // still needs a re-run, and an unstamped late
-                    // result reads stale, never current.
-                    accepted_metric_options_revision: self
-                        .state
-                        .simulation
-                        .submitted_metric_options_revision
-                        .take(),
-                });
+                self.state.simulation.last_run = Some(SimulationRunMeta);
 
                 self.pending_upload = true;
 
@@ -1041,10 +1022,6 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
                     self.state.simulation.submitted_simulation_epoch.take(),
-                    self.state
-                        .simulation
-                        .submitted_metric_options_revision
-                        .take(),
                 );
                 // M1: the submit released the previous run's view.
                 self.note_simulation_did_not_land("cancelled");
@@ -1061,10 +1038,6 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
                     self.state.simulation.submitted_simulation_epoch.take(),
-                    self.state
-                        .simulation
-                        .submitted_metric_options_revision
-                        .take(),
                 );
                 // B3: the memory budget stopped the run. A Warning, not the
                 // plain "cancelled": the operator must see why and what to
@@ -1080,10 +1053,6 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
                     self.state.simulation.submitted_simulation_epoch.take(),
-                    self.state
-                        .simulation
-                        .submitted_metric_options_revision
-                        .take(),
                 );
                 tracing::error!("Simulation failed: {error}");
                 self.push_notification(
@@ -2682,10 +2651,9 @@ impl<B: ComputeBackend> AppController<B> {
         let cut_metrics_not_measured = match (&self.state.simulation.results, trace_summary) {
             (_, Some(_)) => None,
             (None, None) => Some("no simulation has run"),
-            (Some(_), None) => Some(
-                "the simulation ran without cutting metrics, so it kept no cut trace; \
-                 run_simulation captures them",
-            ),
+            (Some(_), None) => {
+                Some("the simulation result holds no cut trace; re-run the simulation")
+            }
         };
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();

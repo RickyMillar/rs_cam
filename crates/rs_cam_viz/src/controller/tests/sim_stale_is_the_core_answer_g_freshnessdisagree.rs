@@ -15,9 +15,9 @@
 //! - It stands still for edits the core clears the simulation on. Nothing
 //!   bumps it on `Command::AdoptResult`.
 //!
-//! [`crate::state::freshness::simulation_freshness`] asks the core instead,
-//! and asks the GUI only about the capture options, which are runtime-only
-//! and which the core cannot see.
+//! [`crate::state::freshness::simulation_freshness`] asks the core instead.
+//! The GUI holds no capture option of its own: every run captures the cut
+//! trace (operator ruling 2026-10-02, "always capture").
 //!
 //! # What this file asserts
 //!
@@ -316,36 +316,6 @@ fn an_unmirrored_edit_leaves_edited_since_g_freshnessdisagree() {
             class.name
         );
     }
-}
-
-/// A capture-option change keeps the core's simulation and still needs a
-/// re-run. This arm proves the GUI half of the answer is still needed.
-#[test]
-fn a_capture_option_change_reads_capture_options_changed_g_freshnessdisagree() {
-    let mut controller = controller_with_a_landed_run();
-    assert_eq!(
-        controller.state.simulation_freshness(),
-        SimFreshness::Current
-    );
-
-    let enabled = controller.state.simulation.metric_options.enabled;
-    controller
-        .state
-        .simulation
-        .set_metric_capture_enabled(!enabled);
-
-    assert!(
-        controller.state.session.simulation_result().is_some(),
-        "capture options are runtime-only: the core cannot see them, and it \
-         must not drop a run over one"
-    );
-    assert_eq!(
-        controller.state.simulation_freshness(),
-        SimFreshness::CaptureOptionsChanged,
-        "the geometry answer stands and the metric answer does not, so the \
-         state names which"
-    );
-    assert!(controller.state.simulation_is_stale());
 }
 
 /// D7, G-LATESIM. An edit lands while the run works; the result arrives

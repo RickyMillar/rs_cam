@@ -15,9 +15,7 @@ use super::runtime::GuiState;
 use super::toolpath::ToolpathId;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::stock::collision::{CollisionReport, RapidCollision};
-use rs_cam_core::stock::simulation_cut::{
-    SimulationCutSample, SimulationCutTrace, SimulationMetricOptions,
-};
+use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace};
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::verdict::CriterionKind;
 use rs_cam_core::tool_load::{
@@ -993,19 +991,13 @@ impl SimulationChecks {
     }
 }
 
-/// Metadata about the last simulation run for staleness tracking.
-pub struct SimulationRunMeta {
-    /// The metric-options revision this accepted result PROVABLY answers.
-    ///
-    /// `None` means the drain could not prove one: the submit stamp was
-    /// consumed by a cancel or an error, and a late result arrived behind
-    /// it. An unprovable revision reads STALE, never current — the rule
-    /// [`SimulationChecks::checked_at_epoch`] already applies to a
-    /// holder verdict, for the same reason: recording preferences are not
-    /// a safety claim, but a "current" reading on unprovable evidence is
-    /// still a wrong reading.
-    pub accepted_metric_options_revision: Option<u64>,
-}
+/// The marker of an accepted simulation run.
+///
+/// `SimulationState::last_run` holds it from the drain that adopts a run
+/// until an edit or a Reset clears it. A re-run releases the view result
+/// and keeps the marker, so `SimFreshness::Released` can tell a released
+/// run from no run.
+pub struct SimulationRunMeta;
 
 // ---------------------------------------------------------------------------
 // Top-level simulation state
@@ -1019,7 +1011,7 @@ pub struct SimulationState {
     pub playback: SimulationPlayback,
     /// Verification outputs (collisions, etc.).
     pub checks: SimulationChecks,
-    /// Staleness metadata from the last simulation run.
+    /// The last accepted simulation run, if one exists.
     pub last_run: Option<SimulationRunMeta>,
     /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
     /// in-flight simulation was SUBMITTED (F2.10, G-LATESIM).
@@ -1086,12 +1078,6 @@ pub struct SimulationState {
     /// per frame, because each write drops the simulation and the rest
     /// results.
     pub resolution_draft: Option<f64>,
-    /// Runtime-only capture options for simulation cutting metrics.
-    pub metric_options: SimulationMetricOptions,
-    /// Revision of runtime-only metric options.
-    pub metric_options_revision: u64,
-    /// Metric-options revision captured when the in-flight run was submitted.
-    pub submitted_metric_options_revision: Option<u64>,
     /// Stock visualization mode.
     pub stock_viz_mode: StockVizMode,
     /// Stock opacity (0.0 = transparent, 1.0 = solid).
@@ -1278,10 +1264,10 @@ impl SimulationState {
     /// view copy of the prior stocks, the live stock, the display mesh, the
     /// display deviations and the rapid collisions of that run. It keeps the
     /// holder-clearance verdict, because a different lane owns it and it
-    /// carries its own epoch. It keeps `last_run`, so the metric-capture
-    /// rule in `state/CLAUDE.md` holds. It does NOT touch the session: the
-    /// core `SimulationResult` keeps the prior stocks that rest generation
-    /// reads, so a rest cascade still starts.
+    /// carries its own epoch. It keeps `last_run`, so
+    /// `SimFreshness::Released` can name the released run. It does NOT
+    /// touch the session: the core `SimulationResult` keeps the prior stocks
+    /// that rest generation reads, so a rest cascade still starts.
     ///
     /// What the operator sees:
     /// - While the new run works, [`crate::state::freshness::SimFreshness`]

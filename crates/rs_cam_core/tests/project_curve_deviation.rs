@@ -227,7 +227,6 @@ fn live_project_pc6_has_no_phantom_cuts() {
     let sim_opts = rs_cam_core::session::SimulationOptions {
         resolution: 0.5,
         auto_resolution: true,
-        metrics_enabled: false,
         skip_ids: Vec::new(),
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

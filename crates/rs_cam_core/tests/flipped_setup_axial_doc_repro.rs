@@ -167,7 +167,6 @@ fn flipped_setup_first_pass_axial_engagement_within_commanded_doc() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

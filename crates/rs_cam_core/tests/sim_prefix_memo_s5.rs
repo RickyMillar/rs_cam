@@ -38,7 +38,6 @@ use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, ToolDefinition, VBitEndmill};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -119,10 +118,6 @@ fn request(chain: &[Arc<AnnotatedToolpath>], count: usize) -> SimulationRequest 
         stock_bbox: stock(),
         stock_top_z: 0.0,
         resolution: 0.5,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
@@ -385,8 +380,6 @@ fn a_changed_resolution_or_stock_misses() {
         |r: &mut SimulationRequest| r.stock_top_z = 1.0,
         |r: &mut SimulationRequest| r.spindle_rpm = 12_000,
         |r: &mut SimulationRequest| r.rapid_feed_mm_min = 9000.0,
-        |r: &mut SimulationRequest| r.metric_options.capture_arc_engagement = false,
-        |r: &mut SimulationRequest| r.metric_options.enabled = false,
     ] {
         let mut cache = SimPrefixCache::new();
         let _ = run_memo(&request(&chain, 2), &mut cache, true);
@@ -746,10 +739,6 @@ fn a_multi_group_prefix_resumes_inside_the_last_group() {
         stock_bbox: stock(),
         stock_top_z: 0.0,
         resolution: 0.5,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
@@ -791,10 +780,6 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
         stock_bbox: stock(),
         stock_top_z: 0.0,
         resolution: 0.5,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
@@ -837,10 +822,6 @@ fn layout_request(chain: &[Arc<AnnotatedToolpath>], layout: &[&[usize]]) -> Simu
         stock_bbox: stock(),
         stock_top_z: 0.0,
         resolution: 0.5,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
@@ -1019,7 +1000,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution: 0.5,
-        metrics_enabled: false,
+        adaptive_feed_modulation: false,
         auto_resolution: false,
         ..SimulationOptions::default()
     };

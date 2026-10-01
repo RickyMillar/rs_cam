@@ -328,7 +328,6 @@ pub(crate) fn simulation_detail(state: &AppState) -> String {
         }
         SimFreshness::Current => "Up to date".to_owned(),
         SimFreshness::EditedSince => "Stale — parameters changed".to_owned(),
-        SimFreshness::CaptureOptionsChanged => "Stale — capture options changed".to_owned(),
         // G-STALECARDS: a re-run cannot help; the operation needs a
         // regenerate first.
         SimFreshness::Ungenerated(id) => format!(
@@ -543,8 +542,11 @@ fn draw_tool_load_overrides(
         });
 }
 
-/// A simulation result exists, and it kept no cut trace: the run had
-/// "Capture cutting metrics" off.
+/// A simulation result exists, and it holds no cut trace.
+///
+/// Every GUI run captures the trace (operator ruling 2026-10-02, "always
+/// capture"), so this is rare. It stays so that a result without a trace
+/// never reads as "no simulation" and never reads as a measured zero.
 pub(crate) fn simulation_kept_no_trace(state: &AppState) -> bool {
     state
         .simulation
@@ -565,14 +567,12 @@ pub(crate) fn unmodeled_reason_label(
     use rs_cam_core::tool_load::UnmodeledReason;
     match reason {
         UnmodeledReason::SimulationRequired if trace_less => {
-            "the simulation ran without cutting metrics \u{2014} turn on Simulation \
-             \u{25B8} Setup & run \u{25B8} \"Capture cutting metrics\", then re-run the \
-             simulation"
+            "the simulation result holds no cut trace \u{2014} re-run the simulation"
         }
         UnmodeledReason::SimulationRequired => "run simulation first",
         UnmodeledReason::StaleSimulation => "re-run stale simulation",
         UnmodeledReason::ArcEngagementNotCaptured => {
-            "turn on \"Capture cutting metrics\" and re-run the simulation"
+            "the cut trace holds no arc engagement \u{2014} re-run the simulation"
         }
         UnmodeledReason::NoVendorData => "no vendor data",
         UnmodeledReason::SteadyStateSamplesNotPresent => "no steady-state cutting samples",
@@ -642,14 +642,14 @@ mod tests {
     use super::unmodeled_reason_label;
     use rs_cam_core::tool_load::UnmodeledReason;
 
-    /// U3: after a run with no cut trace, the gate panel names the capture
-    /// control, not "run simulation first".
+    /// U3: after a run with no cut trace, the gate panel names the missing
+    /// trace, not "run simulation first". It names no capture control: every
+    /// run captures the trace (operator ruling 2026-10-02).
     #[test]
-    fn a_trace_less_run_names_the_capture_control() {
+    fn a_trace_less_run_names_the_missing_trace() {
         let text = unmodeled_reason_label(&UnmodeledReason::SimulationRequired, true);
         assert!(!text.to_lowercase().contains("simulation first"), "{text}");
-        assert!(text.contains("without cutting metrics"), "{text}");
-        assert!(text.contains("\"Capture cutting metrics\""), "{text}");
+        assert!(text.contains("no cut trace"), "{text}");
         assert!(text.contains("re-run the simulation"), "{text}");
     }
 

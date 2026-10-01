@@ -199,7 +199,6 @@ fn opts(adaptive_feed_modulation: bool) -> SimulationOptions {
     SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation,

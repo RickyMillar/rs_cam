@@ -376,14 +376,13 @@ fn simulation_workspace_has_one_direct_run_producer_ur3() {
     );
     assert!(
         !placeholder.contains("checkbox("),
-        "the cut-metrics placeholder must not carry a capture control (package \
-         A, 2026-09-23): the one capture control is \"Capture cutting \
-         metrics\" in {SIM_OP_LIST}."
+        "the cut-metrics placeholder must not carry a capture control: every \
+         run captures the cutting metrics (operator ruling 2026-10-02)."
     );
     assert!(
-        code_only(&read(SIM_OP_LIST)).contains("\"Capture cutting metrics\""),
-        "{SIM_OP_LIST} must keep the one capture control, \"Capture cutting \
-         metrics\"."
+        !code_only(&read(SIM_OP_LIST)).contains("\"Capture cutting metrics\""),
+        "{SIM_OP_LIST} must not bring back the deleted capture checkbox: every \
+         run captures the cutting metrics (operator ruling 2026-10-02)."
     );
     assert!(
         !placeholder.contains("AppEvent::RunSimulation"),

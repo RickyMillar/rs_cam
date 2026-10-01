@@ -13,7 +13,7 @@ use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
-use crate::stock::simulation_cut::{SimulationCutTrace, SimulationMetricOptions};
+use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 use crate::trace::debug_trace::ToolpathDebugRecorder;
 use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
@@ -1966,14 +1966,10 @@ struct SimRequestContext<'a> {
 /// Both callers — [`ProjectSession::run_simulation`] and
 /// `simulate_candidate_isolated` — go through the identical stock-frame /
 /// rapid-feed-ternary / kinematics-map shape (S.12 dedup); only these knobs
-/// differ:
+/// differ. Neither one has a metric knob: every simulation captures the
+/// cut trace and the arc engagement (operator ruling 2026-10-02, "always
+/// capture").
 ///
-/// - `metric_options`: `run_simulation` mirrors
-///   `SimulationOptions::metrics_enabled` into both fields (a single toggle
-///   the production path exposes). `simulate_candidate_isolated`
-///   force-enables both unconditionally — the strategy advisor's modulator
-///   needs per-move engagement on every candidate regardless of the
-///   session's default sim options.
 /// - `model_mesh`: `run_simulation` supplies the translated model mesh so
 ///   the simulator can compute sim-vs-model deviation;
 ///   `simulate_candidate_isolated` passes `None` — a throwaway candidate
@@ -1987,7 +1983,6 @@ fn build_sim_request(
     groups: Vec<SimGroupEntry>,
     stock_bbox: BoundingBox3,
     resolution: f64,
-    metric_options: SimulationMetricOptions,
     model_mesh: Option<Arc<TriangleMesh>>,
     use_predicted_feed_in_gates: bool,
 ) -> SimulationRequest {
@@ -1998,7 +1993,6 @@ fn build_sim_request(
         stock_bbox,
         stock_top_z: stock_bbox.max.z,
         resolution,
-        metric_options,
         spindle_rpm: post.spindle_speed,
         rapid_feed_mm_min: if post.high_feedrate_mode {
             post.high_feedrate
@@ -2066,11 +2060,10 @@ fn simulate_candidate_isolated(
         phantom_prior_stock: None,
     }];
     let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
-    // Deviation (model_mesh) is not needed for engagement capture; both
-    // metrics flags force-on (modulator needs arc engagement regardless
-    // of session defaults); predicted-feed gates force-off (no modulation
-    // pass has run yet to populate a predicted-feed map). See
-    // `build_sim_request`'s doc comment for the full rationale.
+    // Deviation (model_mesh) is not needed for engagement capture;
+    // predicted-feed gates force-off (no modulation pass has run yet to
+    // populate a predicted-feed map). See `build_sim_request`'s doc comment
+    // for the full rationale.
     let request = build_sim_request(
         &SimRequestContext {
             machine: &context.machine,
@@ -2079,10 +2072,6 @@ fn simulate_candidate_isolated(
         groups,
         stock_bbox,
         resolution,
-        SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         None,
         false,
     );

@@ -844,7 +844,7 @@ fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> 
             "simulation trace is stale — re-run simulation".to_owned()
         }
         Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-            "arc-engagement metric not captured — enable Cut Metrics and re-run".to_owned()
+            "the cut trace holds no arc engagement — re-run the simulation".to_owned()
         }
         Some(UnmodeledReason::NoVendorData) => {
             "no vendor LUT row for this tool/material combination".to_owned()

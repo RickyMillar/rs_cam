@@ -841,7 +841,6 @@ fn simulate(session: &mut ProjectSession, modulation: bool) {
             &SimulationOptions {
                 resolution: SIM_CELL_MM,
                 auto_resolution: false,
-                metrics_enabled: true,
                 adaptive_feed_modulation: modulation,
                 ..SimulationOptions::default()
             },
@@ -1038,7 +1037,6 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
                 &SimulationOptions {
                     resolution: SIM_CELL_MM,
                     auto_resolution: false,
-                    metrics_enabled: true,
                     // `adaptive_feed_modulation` deliberately unset.
                     ..SimulationOptions::default()
                 },
@@ -1364,7 +1362,7 @@ fn arc_fit_arms_gate_observation() {
                     &SimulationOptions {
                         resolution: SIM_CELL_MM * 2.0,
                         auto_resolution: false,
-                        metrics_enabled: false,
+                        adaptive_feed_modulation: false,
                         ..SimulationOptions::default()
                     },
                     &cancel,

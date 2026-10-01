@@ -142,17 +142,6 @@ impl SampleCoalescer {
         self.pending_savings >= self.budget
     }
 
-    /// Drop every recorded run without a sample buffer (M8).
-    ///
-    /// The metric walk calls this in place of [`Self::compact`] when it
-    /// records no samples. The runs and the savings are cleared as `compact`
-    /// clears them, so the next `is_due` fires at the same move in both
-    /// modes. `compacted` is not used without a buffer.
-    pub(super) fn forget(&mut self) {
-        self.runs.clear();
-        self.pending_savings = 0;
-    }
-
     /// Coalesce every recorded run. EVERY sample from `compacted` on must be
     /// final (no queued stamp still owes it metrics). Renumbers
     /// `sample_index` to the new positions and returns the new length, which

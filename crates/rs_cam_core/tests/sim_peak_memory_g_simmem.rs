@@ -42,8 +42,7 @@ use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::simulation_cut::{
-    SimulationCutArtifact, SimulationCutSample, SimulationMetricOptions,
-    write_simulation_cut_artifact_to,
+    SimulationCutArtifact, SimulationCutSample, write_simulation_cut_artifact_to,
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
@@ -125,10 +124,6 @@ fn request() -> SimulationRequest {
         },
         stock_top_z: 0.0,
         resolution: 0.25,
-        metric_options: SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,

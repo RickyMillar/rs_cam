@@ -43,7 +43,6 @@ use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::dexel_mesh::dexel_stock_to_mesh;
-use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
@@ -127,7 +126,6 @@ fn simulate() -> SimulationResult {
         stock_bbox: stock(),
         stock_top_z: 0.0,
         resolution: 0.5,
-        metric_options: SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,

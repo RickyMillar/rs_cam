@@ -884,11 +884,11 @@ impl ProjectSession {
         // narration reports) travels beside it under its own name.
         //
         // U2 (2026-10-01): with no cut trace the four figures are `None`
-        // (NOT MEASURED), not 0.0. A run with "Capture cutting metrics" off
-        // published 0 s runtime and 0 % air cut, which reads as a measured,
-        // clean run. The reason travels beside them. A simulation exists
-        // when the session holds one, or when the caller's evidence carries
-        // toolpath boundaries (the GUI builds evidence from its own run).
+        // (NOT MEASURED), not 0.0. A run with no trace published 0 s runtime
+        // and 0 % air cut, which reads as a measured, clean run. The reason
+        // travels beside them. A simulation exists when the session holds
+        // one, or when the caller's evidence carries toolpath boundaries
+        // (the GUI builds evidence from its own run).
         let trace_figures = evidence.cut_trace.map(|trace| {
             use crate::stock::simulation_cut::AirCutRatios;
             let summary = &trace.summary;

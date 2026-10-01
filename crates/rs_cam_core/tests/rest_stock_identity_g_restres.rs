@@ -108,9 +108,6 @@ fn simulate_at(session: &mut ProjectSession, cell_mm: f64) {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution: cell_mm,
-        // Metrics observe the carve and never change it
-        // (`metric_and_plain_carve_agree_g_restres.rs`).
-        metrics_enabled: false,
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };
