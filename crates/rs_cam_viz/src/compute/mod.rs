@@ -220,17 +220,66 @@ impl ComputeError {
     /// settings file, or a coarser simulation cell.
     #[must_use]
     pub fn over_budget_message(job: &str, need_bytes: u64, limit_bytes: u64) -> String {
-        let settings = crate::io::app_settings::settings_path().map_or_else(
-            || "~/.config/rs_cam/settings.toml".to_owned(),
-            |path| path.display().to_string(),
-        );
         format!(
             "{job} stopped: the job needs about {}, but the memory budget is {}. \
-             Set a larger [memory] limit in {settings} or use a coarser simulation cell.",
+             Set a larger [memory] limit in {} or use a coarser simulation cell.",
             rs_cam_core::budget::format_bytes(need_bytes),
             rs_cam_core::budget::format_bytes(limit_bytes),
+            settings_file_text(),
         )
     }
+
+    /// The sentence a surface shows when the preflight refuses `job` before
+    /// it allocates (memory programme wave 3, "Architecture" 4e).
+    ///
+    /// It names the need, the idle baseline, the limit, and the finest
+    /// simulation cell that fits. The grid is NEVER coarsened in silence:
+    /// the sentence names the cell, and the operator chooses.
+    #[must_use]
+    pub fn preflight_refusal_message(
+        job: &str,
+        refusal: &rs_cam_core::budget::estimate::PreflightRefusal,
+    ) -> String {
+        use rs_cam_core::budget::{CellFit, format_bytes};
+        let fit = match refusal.fit {
+            CellFit::Fits(cell_mm) => format!(
+                "The finest simulation cell that fits is {} mm; this run asked for {} mm.",
+                cell_text_up(cell_mm),
+                cell_text_up(refusal.requested_cell_mm),
+            ),
+            CellFit::Nothing { need_bytes, .. } => format!(
+                "No simulation cell fits: the coarsest grid still needs about {}.",
+                format_bytes(need_bytes)
+            ),
+            // A refusal has a limit, so this arm is not reached.
+            CellFit::Unlimited => String::new(),
+        };
+        format!(
+            "{job} refused before it started: it needs about {}, the idle app holds about {}, \
+             and the memory budget is {}. {fit} Set a larger [memory] limit in {} or use a \
+             coarser simulation cell. The cell was not changed.",
+            format_bytes(refusal.need_bytes),
+            format_bytes(refusal.baseline_bytes),
+            format_bytes(refusal.limit_bytes),
+            settings_file_text(),
+        )
+    }
+}
+
+/// The settings file a budget message names.
+fn settings_file_text() -> String {
+    crate::io::app_settings::settings_path().map_or_else(
+        || "~/.config/rs_cam/settings.toml".to_owned(),
+        |path| path.display().to_string(),
+    )
+}
+
+/// A cell size in mm with three decimals, rounded UP, so that the cell the
+/// text names is never finer than the cell that fits.
+fn cell_text_up(cell_mm: f64) -> String {
+    /// Thousandths of a millimetre: the three decimals of the text.
+    const PER_MM: f64 = 1000.0;
+    format!("{:.3}", (cell_mm * PER_MM).ceil() / PER_MM)
 }
 
 impl std::fmt::Display for ComputeError {
@@ -402,6 +451,38 @@ pub trait ComputeBackend: Send {
     /// snapshot's memory is released at a known point instead of waiting for
     /// the next simulation to consume it.
     fn clear_sim_prefix_cache(&mut self) {}
+
+    /// The memory budget of the heavy lanes (plan B1).
+    ///
+    /// Defaulted to no limit: a scripted test backend runs no lane and has
+    /// nothing to guard.
+    fn memory_budget(&self) -> rs_cam_core::budget::MemoryBudget {
+        rs_cam_core::budget::MemoryBudget::UNLIMITED
+    }
+
+    /// The bytes that the running heavy jobs reserved in the ledger (plan
+    /// B4). Defaulted to zero for a backend with no ledger.
+    fn memory_reserved_bytes(&self) -> u64 {
+        0
+    }
+
+    /// The simulation preflight (memory programme wave 3): `Err` when even
+    /// an otherwise idle process cannot hold `need` under the budget.
+    ///
+    /// The controller calls it BEFORE it releases the view of the previous
+    /// run and before it submits, so a refusal allocates nothing and
+    /// changes nothing. Defaulted to `Ok`: a backend with no budget refuses
+    /// nothing.
+    ///
+    /// # Errors
+    /// The refusal, with the need, the limit, the baseline and the finest
+    /// cell that fits.
+    fn preflight_simulation(
+        &self,
+        _need: &rs_cam_core::budget::estimate::SimulationNeed,
+    ) -> Result<(), rs_cam_core::budget::estimate::PreflightRefusal> {
+        Ok(())
+    }
 
     fn cancel_all(&mut self) {
         self.cancel_lane(ComputeLane::Toolpath);

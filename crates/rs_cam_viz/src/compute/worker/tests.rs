@@ -2605,10 +2605,74 @@ fn budgeted_backend(reading: u64) -> ThreadedComputeBackend {
     ))
 }
 
+/// A probe that a test raises while a job runs. It counts its reads, so a
+/// test can wait until the job's guard has read it once under the limit:
+/// since wave 3 the guard stops a job only when the process CROSSES the
+/// limit during the job (`rs_cam_core::budget::guard`, "The stop rule").
+struct RaisableProbe {
+    value: std::sync::atomic::AtomicU64,
+    reads: std::sync::atomic::AtomicUsize,
+}
+
+impl RaisableProbe {
+    fn new(value: u64) -> Arc<Self> {
+        Arc::new(Self {
+            value: std::sync::atomic::AtomicU64::new(value),
+            reads: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
+    fn reads(&self) -> usize {
+        self.reads.load(Ordering::SeqCst)
+    }
+
+    fn raise(&self, value: u64) {
+        self.value.store(value, Ordering::SeqCst);
+    }
+
+    /// Wait until the probe has been read more than `seen` times.
+    fn wait_for_read_after(&self, seen: usize) {
+        let start = Instant::now();
+        while self.reads() <= seen {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "the job's guard never read the probe"
+            );
+            thread::yield_now();
+        }
+    }
+}
+
+impl rs_cam_core::budget::UsageProbe for RaisableProbe {
+    fn used_bytes(&self) -> Option<u64> {
+        // Load FIRST, count after: a test that sees the count has a reader
+        // that already holds its value.
+        let value = self.value.load(Ordering::SeqCst);
+        self.reads.fetch_add(1, Ordering::SeqCst);
+        Some(value)
+    }
+}
+
+/// A backend whose probe reads under the limit until the test raises it.
+fn raisable_backend() -> (ThreadedComputeBackend, Arc<RaisableProbe>) {
+    let probe = RaisableProbe::new(FAKE_LIMIT / 2);
+    let backend = ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        Arc::clone(&probe) as Arc<dyn rs_cam_core::budget::UsageProbe>,
+        Duration::ZERO,
+    ));
+    (backend, probe)
+}
+
 #[test]
 fn a_budget_stop_reports_over_budget_not_cancelled_on_the_simulation_lane() {
-    let mut backend = budgeted_backend(FAKE_LIMIT * 2);
+    let (mut backend, probe) = raisable_backend();
+    let seen = probe.reads();
     backend.submit_simulation(long_simulation_request());
+    // The guard arms on a reading under the limit, then the process
+    // crosses the limit during the job.
+    probe.wait_for_read_after(seen);
+    probe.raise(FAKE_LIMIT * 2);
 
     let message = wait_for(&mut backend, Duration::from_secs(10), |message| {
         matches!(message, ComputeMessage::Simulation(Err(_)))
@@ -2650,8 +2714,11 @@ fn an_operator_cancel_under_the_budget_still_reports_cancelled() {
 
 #[test]
 fn a_budget_stop_on_the_toolpath_lane_reports_over_budget() {
-    let mut backend = budgeted_backend(FAKE_LIMIT * 2);
+    let (mut backend, probe) = raisable_backend();
+    let seen = probe.reads();
     backend.submit_toolpath(build_request(heavy_dropcutter_spec(41)));
+    probe.wait_for_read_after(seen);
+    probe.raise(FAKE_LIMIT * 2);
 
     let message = wait_for(&mut backend, Duration::from_secs(10), |message| {
         matches!(message, ComputeMessage::Toolpath(_))
@@ -2761,5 +2828,261 @@ fn an_over_budget_simulation_posts_a_warning_not_cancelled() {
             .iter()
             .all(|note| !note.message.eq_ignore_ascii_case("cancelled")),
         "an over-budget stop never reads as a plain cancel"
+    );
+}
+
+// ── Memory budget, wave 3 group I: the ledger and the preflight ─────────
+//
+// `planning/memory_budget_2026-10-01/PLAN.md`, "Architecture" 3 and 4. The
+// limits and readings are arbitrary values on the two sides of each other,
+// or sums of estimates that the real types give. None is a memory claim.
+
+/// Wait until `lane` shows a job that waits for memory.
+fn wait_for_ledger_wait<R>(lane: &LaneQueue<R>) -> LaneSnapshot {
+    let start = Instant::now();
+    loop {
+        let snapshot = lane.snapshot();
+        if snapshot
+            .current_phase
+            .as_deref()
+            .is_some_and(|phase| phase.starts_with("Waiting for memory"))
+        {
+            return snapshot;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the lane never showed a job that waits for memory: {snapshot:?}"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn the_ledger_queues_a_second_heavy_job_until_the_first_finishes() {
+    // Job A reserves `estimate`; job B needs `estimate` too. The reading
+    // plus A's reservation plus B's estimate is one byte over the limit.
+    let estimate: u64 = 1 << 16;
+    let reading: u64 = 1 << 10;
+    let limit = reading + 2 * estimate - 1;
+    let ledger = BudgetLedger::new(
+        MemoryBudget::with_limit(limit),
+        Arc::new(FixedProbe(reading)),
+    );
+    let lane_a: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Toolpath, Arc::clone(&ledger));
+    let lane_b: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Analysis, Arc::clone(&ledger));
+
+    lane_a
+        .inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .queue
+        .push_back(1);
+    let (job_a, ticket_a) = lane_a
+        .dequeue_reserved(|job| RunningJob::labelled(format!("A{job}")).reserving(Some(estimate)))
+        .expect("job A runs: nothing else holds memory");
+    assert_eq!(job_a, 1);
+    assert_eq!(ledger.reserved_bytes(), estimate);
+
+    lane_b
+        .inner
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .queue
+        .push_back(2);
+    let worker_b = {
+        let lane_b = Arc::clone(&lane_b);
+        thread::spawn(move || {
+            lane_b
+                .dequeue_reserved(|job| {
+                    RunningJob::labelled(format!("B{job}")).reserving(Some(estimate))
+                })
+                .map(|(job, ticket)| (job, ticket.is_some()))
+        })
+    };
+
+    // B waits in its queue: visible, counted, labelled, not lost.
+    let waiting = wait_for_ledger_wait(&lane_b);
+    assert_eq!(waiting.state, LaneState::Queued);
+    assert_eq!(waiting.queue_depth, 1, "the waiting job stays in the queue");
+    assert_eq!(waiting.current_job.as_deref(), Some("B2"));
+    assert!(waiting.started_at.is_none(), "a waiting job is not running");
+    assert!(!worker_b.is_finished());
+
+    // A finishes: its ticket drops and gives the reservation back.
+    drop(ticket_a);
+    let taken = worker_b.join().expect("lane B thread");
+    assert_eq!(taken, Some((2, true)), "B runs after A finished");
+    let running = lane_b.snapshot();
+    assert_eq!(running.state, LaneState::Running);
+    assert_eq!(running.current_phase, None);
+    assert_eq!(
+        ledger.reserved_bytes(),
+        estimate,
+        "B holds its own reservation"
+    );
+}
+
+#[test]
+fn an_unlimited_ledger_runs_both_heavy_jobs_at_once() {
+    let ledger = BudgetLedger::new(MemoryBudget::UNLIMITED, Arc::new(FixedProbe(u64::MAX)));
+    let lane_a: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Toolpath, Arc::clone(&ledger));
+    let lane_b: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Analysis, Arc::clone(&ledger));
+    for (lane, job) in [(&lane_a, 1), (&lane_b, 2)] {
+        lane.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .queue
+            .push_back(job);
+    }
+    let huge = Some(u64::MAX / 4);
+    let first =
+        lane_a.dequeue_reserved(|job| RunningJob::labelled(job.to_string()).reserving(huge));
+    // On this thread: a wait here would hang the test, not fail it, so the
+    // second dequeue proves there is no wait.
+    let second =
+        lane_b.dequeue_reserved(|job| RunningJob::labelled(job.to_string()).reserving(huge));
+    assert!(first.is_some() && second.is_some());
+    assert_eq!(lane_a.snapshot().state, LaneState::Running);
+    assert_eq!(lane_b.snapshot().state, LaneState::Running);
+}
+
+#[test]
+fn an_unlimited_budget_runs_the_toolpath_and_simulation_lanes_at_once() {
+    // The probe reads past any limit; with no limit nothing reads it.
+    let mut backend = ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        MemoryBudget::UNLIMITED,
+        Arc::new(FixedProbe(u64::MAX)),
+        Duration::ZERO,
+    ));
+    backend.submit_simulation(long_simulation_request());
+    thread::sleep(Duration::from_millis(20));
+    backend.submit_toolpath(build_request(pocket_spec(7)));
+
+    let result = wait_for(&mut backend, Duration::from_secs(5), |message| {
+        matches!(
+            message,
+            ComputeMessage::Toolpath(result)
+                if matches!(**result, ComputeResult { toolpath_id: ToolpathId(7), result: Ok(_), .. })
+        )
+    });
+    assert!(result.is_some(), "the toolpath ran beside the simulation");
+    assert!(backend.lane_snapshot(ComputeLane::Analysis).is_active());
+    assert_eq!(
+        backend.memory_reserved_bytes(),
+        0,
+        "no estimate with no limit"
+    );
+}
+
+#[test]
+fn an_operator_cancel_reads_cancelled_even_when_the_probe_then_goes_over() {
+    let (mut backend, probe) = raisable_backend();
+    let seen = probe.reads();
+    backend.submit_simulation(long_simulation_request());
+    probe.wait_for_read_after(seen);
+    // The operator cancels FIRST; a later reading is over the limit.
+    backend.cancel_lane(ComputeLane::Analysis);
+    probe.raise(FAKE_LIMIT * 2);
+
+    let message = wait_for(&mut backend, Duration::from_secs(10), |message| {
+        matches!(message, ComputeMessage::Simulation(_))
+    });
+    assert!(
+        matches!(
+            message,
+            Some(ComputeMessage::Simulation(Err(ComputeError::Cancelled)))
+        ),
+        "the operator's cancel came first, so it is the reason"
+    );
+}
+
+#[test]
+fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
+    use crate::controller::{AppController, Severity};
+    use rs_cam_core::budget::estimate::{SimulationNeed, preflight_simulation};
+
+    // The run the controller will build: the long request's groups, at the
+    // cell this test stores, with metric capture off.
+    let mut expected = long_simulation_request().core;
+    expected.metric_options.enabled = false;
+    let need = SimulationNeed::of_request(&expected);
+    let need_bytes = need.bytes();
+    // The idle baseline is a quarter of the need; the limit is half of the
+    // need above it, so the run does not fit and a coarser cell does.
+    let baseline = need_bytes / 4;
+    let limit = baseline + need_bytes / 2;
+    let budget = MemoryBudget::with_limit(limit);
+    let refusal =
+        preflight_simulation(&budget, baseline, &need).expect_err("half of the need does not fit");
+    assert!(
+        matches!(refusal.fit, rs_cam_core::budget::CellFit::Fits(_)),
+        "the moves alone fit, so some cell fits: {:?}",
+        refusal.fit
+    );
+
+    let backend = ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        budget,
+        Arc::new(FixedProbe(baseline)),
+        Duration::ZERO,
+    ));
+    let mut controller = AppController::with_backend(backend);
+    controller
+        .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(
+            expected.resolution,
+        ))
+        .expect("a positive cell");
+    controller
+        .state_mut()
+        .simulation
+        .set_metric_capture_enabled(false);
+
+    // The same groups again: `SimGroupEntry` is not `Clone`.
+    let reported = controller.submit_simulation_for_groups(
+        long_simulation_request().core.groups,
+        &[],
+        expected.stock_bbox,
+        None,
+        false,
+    );
+    assert!(reported, "a refusal is reported; the caller must not wait");
+
+    let message = crate::compute::ComputeError::preflight_refusal_message("Simulation", &refusal);
+    let notifications = controller.notifications();
+    let warning = notifications
+        .iter()
+        .find(|note| note.severity == Severity::Warning && note.message == message)
+        .unwrap_or_else(|| {
+            let messages: Vec<&str> = notifications
+                .iter()
+                .map(|note| note.message.as_str())
+                .collect();
+            panic!("no preflight refusal among {messages:?}")
+        });
+    let text = &warning.message;
+    assert!(
+        text.contains(&rs_cam_core::budget::format_bytes(need_bytes)),
+        "{text}"
+    );
+    assert!(
+        text.contains(&rs_cam_core::budget::format_bytes(limit)),
+        "{text}"
+    );
+    assert!(
+        text.contains("finest simulation cell that fits is"),
+        "{text}"
+    );
+    assert!(text.contains(" mm"), "{text}");
+
+    // Nothing reached the lane, and nothing was submitted.
+    let snapshot = controller.lane_snapshot(ComputeLane::Analysis);
+    assert_eq!(snapshot.state, LaneState::Idle);
+    assert_eq!(snapshot.queue_depth, 0);
+    assert_eq!(
+        controller.state().simulation.submitted_simulation_epoch,
+        None
     );
 }

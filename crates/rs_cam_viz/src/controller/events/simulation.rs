@@ -322,6 +322,13 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// Submit a simulation request.
+    ///
+    /// Returns `true` when the request reached the analysis lane, or when
+    /// the memory preflight refused it. A refusal is reported at once
+    /// through [`Self::report_simulation_over_budget`], the path a lane
+    /// `OverBudget` result takes, and that path also closes a plan step in
+    /// flight. So the caller must not wait for a completion and must not
+    /// record its own outcome either way.
     pub(crate) fn submit_simulation_for_groups(
         &mut self,
         groups: Vec<SimGroupEntry>,
@@ -329,21 +336,8 @@ impl<B: ComputeBackend> AppController<B> {
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
         memoize_prefix: bool,
-    ) {
+    ) -> bool {
         let _ = all_tools_flat;
-        // M1 (memory programme 2026-10-01): release the view artifacts of
-        // the previous run BEFORE the new run starts, so the old and the new
-        // result never exist together. The core simulation stays: rest
-        // generation reads its prior stocks. See
-        // `SimulationState::release_for_new_run` for what the operator sees
-        // while the run works and after a cancel or a failure.
-        //
-        // The analysis lane is not cancelled here: `submit_simulation`
-        // replaces the queued job itself. `invalidate_simulation` is not
-        // used, because it also clears the holder-clearance verdict, and a
-        // re-run does not change that verdict.
-        self.state.simulation.release_for_new_run();
-        self.pending_upload = true;
 
         // G-RESTRES: ONE stored project value sets the cell of every
         // simulation — a plain Run Simulation, a plan prefix, the closing
@@ -363,19 +357,6 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.simulation.metric_options.capture_arc_engagement = true;
         }
 
-        // G-LATESIM (F2.10): record the project's edit state as it is NOW,
-        // because that is the configuration this run answers. The drain used
-        // to read the live counter when the result landed, which quietly
-        // absorbed every edit made while the simulation ran.
-        self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
-        self.state.simulation.submitted_metric_options_revision =
-            Some(self.state.simulation.metric_options_revision);
-        // D7 (W0c): the core's own half of the same rule. Every edit that
-        // clears the simulation bumps the epoch, so a run that lands after
-        // one carries a stamp the session refuses.
-        self.state.simulation.submitted_simulation_epoch =
-            Some(self.state.session.simulation_epoch());
-
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
         // F-034/F-035 — build core's own context here, so the worker
@@ -391,24 +372,70 @@ impl<B: ComputeBackend> AppController<B> {
                 use_predicted_feed_in_gates: false,
             }
         });
-        self.compute.submit_simulation(SimulationRequest {
-            core: rs_cam_core::compute::simulate::SimulationRequest {
-                groups,
-                stock_bbox,
-                stock_top_z: stock_bbox.max.z,
-                resolution: request_resolution,
-                metric_options: self.state.simulation.metric_options,
-                spindle_rpm: self.state.gui.post.spindle_speed,
-                rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
-                    self.state.gui.post.high_feedrate.max(1.0)
-                } else {
-                    max_feed_mm_min
-                },
-                model_mesh,
-                kinematics,
+        let core = rs_cam_core::compute::simulate::SimulationRequest {
+            groups,
+            stock_bbox,
+            stock_top_z: stock_bbox.max.z,
+            resolution: request_resolution,
+            metric_options: self.state.simulation.metric_options,
+            spindle_rpm: self.state.gui.post.spindle_speed,
+            rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
+                self.state.gui.post.high_feedrate.max(1.0)
+            } else {
+                max_feed_mm_min
             },
+            model_mesh,
+            kinematics,
+        };
+
+        // Memory programme wave 3, the preflight: refuse a run that even an
+        // otherwise idle process cannot hold, BEFORE anything is released
+        // or allocated. The view of the previous run stays, and the grid is
+        // never coarsened in silence: the message names the cell that fits.
+        // With no limit (the default until the operator rules) nothing is
+        // counted and nothing changes.
+        if self.compute.memory_budget().is_limited() {
+            let need = rs_cam_core::budget::estimate::SimulationNeed::of_request(&core);
+            if let Err(refusal) = self.compute.preflight_simulation(&need) {
+                let message =
+                    crate::compute::ComputeError::preflight_refusal_message("Simulation", &refusal);
+                self.report_simulation_over_budget(message);
+                return true;
+            }
+        }
+
+        // M1 (memory programme 2026-10-01): release the view artifacts of
+        // the previous run BEFORE the new run starts, so the old and the new
+        // result never exist together. The core simulation stays: rest
+        // generation reads its prior stocks. See
+        // `SimulationState::release_for_new_run` for what the operator sees
+        // while the run works and after a cancel or a failure.
+        //
+        // The analysis lane is not cancelled here: `submit_simulation`
+        // replaces the queued job itself. `invalidate_simulation` is not
+        // used, because it also clears the holder-clearance verdict, and a
+        // re-run does not change that verdict.
+        self.state.simulation.release_for_new_run();
+        self.pending_upload = true;
+
+        // G-LATESIM (F2.10): record the project's edit state as it is NOW,
+        // because that is the configuration this run answers. The drain used
+        // to read the live counter when the result landed, which quietly
+        // absorbed every edit made while the simulation ran.
+        self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
+        self.state.simulation.submitted_metric_options_revision =
+            Some(self.state.simulation.metric_options_revision);
+        // D7 (W0c): the core's own half of the same rule. Every edit that
+        // clears the simulation bumps the epoch, so a run that lands after
+        // one carries a stamp the session refuses.
+        self.state.simulation.submitted_simulation_epoch =
+            Some(self.state.session.simulation_epoch());
+
+        self.compute.submit_simulation(SimulationRequest {
+            core,
             memoize_prefix,
         });
+        true
     }
 
     /// Simulate every enabled toolpath at the panel's own resolution.
@@ -437,14 +464,14 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return false;
         };
+        // `true` also for a preflight refusal: that path has reported it.
         self.submit_simulation_for_groups(
             groups,
             &all_tools_flat,
             stock_bbox,
             Some(0),
             memoize_prefix,
-        );
-        true
+        )
     }
 
     /// Simulate setups `0..=setup_idx`, every enabled operation, for a plan.
@@ -464,14 +491,14 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return false;
         };
+        // `true` also for a preflight refusal: that path has reported it.
         self.submit_simulation_for_groups(
             groups,
             &all_tools_flat,
             stock_bbox,
             Some(setup_idx),
             memoize_prefix,
-        );
-        true
+        )
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
@@ -507,7 +534,7 @@ impl<B: ComputeBackend> AppController<B> {
         ) else {
             return;
         };
-        self.submit_simulation_for_groups(
+        let _submitted_or_refused = self.submit_simulation_for_groups(
             groups,
             &all_tools_flat,
             stock_bbox,
