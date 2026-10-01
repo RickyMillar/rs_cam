@@ -126,20 +126,30 @@ pub const DEFAULT_MAX_REGIONS_PER_TIER: usize = 24;
 /// tier still has more islands than its cap.
 pub const CAP_CLOSE_RAISE_FACTOR: f64 = 1.5;
 
-/// The CEILING on the auto-raise passes the cap loop may take, and the
-/// default of [`TierIslandParams::max_close_raises`]. Bounded because closing
-/// is a *lossy* merge: at some radius the islands stop being the operator's
-/// features and start being one blob covering the board. Three passes at 1.5×
-/// is a 3.375× radius ceiling.
+/// The CEILING on the auto-raise passes the cap loop may take. Bounded
+/// because closing is a *lossy* merge: at some radius the islands stop being
+/// the operator's features and start being one blob covering the board.
+/// Three passes at 1.5× is a 3.375× radius ceiling.
 ///
-/// **Known defect at this default (tiered-finish plan F1, 2026-09-30).** A
+/// **Known defect at this value (tiered-finish plan F1, 2026-09-30).** A
 /// raise re-closes the RAW mask, so specks under the minimum island area,
 /// which pass 0 drops, come back welded into one blob once the raised radius
 /// bridges their gaps, and "keep the largest" then prefers the blob. The
 /// sentry `tests/tier_islands_speck_weld.rs` pins the weld at this value and
-/// its absence at `max_close_raises: 0`. The default stays 3 until the
-/// operator approves the change.
+/// its absence at [`DEFAULT_MAX_CLOSE_RAISES`]. This value was the default
+/// until 2026-10-01; a project saved with it keeps it.
 pub const MAX_CLOSE_RAISES: usize = 3;
+
+/// The default of [`TierIslandParams::max_close_raises`], and so of every
+/// project file that does not state the key (the struct-level
+/// `#[serde(default)]` reads [`Default`]).
+///
+/// Zero, by the operator's approval of plan F1 (2026-10-01). Derivation: a
+/// raise only merges, it never adds a raw cell, so with no raise the owned
+/// cells are a subset of `close(raw, first radius)`. Over the cap, the
+/// smallest islands go back to the coarser tool and
+/// [`TierCapReport::dropped_area_mm2`] states how much.
+pub const DEFAULT_MAX_CLOSE_RAISES: usize = 0;
 
 /// `close_radius_mm = cusp_radius · CLOSE_RADIUS_PER_CUSP_RADIUS`, the same
 /// derivation [`crate::finish::finish_planner::FinishPlannerParams::for_tool`] uses.
@@ -316,8 +326,9 @@ pub struct TierIslandParams {
     /// [`TierCapReport::dropped_area_mm2`] states how much. A raise only
     /// MERGES, it never adds a raw cell, so with `0` the owned cells are a
     /// subset of `close(raw, first radius)`. The default is
-    /// [`MAX_CLOSE_RAISES`], the behaviour before the dial existed; read that
-    /// constant's doc for the defect it carries.
+    /// [`DEFAULT_MAX_CLOSE_RAISES`] (0). [`MAX_CLOSE_RAISES`] (3) is the
+    /// behaviour before the dial existed; read that constant's doc for the
+    /// defect it carries.
     pub max_close_raises: usize,
 }
 
@@ -330,7 +341,7 @@ impl Default for TierIslandParams {
             overlap_mm: DEFAULT_OVERLAP_MM,
             max_regions_per_tier: DEFAULT_MAX_REGIONS_PER_TIER,
             rim_erosion_mm: 0.0,
-            max_close_raises: MAX_CLOSE_RAISES,
+            max_close_raises: DEFAULT_MAX_CLOSE_RAISES,
         }
     }
 }
@@ -601,7 +612,8 @@ pub struct TierIslandSet {
     /// labels.** When the cap's bounded auto-raise fires, the close radius
     /// reaches `first · 1.5^raises` and welds a dendritic network into slabs,
     /// which this then measures. On the wanaka map at tolerance 0.146
-    /// (instrument `tests/tier_band_overlap_g_overlapfill.rs`) three raises
+    /// (instrument `tests/tier_band_overlap_g_overlapfill.rs`), at the raise
+    /// bound [`MAX_CLOSE_RAISES`] (the default until 2026-10-01), three raises
     /// took the radius to 1.688 mm and the owned area from **2 261 mm² to
     /// 17 812 mm²** — 7.9×, and enough to make owned area NON-MONOTONIC in
     /// the plan tolerance. Read [`TierCapReport::close_raises`] alongside it.

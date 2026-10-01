@@ -111,7 +111,9 @@
 //!
 //! ## RE-PREMISED 2026-10-01: Parallel finishing on the printed Ø1 row
 //!
-//! The Scallop premise above has no band now. Two commits removed it:
+//! The Scallop premise above lost its band before 2026-10-01 (the ruling
+//! of 2026-10-01, below, gives it a printed band again). Two commits
+//! removed it:
 //!
 //! 1. **42192d6e** (2026-09-23) loaded the printed Onsrud 77-100 tapered
 //!    rows. From that commit the Scallop query matched
@@ -129,8 +131,21 @@
 //!    at 90aaf54b. The recorded row is Ø3.175, 3.2x the Ø1 tip, so it
 //!    refuses too. Reading it by its id does not bring the band back.
 //!
-//! [`the_old_scallop_premise_is_refused_by_the_size_rule`] pins that
-//! refusal, so it is a recorded behaviour, not a silent loss.
+//! Until the operator ruling of 2026-10-01 a test
+//! (`the_old_scallop_premise_is_refused_by_the_size_rule`) pinned that
+//! refusal, so it was a recorded behaviour, not a silent loss.
+//!
+//! **The ruling of 2026-10-01 ("yes") gives the Scallop cell a band
+//! again.** The Amana ZrN v8 chart names no operation; its rows are filed
+//! under parallel / finish as an assignment. A third `FAMILY_RULES` entry
+//! (`feeds/extrapolation/family.rs`, home (Parallel, Finish), serves
+//! Contour, Scallop and Trace) carries the printed Ø1 row to Scallop. So
+//! the old Scallop query matches [`PREMISE_ROW`], `Exact`, with the band
+//! printed x 25.4 (`amana_zrn_3d_v8.txt:9`), and the gate gives it the
+//! Parallel verdict. [`the_old_scallop_premise_ships_the_printed_tip_row`]
+//! pins that, and keeps a refusal pin for the same Ø1 tip in plywood,
+//! where the only row (Onsrud 1/4 in, Ø6.35) is more than 2x the tip. The
+//! tests below keep the Parallel premise: it is the row's home family.
 //!
 //! **The new premise.** The same tool, material, feed, RPM, sample depth
 //! and achieved-feed fraction, on **Parallel finishing** (`DropCutter`,
@@ -222,9 +237,12 @@
 //!    can diverge "on ball tools at shallow DOC". Measured here through
 //!    `feeds::calculate`, that is **false**; the reachable case is
 //!    narrower and is a different geometry.
-//! 8. [`the_old_scallop_premise_is_refused_by_the_size_rule`] — the
-//!    record of the premise this file left on 2026-10-01: the gate
-//!    abstains on the Ø1 Scallop cell, and why.
+//! 8. [`the_old_scallop_premise_ships_the_printed_tip_row`] — the
+//!    premise this file left on 2026-10-01, under the operator ruling of
+//!    the same day: the Ø1 Scallop cell reads the printed v8 row, `Exact`,
+//!    with the Parallel verdict; the same tip in plywood still refuses on
+//!    the size rule. Until the ruling this test pinned the refusal in hard
+//!    maple (`the_old_scallop_premise_is_refused_by_the_size_rule`).
 //!
 //! **Nothing here proposes a fix.** Every number this file prints is
 //! reported under the stage that produced it.
@@ -598,15 +616,33 @@ fn gate_verdict(
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
 ) -> ChiploadVerdict {
+    gate_verdict_in(
+        &material(),
+        sample_arc_rad,
+        with_predicted_feeds,
+        operation_kind,
+        operation_family,
+        pass_role,
+    )
+}
+
+/// [`gate_verdict`] in another material. Test 8 runs it in plywood.
+fn gate_verdict_in(
+    material: &Material,
+    sample_arc_rad: f64,
+    with_predicted_feeds: bool,
+    operation_kind: OperationType,
+    operation_family: LutOperationFamily,
+    pass_role: LutPassRole,
+) -> ChiploadVerdict {
     let tool = tool();
-    let material = material();
     let trace = trace(sample_arc_rad, with_predicted_feeds);
     let tolerance = ToleranceBands::default();
     chipload::evaluate(
         &ToolpathLoadContext {
             toolpath_id: TOOLPATH,
             tool: &tool,
-            material: &material,
+            material,
             operation_family,
             pass_role,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
@@ -1351,28 +1387,115 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
     );
 }
 
-// ── 8. The premise this file left, recorded ─────────────────────────────
+// ── 8. The old Scallop premise, under the ruling of 2026-10-01 ───────────
 
 /// The Scallop premise of tests 2-6 until 2026-10-01: the same Ø1 tapered
-/// tip, the same hard maple, the same trace, on `(Scallop, Finish)`. The
-/// gate abstains on it. This test pins that refusal and its reason, so
-/// the loss of the band is a recorded behaviour, not a silent one.
+/// tip, the same hard maple, the same trace, on `(Scallop, Finish)`.
 ///
-/// - The query matches `onsrud-hardwood-77-100-1_4-pocket` (Ø6.35, the
-///   G3 family rule carries it to Scallop) since 42192d6e and 5ca7fedf.
-/// - Its G1 size basis is `Refused`: a key under 1.5 mm may read only a
-///   row inside 0.5x-2x of it (`feeds::support::micro_extrapolation_refusal`,
-///   87027060), and 6.35 / 1.0 = 6.35x. Since 90aaf54b a refused basis
-///   has no band and the gate reports `Unmodeled(NoVendorData)`.
-/// - The recorded row (Ø3.175) is 3.175x the tip, so it refuses too:
-///   reading it by its id cannot bring the band back.
+/// Until the operator ruling of 2026-10-01 the gate abstained on it: the
+/// query matched `onsrud-hardwood-77-100-1_4-pocket` (Ø6.35, served to
+/// Scallop by the Onsrud 77-100 family rule), and its G1 size basis was
+/// `Refused` (a key under 1.5 mm reads only a row inside 0.5x-2x of it,
+/// `feeds::support::micro_extrapolation_refusal`, 87027060; 6.35 / 1.0 =
+/// 6.35x; since 90aaf54b a refused basis has no band). That test was
+/// `the_old_scallop_premise_is_refused_by_the_size_rule`.
+///
+/// The ruling ("yes", 2026-10-01): the Amana ZrN v8 tapered rows serve
+/// every 3D finishing operation, because the chart names no operation and
+/// "parallel / finish is an assignment" (the row notes,
+/// `amana_zrn_tapered_v8.json`). The v8 family rule
+/// (`feeds::extrapolation::FAMILY_RULES`, home (Parallel, Finish), serves
+/// Contour, Scallop and Trace) carries [`PREMISE_ROW`] to Scallop. So the
+/// old premise now reads the printed tip row:
+///
+/// - row [`PREMISE_ROW`], size basis `Exact` (row Ø1.0 = the tip key of
+///   ruling A1), family basis `Transferred` from (Parallel, Finish);
+/// - band = printed x 25.4 = 0.01905-0.0508 mm
+///   (`data/vendor_lut/sources/amana_zrn_3d_v8.txt:9`), the band of the
+///   Parallel premise, so the gate gives the Parallel verdict.
+///
+/// The size rule did not move. A Ø1 tip whose only row is more than 2x its
+/// size still refuses: in Baltic birch plywood the v8 chart prints no row
+/// ("Wood, MDF, Sign-Foam"), the query reads the Onsrud 1/4 in plywood
+/// pocket row (Ø6.35), and the gate abstains. The recorded row (Ø3.175) is
+/// 3.175x the tip, so it is still outside the micro window.
 #[test]
-fn the_old_scallop_premise_is_refused_by_the_size_rule() {
+fn the_old_scallop_premise_ships_the_printed_tip_row() {
     use rs_cam_core::feeds::extrapolation::{Gap, SizeBasis};
     use rs_cam_core::feeds::support::micro_extrapolation_refusal;
+    use rs_cam_core::material::PlywoodGrade;
     use rs_cam_core::tool_load::UnmodeledReason;
 
-    let verdict = gate_verdict(
+    // The gate judges the Scallop cell, on the Parallel premise's band.
+    let scallop = gate_verdict(
+        SAMPLE_ARC_A_RAD,
+        true,
+        OperationType::Scallop,
+        LutOperationFamily::Scallop,
+        LutPassRole::Finish,
+    );
+    assert!(
+        !matches!(scallop, ChiploadVerdict::Unmodeled { .. }),
+        "the Ø1 tapered Scallop cell in hard maple is judged since the 2026-10-01 ruling; \
+         got {scallop:?}"
+    );
+    let parallel = gate_verdict(
+        SAMPLE_ARC_A_RAD,
+        true,
+        OPERATION_KIND,
+        OPERATION_FAMILY,
+        PASS_ROLE,
+    );
+    assert_eq!(
+        scallop, parallel,
+        "one printed row and one band: the Scallop verdict must be the Parallel verdict"
+    );
+
+    let tool = tool();
+    let key = rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter(&tool, SAMPLE_AXIAL_DOC_MM);
+    assert!(
+        (key - TIP_DIAMETER_MM).abs() < 1e-12,
+        "ruling A1: a tapered ball is keyed at its tip; got {key}"
+    );
+    let row = matched_row_for(&tool, key, LutOperationFamily::Scallop, LutPassRole::Finish)
+        .expect("the v8 family rule serves the printed tip row to Scallop");
+    assert_eq!(row.observation_id, PREMISE_ROW);
+    assert_eq!(
+        row.size_basis,
+        SizeBasis::Exact,
+        "the row prints the Ø1 tip"
+    );
+    let claim = row
+        .family_basis
+        .claim()
+        .expect("the row is filed under parallel / finish, so Scallop reads it transferred");
+    assert_eq!(
+        claim.home,
+        (LutOperationFamily::Parallel, LutPassRole::Finish)
+    );
+    assert_eq!(
+        claim.query,
+        (LutOperationFamily::Scallop, LutPassRole::Finish)
+    );
+    assert_eq!(claim.source_rows, vec![PREMISE_ROW.to_owned()]);
+    let band_min = row.chip_load_min_mm.expect("the row prints a minimum");
+    let band_max = row.chip_load_max_mm.expect("the row prints a maximum");
+    assert!(
+        (band_min - PRINTED_MIN_IN * MM_PER_IN).abs() < 1e-12,
+        "band min {band_min} must be the printed 0.00075 in x 25.4"
+    );
+    assert!(
+        (band_max - PRINTED_MAX_IN * MM_PER_IN).abs() < 1e-12,
+        "band max {band_max} must be the printed 0.002 in x 25.4"
+    );
+
+    // The size rule still refuses a Ø1 tip whose only row is more than 2x
+    // its size: Baltic birch plywood, where the v8 chart prints no row.
+    let plywood = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+    let verdict = gate_verdict_in(
+        &plywood,
         SAMPLE_ARC_A_RAD,
         true,
         OperationType::Scallop,
@@ -1386,23 +1509,34 @@ fn the_old_scallop_premise_is_refused_by_the_size_rule() {
                 reason: UnmodeledReason::NoVendorData
             }
         ),
-        "the Ø1 tapered Scallop cell in hard maple must stay unjudged under the size rule; \
+        "the Ø1 tapered Scallop cell in plywood must stay unjudged under the size rule; \
          got {verdict:?}"
     );
-
-    let tool = tool();
-    let key = rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter(&tool, SAMPLE_AXIAL_DOC_MM);
-    assert!(
-        (key - TIP_DIAMETER_MM).abs() < 1e-12,
-        "ruling A1: a tapered ball is keyed at its tip; got {key}"
+    let query = LookupQuery {
+        tool_family: ToolFamily::TaperedBallNose,
+        tool_subfamily: None,
+        diameter_mm: key,
+        flute_count: FLUTES,
+        material_family: MaterialFamily::PlywoodHardwood,
+        hardness_kind: None,
+        hardness_value: None,
+        operation_family: LutOperationFamily::Scallop,
+        pass_role: LutPassRole::Finish,
+    };
+    let refused = find_best_chip_envelope_row(
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        &query,
+        &tool.to_geometry_hint(),
+    )
+    .expect("the envelope resolver still names a row; the size rule refuses it");
+    assert_eq!(
+        refused.observation_id,
+        "onsrud-plywood-hardwood-77-100-1_4-pocket"
     );
-    let row = matched_row_for(&tool, key, LutOperationFamily::Scallop, LutPassRole::Finish)
-        .expect("the envelope resolver still names a row; the size rule refuses it");
-    assert_eq!(row.observation_id, "onsrud-hardwood-77-100-1_4-pocket");
     let expected_reason = "no published figure for a 1.00 mm tapered ball nose; the nearest \
                            chart row is 6.35 mm, 6.3x the tool, outside the 0.5x to 2x window \
                            a tool under 1.5 mm needs (ruling R1 applied to size)";
-    match &row.size_basis {
+    match &refused.size_basis {
         SizeBasis::Refused { gap, reason } => {
             assert!(
                 matches!(gap, Gap::Size),
@@ -1410,10 +1544,10 @@ fn the_old_scallop_premise_is_refused_by_the_size_rule() {
             );
             assert_eq!(reason, expected_reason);
         }
-        other => panic!("the Ø1 Scallop row must be size-refused; got {other:?}"),
+        other => panic!("the Ø1 plywood Scallop row must be size-refused; got {other:?}"),
     }
     assert!(
-        row.chip_load_min_mm.is_none() && row.chip_load_max_mm.is_none(),
+        refused.chip_load_min_mm.is_none() && refused.chip_load_max_mm.is_none(),
         "a refused row publishes no band"
     );
 

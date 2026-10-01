@@ -29,9 +29,11 @@
 //! - (g) extrapolation A3 (G3, family transfer): the tapered ball-nose
 //!   formula arms are gone. A Ø3.175 tapered Profile, Trace and Waterline
 //!   in hardwood ship the Onsrud 77-100 pocket row through the family claim;
-//!   a 1.0 mm tapered Trace in softwood (the formula before A3) refuses on
-//!   the size rule (orchestrator decision 4); a 0.4 mm tip refuses on the
-//!   tip floor (ruling B1).
+//!   a 1.0 mm tapered Trace in softwood (the formula before A3; a size
+//!   refusal until 2026-10-01) ships the Amana ZrN v8 1 mm row through the
+//!   v8 family rule (operator ruling 2026-10-01); the same tip in plywood,
+//!   where no v8 row exists, refuses on the size rule (orchestrator
+//!   decision 4); a 0.4 mm tip refuses on the tip floor (ruling B1).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -308,12 +310,33 @@ fn the_tapered_cells_ship_the_family_claim_or_refuse_on_size_fm5() {
     let softwood = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
-    // Decision 4: the 1.0 mm tip reads the 1/4 in pocket row (6.35 mm, the
-    // exact flute count), 6.3x the tool, and no chart prints a trace series
-    // that brackets the tip.
+    // Operator ruling 2026-10-01: the Amana ZrN v8 rule serves the printed
+    // 1 mm 2-flute softwood row (filed under parallel / finish) to the trace
+    // query. Before the ruling this cell refused on decision 4 (the 1/4 in
+    // Onsrud pocket row, 6.3x the tool); that refusal now holds in plywood,
+    // where no v8 row exists (below).
+    let s = suggest_tool(OperationType::Trace, &tapered(1.0), &softwood)
+        .unwrap_or_else(|e| panic!("a 1.0 mm tapered Trace in softwood ships, got {e}"));
+    let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
+        panic!(
+            "expected FamilyTransferred, got {:?}",
+            s.feeds_result.support
+        );
+    };
+    assert!(size.is_none(), "the 1 mm tip is the printed size");
+    assert_eq!(
+        family.source_rows,
+        vec!["amana-tapered-softwood-parallel-1000-2f-zrn-v8".to_owned()]
+    );
+    // Decision 4, in plywood: the 1.0 mm tip reads the Onsrud 1/4 in pocket
+    // row (6.35 mm, the exact flute count), 6.3x the tool, and no chart
+    // prints a plywood tapered series that brackets the tip.
+    let plywood = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
     let micro = unbacked_reason(
-        suggest_tool(OperationType::Trace, &tapered(1.0), &softwood),
-        "1.0 mm tapered Trace in softwood",
+        suggest_tool(OperationType::Trace, &tapered(1.0), &plywood),
+        "1.0 mm tapered Trace in plywood",
     );
     assert!(
         micro.starts_with(
