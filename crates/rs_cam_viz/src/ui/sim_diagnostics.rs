@@ -1,6 +1,8 @@
 use super::AppEvent;
 use super::components::histogram;
-use super::components::{CountPill, DistributionChart, FreshnessGate, NotMeasured, text};
+use super::components::{
+    ChartFace, ChartFlip, CountPill, DistributionChart, FreshnessGate, NotMeasured, Sparkline, text,
+};
 use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
@@ -1472,17 +1474,15 @@ fn has_cut_metric_card(kind: CriterionKind) -> bool {
 
 /// What a card asks the panel to do after the draw.
 enum CutMetricAction {
-    /// Open or close the time-series drawer.
-    ToggleSeries,
-    /// Open the drawer and scroll it to this metric's track.
-    ShowSeries(DistributionMetric),
+    /// Flip this metric's card to its other face.
+    Flip(DistributionMetric),
     /// Seek the playhead to a toolpath-local move.
     Seek { local_move: usize },
 }
 
-/// How a card names and scales its metric. The time-series drawer reads
-/// the same spec, so a card and its track show one unit.
-pub(crate) struct CutMetricSpec {
+/// How a card names and scales its metric. The histogram and the line of
+/// one card read the same spec, so the two faces show one unit.
+struct CutMetricSpec {
     pub title: &'static str,
     /// The display unit. It differs from core's unit only for deflection.
     pub unit: &'static str,
@@ -1493,7 +1493,7 @@ pub(crate) struct CutMetricSpec {
 }
 
 impl CutMetricSpec {
-    pub(crate) fn of(metric: DistributionMetric) -> Self {
+    fn of(metric: DistributionMetric) -> Self {
         match metric {
             DistributionMetric::Criterion(CriterionKind::Chipload) => Self {
                 title: "Chipload",
@@ -1660,10 +1660,13 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 /// The "Cut metrics" section of the focused toolpath.
 ///
 /// DC6: the header is the summary, and the body opens by default only when
-/// a criterion exceeds. The drawer toggle sits under the header, so it is
-/// reachable with the body closed. It is the one toggle for the drawer
-/// (§7 Q3); a card title only opens the drawer at its track. The toggle
-/// state stays one state.
+/// a criterion exceeds.
+///
+/// Each measured card has a flip button beside its chart (operator request
+/// 2026-10-02). It swaps the histogram for the line of the same metric over
+/// time. The face is per metric and lives in
+/// `SimulationState::cut_metric_over_time`, so it outlasts a change of
+/// toolpath while the app runs. The bottom time-series drawer is deleted.
 ///
 /// Each card carries its criterion's limit row in the hover of its status
 /// glyph: the face `verdict_badge` paints for Readiness, the setting, the
@@ -1729,17 +1732,11 @@ fn draw_cut_metrics_section(
     });
 
     let mut actions: Vec<CutMetricAction> = Vec::new();
-    let toggle_label = if sim.time_series_open {
-        "Hide time series \u{25be}"
-    } else {
-        "See time series \u{25b8}"
-    };
-    ui.horizontal(|ui| {
-        ui.add_space(ui.spacing().indent);
-        if ui.link(toggle_label).clicked() {
-            actions.push(CutMetricAction::ToggleSeries);
-        }
-    });
+    // The playhead, as a move of this toolpath, for the line face.
+    let playhead = sim
+        .current_local_toolpath_move()
+        .filter(|(_, id, _)| *id == toolpath_id)
+        .map(|(_, _, local_move)| local_move);
     // G-STALECARDS: an operation with no core result was not simulated at
     // all. Its cards say to regenerate it, because a re-run cannot help.
     let regenerate_first: Option<String> = session
@@ -1757,7 +1754,17 @@ fn draw_cut_metrics_section(
             if index > 0 {
                 draw_hairline(ui);
             }
-            draw_cut_metric_card(ui, card, row, regenerate_first.as_deref(), &mut actions);
+            let face = if sim.shows_over_time(card.metric) {
+                ChartFace::OverTime
+            } else {
+                ChartFace::Distribution
+            };
+            let view = CardView {
+                regenerate_first: regenerate_first.as_deref(),
+                face,
+                playhead,
+            };
+            draw_cut_metric_card(ui, card, row, &view, &mut actions);
         }
         ui.add_space(tokens::SPACE_2);
         if !other_rows.is_empty() {
@@ -1770,14 +1777,7 @@ fn draw_cut_metrics_section(
 
     for action in actions {
         match action {
-            CutMetricAction::ToggleSeries => {
-                sim.time_series_open = !sim.time_series_open;
-                sim.time_series_scroll_to = None;
-            }
-            CutMetricAction::ShowSeries(metric) => {
-                sim.time_series_open = true;
-                sim.time_series_scroll_to = Some(metric);
-            }
+            CutMetricAction::Flip(metric) => sim.flip_cut_metric(metric),
             CutMetricAction::Seek { local_move } => {
                 if let Some(move_index) = sim.global_move_for_local(toolpath_id, local_move) {
                     events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
@@ -1817,11 +1817,23 @@ fn draw_cut_metrics_empty(ui: &mut egui::Ui, reason: &str) {
     });
 }
 
-/// One metric: a header row, the histogram, and a caption only when some
+/// How one card draws, beside the card's own data.
+struct CardView<'a> {
+    /// The name of the operation when it has no core result.
+    regenerate_first: Option<&'a str>,
+    /// The face the card shows.
+    face: ChartFace,
+    /// The playhead as a move of this toolpath, when it is in it.
+    playhead: Option<usize>,
+}
+
+/// One metric: a header row, the chart, and a caption only when some
 /// cutting time is out of band.
 ///
-/// The header row holds the title (a click opens this metric's track in the
-/// drawer), the (i) guide, the status glyph and the peak. The glyph's hover
+/// The chart is the histogram or the line over time, as `view.face` says.
+/// The header row holds the title, the (i) guide, the status glyph, the
+/// peak and the flip button. The flip button sits at the right end of the
+/// row, directly above the chart's right edge. The glyph's hover
 /// carries the criterion's limit row: the face, the setting, the population,
 /// the bound clause and the confidence reason (`cut_metric_status_hover`).
 /// A metric core could not measure draws one muted line with the
@@ -1830,23 +1842,15 @@ fn draw_cut_metric_card(
     ui: &mut egui::Ui,
     card: &CutMetricCard,
     row: Option<&LimitRow<'_>>,
-    regenerate_first: Option<&str>,
+    view: &CardView<'_>,
     actions: &mut Vec<CutMetricAction>,
 ) {
     let spec = CutMetricSpec::of(card.metric);
     let hover = cut_metric_status_hover(card, row, &spec);
     ui.horizontal(|ui| {
-        let title = ui
-            .add(
-                egui::Label::new(egui::RichText::new(spec.title).color(tokens::TEXT_STRONG))
-                    .sense(egui::Sense::click())
-                    .truncate(),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text("Show this metric's time series");
-        if title.clicked() {
-            actions.push(CutMetricAction::ShowSeries(card.metric));
-        }
+        ui.add(
+            egui::Label::new(egui::RichText::new(spec.title).color(tokens::TEXT_STRONG)).truncate(),
+        );
         if let Some(guide) = cut_metric_guide(card.metric) {
             ui.label(egui::RichText::new(tokens::GLYPH_DETAIL).color(tokens::TEXT_MUTED))
                 .on_hover_text(guide);
@@ -1855,32 +1859,49 @@ fn draw_cut_metric_card(
             let (glyph, colour) = status_glyph(distribution);
             ui.add(egui::Label::new(egui::RichText::new(glyph).color(colour)).truncate())
                 .on_hover_text(hover.clone());
-            if let Some(peak) = peak_text(distribution, row, &spec) {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let peak = peak_text(distribution, row, &spec);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The line face needs samples to draw. A card with none
+                // keeps the histogram and offers no flip.
+                if !card.series.is_empty() && ui.add(ChartFlip::new(view.face)).clicked() {
+                    actions.push(CutMetricAction::Flip(card.metric));
+                }
+                if let Some(peak) = peak {
                     ui.add(egui::Label::new(text::caption(peak)).truncate());
-                });
-            }
+                }
+            });
         }
     });
     match &card.outcome {
         DistributionOutcome::Measured(distribution) => {
-            let chart = DistributionChart::new(&distribution.histogram, spec.unit)
-                .scale(spec.scale)
-                .advisory(is_advisory(distribution))
-                .show(ui);
-            if let Some(bin) = chart.clicked_bin
-                && let Some(Some(local_move)) = distribution.histogram.first_move_per_bin.get(bin)
-            {
-                actions.push(CutMetricAction::Seek {
-                    local_move: *local_move,
-                });
+            let over_time = view.face == ChartFace::OverTime && !card.series.is_empty();
+            let clicked_move = if over_time {
+                Sparkline::new(&card.series, &distribution.histogram, spec.unit)
+                    .scale(spec.scale)
+                    .advisory(is_advisory(distribution))
+                    .playhead(view.playhead)
+                    .show(ui)
+                    .clicked_move
+            } else {
+                let chart = DistributionChart::new(&distribution.histogram, spec.unit)
+                    .scale(spec.scale)
+                    .advisory(is_advisory(distribution))
+                    .show(ui);
+                chart
+                    .clicked_bin
+                    .and_then(|bin| distribution.histogram.first_move_per_bin.get(bin))
+                    .copied()
+                    .flatten()
+            };
+            if let Some(local_move) = clicked_move {
+                actions.push(CutMetricAction::Seek { local_move });
             }
             if let Some(caption) = card_caption(distribution, &spec) {
                 ui.add(egui::Label::new(text::caption(caption)).wrap());
             }
         }
         DistributionOutcome::NotMeasured(reason) => {
-            let reason = match (reason, regenerate_first) {
+            let reason = match (reason, view.regenerate_first) {
                 (NotMeasuredReason::Unmodeled(UnmodeledReason::StaleSimulation), Some(name)) => {
                     format!("Unmodeled: '{name}' is not generated — regenerate it first")
                 }

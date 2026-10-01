@@ -15,11 +15,11 @@
 //!   a framed chip strip — beside nothing they drive, and the signal spine's
 //!   empty state was an italic sentence plus a button.
 //!
-//! Sim-cut-metrics packages C and E (2026-09-23) moved that empty state. The
-//! time series is a drawer, closed until the Inspector opens it, and the
-//! bottom panel has no placeholder. The Inspector's "Cut metrics" section
+//! Sim-cut-metrics packages C and E (2026-09-23) moved that empty state, and
+//! the bottom panel has no placeholder. The Inspector's "Cut metrics" section
 //! draws the abstention in `draw_cut_metrics_empty`. The arms that held the
-//! placeholder now hold that function.
+//! placeholder now hold that function. On 2026-10-02 the time-series drawer
+//! was deleted: each cut-metric card flips to its own line over time.
 //!
 //! # Why this invariant and not a screenshot diff
 //!
@@ -30,8 +30,8 @@
 //! 1. the help paragraph is gone,
 //! 2. the verdict line reads the SHARED triage, in the contract's own class
 //!    order, and never the raw `issue_count`,
-//! 3. the timeline's one documented colour literal is still the one in
-//!    `desaturate`.
+//! 3. the timeline holds no colour literal. Its one documented literal was in
+//!    `desaturate`, which went with the time-series drawer.
 //!
 //! Property 2 is the one that matters most. `ProjectSession::simulation_triage`
 //! is the single construction site for the bounded typed answer. The CLI
@@ -239,32 +239,27 @@ fn no_verdict_reads_the_raw_issue_count_dc6() {
     }
 }
 
-/// Arm 4. The timeline's one documented colour literal is still `desaturate`'s.
+/// Arm 4. The timeline holds no colour literal.
 ///
 /// The count is of `Color32::from_rgb(` alone. That is what UP1's budget
-/// sentry counts, and its `DOCUMENTED_EXCEPTION` names this same function.
-/// The `from_rgba_*` calls elsewhere in the file rebuild the ALPHA of a
-/// colour they were handed. They choose no colour, so UP1 does not count
-/// them.
+/// sentry counts. The one documented exception was `desaturate`, the stale
+/// skin of the time-series drawer. The drawer and the function were deleted
+/// on 2026-10-02, and UP1's budget fell to zero.
 #[test]
-fn the_timeline_keeps_exactly_one_colour_literal_in_desaturate_dc6() {
+fn the_timeline_holds_no_colour_literal_dc6() {
     let src = read(TIMELINE);
     let code = code_only(&src);
 
     let total: usize = code.matches("Color32::from_rgb(").count();
     assert_eq!(
-        total, 1,
-        "{TIMELINE} holds {total} Color32::from_rgb( call sites, not 1. UP1's \
-         budget is 1 and this file's desaturate() is the one documented \
-         exception. Every other colour is a token or it does not ship."
+        total, 0,
+        "{TIMELINE} holds {total} Color32::from_rgb( call sites, not 0. UP1's \
+         budget is 0. Every colour is a token or it does not ship."
     );
-
-    let desaturate = function_source(&code, "fn desaturate(");
     assert!(
-        desaturate.contains("Color32::from_rgb("),
-        "the one surviving literal must still be inside desaturate(), which \
-         REBUILDS a colour from channels it has just computed. There is no \
-         colour there to tokenise; the constructor is arithmetic."
+        !code.contains("fn desaturate("),
+        "desaturate() is back in {TIMELINE}. It was the stale skin of the \
+         deleted time-series drawer."
     );
 }
 
@@ -311,9 +306,8 @@ fn the_bottom_strip_is_one_bar_with_no_italic_sentence_dc6() {
     );
     assert!(
         !code.contains(DELETED_PLACEHOLDER),
-        "{TIMELINE} draws a cut-metrics placeholder again. The drawer is \
-         closed until metrics exist, and the Inspector's \"Cut metrics\" \
-         section carries the abstention (packages C and E)."
+        "{TIMELINE} draws a cut-metrics placeholder again. The Inspector's \
+         \"Cut metrics\" section carries the abstention (packages C and E)."
     );
     let diagnostics = code_only(&read(DIAGNOSTICS));
     let placeholder = function_source(&diagnostics, CUT_METRICS_EMPTY);
@@ -463,8 +457,7 @@ fn the_scan_is_not_vacuous_dc6() {
     for anchor in [
         "pub fn draw(",
         "fn draw_verdict_hud(",
-        "fn desaturate(",
-        "fn draw_time_series(",
+        "fn draw_boundary_timeline(",
     ] {
         assert!(
             timeline.contains(anchor),

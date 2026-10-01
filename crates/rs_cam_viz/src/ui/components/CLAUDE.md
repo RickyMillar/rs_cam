@@ -14,9 +14,9 @@ numbers each file cites.
 - `chip.rs`, `pill.rs` — `StatusChip` and `CountPill`.
 - `choice_row.rs` — `ChoiceRow`, the one closed-choice row (G-STARTFROM).
 - `freshness.rs` — `Freshness` and `FreshnessGate`, the single staleness cue.
-- `histogram.rs` — `DistributionChart`, a painted histogram (no `egui_plot`).
-- `provenance.rs` — `ProvKind` and `ProvenanceBadge`.
-- `precedence.rs` — `PrecedenceField`, an override over a project default.
+- `histogram.rs`, `sparkline.rs` — the painted faces of a cut-metric card.
+- `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge` and
+  `PrecedenceField`, an override over a project default.
 - `suggest.rs`, `compare.rs` — `SuggestButton` and the current-versus-
   recommended comparison.
 - `button.rs`, `focus_ring.rs`, `motion.rs`, `text.rs`, `format.rs` — the

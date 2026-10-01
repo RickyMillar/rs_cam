@@ -180,7 +180,7 @@ pub(crate) struct ChiploadEnvelopeCache {
 
 /// The metrics the Inspector's "Cut metrics" section shows, in the order it
 /// shows them: the criteria in `ToolpathLoadVerdict::criteria()` order, so
-/// the cards, the drawer tracks, the CLI and the MCP list one order. The
+/// the cards, the CLI and the MCP list one order. The
 /// engagement card has no criterion and goes last.
 pub const CUT_METRIC_ORDER: [DistributionMetric; 5] = [
     DistributionMetric::Criterion(CriterionKind::Chipload),
@@ -196,8 +196,8 @@ pub struct CutMetricCard {
     pub metric: DistributionMetric,
     pub outcome: DistributionOutcome,
     /// The gate population in trace order, as `(toolpath-local move, value
-    /// in core's unit)`. The time-series drawer plots it, so the track and
-    /// the histogram read the same samples. Empty unless `outcome` is
+    /// in core's unit)`. The card's "over time" face draws it, so the line
+    /// and the histogram read the same samples. Empty unless `outcome` is
     /// `Measured`.
     pub series: Vec<(usize, f64)>,
 }
@@ -221,6 +221,22 @@ pub(crate) struct CutMetricCache {
 }
 
 impl SimulationState {
+    /// True when the card of `metric` shows the line over time, not the
+    /// histogram.
+    pub fn shows_over_time(&self, metric: DistributionMetric) -> bool {
+        self.cut_metric_over_time.contains(&metric)
+    }
+
+    /// Flip the card of `metric` to its other face. The other cards keep
+    /// their face.
+    pub fn flip_cut_metric(&mut self, metric: DistributionMetric) {
+        if self.shows_over_time(metric) {
+            self.cut_metric_over_time.retain(|shown| *shown != metric);
+        } else {
+            self.cut_metric_over_time.push(metric);
+        }
+    }
+
     /// The cut-metric distributions of `toolpath_id`, built once per trace,
     /// toolpath and edit counter. Never per frame.
     ///
@@ -1084,19 +1100,11 @@ pub struct SimulationState {
     pub stock_opacity: f32,
     /// Runtime-only debugger state and semantic lookup cache.
     pub debug: SimulationDebugState,
-    /// Global move index (as f64 for sub-move pointer precision) under the
-    /// cursor in the bottom signal spine. Set when the user hovers any signal
-    /// track; consumed by every other track so they all show a vertical
-    /// crosshair at the same X. One frame of lag is intentional: tracks read
-    /// this on the same frame they may overwrite it.
-    pub hovered_x: Option<f64>,
-    /// True when the bottom drawer shows the cut-metric time series. The
-    /// Inspector's "Cut metrics" section owns the one toggle (PLAN §3.3).
-    /// Runtime-only: `SimulationState` is not saved with the project.
-    pub time_series_open: bool,
-    /// The time-series track the drawer scrolls to on its next frame. A card
-    /// footer sets it; the drawer takes it.
-    pub time_series_scroll_to: Option<DistributionMetric>,
+    /// The cut metrics whose Inspector card shows the line over time in
+    /// place of the histogram. The flip button of each card adds or removes
+    /// its metric. Runtime-only: the choice lasts while the app runs, and
+    /// `SimulationState` is not saved with the project.
+    pub cut_metric_over_time: Vec<DistributionMetric>,
 }
 
 impl Default for SimulationState {

@@ -714,8 +714,8 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/sim_timeline.rs",
-        3,
-        "one playback notice and two active-track emphases",
+        1,
+        "one playback notice, a sentence rather than a title",
     ),
     (
         "ui/feeds/explore.rs",
