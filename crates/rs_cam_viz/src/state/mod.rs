@@ -711,6 +711,7 @@ impl AppState {
         self.show_export_wizard = false;
         self.show_preflight = false;
         self.show_shortcuts = false;
+        self.simulation.open_trace = None;
         if !self.is_optimizing() {
             self.optimize_modal = None;
             self.optimize_project = None;
@@ -722,6 +723,14 @@ impl AppState {
                 planner.open = false;
             }
         }
+    }
+
+    /// Open the trace modal on `metric`. Modal exclusivity: the other
+    /// modals close first.
+    pub fn open_cut_metric_trace(&mut self, metric: rs_cam_core::tool_load::DistributionMetric) {
+        self.close_modals_for_exclusivity();
+        self.simulation.open_trace = Some(metric);
+        self.simulation.trace_window = None;
     }
 }
 

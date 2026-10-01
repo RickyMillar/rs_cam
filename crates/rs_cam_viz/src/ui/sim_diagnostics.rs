@@ -1,7 +1,8 @@
 use super::AppEvent;
 use super::components::histogram;
 use super::components::{
-    ChartFace, ChartFlip, CountPill, DistributionChart, FreshnessGate, NotMeasured, Sparkline, text,
+    ChartFace, ChartFlip, CountPill, DistributionChart, FreshnessGate, NotMeasured, Sparkline,
+    TraceOpen, text,
 };
 use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_debug::{
@@ -1476,13 +1477,15 @@ fn has_cut_metric_card(kind: CriterionKind) -> bool {
 enum CutMetricAction {
     /// Flip this metric's card to its other face.
     Flip(DistributionMetric),
+    /// Open this metric's trace in the trace modal.
+    Open(DistributionMetric),
     /// Seek the playhead to a toolpath-local move.
     Seek { local_move: usize },
 }
 
-/// How a card names and scales its metric. The histogram and the line of
-/// one card read the same spec, so the two faces show one unit.
-struct CutMetricSpec {
+/// How a card names and scales its metric. The histogram, the line and the
+/// trace modal read the same spec, so they show one unit.
+pub(crate) struct CutMetricSpec {
     pub title: &'static str,
     /// The display unit. It differs from core's unit only for deflection.
     pub unit: &'static str,
@@ -1493,7 +1496,7 @@ struct CutMetricSpec {
 }
 
 impl CutMetricSpec {
-    fn of(metric: DistributionMetric) -> Self {
+    pub(crate) fn of(metric: DistributionMetric) -> Self {
         match metric {
             DistributionMetric::Criterion(CriterionKind::Chipload) => Self {
                 title: "Chipload",
@@ -1550,7 +1553,7 @@ fn cut_metric_guide(metric: DistributionMetric) -> Option<String> {
 }
 
 /// True when the bound is a rule of thumb that does not gate an export.
-fn is_advisory(distribution: &MetricDistribution) -> bool {
+pub(crate) fn is_advisory(distribution: &MetricDistribution) -> bool {
     distribution
         .bound_source
         .as_ref()
@@ -1667,6 +1670,8 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 /// time. The face is per metric and lives in
 /// `SimulationState::cut_metric_over_time`, so it outlasts a change of
 /// toolpath while the app runs. The bottom time-series drawer is deleted.
+/// A second button, `< >`, opens the one trace large in the trace modal
+/// (`ui/sim_trace_modal.rs`).
 ///
 /// Each card carries its criterion's limit row in the hover of its status
 /// glyph: the face `verdict_badge` paints for Readiness, the setting, the
@@ -1737,6 +1742,9 @@ fn draw_cut_metrics_section(
         .current_local_toolpath_move()
         .filter(|(_, id, _)| *id == toolpath_id)
         .map(|(_, _, local_move)| local_move);
+    // The global move of the toolpath's first move, so the line names the
+    // move the transport bar shows.
+    let move_offset = sim.global_move_for_local(toolpath_id, 0).unwrap_or(0);
     // G-STALECARDS: an operation with no core result was not simulated at
     // all. Its cards say to regenerate it, because a re-run cannot help.
     let regenerate_first: Option<String> = session
@@ -1763,6 +1771,7 @@ fn draw_cut_metrics_section(
                 regenerate_first: regenerate_first.as_deref(),
                 face,
                 playhead,
+                move_offset,
             };
             draw_cut_metric_card(ui, card, row, &view, &mut actions);
         }
@@ -1778,6 +1787,10 @@ fn draw_cut_metrics_section(
     for action in actions {
         match action {
             CutMetricAction::Flip(metric) => sim.flip_cut_metric(metric),
+            // `app.rs` sees the new value after this panel draws and calls
+            // `AppState::open_cut_metric_trace`, which closes the other
+            // modals (modal exclusivity).
+            CutMetricAction::Open(metric) => sim.open_trace = Some(metric),
             CutMetricAction::Seek { local_move } => {
                 if let Some(move_index) = sim.global_move_for_local(toolpath_id, local_move) {
                     events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
@@ -1825,6 +1838,8 @@ struct CardView<'a> {
     face: ChartFace,
     /// The playhead as a move of this toolpath, when it is in it.
     playhead: Option<usize>,
+    /// The global move of the toolpath's first move.
+    move_offset: usize,
 }
 
 /// One metric: a header row, the chart, and a caption only when some
@@ -1832,10 +1847,11 @@ struct CardView<'a> {
 ///
 /// The chart is the histogram or the line over time, as `view.face` says.
 /// The header row holds the title, the (i) guide, the status glyph, the
-/// peak and the flip button. The flip button sits at the right end of the
-/// row, directly above the chart's right edge. The glyph's hover
-/// carries the criterion's limit row: the face, the setting, the population,
-/// the bound clause and the confidence reason (`cut_metric_status_hover`).
+/// peak, the flip button and the open button. The two buttons sit at the
+/// right end of the row, directly above the chart's right edge. The glyph's
+/// hover carries the criterion's limit row: the face, the setting, the
+/// population, the bound clause and the confidence reason
+/// (`cut_metric_status_hover`).
 /// A metric core could not measure draws one muted line with the
 /// abstention mark and core's reason.
 fn draw_cut_metric_card(
@@ -1861,10 +1877,15 @@ fn draw_cut_metric_card(
                 .on_hover_text(hover.clone());
             let peak = peak_text(distribution, row, &spec);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // The line face needs samples to draw. A card with none
-                // keeps the histogram and offers no flip.
-                if !card.series.is_empty() && ui.add(ChartFlip::new(view.face)).clicked() {
-                    actions.push(CutMetricAction::Flip(card.metric));
+                // The line face and the modal need samples to draw. A card
+                // with none keeps the histogram and offers neither button.
+                if !card.series.is_empty() {
+                    if ui.add(TraceOpen).clicked() {
+                        actions.push(CutMetricAction::Open(card.metric));
+                    }
+                    if ui.add(ChartFlip::new(view.face)).clicked() {
+                        actions.push(CutMetricAction::Flip(card.metric));
+                    }
                 }
                 if let Some(peak) = peak {
                     ui.add(egui::Label::new(text::caption(peak)).truncate());
@@ -1880,6 +1901,7 @@ fn draw_cut_metric_card(
                     .scale(spec.scale)
                     .advisory(is_advisory(distribution))
                     .playhead(view.playhead)
+                    .move_offset(view.move_offset)
                     .show(ui)
                     .clicked_move
             } else {

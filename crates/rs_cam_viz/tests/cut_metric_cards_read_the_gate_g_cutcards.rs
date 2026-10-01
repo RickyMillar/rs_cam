@@ -74,6 +74,8 @@ const LINE: &str = "ui/components/sparkline.rs";
 const STATE: &str = "state/simulation.rs";
 const PLAYBACK: &str = "state/simulation/playback_state.rs";
 const APP: &str = "app.rs";
+const MODAL: &str = "ui/sim_trace_modal.rs";
+const INPUT: &str = "app/input.rs";
 
 /// The rail width the Inspector opens at.
 const RAIL_WIDTH: f32 = 240.0;
@@ -576,13 +578,17 @@ fn the_line_is_painted_in_the_band_colours_g_cutcards() {
         !line.contains("Color32::from_rgb("),
         "{LINE} names a colour literal; a component reads tokens only"
     );
-    for shared in ["histogram::side_colour(", "histogram::display_range("] {
-        assert!(
-            line.contains(shared),
-            "the line must read `{shared}`, so the two faces of a card share \
-             one colour rule and one scale"
-        );
-    }
+    assert!(
+        line.contains("histogram::side_colour("),
+        "the line must read `histogram::side_colour(`, so the two faces of a \
+         card share one colour rule"
+    );
+    let show = function_source(&line, "pub fn show(");
+    assert!(
+        show.contains("line_range("),
+        "the line scales by `line_range`: the whole run plus a margin, with \
+         every limit (operator ruling 2026-10-02)"
+    );
 
     assert_eq!(histogram::side_colour(BinSide::Below), tokens::CAUTION);
     assert_eq!(histogram::side_colour(BinSide::Above), tokens::DANGER);
@@ -659,42 +665,219 @@ fn the_line_keeps_spikes_and_breaks_at_gaps_g_cutcards() {
     );
 }
 
-/// The operator's main complaint: the drawer drew the line "off the scale".
-/// A spindle-power limit forty times the peak widened the axis, so the line
-/// lay flat on the floor. The line reads the histogram's display range,
-/// which follows the data.
+/// Operator ruling 2026-10-02: "show the whole thing plus a little, so you
+/// can see the limit bars too". The y range is the data minimum to the data
+/// maximum, extended to every bound, plus `LINE_MARGIN` of the span. No
+/// percentile cut, no clamp.
 #[test]
-fn a_far_bound_does_not_flatten_the_line_g_cutcards() {
-    let mut samples: Vec<PopulationSample> = (0..200)
-        .map(|i| PopulationSample {
-            value: 0.01 + 0.01 * f64::from(i) / 199.0,
-            weight_s: 0.1,
-            move_index: i as usize,
-            sample_index: i as usize,
-        })
+fn the_line_shows_the_whole_run_and_every_limit_g_cutcards() {
+    let mut series: Vec<(usize, f64)> = (0..200)
+        .map(|i| (i, 0.01 + 0.01 * f64::from(i as u32) / 199.0))
         .collect();
-    // One spike, far above the rest.
-    samples[100].value = 0.3;
-    let far = Histogram::build(&samples, None, Some(0.84), 24);
-    let (lo, hi) = histogram::display_range(&far);
+    // One spike, far above the rest, and one sample with no value.
+    series[100].1 = 0.3;
+    series[150].1 = f64::NAN;
+
+    let range = sparkline::line_range(&series, None, None).unwrap();
+    assert_eq!(range.data_min, 0.01);
+    assert_eq!(
+        range.data_max, 0.3,
+        "the spike is in the range, not clipped"
+    );
+    let span = 0.3 - 0.01;
+    assert!((range.lo - (0.01 - sparkline::LINE_MARGIN * span)).abs() < 1e-12);
+    assert!((range.hi - (0.3 + sparkline::LINE_MARGIN * span)).abs() < 1e-12);
+
+    // A far ceiling and a floor under the data both widen the range.
+    let range = sparkline::line_range(&series, Some(0.005), Some(0.84)).unwrap();
+    let span = 0.84 - 0.005;
     assert!(
-        hi < 0.84,
-        "the far ceiling must not widen the y range ({lo}..{hi})"
+        range.lo < 0.005 && range.hi > 0.84,
+        "every limit line is on the chart ({}..{})",
+        range.lo,
+        range.hi
+    );
+    assert!((range.hi - (0.84 + sparkline::LINE_MARGIN * span)).abs() < 1e-12);
+    assert!((range.lo - (0.005 - sparkline::LINE_MARGIN * span)).abs() < 1e-12);
+
+    // Equal values get a width, so the line does not divide by zero.
+    let flat = sparkline::line_range(&[(0, 0.02), (1, 0.02)], None, None).unwrap();
+    assert!(flat.hi > flat.lo);
+    assert!(
+        sparkline::line_range(&[(0, f64::NAN)], Some(0.1), None).is_none(),
+        "a series with no finite value has no range"
+    );
+
+    let line = code_only(&read(LINE));
+    assert!(
+        !line.contains("display_range(") && !line.contains("bound_place("),
+        "the line uses the histogram's percentile range again; the operator \
+         asked for the whole run"
+    );
+}
+
+/// The trace modal zooms about the pointer and pans inside the run.
+#[test]
+fn the_trace_window_zooms_and_pans_inside_the_run_g_cutcards() {
+    let full = (0.0, 1000.0);
+    let zoomed = sparkline::zoom_window(full, full, 250.0, 0.5);
+    assert!(((zoomed.1 - zoomed.0) - 500.0).abs() < 1e-9, "{zoomed:?}");
+    assert!(
+        (zoomed.0 - 125.0).abs() < 1e-9,
+        "the move under the pointer stays under the pointer: {zoomed:?}"
+    );
+    let tight = sparkline::zoom_window(full, full, 500.0, 1e-9);
+    assert!(
+        ((tight.1 - tight.0) - sparkline::MIN_WINDOW_MOVES).abs() < 1e-9,
+        "a zoom stops at MIN_WINDOW_MOVES: {tight:?}"
+    );
+    assert_eq!(
+        sparkline::zoom_window(zoomed, full, 400.0, 100.0),
+        full,
+        "a zoom out stops at the whole run"
+    );
+    assert_eq!(
+        sparkline::pan_window((800.0, 900.0), full, 500.0),
+        (900.0, 1000.0),
+        "a pan stops at the end of the run"
+    );
+    assert_eq!(
+        sparkline::pan_window((100.0, 200.0), full, -500.0),
+        (0.0, 100.0),
+        "a pan stops at the start of the run"
+    );
+
+    // A window shows only its own moves.
+    let series: Vec<(usize, f64)> = (0..100).map(|i| (i, 0.03)).collect();
+    let columns = sparkline::columns_in(&series, 400, (10, 19)).unwrap();
+    assert_eq!((columns.first_move, columns.last_move), (10, 19));
+    assert_eq!(columns.columns.len(), 10);
+    assert!(columns.columns.iter().all(Option::is_some));
+}
+
+/// The `< >` button opens the one trace in a modal, through the door that
+/// closes the other modals, and Escape closes it.
+#[test]
+fn the_open_button_opens_the_trace_modal_g_cutcards() {
+    let diagnostics = code_only(&read(DIAGNOSTICS));
+    let card = function_source(&diagnostics, "fn draw_cut_metric_card(");
+    assert!(
+        card.contains("TraceOpen") && card.contains("CutMetricAction::Open("),
+        "each measured card has the open button beside the flip button"
+    );
+    let section = function_source(&diagnostics, "fn draw_cut_metrics_section(");
+    assert!(section.contains("open_trace = Some("));
+
+    let app = code_only(&read(APP));
+    assert!(
+        app.contains("open_cut_metric_trace(") && app.contains("sim_trace_modal::draw("),
+        "{APP} must open the trace through `AppState::open_cut_metric_trace` \
+         and draw the modal"
+    );
+    let modal = code_only(&read(MODAL));
+    for part in [
+        "egui::Modal::new(",
+        "should_close()",
+        "Button::primary(\"Close\")",
+        "SimJumpToMove",
+        "global_move_for_local(",
+        ".detail(true)",
+    ] {
+        assert!(
+            modal.contains(part),
+            "{MODAL} must hold `{part}`: the app's modal pattern (Escape and \
+             the backdrop close it through `should_close`), and the card's \
+             seek route"
+        );
+    }
+    let input = code_only(&read(INPUT));
+    let shortcuts = function_source(&input, "pub(super) fn handle_simulation_shortcuts(");
+    let guard = shortcuts
+        .find("open_trace.is_some()")
+        .expect("the simulation shortcuts must stand down while the trace modal is open");
+    let escape = shortcuts
+        .find("Key::Escape")
+        .expect("the workspace Escape arm is gone; the sentry is stale");
+    assert!(
+        guard < escape,
+        "with the modal open, Escape must close the modal, not switch the \
+         workspace: the guard must come before the Escape arm"
+    );
+
+    // The state: one door opens it and closes the others; exclusivity
+    // closes it.
+    let mut state = rs_cam_viz::state::AppState::new();
+    state.show_preflight = true;
+    state.simulation.trace_window = Some((10.0, 20.0));
+    let [metric, ..] = CUT_METRIC_ORDER;
+    state.open_cut_metric_trace(metric);
+    assert_eq!(state.simulation.open_trace, Some(metric));
+    assert!(
+        !state.show_preflight,
+        "opening the trace closes the other modals"
     );
     assert!(
-        hi < 0.3,
-        "one spike must not widen the y range: the line clamps it to the \
-         edge with a marker ({lo}..{hi})"
+        state.simulation.trace_window.is_none(),
+        "a new trace opens on the whole run"
+    );
+    state.close_modals_for_exclusivity();
+    assert!(
+        state.simulation.open_trace.is_none(),
+        "another modal opening closes the trace modal"
     );
     assert!(
-        hi - lo < 0.02,
-        "the range fits the data's percentile range ({lo}..{hi})"
+        SimulationState::new().open_trace.is_none(),
+        "it starts closed"
     );
-    let near = Histogram::build(&samples, None, Some(0.0205), 24);
-    assert!(
-        histogram::display_range(&near).1 >= 0.0205,
-        "a bound just past the data stays to scale on the line"
-    );
+    assert_eq!(sparkline::OPEN_HOVER, "Open this trace");
+}
+
+/// The hover names the move, the value and the side of the bounds.
+#[test]
+fn the_line_hover_names_move_value_and_side_g_cutcards() {
+    let column = sparkline::Column {
+        min: 0.05,
+        max: 0.09,
+        first: 0.05,
+        last: 0.09,
+        first_move: 12,
+        joined: false,
+    };
+    let side = sparkline::column_side(&column, Some(0.02), Some(0.08));
+    assert_eq!(side, BinSide::Above);
+    let text = sparkline::column_hover_text(&column, 1012, side, 1.0, "mm/tooth");
+    for part in [
+        "Move 1012",
+        "0.050\u{2013}0.090 mm/tooth",
+        "above the ceiling",
+    ] {
+        assert!(text.contains(part), "{text:?} has no {part:?}");
+    }
+}
+
+/// The modal draws the same component at its own height.
+#[test]
+fn the_detail_line_takes_its_own_height_g_cutcards() {
+    let hist = fixture();
+    let series = fixture_series();
+    let ctx = ctx();
+    let mut height = 0.0_f32;
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(600.0);
+            height = Sparkline::new(&series, &hist, "mm/tooth")
+                .height(320.0)
+                .window(Some((1010, 1050)))
+                .move_offset(5000)
+                .detail(true)
+                .show(ui)
+                .response
+                .rect
+                .height();
+        });
+        out.textures_delta.clear();
+    }
+    assert!((height - 320.0).abs() <= SLACK, "the line is {height} high");
 }
 
 #[test]
@@ -780,6 +963,8 @@ fn the_scan_is_not_vacuous_g_cutcards() {
         (STATE, 10_000),
         (PLAYBACK, 2_000),
         (APP, 10_000),
+        (MODAL, 2_000),
+        (INPUT, 10_000),
     ] {
         let src = read(rel);
         assert!(

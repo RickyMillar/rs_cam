@@ -623,6 +623,13 @@ impl RsCamApp {
 
     /// Handle keyboard shortcuts for the simulation workspace.
     pub(super) fn handle_simulation_shortcuts(&mut self, ctx: &egui::Context) {
+        // The trace modal owns the keys while it is open. Its Escape closes
+        // the modal (`egui::Modal::should_close`); here it would switch the
+        // workspace, and the arrows and Space would move the playhead
+        // behind the modal.
+        if self.controller.state().simulation.open_trace.is_some() {
+            return;
+        }
         // Before the Escape arm below: with a dock popover or the catalogue
         // open, Escape closes that surface and does not leave the workspace.
         self.escape_closes_a_viewport_surface(ctx);

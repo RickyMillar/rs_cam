@@ -1105,6 +1105,14 @@ pub struct SimulationState {
     /// its metric. Runtime-only: the choice lasts while the app runs, and
     /// `SimulationState` is not saved with the project.
     pub cut_metric_over_time: Vec<DistributionMetric>,
+    /// The cut metric whose trace the trace modal shows large, for the
+    /// focused toolpath. `None` when the modal is closed. Runtime-only.
+    /// Open it through `AppState::open_cut_metric_trace`, which closes the
+    /// other modals first.
+    pub open_trace: Option<DistributionMetric>,
+    /// The move window the trace modal shows, as toolpath-local moves.
+    /// `None` is the whole run. Runtime-only; opening a trace resets it.
+    pub trace_window: Option<(f64, f64)>,
 }
 
 impl Default for SimulationState {

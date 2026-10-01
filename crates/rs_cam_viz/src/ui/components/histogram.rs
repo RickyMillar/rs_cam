@@ -523,15 +523,6 @@ fn ranges(hist: &Histogram) -> ((f64, f64), (f64, f64)) {
     ((inner_lo, inner_hi), (display_lo, display_hi))
 }
 
-/// The display range of the chart, in core's unit: core's inner range (a
-/// percentile range of the population), widened to include each bound
-/// within [`NEAR_BOUND_SHARE`] of it. The histogram's x axis and the
-/// sparkline's y axis both use it.
-#[must_use]
-pub fn display_range(hist: &Histogram) -> (f64, f64) {
-    ranges(hist).1
-}
-
 /// Where the chart draws `value`: to scale, or off scale at one edge.
 #[must_use]
 pub fn bound_place(hist: &Histogram, value: f64) -> BoundPlace {

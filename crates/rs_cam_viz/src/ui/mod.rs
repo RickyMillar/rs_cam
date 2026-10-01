@@ -23,6 +23,7 @@ pub mod sim_debug;
 pub mod sim_diagnostics;
 pub mod sim_op_list;
 pub mod sim_timeline;
+pub mod sim_trace_modal;
 pub mod status_bar;
 pub mod theme;
 pub mod tokens;
