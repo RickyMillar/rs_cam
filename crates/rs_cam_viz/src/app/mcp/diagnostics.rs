@@ -741,29 +741,48 @@ pub(super) fn parse_span_kind_filter(
     })
 }
 
-/// The `area_regions` key of `inspect_spans`: the regions that a 3D Rough
-/// with By Area ordering detected, the same data the viewport overlay
-/// draws. `null` for every other toolpath and for Global ordering.
+/// The `area_regions` key of `inspect_spans`: the jobs that a 3D Rough with
+/// By Area ordering ran, the same data the viewport overlay draws. `null`
+/// for every other toolpath and for Global ordering.
 ///
-/// Each region's `order` is the `region_id` of its `region` span. The
-/// coordinates are in the emission frame, the frame of the moves.
+/// Each region's `order` is the `region_id` of its `region` span; `kind` is
+/// `"rest"` or `"valley"`. The coordinates are in the emission frame, the
+/// frame of the moves.
 pub(super) fn area_regions_json(
     map: Option<&rs_cam_core::adaptive3d::AreaRegionMap>,
 ) -> serde_json::Value {
     let Some(map) = map else {
         return serde_json::Value::Null;
     };
+    let valleys = map
+        .regions
+        .iter()
+        .filter(|r| r.kind == rs_cam_core::adaptive3d::AreaRegionKind::Valley)
+        .count();
+    let note = format!(
+        "Built once from the pocket tree of the tool-CL grid, before the first \
+         level. Each valley of the tree is a job and the rest of the material \
+         is one rest job. A job cuts only its own cells (bbox_xy is evidence \
+         only). The rest runs {}; the valleys go nearest next. Dials: minimum \
+         depth {:.2} mm (1/3 x D), minimum area {:.0} mm². {} valley(s); no \
+         valley means By Area cuts as Global does.",
+        if map.rest_first { "first" } else { "last" },
+        map.pocket_min_depth_mm,
+        map.pocket_min_area_mm2,
+        valleys,
+    );
     serde_json::json!({
         "region_count": map.regions.len(),
+        "valley_count": valleys,
+        "rest_first": map.rest_first,
+        "pocket_min_depth_mm": map.pocket_min_depth_mm,
+        "pocket_min_area_mm2": map.pocket_min_area_mm2,
         "cell_mm": map.cell_mm,
         "grid_rows": map.rows,
         "grid_cols": map.cols,
         "top_z": map.top_z,
         "regions": serde_json::to_value(&map.regions).unwrap_or(serde_json::Value::Null),
-        "note": "Detected once, from the stock before the first level. The planner \
-                 cuts each region by its bbox_xy, not by its cells, so a cell of \
-                 another region inside the box is cut with this region. One region \
-                 means By Area cuts as Global does.",
+        "note": note,
     })
 }
 

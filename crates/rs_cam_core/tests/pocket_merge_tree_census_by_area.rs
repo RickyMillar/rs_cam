@@ -1,21 +1,21 @@
 //! Research probe: the pockets that a join tree finds on the tool-CL
-//! surface of a 3D Rough, against the regions that By Area finds today.
+//! surface of a 3D Rough, and the jobs that By Area runs from it.
 //!
 //! # The question
 //!
-//! On terrain (rivmap100) the By Area detector
-//! (`adaptive3d::clearing::detect_material_regions_labeled`) finds one
-//! region, because it flood-fills the remaining material and all of it
-//! connects. The operator wants By Area to find the real pockets: every
-//! valley that the roughing tool fits into, fewer than about ten of them,
-//! cut depth-first. This probe measures what
-//! `surface::merge_tree::build_pocket_tree` finds for a grid of dials.
+//! Until WP2 of `planning/by_area_merge_tree_2026-09-25/PLAN.md`, By Area
+//! flood-filled the remaining material and found one region on terrain
+//! (rivmap100). Since WP2 the planner builds `surface::merge_tree` from its
+//! own tool-CL grid (`adaptive3d/area_plan.rs`): each valley is a job and
+//! the rest is one job. This probe sweeps the tree dials and prints the
+//! planner order of the rough.
 //!
 //! # What it does
 //!
 //! 1. It loads the project and walks the generation plan up to the first
 //!    3D Rough (generate, simulate, generate), as the CLI does.
-//! 2. It reads the By Area map of that result: the current detector.
+//! 2. It reads the By Area map of that result: the planner order
+//!    (`planner_order.csv`, `planner_order.png`).
 //! 3. It builds the drop-cutter height grid of the rough's tool with
 //!    `SurfaceHeightmap::from_mesh`, on the grid that `adaptive3d/path.rs`
 //!    builds: cell `max(engagement radius / 6, tolerance)`, the mesh box
@@ -25,14 +25,16 @@
 //!    view and a CSV per pair, plus `summary.csv`.
 //!
 //! The PNGs carry colour only. `annotate.py` (in the output folder, not in
-//! the repo) prints the pocket ids and the cut order from the CSVs.
+//! the repo) prints the pocket ids and the valley ranks from the CSVs.
 //!
 //! # How to run
 //!
 //! `cargo test -p rs_cam_core -q --test pocket_merge_tree_census_by_area
 //! -- --ignored`. Set `MERGE_TREE_PROJECT` and `MERGE_TREE_OUT` to change
 //! the project (default: `planning/fixtures/rivmap100/rivmap100_ladder_demo.toml`)
-//! and the output folder (default: `<temp dir>/merge_tree`). The probe asserts nothing about the
+//! and the output folder (default: `<temp dir>/merge_tree`). The probe reads
+//! the first enabled 3D Rough, or the one named `MERGE_TREE_ROUGH`;
+//! `MERGE_TREE_SET="param=value,..."` sets its params before the walk. The probe asserts nothing about the
 //! counts: it is an instrument, not a gate.
 
 #![allow(
@@ -52,7 +54,8 @@ use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 use rs_cam_core::session::{
-    Command, ProjectSession, SetSimulationResolutionArgs, SimulationOptions, SimulationResolution,
+    Command, ProjectSession, SetSimulationResolutionArgs, SetToolpathParamArgs, SimulationOptions,
+    SimulationResolution,
 };
 use rs_cam_core::surface::flow_accum::FlowField;
 use rs_cam_core::surface::merge_tree::{MergeTreeParams, PocketTree, build_pocket_tree};
@@ -177,19 +180,23 @@ fn anchor_px(labels: &[Option<usize>], nx: usize, ny: usize, id: usize) -> (u32,
     (c as u32 * PX + PX / 2, (ny - 1 - r) as u32 * PX + PX / 2)
 }
 
-fn pocket_csv(tree: &PocketTree, nx: usize, ny: usize) -> String {
-    let order = tree.cut_order();
+fn pocket_csv(tree: &PocketTree, field: &FlowField) -> String {
+    let (nx, ny) = (field.nx, field.ny);
+    let valleys = tree.valleys();
     let mut s = String::from(
-        "id,cut_order,parent,children,min_z,saddle_z,depth_mm,area_mm2,basin_area_mm2,\
-         x_min,y_min,x_max,y_max,cells,label_px_x,label_px_y\n",
+        "id,valley_rank,parent,children,min_z,saddle_z,depth_mm,area_mm2,basin_area_mm2,\
+         x_min,y_min,x_max,y_max,cells,label_px_x,label_px_y,centroid_x,centroid_y\n",
     );
     for p in &tree.pockets {
-        let rank = order.iter().position(|&o| o == p.id).map_or(0, |k| k + 1);
+        // The rank in `valleys()` (deepest first); 0 for a band or a root
+        // with children. The planner order is in `planner_order.csv`.
+        let rank = valleys.iter().position(|&o| o == p.id).map_or(0, |k| k + 1);
         let (px, py) = anchor_px(&tree.labels, nx, ny, p.id);
         let kids: Vec<String> = p.children.iter().map(ToString::to_string).collect();
+        let (cx, cy) = centroid(tree, field, p.id);
         let _ = writeln!(
             s,
-            "{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.2},{:.2},{:.2},{:.2},{},{},{}",
+            "{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.2},{:.2},{:.2},{:.2},{},{},{},{:.2},{:.2}",
             p.id,
             rank,
             p.parent.map_or(String::new(), |q| q.to_string()),
@@ -206,9 +213,25 @@ fn pocket_csv(tree: &PocketTree, nx: usize, ny: usize) -> String {
             p.cell_count,
             px,
             py,
+            cx,
+            cy,
         );
     }
     s
+}
+
+/// The world XY centroid of the cells labelled `id`.
+fn centroid(tree: &PocketTree, field: &FlowField, id: usize) -> (f64, f64) {
+    let (mut sx, mut sy, mut n) = (0.0, 0.0, 0usize);
+    for (i, l) in tree.labels.iter().enumerate() {
+        if *l == Some(id) {
+            sx += field.ox + (i % field.nx) as f64 * field.cell;
+            sy += field.oy + (i / field.nx) as f64 * field.cell;
+            n += 1;
+        }
+    }
+    let n = n.max(1) as f64;
+    (sx / n, sy / n)
 }
 
 #[test]
@@ -234,8 +257,31 @@ fn pocket_merge_tree_census_on_the_rough() {
     let rough_index = session
         .toolpath_configs()
         .iter()
-        .position(|tc| tc.enabled && matches!(tc.operation, OperationConfig::Adaptive3d(_)))
-        .expect("the project has an enabled 3D Rough");
+        .position(|tc| {
+            tc.enabled
+                && matches!(tc.operation, OperationConfig::Adaptive3d(_))
+                && std::env::var("MERGE_TREE_ROUGH")
+                    .ok()
+                    .is_none_or(|n| tc.name == n)
+        })
+        .expect("the project has an enabled 3D Rough (named MERGE_TREE_ROUGH, if set)");
+    // `MERGE_TREE_SET="region_ordering=by_area,depth_per_pass=8"` sets
+    // params on the rough before the walk, as the CLI `--set` does.
+    if let Ok(sets) = std::env::var("MERGE_TREE_SET") {
+        for spec in sets.split(',').filter(|s| !s.is_empty()) {
+            let (param, value) = spec.split_once('=').expect("param=value");
+            let value = value
+                .parse::<f64>()
+                .map_or_else(|_| serde_json::json!(value), |v| serde_json::json!(v));
+            let _ = session
+                .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                    index: rough_index,
+                    param: param.to_owned(),
+                    value,
+                }))
+                .unwrap_or_else(|e| panic!("set {spec}: {e}"));
+        }
+    }
     let tc = session.toolpath_configs()[rough_index].clone();
     let OperationConfig::Adaptive3d(cfg) = &tc.operation else {
         unreachable!("matched above");
@@ -244,7 +290,7 @@ fn pocket_merge_tree_census_on_the_rough() {
     walk_to(&mut session, rough_index);
     let walk_s = t_walk.elapsed().as_secs_f64();
 
-    // 2. The current detector.
+    // 2. The planner order (By Area only).
     let area = session
         .get_result(rough_index)
         .expect("the rough generated")
@@ -326,7 +372,7 @@ fn pocket_merge_tree_census_on_the_rough() {
         z_hi,
     };
 
-    // 4. The current detector's regions, on its own grid.
+    // 4. The planner's jobs, on its own grid.
     if let Some(a) = area.as_ref() {
         let _ = writeln!(
             notes,
@@ -339,30 +385,45 @@ fn pocket_merge_tree_census_on_the_rough() {
             a.top_z,
             a.regions.len()
         );
-        let mut s =
-            String::from("order,cells,area_mm2,x_min,y_min,x_max,y_max,surf_z_min,surf_z_max\n");
+        // The planner order: the jobs as the By Area planner ran them (the
+        // rest and the valleys nearest next), from `AreaRegionMap`.
+        let mut s = String::from(
+            "order,kind,cells,area_mm2,saddle_z,depth_mm,x_min,y_min,x_max,y_max,\
+             surf_z_min,surf_z_max,levels,anchor_x,anchor_y\n",
+        );
         for reg in &a.regions {
             let _ = writeln!(
                 s,
-                "{},{},{:.1},{:.2},{:.2},{:.2},{:.2},{:.3},{:.3}",
+                "{},{},{},{:.1},{},{:.3},{:.2},{:.2},{:.2},{:.2},{:.3},{:.3},{},{:.2},{:.2}",
                 reg.order,
+                reg.kind.as_str(),
                 reg.cell_count,
-                reg.cell_count as f64 * a.cell_mm * a.cell_mm,
+                reg.area_mm2,
+                reg.saddle_z.map_or(String::new(), |z| format!("{z:.3}")),
+                reg.depth_mm,
                 reg.bbox_xy[0],
                 reg.bbox_xy[1],
                 reg.bbox_xy[2],
                 reg.bbox_xy[3],
                 reg.surface_z_range[0],
                 reg.surface_z_range[1],
+                reg.level_count,
+                reg.anchor_xy[0],
+                reg.anchor_xy[1],
             );
         }
-        std::fs::write(out.join("current_by_area_regions.csv"), s).expect("write csv");
+        let _ = writeln!(
+            notes,
+            "by_area_rest_first,{}\nby_area_dials,{:.3} mm {:.1} mm2",
+            a.rest_first, a.pocket_min_depth_mm, a.pocket_min_area_mm2
+        );
+        std::fs::write(out.join("planner_order.csv"), s).expect("write csv");
         if a.rows == rows && a.cols == cols {
             let labels = &a.labels;
             render(
                 &canvas,
                 &|i| (labels[i] > 0).then(|| usize::from(labels[i])),
-                &out.join("current_by_area_regions.png"),
+                &out.join("planner_order.png"),
             );
         } else {
             let _ = writeln!(notes, "by_area_grid_differs,no png");
@@ -391,7 +452,7 @@ fn pocket_merge_tree_census_on_the_rough() {
         let png = out.join(format!("{name}.png"));
         let csv = out.join(format!("{name}.csv"));
         render(canvas, &|i| tree.labels[i], &png);
-        std::fs::write(&csv, pocket_csv(&tree, field.nx, field.ny)).expect("write csv");
+        std::fs::write(&csv, pocket_csv(&tree, field)).expect("write csv");
         let leaves: Vec<_> = tree
             .pockets
             .iter()
@@ -429,6 +490,19 @@ fn pocket_merge_tree_census_on_the_rough() {
             run(h, a, &field, &canvas, "");
         }
     }
+    // Before the dials: every local minimum is a pocket. After: the planner
+    // dials for this tool (1/3 x D and 400 / (π · 3²) tool discs, see
+    // `adaptive3d/area_plan.rs`).
+    run(0.0, 0.0, &field, &canvas, "_raw");
+    let d = tool.diameter;
+    let discs = 400.0 / (std::f64::consts::PI * 3.0 * 3.0);
+    run(
+        d / 3.0,
+        discs * std::f64::consts::PI * (d / 2.0).powi(2),
+        &field,
+        &canvas,
+        "_dials",
+    );
 
     // One run at half the cell, to show how the count moves with the grid.
     let fine = cell / 2.0;

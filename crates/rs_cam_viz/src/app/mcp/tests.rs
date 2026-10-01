@@ -699,10 +699,11 @@ fn workspace_keys_round_trip() {
 // ── By Area regions on inspect_spans ─────────────────────────────────
 
 /// `inspect_spans` carries `area_regions`: `null` without a map, and the
-/// region list (order, cell count, box, Z ranges) with one.
+/// region list (order, kind, cell count, box, Z ranges, saddle) with one,
+/// plus the order of the rest and the dials.
 #[test]
 fn inspect_spans_area_regions_field_is_present() {
-    use rs_cam_core::adaptive3d::{AreaRegion, AreaRegionMap};
+    use rs_cam_core::adaptive3d::{AreaRegion, AreaRegionKind, AreaRegionMap};
     assert_eq!(
         super::diagnostics::area_regions_json(None),
         serde_json::Value::Null
@@ -718,23 +719,34 @@ fn inspect_spans_area_regions_field_is_present() {
         regions: vec![
             AreaRegion {
                 order: 1,
+                kind: AreaRegionKind::Rest,
                 cell_count: 2,
                 bbox_xy: [-0.25, -0.25, 0.75, 0.25],
                 surface_z_range: [0.0, 1.0],
                 level_z_range: Some([8.0, 2.0]),
                 level_count: 4,
                 anchor_xy: [0.0, 0.0],
+                saddle_z: None,
+                depth_mm: 10.0,
+                area_mm2: 0.5,
             },
             AreaRegion {
                 order: 2,
+                kind: AreaRegionKind::Valley,
                 cell_count: 1,
                 bbox_xy: [0.25, 0.25, 0.75, 0.75],
                 surface_z_range: [0.5, 0.5],
                 level_z_range: None,
                 level_count: 0,
                 anchor_xy: [0.5, 0.5],
+                saddle_z: Some(4.0),
+                depth_mm: 3.5,
+                area_mm2: 0.25,
             },
         ],
+        rest_first: true,
+        pocket_min_depth_mm: 2.0,
+        pocket_min_area_mm2: 400.0,
     };
     let v = super::diagnostics::area_regions_json(Some(&map));
     assert_eq!(v["region_count"], 2);
@@ -743,7 +755,26 @@ fn inspect_spans_area_regions_field_is_present() {
     assert_eq!(v["regions"][0]["bbox_xy"][2], 0.75);
     assert_eq!(v["regions"][0]["level_z_range"][1], 2.0);
     assert!(v["regions"][1]["level_z_range"].is_null());
-    assert!(v["note"].as_str().unwrap().contains("bbox_xy"));
+    assert_eq!(v["regions"][0]["kind"], "rest");
+    assert_eq!(v["regions"][1]["kind"], "valley");
+    assert!(v["regions"][0]["saddle_z"].is_null());
+    assert_eq!(v["regions"][1]["saddle_z"], 4.0);
+    assert_eq!(v["regions"][1]["depth_mm"], 3.5);
+    assert_eq!(v["valley_count"], 1);
+    assert_eq!(v["rest_first"], true);
+    assert_eq!(v["pocket_min_depth_mm"], 2.0);
+    assert_eq!(v["pocket_min_area_mm2"], 400.0);
+    let note = v["note"].as_str().unwrap();
+    assert!(note.contains("bbox_xy"), "{note}");
+    assert!(note.contains("rest runs first"), "{note}");
+    assert!(
+        note.contains("2.00 mm") && note.contains("400 mm²"),
+        "{note}"
+    );
+    assert!(
+        !note.contains("not by its cells"),
+        "the WP1 note is gone: {note}"
+    );
 }
 
 // ── B6: basis.force_line (plan §6) ──────────────────────────────────

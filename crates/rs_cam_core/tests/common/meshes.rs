@@ -520,6 +520,44 @@ pub fn l_and_basin_plate() -> TriangleMesh {
     })
 }
 
+// ── By Area pocket-tree fixture ─────────────────────────────────────────
+
+/// A pocket of [`three_valley_plate`]: the XY box `[x0, x1] x [y0, y1]` and
+/// its floor Z.
+///
+/// The floors give a deepest-first order (A, C, B) that no nearest-next
+/// order can give: from A the nearest valley is B, and from C it is B too.
+pub const THREE_VALLEY_POCKETS: [(f64, f64, f64, f64, f64); 3] = [
+    // Valley A, west. Floor Z 0.
+    (3.0, 5.0, 31.0, 35.0, 0.0),
+    // Valley B, centre. Floor Z 2.
+    (46.0, 5.0, 74.0, 35.0, 2.0),
+    // Valley C, east. Floor Z 1.
+    (89.0, 5.0, 117.0, 35.0, 1.0),
+];
+
+/// The plate Z of [`three_valley_plate`]: the ridge between the valleys.
+pub const THREE_VALLEY_PLATE_Z: f64 = 6.0;
+
+/// The stock top for [`three_valley_plate`]: above the plate, so the plate
+/// holds material and the pocket tree has a real rest.
+pub const THREE_VALLEY_TOP_Z: f64 = 10.0;
+
+/// A plate at Z 6 over `[0, 120] x [0, 40]` with three pockets (see
+/// [`THREE_VALLEY_POCKETS`]). Under a stock top at Z 10, the tool-CL grid of
+/// a Ø6 flat end mill has three valleys (each 22 x 24 mm at the CL, so
+/// 528 mm² >= the 400 mm² minimum, and at least 4 mm deep >= 2 mm) whose
+/// saddle is the plate, and the rest is the plate itself: one root with
+/// three children.
+pub fn three_valley_plate() -> TriangleMesh {
+    height_field_grid(0.0, 1.0, 121, 0.0, 1.0, 41, |x, y| {
+        THREE_VALLEY_POCKETS
+            .iter()
+            .find(|&&(x0, y0, x1, y1, _)| x >= x0 && x <= x1 && y >= y0 && y <= y1)
+            .map_or(THREE_VALLEY_PLATE_Z, |p| p.4)
+    })
+}
+
 // ── Global level-gate fixture ───────────────────────────────────────────
 
 /// The XY box `[x0, x1] x [y0, y1]` and the floor Z of the basin of

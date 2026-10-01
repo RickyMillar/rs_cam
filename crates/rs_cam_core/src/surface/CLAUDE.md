@@ -16,7 +16,8 @@ The two cutter walks and the derived surface fields. The entry point is
   rest centreline a tool can reach.
 - `flow_accum.rs` — D8 flow routing on a rasterised heightfield.
 - `merge_tree.rs` — the pocket join tree of a tool-CL grid (h-minima,
-  minimum area). Research only; no product path reads it.
+  minimum area); `valleys()` are its leaves. By Area reads it
+  (`adaptive3d/area_plan.rs`).
 
 ## Invariants
 

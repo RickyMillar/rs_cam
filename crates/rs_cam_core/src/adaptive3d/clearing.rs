@@ -13,7 +13,6 @@ use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
 use crate::trace::debug_trace::ToolpathDebugContext;
-use std::collections::VecDeque;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use tracing::debug;
@@ -36,7 +35,7 @@ use crate::toolpath::simplify_path_3d;
 /// Absolute count (not fraction) — at small `depth_per_pass` a thin
 /// per-level slab contributes few cells even when there's a real island
 /// to clear, so a fraction-based gate (the historical `remaining < 0.005`)
-/// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
+/// would skip it.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
 /// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
@@ -62,156 +61,7 @@ fn quantize_coord(v: f64) -> i64 {
     (v * 1000.0).round() as i64
 }
 
-// ── Region detection ──────────────────────────────────────────────────
-
-/// A connected region of material detected by flood fill on the heightmap.
-#[allow(dead_code)] // Some fields are strategy-specific and only read by some strategies.
-pub(super) struct MaterialRegion {
-    pub(super) row_min: usize,
-    pub(super) row_max: usize,
-    pub(super) col_min: usize,
-    pub(super) col_max: usize,
-    /// World-space bounding box (expanded by tool_radius for direction search).
-    pub(super) world_x_min: f64,
-    pub(super) world_x_max: f64,
-    pub(super) world_y_min: f64,
-    pub(super) world_y_max: f64,
-    pub(super) cell_count: usize,
-    pub(super) surface_z_min: f64,
-    pub(super) surface_z_max: f64,
-    /// The flood-fill id of the region in the label grid of
-    /// [`detect_material_regions_labeled`].
-    pub(super) bfs_label: usize,
-}
-
-/// Detect connected material regions via 8-connected BFS flood fill.
-///
-/// A cell "has material" if the top-Z of the dexel ray exceeds
-/// `surface_z + stock_to_leave + 0.01`.
-/// Regions with fewer than `min_cells` (default 4) are filtered out.
-/// Returns regions sorted by cell_count descending (largest first).
-/// The unit tests read this form; the planner reads
-/// [`detect_material_regions_labeled`].
-#[cfg(test)]
-pub(super) fn detect_material_regions(
-    material_stock: &TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    stock_to_leave: f64,
-    tool_radius: f64,
-) -> Vec<MaterialRegion> {
-    detect_material_regions_labeled(material_stock, surface_hm, stock_to_leave, tool_radius).0
-}
-
-/// [`detect_material_regions`] and its flood-fill label grid (row-major,
-/// one id per cell; `usize::MAX` is a cell with no material). Each region
-/// carries its id in `bfs_label`. The By Area overlay reads the grid.
-// SAFETY: bounded indexing in algorithmic code; every index is below rows * cols.
-#[allow(clippy::indexing_slicing)]
-pub(super) fn detect_material_regions_labeled(
-    material_stock: &TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    stock_to_leave: f64,
-    tool_radius: f64,
-) -> (Vec<MaterialRegion>, Vec<usize>) {
-    let rows = material_stock.z_grid.rows;
-    let cols = material_stock.z_grid.cols;
-    let min_cells = 4usize;
-
-    // Label grid: 0 = unlabeled, usize::MAX = no-material
-    let mut labels = vec![0usize; rows * cols];
-
-    // Mark cells that have no material
-    for row in 0..rows {
-        for col in 0..cols {
-            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
-            let floor = surf_z + stock_to_leave + 0.01;
-            if !stock_has_material_above(material_stock, row, col, floor) {
-                labels[row * cols + col] = usize::MAX;
-            }
-        }
-    }
-
-    let mut regions = Vec::new();
-    let mut region_id = 1usize;
-    let mut queue = VecDeque::new();
-
-    for start_row in 0..rows {
-        for start_col in 0..cols {
-            let idx = start_row * cols + start_col;
-            if labels[idx] != 0 {
-                continue; // Already labeled or no material
-            }
-
-            // BFS flood fill for this region
-            let mut rmin = start_row;
-            let mut rmax = start_row;
-            let mut cmin = start_col;
-            let mut cmax = start_col;
-            let mut count = 0usize;
-            let mut sz_min = f64::INFINITY;
-            let mut sz_max = f64::NEG_INFINITY;
-
-            labels[idx] = region_id;
-            queue.push_back((start_row, start_col));
-
-            while let Some((r, c)) = queue.pop_front() {
-                count += 1;
-                rmin = rmin.min(r);
-                rmax = rmax.max(r);
-                cmin = cmin.min(c);
-                cmax = cmax.max(c);
-                let sz = surface_hm.z_or_bbox_floor_at(r, c);
-                sz_min = sz_min.min(sz);
-                sz_max = sz_max.max(sz);
-
-                // 8-connected neighbors
-                for dr in [-1i32, 0, 1] {
-                    for dc in [-1i32, 0, 1] {
-                        if dr == 0 && dc == 0 {
-                            continue;
-                        }
-                        let nr = r as i32 + dr;
-                        let nc = c as i32 + dc;
-                        if nr < 0 || nr >= rows as i32 || nc < 0 || nc >= cols as i32 {
-                            continue;
-                        }
-                        let nr = nr as usize;
-                        let nc = nc as usize;
-                        let ni = nr * cols + nc;
-                        if labels[ni] == 0 {
-                            labels[ni] = region_id;
-                            queue.push_back((nr, nc));
-                        }
-                    }
-                }
-            }
-
-            if count >= min_cells {
-                let cs = material_stock.z_grid.cell_size;
-                regions.push(MaterialRegion {
-                    row_min: rmin,
-                    row_max: rmax,
-                    col_min: cmin,
-                    col_max: cmax,
-                    world_x_min: material_stock.z_grid.origin_u + cmin as f64 * cs - tool_radius,
-                    world_x_max: material_stock.z_grid.origin_u + cmax as f64 * cs + tool_radius,
-                    world_y_min: material_stock.z_grid.origin_v + rmin as f64 * cs - tool_radius,
-                    world_y_max: material_stock.z_grid.origin_v + rmax as f64 * cs + tool_radius,
-                    cell_count: count,
-                    surface_z_min: sz_min,
-                    surface_z_max: sz_max,
-                    bfs_label: region_id,
-                });
-            }
-
-            region_id += 1;
-        }
-    }
-
-    // Sort largest first
-    regions.sort_by_key(|a| std::cmp::Reverse(a.cell_count));
-    (regions, labels)
-}
+// ── By Area cell mask ─────────────────────────────────────────────────
 
 /// The cells that one By Area job owns (PLAN §3.2).
 ///

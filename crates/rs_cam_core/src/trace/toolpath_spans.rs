@@ -491,8 +491,9 @@ pub struct AnnotatedToolpath {
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub rest_regions: Option<Arc<Vec<Polygon2>>>,
-    /// The regions that a 3D Rough with By Area ordering detected (label
-    /// grid + region list), for the viewport overlay and MCP
+    /// The jobs that a 3D Rough with By Area ordering ran (label grid +
+    /// region list: the rest and the pocket-tree valleys), for the viewport
+    /// overlay and MCP
     /// `inspect_spans`. `None` for every other operation and for Global
     /// ordering. Evidence only: no downstream stage reads it.
     ///

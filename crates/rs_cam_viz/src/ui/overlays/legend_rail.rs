@@ -834,7 +834,12 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
                     .iter()
                     .map(|r| {
                         (
-                            format!("{} \u{00B7} {} cells", r.order, r.cell_count),
+                            format!(
+                                "{} \u{00B7} {} \u{00B7} {} cells",
+                                r.order,
+                                r.kind.as_str(),
+                                r.cell_count
+                            ),
                             rs_cam_core::maps::rest_heatmap_mesh::area_region_color(r.order),
                         )
                     })

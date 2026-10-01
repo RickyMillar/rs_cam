@@ -23,13 +23,14 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 
 use tracing::info;
 
+mod area_plan;
 mod centre_clip;
 mod clearing;
 mod path;
 mod region_map;
 mod search;
 use path::{adaptive_3d_segments, segments_to_toolpath};
-pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
+pub use region_map::{AreaRegion, AreaRegionKind, AreaRegionMap, AreaRegionRun};
 
 // F-029 probe: re-export the planner-state probe for the F-029 acceptance
 // test. Internal — hidden from rustdoc. Will be removed once F-029 lands and
@@ -40,14 +41,16 @@ pub use path::debug_adaptive_3d_segments_for_f029_probe;
 /// Region ordering strategy for 3D adaptive clearing.
 ///
 /// `Global` clears all areas at each Z level before moving to the next (default).
-/// `ByArea` detects connected material regions via flood fill and clears each
-/// region fully (all Z levels) before moving to the next, reducing tool travel.
+/// `ByArea` builds the pocket join tree of the tool-CL grid once
+/// (`area_plan.rs`): each valley is a job and the rest of the material is
+/// one rest job. Each job is confined to its cells and cut through all its
+/// levels before the next; the valleys go nearest next.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RegionOrdering {
     /// Clear all areas at each Z level globally (default, backward compat).
     #[default]
     Global,
-    /// Detect connected pockets and clear each fully before moving to the next.
+    /// Cut the rest, then each valley of the pocket tree, job by job.
     ByArea,
 }
 
