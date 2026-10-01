@@ -598,17 +598,55 @@ pub struct SimulationResult {
 pub enum SimulationError {
     /// The simulation was cancelled via the cancel flag.
     Cancelled,
+    /// The memory budget stopped the simulation (plan B3,
+    /// `planning/memory_budget_2026-10-01/PLAN.md`).
+    ///
+    /// The simulation loop itself reads only the cancel flag, so it returns
+    /// [`Self::Cancelled`] when a `crate::budget::BudgetGuard` stops it. The
+    /// caller that holds the guard reads `stop_reason()` and gives this
+    /// variant. A `try_reserve` site (plan item 8) can give it directly.
+    OverBudget {
+        /// The bytes the job needs: an estimate, or the resident size that
+        /// the probe read.
+        need_bytes: u64,
+        /// The limit, in bytes.
+        limit_bytes: u64,
+    },
 }
 
 impl std::fmt::Display for SimulationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Simulation cancelled"),
+            Self::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => write!(
+                f,
+                "Simulation stopped by the memory budget: needs about {}, the limit is {}",
+                crate::budget::format_bytes(*need_bytes),
+                crate::budget::format_bytes(*limit_bytes)
+            ),
         }
     }
 }
 
 impl std::error::Error for SimulationError {}
+
+impl From<crate::budget::StopReason> for SimulationError {
+    fn from(reason: crate::budget::StopReason) -> Self {
+        match reason {
+            crate::budget::StopReason::User => Self::Cancelled,
+            crate::budget::StopReason::OverBudget {
+                need_bytes,
+                limit_bytes,
+            } => Self::OverBudget {
+                need_bytes,
+                limit_bytes,
+            },
+        }
+    }
+}
 
 fn hash_with<F>(write: F) -> u64
 where

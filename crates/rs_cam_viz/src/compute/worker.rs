@@ -32,8 +32,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Condvar, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use rs_cam_core::budget::{BudgetGuard, MemoryBudget, ProcessRss, StopReason, UsageProbe};
 use rs_cam_core::dexel_stock::StockCutDirection;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::stock::collision::CollisionReport;
@@ -242,6 +243,12 @@ pub enum OptimizeRequest {
 /// The request now owns a clone, so there is nothing to give back.
 pub struct OptimizeResult {
     pub kind: OptimizeResultKind,
+    /// `Some` when the memory budget stopped the run (plan B3). The report
+    /// then holds what the run found before the stop.
+    ///
+    /// Only [`StopReason::OverBudget`] is stored here. An operator cancel
+    /// stays inside the report as a `Cancelled` outcome, as before.
+    pub budget_stop: Option<StopReason>,
 }
 
 pub enum OptimizeResultKind {
@@ -315,6 +322,116 @@ pub struct JobResult {
     pub answer: Result<rs_cam_core::session::JobAnswer, ComputeError>,
 }
 
+/// The memory budget of the heavy lanes, and the probe a job reads its
+/// usage with (plan B1 and B3, `planning/memory_budget_2026-10-01/PLAN.md`).
+///
+/// Each heavy job (toolpath, simulation and collision, project optimize)
+/// builds ONE [`BudgetGuard`] from this over the flag the job already polls,
+/// and runs [`BudgetGuard::watch`] while the job runs. The watch thread
+/// sets that flag when the process goes over the limit, so every existing
+/// `&AtomicBool` check also stops on the budget, with no change to an
+/// algorithm signature. The lane then reads `stop_reason()` and reports
+/// [`ComputeError::OverBudget`], not [`ComputeError::Cancelled`].
+///
+/// A budget with no limit starts no thread and records no reason.
+#[derive(Clone)]
+pub struct JobBudget {
+    budget: MemoryBudget,
+    probe: Arc<dyn UsageProbe>,
+    interval: Duration,
+}
+
+impl JobBudget {
+    /// The budget with the process RSS probe and the core rate limit.
+    pub fn new(budget: MemoryBudget) -> Self {
+        Self::with_probe(
+            budget,
+            Arc::new(ProcessRss),
+            rs_cam_core::budget::guard::PROBE_INTERVAL,
+        )
+    }
+
+    /// The budget with a given probe and rate limit. Tests give a fake
+    /// probe and a zero interval.
+    pub fn with_probe(
+        budget: MemoryBudget,
+        probe: Arc<dyn UsageProbe>,
+        interval: Duration,
+    ) -> Self {
+        Self {
+            budget,
+            probe,
+            interval,
+        }
+    }
+
+    /// The budget this value enforces.
+    pub fn budget(&self) -> MemoryBudget {
+        self.budget
+    }
+
+    /// One guard for one job, over the flag that job polls.
+    fn guard(&self, flag: Arc<AtomicBool>) -> Arc<BudgetGuard> {
+        Arc::new(BudgetGuard::with_probe(
+            flag,
+            self.budget,
+            Box::new(SharedProbe(Arc::clone(&self.probe))),
+            self.interval,
+        ))
+    }
+}
+
+/// A [`UsageProbe`] that the guards of many jobs share.
+struct SharedProbe(Arc<dyn UsageProbe>);
+
+impl UsageProbe for SharedProbe {
+    fn used_bytes(&self) -> Option<u64> {
+        self.0.used_bytes()
+    }
+}
+
+/// The lane error of a job that the memory budget stopped, or `None`.
+///
+/// Read it AFTER the job returns. A job that the budget stopped returns
+/// `Cancelled`, a plain failure, or even `Ok` when the stop came after its
+/// last flag read. In each case the lane reports the budget stop, so the
+/// operator sees why and never a plain "Cancelled". This is the same rule
+/// the lanes keep for an operator cancel: the flag is the evidence, not
+/// the job's own answer.
+fn over_budget_stop(guard: &BudgetGuard) -> Option<ComputeError> {
+    match guard.stop_reason() {
+        Some(reason @ StopReason::OverBudget { .. }) => Some(reason.into()),
+        Some(StopReason::User) | None => None,
+    }
+}
+
+/// The ledger hook of plan B4 ("Architecture" 3). The next wave fills it.
+///
+/// [`LaneQueue::dequeue_running`] calls this once for each job, after it
+/// takes the job off the queue and before the lane runs it. It is the one
+/// point that all five lanes pass through, so it is the one place to sum
+/// what the running jobs hold. Today no ledger exists, and every job runs
+/// at once, as before.
+///
+/// The next wave must:
+///
+/// 1. fill [`RunningJob::estimate_bytes`] in the `describe` closure of each
+///    heavy lane (`rs_cam_core::budget::estimate_simulation_bytes` for a
+///    simulation);
+/// 2. move this call before `pop_front`, and keep the job in its queue
+///    (state `Queued`, visible) while its estimate does not fit beside the
+///    other reservations; wait on `wake` for a release;
+/// 3. release the reservation where each lane goes idle;
+/// 4. refuse a job whose estimate alone is over the limit, through
+///    `BudgetGuard::check_estimate`, BEFORE it allocates (the preflight).
+fn reserve_in_ledger(lane: ComputeLane, estimate_bytes: Option<u64>) {
+    tracing::trace!(
+        ?lane,
+        ?estimate_bytes,
+        "memory ledger: no ledger yet; the job runs at once"
+    );
+}
+
 struct LaneInner<Request> {
     queue: VecDeque<Request>,
     state: LaneState,
@@ -385,6 +502,12 @@ struct RunningJob {
     /// `None` on a lane whose requests carry no per-job flag; a cancel
     /// there sets the lane flag alone.
     active_cancel: Option<Arc<AtomicBool>>,
+    /// The memory the job is estimated to hold, in bytes, for the ledger
+    /// hook [`reserve_in_ledger`]. `None` means NOT ESTIMATED.
+    ///
+    /// No lane fills it yet. The next wave sets it from
+    /// `rs_cam_core::budget::estimate_simulation_bytes` for a simulation.
+    estimate_bytes: Option<u64>,
 }
 
 impl RunningJob {
@@ -395,6 +518,7 @@ impl RunningJob {
             active_toolpath_id: None,
             active_toolpath_index: None,
             active_cancel: None,
+            estimate_bytes: None,
         }
     }
 
@@ -416,7 +540,10 @@ struct LaneQueue<Request> {
     lane: ComputeLane,
     inner: Mutex<LaneInner<Request>>,
     wake: Condvar,
-    cancel: AtomicBool,
+    /// The lane flag. An `Arc` so that a job's [`BudgetGuard`] can own it:
+    /// on the analysis and optimize lanes the guard sets THIS flag when the
+    /// budget stops the job.
+    cancel: Arc<AtomicBool>,
     shutdown: AtomicBool,
 }
 
@@ -445,6 +572,7 @@ impl<Request> LaneQueue<Request> {
         #[allow(clippy::expect_used)]
         let request = inner.queue.pop_front().expect("queue checked");
         let running = describe(&request);
+        reserve_in_ledger(self.lane, running.estimate_bytes);
         self.cancel.store(false, Ordering::SeqCst);
         inner.state = LaneState::Running;
         inner.current_job = Some(running.label);
@@ -461,7 +589,7 @@ impl<Request> LaneQueue<Request> {
             lane,
             inner: Mutex::new(LaneInner::new()),
             wake: Condvar::new(),
-            cancel: AtomicBool::new(false),
+            cancel: Arc::new(AtomicBool::new(false)),
             shutdown: AtomicBool::new(false),
         })
     }
@@ -564,10 +692,34 @@ pub struct ThreadedComputeBackend {
     /// serialises simulations, so the mutex is only ever contended by that
     /// explicit clear.
     sim_prefix_cache: Arc<Mutex<rs_cam_core::compute::sim_prefix::SimPrefixCache>>,
+    /// The memory budget of the heavy lanes (plan B1, B3).
+    budget: JobBudget,
 }
 
 impl ThreadedComputeBackend {
+    /// A backend with NO memory limit. Its lanes behave as they did before
+    /// the memory budget existed.
     pub fn new() -> Self {
+        Self::with_budget(MemoryBudget::UNLIMITED)
+    }
+
+    /// A backend whose heavy lanes stop a job over `budget`.
+    ///
+    /// The app reads the budget from `crate::io::app_settings` at start. A
+    /// budget with no limit starts no probe thread, so it is the same as
+    /// [`Self::new`].
+    pub fn with_budget(budget: MemoryBudget) -> Self {
+        Self::with_job_budget(JobBudget::new(budget))
+    }
+
+    /// The memory budget the heavy lanes enforce.
+    pub fn memory_budget(&self) -> MemoryBudget {
+        self.budget.budget()
+    }
+
+    /// A backend with a given budget AND usage probe. Tests give a fake
+    /// probe here.
+    pub(crate) fn with_job_budget(budget: JobBudget) -> Self {
         let toolpath_lane = LaneQueue::new(ComputeLane::Toolpath);
         let analysis_lane = LaneQueue::new(ComputeLane::Analysis);
         let optimize_lane = LaneQueue::new(ComputeLane::Optimize);
@@ -578,13 +730,25 @@ impl ThreadedComputeBackend {
             rs_cam_core::compute::sim_prefix::SimPrefixCache::new(),
         ));
 
-        let toolpath_handle = spawn_toolpath_lane(Arc::clone(&toolpath_lane), result_tx.clone());
+        // The Reach and Job lanes get no budget guard (memory programme
+        // wave 2, group G): a reach walk is seconds of work, and the Job
+        // lane's answer type carries no stop reason yet.
+        let toolpath_handle = spawn_toolpath_lane(
+            Arc::clone(&toolpath_lane),
+            result_tx.clone(),
+            budget.clone(),
+        );
         let analysis_handle = spawn_analysis_lane(
             Arc::clone(&analysis_lane),
             result_tx.clone(),
             Arc::clone(&sim_prefix_cache),
+            budget.clone(),
         );
-        let optimize_handle = spawn_optimize_lane(Arc::clone(&optimize_lane), result_tx.clone());
+        let optimize_handle = spawn_optimize_lane(
+            Arc::clone(&optimize_lane),
+            result_tx.clone(),
+            budget.clone(),
+        );
         let reach_handle = spawn_reach_lane(Arc::clone(&reach_lane), result_tx.clone());
         let job_handle = spawn_job_lane(Arc::clone(&job_lane), result_tx);
 
@@ -601,6 +765,7 @@ impl ThreadedComputeBackend {
             reach_handle: Some(reach_handle),
             job_handle: Some(job_handle),
             sim_prefix_cache,
+            budget,
         }
     }
 }
@@ -933,6 +1098,7 @@ impl rs_cam_core::tool_load::optimize::ProgressReporter for LaneProgressBridge {
 fn spawn_toolpath_lane(
     lane: Arc<LaneQueue<ComputeRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
+    budget: JobBudget,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
@@ -954,9 +1120,14 @@ fn spawn_toolpath_lane(
             // send an error result back, and continue the loop.
             let toolpath_id = request.viz.toolpath_id;
             let revision = Some(request.handle.revision);
+            // The guard owns the flag that `execute_job` polls, which is the
+            // job's own flag (§22 ruling 3), not the lane flag.
+            let guard = budget.guard(Arc::clone(&request.viz.cancel));
             let caught = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let phase_tracker = ToolpathPhaseTracker::new(Arc::clone(&lane));
+                let watch = guard.watch();
                 let mut outcome = execute::run_compute_with_phase(&request, &phase_tracker);
+                drop(watch);
                 // A cancelled generation reports `Cancelled` whatever the
                 // generator said. `execute_job` returns a plain
                 // `OperationFailed` when the flag stops it — core carries no
@@ -964,8 +1135,15 @@ fn spawn_toolpath_lane(
                 // message. Widened from the pre-WP11b `&& is_ok()`: the two
                 // agree, because the old path already mapped
                 // `OperationError::Cancelled` to `ComputeError::Cancelled`.
+                //
+                // The LANE flag comes first. Only an operator cancel or a
+                // resubmit sets it (the guard sets the job flag), and
+                // G-REGEN-RACE needs the `Cancelled` of a superseded job.
+                // A budget stop with no lane cancel reports `OverBudget`.
                 if lane.cancel.load(Ordering::SeqCst) {
                     outcome.result = Err(ComputeError::Cancelled);
+                } else if let Some(stop) = over_budget_stop(&guard) {
+                    outcome.result = Err(stop);
                 }
                 phase_tracker.clear();
 
@@ -1032,6 +1210,7 @@ fn spawn_analysis_lane(
     lane: Arc<LaneQueue<AnalysisRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
     sim_prefix_cache: Arc<Mutex<rs_cam_core::compute::sim_prefix::SimPrefixCache>>,
+    budget: JobBudget,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
@@ -1044,6 +1223,10 @@ fn spawn_analysis_lane(
             if lane.shutdown.load(Ordering::SeqCst) {
                 return;
             }
+
+            // The guard owns the lane flag: the simulation and the collision
+            // check poll that flag, and a budget stop sets it.
+            let guard = budget.guard(Arc::clone(&lane.cancel));
 
             // Wrap the analysis body in catch_unwind so a panic in simulation
             // or collision checking does not kill the worker thread.  On panic
@@ -1058,17 +1241,23 @@ fn spawn_analysis_lane(
                         // S5: the memo is held for the whole simulation, which
                         // is why it lives on the lane rather than in a global.
                         let mut cache = sim_prefix_cache.lock().unwrap_or_else(|e| e.into_inner());
+                        let watch = guard.watch();
                         let result = execute::run_simulation_with_phase(
                             &request,
-                            &lane.cancel,
+                            guard.flag(),
                             set_phase,
                             Some(rs_cam_core::compute::sim_prefix::SimMemo {
                                 store: request.memoize_prefix,
                                 cache: &mut cache,
                             }),
                         );
+                        drop(watch);
                         drop(cache);
-                        let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
+                        // B3: a budget stop wins over every other answer, so
+                        // the lane never overwrites it with `Cancelled`.
+                        let result = if let Some(stop) = over_budget_stop(&guard) {
+                            Err(stop)
+                        } else if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                             Err(ComputeError::Cancelled)
                         } else {
                             result
@@ -1080,12 +1269,16 @@ fn spawn_analysis_lane(
                             let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
                             inner.current_phase = Some(phase.to_owned());
                         };
+                        let watch = guard.watch();
                         let result = helpers::run_collision_check_with_phase(
                             &request,
-                            &lane.cancel,
+                            guard.flag(),
                             set_phase,
                         );
-                        let result = if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
+                        drop(watch);
+                        let result = if let Some(stop) = over_budget_stop(&guard) {
+                            Err(stop)
+                        } else if lane.cancel.load(Ordering::SeqCst) && result.is_ok() {
                             Err(ComputeError::Cancelled)
                         } else {
                             result
@@ -1133,6 +1326,7 @@ fn spawn_analysis_lane(
 fn spawn_optimize_lane(
     lane: Arc<LaneQueue<OptimizeRequest>>,
     result_tx: mpsc::SyncSender<ComputeMessage>,
+    budget: JobBudget,
 ) -> std::thread::JoinHandle<()> {
     use rs_cam_core::tool_load::optimize::{ProjectOptimizeReport, optimize_project};
 
@@ -1160,18 +1354,25 @@ fn spawn_optimize_lane(
             let progress = LaneProgressBridge {
                 lane: Arc::clone(&lane),
             };
-            let result = match request {
+            // The guard owns the lane flag, which the optimizer polls.
+            let guard = budget.guard(Arc::clone(&lane.cancel));
+            let watch = guard.watch();
+            let kind = match request {
                 OptimizeRequest::Project {
                     mut session,
                     baseline_trace,
                 } => {
                     let report: ProjectOptimizeReport =
-                        optimize_project(&mut session, &baseline_trace, &progress, &lane.cancel);
-                    OptimizeResult {
-                        kind: OptimizeResultKind::Project { report },
-                    }
+                        optimize_project(&mut session, &baseline_trace, &progress, guard.flag());
+                    OptimizeResultKind::Project { report }
                 }
             };
+            drop(watch);
+            let budget_stop = match guard.stop_reason() {
+                Some(reason @ StopReason::OverBudget { .. }) => Some(reason),
+                Some(StopReason::User) | None => None,
+            };
+            let result = OptimizeResult { kind, budget_stop };
 
             // Reset lane state before sending so a follow-up submit
             // doesn't see Running.

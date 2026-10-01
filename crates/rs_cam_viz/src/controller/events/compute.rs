@@ -622,6 +622,21 @@ impl<B: ComputeBackend> AppController<B> {
                 rt.result = None;
                 Self::forget_core_result(&mut self.state.session, tp_id);
             }
+            Err(ComputeError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            }) => {
+                // B3: the memory budget stopped the generation. The row
+                // says why, and so does a Warning toast, which MCP
+                // `get_notifications` also reads. Never a plain "Cancelled".
+                let message =
+                    ComputeError::over_budget_message("Generation", need_bytes, limit_bytes);
+                rt.status = ComputeStatus::Error(message.clone());
+                rt.result = None;
+                Self::forget_core_result(&mut self.state.session, tp_id);
+                tracing::warn!("{message}");
+                self.push_notification(message, super::super::Severity::Warning);
+            }
             Err(ComputeError::Message(error)) => {
                 rt.status = ComputeStatus::Error(error);
                 rt.result = None;
@@ -1039,6 +1054,34 @@ impl<B: ComputeBackend> AppController<B> {
                     crate::controller::generate_all::PlanSimOutcome::Cancelled,
                 );
             }
+            Err(ComputeError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            }) => {
+                let _ = (
+                    self.state.simulation.submitted_edit_counter.take(),
+                    self.state.simulation.submitted_simulation_epoch.take(),
+                    self.state
+                        .simulation
+                        .submitted_metric_options_revision
+                        .take(),
+                );
+                // B3: the memory budget stopped the run. A Warning, not the
+                // plain "cancelled": the operator must see why and what to
+                // change. MCP `get_notifications` reads the same toast.
+                let message =
+                    ComputeError::over_budget_message("Simulation", need_bytes, limit_bytes);
+                tracing::warn!("{message}");
+                self.push_notification(message.clone(), super::super::Severity::Warning);
+                // M1: the submit released the previous run's view.
+                self.note_simulation_did_not_land("stopped by the memory budget");
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_simulation_error(&message);
+                // A failure, not a cancel: `generate_all` names the cause.
+                self.plan_simulation_landed(
+                    crate::controller::generate_all::PlanSimOutcome::Failed(message),
+                );
+            }
             Err(ComputeError::Message(error)) => {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
@@ -1154,6 +1197,20 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.simulation.submitted_collision_scope = None;
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_collision_error("Collision check cancelled");
+            }
+            Err(ComputeError::OverBudget {
+                need_bytes,
+                limit_bytes,
+            }) => {
+                self.state.simulation.submitted_collision_epoch = None;
+                self.state.simulation.submitted_collision_scope = None;
+                // B3: a budget stop is a Warning that names the cause.
+                let message =
+                    ComputeError::over_budget_message("Collision check", need_bytes, limit_bytes);
+                tracing::warn!("{message}");
+                #[cfg(feature = "mcp")]
+                self.notify_mcp_collision_error(&message);
+                self.push_notification(message, super::super::Severity::Warning);
             }
             Err(ComputeError::Message(error)) => {
                 self.state.simulation.submitted_collision_epoch = None;
@@ -1430,6 +1487,13 @@ impl<B: ComputeBackend> AppController<B> {
                 overlay.status = ReachStatus::Failed(message);
                 self.pending_upload = true;
             }
+            // The Reach lane runs no budget guard, so this arm is for a
+            // future guard. A budget stop is a failure the overlay shows.
+            Err(error @ ComputeError::OverBudget { .. }) => {
+                overlay.colors = None;
+                overlay.status = ReachStatus::Failed(error.to_string());
+                self.pending_upload = true;
+            }
         }
     }
 
@@ -1444,6 +1508,18 @@ impl<B: ComputeBackend> AppController<B> {
         use crate::compute::OptimizeResultKind;
 
         self.state.optimize_run = None;
+
+        // B3: the memory budget stopped the rollup. The report keeps what
+        // the run found before the stop; the Warning says why it stopped.
+        if let Some(rs_cam_core::budget::StopReason::OverBudget {
+            need_bytes,
+            limit_bytes,
+        }) = result.budget_stop
+        {
+            let message = ComputeError::over_budget_message("Optimize", need_bytes, limit_bytes);
+            tracing::warn!("{message}");
+            self.push_notification(message, super::super::Severity::Warning);
+        }
 
         match result.kind {
             OptimizeResultKind::Project { report } => {
