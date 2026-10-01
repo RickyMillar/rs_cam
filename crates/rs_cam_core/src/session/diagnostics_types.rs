@@ -239,6 +239,41 @@ impl<'a> ProjectEvidence<'a> {
             ..Self::from_simulation(sim)
         }
     }
+
+    /// The boundary, toolpath and local move of the run-global move
+    /// `global_move`, through the one attribution
+    /// ([`crate::compute::simulate::locate_global_move`]).
+    pub fn locate_move(
+        &self,
+        global_move: usize,
+    ) -> Option<crate::compute::simulate::MoveLocation> {
+        crate::compute::simulate::locate_global_move(self.boundaries.iter().copied(), global_move)
+    }
+
+    /// G-RAPIDFRAME: every rapid collision in both move frames, in the order
+    /// of `rapid_collision_move_indices`.
+    ///
+    /// The global list decides the population and the toolpath. The
+    /// collision record at the same position adds the local index and the
+    /// positions. A caller that supplies the global list without the records
+    /// still gets each collision and its toolpath, with `collision: None`.
+    pub fn attributed_rapid_collisions(
+        &self,
+    ) -> Vec<crate::stock::collision::AttributedRapidCollision> {
+        self.rapid_collision_move_indices
+            .iter()
+            .enumerate()
+            .map(
+                |(i, &global_move)| crate::stock::collision::AttributedRapidCollision {
+                    global_move,
+                    toolpath: self
+                        .locate_move(global_move)
+                        .map(|loc| (loc.toolpath_id, loc.local_move)),
+                    collision: self.rapid_collisions.get(i).cloned(),
+                },
+            )
+            .collect()
+    }
 }
 
 /// Structured project-level verdict. Replaces the legacy single-line

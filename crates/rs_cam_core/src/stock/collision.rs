@@ -556,6 +556,25 @@ pub struct RapidCollision {
     pub end: P3,
 }
 
+/// One rapid collision in BOTH move frames (G-RAPIDFRAME).
+///
+/// [`RapidCollision::move_index`] is the toolpath's own move index, and
+/// `SimulationResult::rapid_collision_move_indices` holds the run-global
+/// index at the same position. Only the global index can find the toolpath.
+/// `ProjectEvidence::attributed_rapid_collisions` builds this record through
+/// `compute::simulate::locate_global_move`; every consumer reads it.
+#[derive(Debug, Clone)]
+pub struct AttributedRapidCollision {
+    /// The run-global move index.
+    pub global_move: usize,
+    /// `(toolpath_id, local_move)`: the toolpath that holds `global_move` and
+    /// the toolpath's own move index. `None` when no boundary holds the move.
+    pub toolpath: Option<(crate::ids::ToolpathId, usize)>,
+    /// The collision record. `None` when the caller has only the global
+    /// index.
+    pub collision: Option<RapidCollision>,
+}
+
 /// Check for rapid (G0) moves that pass through remaining stock material.
 ///
 /// **Scope since Phase S2**: this is the pre-pass for entries whose removal is

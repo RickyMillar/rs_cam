@@ -30,6 +30,8 @@ use crate::ui_command::{
 
 use commands::CorePlan;
 pub(crate) use diagnostics::viz_project_evidence;
+#[cfg(test)]
+pub(crate) use simulation::inspect_collisions_json;
 
 use rs_cam_mcp::server::{json_str, text};
 

@@ -232,6 +232,8 @@ impl SimulationState {
         for &move_index in &self.checks.rapid_collision_move_indices {
             move_index.hash(&mut hasher);
         }
+        // The checked toolpath places every holder event (G-RAPIDFRAME).
+        self.checks.checked_scope.toolpath_id.hash(&mut hasher);
         match self.checks.collision_report.as_ref() {
             Some(report) => {
                 report.collisions.len().hash(&mut hasher);
@@ -360,9 +362,7 @@ impl SimulationState {
         }
 
         for &move_index in &self.checks.rapid_collision_move_indices {
-            let toolpath_id = self
-                .move_to_local_toolpath_move(move_index)
-                .map(|(_, id, _)| id);
+            let toolpath_id = self.locate_move(move_index).map(|loc| loc.toolpath_id);
             issues.push(SimulationIssue {
                 kind: SimulationIssueKind::RapidCollision,
                 toolpath_id,
@@ -375,16 +375,18 @@ impl SimulationState {
             });
         }
 
-        if let Some(report) = self.checks.collision_report.as_ref() {
-            for collision in &report.collisions {
-                let toolpath_id = self
-                    .move_to_local_toolpath_move(collision.move_index)
-                    .map(|(_, id, _)| id);
+        // G-RAPIDFRAME: a holder event carries the checked toolpath's OWN
+        // move index. The located list gives the run move; an event the run
+        // does not hold (a disabled toolpath) has no place on this
+        // move-ordered list. The readiness row and MCP `inspect_collisions`
+        // still count it.
+        for hit in self.located_holder_collisions() {
+            if let Some(move_index) = hit.global_move {
                 issues.push(SimulationIssue {
                     kind: SimulationIssueKind::HolderCollision,
-                    toolpath_id,
-                    move_index: collision.move_index,
-                    label: format!("{} collision", collision.segment),
+                    toolpath_id: hit.toolpath_id,
+                    move_index,
+                    label: format!("{} collision", hit.event.segment),
                     semantic_item_id: None,
                     debug_span_id: None,
                     hotspot_index: None,
@@ -450,6 +452,10 @@ impl SimulationState {
                 collision.move_index.hash(&mut collision_hasher);
             }
         }
+        self.checks
+            .checked_scope
+            .toolpath_id
+            .hash(&mut collision_hasher);
         let collision_fingerprint = collision_hasher.finish();
 
         IssueListCacheKey {
@@ -537,8 +543,8 @@ impl SimulationState {
         }
 
         let toolpath_id = issue.toolpath_id.or_else(|| {
-            self.move_to_local_toolpath_move(issue.move_index)
-                .map(|(_, id, _)| id)
+            self.locate_move(issue.move_index)
+                .map(|loc| loc.toolpath_id)
         })?;
 
         Some(SimulationTraceTarget {

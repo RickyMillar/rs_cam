@@ -599,6 +599,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let obstacles = self.state.session.collision_obstacles_for_toolpath(index);
                 Some((
                     index,
+                    tc.id,
                     tc.enabled,
                     Arc::clone(&result.annotated),
                     tool,
@@ -607,7 +608,8 @@ impl<B: ComputeBackend> AppController<B> {
                 ))
             });
 
-        if let Some((index, enabled, annotated, tool, mesh, obstacles)) = toolpath_data {
+        if let Some((index, toolpath_id, enabled, annotated, tool, mesh, obstacles)) = toolpath_data
+        {
             // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
             // stands at SUBMIT, and only on the branch that really submits.
             // The `else` arm below reaches the lane with nothing, and a stamp
@@ -633,6 +635,7 @@ impl<B: ComputeBackend> AppController<B> {
                 examined: usize::from(enabled),
                 population,
                 position: Some(index + 1),
+                toolpath_id: Some(toolpath_id),
             });
             self.compute.submit_collision(CollisionRequest {
                 annotated,

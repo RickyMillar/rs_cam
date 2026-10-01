@@ -51,7 +51,7 @@ use crate::diagnostics::{
 };
 use crate::ids::ToolpathId;
 use crate::machine::kinematic_utilization::ToolpathKinematicUtilization;
-use crate::stock::collision::{HolderCollisionCheck, RapidCollision};
+use crate::stock::collision::{AttributedRapidCollision, HolderCollisionCheck};
 use crate::stock::sim_measurability::MeasurabilityReport;
 use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::trace::toolpath_spans::{RegionSpanRole, SpanId};
@@ -264,7 +264,14 @@ pub struct TriageInputs<'a> {
     /// the triage cannot drift from the verdicts the rest of the system acts
     /// on.
     pub diagnostics: &'a [Diagnostic],
-    pub rapid_collisions: &'a [RapidCollision],
+    /// Every rapid collision in both move frames, from
+    /// `ProjectEvidence::attributed_rapid_collisions` (G-RAPIDFRAME). The
+    /// triage names the toolpath and the local move from this record; it
+    /// does not attribute a move itself.
+    pub rapid_collisions: &'a [AttributedRapidCollision],
+    /// The toolpath names, for the collision lines. A missing name prints
+    /// the id alone.
+    pub toolpath_names: &'a BTreeMap<ToolpathId, String>,
     /// Per-toolpath holder/shank collision outcomes.
     ///
     /// CMP-14: three states, not a count. This list used to be filtered
@@ -313,20 +320,22 @@ impl SimulationTriage {
         // ── Class A ────────────────────────────────────────────────────
         // Never deduped, never capped. Two collisions in one bucket stay
         // two entries: they are two places the machine will be damaged.
-        for (i, c) in inputs.rapid_collisions.iter().enumerate() {
+        for (i, hit) in inputs.rapid_collisions.iter().enumerate() {
+            let (toolpath_id, evidence_move) = match hit.toolpath {
+                Some((id, local)) => (Some(id), local),
+                None => (None, hit.global_move),
+            };
+            let position = hit
+                .collision
+                .as_ref()
+                .map_or([0.0, 0.0, 0.0], |c| [c.start.x, c.start.y, c.start.z]);
             safety.push(collision_finding(
                 ids::PROJECT_RAPID_COLLISION,
-                format!(
-                    "Rapid passes through stock at move {} ({:.1}, {:.1}, {:.3}) -> \
-                     ({:.1}, {:.1}, {:.3})",
-                    c.move_index, c.start.x, c.start.y, c.start.z, c.end.x, c.end.y, c.end.z
-                ),
-                // `RapidCollision` carries no toolpath id; the caller
-                // attributes it by move range. Scoped to the project rather
-                // than guessed at.
-                None,
-                c.move_index,
-                [c.start.x, c.start.y, c.start.z],
+                rapid_collision_message(hit, inputs.toolpath_names),
+                toolpath_id,
+                evidence_move,
+                hit.global_move,
+                position,
                 i,
             ));
         }
@@ -342,6 +351,7 @@ impl SimulationTriage {
                         .to_owned(),
                     Some(*tp),
                     0,
+                    0,
                     [0.0, 0.0, 0.0],
                     0,
                 ));
@@ -353,6 +363,7 @@ impl SimulationTriage {
                     ids::PROJECT_HOLDER_COLLISION,
                     format!("Holder/shank collision ({} on this toolpath)", count),
                     Some(*tp),
+                    0,
                     0,
                     [0.0, 0.0, 0.0],
                     i,
@@ -999,11 +1010,52 @@ pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Findi
     })
 }
 
+/// The triage line of one rapid collision (G-RAPIDFRAME).
+///
+/// It states what the simulation measured and nothing more: the toolpath,
+/// the move in both frames, and the start and end of the rapid. The
+/// coordinates are in the simulation frame of the toolpath's setup. The
+/// line gives no cause, because the simulation does not measure one.
+fn rapid_collision_message(
+    hit: &AttributedRapidCollision,
+    names: &BTreeMap<ToolpathId, String>,
+) -> String {
+    let at = match hit.toolpath {
+        Some((id, local)) => {
+            let name = names
+                .get(&id)
+                .map_or_else(String::new, |name| format!(" '{name}'"));
+            format!(
+                "on TP{id}{name} at local move {local} (run move {global})",
+                global = hit.global_move
+            )
+        }
+        None => format!(
+            "at run move {} (no simulated toolpath holds this move)",
+            hit.global_move
+        ),
+    };
+    match hit.collision.as_ref() {
+        Some(c) => format!(
+            "Rapid passes through uncut stock {at}: ({:.1}, {:.1}, {:.3}) -> \
+             ({:.1}, {:.1}, {:.3})",
+            c.start.x, c.start.y, c.start.z, c.end.x, c.end.y, c.end.z
+        ),
+        None => format!("Rapid passes through uncut stock {at}"),
+    }
+}
+
+/// One class-A finding.
+///
+/// `move_index` is the move the diagnostic evidence names: the toolpath's
+/// OWN move index when `toolpath_id` is `Some`. `run_move` is the run-global
+/// move index; it orders the findings in run order.
 fn collision_finding(
     id: &str,
     message: String,
     toolpath_id: Option<ToolpathId>,
     move_index: usize,
+    run_move: usize,
     position: [f64; 3],
     ordinal: usize,
 ) -> Finding {
@@ -1039,7 +1091,7 @@ fn collision_finding(
         occurrences: 1,
         worst: WorstEvidence {
             position,
-            move_index,
+            move_index: run_move,
             ..WorstEvidence::default()
         },
     }
@@ -1151,6 +1203,7 @@ fn category_rank(c: Category) -> u8 {
 )]
 mod tests {
     use super::*;
+    use crate::stock::collision::RapidCollision;
     use crate::stock::simulation_cut::{Engagement, SimulationCutSample};
 
     fn air_sample(i: usize, tp: usize) -> SimulationCutSample {
@@ -1168,11 +1221,23 @@ mod tests {
         }
     }
 
+    /// No toolpath names: the collision lines print the id alone.
+    static NO_NAMES: BTreeMap<ToolpathId, String> = BTreeMap::new();
+
+    /// A rapid collision that no boundary holds, at run move `move_index`.
+    fn unattributed(rc: RapidCollision) -> AttributedRapidCollision {
+        AttributedRapidCollision {
+            global_move: rc.move_index,
+            toolpath: None,
+            collision: Some(rc),
+        }
+    }
+
     fn inputs<'a>(
         trace: &'a SimulationCutTrace,
         m: &'a MeasurabilityReport,
         diags: &'a [Diagnostic],
-        rapids: &'a [RapidCollision],
+        rapids: &'a [AttributedRapidCollision],
         holders: &'a [(ToolpathId, HolderCollisionCheck)],
         diameters: &'a BTreeMap<ToolpathId, f64>,
         kinematics: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
@@ -1182,6 +1247,7 @@ mod tests {
             measurability: m,
             diagnostics: diags,
             rapid_collisions: rapids,
+            toolpath_names: &NO_NAMES,
             holder_collisions: holders,
             tool_diameters_mm: diameters,
             kinematic_utilization: kinematics,
@@ -1233,11 +1299,11 @@ mod tests {
         let samples: Vec<_> = (0..6000).map(|i| air_sample(i, 1)).collect();
         let trace = SimulationCutTrace::from_samples(0.5, samples);
 
-        let rapid = RapidCollision {
+        let rapid = unattributed(RapidCollision {
             move_index: 4211,
             start: crate::geo::P3::new(3.0, 4.0, 5.0),
             end: crate::geo::P3::new(9.0, 4.0, 5.0),
-        };
+        });
         let removal_warning = Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_GENERATED_EMPTY),
             scope: Scope::Toolpath { id: ToolpathId(1) },
@@ -1290,16 +1356,16 @@ mod tests {
         let trace = SimulationCutTrace::from_samples(0.5, vec![]);
         // Same toolpath, same spatial bucket, one millimetre apart.
         let rapids = vec![
-            RapidCollision {
+            unattributed(RapidCollision {
                 move_index: 10,
                 start: crate::geo::P3::new(1.0, 1.0, 1.0),
                 end: crate::geo::P3::new(2.0, 1.0, 1.0),
-            },
-            RapidCollision {
+            }),
+            unattributed(RapidCollision {
                 move_index: 11,
                 start: crate::geo::P3::new(1.5, 1.0, 1.0),
                 end: crate::geo::P3::new(2.5, 1.0, 1.0),
-            },
+            }),
         ];
         let m = MeasurabilityReport::default();
         let d = BTreeMap::new();

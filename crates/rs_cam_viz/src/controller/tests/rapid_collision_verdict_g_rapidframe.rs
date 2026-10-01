@@ -32,6 +32,7 @@ fn land_run_with_rapids_on_second(
     controller: &mut AppController<ScriptedBackend>,
     first: ToolpathId,
     second: ToolpathId,
+    local_hits: &[usize],
 ) {
     let boundary = |id: ToolpathId, name: &str, start_move: usize, end_move: usize| {
         crate::compute::worker::SimBoundary {
@@ -43,7 +44,7 @@ fn land_run_with_rapids_on_second(
             direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         }
     };
-    let rapid_collisions: Vec<RapidCollision> = LOCAL_HITS
+    let rapid_collisions: Vec<RapidCollision> = local_hits
         .iter()
         .enumerate()
         .map(|(i, &move_index)| RapidCollision {
@@ -53,7 +54,7 @@ fn land_run_with_rapids_on_second(
             end: P3::new(1.0, 1.0, if i == 1 { -3.0 } else { -1.0 }),
         })
         .collect();
-    let rapid_collision_move_indices: Vec<usize> = LOCAL_HITS
+    let rapid_collision_move_indices: Vec<usize> = local_hits
         .iter()
         .map(|&local| SECOND_START + local)
         .collect();
@@ -73,7 +74,14 @@ fn land_run_with_rapids_on_second(
                 checkpoints: Vec::new(),
                 rapid_collisions,
                 rapid_collision_move_indices,
-                cut_trace: None,
+                // An empty trace, so the triage (the GUI Inspector line)
+                // is built.
+                cut_trace: Some(Arc::new(
+                    rs_cam_core::stock::simulation_cut::SimulationCutTrace::from_samples(
+                        0.5,
+                        Vec::new(),
+                    ),
+                )),
                 column_grid_cell_mm: 0.5,
                 resolution_clamped: false,
                 prior_stocks: std::collections::HashMap::new(),
@@ -89,13 +97,22 @@ fn land_run_with_rapids_on_second(
 /// A controller with two generated toolpaths and an adopted run whose rapid
 /// collisions all sit on the second one.
 fn controller_with_rapids_on_second() -> (AppController<ScriptedBackend>, ToolpathId) {
+    let (controller, _, second) = controller_with_hits_on_second(&LOCAL_HITS);
+    (controller, second)
+}
+
+/// The same run, with the rapid collisions at `local_hits` on the second
+/// toolpath. Gives `(controller, first, second)`.
+fn controller_with_hits_on_second(
+    local_hits: &[usize],
+) -> (AppController<ScriptedBackend>, ToolpathId, ToolpathId) {
     let mut controller = sample_controller();
     let first = controller.state.session.toolpath_configs()[0].id;
     let second = push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
     controller.handle_internal_event(AppEvent::RunSimulation);
-    land_run_with_rapids_on_second(&mut controller, first, second);
-    (controller, second)
+    land_run_with_rapids_on_second(&mut controller, first, second, local_hits);
+    (controller, first, second)
 }
 
 fn is_rapid_finding_for(diag: &rs_cam_core::diagnostics::Diagnostic, id: ToolpathId) -> bool {
@@ -177,4 +194,151 @@ fn a_rapid_collision_off_move_zero_reaches_project_diagnostics_g_rapidframe() {
             .any(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::PROJECT_RAPID_COLLISION),
         "{first_list:#?}"
     );
+}
+
+/// G-RAPIDFRAME sentry: a rapid collision at the boundary edge (run move ==
+/// `end_move` of the first toolpath, local move 0 of the second) has ONE
+/// owner on every surface: the attribution helper, the playback cursor, MCP
+/// `inspect_collisions`, the core verdict, the triage line (the GUI
+/// Inspector) and the GUI issue list.
+#[test]
+fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
+    let (mut controller, first, second) = controller_with_hits_on_second(&[0, 5]);
+    let state = &controller.state;
+    let sim = &state.simulation;
+
+    // The helper and the cursor: `[start, end)`, so move 100 is the
+    // second toolpath's local move 0.
+    let edge = sim
+        .locate_move(SECOND_START)
+        .expect("the run holds the move");
+    assert_eq!((edge.toolpath_id, edge.local_move), (second, 0));
+    assert_eq!(
+        sim.locate_move(SECOND_START - 1).map(|loc| loc.toolpath_id),
+        Some(first)
+    );
+    assert_eq!(sim.locate_move(SECOND_END), None, "end_move is not a move");
+    assert_eq!(
+        sim.cursor_to_local_toolpath_move(SECOND_START)
+            .map(|(_, id, local)| (id, local)),
+        Some((second, 0))
+    );
+    assert_eq!(
+        sim.cursor_to_local_toolpath_move(SECOND_END)
+            .map(|(_, id, local)| (id, local)),
+        Some((second, SECOND_END - SECOND_START)),
+        "the cursor at the end of the run stays on the last toolpath"
+    );
+
+    // MCP `inspect_collisions`.
+    #[cfg(feature = "mcp")]
+    {
+        let json = crate::app::mcp::inspect_collisions_json(sim);
+        let rows = json["by_toolpath"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "{json:#}");
+        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.0 as u64));
+        let hits = rows[0]["rapid_collisions"].as_array().expect("hits");
+        assert_eq!(hits[0]["global_move"].as_u64(), Some(SECOND_START as u64));
+        assert_eq!(hits[0]["local_move"].as_u64(), Some(0));
+    }
+
+    // The core verdict names the same toolpath with both hits.
+    let evidence = sim.project_evidence();
+    let summary = state.session.diagnostics_with_evidence(&evidence);
+    let count_of = |id: ToolpathId| {
+        summary
+            .per_toolpath
+            .iter()
+            .find(|row| row.toolpath_id == id)
+            .map(|row| row.rapid_collision_count)
+    };
+    assert_eq!(count_of(second), Some(2));
+    assert_eq!(count_of(first), Some(0));
+
+    // The triage line names the toolpath and the local move.
+    let name = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == second)
+        .map(|tc| tc.name.clone())
+        .expect("the second toolpath has a config");
+    let triage = state.session.simulation_triage(&evidence);
+    let lines: Vec<&str> = triage
+        .safety
+        .iter()
+        .filter(|f| {
+            f.diagnostic.id.as_str() == rs_cam_core::diagnostics::ids::PROJECT_RAPID_COLLISION
+        })
+        .map(|f| f.diagnostic.message.as_str())
+        .collect();
+    let want = format!("on TP{second} '{name}' at local move 0 (run move {SECOND_START})");
+    assert!(lines.iter().any(|line| line.contains(&want)), "{lines:?}");
+    assert!(
+        lines.iter().all(|line| !line.contains("retract_z")),
+        "the line gives no invented fix: {lines:?}"
+    );
+
+    // The GUI issue list.
+    let issues = controller
+        .state
+        .simulation
+        .issues(&controller.state.gui, 1000.0);
+    let rapid: Vec<_> = issues
+        .iter()
+        .filter(|i| i.kind == crate::state::simulation::SimulationIssueKind::RapidCollision)
+        .collect();
+    assert_eq!(rapid.len(), 2);
+    assert!(rapid.iter().all(|i| i.toolpath_id == Some(second)));
+}
+
+/// G-RAPIDFRAME sentry: the holder check walks ONE toolpath, so its event
+/// index is that toolpath's own move index. A hit at local move 3 on the
+/// second toolpath is run move 103 and belongs to the second toolpath, not
+/// to the first toolpath that holds run move 3.
+#[test]
+fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
+    use rs_cam_core::stock::collision::{
+        AssemblySegment, CollisionEvent, CollisionKind, CollisionReport, HolderCollisionCheck,
+    };
+    let (mut controller, _first, second) = controller_with_hits_on_second(&[]);
+    let checks = &mut controller.state.simulation.checks;
+    checks.collision_report = Some(CollisionReport {
+        collisions: vec![CollisionEvent {
+            move_index: 3,
+            position: P3::new(1.0, 1.0, -1.0),
+            penetration_depth: 0.5,
+            segment: AssemblySegment::Holder,
+            kind: CollisionKind::Workpiece,
+        }],
+        min_safe_stickout: 40.0,
+    });
+    checks.checked_scope.toolpath_id = Some(second);
+    checks.holder_collision_count = 1;
+    let sim = &controller.state.simulation;
+
+    let located = sim.located_holder_collisions();
+    assert_eq!(located.len(), 1);
+    assert_eq!(located[0].toolpath_id, Some(second));
+    assert_eq!(located[0].local_move, 3);
+    assert_eq!(located[0].global_move, Some(SECOND_START + 3));
+
+    assert!(matches!(
+        sim.holder_collision_counts_by_tp().as_slice(),
+        [(id, HolderCollisionCheck::Measured(1))] if *id == second
+    ));
+
+    #[cfg(feature = "mcp")]
+    {
+        let json = crate::app::mcp::inspect_collisions_json(sim);
+        let rows = json["by_toolpath"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "{json:#}");
+        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.0 as u64));
+        let hits = rows[0]["holder_collisions"].as_array().expect("hits");
+        assert_eq!(
+            hits[0]["global_move"].as_u64(),
+            Some((SECOND_START + 3) as u64)
+        );
+        assert_eq!(hits[0]["local_move"].as_u64(), Some(3));
+    }
 }

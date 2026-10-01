@@ -179,15 +179,20 @@ impl RsCamApp {
                 self.controller.state_mut().selection = Selection::Stock;
             }
             (Workspace::Simulation, PickHit::CollisionMarker { index }) => {
-                // Jump playback to the collision move
-                if let Some(&move_idx) = self
+                // Jump playback to the collision move. The markers are the
+                // HOLDER report's positions (`collision_positions`), so the
+                // index is a holder-event index. G-RAPIDFRAME: it used to
+                // index the RAPID list, a different list, and the event's
+                // move is local to the checked toolpath, so the located
+                // list gives the run move.
+                let move_idx = self
                     .controller
                     .state()
                     .simulation
-                    .checks
-                    .rapid_collision_move_indices
+                    .located_holder_collisions()
                     .get(index)
-                {
+                    .and_then(|hit| hit.global_move);
+                if let Some(move_idx) = move_idx {
                     let pb = &mut self.controller.state_mut().simulation.playback;
                     pb.current_move = move_idx;
                     pb.playing = false;
