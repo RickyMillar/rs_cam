@@ -60,7 +60,7 @@ pub(super) fn draw_toolpath_panel(
     let validation = &inputs.validation;
     let height_ctx = inputs.height_ctx.as_ref();
     let stale_default_defects = inputs.stale_default_defects.as_slice();
-    let load_verdict = inputs.load_verdict.as_ref();
+    let load_verdict = inputs.load_verdict();
     let tab_override = inputs.tab_override;
     let reach = &inputs.reach;
     let freshness = &inputs.freshness;
@@ -1098,7 +1098,7 @@ fn draw_feeds_tab(
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
     let project_default_rpm = inputs.project_default_rpm;
-    let load_verdict = inputs.load_verdict.as_ref();
+    let load_verdict = inputs.load_verdict();
 
     let tool_info = tool_configs
         .iter()

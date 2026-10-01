@@ -298,7 +298,9 @@ impl RsCamApp {
             .results
             .as_ref()
             .and_then(|r| r.cut_trace.as_deref());
-        let report = rs_cam_core::gcode::project_load_report(&state.session, sim_trace);
+        // The session memo, so this answer and the GUI panels read one
+        // report (GUI/MCP number parity).
+        let report = state.simulation.cached_load_report(&state.session);
 
         // Per-DepthPass MRR/feed/engagement histogram (S2.5). Keyed by
         // toolpath raw id, then a list of one entry per `SpanKind::DepthPass`
