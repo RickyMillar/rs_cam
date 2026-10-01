@@ -79,3 +79,34 @@ Output neutrality: `simulation.json` (6.76 GB) is byte-identical (`cmp`).
 key (U2). The `tp_*.json` files differ only in `elapsed_us` timing fields.
 Logs and summaries: `w2/`. The CLI has no GUI copies, so this isolates the
 core part of M2/M3/M8.
+
+## W3: branch 51e1bccd (waves 1-3; 2026-10-02 UTC 02:05-02:15)
+
+Protocol P1 (rs-cam-mem MCP GUI, same cgroup). After generate_all the
+2026-05-26 Shapeoko `$$` (kinematics) was imported by MCP; the project
+file was not saved.
+
+| Step | W0 | W1 | W3 |
+|---|---|---|---|
+| generate_all end (GiB) | 8.06 | 4.28 | 4.03 |
+| Simulate, metrics OFF, peak | 14.64 | 7.52 | 4.79-5.08 (three re-runs) |
+| Rest after the simulation | 8.94 | 5.28 | 4.73-4.83 |
+| Simulate, metrics ON, 0.2 mm, peak | OOM-killed at 16 GiB (5b34e710 and fd06f407) | not run | **6.87** (02:14:23) |
+
+At each re-run the RSS fell to about 1.8 GiB at the start: the view
+releases the old result first (M1, W2-E).
+
+The metrics-ON run gave the operator's first full verdict on rivmap350 at
+0.2 mm: cycle time 12:44:39 (wall clock; the cutting-only figure was
+7:41:30), load 5/7 within, exceeds 2/7 ("3D Rough": depth of cut 29 %
+above the flex ceiling), 8 rapid collisions in "3D Rough 8" (first at move
+27653, a rapid from (46.0, 23.3, 31.0) to (46.0, 23.3, 21.486)).
+Screenshot: `w3/w3_metrics_on.png`.
+
+Seen once and not reproduced: after the first metrics-OFF run the GUI read
+"Results may be stale (params changed)" and "cutting only: not simulated".
+The MCP machine import ran next to the start of that run (a machine edit
+invalidates the session's result). Two clean re-runs did not show it.
+Follow-up: during a re-run after that state the panel read "Ready to
+simulate", not "Running — previous result released", because the session
+held no run.

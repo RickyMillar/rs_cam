@@ -1,0 +1,5 @@
+02:05:01 W3 branch 51e1bccd MCP GUI pid 2670084
+02:06:50 generate_all done (5 + 2 already current); kinematics imported (same $$ values)
+02:07:30 Ricky: simulate happening now (metrics off)
+02:10:45 Ricky: re-run metrics off (stale test)
+02:12:40 Ricky: metrics ON re-run
