@@ -11,6 +11,7 @@
 | Desktop GUI / controller / embedded MCP server | `crates/rs_cam_viz/CLAUDE.md` | UI state, worker wiring, live control |
 | Batch commands and job files | `crates/rs_cam_cli/CLAUDE.md` | CLI parity, replay and sweeps |
 | MCP wire types | `crates/rs_cam_mcp/CLAUDE.md` | schema compatibility |
+| MCP supervisor proxy (GUI restart) | `crates/rs_cam_mcp_proxy/CLAUDE.md` | stdio routing, handshake replay, GUI lifecycle |
 | Plans, status and historical evidence | `planning/CLAUDE.md` | active-vs-archived planning material |
 
 Read the relevant child file before changing that area. Do not load every
@@ -28,6 +29,8 @@ folder's file map, invariants, sentries and traps.
 - `crates/rs_cam_viz`: desktop application (`rs_cam_gui`) and embedded MCP
   server.
 - `crates/rs_cam_mcp`: shared MCP parameter types; it is **not** the server.
+- `crates/rs_cam_mcp_proxy`: stdio MCP supervisor in front of `rs_cam_gui --mcp`;
+  the agent restarts the GUI through it (`gui_status`, `gui_restart`).
 
 ## Architecture and mutation contract
 

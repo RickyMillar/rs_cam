@@ -19,6 +19,7 @@
 - `crates/rs_cam_core`: geometry, importers, cutter math, toolpath generation, dressups, simulation, feeds/speeds, and G-code
 - `crates/rs_cam_cli`: batch interface and TOML job runner
 - `crates/rs_cam_viz`: `egui`/`wgpu` desktop application (`rs_cam_gui`)
+- `crates/rs_cam_mcp_proxy`: stdio MCP supervisor that lets an agent restart the GUI
 - `architecture/`: durable design docs
 - `research/`: algorithm notes, provenance, and exploratory research
 - `planning/`: current status, open plans, and the evidence live sentries cite
@@ -53,6 +54,40 @@ Run the test suite:
 ```bash
 cargo test -q
 ```
+
+## Agent-restartable MCP
+
+Claude Code talks to the GUI over stdio MCP (`rs_cam_gui --mcp`). Claude Code
+does not restart a stdio server, so a GUI rebuild or a GUI crash removes the
+tools until a human types `/mcp`. `rs_cam_mcp_proxy` prevents this. The proxy
+is the MCP server that Claude Code starts, and the proxy starts the GUI as
+its child. When the GUI exits, the proxy stays up. The agent then calls
+`gui_status` for the reason (an OOM kill included) and `gui_restart` to start
+the GUI again.
+
+Build the proxy and the GUI:
+
+```bash
+cargo build --release -p rs_cam_mcp_proxy
+cargo build --release -p rs_cam_viz --bin rs_cam_gui
+```
+
+Register the proxy for this checkout (local scope overrides the `rs-cam`
+entry in `.mcp.json`):
+
+```bash
+claude mcp add -s local -e RUST_LOG=info -e RUST_BACKTRACE=1 rs-cam -- \
+  /home/ricky/personal_repos/rs_cam/target/release/rs_cam_mcp_proxy \
+  --log /home/ricky/.rs_cam_logs/mcp_proxy.log -- \
+  systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0 \
+  /home/ricky/personal_repos/rs_cam/target/release/rs_cam_gui --mcp
+```
+
+The first `--` starts the child command. Keep the proxy outside the
+`systemd-run` scope: the cgroup OOM kill then stops only the GUI, and the
+proxy reports it. After a GUI rebuild, `gui_status` shows
+`binary.newer_than_process: true`; call `gui_restart` to load the new binary.
+A restart loses the unsaved project state of the GUI.
 
 ## Documentation map
 

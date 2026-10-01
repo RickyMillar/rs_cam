@@ -4072,6 +4072,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs_cam_mcp_proxy"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "rs_cam_viz"
 version = "0.1.0"
 dependencies = [

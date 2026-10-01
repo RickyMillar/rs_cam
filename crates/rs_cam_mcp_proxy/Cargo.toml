@@ -1,0 +1,22 @@
+[package]
+name = "rs_cam_mcp_proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Stdio MCP supervisor for rs_cam_gui: it keeps the MCP session up when the GUI exits and lets the agent restart the GUI."
+
+[[bin]]
+name = "rs_cam_mcp_proxy"
+path = "src/main.rs"
+
+# Test fixture: a minimal stdio MCP server that the integration tests use as
+# the child. It is a normal binary so that `CARGO_BIN_EXE_*` is always set.
+[[bin]]
+name = "rs_cam_mcp_fake_child"
+path = "src/bin/rs_cam_mcp_fake_child.rs"
+
+[dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
