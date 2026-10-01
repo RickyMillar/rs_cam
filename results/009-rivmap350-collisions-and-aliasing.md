@@ -1,9 +1,9 @@
 ---
 id: 009
-state: running
+state: done
 commit: CLI release at branch e5bd3292 (= master 0617bf8e core + UI/wave 4; simulation outputs byte-identical to master per the W2 CLI A/B)
 started: 2026-10-02T06:25Z
-finished:
+finished: 2026-10-02T08:10Z
 ---
 ## Summary — part A DONE: the 8 rapid collisions are REAL strikes (persist at 0.2 / 0.25 / 0.125 mm)
 
@@ -64,7 +64,23 @@ Side findings:
 - 0.125 mm CLI peak 14.49 GiB on the 16 GiB cgroup (the default app budget,
   half of RAM, is 27 GiB on this PC, above the cgroup).
 
-Part B (wall texture at 0.25 mm, Ricky's eye): pending.
+## Part B: wall texture at 0.25 mm — NOT a moire
+
+Screenshot: results/009-walls-0.25mm.png (compare results/007-walls-0.2mm.png).
+The GUI at 0.25 mm (generate_all at 0.25, kinematics imported) also confirms
+the SAME 8 collision moves (inspect_collisions: local 27653 ... 35040).
+
+The texture is the same at 0.25 as at 0.2 mm: fine horizontal lines up the
+ramped wall and a wavy ripple band at the wall foot, same direction and
+similar spacing. A moire would change with the cell; this did not, so it is
+not a simulation aliasing artefact. Ricky's verdict (verbatim): "you can see
+the ramped walls still have some texture.. maybe its just an artifact of the
+toolpath moving wiggly over that area". Runner reading: the ripples follow
+the iso-scallop rings (Scallop Finish, R1.0 tapered ball, scallop_height 0.1,
+ring pitch 0.87 mm along the surface); each ring leaves a cusp up to 0.1 mm,
+and the viewer's grazing light exaggerates it. So most likely the real cusp
+pattern of the toolpath, not a gouge. Levers if it matters: smaller scallop
+height, or a different finishing direction on steep walls.
 
 Files on the runner's PC: setup-2 G-code
 /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/065a14e8-82c6-476f-9331-96d953a0dcb4/scratchpad/j009_gcode/rivmap350_2_Setup_2.nc ;
