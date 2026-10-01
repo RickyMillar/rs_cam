@@ -332,7 +332,7 @@ impl MultitoolPlannerState {
                 max_regions_per_tier: self.max_regions_per_tier,
                 rim_erosion_mm: self.rim_erosion_mm.max(0.0),
                 // The dialog carries no raise dial: the core default is in
-                // force (tiered-finish plan F1, pending operator approval).
+                // force (tiered-finish plan F1: 0 since 2026-10-01).
                 max_close_raises: TierIslandParams::default().max_close_raises,
             },
             cusp_height_mm: self.cusp_height_mm,

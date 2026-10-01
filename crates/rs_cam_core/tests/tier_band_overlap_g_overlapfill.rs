@@ -134,7 +134,8 @@ fn band_only_params(overlap_mm: f64) -> TierIslandParams {
         max_regions_per_tier: 24,
         rim_erosion_mm: 0.0,
         // The morphology is off (close radius 0), so no raise can merge
-        // anything; the bound is the default only to keep the struct exact.
+        // anything; the bound is the ceiling, as written before F1 moved
+        // the default to 0, only to keep the struct exact.
         max_close_raises: MAX_CLOSE_RAISES,
     }
 }
@@ -579,7 +580,17 @@ fn rivmap100_tiered_finish_step0() {
     let stored = session
         .preview_multitool_plan(&spec(islands), &cancel)
         .expect("the stored recipe previews");
-    print_step0_preview("stored recipe (current default raise bound)", &stored);
+    print_step0_preview("stored recipe", &stored);
+    let dial3 = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                max_close_raises: MAX_CLOSE_RAISES,
+                ..islands
+            }),
+            &cancel,
+        )
+        .expect("the tier map is cached; only the morphology re-runs");
+    print_step0_preview("raise bound 3 (the default before F1)", &dial3);
     let dial0 = session
         .preview_multitool_plan(
             &spec(TierIslandParams {
@@ -589,7 +600,7 @@ fn rivmap100_tiered_finish_step0() {
             &cancel,
         )
         .expect("the tier map is cached; only the morphology re-runs");
-    print_step0_preview("F1 arm: max_close_raises 0", &dial0);
+    print_step0_preview("raise bound 0 (F1, the default since 2026-10-01)", &dial0);
     let no_close = session
         .preview_multitool_plan(
             &spec(TierIslandParams {
@@ -831,7 +842,17 @@ fn rivmap350_tiered_finish_step0_preview() {
         "── walk + islands + flute reach {:.1} s ──",
         t0.elapsed().as_secs_f64()
     );
-    print_step0_preview("x3.5: planner defaults (raise bound 3)", &stored);
+    print_step0_preview("x3.5: planner defaults", &stored);
+    let dial3 = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                max_close_raises: MAX_CLOSE_RAISES,
+                ..TierIslandParams::default()
+            }),
+            &cancel,
+        )
+        .expect("cached map");
+    print_step0_preview("x3.5: raise bound 3 (the default before F1)", &dial3);
     let dial0 = session
         .preview_multitool_plan(
             &spec(TierIslandParams {
@@ -841,7 +862,7 @@ fn rivmap350_tiered_finish_step0_preview() {
             &cancel,
         )
         .expect("cached map");
-    print_step0_preview("x3.5: F1 arm, max_close_raises 0", &dial0);
+    print_step0_preview("x3.5: raise bound 0 (F1)", &dial0);
     let no_close = session
         .preview_multitool_plan(
             &spec(TierIslandParams {
