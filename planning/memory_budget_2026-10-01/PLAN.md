@@ -2,8 +2,11 @@
 
 Status: RUNNING. The operator ruled 2026-10-01: the local runner session
 orchestrates; agents implement in parallel worktrees; merge later on branch
-`memory-budget-2026-10-01` (off `fd06f407`). The budget default and the
-toggle deletion are still RULING PENDING.
+`memory-budget-2026-10-01` (off `fd06f407`). The operator ruled
+2026-10-02 on two more items:
+- The default budget is half of the RAM. File > Preferences sets it (W4-M).
+- The metric-capture toggle is deleted. Every simulation captures the
+  metrics (W4-L).
 
 File groups (disjoint, one agent each):
 - A viz adoption: M1, live_stock, U4, U5.
@@ -161,7 +164,8 @@ UX (from the operator: "not ideal. I've been clueless."):
 ## Acceptance
 
 - rivmap350 at 0.2 mm with the trace: generate all, simulate, simulate
-  again, scrub: peak under the configured budget (value: RULING PENDING),
+  again, scrub: peak under the configured budget (default: half of the RAM,
+  operator ruling 2026-10-02; File > Preferences sets it),
   and it never reaches the cgroup.
 - rivmap350 at 0.1 mm: a clear refusal or a named degrade before any
   allocation; the GUI stays up; the project is not lost.
@@ -173,7 +177,9 @@ UX (from the operator: "not ideal. I've been clueless."):
 ## Decisions for the operator
 
 1. Who runs the programme: the cloud lead, or the local runner session.
-2. The default budget fraction of system RAM.
-3. Delete the metric-capture toggle (always capture) — recommended.
+2. The default budget fraction of system RAM. RULED 2026-10-02: half of
+   the RAM, set in File > Preferences.
+3. Delete the metric-capture toggle (always capture) — recommended. RULED
+   2026-10-02: deleted; every simulation captures the metrics.
 4. Whether W6 (grid packing) is in scope.
 5. Order against job 007 and the tiered-finishing work.

@@ -66,15 +66,11 @@ fn the_simulation_estimate_is_the_held_result_formula() {
     let at_rest_per_cell = e * d + e * d + g * d + g * m;
     let scrub_per_cell = 2 * m + d;
     let per_cell = at_rest_per_cell + scrub_per_cell;
+    // Every simulation keeps its cut trace, so the trace is always counted.
     let with_trace = cells * per_cell + moves * move_bytes() + samples * trace_sample_bytes();
-    let without_trace = cells * per_cell + moves * move_bytes();
     assert_eq!(
-        estimate_simulation_bytes(cells, e, g, moves, samples, true),
+        estimate_simulation_bytes(cells, e, g, moves, samples),
         with_trace
-    );
-    assert_eq!(
-        estimate_simulation_bytes(cells, e, g, moves, samples, false),
-        without_trace
     );
 
     let load = SimulationLoad {
@@ -82,7 +78,6 @@ fn the_simulation_estimate_is_the_held_result_formula() {
         setup_groups: g,
         moves,
         trace_samples: samples,
-        metrics_on: true,
     };
     assert_eq!(load.bytes_per_cell(), per_cell);
     assert_eq!(
@@ -110,7 +105,8 @@ fn the_simulation_estimate_is_the_held_result_formula() {
 /// - W1, GUI, metrics OFF: held after `generate_all` = 4.28 - 0.65 GiB (the
 ///   load step). No scrub had run, so the anchor reads `at_rest`. W1 was
 ///   before W2-E; W2-E removed only handles the view shares, so the held
-///   result at rest is the same or smaller now.
+///   result at rest is the same or smaller now. That run kept no trace
+///   (metric capture was an option then), so the anchor has 0 samples.
 /// - W2, CLI, metrics ON: peak RSS 7 286 720 kB with 5 159 038 trace
 ///   samples. The CLI never scrubs, so the anchor reads `at_rest`.
 #[test]
@@ -123,7 +119,6 @@ fn the_held_result_estimate_sits_at_or_below_the_measured_anchors() {
         setup_groups: 2,
         moves: 0,
         trace_samples: 0,
-        metrics_on: false,
     };
     let w1_held = (428 - 65) * GIB / 100;
     let gui = gui_metrics_off.estimate(cells);
@@ -136,7 +131,6 @@ fn the_held_result_estimate_sits_at_or_below_the_measured_anchors() {
 
     let cli_metrics_on = SimulationLoad {
         trace_samples: 5_159_038,
-        metrics_on: true,
         ..gui_metrics_off
     };
     let w2_peak = 7_286_720 * 1024;
@@ -179,7 +173,6 @@ fn the_finest_cell_that_fits_is_on_the_budget_boundary() {
         setup_groups: 2,
         moves: 800_000,
         trace_samples: 0,
-        metrics_on: false,
     };
     let (w, d) = (380.0, 510.0);
     let limit = 8_u64 << 30;

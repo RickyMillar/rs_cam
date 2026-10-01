@@ -387,7 +387,8 @@ impl<B: ComputeBackend> AppController<B> {
         // otherwise idle process cannot hold, BEFORE anything is released
         // or allocated. The view of the previous run stays, and the grid is
         // never coarsened in silence: the message names the cell that fits.
-        // With no limit (the default until the operator rules) nothing is
+        // The default limit is half of the RAM (operator ruling
+        // 2026-10-02); File > Preferences sets it. With no limit nothing is
         // counted and nothing changes.
         if self.compute.memory_budget().is_limited() {
             let need = rs_cam_core::budget::estimate::SimulationNeed::of_request(&core);

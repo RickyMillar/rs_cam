@@ -244,8 +244,7 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
 // ── SIM w6: serial vs banded PLAYBACK replay, PAIRED ────────────────────
 
 /// One non-metric playback replay — the kernel `compute/simulate.rs` runs
-/// against `global_stock` for **every** toolpath in a project, and against
-/// `group_stock` for every toolpath whose metrics are off.
+/// against `global_stock` for **every** toolpath in a project.
 ///
 /// This is emphatically NOT `run_metric_sim`: the playback kernel collects no
 /// samples and no accumulators, and `perf_suite`'s own measurement puts it at

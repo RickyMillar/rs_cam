@@ -13,9 +13,9 @@ pub const OPTIMIZE_NEEDS_SIMULATION: &str =
 /// A simulation exists, so "Run a simulation first" names the wrong cause.
 /// The control and the step come from the cycle-time remedy for
 /// `MissingInput::NoCutTrace` (`ui::readiness`).
-pub const OPTIMIZE_NEEDS_CUT_TRACE: &str = "The simulation ran without cutting metrics, \
-     so it kept no cut trace, and the optimizer needs that trace as a baseline. Turn on Simulation \u{25B8} Setup & run \
-     \u{25B8} \"Capture cutting metrics\", then re-run the simulation.";
+pub const OPTIMIZE_NEEDS_CUT_TRACE: &str = "The simulation result holds no cut trace, \
+     and the optimizer needs that trace as a baseline. Re-run the simulation \
+     (Simulation \u{25B8} Re-run Simulation).";
 
 /// Why Optimize cannot start from this simulation state, or `None` when a
 /// baseline cut trace exists.

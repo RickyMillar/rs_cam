@@ -521,6 +521,9 @@ impl Drop for LedgerTicket {
 }
 
 impl BudgetLedger {
+    /// A ledger with its own budget cell and probe. Only the tests build
+    /// one this way; the worker shares the cell of its `JobBudget`.
+    #[cfg(test)]
     pub(crate) fn new(budget: MemoryBudget, probe: Arc<dyn UsageProbe>) -> Arc<Self> {
         Self::sharing(&JobBudget::with_probe(budget, probe, Duration::ZERO))
     }

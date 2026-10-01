@@ -106,12 +106,10 @@ pub struct SimulationLoad {
     pub setup_groups: u64,
     /// Toolpath moves that the result keeps.
     pub moves: u64,
-    /// Cut-trace samples, counted only when `metrics_on`.
+    /// Cut-trace samples. Every simulation keeps its trace
+    /// (`compute/simulate.rs`, the `append_samples` call), so the estimate
+    /// always counts them.
     pub trace_samples: u64,
-    /// Metric capture is on, so the result keeps the trace
-    /// (`compute/simulate.rs`, the `append_samples` call under
-    /// `metric_options.enabled`).
-    pub metrics_on: bool,
 }
 
 /// The estimate of one kept simulation result, term by term, in bytes.
@@ -154,7 +152,7 @@ pub struct SimulationEstimate {
     /// `rs_cam_viz/src/compute/worker/execute/mod.rs:40` (the copies at
     /// `:81` and `:100`).
     pub moves: u64,
-    /// The cut trace; zero when metric capture is off.
+    /// The cut trace.
     pub trace: u64,
 }
 
@@ -194,14 +192,9 @@ impl SimulationLoad {
     /// moves and the trace.
     #[must_use]
     pub fn fixed_bytes(&self) -> u64 {
-        let trace = if self.metrics_on {
-            self.trace_samples.saturating_mul(trace_sample_bytes())
-        } else {
-            0
-        };
         self.moves
             .saturating_mul(move_bytes())
-            .saturating_add(trace)
+            .saturating_add(self.trace_samples.saturating_mul(trace_sample_bytes()))
     }
 
     /// The estimate at `cells` grid columns, term by term.
@@ -218,11 +211,7 @@ impl SimulationLoad {
             composite_mesh: g.saturating_mul(mesh),
             scrub: mesh.saturating_mul(2).saturating_add(dexel),
             moves: self.moves.saturating_mul(move_bytes()),
-            trace: if self.metrics_on {
-                self.trace_samples.saturating_mul(trace_sample_bytes())
-            } else {
-                0
-            },
+            trace: self.trace_samples.saturating_mul(trace_sample_bytes()),
         }
     }
 }
@@ -238,14 +227,12 @@ pub fn estimate_simulation_bytes(
     setup_groups: u64,
     moves: u64,
     trace_samples: u64,
-    metrics_on: bool,
 ) -> u64 {
     SimulationLoad {
         simulated_toolpaths,
         setup_groups,
         moves,
         trace_samples,
-        metrics_on,
     }
     .estimate(cells)
     .total()
@@ -390,18 +377,16 @@ impl SimulationNeed {
     /// - E: the toolpath entries of every group.
     /// - G: the groups (a group with no entry still builds its stock).
     /// - moves: every entry's moves.
-    /// - trace: [`estimate_trace_samples`] at [`trace_sample_step_mm`],
-    ///   counted only when `metric_options.enabled`.
+    /// - trace: [`estimate_trace_samples`] at [`trace_sample_step_mm`].
+    ///   Every simulation keeps its trace, so the trace is always counted.
     /// - footprint: the grid with the most columns among the request's
     ///   `stock_bbox` and each group's `local_stock_bbox`. The model R uses
     ///   ONE cell count for every grid; this takes the largest.
     #[must_use]
     pub fn of_request(request: &SimulationRequest) -> Self {
         let step = trace_sample_step_mm(request.resolution);
-        let metrics_on = request.metric_options.enabled;
         let mut load = SimulationLoad {
             setup_groups: bytes(request.groups.len()),
-            metrics_on,
             ..SimulationLoad::default()
         };
         for entry in request
@@ -412,11 +397,9 @@ impl SimulationNeed {
             let toolpath = &entry.annotated.toolpath;
             load.simulated_toolpaths = load.simulated_toolpaths.saturating_add(1);
             load.moves = load.moves.saturating_add(bytes(toolpath.moves.len()));
-            if metrics_on {
-                load.trace_samples = load
-                    .trace_samples
-                    .saturating_add(estimate_trace_samples(toolpath, step));
-            }
+            load.trace_samples = load
+                .trace_samples
+                .saturating_add(estimate_trace_samples(toolpath, step));
         }
         let boxes = std::iter::once(&request.stock_bbox).chain(
             request
@@ -553,7 +536,6 @@ mod wave3_tests {
             setup_groups: 1,
             moves: 10,
             trace_samples: 0,
-            metrics_on: false,
         };
         SimulationNeed::over_largest([&bbox], 0.5, load)
     }

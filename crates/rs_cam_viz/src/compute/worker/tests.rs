@@ -3124,16 +3124,18 @@ fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
     let expected = long_simulation_request().core;
     let need = SimulationNeed::of_request(&expected);
     let need_bytes = need.bytes();
-    // The idle baseline is a quarter of the need; the limit is half of the
-    // need above it, so the run does not fit and a coarser cell does.
+    // The idle baseline is a quarter of the need. Above it, the limit holds
+    // the part that no cell changes (the moves and the trace) and half of
+    // the grid part, so the run does not fit and a coarser cell does.
+    let fixed_bytes = need.load.fixed_bytes();
     let baseline = need_bytes / 4;
-    let limit = baseline + need_bytes / 2;
+    let limit = baseline + fixed_bytes + (need_bytes - fixed_bytes) / 2;
     let budget = MemoryBudget::with_limit(limit);
     let refusal =
         preflight_simulation(&budget, baseline, &need).expect_err("half of the need does not fit");
     assert!(
         matches!(refusal.fit, rs_cam_core::budget::CellFit::Fits(_)),
-        "the moves alone fit, so some cell fits: {:?}",
+        "the moves and the trace alone fit, so some cell fits: {:?}",
         refusal.fit
     );
 

@@ -79,7 +79,7 @@ mod tests {
     use rs_cam_core::budget::settings::{AppSettings, LoadedSettings};
     use rs_cam_core::budget::{MemoryBudget, MemoryLimit};
 
-    use crate::compute::{ComputeBackend, ThreadedComputeBackend};
+    use crate::compute::ThreadedComputeBackend;
     use crate::controller::AppController;
     use crate::ui::AppEvent;
     use crate::ui::preferences::PreferencesState;
