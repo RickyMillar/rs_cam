@@ -15,7 +15,9 @@
 //!   same query, and `tool_load::chipload_envelope_for_toolpath` (the
 //!   modulator's and the advisor's door, with no simulation, so no depth
 //!   de-rate) are one band, and the scale on the row is the claim's scale;
-//! - a refused cell (a 1.0 mm tapered Scallop in hardwood): Suggest refuses,
+//! - a refused cell (a 1.0 mm tapered Scallop in plywood; in hardwood until
+//!   the operator ruling of 2026-10-01, which serves the printed Amana ZrN
+//!   v8 1 mm row to Scallop): Suggest refuses,
 //!   the envelope row publishes no band, the modulator's door gives `None`,
 //!   and a raw `calculate` ships the formula with no vendor RPM, no band and
 //!   no `VendorRowPublishesNoChipload`;
@@ -81,7 +83,7 @@ use rs_cam_core::feeds::{
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{Material, WoodSpecies};
+use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
 };
@@ -430,10 +432,21 @@ fn a_form_c_cell_has_one_band_g1() {
 }
 
 /// A refused cell has no band anywhere.
+///
+/// Re-premised 2026-10-01: the cell was a 1.0 mm tapered Scallop in
+/// HARDWOOD. The operator ruling of that day serves the printed Amana ZrN v8
+/// 1 mm row to Scallop, so that cell ships now
+/// (`a_one_millimetre_tapered_scallop_ships_the_printed_tip_row_fm9`). The
+/// same tip in PLYWOOD has no v8 row (the chart prints "Wood, MDF,
+/// Sign-Foam") and reads the Onsrud 1/4 in plywood pocket row, 6.35x the
+/// tip, so it still refuses on the size rule. Every assertion below is the
+/// same; only the material and the row id moved.
 #[test]
 fn a_refused_cell_has_no_band_anywhere_g1() {
     let tool = tool_of(ToolType::TaperedBallNose, 1.0);
-    let material = hardwood();
+    let material = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
     let op = OperationType::Scallop;
 
     // Suggest refuses with the size rule's text.
@@ -453,7 +466,10 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
     let env = envelope_row(op, &tool, &material);
     // Since A3 step 3 the row is the pocket row, which the G3 family rule
     // serves to the scallop query.
-    assert_eq!(env.observation_id, "onsrud-hardwood-77-100-1_4-pocket");
+    assert_eq!(
+        env.observation_id,
+        "onsrud-plywood-hardwood-77-100-1_4-pocket"
+    );
     assert_eq!(env.family_basis.name(), "Transferred");
     assert!(env.size_basis.is_refused(), "{:?}", env.size_basis);
     assert_eq!(env.chip_load_mm, 0.0);

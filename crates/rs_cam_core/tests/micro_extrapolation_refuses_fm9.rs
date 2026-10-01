@@ -30,7 +30,9 @@
 //!   window; a 0.3 mm tapered Scallop, which matches no row at all (every
 //!   Scallop row is more than 10x the tip), refuses on the same floor and
 //!   does not fall to the formula;
-//! - a 1.0 mm tapered ball Scallop in hardwood refuses;
+//! - a 1.0 mm tapered ball Scallop in plywood refuses. In hardwood the same
+//!   cell refused until the operator ruling of 2026-10-01; it now ships the
+//!   printed Amana ZrN v8 1 mm row through the v8 family rule;
 //! - a 1.0 mm ball nose Scallop in hardwood refuses: the only ball Scallop
 //!   rows are the Ø6 hardwood rows (6x); the 1 mm ball rows are Parallel
 //!   rows, and the MDF one is another material category;
@@ -64,7 +66,7 @@ use rs_cam_core::feeds::support::{
 use rs_cam_core::feeds::vendor_lut::ToolFamily;
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{Material, WoodSpecies};
+use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId(1), kind);
@@ -218,16 +220,51 @@ fn a_tip_under_half_a_millimetre_refuses_on_the_tip_floor_b1() {
     }
 }
 
+/// Re-premised 2026-10-01. This arm was
+/// `a_one_millimetre_tapered_scallop_refuses_fm9`: in hardwood the only
+/// Scallop row was the Onsrud 1/4 in pocket row, 6.35x the tip. The operator ruling of 2026-10-01 serves the
+/// printed Amana ZrN v8 1 mm row (filed under parallel / finish) to
+/// Scallop, so the hardwood cell ships that row at the printed size. The
+/// size rule is unchanged: the same tip in plywood, where no v8 row exists,
+/// still refuses (`a_one_millimetre_tapered_scallop_in_plywood_refuses_fm9`).
 #[test]
-fn a_one_millimetre_tapered_scallop_refuses_fm9() {
-    let err = suggest(
+fn a_one_millimetre_tapered_scallop_ships_the_printed_tip_row_fm9() {
+    let s = suggest(
         OperationType::Scallop,
         &tool_of(ToolType::TaperedBallNose, 1.0),
         &hardwood(),
     )
-    .expect_err("a 1.0 mm tapered ball has no chart row within 2x");
+    .expect("the Amana ZrN v8 chart prints a 1 mm tip");
+    let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
+        panic!(
+            "expected FamilyTransferred, got {:?}",
+            s.feeds_result.support
+        );
+    };
+    assert!(size.is_none(), "the tip is the printed size");
+    assert_eq!(
+        family.source_rows,
+        vec!["amana-tapered-hardwood-parallel-1000-2f-zrn-v8".to_owned()]
+    );
+}
+
+/// The size rule still refuses a 1.0 mm tapered Scallop where the only row
+/// is more than 2x the tip: in plywood the Onsrud 1/4 in pocket row (6.35
+/// mm) answers, and the Amana ZrN v8 chart prints no plywood row.
+#[test]
+fn a_one_millimetre_tapered_scallop_in_plywood_refuses_fm9() {
+    let err = suggest(
+        OperationType::Scallop,
+        &tool_of(ToolType::TaperedBallNose, 1.0),
+        &Material::Plywood {
+            grade: PlywoodGrade::BalticBirch,
+        },
+    )
+    .expect_err("a 1.0 mm tapered ball has no plywood chart row within 2x");
     assert!(
-        size_reason(&err).starts_with("no published figure for a 1.00 mm tapered ball nose"),
+        size_reason(&err).starts_with(
+            "no published figure for a 1.00 mm tapered ball nose; the nearest chart row is 6.35 mm"
+        ),
         "{err}"
     );
 }
