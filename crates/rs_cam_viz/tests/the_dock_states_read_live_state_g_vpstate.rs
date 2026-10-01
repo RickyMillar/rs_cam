@@ -13,7 +13,11 @@
 //!   height budget and every popover stays inside the viewport;
 //! - (f) Tab reaches the four section buttons in order and then the open
 //!   popover; a click outside closes the popover; `Escape` closes one
-//!   surface at a time.
+//!   surface at a time;
+//! - (g) the compact legend (operator ruling 2026-10-02): it never covers
+//!   the dock or the orientation gizmo at any common viewport size, its
+//!   caveat lines paint only while the pointer is on a chip, and folded it
+//!   is one `Legend (n)` chip.
 //!
 //! Two mirrored render colours and the rest ramp top are pinned against
 //! their render sources, so the legend cannot drift from the picture.
@@ -816,7 +820,7 @@ fn the_dock_keeps_its_height_budget_at_320_by_600_g_vpstate() {
         let budget = viewport_overlay::DOCK_STACK_MAX_HEIGHT_FRACTION * viewport.height();
         assert!(
             dock.height() <= budget,
-            "measured: the target, rail and dock stack is {:.1} pt high at 320 × 600 with six legends; the budget is {budget:.1} pt",
+            "measured: the target and dock stack is {:.1} pt high at 320 × 600 with six legends on; the budget is {budget:.1} pt",
             dock.height()
         );
         assert!(
@@ -969,4 +973,338 @@ fn escape_closes_one_surface_at_a_time_g_vpstate() {
         !overlays.close_one_for_escape(),
         "with nothing open, Escape keeps its workspace meaning (Simulation: back to Toolpaths)"
     );
+}
+
+// ── (g) the compact legend ───────────────────────────────────────────
+
+/// One frame of the dock and the legend. Returns every text the frame
+/// painted, with its rect.
+fn painted_frame(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    viewport: egui::Rect,
+    events: Vec<egui::Event>,
+) -> Vec<(String, egui::Rect)> {
+    let lanes = idle_lanes();
+    let mut app_events: Vec<AppEvent> = Vec::new();
+    let mut output = ctx.run_ui(
+        raw_input(viewport.width(), viewport.height(), events),
+        |ui| {
+            viewport_overlay::draw(
+                ui,
+                state,
+                ProjectionMode::Perspective,
+                &lanes,
+                &mut app_events,
+                viewport,
+            );
+        },
+    );
+    output.textures_delta.clear();
+    fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::Shape::Text(text) => {
+                let rect = text.galley.rect.translate(text.pos.to_vec2());
+                out.push((text.galley.text().to_owned(), rect));
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut out);
+    }
+    out
+}
+
+fn painted_contains(texts: &[(String, egui::Rect)], needle: &str) -> bool {
+    texts.iter().any(|(text, _)| text.contains(needle))
+}
+
+fn click_at(pos: egui::Pos2) -> [Vec<egui::Event>; 2] {
+    let press = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    [
+        vec![egui::Event::PointerMoved(pos), press(true)],
+        vec![press(false)],
+    ]
+}
+
+/// The orientation gizmo of `app/viewport.rs`: a 50 pt disc 10 pt in from
+/// the top-right corner.
+fn gizmo_rect(viewport: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(viewport.right() - 60.0, viewport.top()),
+        egui::vec2(60.0, 60.0),
+    )
+}
+
+/// The legend never intersects the dock bar or the gizmo. The sizes cover
+/// the operator's windows (1400 × 900, 1920 × 1165) as an upper bound, the
+/// 3D view inside them once the side panels take their width, a 1100 pt
+/// window, and the 320 pt floor of the dock sentry.
+#[test]
+fn the_legend_never_covers_the_dock_or_the_gizmo_g_legend() {
+    let sizes = [
+        (1920.0, 1165.0),
+        (1400.0, 900.0),
+        (1100.0, 800.0),
+        (1340.0, 1000.0),
+        (860.0, 760.0),
+        (600.0, 700.0),
+        (480.0, 600.0),
+        (320.0, 600.0),
+        (320.0, 300.0),
+    ];
+    let mut beside = 0;
+    for (width, height) in sizes {
+        let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+        for collapsed in [false, true] {
+            let mut state = legend_fixture();
+            state.overlays.legend_collapsed = collapsed;
+            let ctx = ctx(width, height);
+            for _ in 0..3 {
+                frame(&ctx, &mut state, viewport, Vec::new());
+            }
+            let dock = area(&ctx, DOCK_AREA_ID).expect("the dock never drew");
+            let legend = area(&ctx, legend_rail::LEGEND_AREA_ID).expect("the legend never drew");
+            let case = format!("{width} × {height}, collapsed {collapsed}");
+            assert!(
+                !legend.intersects(dock),
+                "measured at {case}: the legend {legend:?} covers the dock {dock:?}"
+            );
+            assert!(
+                !legend.intersects(gizmo_rect(viewport)),
+                "measured at {case}: the legend {legend:?} covers the gizmo"
+            );
+            assert!(
+                viewport.contains_rect(legend.shrink(0.5)),
+                "measured at {case}: the legend {legend:?} leaves the viewport"
+            );
+            assert!(
+                legend.right() >= viewport.right() - viewport_overlay::DOCK_GUTTER - 0.5,
+                "measured at {case}: the legend {legend:?} is not on the right edge"
+            );
+            assert!(
+                legend.height() <= legend_rail::LEGEND_MAX_HEIGHT_FRACTION * height + 1.0
+                    || legend.height() <= tokens::ROW_ACTION + 4.0 * tokens::SPACE_2,
+                "measured at {case}: the legend is {:.1} pt high, over a quarter of the viewport",
+                legend.height()
+            );
+            if legend.bottom() > dock.top() {
+                beside += 1;
+            }
+            if width >= 860.0 && !collapsed {
+                assert!(
+                    legend.bottom() > dock.top(),
+                    "at {case} the legend must sit beside the dock, on the viewport bottom"
+                );
+            }
+        }
+    }
+    assert!(
+        beside >= 8,
+        "non-vacuity: the legend sat beside the dock only {beside} times"
+    );
+}
+
+/// The chip text is short and the caveats paint only on hover.
+#[test]
+fn hover_reveals_the_long_text_and_only_hover_g_legend() {
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0));
+    let mut state = legend_fixture();
+    let lines = legend_rail::active_lines(&state);
+    let mut caveat_count = 0;
+    for line in &lines {
+        let chip = legend_rail::chip_text(&state, line);
+        for (caveat, _) in legend_rail::caveat_lines(&state, line) {
+            caveat_count += 1;
+            assert!(
+                !chip.contains(&caveat),
+                "the chip `{chip}` carries its caveat `{caveat}`"
+            );
+        }
+    }
+    assert!(
+        caveat_count >= 4,
+        "non-vacuity: only {caveat_count} caveat lines"
+    );
+
+    let heights = lines
+        .iter()
+        .find(|line| {
+            matches!(
+                line,
+                RailLine::Categories(legend_rail::Categories::HeightPlanes)
+            )
+        })
+        .expect("the fixture draws height planes");
+    let name = legend_rail::line_name(&state, heights);
+    let caveat = "the Heights tab of the inspector gives each Z in mm";
+
+    let ctx = ctx(viewport.width(), viewport.height());
+    let mut texts = Vec::new();
+    for _ in 0..3 {
+        texts = painted_frame(&ctx, &mut state, viewport, Vec::new());
+    }
+    assert!(
+        painted_contains(&texts, &name),
+        "the chip `{name}` never painted"
+    );
+    assert!(
+        !painted_contains(&texts, caveat),
+        "a caveat painted without a hover"
+    );
+    assert!(area(&ctx, legend_rail::LEGEND_DETAIL_AREA_ID).is_none());
+
+    let chip = ctx
+        .read_response(legend_rail::chip_id(&name))
+        .expect("the chip has a response")
+        .rect;
+    for _ in 0..2 {
+        texts = painted_frame(
+            &ctx,
+            &mut state,
+            viewport,
+            vec![egui::Event::PointerMoved(chip.center())],
+        );
+    }
+    assert!(
+        painted_contains(&texts, caveat),
+        "the hover on `{name}` did not paint its caveat"
+    );
+    let detail = area(&ctx, legend_rail::LEGEND_DETAIL_AREA_ID).expect("no detail area");
+    assert!(
+        viewport.contains_rect(detail.shrink(0.5)),
+        "the detail {detail:?} leaves the viewport"
+    );
+    assert!(
+        !detail.contains(chip.center()),
+        "the detail {detail:?} lies under the pointer"
+    );
+    // The hover must hold from frame to frame: the detail takes no input.
+    texts = painted_frame(&ctx, &mut state, viewport, Vec::new());
+    assert!(painted_contains(&texts, caveat), "the detail flickered off");
+}
+
+/// Folded, the legend is one chip; the chip and the fold glyph switch it.
+#[test]
+fn a_folded_legend_is_one_chip_g_legend() {
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0));
+    let mut state = legend_fixture();
+    let lines = legend_rail::active_lines(&state);
+    let names: Vec<String> = lines
+        .iter()
+        .map(|line| legend_rail::line_name(&state, line))
+        .collect();
+    let folded = format!("{} ({})", legend_rail::COLLAPSED_WORD, lines.len());
+    state.overlays.legend_collapsed = true;
+
+    let ctx = ctx(viewport.width(), viewport.height());
+    let mut texts = Vec::new();
+    for _ in 0..3 {
+        texts = painted_frame(&ctx, &mut state, viewport, Vec::new());
+    }
+    assert!(
+        painted_contains(&texts, &folded),
+        "the `{folded}` chip never painted"
+    );
+    for name in &names {
+        assert!(
+            !painted_contains(&texts, name),
+            "the folded legend painted the chip `{name}`"
+        );
+    }
+    let legend = area(&ctx, legend_rail::LEGEND_AREA_ID).expect("the legend never drew");
+    assert!(
+        legend.height() <= tokens::ROW_ACTION + 2.0 * tokens::SPACE_2 + 2.0,
+        "the folded legend is {:.1} pt high: more than one chip",
+        legend.height()
+    );
+
+    for events in click_at(legend.center()) {
+        painted_frame(&ctx, &mut state, viewport, events);
+    }
+    assert!(
+        !state.overlays.legend_collapsed,
+        "a click on the chip did not unfold it"
+    );
+    // The area places itself from the size of the frame before, so the
+    // open legend settles over a few frames.
+    for _ in 0..4 {
+        texts = painted_frame(&ctx, &mut state, viewport, Vec::new());
+    }
+    for name in &names {
+        assert!(
+            painted_contains(&texts, name),
+            "the open legend lost `{name}`"
+        );
+    }
+    let fold = texts
+        .iter()
+        .find(|(text, _)| text == legend_rail::FOLD_GLYPH)
+        .map(|(_, rect)| *rect)
+        .expect("the fold glyph never painted");
+    for events in click_at(fold.center()) {
+        painted_frame(&ctx, &mut state, viewport, events);
+    }
+    assert!(
+        state.overlays.legend_collapsed,
+        "the fold glyph did not fold the legend"
+    );
+}
+
+/// The legend reaches its final rect within three frames of a growth,
+/// holds it, and clips no chip. An area gives its content the rect of the frame before; a scroll
+/// area inside it that reads that rect grows by a few points per frame, and
+/// the old rail crept up the viewport that way.
+#[test]
+fn the_legend_settles_without_a_slide_g_legend() {
+    for (width, height) in [(1400.0, 900.0), (480.0, 600.0)] {
+        let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+        // The legend GROWS here, from one folded chip to every chip: the
+        // creep shows only on growth.
+        let mut state = legend_fixture();
+        state.overlays.legend_collapsed = true;
+        let ctx = ctx(width, height);
+        for _ in 0..3 {
+            frame(&ctx, &mut state, viewport, Vec::new());
+        }
+        state.overlays.legend_collapsed = false;
+        for _ in 0..3 {
+            frame(&ctx, &mut state, viewport, Vec::new());
+        }
+        let early = area(&ctx, legend_rail::LEGEND_AREA_ID).expect("the legend never drew");
+        for _ in 0..20 {
+            frame(&ctx, &mut state, viewport, Vec::new());
+        }
+        let late = area(&ctx, legend_rail::LEGEND_AREA_ID).expect("the legend never drew");
+        assert!(
+            (early.min - late.min).length() < 0.5 && (early.max - late.max).length() < 0.5,
+            "measured at {width} × {height}: the legend moved from {early:?} after three frames to {late:?} after 23"
+        );
+        // Stable is not enough: a scroll area held to the old rect is
+        // stable and clips. Every chip must lie inside the legend.
+        for line in legend_rail::active_lines(&state) {
+            let name = legend_rail::line_name(&state, &line);
+            let chip = ctx
+                .read_response(legend_rail::chip_id(&name))
+                .unwrap_or_else(|| panic!("the chip `{name}` has no response"))
+                .rect;
+            assert!(
+                late.contains_rect(chip),
+                "measured at {width} × {height}: the chip `{name}` {chip:?} lies outside the legend {late:?}"
+            );
+        }
+        assert!(
+            early.height() > tokens::ROW_DENSE * 2.0,
+            "non-vacuity: the open legend is only {:.1} pt high",
+            early.height()
+        );
+    }
 }
