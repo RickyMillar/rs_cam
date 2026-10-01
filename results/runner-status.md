@@ -45,3 +45,14 @@ compute/simulate.rs, compute/sim_prefix.rs, dexel_stock/, stock/dexel*.rs,
 stock_mesh.rs, app/simulation.rs, worker/execute/, session/cycle_time.rs,
 ui/readiness*.rs, interrupt.rs, rest_stock.rs grid cap, a new budget/ folder.
 The lead's fd06f407 touched none of them.
+
+## 2026-10-02 ~02:20 UTC: memory programme waves 1-3 done on the local branch
+
+Branch `memory-budget-2026-10-01` at 0617bf8e (local, not pushed), 3 waves,
+all gates green (fmt, clippy -D warnings, focused core tests incl. both perf
+goldens, viz/cli/mcp crates). CLI A/B: simulation.json byte-identical.
+rivmap350 0.2 mm: re-run peak 14.64 -> ~5 GiB; metrics ON now fits at
+6.87 GiB (was OOM at 16G). Full numbers: results/memory-programme-baselines.md.
+Breaking changes are listed in the branch's FEATURE_CATALOG diff (CLI
+`project` needs --output-dir; null trace figures; generate_all reply keys).
+The branch is ready for the operator's merge call.
