@@ -21,43 +21,29 @@ use super::{
 use crate::state::runtime::GuiState;
 
 impl SimulationState {
-    /// Project tool-load report cached by simulation trace pointer and GUI edit counter.
+    /// The project tool-load report against this view's cut trace.
     ///
-    /// The report evaluates chipload/power/deflection for every enabled toolpath and
-    /// scans the cut trace for the sample-based criteria. Both the bottom timeline and
-    /// right inspector need it every frame, so compute it once per trace/edit version
-    /// and return a cheap clone for borrow-friendly UI code.
-    pub fn cached_load_report(
-        &mut self,
-        session: &ProjectSession,
-        edit_counter: u64,
-    ) -> ToolLoadReport {
-        let live = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref());
-        if weak_matches(self.debug.load_report_cache.trace.as_ref(), live)
-            && self.debug.load_report_cache.edit_counter == edit_counter
-            && let Some(report) = &self.debug.load_report_cache.report
-        {
-            return report.clone();
-        }
-        let stored_trace = live.map(Arc::downgrade);
+    /// The memo is the session's ([`ProjectSession::tool_load_report_for`]),
+    /// keyed by every input the report reads and by the trace identity.
+    /// This view adds no key of its own. The GUI edit counter is not in the
+    /// key: a result adoption moves no counter, and a counter key therefore
+    /// kept a report for a toolpath that had generated again.
+    ///
+    /// The answer is an `Arc`. A clone of the report copies every
+    /// kinematic move row, which on a large finish is more work than a
+    /// frame has.
+    pub fn cached_load_report(&self, session: &ProjectSession) -> Arc<ToolLoadReport> {
+        session.tool_load_report_for(self.cut_trace_arc())
+    }
 
-        let start = std::time::Instant::now();
-        let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-        let report = rs_cam_core::gcode::project_load_report(session, sim_trace);
-        let elapsed = start.elapsed();
-        if elapsed > std::time::Duration::from_millis(8) {
-            tracing::debug!(
-                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
-                "slow simulation tool-load report build"
-            );
-        }
-        self.debug.load_report_cache.trace = stored_trace;
-        self.debug.load_report_cache.edit_counter = edit_counter;
-        self.debug.load_report_cache.report = Some(report.clone());
-        report
+    /// The accepted run's cut trace, as the `Arc` that holds it. The load
+    /// report memo keys on this `Arc`'s identity.
+    pub fn cut_trace_arc(
+        &self,
+    ) -> Option<&Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>> {
+        self.results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref())
     }
 
     pub fn cached_chipload_envelopes(
@@ -96,9 +82,9 @@ impl SimulationState {
 
     /// Simulation triage cached by simulation trace identity, GUI edit
     /// counter and evidence fingerprint — the trace and edit rule is the same
-    /// as [`Self::cached_load_report`] and [`Self::cached_chipload_envelopes`];
+    /// as [`Self::cached_chipload_envelopes`];
     /// the fingerprint is this cache's alone, because it is the only one of
-    /// the three whose build reads state outside the trace
+    /// the two whose build reads state outside the trace
     /// ([`Self::project_evidence`], and see [`Self::evidence_fingerprint`]).
     ///
     /// Building it is `O(samples × toolpaths)` with a per-toolpath sort (full

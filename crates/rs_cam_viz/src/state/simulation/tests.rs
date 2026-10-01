@@ -634,8 +634,9 @@ fn span_aggregate_cache_rebuilds_after_its_trace_is_freed() {
 }
 
 /// Load-report and chipload-envelope caches: a hit must still be a hit
-/// (the key change is strictly narrowing, and both are per-frame paths),
-/// and both must miss once their trace is replaced.
+/// (both are per-frame paths), and both must miss once their trace is
+/// replaced. The load report reads the session memo, so its builds are
+/// counted on the session.
 #[test]
 fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
     let session = rs_cam_core::session::ProjectSession::new_empty();
@@ -643,20 +644,15 @@ fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
     let first = attach_cut_trace(&mut sim);
     drop(first);
 
-    let _ = sim.cached_load_report(&session, 1);
-    let _ = sim.cached_chipload_envelopes(&session, 1);
-    assert!(sim.debug.load_report_cache.report.is_some());
-    assert!(sim.debug.chipload_envelope_cache.envelopes.is_some());
-    let live = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .cloned();
-    assert!(
-        weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "the stored key must match the trace it was built from"
+    let _ = sim.cached_load_report(&session);
+    let _ = sim.cached_load_report(&session);
+    assert_eq!(
+        session.tool_load_report_builds(),
+        1,
+        "an unchanged frame must not rebuild the load report"
     );
-    drop(live);
+    let _ = sim.cached_chipload_envelopes(&session, 1);
+    assert!(sim.debug.chipload_envelope_cache.envelopes.is_some());
 
     sim.results = None;
     let mut refreshed = simulation_for_toolpath();
@@ -668,10 +664,6 @@ fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
         .and_then(|r| r.cut_trace.as_ref())
         .cloned();
     assert!(
-        !weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "a freed trace's key must not answer for its replacement"
-    );
-    assert!(
         !weak_matches(
             sim.debug.chipload_envelope_cache.trace.as_ref(),
             live.as_ref()
@@ -679,9 +671,10 @@ fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
         "a freed trace's key must not answer for its replacement"
     );
 
-    let _ = sim.cached_load_report(&session, 1);
-    assert!(
-        weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "the rebuild must re-key against the live trace"
+    let _ = sim.cached_load_report(&session);
+    assert_eq!(
+        session.tool_load_report_builds(),
+        2,
+        "a new trace must rebuild the load report"
     );
 }

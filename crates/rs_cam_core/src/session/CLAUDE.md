@@ -11,15 +11,15 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - `diagnostics_types.rs` — the diagnostic types. Keep the `mod.rs` re-export.
 - `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs` — context,
   cycle time, reach, the planner. `rest_stock.rs` — the stored resolution.
+- `load_report.rs` — the load-report memo (sentry: `--lib session::load_report`).
 
 ## Invariants
 
 - A command returns `Effects`. `Effects.stale` is the stale set.
 - A parameter, tool, model, stock or setup edit invalidates the affected
   cached result chain, to fixpoint: `invalidate_output_dependents_of_set`.
-- `dependencies::edges` states that walker's rules and `generation_plan` the
-  order; no surface re-derives either. The pure `walk_output_dependents`
-  touches no simulation.
+- `dependencies::edges` (rules) and `generation_plan` (order): no surface
+  re-derives either. The pure `walk_output_dependents` touches no simulation.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
   bumps `simulation_epoch` and records the cause. `AdoptResult` refuses a
   stale revision, `AdoptSimulation` a stale epoch.

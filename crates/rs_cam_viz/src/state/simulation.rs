@@ -20,8 +20,8 @@ use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::verdict::CriterionKind;
 use rs_cam_core::tool_load::{
-    DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolLoadReport,
-    ToolpathLoadContext, ToolpathLoadVerdict,
+    DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolpathLoadContext,
+    ToolpathLoadVerdict,
 };
 use rs_cam_core::trace::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticTrace};
 use rs_cam_core::trace::toolpath_spans::SpanId;
@@ -103,16 +103,12 @@ pub struct SimulationDebugState {
     /// frame. Without this cache the Selected section rescans the full
     /// sample list every frame — see `SpanAggregateCache::ensure_built`.
     pub(crate) span_aggregates: SpanAggregateCache,
-    /// Cached project tool-load verdicts keyed by sim trace + edit counter.
-    /// The bottom timeline and right inspector both need this every frame;
-    /// building it scans large cut traces once per criterion/toolpath.
-    pub(crate) load_report_cache: ToolLoadReportCache,
     /// Cached chipload envelope LUT matches keyed by sim trace + edit counter.
     /// The lookup needs per-toolpath peak axial DOC and otherwise scans the
     /// full sample trace for every toolpath if rebuilt per frame.
     pub(crate) chipload_envelope_cache: ChiploadEnvelopeCache,
     /// Cached simulation triage keyed by sim trace + edit counter, matching
-    /// the `load_report_cache` / `chipload_envelope_cache` staleness rule.
+    /// the `chipload_envelope_cache` staleness rule.
     /// Building it walks the full cut trace per toolpath twice (diagnostics
     /// then triage) with a per-toolpath height sort, so the inspector's
     /// measurability strip must not rebuild it every frame.
@@ -159,15 +155,6 @@ fn weak_matches<T>(stored: Option<&Weak<T>>, live: Option<&Arc<T>>) -> bool {
         (Some(w), Some(a)) => w.upgrade().is_some_and(|up| Arc::ptr_eq(&up, a)),
         _ => false,
     }
-}
-
-#[derive(Default)]
-pub(crate) struct ToolLoadReportCache {
-    /// Weak-pinned identity of the trace this report was built from. See
-    /// [`weak_matches`].
-    trace: Option<Weak<SimulationCutTrace>>,
-    edit_counter: u64,
-    report: Option<ToolLoadReport>,
 }
 
 #[derive(Default)]
@@ -268,7 +255,7 @@ impl SimulationState {
         let stored_trace = live.map(Arc::downgrade);
         let trace = live.map(Arc::clone);
 
-        let report = self.cached_load_report(session, edit_counter);
+        let report = self.cached_load_report(session);
         let verdict = report
             .per_toolpath
             .iter()
