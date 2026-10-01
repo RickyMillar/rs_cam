@@ -77,29 +77,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 
             // --- Simulation check ---
             let sim_status = readiness::simulation_check(state);
-            // W4: the arm names the reason, so the card can say which of the
-            // two stale readings it has. The old text called a capture-option
-            // change a parameter change.
-            let sim_detail: String = match state.simulation_freshness() {
-                crate::state::freshness::SimFreshness::NoRun => "Not run".to_owned(),
-                crate::state::freshness::SimFreshness::Running => "Running".to_owned(),
-                crate::state::freshness::SimFreshness::Current => "Up to date".to_owned(),
-                crate::state::freshness::SimFreshness::EditedSince => {
-                    "Stale — parameters changed".to_owned()
-                }
-                crate::state::freshness::SimFreshness::CaptureOptionsChanged => {
-                    "Stale — capture options changed".to_owned()
-                }
-                // G-STALECARDS: a re-run cannot help; the operation needs a
-                // regenerate first.
-                crate::state::freshness::SimFreshness::Ungenerated(id) => format!(
-                    "Stale — regenerate {} first",
-                    state
-                        .session
-                        .find_toolpath_config_by_id(id)
-                        .map_or("an operation", |(_, tc)| tc.name.as_str())
-                ),
-            };
+            let sim_detail = simulation_detail(state);
             check_card(
                 ui,
                 sim_status,
@@ -326,6 +304,41 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
         });
 
     still_open
+}
+
+/// The detail text of the Simulation card: one text per
+/// [`crate::state::freshness::SimFreshness`] arm.
+///
+/// W4: the arm names the reason, so the card can say which of the stale
+/// readings it has. The old text called a capture-option change a
+/// parameter change.
+pub(crate) fn simulation_detail(state: &AppState) -> String {
+    use crate::state::freshness::SimFreshness;
+    match state.simulation_freshness() {
+        SimFreshness::NoRun => "Not run".to_owned(),
+        SimFreshness::Running => "Running".to_owned(),
+        // M1: the view released the previous run for a new run. The card
+        // names the release, so an empty viewport is not read as "never
+        // run".
+        SimFreshness::Released { in_flight: true } => {
+            "Running — previous result released".to_owned()
+        }
+        SimFreshness::Released { in_flight: false } => {
+            "Stale — previous result released, run again".to_owned()
+        }
+        SimFreshness::Current => "Up to date".to_owned(),
+        SimFreshness::EditedSince => "Stale — parameters changed".to_owned(),
+        SimFreshness::CaptureOptionsChanged => "Stale — capture options changed".to_owned(),
+        // G-STALECARDS: a re-run cannot help; the operation needs a
+        // regenerate first.
+        SimFreshness::Ungenerated(id) => format!(
+            "Stale — regenerate {} first",
+            state
+                .session
+                .find_toolpath_config_by_id(id)
+                .map_or("an operation", |(_, tc)| tc.name.as_str())
+        ),
+    }
 }
 
 /// A check card with status icon, label, detail, and optional action link.
