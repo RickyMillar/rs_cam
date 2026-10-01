@@ -428,8 +428,8 @@ fn draw_advanced_body(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
             planner.mark_island_dial_dirty();
         }
         drag.on_hover_text(
-            "Over this, the merge radius is auto-raised up to three times and then the \
-             largest islands are kept. The preview says loudly when that happens.",
+            "Over this, the largest islands are kept and the rest go back to the coarser \
+             tool. The preview says loudly when that happens.",
         );
 
         ui.add_space(12.0);

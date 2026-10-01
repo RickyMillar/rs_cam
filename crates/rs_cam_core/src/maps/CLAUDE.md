@@ -37,4 +37,4 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 
 - Do not read a tier seam as a defect. The band swallows the coarse tool's
   slivers by design (G-OVERLAPFILL); its width is plan F2, still open.
-- Do not raise `MAX_CLOSE_RAISES`: a raise welds specks into blobs (F1).
+- Do not raise the raise bound (default 0, ceiling 3): it welds specks (F1).

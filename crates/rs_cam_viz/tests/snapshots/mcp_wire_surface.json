@@ -1093,7 +1093,7 @@
           ]
         },
         "max_regions_per_tier": {
-          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe merge radius is raised and the close re-run (bounded), and what\nmerged is reported. Default 24.",
+          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe largest are kept and the rest go back to the coarser tool, and\nthe drop is reported. Default 24.",
           "format": "uint",
           "minimum": 0,
           "type": [
@@ -1214,7 +1214,7 @@
           ]
         },
         "max_regions_per_tier": {
-          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe merge radius is raised and the close re-run (bounded), and what\nmerged is reported. Default 24.",
+          "description": "Per-tier island cap. When filtering leaves more islands than this,\nthe largest are kept and the rest go back to the coarser tool, and\nthe drop is reported. Default 24.",
           "format": "uint",
           "minimum": 0,
           "type": [
