@@ -1,11 +1,13 @@
-//! `Sparkline` and `ChartFlip` — the "over time" face of a cut-metric card.
+//! `Sparkline`, `ChartFlip` and `TraceOpen` — the "over time" face of a
+//! cut-metric card, and the button that opens the trace large.
 //!
 //! Operator request 2026-10-02: each cut-metric histogram has a flip button
 //! beside it. The button swaps the histogram for a small line of the same
 //! metric over the run of the toolpath. The bottom time-series drawer is
-//! deleted. The painter draws the line directly, for the reason
-//! `histogram.rs` gives: a plot keeps its bounds per id from frame to frame,
-//! and the rail needs no axes and no zoom.
+//! deleted. A second button opens the one trace in a modal
+//! (`ui/sim_trace_modal.rs`), which draws the same component large, with
+//! zoom and pan. The painter draws the line directly, for the reason
+//! `histogram.rs` gives: a plot keeps its bounds per id from frame to frame.
 //!
 //! # What the line shows
 //!
@@ -22,23 +24,21 @@
 //!
 //! # The y scale
 //!
-//! The y range is [`histogram::display_range`], the same range the
-//! histogram's x axis uses. Core sets it to a percentile range of the gate
-//! population (`RANGE_PERCENTILE_LOW` to `RANGE_PERCENTILE_HIGH`), and the
-//! chart widens it to include each bound within [`histogram::NEAR_BOUND_SHARE`]
-//! of it. The rule has three parts:
+//! Operator ruling 2026-10-02: "show the whole thing plus a little, so you
+//! can see the limit bars too". [`line_range`] gives the rule:
 //!
-//! 1. The range follows the data, so one spike cannot flatten the line.
-//! 2. A value outside the range is clamped to the edge, and the column gets
-//!    a small triangle at that edge in the value's band colour.
-//! 3. A bound far outside the range does not widen it. It is an off-scale
-//!    marker at the edge: a triangle and the bound's value with its unit.
+//! 1. Start from the minimum and the maximum of every finite sample of the
+//!    series. There is no percentile cut and no clamp: every sample is in
+//!    the range.
+//! 2. Extend the range to include each bound the gate has, floor and
+//!    ceiling, so every limit line is on the chart.
+//! 3. Add [`LINE_MARGIN`] of the span above and below. This is a display
+//!    margin only, so the line and the limit lines do not touch the edge.
 //!
-//! Part 3 is a deliberate difference from "always include the limit line".
-//! The deleted drawer always included the bounds, and a spindle-power limit
-//! forty times the peak then pressed the whole line flat against the
-//! bottom. The histogram met the same defect on 2026-09-24 and took this
-//! rule; the line takes the same rule, so the two faces agree.
+//! The range covers the whole series, not the shown window, so the y axis
+//! stays still while the modal zooms and pans. A bound far from the data
+//! compresses the line; the operator accepted that to keep the limits in
+//! view. The histogram keeps its own x-axis rule (`histogram.rs`).
 //!
 //! # Decimation
 //!
@@ -49,18 +49,24 @@
 
 use rs_cam_core::tool_load::Histogram;
 
-use crate::ui::components::histogram::{self, BinSide, BoundPlace};
+use crate::ui::components::histogram::{self, BinSide};
 use crate::ui::tokens;
 
 /// The width of the line, in points.
 pub const LINE_WIDTH: f32 = 1.5;
 
-/// The side of the square flip button, in points.
+/// The side of the square icon buttons (flip and open), in points.
 pub const FLIP_SIZE: f32 = tokens::SPACE_5;
 
-/// The space above and below the data area, in points. The outlier
-/// triangles sit in it.
-const EDGE_PAD: f32 = histogram::CAP_HALF_WIDTH + 1.0;
+/// The display margin above and below the y range, as a share of the span.
+/// It is not a bound and not data: it keeps the line off the edge.
+pub const LINE_MARGIN: f64 = 0.05;
+
+/// The fewest moves a zoomed window shows.
+pub const MIN_WINDOW_MOVES: f64 = 8.0;
+
+/// The space above and below the data area, in points.
+const EDGE_PAD: f32 = tokens::SPACE_1;
 
 /// One pixel column of the line, in core's unit.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -106,6 +112,14 @@ impl Columns {
     }
 }
 
+/// The first and the last move of `series`, or `None` when it is empty.
+#[must_use]
+pub fn move_extent(series: &[(usize, f64)]) -> Option<(usize, usize)> {
+    let first = series.iter().map(|(m, _)| *m).min()?;
+    let last = series.iter().map(|(m, _)| *m).max()?;
+    Some((first, last))
+}
+
 /// Put `series` into at most `max_columns` pixel columns.
 ///
 /// `series` is `(toolpath-local move, value)` in trace order. The column
@@ -115,11 +129,22 @@ impl Columns {
 /// across it. Returns `None` when no value is finite.
 #[must_use]
 pub fn columns(series: &[(usize, f64)], max_columns: usize) -> Option<Columns> {
+    let window = move_extent(series)?;
+    columns_in(series, max_columns, window)
+}
+
+/// [`columns`] over the inclusive move window `window` only. A sample
+/// outside the window is not drawn.
+#[must_use]
+pub fn columns_in(
+    series: &[(usize, f64)],
+    max_columns: usize,
+    window: (usize, usize),
+) -> Option<Columns> {
     if !series.iter().any(|(_, value)| value.is_finite()) {
         return None;
     }
-    let first_move = series.iter().map(|(m, _)| *m).min()?;
-    let last_move = series.iter().map(|(m, _)| *m).max()?;
+    let (first_move, last_move) = (window.0.min(window.1), window.0.max(window.1));
     let span = last_move - first_move + 1;
     let count = max_columns.max(1).min(span);
     let mut out = Columns {
@@ -163,6 +188,88 @@ pub fn columns(series: &[(usize, f64)], max_columns: usize) -> Option<Columns> {
     Some(out)
 }
 
+/// The y range of a line, in core's unit. See "The y scale" above.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LineRange {
+    /// The smallest finite sample.
+    pub data_min: f64,
+    /// The largest finite sample.
+    pub data_max: f64,
+    /// The bottom of the chart: the data and the bounds, less the margin.
+    pub lo: f64,
+    /// The top of the chart: the data and the bounds, plus the margin.
+    pub hi: f64,
+}
+
+/// The y range of `series` with the bounds `floor` and `ceiling`: the full
+/// data range, extended to each finite bound, plus [`LINE_MARGIN`] of the
+/// span on each side. Returns `None` when no sample is finite.
+#[must_use]
+pub fn line_range(
+    series: &[(usize, f64)],
+    floor: Option<f64>,
+    ceiling: Option<f64>,
+) -> Option<LineRange> {
+    let finite = || series.iter().map(|(_, v)| *v).filter(|v| v.is_finite());
+    let data_min = finite().fold(f64::INFINITY, f64::min);
+    let data_max = finite().fold(f64::NEG_INFINITY, f64::max);
+    if !data_min.is_finite() || !data_max.is_finite() {
+        return None;
+    }
+    let (mut lo, mut hi) = (data_min, data_max);
+    for bound in [floor, ceiling].into_iter().flatten() {
+        if bound.is_finite() {
+            lo = lo.min(bound);
+            hi = hi.max(bound);
+        }
+    }
+    if hi <= lo {
+        // Every value is equal and no bound is apart from it. Give the
+        // range a width, as core's histogram does. This is display only.
+        let pad = if lo.abs() > 0.0 {
+            lo.abs() * LINE_MARGIN
+        } else {
+            1e-6
+        };
+        lo -= pad;
+        hi += pad;
+    }
+    let margin = (hi - lo) * LINE_MARGIN;
+    Some(LineRange {
+        data_min,
+        data_max,
+        lo: lo - margin,
+        hi: hi + margin,
+    })
+}
+
+/// Zoom `window` by `factor` about the move `anchor`. A factor below 1
+/// zooms in. The result keeps at least [`MIN_WINDOW_MOVES`] and stays
+/// inside `extent`.
+#[must_use]
+pub fn zoom_window(window: (f64, f64), extent: (f64, f64), anchor: f64, factor: f64) -> (f64, f64) {
+    let full = (extent.1 - extent.0).max(0.0);
+    let span = (window.1 - window.0).max(f64::EPSILON);
+    let new_span = (span * factor).clamp(MIN_WINDOW_MOVES.min(full), full);
+    let anchor = anchor.clamp(window.0, window.1.max(window.0));
+    let share = (anchor - window.0) / span;
+    let lo = anchor - share * new_span;
+    clamp_window((lo, lo + new_span), extent)
+}
+
+/// Move `window` by `delta` moves, inside `extent`.
+#[must_use]
+pub fn pan_window(window: (f64, f64), extent: (f64, f64), delta: f64) -> (f64, f64) {
+    clamp_window((window.0 + delta, window.1 + delta), extent)
+}
+
+/// Shift `window` into `extent` and keep its span.
+fn clamp_window(window: (f64, f64), extent: (f64, f64)) -> (f64, f64) {
+    let span = (window.1 - window.0).min(extent.1 - extent.0).max(0.0);
+    let lo = window.0.clamp(extent.0, (extent.1 - span).max(extent.0));
+    (lo, lo + span)
+}
+
 /// Split the piece from `v0` to `v1` at each bound it crosses.
 ///
 /// Returns `(t_start, t_end, side)` pieces in order, with `t` from 0 at
@@ -193,15 +300,16 @@ pub fn split_at_bounds(
         .collect()
 }
 
-/// Where a gutter label sits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LabelAt {
-    /// At the y of its value: a to-scale bound.
-    Value,
-    /// At the top edge: the top of the range.
-    Top,
-    /// At the bottom edge: the bottom of the range.
-    Bottom,
+/// The words for a column's side of the bounds: the worst side it reaches.
+#[must_use]
+pub fn column_side(column: &Column, floor: Option<f64>, ceiling: Option<f64>) -> BinSide {
+    if histogram::value_side(floor, ceiling, column.max) == BinSide::Above {
+        BinSide::Above
+    } else if histogram::value_side(floor, ceiling, column.min) == BinSide::Below {
+        BinSide::Below
+    } else {
+        BinSide::InBand
+    }
 }
 
 /// The vertical geometry of one line: the data area and its value range.
@@ -214,7 +322,7 @@ struct YScale {
 }
 
 impl YScale {
-    /// The y of `value`, clamped to the data area.
+    /// The y of `value` in the data area.
     fn y(&self, value: f64) -> f32 {
         let span = self.hi - self.lo;
         if span <= 0.0 || !value.is_finite() {
@@ -223,19 +331,10 @@ impl YScale {
         let t = ((value - self.lo) / span).clamp(0.0, 1.0) as f32;
         self.bottom - t * (self.bottom - self.top)
     }
-
-    /// The y where a zone changes at `bound`: the bound's y to scale, and
-    /// the area edge off scale.
-    fn zone_y(&self, place: BoundPlace, bound: f64) -> f32 {
-        match place {
-            BoundPlace::ToScale => self.y(bound),
-            BoundPlace::OffLeft => self.bottom,
-            BoundPlace::OffRight => self.top,
-        }
-    }
 }
 
-/// The "over time" face of a cut-metric card.
+/// The "over time" face of a cut-metric card, and the large trace of the
+/// trace modal.
 pub struct Sparkline<'a> {
     series: &'a [(usize, f64)],
     histogram: &'a Histogram,
@@ -243,6 +342,10 @@ pub struct Sparkline<'a> {
     scale: f64,
     advisory: bool,
     playhead: Option<usize>,
+    height: Option<f32>,
+    window: Option<(usize, usize)>,
+    move_offset: usize,
+    detail: bool,
 }
 
 /// What the operator did to the line this frame.
@@ -250,12 +353,17 @@ pub struct SparklineResponse {
     pub response: egui::Response,
     /// The toolpath-local move of the first sample in the clicked column.
     pub clicked_move: Option<usize>,
+    /// The toolpath-local move under the pointer, as a fraction, when the
+    /// pointer is over the data area. The modal zooms about it.
+    pub pointer_move: Option<f64>,
+    /// How many moves one point of width covers. The modal pans with it.
+    pub moves_per_point: f64,
 }
 
 impl<'a> Sparkline<'a> {
     /// A line of `series`, `(toolpath-local move, value in core's unit)` in
     /// trace order. `histogram` is the card's histogram of the same
-    /// population: the line reads its bounds and its display range.
+    /// population: the line reads its bounds.
     #[must_use]
     pub fn new(series: &'a [(usize, f64)], histogram: &'a Histogram, unit: &'a str) -> Self {
         Self {
@@ -265,6 +373,10 @@ impl<'a> Sparkline<'a> {
             scale: 1.0,
             advisory: false,
             playhead: None,
+            height: None,
+            window: None,
+            move_offset: 0,
+            detail: false,
         }
     }
 
@@ -291,59 +403,117 @@ impl<'a> Sparkline<'a> {
         self
     }
 
-    /// Draw the line in the full available width, at the histogram's
-    /// height.
+    /// The height of the line, in points. The default is the histogram's
+    /// height, so a card does not change height when it flips.
+    #[must_use]
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
+        self
+    }
+
+    /// Show only the inclusive move window `window`. The default is the
+    /// whole series.
+    #[must_use]
+    pub fn window(mut self, window: Option<(usize, usize)>) -> Self {
+        self.window = window;
+        self
+    }
+
+    /// Add `offset` to every move number the line shows, so it reads the
+    /// global move of the transport bar. The default is 0.
+    #[must_use]
+    pub fn move_offset(mut self, offset: usize) -> Self {
+        self.move_offset = offset;
+        self
+    }
+
+    /// The modal face: named limit labels, a move label row under the
+    /// line, and drag senses for pan.
+    #[must_use]
+    pub fn detail(mut self, detail: bool) -> Self {
+        self.detail = detail;
+        self
+    }
+
+    /// Draw the line in the full available width.
     pub fn show(self, ui: &mut egui::Ui) -> SparklineResponse {
         let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
+        let label_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
         let width = ui.available_width().max(histogram::STUB_WIDTH * 4.0);
-        let (rect, response) = ui.allocate_exact_size(
-            egui::vec2(width, histogram::chart_height(ui)),
-            egui::Sense::click(),
-        );
+        let height = self.height.unwrap_or_else(|| histogram::chart_height(ui));
+        let sense = if self.detail {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::click()
+        };
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), sense);
         let hist = self.histogram;
-        let (lo, hi) = histogram::display_range(hist);
         let floor = hist.floor.filter(|v| v.is_finite());
         let ceiling = hist.ceiling.filter(|v| v.is_finite());
+        let range = line_range(self.series, floor, ceiling);
 
-        // The gutter labels: each to-scale bound first, then the two range
-        // ends. A label that collides with one already placed is left out.
-        let mut labels: Vec<(f64, egui::Color32, LabelAt)> = Vec::new();
-        for (bound, colour) in [(floor, tokens::CAUTION), (ceiling, tokens::DANGER)] {
-            if let Some(value) = bound
-                && histogram::bound_place(hist, value) == BoundPlace::ToScale
-            {
-                labels.push((value, colour, LabelAt::Value));
+        // The gutter labels: each bound first, then the data maximum and
+        // minimum, each at its own y. A label that collides with one
+        // already placed is left out.
+        let mut labels: Vec<(f64, egui::Color32, &str)> = Vec::new();
+        for (bound, colour, name) in [
+            (ceiling, tokens::DANGER, "ceiling"),
+            (floor, tokens::CAUTION, "floor"),
+        ] {
+            if let Some(value) = bound {
+                labels.push((value, colour, name));
             }
         }
-        labels.push((hi, tokens::TEXT_MUTED, LabelAt::Top));
-        labels.push((lo, tokens::TEXT_MUTED, LabelAt::Bottom));
+        if let Some(range) = range {
+            labels.push((range.data_max, tokens::TEXT_MUTED, "max"));
+            labels.push((range.data_min, tokens::TEXT_MUTED, "min"));
+        }
         let painter = ui.painter_at(rect);
-        let galleys: Vec<(f64, std::sync::Arc<egui::Galley>, egui::Color32, LabelAt)> = labels
+        let galleys: Vec<(f64, std::sync::Arc<egui::Galley>, egui::Color32)> = labels
             .into_iter()
-            .map(|(value, colour, at)| {
-                let text = histogram::format_value(value * self.scale);
-                let galley = painter.layout_no_wrap(text, font.clone(), colour);
-                (value, galley, colour, at)
+            .map(|(value, colour, name)| {
+                let number = histogram::format_value(value * self.scale);
+                let text = if self.detail {
+                    format!("{name} {number}")
+                } else {
+                    number
+                };
+                (
+                    value,
+                    painter.layout_no_wrap(text, font.clone(), colour),
+                    colour,
+                )
             })
             .collect();
         let gutter = galleys
             .iter()
-            .map(|(_, galley, _, _)| galley.size().x)
+            .map(|(_, galley, _)| galley.size().x)
             .fold(0.0_f32, f32::max)
             + tokens::SPACE_2;
+        let foot = if self.detail {
+            label_height + tokens::SPACE_1
+        } else {
+            0.0
+        };
         let area = egui::Rect::from_min_max(
             egui::pos2(rect.left() + gutter, rect.top() + EDGE_PAD),
-            egui::pos2(rect.right(), rect.bottom() - EDGE_PAD),
+            egui::pos2(rect.right(), rect.bottom() - EDGE_PAD - foot),
         );
         let y_scale = YScale {
             top: area.top(),
             bottom: area.bottom(),
-            lo,
-            hi,
+            lo: range.map_or(0.0, |r| r.lo),
+            hi: range.map_or(1.0, |r| r.hi),
         };
         let max_columns = area.width().max(1.0) as usize;
-        let columns = columns(self.series, max_columns);
+        let columns = match self.window.or_else(|| move_extent(self.series)) {
+            Some(window) => columns_in(self.series, max_columns, window),
+            None => None,
+        };
         let column_count = columns.as_ref().map_or(1, |c| c.columns.len().max(1));
+        let (first_move, move_span) = columns
+            .as_ref()
+            .map_or((0, 1), |c| (c.first_move, c.move_span()));
         let column_x = |index: usize| -> f32 {
             area.left() + (index as f32 + 0.5) * area.width() / column_count as f32
         };
@@ -354,7 +524,6 @@ impl<'a> Sparkline<'a> {
             let t = (x - area.left()) / area.width();
             Some(((t * column_count as f32) as usize).min(column_count - 1))
         };
-
         let column_data = |index: usize| -> Option<Column> {
             columns.as_ref()?.columns.get(index).copied().flatten()
         };
@@ -369,19 +538,36 @@ impl<'a> Sparkline<'a> {
         } else {
             None
         };
+        let moves_per_point = move_span as f64 / f64::from(area.width().max(1.0));
+        let pointer_move = response
+            .hover_pos()
+            .filter(|pos| pos.x >= area.left() && pos.x <= area.right())
+            .map(|pos| first_move as f64 + f64::from(pos.x - area.left()) * moves_per_point);
 
         if ui.is_rect_visible(rect) {
-            self.paint_zones(&painter, area, &y_scale, floor, ceiling);
-            self.paint_limits(&painter, area, &y_scale, floor, ceiling, &font);
+            paint_zones(&painter, area, &y_scale, floor, ceiling);
+            let (dash, gap) = if self.advisory {
+                (2.0, 4.0)
+            } else {
+                (3.0, 2.0)
+            };
+            for (bound, colour) in [(floor, tokens::CAUTION), (ceiling, tokens::DANGER)] {
+                if let Some(value) = bound {
+                    let y = y_scale.y(value);
+                    painter.extend(egui::Shape::dashed_line(
+                        &[egui::pos2(area.left(), y), egui::pos2(area.right(), y)],
+                        egui::Stroke::new(1.0, colour.gamma_multiply(histogram::MARKER_TONE)),
+                        dash,
+                        gap,
+                    ));
+                }
+            }
             let mut placed: Vec<egui::Rect> = Vec::new();
-            for (value, galley, colour, at) in galleys {
+            for (value, galley, colour) in galleys {
                 let size = galley.size();
-                let y = match at {
-                    LabelAt::Top => rect.top(),
-                    LabelAt::Bottom => rect.bottom() - size.y,
-                    LabelAt::Value => y_scale.y(value) - 0.5 * size.y,
-                };
-                let label = egui::Rect::from_min_size(egui::pos2(rect.left(), y), size);
+                let top = (y_scale.y(value) - 0.5 * size.y)
+                    .clamp(rect.top(), (area.bottom() - size.y).max(rect.top()));
+                let label = egui::Rect::from_min_size(egui::pos2(rect.left(), top), size);
                 let padded = label.expand2(egui::vec2(0.0, tokens::SPACE_1));
                 if placed.iter().any(|other| other.intersects(padded)) {
                     continue;
@@ -409,11 +595,36 @@ impl<'a> Sparkline<'a> {
                         egui::Stroke::new(1.0, tokens::HAIRLINE),
                     );
                 }
+                if self.detail {
+                    let label_y = area.bottom() + EDGE_PAD + tokens::SPACE_1;
+                    let ends = [
+                        (area.left(), egui::Align2::LEFT_TOP, columns.first_move),
+                        (area.right(), egui::Align2::RIGHT_TOP, columns.last_move),
+                    ];
+                    for (x, align, local_move) in ends {
+                        painter.text(
+                            egui::pos2(x, label_y),
+                            align,
+                            format!("move {}", local_move + self.move_offset),
+                            font.clone(),
+                            tokens::TEXT_MUTED,
+                        );
+                    }
+                }
             }
         }
 
         let hover_text = hovered_index.map(|_| match hovered_column {
-            Some(column) => column_hover_text(&column, self.scale, self.unit),
+            Some(column) => {
+                let side = column_side(&column, floor, ceiling);
+                column_hover_text(
+                    &column,
+                    column.first_move + self.move_offset,
+                    side,
+                    self.scale,
+                    self.unit,
+                )
+            }
             None => "Not measured here.".to_owned(),
         });
         let response = match hover_text {
@@ -426,142 +637,63 @@ impl<'a> Sparkline<'a> {
         SparklineResponse {
             response,
             clicked_move,
-        }
-    }
-
-    /// Paint the band zones behind the line, as the histogram does. A line
-    /// with no bound paints no zone.
-    fn paint_zones(
-        &self,
-        painter: &egui::Painter,
-        area: egui::Rect,
-        y_scale: &YScale,
-        floor: Option<f64>,
-        ceiling: Option<f64>,
-    ) {
-        if floor.is_none() && ceiling.is_none() {
-            return;
-        }
-        let hist = self.histogram;
-        let floor_y = floor.map_or(area.bottom(), |v| {
-            y_scale.zone_y(histogram::bound_place(hist, v), v)
-        });
-        let ceiling_y = ceiling.map_or(area.top(), |v| {
-            y_scale.zone_y(histogram::bound_place(hist, v), v)
-        });
-        // `top` is above `bottom` on screen: a smaller y.
-        let zone = |top: f32, bottom: f32, colour: egui::Color32| {
-            if bottom > top {
-                painter.rect_filled(
-                    egui::Rect::from_min_max(
-                        egui::pos2(area.left(), top),
-                        egui::pos2(area.right(), bottom),
-                    ),
-                    0.0,
-                    colour,
-                );
-            }
-        };
-        if floor.is_some() {
-            zone(
-                floor_y,
-                area.bottom(),
-                tokens::CAUTION.gamma_multiply(histogram::WASH_OUT),
-            );
-        }
-        zone(
-            ceiling_y,
-            floor_y,
-            tokens::OK.gamma_multiply(histogram::WASH_OK),
-        );
-        if ceiling.is_some() {
-            zone(
-                area.top(),
-                ceiling_y.min(floor_y),
-                tokens::DANGER.gamma_multiply(histogram::WASH_OUT),
-            );
-        }
-    }
-
-    /// Paint a dashed limit line at each to-scale bound, and an off-scale
-    /// marker at the edge for each bound outside the range.
-    fn paint_limits(
-        &self,
-        painter: &egui::Painter,
-        area: egui::Rect,
-        y_scale: &YScale,
-        floor: Option<f64>,
-        ceiling: Option<f64>,
-        font: &egui::FontId,
-    ) {
-        let (dash, gap) = if self.advisory {
-            (2.0, 4.0)
-        } else {
-            (3.0, 2.0)
-        };
-        for (bound, colour) in [(floor, tokens::CAUTION), (ceiling, tokens::DANGER)] {
-            let Some(value) = bound else {
-                continue;
-            };
-            let tone = colour.gamma_multiply(histogram::MARKER_TONE);
-            match histogram::bound_place(self.histogram, value) {
-                BoundPlace::ToScale => {
-                    let y = y_scale.y(value);
-                    painter.extend(egui::Shape::dashed_line(
-                        &[egui::pos2(area.left(), y), egui::pos2(area.right(), y)],
-                        egui::Stroke::new(1.0, tone),
-                        dash,
-                        gap,
-                    ));
-                }
-                place => {
-                    let text = format!(
-                        "{} {}",
-                        histogram::format_value(value * self.scale),
-                        self.unit
-                    );
-                    let galley = painter.layout_no_wrap(text, font.clone(), colour);
-                    let size = galley.size();
-                    let half = histogram::CAP_HALF_WIDTH;
-                    let tip_x = area.right() - half;
-                    // A triangle that points out of the area, at the edge
-                    // the bound lies beyond, with the value beside it.
-                    let (points, text_y) = if place == BoundPlace::OffRight {
-                        let base = area.top() + half * 1.5;
-                        (
-                            vec![
-                                egui::pos2(tip_x, area.top()),
-                                egui::pos2(tip_x + half, base),
-                                egui::pos2(tip_x - half, base),
-                            ],
-                            area.top(),
-                        )
-                    } else {
-                        let base = area.bottom() - half * 1.5;
-                        (
-                            vec![
-                                egui::pos2(tip_x - half, base),
-                                egui::pos2(tip_x + half, base),
-                                egui::pos2(tip_x, area.bottom()),
-                            ],
-                            area.bottom() - size.y,
-                        )
-                    };
-                    painter.add(egui::Shape::convex_polygon(
-                        points,
-                        colour,
-                        egui::Stroke::NONE,
-                    ));
-                    let text_x = tip_x - half - tokens::SPACE_1 - size.x;
-                    painter.galley(egui::pos2(text_x, text_y), galley, colour);
-                }
-            }
+            pointer_move,
+            moves_per_point,
         }
     }
 }
 
-/// Paint the line: the joins between columns, the min-to-max piece of
-/// each column, and a triangle at the edge for each clamped value.
+/// Paint the band zones behind the line, as the histogram does. A line
+/// with no bound paints no zone. Every bound is inside the y range, so
+/// each zone starts at its bound.
+fn paint_zones(
+    painter: &egui::Painter,
+    area: egui::Rect,
+    y_scale: &YScale,
+    floor: Option<f64>,
+    ceiling: Option<f64>,
+) {
+    if floor.is_none() && ceiling.is_none() {
+        return;
+    }
+    let floor_y = floor.map_or(area.bottom(), |v| y_scale.y(v));
+    let ceiling_y = ceiling.map_or(area.top(), |v| y_scale.y(v));
+    // `top` is above `bottom` on screen: a smaller y.
+    let zone = |top: f32, bottom: f32, colour: egui::Color32| {
+        if bottom > top {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(area.left(), top),
+                    egui::pos2(area.right(), bottom),
+                ),
+                0.0,
+                colour,
+            );
+        }
+    };
+    if floor.is_some() {
+        zone(
+            floor_y,
+            area.bottom(),
+            tokens::CAUTION.gamma_multiply(histogram::WASH_OUT),
+        );
+    }
+    zone(
+        ceiling_y,
+        floor_y,
+        tokens::OK.gamma_multiply(histogram::WASH_OK),
+    );
+    if ceiling.is_some() {
+        zone(
+            area.top(),
+            ceiling_y.min(floor_y),
+            tokens::DANGER.gamma_multiply(histogram::WASH_OUT),
+        );
+    }
+}
+
+/// Paint the line: the joins between columns and the min-to-max piece of
+/// each column.
 fn paint_line(
     painter: &egui::Painter,
     columns: &Columns,
@@ -606,41 +738,31 @@ fn paint_line(
             // neighbour stays visible.
             piece(x - LINE_WIDTH, column.min, x + LINE_WIDTH, column.max);
         }
-        let half = histogram::CAP_HALF_WIDTH;
-        if column.max > y_scale.hi {
-            let colour = histogram::side_colour(histogram::value_side(floor, ceiling, column.max));
-            let top = y_scale.top - EDGE_PAD;
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    egui::pos2(x, top),
-                    egui::pos2(x + half, top + half),
-                    egui::pos2(x - half, top + half),
-                ],
-                colour,
-                egui::Stroke::NONE,
-            ));
-        }
-        if column.min < y_scale.lo {
-            let colour = histogram::side_colour(histogram::value_side(floor, ceiling, column.min));
-            let bottom = y_scale.bottom + EDGE_PAD;
-            painter.add(egui::Shape::convex_polygon(
-                vec![
-                    egui::pos2(x - half, bottom - half),
-                    egui::pos2(x + half, bottom - half),
-                    egui::pos2(x, bottom),
-                ],
-                colour,
-                egui::Stroke::NONE,
-            ));
-        }
         previous = Some(*column);
     }
 }
 
-/// The hover line of one column: `0.031 mm/tooth`, or
-/// `0.028–0.036 mm/tooth` when the column holds a range.
+/// The words for a side of the bounds.
 #[must_use]
-pub fn column_hover_text(column: &Column, scale: f64, unit: &str) -> String {
+pub fn side_words(side: BinSide) -> &'static str {
+    match side {
+        BinSide::Below => "below the floor",
+        BinSide::InBand => "within the limits",
+        BinSide::Above => "above the ceiling",
+    }
+}
+
+/// The hover line of one column:
+/// `Move 1234 · 0.031 mm/tooth · within the limits`, with a value range
+/// when the column holds more than one value.
+#[must_use]
+pub fn column_hover_text(
+    column: &Column,
+    shown_move: usize,
+    side: BinSide,
+    scale: f64,
+    unit: &str,
+) -> String {
     let value = if column.max > column.min {
         format!(
             "{}\u{2013}{} {unit}",
@@ -650,7 +772,10 @@ pub fn column_hover_text(column: &Column, scale: f64, unit: &str) -> String {
     } else {
         format!("{} {unit}", histogram::format_value(column.min * scale))
     };
-    format!("{value}\nClick to go to this point.")
+    format!(
+        "Move {shown_move} \u{00b7} {value} \u{00b7} {}\nClick to go to this move.",
+        side_words(side)
+    )
 }
 
 /// The two faces of a cut-metric card.
@@ -682,10 +807,82 @@ impl ChartFace {
     }
 }
 
+/// The hover text of the open button.
+pub const OPEN_HOVER: &str = "Open this trace";
+
+/// The icon an icon button paints.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Icon {
+    /// A small line: "show over time".
+    Line,
+    /// Three bars: "show distribution".
+    Bars,
+    /// `< >`: "open this trace".
+    Open,
+}
+
+/// Allocate one square icon button and paint `icon` in it. The flip and
+/// the open buttons share this, so they are one family. It paints no glyph
+/// from a font, so it does not depend on font cover.
+fn icon_button(ui: &mut egui::Ui, icon: Icon, hover: &str) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(FLIP_SIZE, FLIP_SIZE), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let colour = if response.hovered() {
+            painter.rect_filled(
+                rect,
+                egui::CornerRadius::from(tokens::RADIUS_SM),
+                tokens::SURFACE_RAISED,
+            );
+            tokens::TEXT_STRONG
+        } else {
+            tokens::TEXT_MUTED
+        };
+        let frame = rect.shrink(tokens::SPACE_1 + 1.0);
+        let at = |x: f32, y: f32| {
+            egui::pos2(
+                frame.left() + x * frame.width(),
+                frame.top() + y * frame.height(),
+            )
+        };
+        let stroke = egui::Stroke::new(LINE_WIDTH, colour);
+        let polyline = |points: &[egui::Pos2]| {
+            for pair in points.windows(2) {
+                if let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) {
+                    painter.line_segment([a, b], stroke);
+                }
+            }
+        };
+        match icon {
+            Icon::Line => polyline(&[
+                at(0.0, 0.75),
+                at(0.3, 0.3),
+                at(0.55, 0.8),
+                at(0.8, 0.15),
+                at(1.0, 0.4),
+            ]),
+            Icon::Bars => {
+                for (left, height) in [(0.0, 0.5), (0.36, 1.0), (0.72, 0.7)] {
+                    painter.rect_filled(
+                        egui::Rect::from_min_max(at(left, 1.0 - height), at(left + 0.28, 1.0)),
+                        0.0,
+                        colour,
+                    );
+                }
+            }
+            Icon::Open => {
+                polyline(&[at(0.35, 0.1), at(0.0, 0.5), at(0.35, 0.9)]);
+                polyline(&[at(0.65, 0.1), at(1.0, 0.5), at(0.65, 0.9)]);
+            }
+        }
+    }
+    response.on_hover_text(hover)
+}
+
 /// The flip button of a cut-metric card: a small painted icon of the face
 /// a click shows. A line icon on the histogram face, a bar icon on the
-/// line face. It paints no glyph from a font, so it does not depend on
-/// font cover.
+/// line face.
 pub struct ChartFlip {
     face: ChartFace,
 }
@@ -700,54 +897,20 @@ impl ChartFlip {
 
 impl egui::Widget for ChartFlip {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(FLIP_SIZE, FLIP_SIZE), egui::Sense::click());
-        if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-            let colour = if response.hovered() {
-                painter.rect_filled(
-                    rect,
-                    egui::CornerRadius::from(tokens::RADIUS_SM),
-                    tokens::SURFACE_RAISED,
-                );
-                tokens::TEXT_STRONG
-            } else {
-                tokens::TEXT_MUTED
-            };
-            let icon = rect.shrink(tokens::SPACE_1 + 1.0);
-            let at = |x: f32, y: f32| {
-                egui::pos2(
-                    icon.left() + x * icon.width(),
-                    icon.top() + y * icon.height(),
-                )
-            };
-            match self.face {
-                ChartFace::Distribution => {
-                    let stroke = egui::Stroke::new(LINE_WIDTH, colour);
-                    let points = [
-                        at(0.0, 0.75),
-                        at(0.3, 0.3),
-                        at(0.55, 0.8),
-                        at(0.8, 0.15),
-                        at(1.0, 0.4),
-                    ];
-                    for pair in points.windows(2) {
-                        if let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) {
-                            painter.line_segment([a, b], stroke);
-                        }
-                    }
-                }
-                ChartFace::OverTime => {
-                    for (left, height) in [(0.0, 0.5), (0.36, 1.0), (0.72, 0.7)] {
-                        painter.rect_filled(
-                            egui::Rect::from_min_max(at(left, 1.0 - height), at(left + 0.28, 1.0)),
-                            0.0,
-                            colour,
-                        );
-                    }
-                }
-            }
-        }
-        response.on_hover_text(self.face.flip_hover())
+        let icon = match self.face {
+            ChartFace::Distribution => Icon::Line,
+            ChartFace::OverTime => Icon::Bars,
+        };
+        icon_button(ui, icon, self.face.flip_hover())
+    }
+}
+
+/// The open button of a cut-metric card: `< >`. A click opens the one
+/// trace large in the trace modal (`ui/sim_trace_modal.rs`).
+pub struct TraceOpen;
+
+impl egui::Widget for TraceOpen {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        icon_button(ui, Icon::Open, OPEN_HOVER)
     }
 }

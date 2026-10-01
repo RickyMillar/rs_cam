@@ -637,6 +637,7 @@ impl RsCamApp {
         // Right panel: diagnostics
         side_panel(ui, SidePanelEdge::Right, "sim_diagnostics", 240.0, |ui| {
             let (state, events) = self.controller.state_and_events_mut();
+            let trace_before = state.simulation.open_trace;
             crate::ui::sim_diagnostics::draw(
                 ui,
                 &mut state.simulation,
@@ -644,6 +645,13 @@ impl RsCamApp {
                 &state.gui,
                 events,
             );
+            // A card's `< >` button set the trace on this frame. Open it
+            // through the one door, which closes the other modals first.
+            if let Some(metric) = state.simulation.open_trace
+                && trace_before != Some(metric)
+            {
+                state.open_cut_metric_trace(metric);
+            }
         });
 
         // Central panel: 3D viewport
@@ -1030,6 +1038,24 @@ impl RsCamApp {
         if self.controller.state().machine_library_open {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::machine_library_modal::draw(ctx, state, events);
+        }
+
+        // The cut-metric trace modal (operator request 2026-10-02). It
+        // belongs to the Simulation workspace and closes when the workspace
+        // changes.
+        if self.controller.state().simulation.open_trace.is_some() {
+            let (state, events) = self.controller.state_and_events_mut();
+            if state.workspace == Workspace::Simulation {
+                crate::ui::sim_trace_modal::draw(
+                    ctx,
+                    &mut state.simulation,
+                    &state.session,
+                    &state.gui,
+                    events,
+                );
+            } else {
+                state.simulation.open_trace = None;
+            }
         }
 
         // Keyboard shortcuts reference window

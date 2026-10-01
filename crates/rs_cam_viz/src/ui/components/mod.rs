@@ -55,6 +55,6 @@ pub use pill::{CountPill, PillFamily, PillRole};
 pub use precedence::PrecedenceField;
 pub use provenance::{ProvKind, ProvenanceBadge};
 pub use section::{SummaryCard, UiExt};
-pub use sparkline::{ChartFace, ChartFlip, Sparkline, SparklineResponse};
+pub use sparkline::{ChartFace, ChartFlip, Sparkline, SparklineResponse, TraceOpen};
 pub use suggest::{SuggestButton, SuggestScope, Suggestion};
 pub use value_row::{ValueRow, ValueRowOutcome};

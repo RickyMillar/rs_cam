@@ -83,6 +83,8 @@ impl SimulationState {
                 semantic_indexes: HashMap::new(),
             },
             cut_metric_over_time: Vec::new(),
+            open_trace: None,
+            trace_window: None,
         }
     }
 
