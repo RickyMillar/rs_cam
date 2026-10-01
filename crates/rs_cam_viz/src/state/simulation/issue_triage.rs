@@ -13,7 +13,8 @@ use rs_cam_core::stock::simulation_cut::SimulationCutIssueKind;
 use rs_cam_core::tool_load::ToolLoadReport;
 
 use super::{
-    IssueListCacheKey, SimulationIssue, SimulationIssueKind, SimulationState, SimulationTraceTarget,
+    IssueListCacheKey, IssueTraceIdentity, SimulationIssue, SimulationIssueKind, SimulationState,
+    SimulationTraceTarget,
 };
 use crate::state::runtime::GuiState;
 
@@ -215,7 +216,7 @@ impl SimulationState {
     fn ensure_issue_cache(&mut self, gui: &GuiState, max_feed_mm_min: f64) {
         self.sync_debug_state(gui);
         let cache_key = self.issue_cache_key(gui, max_feed_mm_min);
-        if self.debug.issue_cache.key == Some(cache_key) {
+        if self.debug.issue_cache.key.as_ref() == Some(&cache_key) {
             return;
         }
 
@@ -364,22 +365,23 @@ impl SimulationState {
     }
 
     fn issue_cache_key(&self, gui: &GuiState, max_feed_mm_min: f64) -> IssueListCacheKey {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut boundary_hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut toolpath_traces = Vec::with_capacity(self.boundaries().len());
         for boundary in self.boundaries() {
-            boundary.id.0.hash(&mut hasher);
-            if let Some(rt) = gui.toolpath_rt.get(&boundary.id) {
-                if let Some(trace) = rt.debug_trace.as_ref() {
-                    (Arc::as_ptr(trace) as usize).hash(&mut hasher);
-                    trace.annotations.len().hash(&mut hasher);
-                    trace.hotspots.len().hash(&mut hasher);
-                }
-                if let Some(trace) = rt.semantic_trace.as_ref() {
-                    (Arc::as_ptr(trace) as usize).hash(&mut hasher);
-                    trace.items.len().hash(&mut hasher);
-                }
-            }
+            boundary.id.0.hash(&mut boundary_hasher);
+            boundary.start_move.hash(&mut boundary_hasher);
+            boundary.end_move.hash(&mut boundary_hasher);
+            let rt = gui.toolpath_rt.get(&boundary.id);
+            toolpath_traces.push(IssueTraceIdentity {
+                debug: rt
+                    .and_then(|rt| rt.debug_trace.as_ref())
+                    .map(Arc::downgrade),
+                semantic: rt
+                    .and_then(|rt| rt.semantic_trace.as_ref())
+                    .map(Arc::downgrade),
+            });
         }
-        let debug_trace_fingerprint = hasher.finish();
+        let boundary_fingerprint = boundary_hasher.finish();
 
         let mut collision_hasher = std::collections::hash_map::DefaultHasher::new();
         for &move_index in &self.checks.rapid_collision_move_indices {
@@ -397,13 +399,13 @@ impl SimulationState {
         let collision_fingerprint = collision_hasher.finish();
 
         IssueListCacheKey {
-            cut_trace_ptr: self
+            cut_trace: self
                 .results
                 .as_ref()
                 .and_then(|results| results.cut_trace.as_ref())
-                .map(|trace| Arc::as_ptr(trace) as usize),
-            gui_edit_counter: gui.edit_counter,
-            debug_trace_fingerprint,
+                .map(Arc::downgrade),
+            toolpath_traces,
+            boundary_fingerprint,
             max_feed_bits: max_feed_mm_min.to_bits(),
             collision_fingerprint,
         }

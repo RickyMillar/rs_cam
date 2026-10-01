@@ -47,7 +47,7 @@
 //! one an MCP `reach_map` call with a tolerance override asks for — an agent
 //! probing tolerances must not evict what the viewport is drawing.
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::maps::memo::MeshMemo;
@@ -82,6 +82,47 @@ impl ReachMapKey {
         }
     }
 }
+
+/// The memo key of one [`ReachMapRequest`], for a caller that schedules walks.
+///
+/// The memo's own key is crate-private, because its tool part
+/// ([`ToolShapeKey`]) is crate-private. A caller outside this crate still
+/// has to know when a new request asks a new question: the GUI's reach
+/// overlay resubmits only when this key moves. This type is that answer. It
+/// holds the same fields as the memo key, plus the mesh identity, so two
+/// requests have equal keys exactly when the memo answers both with one map.
+///
+/// The mesh identity is a [`Weak`], compared with [`Weak::ptr_eq`]. The held
+/// `Weak` keeps the allocation reserved, so a new mesh cannot get the same
+/// address while this key lives. A bare pointer has that ABA hazard.
+///
+/// The key reads every input of the map: the setup transform gives a new
+/// mesh `Arc` (through [`crate::maps::geom_cache::cached_transform`]), a tool
+/// edit moves the shape key, and an operation edit moves the tolerance.
+#[derive(Debug, Clone)]
+pub struct ReachRequestKey {
+    mesh: Weak<TriangleMesh>,
+    key: ReachMapKey,
+}
+
+impl ReachRequestKey {
+    /// The key of `request`. It allocates nothing and reads no geometry.
+    #[must_use]
+    pub fn of(request: &ReachMapRequest) -> Self {
+        Self {
+            mesh: Arc::downgrade(&request.mesh),
+            key: ReachMapKey::new(request),
+        }
+    }
+}
+
+impl PartialEq for ReachRequestKey {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.mesh, &other.mesh) && self.key == other.key
+    }
+}
+
+impl Eq for ReachRequestKey {}
 
 /// The table itself is [`crate::maps::memo::MeshMemo`]: `Weak` mesh identity,
 /// dead-mesh sweep and oldest-first eviction at [`CAPACITY`].
@@ -209,5 +250,65 @@ fn get(mesh: &Arc<TriangleMesh>, key: &ReachMapKey) -> Option<Arc<ReachMap>> {
 fn put(mesh: &Arc<TriangleMesh>, key: ReachMapKey, map: Arc<ReachMap>) {
     if let Ok(mut table) = table().lock() {
         table.put(mesh, key, map);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::compute::tool_config::ToolMaterial;
+    use crate::maps::reach_map::{ReachMapParams, ReachToleranceSource};
+    use crate::mesh::{SpatialIndex, make_test_flat};
+    use crate::tool::{BallEndmill, ToolDefinition};
+
+    fn request(mesh: &Arc<TriangleMesh>, diameter: f64, tolerance_mm: f64) -> ReachMapRequest {
+        let cutter = Arc::new(ToolDefinition::new(
+            Box::new(BallEndmill::new(diameter, 25.0)),
+            6.0,
+            20.0,
+            20.0,
+            40.0,
+            2,
+            ToolMaterial::Carbide,
+        ));
+        ReachMapRequest {
+            mesh: Arc::clone(mesh),
+            index: Arc::new(SpatialIndex::build_auto(mesh.as_ref())),
+            params: ReachMapParams::for_cutter(cutter.as_ref(), tolerance_mm),
+            cutter,
+            tool_id: 1,
+            model_id: 2,
+            tolerance_source: ReachToleranceSource::Default,
+        }
+    }
+
+    /// The key moves on each input the map reads, and on nothing else.
+    #[test]
+    fn the_request_key_moves_on_each_input_the_map_reads() {
+        let mesh = Arc::new(make_test_flat(20.0));
+        let base = ReachRequestKey::of(&request(&mesh, 6.0, 0.05));
+        // A second resolve of the same inputs is the same question.
+        assert_eq!(base, ReachRequestKey::of(&request(&mesh, 6.0, 0.05)));
+        // A tool edit, inside the cell clamp too, is a new question.
+        assert_ne!(base, ReachRequestKey::of(&request(&mesh, 6.2, 0.05)));
+        // An operation edit that moves the tolerance is a new question.
+        assert_ne!(base, ReachRequestKey::of(&request(&mesh, 6.0, 0.1)));
+        // An equal mesh in a new allocation is a new question.
+        let twin = Arc::new(make_test_flat(20.0));
+        assert_ne!(base, ReachRequestKey::of(&request(&twin, 6.0, 0.05)));
+    }
+
+    /// A held key keeps its mesh address reserved, so a mesh allocated after
+    /// the first one drops cannot match the old key (no ABA).
+    #[test]
+    fn a_dropped_mesh_key_never_matches_a_new_mesh() {
+        let first = Arc::new(make_test_flat(20.0));
+        let held = ReachRequestKey::of(&request(&first, 6.0, 0.05));
+        drop(first);
+        for _ in 0..64 {
+            let next = Arc::new(make_test_flat(20.0));
+            assert_ne!(held, ReachRequestKey::of(&request(&next, 6.0, 0.05)));
+        }
     }
 }

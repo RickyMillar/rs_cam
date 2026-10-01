@@ -635,14 +635,19 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// Runs on every pump beside [`Self::process_auto_regen`], and submits
     /// only when the scheduling key moves. The key is the selected toolpath
-    /// plus the session edit counter, so a tool or parameter edit resolves a
-    /// fresh request while a plain repaint resolves nothing.
+    /// plus the reach memo's own key of the resolved request
+    /// (`ReachRequestKey`): the mesh identity, the tool shape, the tolerance
+    /// and the cell. The sweep resolves the request on each pump and compares
+    /// keys, so a tool or parameter edit from ANY surface (the GUI, an MCP
+    /// core command, a controller command that does not call `mark_edited`)
+    /// resolves a fresh walk, and an unrelated edit resolves none.
     ///
     /// `ProjectSession::reach_map_spec` does no drop-cutter work — it reads
-    /// two memoised geometry caches — so resolving one here is safe on the UI
-    /// thread. It answers `None` when the operation is not one a reach map
-    /// speaks about, or has no mesh, or has no tool; that clears the overlay
-    /// rather than leaving the previous toolpath's answer on screen.
+    /// two memoised geometry caches — so resolving one here on each pump is
+    /// safe on the UI thread. It answers `None` when the operation is not one
+    /// a reach map speaks about, or has no mesh, or has no tool; that clears
+    /// the overlay rather than leaving the previous toolpath's answer on
+    /// screen.
     ///
     /// No debounce: the memo makes a repeat key free, and the key cannot move
     /// on its own.
@@ -658,7 +663,6 @@ impl<B: ComputeBackend> AppController<B> {
             self.pending_upload = true;
         }
 
-        let edit_counter = self.state.gui.edit_counter;
         let Selection::Toolpath(id) = self.state.selection else {
             if self.state.gui.reach_overlay.toolpath.is_some() {
                 self.state.gui.reach_overlay.clear();
@@ -700,20 +704,22 @@ impl<B: ComputeBackend> AppController<B> {
         // The key already holds the answer, or the request for it. A resubmit
         // would cancel the walk that is about to answer, because the lane's
         // rule is latest-wins.
-        let overlay = &self.state.gui.reach_overlay;
-        if overlay.toolpath == Some(id) && overlay.edit_counter == edit_counter {
-            return;
-        }
-
         let spec = self
             .state
             .session
             .find_toolpath_config_by_id(id)
             .and_then(|(index, _)| self.state.session.reach_map_spec(index, None));
+        let key = spec
+            .as_ref()
+            .map(rs_cam_core::maps::reach_map_cache::ReachRequestKey::of);
+        let overlay = &self.state.gui.reach_overlay;
+        if overlay.toolpath == Some(id) && overlay.key == key {
+            return;
+        }
 
         let overlay = &mut self.state.gui.reach_overlay;
         overlay.toolpath = Some(id);
-        overlay.edit_counter = edit_counter;
+        overlay.key = key;
         overlay.colors = None;
         match spec {
             Some(spec) => {

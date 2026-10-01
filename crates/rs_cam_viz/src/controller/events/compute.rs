@@ -1503,9 +1503,10 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// Three outcomes, and they are deliberately not collapsed:
     ///
-    /// * A result for a toolpath the overlay is no longer asking about is a
-    ///   stale supersede. It is DROPPED, never shown — the operator has
-    ///   already moved on, and the sweep has already asked for the new one.
+    /// * A result for a toolpath the overlay is no longer asking about, or
+    ///   for a request key the overlay no longer holds, is a stale
+    ///   supersede. It is DROPPED, never shown — the operator has already
+    ///   moved on, and the sweep has already asked for the new one.
     /// * A cancelled walk is DROPPED too, and it must not clear the key.
     ///   The Reach lane cancels only when a replacement has just been queued,
     ///   so the `Cancelled` is bookkeeping, exactly as G-REGEN-RACE is on the
@@ -1529,6 +1530,17 @@ impl<B: ComputeBackend> AppController<B> {
         if self.state.gui.reach_overlay.toolpath != Some(result.toolpath_id) {
             tracing::debug!(
                 "Reach map for tp {} dropped — the overlay now follows a different selection",
+                result.toolpath_id
+            );
+            return;
+        }
+        // The same toolpath can ask a new question: an edit to its tool or
+        // its parameters moves the key, and the sweep has already queued the
+        // new walk. A result that was sent before that edit answers the old
+        // question, so drop it rather than show the previous tool's map.
+        if self.state.gui.reach_overlay.key.as_ref() != Some(&result.key) {
+            tracing::debug!(
+                "Reach map for tp {} dropped — the request key moved after the walk was sent",
                 result.toolpath_id
             );
             return;
