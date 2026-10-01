@@ -104,6 +104,9 @@ pub enum RequestSource {
     /// [`PRESENT_MODE_ENV`] was set to something unrecognised; the launch
     /// default was used instead.
     RigOverrideUnrecognised,
+    /// [`PRESENT_MODE_ENV`] was not set, and `[diagnostics] present_mode` of
+    /// the settings file named the mode (File ▸ Preferences ▸ Diagnostics).
+    SettingsFile,
 }
 
 impl RequestSource {
@@ -115,6 +118,7 @@ impl RequestSource {
             Self::RigOverrideUnrecognised => {
                 "launch default (RS_CAM_PRESENT_MODE was set but not understood)"
             }
+            Self::SettingsFile => "settings.toml [diagnostics] present_mode",
         }
     }
 }
@@ -177,10 +181,49 @@ pub fn decide(mcp_mode: bool, env: Option<&str>) -> (PresentMode, RequestSource)
     }
 }
 
-/// [`decide`], plus the startup log line and the record [`report`] publishes.
-pub fn decide_and_record(mcp_mode: bool) -> PresentMode {
+/// [`decide`] with the settings file as the second lever: the environment
+/// variable `env` wins, then the file's value `file`, then the launch
+/// default. The file's value is a parsed token, so it is always understood.
+pub fn decide_with_file(
+    mcp_mode: bool,
+    env: Option<&str>,
+    file: Option<rs_cam_core::settings::PresentModeSetting>,
+) -> (PresentMode, RequestSource) {
+    use rs_cam_core::settings::SettingToken as _;
+
+    let env_is_set = env.is_some_and(|raw| !raw.trim().is_empty());
+    match file {
+        Some(setting) if !env_is_set => {
+            let (mode, _) = decide(mcp_mode, Some(setting.token()));
+            (mode, RequestSource::SettingsFile)
+        }
+        _ => decide(mcp_mode, env),
+    }
+}
+
+/// What the present-mode record holds, as text for a status surface: the
+/// requested mode, where it came from, and the mode wgpu negotiated
+/// (`None` until wgpu logs it).
+#[must_use]
+pub fn status_text() -> (Option<String>, Option<&'static str>, Option<String>) {
+    match RECORD.read() {
+        Ok(slot) => (
+            slot.requested.map(|mode| format!("{mode:?}")),
+            slot.source.map(RequestSource::as_str),
+            slot.negotiated.clone(),
+        ),
+        Err(_) => (None, None, None),
+    }
+}
+
+/// [`decide_with_file`], plus the startup log line and the record
+/// [`report`] publishes.
+pub fn decide_and_record(
+    mcp_mode: bool,
+    file: Option<rs_cam_core::settings::PresentModeSetting>,
+) -> PresentMode {
     let raw = std::env::var(PRESENT_MODE_ENV).ok();
-    let (mode, source) = decide(mcp_mode, raw.as_deref());
+    let (mode, source) = decide_with_file(mcp_mode, raw.as_deref(), file);
 
     if source == RequestSource::RigOverrideUnrecognised {
         tracing::warn!(
@@ -413,6 +456,30 @@ mod tests {
             decide(true, Some("  AUTO_VSYNC  ")),
             (PresentMode::AutoVsync, RequestSource::RigOverride)
         );
+    }
+
+    /// File ▸ Preferences ▸ Diagnostics: the settings file names the mode
+    /// when the environment variable is not set; the variable still wins.
+    #[test]
+    fn the_settings_file_is_the_second_lever() {
+        use rs_cam_core::settings::PresentModeSetting;
+
+        assert_eq!(
+            decide_with_file(false, None, Some(PresentModeSetting::Fifo)),
+            (PresentMode::Fifo, RequestSource::SettingsFile)
+        );
+        assert_eq!(
+            decide_with_file(true, Some("  "), Some(PresentModeSetting::Mailbox)),
+            (PresentMode::Mailbox, RequestSource::SettingsFile),
+            "an empty variable is not set"
+        );
+        assert_eq!(
+            decide_with_file(true, Some("immediate"), Some(PresentModeSetting::Fifo)),
+            (PresentMode::Immediate, RequestSource::RigOverride),
+            "the environment variable wins"
+        );
+        assert_eq!(decide_with_file(true, None, None), decide(true, None));
+        assert_eq!(decide_with_file(false, None, None), decide(false, None));
     }
 
     /// An unset-equivalent or unusable value must not silently move a launch

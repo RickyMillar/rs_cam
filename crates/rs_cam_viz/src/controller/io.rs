@@ -510,6 +510,12 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.selection = Selection::None;
         self.state.panels.pending_setup_removal = None;
         self.state.simulation = SimulationState::new();
+        // `[simulation]` of the settings file: the playback speed and the
+        // stock view a new project starts with.
+        crate::state::app_settings::apply_simulation_defaults(
+            &mut self.state.simulation,
+            &self.state.app_settings.simulation,
+        );
         self.collision_positions.clear();
         self.pending_upload = true;
         self.load_warnings = warning_messages;

@@ -87,6 +87,73 @@ pub struct VizExtras {
     /// refuse the new job for the old job's cancel. The lane maps "cancel
     /// this job" onto the flag of the job it is running.
     pub cancel: Arc<AtomicBool>,
+    /// Where a debug trace file goes when the operator asked for a trace.
+    pub artifacts: ArtifactPolicy,
+}
+
+/// Whether, and where, a lane writes its diagnostic files: the simulation
+/// cut-trace file (`simulation_metrics/`) and the toolpath debug trace
+/// (`toolpath_debug/`).
+///
+/// The controller builds it from `[diagnostics]` of the settings file
+/// (File ▸ Preferences ▸ Diagnostics) for each submit, so a change applies
+/// to the next job. A test gives a scratch folder, so no test writes the
+/// operator's cache folder.
+///
+/// It decides FILES only. The in-memory cut trace is always captured
+/// (`state/CLAUDE.md`: every run captures the cut trace), and nothing in the
+/// product reads the file back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtifactPolicy {
+    /// Write the simulation cut-trace file. Default off: operator ruling
+    /// 2026-10-02.
+    pub save_cut_trace: bool,
+    /// How many cut-trace files stay in `simulation_metrics/` (G-SIMDUMP:
+    /// each file can be several GB).
+    pub cut_trace_retain: usize,
+    /// The artifact folder. `None` when no folder resolves: then no file
+    /// is written.
+    pub dir: Option<PathBuf>,
+}
+
+impl ArtifactPolicy {
+    /// The policy of `[diagnostics]`. The folder is the file's value, else
+    /// the per-user cache folder (`rs_cam_core::settings::paths`).
+    #[must_use]
+    pub fn from_settings(diagnostics: &rs_cam_core::settings::DiagnosticsSettings) -> Self {
+        Self {
+            save_cut_trace: diagnostics.save_cut_trace,
+            cut_trace_retain: diagnostics.cut_trace_retain,
+            dir: rs_cam_core::settings::paths::artifact_dir(diagnostics.artifact_dir.as_deref()),
+        }
+    }
+
+    /// No file of any kind.
+    #[must_use]
+    pub fn none() -> Self {
+        Self {
+            save_cut_trace: false,
+            cut_trace_retain: rs_cam_core::settings::DEFAULT_CUT_TRACE_RETAIN,
+            dir: None,
+        }
+    }
+
+    /// The cut-trace folder, when the switch is on and a folder resolves.
+    #[must_use]
+    pub fn cut_trace_dir(&self) -> Option<PathBuf> {
+        if self.save_cut_trace {
+            self.dir.as_ref().map(|dir| dir.join("simulation_metrics"))
+        } else {
+            None
+        }
+    }
+
+    /// The debug-trace folder, when a folder resolves. The operator's
+    /// per-toolpath trace switch decides whether the file is written.
+    #[must_use]
+    pub fn toolpath_debug_dir(&self) -> Option<PathBuf> {
+        self.dir.as_ref().map(|dir| dir.join("toolpath_debug"))
+    }
 }
 
 pub struct ComputeResult {
@@ -130,6 +197,8 @@ pub struct SimulationRequest {
     /// it matches — that is free — but leaves none, so the memo's memory is
     /// released at the next run rather than held for the life of the session.
     pub memoize_prefix: bool,
+    /// Whether, and where, the run writes its cut-trace file.
+    pub artifacts: ArtifactPolicy,
 }
 
 pub use rs_cam_core::compute::simulate::{SimBoundary, SimCheckpointMesh};

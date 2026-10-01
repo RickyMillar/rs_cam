@@ -52,6 +52,7 @@ pub mod metrology;
 pub mod ops;
 pub mod polygon;
 pub mod session;
+pub mod settings;
 pub mod stock;
 pub mod surface;
 pub mod tool;

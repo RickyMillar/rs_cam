@@ -102,6 +102,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let cancel = AtomicBool::new(false);

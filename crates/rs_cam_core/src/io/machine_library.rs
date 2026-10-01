@@ -8,10 +8,12 @@
 //! pick up a change. There is no reference link of any kind; L6 deleted
 //! the pre-snapshot one.
 //!
-//! Directory resolution (first that is set wins):
-//! 1. `$RS_CAM_MACHINE_DIR` — explicit override (used by tests / CI).
-//! 2. `$XDG_CONFIG_HOME/rs_cam/machines`.
-//! 3. `$HOME/.config/rs_cam/machines`.
+//! Directory resolution (first that is set wins), in
+//! `crate::settings::paths`, the ONE resolver for the GUI, MCP and the CLI:
+//! 1. `$RS_CAM_MACHINE_DIR` — explicit override (tests / CI).
+//! 2. `[paths] machine_library` in the settings file (File ▸ Preferences).
+//! 3. `$XDG_CONFIG_HOME/rs_cam/machines`, else `$HOME/.config/rs_cam/machines`,
+//!    else `%APPDATA%\rs_cam\machines`, else `%USERPROFILE%\.config\rs_cam\machines`.
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +23,7 @@ use crate::machine::MachineProfile;
 #[derive(Debug, thiserror::Error)]
 pub enum MachineLibraryError {
     #[error(
-        "machine library directory could not be determined (no RS_CAM_MACHINE_DIR, XDG_CONFIG_HOME, or HOME)"
+        "machine library directory could not be determined (no RS_CAM_MACHINE_DIR, [paths] machine_library, XDG_CONFIG_HOME, HOME, APPDATA or USERPROFILE)"
     )]
     NoLibraryDir,
     #[error("invalid machine name {0:?}: must be non-empty and contain no path separators or '..'")]
@@ -61,27 +63,10 @@ impl crate::io::named_toml_library::LibraryError for MachineLibraryError {
 
 /// Resolve the per-user machine-library directory. Does not create it.
 pub fn library_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("RS_CAM_MACHINE_DIR")
-        && !dir.is_empty()
-    {
-        return Some(PathBuf::from(dir));
-    }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
-        && !xdg.is_empty()
-    {
-        return Some(PathBuf::from(xdg).join("rs_cam").join("machines"));
-    }
-    if let Ok(home) = std::env::var("HOME")
-        && !home.is_empty()
-    {
-        return Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("rs_cam")
-                .join("machines"),
-        );
-    }
-    None
+    // One resolver for every surface: `RS_CAM_MACHINE_DIR`, else `[paths]
+    // machine_library` of the settings file, else the config folder
+    // (`crate::settings::paths`).
+    crate::settings::paths::machine_library_dir()
 }
 
 /// True when `name` is a safe bare file stem (no separators, no `..`).

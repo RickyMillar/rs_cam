@@ -13,7 +13,8 @@ and the All viewport options catalogue read it. Entry: `ui::overlays::mod`.
 
 ## Invariants
 
-- Registration, MCP, the dock and the catalogue read the SAME registry.
+- Registration, MCP, the dock and the catalogue read the SAME registry, and
+  every default reader asks `effective_default` (`[display.overlays]`).
 - Every row has ONE dock section and is listed in the catalogue.
 - An unavailable overlay is refused with a reason, never silently accepted.
 - A row state is derived each frame; never store a computing, stale or
@@ -24,8 +25,7 @@ and the All viewport options catalogue read it. Entry: `ui::overlays::mod`.
   with no public source is mirrored in `legend_rail::mirrored`, and the
   vpstate sentry pins the render literal.
 - The dock and the catalogue float over the 3D view. Neither takes width.
-- The reach map overlay is an UPPER estimate; see
-  `../../../../rs_cam_core/src/maps/CLAUDE.md`.
+- The reach map is an UPPER estimate (`rs_cam_core/src/maps/CLAUDE.md`).
 
 ## Sentries
 

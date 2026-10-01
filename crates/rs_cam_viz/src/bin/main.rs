@@ -5,21 +5,28 @@ fn main() -> eframe::Result {
     // window-system work. `run` repeats the guard for library callers.
     #[cfg(not(feature = "mcp"))]
     if mcp_mode {
-        return rs_cam_viz::run(true);
+        return rs_cam_viz::run(true, rs_cam_viz::io::app_settings::LoadedSettings::default());
     }
 
-    init_tracing(mcp_mode);
+    // The settings file is read ONCE, here, before the log subscriber
+    // starts: `[diagnostics] log_level` decides the subscriber. A warning
+    // of the file reaches the operator as a toast (`RsCamApp::new`) and as
+    // a log line once the subscriber runs.
+    let settings = rs_cam_viz::io::app_settings::load();
+    init_tracing(mcp_mode, settings.settings.diagnostics.log_level);
     install_panic_hook();
     if mcp_mode {
         warn_if_wayland_can_park_the_frame_loop();
     }
-    rs_cam_viz::run(mcp_mode)
+    rs_cam_viz::run(mcp_mode, settings)
 }
 
 /// Install the global tracing subscriber.
 ///
-/// **The interactive path is byte-for-byte what it was**: `fmt::init()`, whose
-/// filtering is `RUST_LOG` if set and `INFO` otherwise
+/// **The interactive path is what it was**, with one dial: `fmt::init()`
+/// when `RUST_LOG` is set, else a `fmt` subscriber at `level`, the
+/// `[diagnostics] log_level` of the settings file. Its default is `INFO`,
+/// which is `fmt::init()`'s own level without `RUST_LOG`
 /// (`tracing-subscriber-0.3.23/src/fmt/mod.rs:1216-1234`).
 ///
 /// The `--mcp` path adds one thing to that same arrangement — a layer that
@@ -34,13 +41,20 @@ fn main() -> eframe::Result {
 /// It is not installed for interactive launches, and deliberately: the flip it
 /// observes is `--mcp`-only, and enabling a `TRACE` target raises the global
 /// `log` max level, which re-checks every `log` record in the process.
-fn init_tracing(mcp_mode: bool) {
+fn init_tracing(mcp_mode: bool, level: rs_cam_viz::io::app_settings::LogLevel) {
     use tracing_subscriber::Layer as _;
     use tracing_subscriber::layer::SubscriberExt as _;
     use tracing_subscriber::util::SubscriberInitExt as _;
 
     if !mcp_mode {
-        tracing_subscriber::fmt::init();
+        if std::env::var_os("RUST_LOG").is_some() {
+            // `RUST_LOG` wins over the settings file.
+            tracing_subscriber::fmt::init();
+        } else {
+            tracing_subscriber::fmt()
+                .with_max_level(level_filter(level))
+                .init();
+        }
         return;
     }
 
@@ -48,27 +62,47 @@ fn init_tracing(mcp_mode: bool) {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
         .with_ansi(false)
-        .with_filter(user_log_filter());
+        .with_filter(user_log_filter(level));
     tracing_subscriber::registry()
         .with(fmt_layer)
         .with(rs_cam_viz::present_mode::capture_layer())
         .init();
 }
 
-/// `RUST_LOG` if it parses, `INFO` otherwise — `fmt::init()`'s own rule
-/// (`tracing-subscriber-0.3.23/src/fmt/mod.rs:1216-1234`), reproduced here
-/// because the layered build cannot call it.
+/// `RUST_LOG` if it parses, else `[diagnostics] log_level` of the settings
+/// file (default `INFO`) — `fmt::init()`'s own rule
+/// (`tracing-subscriber-0.3.23/src/fmt/mod.rs:1216-1234`) with the file's
+/// level in place of `INFO`, reproduced here because the layered build
+/// cannot call it.
 ///
 /// An unparseable `RUST_LOG` yields an empty filter, exactly as upstream does.
 /// Upstream also prints a note about it; this cannot, because the subscriber it
 /// would print through is the one being built.
-fn user_log_filter() -> tracing_subscriber::filter::Targets {
+fn user_log_filter(
+    level: rs_cam_viz::io::app_settings::LogLevel,
+) -> tracing_subscriber::filter::Targets {
     use std::str::FromStr as _;
-    use tracing_subscriber::filter::{LevelFilter, Targets};
+    use tracing_subscriber::filter::Targets;
 
     match std::env::var("RUST_LOG") {
         Ok(var) => Targets::from_str(&var).unwrap_or_default(),
-        Err(_) => Targets::new().with_default(LevelFilter::INFO),
+        Err(_) => Targets::new().with_default(level_filter(level)),
+    }
+}
+
+/// The tracing level of a `[diagnostics] log_level` value.
+fn level_filter(
+    level: rs_cam_viz::io::app_settings::LogLevel,
+) -> tracing_subscriber::filter::LevelFilter {
+    use rs_cam_viz::io::app_settings::LogLevel;
+    use tracing_subscriber::filter::LevelFilter;
+
+    match level {
+        LogLevel::Error => LevelFilter::ERROR,
+        LogLevel::Warn => LevelFilter::WARN,
+        LogLevel::Info => LevelFilter::INFO,
+        LogLevel::Debug => LevelFilter::DEBUG,
+        LogLevel::Trace => LevelFilter::TRACE,
     }
 }
 

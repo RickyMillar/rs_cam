@@ -74,6 +74,8 @@ pub(crate) type ToolpathSnapshot = (
 pub struct UndoHistory {
     undo_stack: Vec<UndoAction>,
     redo_stack: Vec<UndoAction>,
+    /// The undo depth. See [`UndoHistory::set_limit`].
+    limit: usize,
     /// Snapshot of stock config before current edit drag.
     pub stock_snapshot: Option<StockConfig>,
     /// WP6 — the stock panel's scratch copy for the edit in flight.
@@ -122,6 +124,7 @@ impl UndoHistory {
         Self {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            limit: rs_cam_core::settings::DEFAULT_UNDO_DEPTH,
             stock_snapshot: None,
             stock_draft: None,
             machine_draft: None,
@@ -135,12 +138,29 @@ impl UndoHistory {
         }
     }
 
+    /// The undo depth: `[general] undo_depth` (File ▸ Preferences). A
+    /// smaller depth drops the oldest steps at once.
+    pub fn set_limit(&mut self, limit: usize) {
+        self.limit = limit.max(1);
+        self.trim();
+    }
+
+    /// The number of undo steps this history keeps.
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    fn trim(&mut self) {
+        if self.undo_stack.len() > self.limit {
+            let excess = self.undo_stack.len() - self.limit;
+            self.undo_stack = self.undo_stack.split_off(excess);
+        }
+    }
+
     pub fn push(&mut self, action: UndoAction) {
         self.undo_stack.push(action);
         self.redo_stack.clear();
-        if self.undo_stack.len() > 100 {
-            self.undo_stack.remove(0);
-        }
+        self.trim();
     }
 
     pub fn can_undo(&self) -> bool {
@@ -303,5 +323,35 @@ mod tests {
         let r3 = history.redo().expect("redo 3rd");
         assert_eq!(extract_stock_new_x(&r3), 40.0);
         assert!(history.redo().is_none());
+    }
+    /// `[general] undo_depth`: the history keeps that many steps, and a
+    /// smaller depth drops the oldest steps at once.
+    #[test]
+    fn the_undo_depth_is_the_setting() {
+        let mut history = UndoHistory::new();
+        assert_eq!(history.limit(), 100, "the depth before the setting");
+        history.set_limit(3);
+        for i in 0..5 {
+            let x = f64::from(i);
+            history.push(stock_action(x, x + 1.0));
+        }
+        let mut kept = Vec::new();
+        while let Some(action) = history.undo() {
+            kept.push(extract_stock_old_x(&action));
+        }
+        assert_eq!(kept, vec![4.0, 3.0, 2.0], "the oldest steps go");
+
+        for i in 0..3 {
+            let x = f64::from(i);
+            history.push(stock_action(x, x + 1.0));
+        }
+        history.set_limit(1);
+        assert_eq!(
+            history.undo().map(|action| extract_stock_old_x(&action)),
+            Some(2.0)
+        );
+        assert!(history.undo().is_none());
+        history.set_limit(0);
+        assert_eq!(history.limit(), 1, "the depth is at least one step");
     }
 }

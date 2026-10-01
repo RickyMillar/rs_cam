@@ -92,8 +92,9 @@ pub(crate) fn resolve_machine_in(
     let Some(dir) = dir else {
         bail!(
             "--machine {name} needs a machine library, and none is set. Set \
-             RS_CAM_MACHINE_DIR, XDG_CONFIG_HOME or HOME, or drop the flag to \
-             use the built-in shapeoko_xxl_ricky_tuned preset."
+             RS_CAM_MACHINE_DIR, [paths] machine_library in settings.toml, \
+             XDG_CONFIG_HOME or HOME, or drop the flag to use the built-in \
+             shapeoko_xxl_ricky_tuned preset."
         );
     };
     match machine_library::load_from(dir, name) {
@@ -488,5 +489,52 @@ mod tests {
             rs_cam_core::toolpath::MoveType::Linear { .. }
         ));
         let _ = std::fs::remove_file(&path);
+    }
+    /// The CLI reads the machine folder that File ▸ Preferences writes.
+    ///
+    /// `nc-time` asks `machine_library::library_dir`, which is the core
+    /// resolver `rs_cam_core::settings::paths` that the GUI and MCP use:
+    /// `RS_CAM_MACHINE_DIR`, else `[paths] machine_library`, else the
+    /// config folder. This test drives the pure form of that resolver with
+    /// a settings file that the core writer wrote, so it never writes the
+    /// process environment or the operator's own file.
+    #[test]
+    fn the_cli_resolves_the_machine_folder_of_the_settings_file() {
+        use rs_cam_core::settings::paths::machine_library_dir_from;
+        use rs_cam_core::settings::{AppSettings, PathSettings, load_from, save_to};
+
+        let root = std::env::temp_dir().join(format!("nc_time_settings_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let library = root.join("machines_from_prefs");
+        let settings_file = root.join("settings.toml");
+        let settings = AppSettings {
+            paths: PathSettings {
+                machine_library: Some(library.clone()),
+                ..PathSettings::default()
+            },
+            ..AppSettings::default()
+        };
+        save_to(&settings_file, &settings).unwrap();
+        let mut profile = rs_cam_core::machine::MachineProfile::generic_wood_router();
+        profile.name = "prefs_router".to_owned();
+        rs_cam_core::io::machine_library::save_to(&library, "prefs_router", &profile).unwrap();
+
+        let file = load_from(&settings_file).settings.paths;
+        let home = |name: &str| (name == "HOME").then(|| "/nowhere".to_owned());
+        let dir = machine_library_dir_from(home, file.machine_library.as_deref());
+        assert_eq!(dir.as_deref(), Some(library.as_path()), "the file wins over HOME");
+        let resolved = resolve_machine_in(dir.as_deref(), Some("prefs_router")).unwrap();
+        assert_eq!(resolved.label, "prefs_router");
+
+        // The environment variable still wins over the file.
+        let env = |name: &str| match name {
+            "RS_CAM_MACHINE_DIR" => Some("/env/machines".to_owned()),
+            _ => None,
+        };
+        assert_eq!(
+            machine_library_dir_from(env, file.machine_library.as_deref()),
+            Some(PathBuf::from("/env/machines"))
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

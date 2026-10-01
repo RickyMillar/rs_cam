@@ -5,9 +5,10 @@
 //!
 //! 1. `--memory-limit <SIZE>` on the command line.
 //! 2. `[memory] limit` in the settings file. The CLI reads the file through
-//!    `rs_cam_core::budget::settings`, the loader the GUI uses, so the path
+//!    `rs_cam_core::settings`, the loader the GUI uses, so the path
 //!    resolves the same way: `RS_CAM_SETTINGS`, then `XDG_CONFIG_HOME`,
-//!    then `HOME`, then `APPDATA`, then `USERPROFILE`.
+//!    then `HOME`, then `APPDATA`, then `USERPROFILE`. The text of the
+//!    limit reads through `rs_cam_core::budget::settings`.
 //! 3. `MemoryLimit::Default`, which reads
 //!    `rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION`: half of the system
 //!    RAM (operator ruling 2026-10-02). So with no flag and no file the run
@@ -18,7 +19,8 @@
 
 use std::sync::OnceLock;
 
-use rs_cam_core::budget::settings::{self, LoadedSettings};
+use rs_cam_core::budget::settings as limit_text;
+use rs_cam_core::settings::{self, LoadedSettings};
 use rs_cam_core::budget::{BudgetGuard, MemoryBudget, MemoryLimit, StopReason, format_bytes};
 
 /// The budget of this process, set once by `main`.
@@ -31,7 +33,7 @@ static BUDGET: OnceLock<MemoryBudget> = OnceLock::new();
 /// # Errors
 /// A sentence that names the problem, for clap to show.
 pub(crate) fn parse_memory_limit(text: &str) -> Result<MemoryLimit, String> {
-    settings::parse_limit_text(text).map_err(|error| error.to_string())
+    limit_text::parse_limit_text(text).map_err(|error| error.to_string())
 }
 
 /// The limit of this run: the flag, else the file that `load` reads, and
@@ -48,7 +50,7 @@ pub(crate) fn limit_from(
         .as_ref()
         .map_or(MemoryLimit::Default, |loaded| loaded.settings.memory_limit);
     (
-        settings::resolve_limit(flag, file),
+        limit_text::resolve_limit(flag, file),
         loaded.and_then(|loaded| loaded.warning),
     )
 }

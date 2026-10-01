@@ -367,6 +367,7 @@ fn long_simulation_request() -> SimulationRequest {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     }
 }
 
@@ -415,6 +416,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     }
 }
 
@@ -1571,6 +1573,7 @@ fn multi_setup_top_bottom_simulation() {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1727,6 +1730,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1776,10 +1780,24 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     );
 }
 
+/// A scratch artifact folder of its own, empty, unique to this process.
+fn scratch_artifact_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("rs_cam_artifacts_{name}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
 #[test]
 fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
+    let dir = scratch_artifact_dir("backend");
+    let mut request = small_simulation_request_with_metrics();
+    request.artifacts = crate::compute::ArtifactPolicy {
+        save_cut_trace: true,
+        cut_trace_retain: 5,
+        dir: Some(dir.clone()),
+    };
     let mut backend = ThreadedComputeBackend::new();
-    backend.submit_simulation(small_simulation_request_with_metrics());
+    backend.submit_simulation(request);
 
     let result = wait_for(&mut backend, Duration::from_secs(10), |msg| {
         matches!(msg, ComputeMessage::Simulation(Ok(_)))
@@ -1800,10 +1818,61 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
     );
     if let Some(path) = result.cut_trace_path.as_ref() {
         assert!(path.exists(), "expected cut trace artifact to exist");
-        std::fs::remove_file(path).ok();
+        assert!(path.starts_with(&dir), "the file goes to the policy folder");
     } else {
         panic!("expected cut trace artifact path");
     }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// File ▸ Preferences ▸ Diagnostics, operator ruling 2026-10-02: with the
+/// switch off (the default) the run writes no `simulation_metrics` file and
+/// still holds the in-memory trace; with the switch on it writes one file
+/// into the policy folder. (The retention count reaches the core pruner,
+/// whose grace period keeps a file this young, so this test does not
+/// measure the prune.)
+#[test]
+fn the_cut_trace_file_follows_the_switch() {
+    let run = |artifacts: crate::compute::ArtifactPolicy| {
+        let mut request = small_simulation_request_with_metrics();
+        request.artifacts = artifacts;
+        let cancel = AtomicBool::new(false);
+        super::execute::run_simulation_with_phase(&request, &cancel, |_phase| {}, None)
+            .expect("viz simulation completes")
+    };
+    let files_in = |dir: &std::path::Path| -> usize {
+        std::fs::read_dir(dir.join("simulation_metrics")).map_or(0, |entries| entries.count())
+    };
+
+    let off = scratch_artifact_dir("switch_off");
+    let result = run(crate::compute::ArtifactPolicy {
+        save_cut_trace: false,
+        cut_trace_retain: 5,
+        dir: Some(off.clone()),
+    });
+    assert!(result.core.cut_trace.is_some(), "the trace is still captured");
+    assert!(result.cut_trace_path.is_none());
+    assert_eq!(files_in(&off), 0, "the switch is off: no file");
+    assert!(!off.exists(), "the folder is not even made");
+
+    // The defaults of the settings file give the switch off.
+    let defaults = crate::compute::ArtifactPolicy::from_settings(
+        &rs_cam_core::settings::DiagnosticsSettings::default(),
+    );
+    assert!(!defaults.save_cut_trace);
+    assert_eq!(defaults.cut_trace_dir(), None);
+
+    let on = scratch_artifact_dir("switch_on");
+    let first = run(crate::compute::ArtifactPolicy {
+        save_cut_trace: true,
+        cut_trace_retain: 5,
+        dir: Some(on.clone()),
+    });
+    let path = first.cut_trace_path.expect("the switch is on: a file");
+    assert!(path.starts_with(on.join("simulation_metrics")));
+    assert!(path.exists());
+    assert_eq!(files_in(&on), 1);
+    std::fs::remove_dir_all(&on).ok();
 }
 
 // Regression: playback_data must carry drill_op for drill toolpaths so the
@@ -1888,6 +1957,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -1995,6 +2065,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2099,6 +2170,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     let mut backend = ThreadedComputeBackend::new();
@@ -2279,6 +2351,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             display_stride: 1,
         },
         memoize_prefix: false,
+        artifacts: crate::compute::ArtifactPolicy::none(),
     };
 
     // Drive the viz production sim entry point directly (the same function

@@ -764,7 +764,8 @@ fn matches_filter(
     let filter_ok = match filter {
         CatalogueFilter::All => true,
         CatalogueFilter::Changed => {
-            (row.default_for)(state.workspace).is_some_and(|default| (row.get)(state) != default)
+            super::registry::effective_default(state, row, state.workspace)
+                .is_some_and(|default| (row.get)(state) != default)
         }
         CatalogueFilter::CannotDraw => !(row.precondition)(state).is_ready(),
     };

@@ -13,8 +13,8 @@ Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3, B5).
   (`SimulationEstimate`), the preflight and `largest_cell_that_fits`.
 - `grid.rs` — the ONE source of every dexel grid cap (`GridCapRole`) and the
   dexel rounding (`grid_cells`).
-- `settings.rs` — the ONE `settings.toml` loader and writer for the GUI and
-  the CLI. The flag overrides the file. Tests never `set_var`.
+- `settings.rs` — the `[memory] limit` text, shared by the file and the CLI
+  flag. The flag overrides the file. The file itself is `crate::settings`.
 
 ## Invariants
 

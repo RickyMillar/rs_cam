@@ -417,7 +417,7 @@ impl RsCamApp {
                         self.controller.state_mut().show_shortcuts = true;
                     }
                     UiCommand::Quit(NoArgs) => {
-                        if self.controller.state().gui.dirty {
+                        if self.controller.state().quit_needs_confirmation() {
                             self.unsaved_guard = Some(super::UnsavedGuard::Quit);
                         } else {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

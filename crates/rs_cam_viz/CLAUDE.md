@@ -21,7 +21,7 @@ directory; it holds the file map, invariants, sentries and traps.
 | `ui/feeds/` | The feeds and speeds surfaces | `ui/feeds/CLAUDE.md` |
 | `ui/overlays/` | The viewport dock, the All viewport options catalogue and their registry | `ui/overlays/CLAUDE.md` |
 | `ui/properties/` | The inspector tabs | `ui/properties/CLAUDE.md` |
-| `interaction/`, `io/` | Picking and mouse handling; project import, export and the setup sheet. `io/app_settings.rs` only re-exports core's `budget::settings` loader | — |
+| `interaction/`, `io/` | Picking and mouse handling; project import, export and the setup sheet. `io/app_settings.rs` only re-exports core's `settings` loader and writer | — |
 
 ## GUI contracts
 

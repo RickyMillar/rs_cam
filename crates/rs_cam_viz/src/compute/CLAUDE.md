@@ -25,6 +25,7 @@ the UI thread. The entry point is `compute::worker`.
   stale label over a live one.
 - A heavy job with an estimate waits in its queue while another heavy job
   runs and RSS + reserved + estimate > limit.
+- A file goes where the request's `ArtifactPolicy` says (cut trace: off).
 
 ## Sentries
 
@@ -36,5 +37,4 @@ the UI thread. The entry point is `compute::worker`.
 
 ## Do not
 
-- Do not run a heavy job on the UI thread. Do not start a second cargo build
-  beside a running one.
+- Do not run a heavy job on the UI thread or write into `target/`.

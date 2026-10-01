@@ -21,7 +21,9 @@
 //!   `Notification::created_at`, in the running GUI process. The stack is
 //!   not persisted; ages mean nothing across a restart and the stack is
 //!   empty after one. `visible` is `age < ttl`, and TTL comes from
-//!   severity (`Notification::ttl`: info 4 s, warning 6 s, error 8 s).
+//!   severity and `[general] toast_*_seconds` of the settings file, fixed at
+//!   the push (`Notification::ttl`; defaults info 4 s, warning 6 s, error
+//!   8 s).
 
 #![cfg(feature = "mcp")]
 #![allow(
@@ -229,6 +231,28 @@ fn ttl_is_by_severity_and_a_fresh_toast_is_visible() {
             "age is measured from the push, not from process start"
         );
     }
+}
+
+/// File ▸ Preferences ▸ General: a new toast takes the new durations, and
+/// a toast already on the stack keeps the duration it was pushed with.
+#[test]
+fn a_new_toast_takes_the_durations_of_the_settings() {
+    let mut controller = AppController::with_backend(SilentBackend);
+    controller.push_notification("before".to_owned(), Severity::Info);
+    let general = &mut controller.state_mut().app_settings.general;
+    general.toast_info_seconds = 2.5;
+    general.toast_warning_seconds = 12.0;
+    general.toast_error_seconds = 30.0;
+    controller.push_notification("i".to_owned(), Severity::Info);
+    controller.push_notification("w".to_owned(), Severity::Warning);
+    controller.push_notification("e".to_owned(), Severity::Error);
+
+    let ttls: Vec<f64> = controller
+        .notifications()
+        .iter()
+        .map(|n| n.ttl().as_secs_f64())
+        .collect();
+    assert_eq!(ttls, vec![4.0, 2.5, 12.0, 30.0]);
 }
 
 /// The stack keeps expired entries until the frame loop's collector runs,

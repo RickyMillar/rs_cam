@@ -11,10 +11,12 @@
 //! Each tool is stored as a serialized [`ToolConfig`]; the project-local
 //! `id` is ignored on import (`add_tool` reassigns it).
 //!
-//! Directory resolution (first that is set wins):
+//! Directory resolution (first that is set wins), in
+//! `crate::settings::paths`, the ONE resolver for the GUI, MCP and the CLI:
 //! 1. `$RS_CAM_TOOL_DIR` — explicit override (tests / CI).
-//! 2. `$XDG_CONFIG_HOME/rs_cam/tools`.
-//! 3. `$HOME/.config/rs_cam/tools`.
+//! 2. `[paths] tool_library` in the settings file (File ▸ Preferences).
+//! 3. `$XDG_CONFIG_HOME/rs_cam/tools`, else `$HOME/.config/rs_cam/tools`,
+//!    else `%APPDATA%\rs_cam\tools`, else `%USERPROFILE%\.config\rs_cam\tools`.
 
 use std::path::{Path, PathBuf};
 
@@ -26,7 +28,7 @@ use crate::compute::tool_config::ToolConfig;
 #[derive(Debug, thiserror::Error)]
 pub enum ToolLibraryError {
     #[error(
-        "tool library directory could not be determined (no RS_CAM_TOOL_DIR, XDG_CONFIG_HOME, or HOME)"
+        "tool library directory could not be determined (no RS_CAM_TOOL_DIR, [paths] tool_library, XDG_CONFIG_HOME, HOME, APPDATA or USERPROFILE)"
     )]
     NoLibraryDir,
     #[error("invalid catalog name {0:?}: must be non-empty and contain no path separators or '..'")]
@@ -71,27 +73,10 @@ pub struct ToolCatalog {
 
 /// Resolve the per-user tool-library directory. Does not create it.
 pub fn library_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("RS_CAM_TOOL_DIR")
-        && !dir.is_empty()
-    {
-        return Some(PathBuf::from(dir));
-    }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
-        && !xdg.is_empty()
-    {
-        return Some(PathBuf::from(xdg).join("rs_cam").join("tools"));
-    }
-    if let Ok(home) = std::env::var("HOME")
-        && !home.is_empty()
-    {
-        return Some(
-            PathBuf::from(home)
-                .join(".config")
-                .join("rs_cam")
-                .join("tools"),
-        );
-    }
-    None
+    // One resolver for every surface: `RS_CAM_TOOL_DIR`, else `[paths]
+    // tool_library` of the settings file, else the config folder
+    // (`crate::settings::paths`).
+    crate::settings::paths::tool_library_dir()
 }
 
 fn path_in(dir: &Path, name: &str) -> Result<PathBuf, ToolLibraryError> {

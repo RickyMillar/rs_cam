@@ -175,6 +175,7 @@ impl RsCamApp {
     pub(crate) fn new(
         cc: &eframe::CreationContext<'_>,
         mcp_mode: bool,
+        settings: crate::io::app_settings::LoadedSettings,
         #[cfg(feature = "mcp")] mcp_exit: Option<&crate::mcp_lifecycle::McpExitSignal>,
     ) -> Self {
         configure_theme(&cc.egui_ctx);
@@ -203,7 +204,11 @@ impl RsCamApp {
         // 2026-10-02). A file that did not parse gives the default and a
         // Warning toast. File ▸ Preferences changes the budget at run time
         // (`ComputeBackend::set_memory_budget`).
-        let settings = crate::io::app_settings::load();
+        //
+        // `bin/main.rs` read the file ONCE, before the log subscriber. The
+        // other sections apply here (`AppController::apply_startup_settings`):
+        // the undo depth, the toast durations, the display and simulation
+        // defaults, the library folders and the diagnostics switches.
         let memory_budget = settings.settings.memory_budget();
         tracing::info!(
             limit = ?memory_budget.limit_bytes,
@@ -213,7 +218,9 @@ impl RsCamApp {
         let mut controller = AppController::with_backend(
             crate::compute::ThreadedComputeBackend::with_budget(memory_budget),
         );
+        controller.apply_startup_settings(settings.settings);
         if let Some(warning) = settings.warning {
+            tracing::warn!("{warning}");
             controller.push_notification(warning, crate::controller::Severity::Warning);
         }
 
@@ -695,8 +702,10 @@ impl RsCamApp {
         }
     }
 
-    /// Save an egui screenshot to a PNG file in the current directory.
-    fn save_screenshot(image: &egui::ColorImage) {
+    /// Save an egui screenshot to a PNG file in `dir`, the
+    /// `[paths] screenshots` folder, or in the current folder when `dir` is
+    /// `None`.
+    fn save_screenshot(image: &egui::ColorImage, dir: Option<&std::path::Path>) {
         let pixels: Vec<u8> = image
             .pixels
             .iter()
@@ -715,9 +724,20 @@ impl RsCamApp {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let path = format!("screenshot_{timestamp}.png");
+        // `[paths] screenshots`; with no value, the current folder, as
+        // before the setting existed.
+        let name = format!("screenshot_{timestamp}.png");
+        let path = match dir {
+            Some(dir) => {
+                if let Err(e) = std::fs::create_dir_all(dir) {
+                    tracing::error!("Failed to make screenshot folder {}: {e}", dir.display());
+                }
+                dir.join(name)
+            }
+            None => std::path::PathBuf::from(name),
+        };
         match img_buf.save(&path) {
-            Ok(()) => tracing::info!("Screenshot saved to {path}"),
+            Ok(()) => tracing::info!("Screenshot saved to {}", path.display()),
             Err(e) => tracing::error!("Failed to save screenshot: {e}"),
         }
     }
@@ -817,8 +837,9 @@ impl eframe::App for RsCamApp {
 impl RsCamApp {
     fn draw_frame(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         // Intercept OS close button when there are unsaved changes
+        // `[general] confirm_unsaved_quit` (default on) turns the guard off.
         let os_close_requested = ctx.input(|i| i.viewport().close_requested());
-        if os_close_requested && self.controller.state().gui.dirty {
+        if os_close_requested && self.controller.state().quit_needs_confirmation() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.unsaved_guard = Some(UnsavedGuard::Quit);
         }
@@ -826,7 +847,14 @@ impl RsCamApp {
         // Handle screenshot results from previous frame. An in-flight MCP
         // screenshot_gui request consumes the event (writes to its own
         // path + completes the deferred response); otherwise fall back to
-        // the F12 save-to-cwd path.
+        // the F12 save path (`[paths] screenshots`, else the current folder).
+        let screenshot_dir = self
+            .controller
+            .state()
+            .app_settings
+            .paths
+            .screenshots
+            .clone();
         ctx.input(|i| {
             for event in &i.raw.events {
                 if let egui::Event::Screenshot { image, .. } = event {
@@ -834,7 +862,7 @@ impl RsCamApp {
                     if self.complete_mcp_gui_screenshot(image) {
                         continue;
                     }
-                    Self::save_screenshot(image);
+                    Self::save_screenshot(image, screenshot_dir.as_deref());
                 }
             }
         });

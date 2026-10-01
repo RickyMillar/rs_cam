@@ -631,11 +631,12 @@ mod tests {
     /// does not read the file at all.
     #[test]
     fn the_flag_overrides_the_settings_file() {
-        use rs_cam_core::budget::settings::{AppSettings, LoadedSettings};
+        use rs_cam_core::settings::{AppSettings, LoadedSettings};
 
         let file = || LoadedSettings {
             settings: AppSettings {
                 memory_limit: MemoryLimit::Bytes(3 * GIB),
+                ..AppSettings::default()
             },
             path: None,
             warning: None,
@@ -660,7 +661,7 @@ mod tests {
     /// A bad file gives the default limit, and its warning reaches `main`.
     #[test]
     fn a_bad_settings_file_warns_and_gives_the_default() {
-        use rs_cam_core::budget::settings::load_from;
+        use rs_cam_core::settings::load_from;
 
         let path = std::env::temp_dir().join(format!(
             "rs_cam_cli_settings_bad_{}.toml",

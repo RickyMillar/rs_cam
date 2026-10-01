@@ -1015,3 +1015,50 @@ fn the_live_viewport_dims_moves_under_the_reach_overlay() {
          Cutting moves row beside faint lines reads as a contradiction"
     );
 }
+
+/// File ▸ Preferences ▸ Display: a `[display.overlays]` value replaces the
+/// per-workspace default in every viewport workspace, the dock count reads
+/// the same answer, and a row that the window does not offer keeps its
+/// workspace default.
+#[test]
+fn a_preference_overlay_value_is_the_default_of_every_viewport_workspace() {
+    let mut state = AppState::new();
+    let mut settings = rs_cam_core::settings::AppSettings::default();
+    settings.display.overlays.insert("grid".to_owned(), false);
+    settings.display.overlays.insert("height_planes".to_owned(), true);
+    // Not a preference overlay: a scalar-field colour row.
+    settings
+        .display
+        .overlays
+        .insert("rest_heatmap".to_owned(), true);
+    state.apply_startup_settings(settings);
+
+    let grid = registry::row("grid").unwrap();
+    let planes = registry::row("height_planes").unwrap();
+    let rest = registry::row("rest_heatmap").unwrap();
+    assert!(registry::is_preference_overlay(grid));
+    assert!(!registry::is_preference_overlay(rest));
+
+    assert!(!(grid.get)(&state), "the start workspace shows the value");
+    assert_eq!(registry::non_default_count(&state), 0);
+    for workspace in [
+        Workspace::Simulation,
+        Workspace::Setup,
+        Workspace::Toolpaths,
+    ] {
+        registry::switch_workspace(&mut state, workspace);
+        assert!(!(grid.get)(&state), "{workspace:?}: grid off");
+        assert!((planes.get)(&state), "{workspace:?}: height planes on");
+        assert_eq!(
+            registry::effective_default(&state, rest, workspace),
+            (rest.default_for)(workspace),
+            "{workspace:?}: a colour row keeps its workspace default"
+        );
+        assert_eq!(registry::non_default_count(&state), 0, "{workspace:?}");
+    }
+    assert_eq!(
+        registry::effective_default(&state, grid, Workspace::Readiness),
+        None,
+        "Readiness has no viewport"
+    );
+}
