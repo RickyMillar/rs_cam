@@ -50,19 +50,73 @@ fn format_bytes_picks_the_largest_unit() {
     assert_eq!(format_bytes(1023), "1023 B");
 }
 
+/// Operator ruling 2026-10-02: the default is half of the system RAM. This
+/// test replaces `no_configured_limit_is_a_valid_unlimited_budget`, which
+/// pinned the pending `None`.
 #[test]
-fn no_configured_limit_is_a_valid_unlimited_budget() {
-    // RULING PENDING: the default fraction is `None`, so the default has no
-    // limit. When the ruling lands, this test changes with the constant.
-    assert_eq!(super::DEFAULT_SYSTEM_FRACTION, None);
-    let budget = MemoryBudget::from_setting(MemoryLimit::Default);
+fn the_default_is_half_of_a_given_total() {
+    assert_eq!(super::DEFAULT_SYSTEM_FRACTION, Some(0.5));
+    assert_eq!(
+        MemoryBudget::from_setting_on(MemoryLimit::Default, Some(64 * GIB)),
+        MemoryBudget::with_limit(32 * GIB)
+    );
+    // An odd byte count floors.
+    assert_eq!(
+        MemoryBudget::from_setting_on(MemoryLimit::Default, Some(9)),
+        MemoryBudget::with_limit(4)
+    );
+    // No total from the platform: the default has no limit, and that is a
+    // valid state, not an error.
+    let budget = MemoryBudget::from_setting_on(MemoryLimit::Default, None);
     assert_eq!(budget, MemoryBudget::UNLIMITED);
     assert!(budget.fits(u64::MAX));
     assert_eq!(budget.check(u64::MAX), Ok(()));
+    // The total does not change an explicit choice.
+    assert_eq!(
+        MemoryBudget::from_setting_on(MemoryLimit::Unlimited, Some(64 * GIB)),
+        MemoryBudget::UNLIMITED
+    );
+    assert_eq!(
+        MemoryBudget::from_setting_on(MemoryLimit::Bytes(3 * GIB), Some(64 * GIB)),
+        MemoryBudget::with_limit(3 * GIB)
+    );
+}
+
+/// The real path reads the total from `sysinfo`. Two reads in one process
+/// agree, so the default equals half of that total.
+#[test]
+fn the_default_on_this_machine_is_half_of_the_system_memory() {
+    assert_eq!(
+        MemoryBudget::from_setting(MemoryLimit::Default),
+        MemoryBudget::from_setting_on(MemoryLimit::Default, super::system_memory_bytes())
+    );
     assert_eq!(
         MemoryBudget::from_setting(MemoryLimit::Unlimited),
         MemoryBudget::UNLIMITED
     );
+}
+
+#[test]
+fn an_exact_size_reads_back_to_the_same_value() {
+    assert_eq!(super::format_exact_size(24 * GIB), "24GiB");
+    assert_eq!(super::format_exact_size(3 * GIB / 2), "1536MiB");
+    assert_eq!(super::format_exact_size(7), "7B");
+    assert_eq!(super::format_exact_size(0), "0B");
+    for bytes in [
+        0,
+        1,
+        7,
+        1023,
+        1024,
+        4096,
+        3 * GIB / 2,
+        24 * GIB,
+        2 << 40,
+        12_345_678,
+    ] {
+        let text = super::format_exact_size(bytes);
+        assert_eq!(parse_byte_size(&text).unwrap(), bytes, "{text}");
+    }
 }
 
 #[test]

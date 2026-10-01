@@ -1,6 +1,7 @@
 mod compute;
 mod model;
 mod planner;
+mod preferences;
 pub(crate) mod simulation;
 mod toolpath;
 mod undo;
@@ -431,6 +432,10 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::SetGeneratorTraceCaptureAll(enabled) => {
                 self.set_generator_trace_capture_all(enabled);
             }
+
+            // --- File ▸ Preferences ---
+            AppEvent::OpenPreferences => self.open_preferences(),
+            AppEvent::ApplyPreferences(limit) => self.apply_preferences(limit),
 
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportCombinedGcode

@@ -197,11 +197,12 @@ impl RsCamApp {
             .and_then(|v| v.parse::<u32>().ok());
 
         // B5: the settings file gives the memory budget of the heavy lanes
-        // (`crate::io::app_settings`). A missing file gives the defaults,
-        // and while `rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION` is
-        // `None` (RULING PENDING) the default has no limit, so the lanes
-        // behave as before. A file that did not parse gives the defaults
-        // and a Warning toast.
+        // (`crate::io::app_settings`). A missing file, or no `limit` key,
+        // gives the default: half of the system RAM
+        // (`rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION`, operator ruling
+        // 2026-10-02). A file that did not parse gives the default and a
+        // Warning toast. File ▸ Preferences changes the budget at run time
+        // (`ComputeBackend::set_memory_budget`).
         let settings = crate::io::app_settings::load();
         let memory_budget = settings.settings.memory_budget();
         tracing::info!(
@@ -1049,6 +1050,14 @@ impl RsCamApp {
         if self.controller.state().machine_library_open {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::machine_library_modal::draw(ctx, state, events);
+        }
+
+        // File ▸ Preferences. Takes `&mut AppState` because the window
+        // edits its own draft in place, as the multi-tool planner does. Only
+        // Apply goes through an event.
+        if self.controller.state().preferences.is_some() {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::preferences::draw(ctx, state, events);
         }
 
         // Keyboard shortcuts reference window

@@ -9,8 +9,10 @@
 //!    resolves the same way: `RS_CAM_SETTINGS`, then `XDG_CONFIG_HOME`,
 //!    then `HOME`, then `APPDATA`, then `USERPROFILE`.
 //! 3. `MemoryLimit::Default`, which reads
-//!    `rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION`. That value is RULING
-//!    PENDING (`None`), so with no flag and no file the run has no limit.
+//!    `rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION`: half of the system
+//!    RAM (operator ruling 2026-10-02). So with no flag and no file the run
+//!    has a limit of half of the system RAM. `--memory-limit unlimited`
+//!    removes it.
 //!
 //! When the flag is given, the CLI does not read the file.
 
@@ -23,8 +25,8 @@ use rs_cam_core::budget::{BudgetGuard, MemoryBudget, MemoryLimit, StopReason, fo
 static BUDGET: OnceLock<MemoryBudget> = OnceLock::new();
 
 /// Parse the value of `--memory-limit`: a binary size (`"12GiB"`), a byte
-/// count (`"4096"`), or `"unlimited"`. The settings file reads its text
-/// value through the same core function.
+/// count (`"4096"`), `"unlimited"` or `"default"`. The settings file reads
+/// its text value through the same core function.
 ///
 /// # Errors
 /// A sentence that names the problem, for clap to show.
@@ -65,7 +67,8 @@ pub(crate) fn set(flag: Option<MemoryLimit>) -> Option<String> {
     warning
 }
 
-/// The budget of this process. No limit when `main` set none.
+/// The budget of this process. When `main` set none, the default: half of
+/// the system RAM.
 pub(crate) fn current() -> MemoryBudget {
     BUDGET
         .get()

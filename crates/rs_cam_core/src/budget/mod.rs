@@ -31,11 +31,11 @@ pub use guard::{BudgetGuard, BudgetWatch, ProcessRss, UsageProbe};
 /// The default limit as a fraction of the system memory, when the settings
 /// file gives no limit.
 ///
-/// RULING PENDING (operator): the plan lists the default fraction as
-/// operator decision 2. Until the ruling, the value is `None`, and the
-/// default budget has NO limit. Do not type a number here without the
-/// ruling.
-pub const DEFAULT_SYSTEM_FRACTION: Option<f64> = None;
+/// Operator ruling 2026-10-02: half of the system RAM. The plan lists the
+/// default fraction as operator decision 2. The operator changes the limit
+/// in File ▸ Preferences, in `settings.toml`, or with the CLI flag
+/// `--memory-limit`. A value of `None` gives the default NO limit.
+pub const DEFAULT_SYSTEM_FRACTION: Option<f64> = Some(0.5);
 
 /// The memory limit that a surface configured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -92,15 +92,29 @@ impl MemoryBudget {
     }
 
     /// The budget for a configured limit. [`MemoryLimit::Default`] reads
-    /// [`DEFAULT_SYSTEM_FRACTION`]; while that is `None`, it has no limit.
+    /// [`DEFAULT_SYSTEM_FRACTION`] of the system memory (half). When the
+    /// platform gives no system memory, the default has no limit.
     #[must_use]
     pub fn from_setting(setting: MemoryLimit) -> Self {
         match setting {
+            // Only the default reads the system table.
+            MemoryLimit::Default => Self::from_setting_on(setting, system_memory_bytes()),
+            MemoryLimit::Bytes(_) | MemoryLimit::Unlimited => Self::from_setting_on(setting, None),
+        }
+    }
+
+    /// The budget for a configured limit on a machine with `total_bytes` of
+    /// memory. Pure: a test, or a surface that read the total before, gives
+    /// it here. [`MemoryLimit::Default`] with no total has no limit.
+    #[must_use]
+    pub fn from_setting_on(setting: MemoryLimit, total_bytes: Option<u64>) -> Self {
+        match setting {
             MemoryLimit::Bytes(bytes) => Self::with_limit(bytes),
             MemoryLimit::Unlimited => Self::UNLIMITED,
-            MemoryLimit::Default => {
-                DEFAULT_SYSTEM_FRACTION.map_or(Self::UNLIMITED, Self::from_system_fraction)
-            }
+            MemoryLimit::Default => match (DEFAULT_SYSTEM_FRACTION, total_bytes) {
+                (Some(fraction), Some(total)) => Self::from_fraction_of(total, fraction),
+                _ => Self::UNLIMITED,
+            },
         }
     }
 
@@ -251,6 +265,22 @@ pub fn parse_byte_size(text: &str) -> Result<u64, ByteSizeError> {
         return Err(ByteSizeError::TooLarge(text.to_owned()));
     }
     Ok(scaled as u64)
+}
+
+/// A byte count as limit text that [`parse_byte_size`] reads back to the
+/// SAME value: the largest binary unit that divides the count with no
+/// remainder, and no space. For example `"24GiB"`, `"1536MiB"` or `"7B"`.
+///
+/// The settings writer and the Preferences window use it, so a saved limit
+/// never changes by a rounding.
+#[must_use]
+pub fn format_exact_size(bytes: u64) -> String {
+    for (name, scale) in BYTE_UNITS {
+        if bytes >= scale && bytes.is_multiple_of(scale) {
+            return format!("{}{name}", bytes / scale);
+        }
+    }
+    format!("{bytes}B")
 }
 
 /// A byte count in the largest binary unit that keeps it at 1 or more, with

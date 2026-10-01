@@ -2741,13 +2741,20 @@ fn a_budget_stop_on_the_toolpath_lane_reports_over_budget() {
     );
 }
 
+/// Operator ruling 2026-10-02: with no settings file the GUI budget is half
+/// of the system RAM. This test replaces
+/// `with_no_settings_the_budget_has_no_limit`, which pinned the pending
+/// "no limit". `ThreadedComputeBackend::new()` stays UNLIMITED on purpose:
+/// the default lives in the settings layer, not in the backend.
 #[test]
-fn with_no_settings_the_budget_has_no_limit() {
-    // RULING PENDING: no default fraction, so the default has no limit.
-    assert!(rs_cam_core::budget::DEFAULT_SYSTEM_FRACTION.is_none());
+fn with_no_settings_the_budget_is_half_of_the_system_memory() {
+    let half = MemoryBudget::from_setting_on(
+        rs_cam_core::budget::MemoryLimit::Default,
+        rs_cam_core::budget::system_memory_bytes(),
+    );
     assert_eq!(
         crate::io::app_settings::AppSettings::default().memory_budget(),
-        MemoryBudget::UNLIMITED
+        half
     );
     let missing = std::env::temp_dir().join(format!(
         "rs_cam_settings_w2g_missing_{}.toml",
@@ -2755,17 +2762,123 @@ fn with_no_settings_the_budget_has_no_limit() {
     ));
     let loaded = crate::io::app_settings::load_from(&missing);
     assert_eq!(loaded.warning, None);
-    assert_eq!(loaded.settings.memory_budget(), MemoryBudget::UNLIMITED);
-    // The startup path gives that budget to the backend; `new()` is the
-    // same value.
+    assert_eq!(loaded.settings.memory_budget(), half);
+    // The startup path gives that budget to the backend.
     assert_eq!(
         ThreadedComputeBackend::with_budget(loaded.settings.memory_budget()).memory_budget(),
-        MemoryBudget::UNLIMITED
+        half
     );
     assert_eq!(
         ThreadedComputeBackend::new().memory_budget(),
         MemoryBudget::UNLIMITED
     );
+}
+
+/// File ▸ Preferences ▸ Apply: the backend reads the new budget, the guard
+/// of a job that started before keeps the old one, and the guard of the
+/// next job reads the new one.
+#[test]
+fn set_memory_budget_changes_the_next_job_and_not_a_running_guard() {
+    let job_budget = JobBudget::with_probe(
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        Arc::new(FixedProbe(0)),
+        Duration::ZERO,
+    );
+    let mut backend = ThreadedComputeBackend::with_job_budget(job_budget.clone());
+    let running = job_budget.guard(Arc::new(AtomicBool::new(false)));
+
+    let new_budget = MemoryBudget::with_limit(FAKE_LIMIT * 4);
+    ComputeBackend::set_memory_budget(&mut backend, new_budget);
+
+    assert_eq!(ComputeBackend::memory_budget(&backend), new_budget);
+    assert_eq!(
+        running.budget(),
+        MemoryBudget::with_limit(FAKE_LIMIT),
+        "a running job keeps its old guard"
+    );
+    let next = job_budget.guard(Arc::new(AtomicBool::new(false)));
+    assert_eq!(
+        next.budget(),
+        new_budget,
+        "the next job reads the new budget"
+    );
+
+    // To no limit and back: each change reaches the next guard.
+    ComputeBackend::set_memory_budget(&mut backend, MemoryBudget::UNLIMITED);
+    assert_eq!(
+        job_budget.guard(Arc::new(AtomicBool::new(false))).budget(),
+        MemoryBudget::UNLIMITED
+    );
+}
+
+/// A job that waits for the ledger runs when a larger budget arrives, while
+/// the first job still holds its reservation: the ledger reads the same
+/// cell as the guards.
+#[test]
+fn a_larger_budget_admits_a_job_that_waits_for_the_ledger() {
+    let estimate: u64 = 1 << 16;
+    let reading: u64 = 1 << 10;
+    let limit = reading + 2 * estimate - 1;
+    let job_budget = JobBudget::with_probe(
+        MemoryBudget::with_limit(limit),
+        Arc::new(FixedProbe(reading)),
+        Duration::ZERO,
+    );
+    let ledger = BudgetLedger::sharing(&job_budget);
+    let lane_a: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Toolpath, Arc::clone(&ledger));
+    let lane_b: Arc<LaneQueue<u32>> =
+        LaneQueue::with_ledger(ComputeLane::Analysis, Arc::clone(&ledger));
+    for (lane, job) in [(&lane_a, 1), (&lane_b, 2)] {
+        lane.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .queue
+            .push_back(job);
+    }
+    let (_job_a, ticket_a) = lane_a
+        .dequeue_reserved(|job| RunningJob::labelled(format!("A{job}")).reserving(Some(estimate)))
+        .expect("job A runs: nothing else holds memory");
+    let worker_b = {
+        let lane_b = Arc::clone(&lane_b);
+        thread::spawn(move || {
+            lane_b.dequeue_reserved(|job| {
+                RunningJob::labelled(format!("B{job}")).reserving(Some(estimate))
+            })
+        })
+    };
+    let _waiting = wait_for_ledger_wait(&lane_b);
+
+    // The same two steps as `ThreadedComputeBackend::set_memory_budget`.
+    job_budget.set(MemoryBudget::with_limit(limit + 1));
+    ledger.wake_all();
+
+    let (job_b, ticket_b) = worker_b
+        .join()
+        .expect("lane B thread")
+        .expect("B runs under the larger budget");
+    assert_eq!(job_b, 2);
+    assert_eq!(
+        ledger.reserved_bytes(),
+        2 * estimate,
+        "A still holds its ticket"
+    );
+    drop(ticket_b);
+    drop(ticket_a);
+}
+
+/// A change from no limit to a limit reads the idle baseline, so the
+/// simulation preflight can refuse after the change.
+#[test]
+fn set_memory_budget_from_no_limit_reads_the_baseline() {
+    let mut backend = ThreadedComputeBackend::with_job_budget(JobBudget::with_probe(
+        MemoryBudget::UNLIMITED,
+        Arc::new(FixedProbe(FAKE_LIMIT / 2)),
+        Duration::ZERO,
+    ));
+    assert_eq!(backend.baseline_bytes, None);
+    ComputeBackend::set_memory_budget(&mut backend, MemoryBudget::with_limit(FAKE_LIMIT));
+    assert_eq!(backend.baseline_bytes, Some(FAKE_LIMIT / 2));
 }
 
 /// A backend that hands back the messages a test queues.

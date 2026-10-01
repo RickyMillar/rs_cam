@@ -203,10 +203,11 @@ Every operation in the registry is reachable from the CLI; a new
 operation appears in `run` with zero CLI code.
 
 The global flag `--memory-limit <SIZE>` (a binary size such as `12GiB`, a
-byte count, or `unlimited`) sets the memory budget of the run. When the
-process uses more, the generation plan stops and names the two values and
-the remedies, before the system kills the process. The flag overrides
-`[memory] limit` in the settings file; with neither, the run has no limit.
+byte count, `unlimited`, or `default`) sets the memory budget of the run.
+When the process uses more, the generation plan stops and names the two
+values and the remedies, before the system kills the process. The flag
+overrides `[memory] limit` in the settings file. With neither, the limit is
+half of the system RAM.
 
 ## Settings file
 
@@ -216,7 +217,8 @@ the remedies, before the system kills the process. The flag overrides
 
 ```toml
 [memory]
-limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count, or "unlimited"
+limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count,
+                  # "unlimited", or "default" (half of the system RAM)
 ```
 
 - The path: `$RS_CAM_SETTINGS` (a file), else
@@ -224,10 +226,17 @@ limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count, or "unl
   `~/.config/rs_cam/settings.toml`. On Windows with no `HOME`:
   `%APPDATA%\rs_cam\settings.toml`, else
   `%USERPROFILE%\.config\rs_cam\settings.toml`.
-- A missing file or a missing `limit` gives the default. The default limit
-  is a fraction of the system memory that is RULING PENDING, so today the
-  default is no limit.
+- A missing file, a missing `limit`, or `limit = "default"` gives the
+  default: half of the system RAM (operator ruling 2026-10-02). When the
+  platform does not give the system memory, the default has no limit.
 - A file that does not read or parse gives the default and a warning: a
   toast in the GUI, a log line in the CLI.
-- The GUI reads the file at start. The CLI flag `--memory-limit` overrides
-  the file.
+- The GUI reads the file at start. **File ▸ Preferences** shows the system
+  memory, the budget now and its source, and sets the limit: Default (half
+  of RAM), Custom (a binary size) or Unlimited. Apply writes `[memory]
+  limit` to this file and gives the new budget to the compute lanes at
+  once. A job that runs keeps its old limit; the next job uses the new
+  one. The writer keeps the other keys of the file, but not its comments.
+- The precedence in the CLI, highest first: `--memory-limit`, then
+  `[memory] limit` in the file, then the default. The CLI flag does not
+  apply to the GUI.

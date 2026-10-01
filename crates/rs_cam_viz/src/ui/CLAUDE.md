@@ -13,8 +13,8 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   series drawer opens only from the Inspector's Cut metrics toggle.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
 - `export_wizard.rs`, `optimize_*.rs`, `multitool_planner.rs`, `*_modal.rs`.
-- `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs` — the
-  viewport dock, automation, the shortcuts window.
+- `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`,
+  `preferences.rs` — the dock, automation, shortcuts, File ▸ Preferences.
 
 ## Invariants
 

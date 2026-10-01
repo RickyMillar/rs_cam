@@ -38,8 +38,10 @@ cargo run -p rs_cam_cli -- --help
 ```
 
 The CLI `project` command needs `--output-dir <DIR>`. The memory budget of
-the GUI and the CLI comes from `~/.config/rs_cam/settings.toml`
-(`[memory] limit = "12GiB"`); the CLI flag `--memory-limit` overrides it.
+the GUI and the CLI is half of the system RAM by default. To change it, use
+**File ▸ Preferences** in the GUI, or set `[memory] limit` in
+`~/.config/rs_cam/settings.toml` (`"24GiB"`, `"unlimited"` or `"default"`).
+The CLI flag `--memory-limit` overrides the file for one CLI run.
 See [`FEATURE_CATALOG.md`](FEATURE_CATALOG.md#settings-file).
 
 Run the test suite:
