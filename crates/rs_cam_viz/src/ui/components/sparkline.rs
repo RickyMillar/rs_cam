@@ -21,13 +21,14 @@
 //!   its side, with a dashed limit line at each bound.
 //! - The line joins consecutive samples at their true x, across pixel
 //!   columns with no sample. The gate population is sparse in move order
-//!   (it leaves out air cuts, acceleration ramps and transit samples), and
-//!   the tool cut through those moves. Round 3 broke the line at every
+//!   (it leaves out acceleration ramps and transit samples), and the tool
+//!   cut through those moves. Round 3 broke the line at every
 //!   empty column; zoomed in, that drew isolated dots (2026-10-02).
 //! - A gap breaks the line only at a non-finite sample. The card series
-//!   holds one where a rapid or a retract lies between two samples
-//!   (`state::simulation::series_with_breaks`). A gap is "not measured",
-//!   never zero.
+//!   holds one wherever the tool is in air: an air sample, or air between
+//!   two samples (`state::simulation::series_with_breaks`, round 5). The
+//!   line is drawn across cutting samples only; it never drops to zero in
+//!   air. The hover over an air column says so.
 //!
 //! # The y scale
 //!
@@ -127,6 +128,9 @@ pub struct Column {
 pub struct Columns {
     /// One entry per pixel column. `None` is a gap: no finite sample.
     pub columns: Vec<Option<Column>>,
+    /// One flag per pixel column: the column holds a non-finite sample,
+    /// which the card series uses for "the tool is in air".
+    pub air: Vec<bool>,
     pub first_move: usize,
     pub last_move: usize,
 }
@@ -136,6 +140,13 @@ impl Columns {
     #[must_use]
     pub fn move_span(&self) -> usize {
         self.last_move - self.first_move + 1
+    }
+
+    /// The first move of column `index`.
+    #[must_use]
+    pub fn move_of(&self, index: usize) -> usize {
+        let count = self.columns.len().max(1);
+        self.first_move + index * self.move_span() / count
     }
 
     /// The column that holds `local_move`, or `None` outside the range.
@@ -187,6 +198,7 @@ pub fn columns_in(
     let count = max_columns.max(1).min(span);
     let mut out = Columns {
         columns: vec![None; count],
+        air: vec![false; count],
         first_move,
         last_move,
     };
@@ -196,6 +208,12 @@ pub fn columns_in(
     for &(local_move, value) in series {
         if !value.is_finite() {
             after_gap = true;
+            if let Some(flag) = out
+                .column_of(local_move)
+                .and_then(|index| out.air.get_mut(index))
+            {
+                *flag = true;
+            }
             continue;
         }
         let Some(index) = out.column_of(local_move) else {
@@ -203,8 +221,8 @@ pub fn columns_in(
         };
         // Join to the previous finite sample in ANY earlier column. An empty
         // column between them is a move with no population sample (an
-        // acceleration ramp, an air cut, a transit sample), not a gap: the
-        // tool cut through it. Only a non-finite sample breaks the line.
+        // acceleration ramp, a transit sample), not a gap: the tool cut
+        // through it. Only a non-finite sample (air) breaks the line.
         let joined = !after_gap && last_column.is_some_and(|last| last < index);
         if let Some(slot) = out.columns.get_mut(index) {
             match slot {
@@ -704,7 +722,23 @@ impl<'a> Sparkline<'a> {
                 self.scale,
                 self.unit,
             ),
-            None => "No gate sample at this move.".to_owned(),
+            None => {
+                let air = hovered_index.and_then(|index| {
+                    let columns = columns.as_ref()?;
+                    columns
+                        .air
+                        .get(index)
+                        .copied()
+                        .filter(|air| *air)
+                        .map(|_| columns.move_of(index))
+                });
+                match air {
+                    Some(local_move) => {
+                        format!("In air (no cut) at move {}", local_move + self.move_offset)
+                    }
+                    None => "No gate sample at this move.".to_owned(),
+                }
+            }
         });
         let response = match hover_text {
             Some(text) => response.on_hover_text_at_pointer(text),

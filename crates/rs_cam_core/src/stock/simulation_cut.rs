@@ -230,7 +230,21 @@ pub struct SimulationCutSample {
     pub source_intent: Option<crate::toolpath::MoveIntent>,
 }
 
+/// The radial engagement, as a fraction of the tool diameter, under which a
+/// cutting sample is an air cut. The simulator's `AirCut` issue class, its
+/// `air_cut_time_s` and the chipload and power gates all use this value.
+pub const AIR_CUT_RADIAL_WOC_FRACTION: f64 = 0.02;
+
 impl SimulationCutSample {
+    /// True when the sample removes no material: a rapid or a retract
+    /// (`is_cutting == false`), or a fed move in air (radial engagement under
+    /// [`AIR_CUT_RADIAL_WOC_FRACTION`]). The chipload and power gates leave
+    /// such a sample out, and the GUI breaks a metric line there.
+    #[must_use]
+    pub fn is_air(&self) -> bool {
+        !self.is_cutting || self.engagement.radial_woc_fraction < AIR_CUT_RADIAL_WOC_FRACTION
+    }
+
     /// Neutral test fixture: a non-cutting sample at the origin with zeroed
     /// metrics. Test code overrides the fields under test via struct-update
     /// syntax. Not for production paths.

@@ -259,7 +259,7 @@ pub fn sample_power_kw(
     sample: &crate::stock::simulation_cut::SimulationCutSample,
     feed_mm_min: f64,
 ) -> Option<f64> {
-    if !sample.is_cutting || sample.engagement.radial_woc_fraction < 0.02 {
+    if sample.is_air() {
         return None;
     }
     let arc = sample.arc_engagement_radians?;

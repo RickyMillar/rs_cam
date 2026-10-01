@@ -197,8 +197,9 @@ pub struct CutMetricCard {
     pub outcome: DistributionOutcome,
     /// The gate population in trace order, as `(toolpath-local move, value
     /// in core's unit)`. The card's "over time" face draws it, so the line
-    /// and the histogram read the same samples. A NaN entry marks a rapid
-    /// or a retract between two samples (`series_with_breaks`). Empty
+    /// and the histogram read the same samples. A NaN entry marks the tool
+    /// in air: an air sample, or air between two samples
+    /// (`series_with_breaks`). Empty
     /// unless `outcome` is `Measured`.
     pub series: Vec<(usize, f64)>,
 }
@@ -358,7 +359,7 @@ fn build_cut_metric_set(
         machine: Some(session.machine()),
         tolerance: &tolerance,
     };
-    let breaks = NonCuttingCounts::of(env.sim_trace, ctx.toolpath_id);
+    let breaks = AirSamples::of(env.sim_trace, ctx.toolpath_id);
     for metric in CUT_METRIC_ORDER {
         let Some(outcome) =
             rs_cam_core::tool_load::metric_distribution(metric, verdict, &ctx, &env)
@@ -381,47 +382,59 @@ fn build_cut_metric_set(
     set
 }
 
-/// The rapids and retracts of one toolpath in a cut trace, as a running
-/// count: `prefix[k]` is the number of samples of the toolpath before trace
-/// index `k` that the simulator marks `is_cutting == false`. The dexel marks
-/// exactly two move kinds so: a rapid, and a linear feed tagged as a
-/// retract. Built once per card set.
-pub struct NonCuttingCounts {
+/// The air samples of one toolpath in a cut trace.
+///
+/// A sample is air when `SimulationCutSample::is_air` says so: a rapid or a
+/// retract (`is_cutting == false`), or a fed move under the simulator's
+/// air-cut radial engagement (`AIR_CUT_RADIAL_WOC_FRACTION`). That is the
+/// predicate the chipload and power gates use to leave a sample out. Built
+/// once per card set.
+pub struct AirSamples {
+    /// One flag per trace sample: an air sample of this toolpath.
+    air: Vec<bool>,
+    /// `prefix[k]` is the number of air samples before trace index `k`.
     prefix: Vec<usize>,
 }
 
-impl NonCuttingCounts {
-    /// The counts of `toolpath_id` in `trace`. No trace gives no counts,
-    /// and then no series has a break.
+impl AirSamples {
+    /// The air samples of `toolpath_id` in `trace`. No trace gives no air
+    /// samples, and then no series has a break.
     pub fn of(trace: Option<&SimulationCutTrace>, toolpath_id: ToolpathId) -> Self {
         let Some(trace) = trace else {
-            return Self { prefix: Vec::new() };
+            return Self::from_flags(&[]);
         };
         let flags: Vec<bool> = trace
             .samples
             .iter()
-            .map(|sample| sample.toolpath_id == toolpath_id && !sample.is_cutting)
+            .map(|sample| sample.toolpath_id == toolpath_id && sample.is_air())
             .collect();
         Self::from_flags(&flags)
     }
 
-    /// The counts of a flag per trace sample: `true` is a rapid or a
-    /// retract sample of the toolpath.
-    pub fn from_flags(non_cutting: &[bool]) -> Self {
-        let mut prefix = Vec::with_capacity(non_cutting.len() + 1);
+    /// The air samples of a flag per trace sample: `true` is air.
+    pub fn from_flags(air: &[bool]) -> Self {
+        let mut prefix = Vec::with_capacity(air.len() + 1);
         let mut count = 0usize;
         prefix.push(count);
-        for &flag in non_cutting {
+        for &flag in air {
             if flag {
                 count += 1;
             }
             prefix.push(count);
         }
-        Self { prefix }
+        Self {
+            air: air.to_vec(),
+            prefix,
+        }
     }
 
-    /// True when a rapid or a retract sample lies strictly between trace
-    /// indices `before` and `after`.
+    /// True when trace sample `index` is air.
+    pub fn is_air(&self, index: usize) -> bool {
+        self.air.get(index).copied().unwrap_or(false)
+    }
+
+    /// True when an air sample lies strictly between trace indices
+    /// `before` and `after`.
     pub fn between(&self, before: usize, after: usize) -> bool {
         let at = |index: usize| self.prefix.get(index).copied().unwrap_or(0);
         after > before + 1 && at(after) > at(before + 1)
@@ -429,28 +442,40 @@ impl NonCuttingCounts {
 }
 
 /// The card series of a gate population: `(toolpath-local move, value)` in
-/// trace order, with a break where the tool leaves the cut.
+/// trace order, with a break (a NaN) wherever the tool is in air.
 ///
-/// The gate population is sparse in move order. It leaves out the air
-/// cuts, the samples under the steady-state feed (the acceleration ramps of
-/// short moves) and the transit samples, so on a toolpath of short moves two
-/// neighbours in the population can lie many moves apart. The line joins
-/// them: the tool cut through every move between. It breaks only where a
-/// rapid or a retract lies between two samples ([`NonCuttingCounts`]): there
-/// the series holds a NaN, which the line draws as a gap, never as zero.
+/// Operator, 2026-10-02: "we dont link lines going to 0, because thats air
+/// moves. So we get the lines when cutting but nothing in travel". The line
+/// is drawn only across cutting samples:
+///
+/// - A population sample that is itself air (a zero power, depth or
+///   engagement reading in air) becomes a NaN. It is not a point at zero,
+///   and the column median and band do not see it.
+/// - Where air samples lie between two population samples (a rapid, a
+///   retract, an air move that the population already left out), a NaN
+///   goes between them, so no join crosses the air.
+/// - Samples the gate leaves out while the tool still cuts (an
+///   acceleration ramp, a transit sample) do not break the line: the tool
+///   cut through those moves (round 4).
 pub fn series_with_breaks(
     population: &[rs_cam_core::tool_load::distribution::PopulationSample],
-    breaks: &NonCuttingCounts,
+    air: &AirSamples,
 ) -> Vec<(usize, f64)> {
     let mut series = Vec::with_capacity(population.len());
     let mut previous: Option<(usize, usize)> = None;
     for sample in population {
-        if let Some((before_index, before_move)) = previous
-            && breaks.between(before_index, sample.sample_index)
-        {
-            series.push((before_move, f64::NAN));
+        if air.is_air(sample.sample_index) {
+            series.push((sample.move_index, f64::NAN));
+        } else {
+            if let Some((before_index, before_move)) = previous
+                && air.between(before_index, sample.sample_index)
+            {
+                // The gap sits on the first move after the last cutting
+                // sample, so the hover over it reads "in air".
+                series.push(((before_move + 1).min(sample.move_index), f64::NAN));
+            }
+            series.push((sample.move_index, sample.value));
         }
-        series.push((sample.move_index, sample.value));
         previous = Some((sample.sample_index, sample.move_index));
     }
     series

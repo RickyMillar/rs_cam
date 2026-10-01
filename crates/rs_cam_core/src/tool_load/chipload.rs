@@ -318,10 +318,7 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
         .iter()
         .enumerate()
         .filter_map(|(i, s)| {
-            if s.toolpath_id != toolpath_id
-                || !s.is_cutting
-                || s.engagement.radial_woc_fraction < 0.02
-            {
+            if s.toolpath_id != toolpath_id || s.is_air() {
                 return None;
             }
             any_in_cut = true;

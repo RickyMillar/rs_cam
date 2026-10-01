@@ -1000,12 +1000,12 @@ fn a_zoomed_sparse_trace_is_a_connected_line_g_cutcards() {
     );
 }
 
-/// The gap rule: a rapid or a retract between two population samples breaks
-/// the line; a cutting stretch the gate leaves out (an acceleration ramp,
-/// an air cut) does not.
+/// The gap rule: air (a rapid, a retract, an air move) between two
+/// population samples breaks the line; a cutting stretch the gate leaves
+/// out (an acceleration ramp) does not.
 #[test]
-fn only_a_rapid_or_a_retract_breaks_the_series_g_cutcards() {
-    use rs_cam_viz::state::simulation::{NonCuttingCounts, series_with_breaks};
+fn only_air_breaks_the_series_g_cutcards() {
+    use rs_cam_viz::state::simulation::{AirSamples, series_with_breaks};
     let sample = |sample_index: usize, move_index: usize, value: f64| PopulationSample {
         value,
         weight_s: 0.1,
@@ -1016,7 +1016,7 @@ fn only_a_rapid_or_a_retract_breaks_the_series_g_cutcards() {
     // (a ramp). Sample 6 is a rapid.
     let mut flags = vec![false; 10];
     flags[6] = true;
-    let breaks = NonCuttingCounts::from_flags(&flags);
+    let breaks = AirSamples::from_flags(&flags);
     let population = vec![
         sample(0, 100, 0.03),
         sample(3, 130, 0.04),
@@ -1033,8 +1033,9 @@ fn only_a_rapid_or_a_retract_breaks_the_series_g_cutcards() {
     );
     assert_eq!(series[2], (140, 0.05));
     assert!(
-        series[3].0 == 140 && series[3].1.is_nan(),
-        "the rapid between 4 and 8 breaks the line: {series:?}"
+        series[3].0 == 141 && series[3].1.is_nan(),
+        "the rapid between 4 and 8 breaks the line, on the first move after \
+         the cut: {series:?}"
     );
     assert_eq!(series[4], (200, 0.06));
 
@@ -1046,11 +1047,107 @@ fn only_a_rapid_or_a_retract_breaks_the_series_g_cutcards() {
         "the line joins across the ramp and breaks at the rapid"
     );
 
-    let none = NonCuttingCounts::from_flags(&[]);
+    let none = AirSamples::from_flags(&[]);
     assert_eq!(
         series_with_breaks(&population, &none).len(),
         4,
         "no trace, no break"
+    );
+}
+
+/// Round 5 (operator, 2026-10-02): "we dont link lines going to 0, because
+/// thats air moves". An air stretch between two cutting runs breaks the
+/// line, and an air reading of zero is no point at zero.
+#[test]
+fn an_air_stretch_breaks_the_line_and_is_no_zero_g_cutcards() {
+    use rs_cam_core::stock::simulation_cut::{AIR_CUT_RADIAL_WOC_FRACTION, SimulationCutSample};
+    use rs_cam_viz::state::simulation::{AirSamples, series_with_breaks};
+
+    // The one predicate: core's `SimulationCutSample::is_air`.
+    let mut cutting = SimulationCutSample::test_fixture();
+    cutting.is_cutting = true;
+    cutting.engagement.radial_woc_fraction = 0.5;
+    let mut fed_in_air = cutting.clone();
+    fed_in_air.engagement.radial_woc_fraction = AIR_CUT_RADIAL_WOC_FRACTION / 2.0;
+    let mut rapid = cutting.clone();
+    rapid.is_cutting = false;
+    assert!(!cutting.is_air());
+    assert!(
+        fed_in_air.is_air(),
+        "a fed move under the air-cut WOC is air"
+    );
+    assert!(rapid.is_air(), "a rapid or a retract is air");
+
+    // Spindle power, samples 0..10: a cutting run (0..3), air (4..6) that
+    // reads 0 kW, a second cutting run (7..9).
+    let mut flags = vec![false; 10];
+    for flag in flags.iter_mut().take(7).skip(4) {
+        *flag = true;
+    }
+    let air = AirSamples::from_flags(&flags);
+    let power = |index: usize| {
+        if (4..7).contains(&index) {
+            0.0
+        } else {
+            0.4 + 0.01 * index as f64
+        }
+    };
+    let population: Vec<PopulationSample> = (0..10)
+        .map(|index| PopulationSample {
+            value: power(index),
+            weight_s: 0.1,
+            move_index: index,
+            sample_index: index,
+        })
+        .collect();
+    let series = series_with_breaks(&population, &air);
+    assert!(
+        series
+            .iter()
+            .all(|(_, value)| value.is_nan() || *value > 0.0),
+        "no point at zero: an air reading is a gap, not a value ({series:?})"
+    );
+
+    let columns = sparkline::columns(&series, 1000).unwrap();
+    assert!(
+        columns.columns[4..7].iter().all(Option::is_none),
+        "no point is drawn in the air stretch"
+    );
+    assert!(
+        columns.air[4..7].iter().all(|air| *air),
+        "the hover over the stretch says the tool is in air"
+    );
+    let first_after = columns.columns[7].unwrap();
+    assert!(!first_after.joined, "no segment crosses the air stretch");
+    assert!(
+        columns.columns[1..4]
+            .iter()
+            .flatten()
+            .all(|column| column.joined),
+        "the cutting run still joins"
+    );
+
+    // Squeezed into one column, the air zeros do not pull the median or
+    // the band to zero.
+    let one = sparkline::columns(&series, 1).unwrap();
+    let column = one.columns[0].unwrap();
+    assert_eq!(column.count, 7, "the three air samples are not samples");
+    assert!(column.min > 0.0, "the band does not reach zero: {column:?}");
+    assert!(
+        column.median > 0.4,
+        "the median is a cutting value: {column:?}"
+    );
+
+    let line = code_only(&read(LINE));
+    assert!(
+        line.contains("In air (no cut) at move"),
+        "the hover over an air column names it"
+    );
+    let state = code_only(&read(STATE));
+    let of = function_source(&state, "pub fn of(trace: Option<&SimulationCutTrace>");
+    assert!(
+        of.contains(".is_air()"),
+        "the air flags must come from core's one predicate, `is_air`"
     );
 }
 
