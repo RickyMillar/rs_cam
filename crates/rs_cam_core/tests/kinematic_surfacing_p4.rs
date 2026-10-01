@@ -165,9 +165,9 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
     let measurability = MeasurabilityReport::default();
     let diameters: BTreeMap<ToolpathId, f64> = BTreeMap::new();
 
-    let mut populated: BTreeMap<ToolpathId, ToolpathKinematicUtilization> = BTreeMap::new();
     let util = utilization(40, Some(3.53));
-    populated.insert(util.toolpath_id, util);
+    let mut populated: BTreeMap<ToolpathId, &ToolpathKinematicUtilization> = BTreeMap::new();
+    populated.insert(util.toolpath_id, &util);
 
     let with_reading = SimulationTriage::build(&TriageInputs {
         trace: &trace,
@@ -188,7 +188,7 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
         "a measured over-1x reading must reach the actions list"
     );
 
-    let empty: BTreeMap<ToolpathId, ToolpathKinematicUtilization> = BTreeMap::new();
+    let empty: BTreeMap<ToolpathId, &ToolpathKinematicUtilization> = BTreeMap::new();
     let without_reading = SimulationTriage::build(&TriageInputs {
         trace: &trace,
         measurability: &measurability,

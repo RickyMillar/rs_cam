@@ -895,8 +895,8 @@ pub struct PlanMultitoolFinishingParam {
     /// the coarser tier's territory. Default 2.0. `0.0` turns it off.
     pub overlap_mm: Option<f64>,
     /// Per-tier island cap. When filtering leaves more islands than this,
-    /// the merge radius is raised and the close re-run (bounded), and what
-    /// merged is reported. Default 24.
+    /// the largest are kept and the rest go back to the coarser tool, and
+    /// the drop is reported. Default 24.
     pub max_regions_per_tier: Option<usize>,
     /// When true, tier 0 SKIPS the fine tiers' owned islands instead of
     /// sweeping the whole board — the coarse tool leaves ground a finer
@@ -969,8 +969,8 @@ pub struct PreviewTierMapParam {
     /// the coarser tier's territory. Default 2.0. `0.0` turns it off.
     pub overlap_mm: Option<f64>,
     /// Per-tier island cap. When filtering leaves more islands than this,
-    /// the merge radius is raised and the close re-run (bounded), and what
-    /// merged is reported. Default 24.
+    /// the largest are kept and the rest go back to the coarser tool, and
+    /// the drop is reported. Default 24.
     pub max_regions_per_tier: Option<usize>,
     /// When true, tier 0 SKIPS the fine tiers' owned islands instead of
     /// sweeping the whole board — spelled identically to the planner's

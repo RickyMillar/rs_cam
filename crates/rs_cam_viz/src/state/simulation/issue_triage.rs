@@ -5,18 +5,15 @@
 //! move the focus from one issue to the next. They are an `impl
 //! SimulationState` fragment, so every name keeps its path.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::ops::Range;
 use std::sync::Arc;
 
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{LoadReportStamp, ProjectSession, TriageSessionKey};
 use rs_cam_core::stock::simulation_cut::SimulationCutIssueKind;
 use rs_cam_core::tool_load::ToolLoadReport;
 
 use super::{
-    IssueListCacheKey, SimulationIssue, SimulationIssueKind, SimulationState,
-    SimulationTraceTarget, weak_matches,
+    IssueListCacheKey, SimulationIssue, SimulationIssueKind, SimulationState, SimulationTraceTarget,
 };
 use crate::state::runtime::GuiState;
 
@@ -46,80 +43,35 @@ impl SimulationState {
             .and_then(|results| results.cut_trace.as_ref())
     }
 
-    pub fn cached_chipload_envelopes(
-        &mut self,
-        session: &ProjectSession,
-        edit_counter: u64,
-    ) -> HashMap<rs_cam_core::ToolpathId, Range<f64>> {
-        let live = self
-            .results
-            .as_ref()
-            .and_then(|results| results.cut_trace.as_ref());
-        if weak_matches(self.debug.chipload_envelope_cache.trace.as_ref(), live)
-            && self.debug.chipload_envelope_cache.edit_counter == edit_counter
-            && let Some(envelopes) = &self.debug.chipload_envelope_cache.envelopes
-        {
-            return envelopes.clone();
-        }
-        let stored_trace = live.map(Arc::downgrade);
-
-        let start = std::time::Instant::now();
-        let sim_trace = self.results.as_ref().and_then(|r| r.cut_trace.as_deref());
-        let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(session, sim_trace);
-        let elapsed = start.elapsed();
-        if elapsed > std::time::Duration::from_millis(8) {
-            tracing::debug!(
-                envelope_count = envelopes.len(),
-                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
-                "slow chipload envelope build"
-            );
-        }
-        self.debug.chipload_envelope_cache.trace = stored_trace;
-        self.debug.chipload_envelope_cache.edit_counter = edit_counter;
-        self.debug.chipload_envelope_cache.envelopes = Some(envelopes.clone());
-        envelopes
-    }
-
-    /// Simulation triage cached by simulation trace identity, GUI edit
-    /// counter and evidence fingerprint — the trace and edit rule is the same
-    /// as [`Self::cached_chipload_envelopes`];
-    /// the fingerprint is this cache's alone, because it is the only one of
-    /// the two whose build reads state outside the trace
-    /// ([`Self::project_evidence`], and see [`Self::evidence_fingerprint`]).
+    /// Simulation triage, cached on the inputs it reads (see
+    /// [`super::SimulationTriageCache`]): the load report, the session
+    /// parts beside the report key, and the evidence fingerprint.
     ///
-    /// Building it is `O(samples × toolpaths)` with a per-toolpath sort (full
-    /// `ProjectDiagnostics` + `MeasurabilityReport` + `SimulationTriage::build`,
-    /// plus a `build_cutter` per toolpath), and the inspector's measurability
-    /// strip asks for it on every frame the Diagnostics header is open.
-    /// Returned by reference: the triage carries several `Vec<Finding>`, so
-    /// even a cache-hit clone would be per-frame allocation.
+    /// A build reads its kinematic rows from the load report
+    /// ([`ProjectSession::simulation_triage_with_report`]), so it does not
+    /// analyse the moves again. It still walks the cut trace for the
+    /// diagnostics and the triage. The inspector's measurability strip asks
+    /// for it on every frame the Diagnostics header is open, so a hit must
+    /// cost only the key compare. Returned by reference: the triage carries
+    /// several `Vec<Finding>`, so even a cache-hit clone would be per-frame
+    /// allocation.
     pub fn cached_simulation_triage(
         &mut self,
         session: &ProjectSession,
-        edit_counter: u64,
     ) -> &rs_cam_core::stock::sim_triage::SimulationTriage {
+        let report = self.cached_load_report(session);
         let evidence_fp = self.evidence_fingerprint();
-        let fresh = {
-            let live = self
-                .results
-                .as_ref()
-                .and_then(|results| results.cut_trace.as_ref());
-            self.debug
-                .triage_cache
-                .matches(live, edit_counter, evidence_fp)
-        };
-        if !fresh {
-            let stored_trace = self
-                .results
-                .as_ref()
-                .and_then(|results| results.cut_trace.as_ref())
-                .map(Arc::downgrade);
+        if !self
+            .debug
+            .triage_cache
+            .matches(&report, session, evidence_fp)
+        {
             let start = std::time::Instant::now();
             // Scoped so the immutable `project_evidence` borrow of `self`
             // ends before the cache write below.
             let triage = {
                 let evidence = self.project_evidence();
-                session.simulation_triage(&evidence)
+                session.simulation_triage_with_report(&evidence, &report)
             };
             let elapsed = start.elapsed();
             if elapsed > std::time::Duration::from_millis(8) {
@@ -128,11 +80,12 @@ impl SimulationState {
                     "slow simulation triage build"
                 );
             }
-            self.debug.triage_cache.built = true;
-            self.debug.triage_cache.trace = stored_trace;
-            self.debug.triage_cache.edit_counter = edit_counter;
-            self.debug.triage_cache.evidence_fp = evidence_fp;
-            self.debug.triage_cache.triage = triage;
+            let cache = &mut self.debug.triage_cache;
+            cache.report = Some(LoadReportStamp::of(&report));
+            cache.session = Some(TriageSessionKey::of(session));
+            cache.evidence_fp = evidence_fp;
+            cache.triage = triage;
+            cache.builds += 1;
         }
         &self.debug.triage_cache.triage
     }
@@ -170,9 +123,8 @@ impl SimulationState {
     /// Fingerprint over every [`Self::project_evidence`] input that is **not**
     /// the cut trace, for [`Self::cached_simulation_triage`]'s key.
     ///
-    /// The trace is keyed by weak-pinned identity; these are the other four
-    /// evidence fields, none of which move the trace pointer and none of which
-    /// bump the GUI edit counter:
+    /// The load report stamp covers the trace identity; these are the other
+    /// four evidence fields, none of which move the trace pointer:
     ///
     /// - `boundaries` — the move ranges the triage attributes findings through;
     /// - `rapid_collisions` and `rapid_collision_move_indices` — the

@@ -29,11 +29,14 @@
 //!
 //! # The two arms
 //!
-//! - Red (`max_close_raises` = [`MAX_CLOSE_RAISES`], the current default):
-//!   the field welds, the blob is kept, and real islands are dropped instead.
-//!   The owned area in the field is a PINNED MEASUREMENT of the defect.
-//! - Green (`max_close_raises: 0`): the 24 largest real islands are kept,
-//!   6 are dropped with their area reported, and the field owns no cell.
+//! - Green (the default, [`DEFAULT_MAX_CLOSE_RAISES`] = 0, since the
+//!   operator's approval of 2026-10-01): the 24 largest real islands are
+//!   kept, 6 are dropped with their area reported, and the field owns no
+//!   cell.
+//! - Red (`max_close_raises` = [`MAX_CLOSE_RAISES`], the default until
+//!   2026-10-01, and still the value of a project saved with it): the field
+//!   welds, the blob is kept, and real islands are dropped instead. The
+//!   owned area in the field is a PINNED MEASUREMENT of the defect.
 
 #![allow(
     clippy::unwrap_used,
@@ -44,8 +47,8 @@
 
 use rs_cam_core::maps::grid::GridSpec;
 use rs_cam_core::maps::tier_islands::{
-    CAP_CLOSE_RAISE_FACTOR, DEFAULT_MAX_REGIONS_PER_TIER, MAX_CLOSE_RAISES, TierIslandParams,
-    TierIslandSet, extract_tier_islands,
+    CAP_CLOSE_RAISE_FACTOR, DEFAULT_MAX_CLOSE_RAISES, DEFAULT_MAX_REGIONS_PER_TIER,
+    MAX_CLOSE_RAISES, TierIslandParams, TierIslandSet, extract_tier_islands,
 };
 use rs_cam_core::maps::tier_map::{NO_TIER, ResidualTreatment, TierMap};
 
@@ -249,9 +252,10 @@ fn the_fixture_welds_the_field_and_never_the_islands() {
     );
 }
 
-/// RED ARM — the defect at the current default. The field welds into one
-/// blob, the blob is kept as the largest island, and real islands are
-/// dropped in its place.
+/// RED ARM — the defect at the raise bound [`MAX_CLOSE_RAISES`], the
+/// default until 2026-10-01 (a project saved with it keeps it). The field
+/// welds into one blob, the blob is kept as the largest island, and real
+/// islands are dropped in its place.
 #[test]
 fn at_three_raises_the_specks_weld_into_a_blob_that_displaces_real_islands() {
     let map = map_with(Content {
@@ -314,22 +318,24 @@ fn at_three_raises_the_specks_weld_into_a_blob_that_displaces_real_islands() {
 /// The pinned weld measurement. See the red arm.
 const WELDED_FIELD_CELLS: usize = 8_628;
 
-/// GREEN ARM — `max_close_raises: 0`. The cap keeps the 24 largest islands at
+/// GREEN ARM — the default dials (the raise bound
+/// [`DEFAULT_MAX_CLOSE_RAISES`] = 0). The cap keeps the 24 largest islands at
 /// the configured radius, reports the 6 it drops and their area, and the
 /// field owns nothing.
 #[test]
-fn at_zero_raises_the_specks_stay_coarse_and_the_drop_is_reported() {
+fn at_the_default_zero_raises_the_specks_stay_coarse_and_the_drop_is_reported() {
     let map = map_with(Content {
         islands: true,
         field: true,
     });
+    // The raise bound is NOT set here: this arm reads the default.
     let params = TierIslandParams {
         overlap_mm: 0.0,
-        max_close_raises: 0,
         ..TierIslandParams::default()
     };
     let set = fine_set(&map, &params);
 
+    assert_eq!(set.cap.max_close_raises, DEFAULT_MAX_CLOSE_RAISES);
     assert_eq!(set.cap.max_close_raises, 0);
     assert_eq!(set.cap.close_raises, 0, "no raise");
     assert!((set.cap.final_close_radius_mm - pass_radius_mm(0)).abs() < 1e-12);
@@ -396,8 +402,33 @@ fn the_dial_cannot_raise_the_bound_past_the_ceiling() {
     assert_eq!(params.effective_max_close_raises(), MAX_CLOSE_RAISES);
     assert_eq!(
         TierIslandParams::default().max_close_raises,
-        MAX_CLOSE_RAISES,
-        "no default change in this round"
+        DEFAULT_MAX_CLOSE_RAISES,
+        "the default is the named constant"
+    );
+    assert_eq!(
+        DEFAULT_MAX_CLOSE_RAISES, 0,
+        "plan F1, operator approval 2026-10-01: no raise by default"
+    );
+}
+
+/// A project file that states the raise bound keeps it; one that does not
+/// state it reads the default. The struct-level `#[serde(default)]` is the
+/// mechanism; this pins it, so a saved project with `max_close_raises = 3`
+/// still plans as it did before the default changed.
+#[test]
+fn a_saved_raise_bound_survives_the_default_change() {
+    let explicit: TierIslandParams =
+        toml::from_str("max_close_raises = 3\n").expect("an explicit bound parses");
+    assert_eq!(explicit.max_close_raises, MAX_CLOSE_RAISES);
+    assert_eq!(explicit.effective_max_close_raises(), MAX_CLOSE_RAISES);
+
+    let absent: TierIslandParams = toml::from_str("coarseness = 1.0\n").expect("parses");
+    assert_eq!(absent.max_close_raises, DEFAULT_MAX_CLOSE_RAISES);
+
+    let written = toml::to_string(&TierIslandParams::default()).expect("serializes");
+    assert!(
+        written.contains("max_close_raises = 0"),
+        "a new project writes the bound explicitly: {written}"
     );
 }
 

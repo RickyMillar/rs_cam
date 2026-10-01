@@ -10,17 +10,23 @@
 //! The tapered arms are from A3 steps 2 and 3. Step 4 adds the bull-nose
 //! rule (the Amana corner-radius chart) and the arms (a), (c), (g) and (h).
 //!
-//! - (a) `FAMILY_RULES` holds exactly one rule for the bull nose and one for
-//!   the tapered ball; there is no ball-nose rule (ruling B3).
+//! - (a) `FAMILY_RULES` holds exactly one rule for the bull nose and two
+//!   for the tapered ball (Onsrud 77-100, home (Pocket, Roughing); and,
+//!   since the operator ruling of 2026-10-01, Amana ZrN v8, home
+//!   (Parallel, Finish), which serves Contour, Scallop and Trace); there is
+//!   no ball-nose rule (ruling B3).
 //! - (b) For each routed operation of a served family (Profile, Waterline,
 //!   SteepShallow, Trace, Pencil, Adaptive, DropCutter, Scallop), at both
 //!   home sizes and in the four judged woods, the recipe and the envelope
 //!   resolvers return the Onsrud 77-100 pocket row, marked `Transferred`,
 //!   with a band identical to the home band. Step 3 deleted the copies in
 //!   the Adaptive, Parallel and Scallop families, so these families read
-//!   the home row too. One exception: in MDF a printed Parallel row wins
-//!   (SpeTool at 3.175 mm on score, Amana ZrN v8 at 6.35 mm on the tie
-//!   rule), and the arm pins that row as `Printed`.
+//!   the home row too. Two exceptions, both in MDF: a printed Parallel row
+//!   wins (SpeTool at 3.175 mm on score, Amana ZrN v8 at 6.35 mm on the tie
+//!   rule), and the arm pins that row as `Printed`; and since the operator
+//!   ruling of 2026-10-01 the Amana ZrN v8 MDF row, transferred from
+//!   (Parallel, Finish), wins the Contour, Trace and Scallop cells on the
+//!   id tie-break (equal score, equal diameter, both transferred).
 //! - (c) A 6.0 mm bull nose on a DropCutter in hardwood reads the 6.35 mm
 //!   Amana corner-radius pocket row through two claims: the family claim
 //!   and a G1 form C size claim. The band is the home band x the size scale
@@ -163,6 +169,21 @@ fn printed_mdf_parallel_row(tip: f64) -> &'static str {
     }
 }
 
+/// The Amana ZrN v8 MDF rows that the v8 rule (operator ruling 2026-10-01)
+/// serves to the Contour, Trace and Scallop queries in MDF (arm (b)). Both
+/// are grade a, exact, as the Onsrud MDF home rows are. At 3.175 mm the v8
+/// 3-flute row and the Onsrud 1/8 in row (3 flutes) score the same, at the
+/// same diameter, and both are transferred, so the id decides. At 6.35 mm
+/// the 2-flute rows tie the same way. In hardwood and softwood the v8 rows
+/// are grade b, derived, and the Onsrud row wins on score.
+fn transferred_mdf_v8_row(tip: f64) -> &'static str {
+    if tip < 5.0 {
+        "amana-tapered-mdf-parallel-3175-3f-zrn-v8"
+    } else {
+        "amana-tapered-mdf-parallel-6350-2f-zrn-v8"
+    }
+}
+
 /// (b) The routed operations of the served families read the home row
 /// through one claim, with the home band.
 #[test]
@@ -180,6 +201,7 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
     ];
     let mut checked = 0;
     let mut printed_wins = 0;
+    let mut v8_wins = 0;
     for (tip, column) in [(3.175, "1_8"), (6.35, "1_4")] {
         let tool = tapered(tip);
         for (key, material) in &woods() {
@@ -198,6 +220,37 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
                         assert_eq!(row.observation_id, printed_mdf_parallel_row(tip), "{label}");
                         assert_eq!(row.family_basis, FamilyBasis::Printed, "{label}");
                         printed_wins += 1;
+                    }
+                    continue;
+                }
+                if *key == "mdf"
+                    && matches!(
+                        family,
+                        LutOperationFamily::Contour
+                            | LutOperationFamily::Trace
+                            | LutOperationFamily::Scallop
+                    )
+                {
+                    // Operator ruling 2026-10-01: the v8 rule serves these
+                    // families, and in MDF its row wins the tie (see
+                    // `transferred_mdf_v8_row`).
+                    let v8_id = transferred_mdf_v8_row(tip);
+                    for row in both_rows(op, &tool, material) {
+                        assert_eq!(row.observation_id, v8_id, "{label}");
+                        let claim = row
+                            .family_basis
+                            .claim()
+                            .unwrap_or_else(|| panic!("{label}: the row must be Transferred"));
+                        assert_eq!(claim.query.0, family, "{label}");
+                        assert_eq!(
+                            claim.home,
+                            (LutOperationFamily::Parallel, LutPassRole::Finish),
+                            "{label}"
+                        );
+                        assert_eq!(claim.source_rows, vec![v8_id.to_owned()], "{label}");
+                        assert!(row.size_basis.claim().is_none(), "{label}");
+                        assert!(!row.size_basis.is_refused(), "{label}");
+                        v8_wins += 1;
                     }
                     continue;
                 }
@@ -228,8 +281,12 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
     }
     // 2 sizes x 4 woods x 8 operations x 2 resolvers = 128, of which the
     // MDF DropCutter cells (2 sizes x 2 resolvers = 4) read a printed row.
-    assert_eq!(checked, 124);
+    // Operator ruling 2026-10-01: the MDF Profile, Waterline, SteepShallow,
+    // Trace, Pencil and Scallop cells (2 sizes x 6 operations x 2 resolvers
+    // = 24) read the transferred Amana ZrN v8 row. Was `checked == 124`.
+    assert_eq!(checked, 100);
     assert_eq!(printed_wins, 4);
+    assert_eq!(v8_wins, 24);
 }
 
 /// (f) A3 step 3: one row per printed cell. For each rule, the rows of its
@@ -273,9 +330,16 @@ fn a_rule_has_one_row_per_printed_cell_g3() {
                 "{key:?}: one row per printed cell, got {ids:?}"
             );
         }
-        if rule.tool_family == ToolFamily::TaperedBallNose {
+        if rule.tool_subfamily == "77_100_series" {
             // 4 sheets x 2 tip diameters.
             assert_eq!(cells.len(), 8, "{cells:?}");
+        }
+        if rule.tool_subfamily == "zrn_2d3d_carving_tapered" {
+            // 9 printed (tip, flutes) columns (2 flutes: 1 mm, 1/16 in,
+            // 1/4 in; 3 flutes: 1/32, 1/8, 3/16 in; 4 flutes: 1.5 mm,
+            // 1/16, 1/8 in; `amana_zrn_3d_v8.txt`) x softwood, hardwood and
+            // MDF.
+            assert_eq!(cells.len(), 27, "{cells:?}");
         }
         if rule.tool_family == ToolFamily::BullNose {
             // 2 diameters (1/4 and 1/2 in) x softwood, hardwood and MDF.
@@ -429,17 +493,49 @@ fn a_printed_row_wins_a_tie_over_a_transfer_g3() {
     }
 }
 
-/// (a) One rule per tool family that has a chart with no operation: the
-/// bull nose and the tapered ball. No ball-nose rule (ruling B3).
+/// (a) One rule per chart that prints a value with no operation: the bull
+/// nose (Amana corner radius) and two tapered-ball charts (Onsrud 77-100
+/// and, since the operator ruling of 2026-10-01, Amana ZrN v8). No
+/// ball-nose rule (ruling B3).
 #[test]
 fn the_rules_are_the_bull_and_the_tapered_ball_g3() {
     let families: Vec<ToolFamily> = FAMILY_RULES.iter().map(|r| r.tool_family).collect();
-    assert_eq!(families.len(), 2, "{families:?}");
-    assert!(families.contains(&ToolFamily::BullNose), "{families:?}");
-    assert!(
-        families.contains(&ToolFamily::TaperedBallNose),
+    // Was 2 (one bull, one tapered). The operator ruling of 2026-10-01 adds
+    // the Amana ZrN v8 tapered rule.
+    assert_eq!(families.len(), 3, "{families:?}");
+    assert_eq!(
+        families
+            .iter()
+            .filter(|f| **f == ToolFamily::BullNose)
+            .count(),
+        1,
         "{families:?}"
     );
+    assert_eq!(
+        families
+            .iter()
+            .filter(|f| **f == ToolFamily::TaperedBallNose)
+            .count(),
+        2,
+        "{families:?}"
+    );
+    assert!(!families.contains(&ToolFamily::BallNose), "{families:?}");
+    let v8 = FAMILY_RULES
+        .iter()
+        .find(|r| r.tool_subfamily == "zrn_2d3d_carving_tapered")
+        .expect("the Amana ZrN v8 tapered rule");
+    assert_eq!(v8.tool_family, ToolFamily::TaperedBallNose);
+    assert_eq!(v8.source_ids, &["amana_zrn_3d_profiling_v8"]);
+    assert_eq!(v8.home, (LutOperationFamily::Parallel, LutPassRole::Finish));
+    assert_eq!(
+        v8.serves,
+        &[
+            LutOperationFamily::Contour,
+            LutOperationFamily::Scallop,
+            LutOperationFamily::Trace,
+        ]
+    );
+    assert_eq!(v8.printed_mm, (0.79375, 6.35));
     let bull = FAMILY_RULES
         .iter()
         .find(|r| r.tool_family == ToolFamily::BullNose)

@@ -51,8 +51,8 @@ pub use command::{
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, execute_generation, execute_job,
-    execute_optimize_toolpath, execute_recommend_clearing_strategy,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, TriageSessionKey, execute_generation,
+    execute_job, execute_optimize_toolpath, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs, toolpath_cycle_time,
@@ -67,6 +67,7 @@ pub use diagnostics_types::{
     VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
+pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
     equal_cusp_stepover_mm, execute_preview_tier_map,

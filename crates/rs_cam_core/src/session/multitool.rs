@@ -75,7 +75,8 @@ use tracing::warn;
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{
-    BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig, HeightsConfig, StockSource,
+    ArcFitParams, BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
+    HeightsConfig, StockSource,
 };
 use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::UnifiedFinishConfig;
@@ -475,7 +476,7 @@ impl ProjectSession {
         };
         // G6 ramp: the tier's own dressups, so Suggest reads the entry the
         // tier ships ("entry off" on a finish tier, not "entry unknown").
-        let dressups = DressupConfig::for_op(dressup_op);
+        let dressups = plan_tier_dressups(dressup_op, spec.cusp_height_mm);
         let feeds_provenance = self.suggest_feeds_for(
             &mut operation,
             tool,
@@ -902,6 +903,42 @@ impl ProjectSession {
             }
         }
     }
+}
+
+/// The arc-fit tolerance of a planner tier op, as a fraction of the plan's
+/// cusp height (tiered-finish plan F4a, operator approval 2026-10-01).
+///
+/// Derivation: the arc fitter holds every source segment within its
+/// tolerance of the arc in 3D (`dressup/arcfit.rs::try_fit_arc`), on either
+/// side, so a fitted arc can move the surface by up to two tolerances peak to
+/// peak. Two tolerances must not exceed the cusp the tier is dialled to:
+/// `2 · t ≤ h`, so `t = h / 2`.
+pub const TIER_ARC_TOLERANCE_PER_CUSP_HEIGHT: f64 = 0.5;
+
+/// The arc-fit tolerance (mm) of a planner tier op whose plan is dialled to
+/// cusp height `cusp_height_mm`: [`TIER_ARC_TOLERANCE_PER_CUSP_HEIGHT`] of
+/// it. `None` for a cusp height that is not a positive finite number: no
+/// tolerance satisfies `2 · t ≤ h` there.
+#[must_use]
+pub fn tier_arc_tolerance_mm(cusp_height_mm: f64) -> Option<f64> {
+    (cusp_height_mm.is_finite() && cusp_height_mm > 0.0)
+        .then_some(cusp_height_mm * TIER_ARC_TOLERANCE_PER_CUSP_HEIGHT)
+}
+
+/// The dressups of one planner tier op: the op type's own defaults
+/// ([`DressupConfig::for_op`]), then the arc-fit tolerance
+/// [`tier_arc_tolerance_mm`] when the type fits arcs.
+///
+/// Only planner tier ops read this. A Finish op the operator adds keeps the
+/// role's [`crate::compute::config::ArcFitParams`] default (0.05 mm): the
+/// tier op is the one whose cusp target the planner knows. With a cusp
+/// height that gives no tolerance, the tier fits no arcs.
+fn plan_tier_dressups(op: OperationType, cusp_height_mm: f64) -> DressupConfig {
+    let mut dressups = DressupConfig::for_op(op);
+    dressups.arc_fitting = dressups.arc_fitting.and_then(|_role_default| {
+        tier_arc_tolerance_mm(cusp_height_mm).map(|tolerance| ArcFitParams { tolerance })
+    });
+    dressups
 }
 
 /// The `UnifiedFinishConfig` for one tier: the type's defaults, then the
