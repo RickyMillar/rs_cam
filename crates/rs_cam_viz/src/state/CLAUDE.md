@@ -22,9 +22,9 @@ project. The entry point is `state::AppState` in `mod.rs`.
 
 ## Invariants
 
-- Metric-capture staleness is derived from the accepted run's capture
-  revision. Do not reintroduce a mutable stale boolean, and do not clear it
-  on an un-stamped, cancelled or failed result.
+- Capture staleness derives from `last_run`, the last accepted run; add no
+  stale boolean. An un-stamped, cancelled or failed result does not clear
+  it. It pairs with `has_results()` except in `SimFreshness::Released`.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
 - `AppState::simulation_is_stale` is the ONE door onto simulation freshness.
   The core answers project inputs, the GUI capture options. Never the counter.

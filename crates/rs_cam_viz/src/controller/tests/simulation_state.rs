@@ -8,6 +8,10 @@ fn an_accepted_run_and_an_accepted_result_arrive_and_leave_together_ur3() {
     // The derived metric-options staleness reads `last_run`, not `results`.
     // The two must arrive and leave together on EVERY transition, or the
     // reader would ask a run that has no evidence (or evidence with no run).
+    //
+    // W2-E: one state is the exception. A re-run releases the view and
+    // keeps `last_run`, because the core still holds that run's evidence
+    // (`SimFreshness::Released`). See the release steps at the end.
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
     let sim = &controller.state.simulation;
@@ -52,6 +56,37 @@ fn an_accepted_run_and_an_accepted_result_arrive_and_leave_together_ur3() {
 
     // A second accept re-establishes the pairing.
     inject_sim_results(&mut controller, 1);
+    let sim = &controller.state.simulation;
+    assert_eq!(sim.has_results(), sim.last_run.is_some());
+
+    // W2-E: a re-run releases the view and keeps `last_run`. The freshness
+    // names that state, and only that state breaks the pairing.
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    let sim = &controller.state.simulation;
+    assert!(!sim.has_results() && sim.last_run.is_some());
+    assert_eq!(
+        controller.state.simulation_freshness(),
+        crate::state::freshness::SimFreshness::Released { in_flight: true }
+    );
+
+    // The re-run is cancelled: still released, `last_run` still names the
+    // run whose evidence the core holds.
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Simulation(Err(
+            crate::compute::ComputeError::Cancelled,
+        )));
+    controller.drain_compute_results();
+    let sim = &controller.state.simulation;
+    assert!(!sim.has_results() && sim.last_run.is_some());
+    assert_eq!(
+        controller.state.simulation_freshness(),
+        crate::state::freshness::SimFreshness::Released { in_flight: false }
+    );
+
+    // Reset ends the release: both leave together again.
+    controller.handle_internal_event(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
     let sim = &controller.state.simulation;
     assert_eq!(sim.has_results(), sim.last_run.is_some());
 }

@@ -42,15 +42,22 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// The submit door released the view artifacts of the previous run
     /// (`SimulationState::release_for_new_run`). A cancelled or failed run
-    /// has nothing to put back, so the view reads `NoRun`. The core still
-    /// holds the previous simulation. This notification names that state, so
-    /// the old result does not vanish silently. `outcome` is the past
-    /// participle the message uses: "cancelled" or "failed".
+    /// has nothing to put back, so the freshness reads
+    /// `SimFreshness::Released { in_flight: false }`: the view shows no
+    /// stock, and the core still holds the previous simulation. This
+    /// notification names that state, so the old result does not vanish
+    /// silently. `outcome` is the past participle the message uses:
+    /// "cancelled" or "failed".
     ///
-    /// The call posts nothing when the view holds a result, or when the core
-    /// holds no simulation (then no previous run was released).
+    /// Call this AFTER the drain consumed the submit stamps. The call posts
+    /// only on that `Released` arm. It posts nothing when the view holds a
+    /// result, when the core holds no simulation, or when Reset cleared
+    /// `last_run`: then no previous run was released.
     pub(crate) fn note_simulation_did_not_land(&mut self, outcome: &str) {
-        if self.state.simulation.has_results() || self.state.session.simulation_result().is_none() {
+        if !matches!(
+            self.state.simulation_freshness(),
+            crate::state::freshness::SimFreshness::Released { in_flight: false }
+        ) {
             return;
         }
         self.push_notification(
@@ -816,8 +823,8 @@ mod release_for_new_run_m1 {
         assert!(controller.pending_upload, "the viewport must drop its mesh");
         assert_eq!(
             controller.state.simulation_freshness(),
-            SimFreshness::Running,
-            "a run in flight reads Running, not the released result"
+            SimFreshness::Released { in_flight: true },
+            "a run in flight after a release reads Released, not the released result"
         );
     }
 
@@ -838,7 +845,7 @@ mod release_for_new_run_m1 {
     }
 
     #[test]
-    fn a_cancelled_run_reads_no_run_and_names_the_release_m1() {
+    fn a_cancelled_run_reads_released_and_names_the_release_m1() {
         let mut controller = controller_holding_a_run();
         submit(&mut controller);
         controller
@@ -849,8 +856,8 @@ mod release_for_new_run_m1 {
 
         assert_eq!(
             controller.state.simulation_freshness(),
-            SimFreshness::NoRun,
-            "nothing came back to show"
+            SimFreshness::Released { in_flight: false },
+            "nothing came back to show, and the core holds the released run"
         );
         assert!(
             controller.state.session.simulation_result().is_some(),
@@ -862,7 +869,7 @@ mod release_for_new_run_m1 {
     }
 
     #[test]
-    fn a_failed_run_reads_no_run_and_names_the_release_m1() {
+    fn a_failed_run_reads_released_and_names_the_release_m1() {
         let mut controller = controller_holding_a_run();
         submit(&mut controller);
         controller
@@ -873,7 +880,10 @@ mod release_for_new_run_m1 {
             ))));
         controller.drain_compute_results();
 
-        assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);
+        assert_eq!(
+            controller.state.simulation_freshness(),
+            SimFreshness::Released { in_flight: false }
+        );
         let notice = release_notice(&controller)
             .expect("a failed run must say that the view released the old result");
         assert!(notice.starts_with("Simulation failed."), "{notice}");

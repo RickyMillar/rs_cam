@@ -2634,17 +2634,32 @@ impl<B: ComputeBackend> AppController<B> {
 /// N12 item 10. There is ONE simulation type. The lane's answer holds
 /// core's own record, plus the playback stream and the trace artifact
 /// path, which are the viewport's own and which core carries no slot for.
-/// This used to copy twelve fields by hand (D11); it is now a clone of
-/// core's record with the trace slot cleared.
 ///
-/// What the copy SHARES, each behind an `Arc`: the display mesh (M4,
-/// memory programme 2026-10-01), the per-toolpath checkpoints and the prior
-/// stocks. The view state takes the SAME mesh `Arc` from the lane's answer,
-/// so the session and the viewport hold one mesh. What it MOVES: the
-/// per-column deviations, which no view field reads. What it COPIES: the
-/// per-vertex deviations, the boundary list and the rapid-collision list.
-/// The per-vertex copy stays until the view's `display_deviations` is an
-/// `Arc` too.
+/// W2-E (memory programme 2026-10-01): the session keeps ONLY the fields a
+/// session reader reads. The reader audit found these readers:
+/// - `ProjectEvidence::from_simulation` (triage, diagnostics): the
+///   boundaries, the rapid collisions and their move indices, the cut trace
+///   and `column_grid_cell_mm`.
+/// - Rest generation and `snapshot_is_current`: `prior_stocks` and
+///   `prior_stock_sources`.
+/// - Export, the tool-load report, diagnose, narration and optimize: the
+///   cut trace (narration also reads `column_grid_cell_mm`).
+///
+/// No session reader reads the display mesh, the checkpoints, the
+/// per-vertex deviations or the per-column deviations. The view keeps its
+/// own mesh, checkpoints and per-vertex deviations. So the session copy
+/// holds an EMPTY mesh, no checkpoints and no deviations. Before W2-E the
+/// session shared the mesh and the checkpoint `Arc`s with the view. After
+/// `SimulationState::release_for_new_run` dropped the view's handles, the
+/// session handles still held the old mesh and checkpoints for the whole
+/// new run.
+///
+/// The per-column deviations have no reader in the GUI process. This
+/// function takes them out of the lane's answer and drops them, so the
+/// adopt does not hold them either.
+///
+/// The function writes every field by name. A new field on the core type
+/// does not compile here until someone decides whether the session reads it.
 ///
 /// The `cut_trace` slot is the one field this function does not fill. The
 /// caller attaches the trace AFTER the feed-modulation post-pass runs,
@@ -2654,12 +2669,22 @@ impl<B: ComputeBackend> AppController<B> {
 fn core_simulation_from_lane(
     simulation: &mut crate::compute::SimulationResult,
 ) -> rs_cam_core::compute::simulate::SimulationResult {
-    // M4: take the per-column deviations out BEFORE the clone. The view
-    // never reads them, so a clone would copy them only to drop the lane's
-    // copy a moment later, at the adopt's peak.
-    let column_deviations = simulation.core.column_deviations.take();
-    let mut adopted = simulation.core.clone();
-    adopted.column_deviations = column_deviations;
-    adopted.cut_trace = None;
-    adopted
+    // No reader in the GUI process reads the per-column deviations.
+    simulation.core.column_deviations = None;
+    let core = &simulation.core;
+    rs_cam_core::compute::simulate::SimulationResult {
+        mesh: Arc::new(rs_cam_core::stock::stock_mesh::StockMesh::empty()),
+        total_moves: core.total_moves,
+        deviations: None,
+        column_deviations: None,
+        boundaries: core.boundaries.clone(),
+        checkpoints: Vec::new(),
+        rapid_collisions: core.rapid_collisions.clone(),
+        rapid_collision_move_indices: core.rapid_collision_move_indices.clone(),
+        cut_trace: None,
+        resolution_clamped: core.resolution_clamped,
+        column_grid_cell_mm: core.column_grid_cell_mm,
+        prior_stocks: core.prior_stocks.clone(),
+        prior_stock_sources: core.prior_stock_sources.clone(),
+    }
 }

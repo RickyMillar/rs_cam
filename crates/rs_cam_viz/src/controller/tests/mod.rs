@@ -28,7 +28,7 @@ mod rest_cascade_parity_g_restres;
 mod rest_dependency;
 mod rest_sim_reads_core_results_g_reststale;
 mod selection;
-mod session_and_view_share_one_mesh_m4;
+mod session_keeps_only_what_it_reads_w2e;
 mod setup_only_plan_g_setuponly;
 mod sim_stale_is_the_core_answer_g_freshnessdisagree;
 mod simulation_state;

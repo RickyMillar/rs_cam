@@ -135,10 +135,22 @@ pub fn freshness_at(
 pub enum SimFreshness {
     /// No run has landed, or an edit cleared both the core and the view.
     NoRun,
-    /// A run is in flight. The submit door stamped
-    /// `SimulationState::submitted_simulation_epoch` and no result has
-    /// consumed it yet.
+    /// A run is in flight, and the view released no previous run for it.
+    /// The submit door stamped `SimulationState::submitted_simulation_epoch`
+    /// and no result has consumed it yet.
     Running,
+    /// The view released the previous run for a new run (M1, memory
+    /// programme 2026-10-01; `SimulationState::release_for_new_run`).
+    ///
+    /// The view holds no result, so the viewport shows no simulated stock.
+    /// The core still holds the previous run: rest generation reads its
+    /// prior stocks, and export reads its trace. `last_run` still names
+    /// that run. `in_flight` is `true` while the new run works, and `false`
+    /// after the new run was cancelled or failed.
+    Released {
+        /// `true` while the run that caused the release is in flight.
+        in_flight: bool,
+    },
     /// The core holds the simulation these inputs produce.
     Current,
     /// The core dropped the simulation; the view still draws the trace.
@@ -160,6 +172,8 @@ impl SimFreshness {
         match self {
             Self::NoRun => "no_run",
             Self::Running => "running",
+            Self::Released { in_flight: true } => "released_running",
+            Self::Released { in_flight: false } => "released",
             Self::Current => "current",
             Self::EditedSince => "edited_since",
             Self::CaptureOptionsChanged => "capture_options_changed",
@@ -172,27 +186,52 @@ impl SimFreshness {
     /// [`Self::NoRun`] and [`Self::Running`] are false here: neither one
     /// holds a result to mislabel. A reader that wants "there is nothing
     /// to show" asks for the arm, not for this predicate.
+    ///
+    /// [`Self::Released`] is true. The view shows nothing, but the core
+    /// still holds the previous run and other surfaces read it. That run
+    /// is not the answer the operator asked for when the new run started.
     pub fn is_stale(self) -> bool {
         matches!(
             self,
-            Self::EditedSince | Self::CaptureOptionsChanged | Self::Ungenerated(_)
+            Self::Released { .. }
+                | Self::EditedSince
+                | Self::CaptureOptionsChanged
+                | Self::Ungenerated(_)
         )
+    }
+
+    /// True while a simulation run is in flight: [`Self::Running`], and
+    /// [`Self::Released`] with `in_flight`. A "computing" indicator reads
+    /// this, not `== Running`, because a re-run reads `Released`.
+    pub fn is_in_flight(self) -> bool {
+        matches!(self, Self::Running | Self::Released { in_flight: true })
     }
 }
 
 /// Derive the simulation's state from the core and the view together.
 ///
-/// The order of the arms is the order of the questions. A run in flight
-/// answers first, because its own result has not landed and the view still
-/// holds the previous one. Then the view: with nothing to draw there is no
-/// claim to qualify. Then the core, which owns every project input. The
-/// capture options come last, because they only refine a run the core
-/// still stands behind.
+/// The order of the arms is the order of the questions.
+/// 1. A release. The submit door releases the view of the previous run
+///    before the new run starts, and keeps `last_run` and the core
+///    simulation. So "the view holds no result, `last_run` names a run, and
+///    the core holds a simulation" is a release, with the run in flight or
+///    not. `invalidate_simulation` (an edit, or Reset) clears `last_run`,
+///    so it never reads as a release.
+/// 2. A run in flight with no release: the first run of the project, or a
+///    run after Reset.
+/// 3. The view: with nothing to draw there is no claim to qualify.
+/// 4. The core, which owns every project input.
+/// 5. The capture options, which only refine a run the core still stands
+///    behind.
 pub fn simulation_freshness(
     session: &ProjectSession,
     sim: &crate::state::simulation::SimulationState,
 ) -> SimFreshness {
-    if sim.submitted_simulation_epoch.is_some() {
+    let in_flight = sim.submitted_simulation_epoch.is_some();
+    if !sim.has_results() && sim.last_run.is_some() && session.simulation_result().is_some() {
+        return SimFreshness::Released { in_flight };
+    }
+    if in_flight {
         return SimFreshness::Running;
     }
     if !sim.has_results() {
