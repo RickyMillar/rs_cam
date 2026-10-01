@@ -227,6 +227,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,
+            centre_boundary: Vec::new(),
         },
         depth: Adaptive3dDepth {
             // ~14% radial

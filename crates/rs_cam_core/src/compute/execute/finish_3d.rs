@@ -125,6 +125,12 @@ pub(crate) fn generate_adaptive3d(
                 ctx.stock_bbox.max.x,
                 ctx.stock_bbox.max.y,
             )),
+            // G-BOUNDARYPHANTOM: the containment the session clips to after
+            // generation; the planner stamps only what that clip keeps.
+            centre_boundary: ctx
+                .boundary_centre
+                .map(<[crate::polygon::Polygon2]>::to_vec)
+                .unwrap_or_default(),
         },
         depth: crate::adaptive3d::Adaptive3dDepth {
             depth_per_pass: cfg.depth_per_pass,

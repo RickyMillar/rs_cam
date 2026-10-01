@@ -90,6 +90,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: Some((-13.0, -13.0, 13.0, 13.0)),
+            centre_boundary: Vec::new(),
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 3.0,

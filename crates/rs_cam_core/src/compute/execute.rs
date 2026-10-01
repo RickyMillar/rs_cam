@@ -345,6 +345,13 @@ pub struct ExecutionContext<'a> {
     /// `RegionSet` (region_set.rs) so containment tests share one
     /// implementation across every family.
     pub boundary_regions: Option<&'a RegionSet<'a>>,
+    /// G-BOUNDARYPHANTOM: the containment polygons the session's
+    /// post-generation boundary clip clips this toolpath to (the regions
+    /// after keep-outs, the user offset and the tool-radius containment).
+    /// The adaptive3d planner keeps its tool centre inside them so it stamps
+    /// only what the clip keeps. `None`: no boundary, or a caller that
+    /// applies no clip.
+    pub boundary_centre: Option<&'a [Polygon2]>,
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
     /// envelope the pencil generator (and, in future, other finishing
     /// families with a hookup/link decision) costs surface-link vs.
@@ -424,6 +431,7 @@ impl<'a> ExecutionContext<'a> {
             semantic_ctx: None,
             boundary: None,
             boundary_regions: None,
+            boundary_centre: None,
             link_kinematics: None,
             rest_analysis: None,
             segment_merge_tolerance: None,

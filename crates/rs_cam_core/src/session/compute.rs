@@ -118,6 +118,39 @@ pub struct ResolvedGenInputs {
 }
 
 impl ResolvedGenInputs {
+    /// G-BOUNDARYPHANTOM: the containment polygons the post-generation
+    /// boundary clip will clip to, from the same processed source the clip
+    /// processes (`apply_boundary_clip_multi` for a region set,
+    /// `apply_boundary_clip` for one polygon) and the same tool radius.
+    /// `None` with the boundary off, or when no source resolved here.
+    ///
+    /// An offset that fails yields no polygon for that region; the clip
+    /// refuses the generation on the same failure.
+    fn boundary_centre(&self) -> Option<Vec<crate::polygon::Polygon2>> {
+        use crate::geometry::boundary::{ToolContainment, effective_boundary};
+        if !self.boundary_config.enabled {
+            return None;
+        }
+        let containment = match self.boundary_config.containment {
+            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
+            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
+            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
+        };
+        let tool_radius = self.tool_def.diameter() / 2.0;
+        let sources: Vec<&crate::polygon::Polygon2> = match &self.pre_boundary_regions {
+            Some(regions) => regions.iter().collect(),
+            None => self.pre_boundary.iter().collect(),
+        };
+        if sources.is_empty() {
+            return None;
+        }
+        let set: Vec<crate::polygon::Polygon2> = sources
+            .into_iter()
+            .flat_map(|region| effective_boundary(region, containment, tool_radius))
+            .collect();
+        (!set.is_empty()).then_some(set)
+    }
+
     /// The spatial index over this generation's mesh, built on first read.
     ///
     /// The bundle stores a [`LazyIndex`](crate::maps::geom_cache::LazyIndex), so
@@ -1064,6 +1097,7 @@ pub fn execute_generation(
         .pre_boundary_regions
         .as_deref()
         .map(crate::geometry::region_set::RegionSet::from_slice);
+    let boundary_centre = inputs.boundary_centre();
     let findings = std::cell::RefCell::new(crate::compute::execute::GenerationFindings::default());
     let ctx = crate::compute::execute::ExecutionContext {
         mesh: inputs.mesh.as_deref(),
@@ -1078,6 +1112,7 @@ pub fn execute_generation(
         semantic_ctx: observer.semantic_ctx(),
         boundary: inputs.pre_boundary.as_ref(),
         boundary_regions: regions.as_ref(),
+        boundary_centre: boundary_centre.as_deref(),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
         segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),

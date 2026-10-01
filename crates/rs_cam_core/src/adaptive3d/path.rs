@@ -82,6 +82,7 @@ use crate::toolpath::{Toolpath, simplify_path_3d};
 use std::time::Instant;
 use tracing::{debug, info};
 
+use super::centre_clip::CentreClip;
 use super::clearing::{
     AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_adaptive,
     clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
@@ -900,6 +901,17 @@ pub(super) fn adaptive_3d_segments(
     let bbox_y_max = extent_y - envelope_radius;
 
     let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    // G-BOUNDARYPHANTOM: the session clips this path to the containment
+    // polygons after generation; the planner applies the same clip before it
+    // stamps (`centre_clip.rs`).
+    let centre_clip = CentreClip::new(
+        &params.geometry.centre_boundary,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.cell_size,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+    );
     let ctx = ClearZLevelContext {
         mesh,
         index,
@@ -931,6 +943,7 @@ pub(super) fn adaptive_3d_segments(
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
         entry_floor_radius: entry_floor_radius(params, cutter.radius()),
         stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
+        centre_clip: centre_clip.as_ref(),
     };
 
     let mut segments = Vec::new();
@@ -1057,6 +1070,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.cut_simplify_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
+                    ctx.centre_clip,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,
@@ -1106,6 +1120,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.cut_simplify_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
+                    ctx.centre_clip,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,
@@ -1788,6 +1803,7 @@ mod tests {
                 min_cutting_radius: 0.0,
                 boundary: None,
                 world_stock_xy_bbox: None,
+                centre_boundary: Vec::new(),
             },
             depth: crate::adaptive3d::Adaptive3dDepth {
                 depth_per_pass: 3.0,

@@ -514,7 +514,15 @@ const CLIP_PARAMETER_EPSILON: f64 = 1e-9;
 /// Maximal parameter intervals on the linear `start`→`end` segment whose
 /// midpoint is inside the union of `boundaries`. Every exterior and hole ring
 /// contributes crossings. Arc moves do not use these chord-derived intervals.
-fn maximal_inside_intervals(start: P3, end: P3, boundaries: &[Polygon2]) -> Vec<(f64, f64)> {
+///
+/// G-BOUNDARYPHANTOM: the adaptive3d planner reads the same intervals
+/// (`adaptive3d/centre_clip.rs`), so it stamps only the cut that this clip
+/// keeps.
+pub(crate) fn maximal_inside_intervals(
+    start: P3,
+    end: P3,
+    boundaries: &[Polygon2],
+) -> Vec<(f64, f64)> {
     let a = P2::new(start.x, start.y);
     let b = P2::new(end.x, end.y);
     let mut parameters = vec![0.0, 1.0];

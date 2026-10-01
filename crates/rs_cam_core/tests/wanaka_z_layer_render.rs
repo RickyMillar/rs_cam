@@ -215,6 +215,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,
+            centre_boundary: Vec::new(),
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 1.5,

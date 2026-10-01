@@ -23,6 +23,7 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 
 use tracing::info;
 
+mod centre_clip;
 mod clearing;
 mod path;
 mod region_map;
@@ -150,6 +151,17 @@ pub struct Adaptive3dGeometry {
     /// `None` falls back to the mesh-bbox-only initialization for tests
     /// and call sites that do not have a world stock bbox handy.
     pub world_stock_xy_bbox: Option<(f64, f64, f64, f64)>,
+    /// The containment polygons the session clips this path to after
+    /// generation (the boundary regions inset by the tool radius for
+    /// `Inside`, outset for `Outside`, as is for `Center`). Empty: no clip.
+    ///
+    /// G-BOUNDARYPHANTOM (2026-10-01): the planner keeps every tool centre
+    /// inside these polygons and stamps only what the clip keeps. Before,
+    /// it planned and stamped cuts between `boundary` and the containment
+    /// line; the clip deleted them and a later entry read the phantom cut
+    /// as its rapid floor (rivmap350 "3D Rough 8", rapids up to 11 mm into
+    /// stock).
+    pub centre_boundary: Vec<crate::polygon::Polygon2>,
 }
 
 impl Adaptive3dGeometry {

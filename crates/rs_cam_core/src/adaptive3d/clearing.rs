@@ -18,6 +18,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::debug;
 
+use super::centre_clip::{CentreClip, clip_segment};
 use super::path::{Adaptive3dSegment, StayDownProof, drape_path_to_leave, drape_point};
 use super::search::{blend_corners_3d, is_clear_path_3d};
 use super::{
@@ -418,6 +419,9 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The resolved stay-down distance (`path.rs::resolved_stay_down_mm`).
     /// The planner writes a keep-down stock proof only inside it.
     pub(super) stay_down_mm: f64,
+    /// The boundary clip's containment (G-BOUNDARYPHANTOM); see
+    /// [`StampDrape::centre_clip`].
+    pub(super) centre_clip: Option<&'a CentreClip>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -543,6 +547,10 @@ pub(super) struct StampDrape<'a> {
     /// The stay-down distance inside which `plan_entry` writes a keep-down
     /// stock proof. `0.0` writes none.
     pub(super) stay_down_mm: f64,
+    /// The containment of the session's post-generation boundary clip, or
+    /// `None` with no boundary. Every pushed segment passes it first, so the
+    /// planner stamps only what the clip keeps (G-BOUNDARYPHANTOM).
+    pub(super) centre_clip: Option<&'a CentreClip>,
 }
 
 impl<'a> ClearZLevelContext<'a> {
@@ -554,6 +562,7 @@ impl<'a> ClearZLevelContext<'a> {
             stock_to_leave: self.stock_to_leave,
             entry_floor_radius: self.entry_floor_radius,
             stay_down_mm: self.stay_down_mm,
+            centre_clip: self.centre_clip,
         }
     }
 }
@@ -571,6 +580,11 @@ impl<'a> ClearZLevelContext<'a> {
 pub(super) struct PlannerCursor {
     pub(super) last_pos: Option<P3>,
     pub(super) tool_pos: Option<P3>,
+    /// G-BOUNDARYPHANTOM: the boundary clip dropped a segment (or a cut's
+    /// tail) since the last pushed one, so the tool is not where the next
+    /// segment starts and its first piece needs an entry
+    /// (`centre_clip::clip_segment`).
+    pub(super) clip_gap: bool,
 }
 
 /// Mirror in the planner's `material_stock` the swept-tube stamps that
@@ -886,8 +900,57 @@ fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f
 
 /// Helper to push a segment and stamp its simulator-equivalent swept
 /// material removal in one call.
+///
+/// With a boundary the segment first passes the clip
+/// (`centre_clip::clip_segment`): the planner pushes and stamps only the
+/// pieces the session's boundary clip keeps (G-BOUNDARYPHANTOM).
 #[allow(clippy::too_many_arguments)]
 fn push_segment_with_stamp(
+    segments: &mut Vec<Adaptive3dSegment>,
+    material_stock: &mut TriDexelStock,
+    lut: &RadialProfileLUT,
+    tool_radius: f64,
+    cursor: &mut PlannerCursor,
+    segment: Adaptive3dSegment,
+    safe_z: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
+) {
+    let Some(clip) = drape.centre_clip else {
+        push_segment_with_stamp_unclipped(
+            segments,
+            material_stock,
+            lut,
+            tool_radius,
+            cursor,
+            segment,
+            safe_z,
+            tolerance,
+            min_cutting_radius,
+            drape,
+        );
+        return;
+    };
+    for piece in clip_segment(clip, cursor, segment) {
+        push_segment_with_stamp_unclipped(
+            segments,
+            material_stock,
+            lut,
+            tool_radius,
+            cursor,
+            piece,
+            safe_z,
+            tolerance,
+            min_cutting_radius,
+            drape,
+        );
+    }
+}
+
+/// [`push_segment_with_stamp`] for a segment that has passed the clip.
+#[allow(clippy::too_many_arguments)]
+fn push_segment_with_stamp_unclipped(
     segments: &mut Vec<Adaptive3dSegment>,
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
@@ -1548,6 +1611,7 @@ pub(super) fn waterline_cleanup(
     tolerance: f64,
     min_cutting_radius: f64,
     stock_to_leave: f64,
+    centre_clip: Option<&CentreClip>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -1567,6 +1631,7 @@ pub(super) fn waterline_cleanup(
         // contour gets no keep-down link.
         entry_floor_radius,
         stay_down_mm: 0.0,
+        centre_clip,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -2011,8 +2076,24 @@ struct LevelSink<'a> {
 
 impl LevelSink<'_> {
     fn emit(&mut self, ctx: &ClearZLevelContext<'_>, segment: Adaptive3dSegment) {
+        let Some(clip) = ctx.centre_clip else {
+            self.emit_clipped(ctx, segment);
+            return;
+        };
+        // A link's clip reads the planner position, so the pending entry it
+        // would commit is committed first, as `emit_clipped` would.
+        if matches!(segment, Adaptive3dSegment::Link(_)) {
+            self.commit_pending(ctx);
+        }
+        for piece in clip_segment(clip, self.cursor, segment) {
+            self.emit_clipped(ctx, piece);
+        }
+    }
+
+    /// [`Self::emit`] for a segment that has passed the boundary clip.
+    fn emit_clipped(&mut self, ctx: &ClearZLevelContext<'_>, segment: Adaptive3dSegment) {
         if !self.defer_entries {
-            push_segment_with_stamp(
+            push_segment_with_stamp_unclipped(
                 self.segments,
                 self.material_stock,
                 ctx.lut,
@@ -2043,7 +2124,7 @@ impl LevelSink<'_> {
             Adaptive3dSegment::Cut(ref path) if path.len() < 2 => self.segments.push(segment),
             Adaptive3dSegment::Cut(_) | Adaptive3dSegment::Link(_) => {
                 self.commit_pending(ctx);
-                push_segment_with_stamp(
+                push_segment_with_stamp_unclipped(
                     self.segments,
                     self.material_stock,
                     ctx.lut,
