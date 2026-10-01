@@ -197,8 +197,9 @@ pub struct CutMetricCard {
     pub outcome: DistributionOutcome,
     /// The gate population in trace order, as `(toolpath-local move, value
     /// in core's unit)`. The card's "over time" face draws it, so the line
-    /// and the histogram read the same samples. Empty unless `outcome` is
-    /// `Measured`.
+    /// and the histogram read the same samples. A NaN entry marks a rapid
+    /// or a retract between two samples (`series_with_breaks`). Empty
+    /// unless `outcome` is `Measured`.
     pub series: Vec<(usize, f64)>,
 }
 
@@ -357,6 +358,7 @@ fn build_cut_metric_set(
         machine: Some(session.machine()),
         tolerance: &tolerance,
     };
+    let breaks = NonCuttingCounts::of(env.sim_trace, ctx.toolpath_id);
     for metric in CUT_METRIC_ORDER {
         let Some(outcome) =
             rs_cam_core::tool_load::metric_distribution(metric, verdict, &ctx, &env)
@@ -364,12 +366,10 @@ fn build_cut_metric_set(
             continue;
         };
         let series = match &outcome {
-            DistributionOutcome::Measured(_) => {
-                rs_cam_core::tool_load::distribution::gate_population(metric, &ctx, &env)
-                    .into_iter()
-                    .map(|sample| (sample.move_index, sample.value))
-                    .collect()
-            }
+            DistributionOutcome::Measured(_) => series_with_breaks(
+                &rs_cam_core::tool_load::distribution::gate_population(metric, &ctx, &env),
+                &breaks,
+            ),
             DistributionOutcome::NotMeasured(_) => Vec::new(),
         };
         set.cards.push(CutMetricCard {
@@ -379,6 +379,81 @@ fn build_cut_metric_set(
         });
     }
     set
+}
+
+/// The rapids and retracts of one toolpath in a cut trace, as a running
+/// count: `prefix[k]` is the number of samples of the toolpath before trace
+/// index `k` that the simulator marks `is_cutting == false`. The dexel marks
+/// exactly two move kinds so: a rapid, and a linear feed tagged as a
+/// retract. Built once per card set.
+pub struct NonCuttingCounts {
+    prefix: Vec<usize>,
+}
+
+impl NonCuttingCounts {
+    /// The counts of `toolpath_id` in `trace`. No trace gives no counts,
+    /// and then no series has a break.
+    pub fn of(trace: Option<&SimulationCutTrace>, toolpath_id: ToolpathId) -> Self {
+        let Some(trace) = trace else {
+            return Self { prefix: Vec::new() };
+        };
+        let flags: Vec<bool> = trace
+            .samples
+            .iter()
+            .map(|sample| sample.toolpath_id == toolpath_id && !sample.is_cutting)
+            .collect();
+        Self::from_flags(&flags)
+    }
+
+    /// The counts of a flag per trace sample: `true` is a rapid or a
+    /// retract sample of the toolpath.
+    pub fn from_flags(non_cutting: &[bool]) -> Self {
+        let mut prefix = Vec::with_capacity(non_cutting.len() + 1);
+        let mut count = 0usize;
+        prefix.push(count);
+        for &flag in non_cutting {
+            if flag {
+                count += 1;
+            }
+            prefix.push(count);
+        }
+        Self { prefix }
+    }
+
+    /// True when a rapid or a retract sample lies strictly between trace
+    /// indices `before` and `after`.
+    pub fn between(&self, before: usize, after: usize) -> bool {
+        let at = |index: usize| self.prefix.get(index).copied().unwrap_or(0);
+        after > before + 1 && at(after) > at(before + 1)
+    }
+}
+
+/// The card series of a gate population: `(toolpath-local move, value)` in
+/// trace order, with a break where the tool leaves the cut.
+///
+/// The gate population is sparse in move order. It leaves out the air
+/// cuts, the samples under the steady-state feed (the acceleration ramps of
+/// short moves) and the transit samples, so on a toolpath of short moves two
+/// neighbours in the population can lie many moves apart. The line joins
+/// them: the tool cut through every move between. It breaks only where a
+/// rapid or a retract lies between two samples ([`NonCuttingCounts`]): there
+/// the series holds a NaN, which the line draws as a gap, never as zero.
+pub fn series_with_breaks(
+    population: &[rs_cam_core::tool_load::distribution::PopulationSample],
+    breaks: &NonCuttingCounts,
+) -> Vec<(usize, f64)> {
+    let mut series = Vec::with_capacity(population.len());
+    let mut previous: Option<(usize, usize)> = None;
+    for sample in population {
+        if let Some((before_index, before_move)) = previous
+            && breaks.between(before_index, sample.sample_index)
+        {
+            series.push((before_move, f64::NAN));
+        }
+        series.push((sample.move_index, sample.value));
+        previous = Some((sample.sample_index, sample.move_index));
+    }
+    series
 }
 
 /// The LUT pass role of a feeds pass role. Core holds the same three arms

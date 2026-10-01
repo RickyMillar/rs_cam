@@ -19,8 +19,15 @@
 //!   crosses a bound is split at the crossing.
 //! - The band is the same faint zone wash the histogram paints, turned on
 //!   its side, with a dashed limit line at each bound.
-//! - A gap breaks the line: a sample with no finite value, or a pixel
-//!   column with no sample. A gap is "not measured", never zero.
+//! - The line joins consecutive samples at their true x, across pixel
+//!   columns with no sample. The gate population is sparse in move order
+//!   (it leaves out air cuts, acceleration ramps and transit samples), and
+//!   the tool cut through those moves. Round 3 broke the line at every
+//!   empty column; zoomed in, that drew isolated dots (2026-10-02).
+//! - A gap breaks the line only at a non-finite sample. The card series
+//!   holds one where a rapid or a retract lies between two samples
+//!   (`state::simulation::series_with_breaks`). A gap is "not measured",
+//!   never zero.
 //!
 //! # The y scale
 //!
@@ -80,6 +87,10 @@ pub const BAND_ALPHA: f32 = 0.3;
 /// A column of this many samples or fewer draws no band.
 pub const BAND_MIN_SAMPLES: usize = 2;
 
+/// When the line has at least this much width per drawn column, in points,
+/// each column median also gets a dot, so the true sample positions show.
+pub const MARKER_SPACING: f32 = tokens::SPACE_2;
+
 /// The side of the square icon buttons (flip and open), in points.
 pub const FLIP_SIZE: f32 = tokens::SPACE_5;
 
@@ -104,9 +115,10 @@ pub struct Column {
     pub count: usize,
     /// The toolpath-local move of the first finite sample.
     pub first_move: usize,
-    /// True when the line joins the previous column to this one: the
-    /// previous column holds the previous finite sample, and no gap lies
-    /// between them.
+    /// True when the line joins the previous drawn column to this one: an
+    /// earlier column holds the previous finite sample, and no non-finite
+    /// sample lies between them. Empty columns between them do not break
+    /// the join.
     pub joined: bool,
 }
 
@@ -151,7 +163,8 @@ pub fn move_extent(series: &[(usize, f64)]) -> Option<(usize, usize)> {
 /// count is never more than the number of moves in the range, so a short
 /// toolpath does not leave an empty column between two moves. A value that
 /// is not finite is a gap: it is not drawn, and the line does not join
-/// across it. Returns `None` when no value is finite.
+/// across it. An empty column does not break the line. Returns `None` when
+/// no value is finite.
 #[must_use]
 pub fn columns(series: &[(usize, f64)], max_columns: usize) -> Option<Columns> {
     let window = move_extent(series)?;
@@ -188,7 +201,11 @@ pub fn columns_in(
         let Some(index) = out.column_of(local_move) else {
             continue;
         };
-        let joined = !after_gap && index > 0 && last_column == Some(index - 1);
+        // Join to the previous finite sample in ANY earlier column. An empty
+        // column between them is a move with no population sample (an
+        // acceleration ramp, an air cut, a transit sample), not a gap: the
+        // tool cut through it. Only a non-finite sample breaks the line.
+        let joined = !after_gap && last_column.is_some_and(|last| last < index);
         if let Some(slot) = out.columns.get_mut(index) {
             match slot {
                 Some(column) => {
@@ -642,15 +659,13 @@ impl<'a> Sparkline<'a> {
                         egui::Stroke::new(1.0, tokens::TEXT_MUTED),
                     );
                 }
-                let column_width = area.width() / column_count as f32;
+                let drawn = columns.columns.iter().flatten().count().max(1);
+                let geometry = LineGeometry {
+                    column_width: area.width() / column_count as f32,
+                    markers: area.width() / drawn as f32 >= MARKER_SPACING,
+                };
                 paint_line(
-                    &painter,
-                    columns,
-                    &y_scale,
-                    floor,
-                    ceiling,
-                    &column_x,
-                    column_width,
+                    &painter, columns, &y_scale, floor, ceiling, &column_x, geometry,
                 );
                 if let Some(index) = hovered_index
                     && hovered_column.is_some()
@@ -689,7 +704,7 @@ impl<'a> Sparkline<'a> {
                 self.scale,
                 self.unit,
             ),
-            None => "Not measured here.".to_owned(),
+            None => "No gate sample at this move.".to_owned(),
         });
         let response = match hover_text {
             Some(text) => response.on_hover_text_at_pointer(text),
@@ -756,9 +771,23 @@ fn paint_zones(
     }
 }
 
+/// The horizontal geometry `paint_line` needs beside the columns.
+#[derive(Clone, Copy, Debug)]
+struct LineGeometry {
+    /// The width of one pixel column, in points.
+    column_width: f32,
+    /// Draw a dot at each column median: the columns are far apart.
+    markers: bool,
+}
+
 /// Paint the faint min-to-max band of each column, then the median line
 /// that joins the columns. Both take the band colours and split at each
 /// bound. A column of [`BAND_MIN_SAMPLES`] samples or fewer draws no band.
+///
+/// The line joins each drawn column to the previous drawn column when the
+/// column is `joined`, across any empty columns between them. When there are
+/// fewer samples than columns (a zoomed modal), the line is points joined at
+/// their true x, with a dot at each point.
 fn paint_line(
     painter: &egui::Painter,
     columns: &Columns,
@@ -766,9 +795,9 @@ fn paint_line(
     floor: Option<f64>,
     ceiling: Option<f64>,
     column_x: &dyn Fn(usize) -> f32,
-    column_width: f32,
+    geometry: LineGeometry,
 ) {
-    let half = (0.5 * column_width).max(0.5);
+    let half = (0.5 * geometry.column_width).max(0.5);
     for (index, slot) in columns.columns.iter().enumerate() {
         let Some(column) = slot else {
             continue;
@@ -803,36 +832,33 @@ fn paint_line(
             );
         }
     };
-    let mut previous: Option<Column> = None;
-    for (index, slot) in columns.columns.iter().enumerate() {
-        let Some(column) = slot else {
-            previous = None;
-            continue;
-        };
+    let drawn: Vec<(usize, Column)> = columns
+        .columns
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| slot.map(|column| (index, column)))
+        .collect();
+    for (k, &(index, column)) in drawn.iter().enumerate() {
         let x = column_x(index);
-        let next_joined = columns
-            .columns
-            .get(index + 1)
-            .copied()
-            .flatten()
-            .is_some_and(|next| next.joined);
-        match previous {
-            Some(before) if column.joined => {
-                piece(
-                    column_x(index.saturating_sub(1)),
-                    before.median,
-                    x,
-                    column.median,
-                );
-            }
-            _ if !next_joined => {
-                // A column with no joined neighbour: a short flat piece, so
-                // a single point stays visible.
-                piece(x - half, column.median, x + half, column.median);
-            }
-            _ => {}
+        let before = k.checked_sub(1).and_then(|p| drawn.get(p));
+        let joined_in = column.joined && before.is_some();
+        let joined_out = drawn.get(k + 1).is_some_and(|(_, next)| next.joined);
+        if joined_in && let Some(&(before_index, before)) = before {
+            piece(column_x(before_index), before.median, x, column.median);
         }
-        previous = Some(*column);
+        if !joined_in && !joined_out {
+            // A point with no joined neighbour: a short flat piece, so it
+            // stays visible next to a gap.
+            piece(x - half, column.median, x + half, column.median);
+        }
+        if geometry.markers {
+            let side = histogram::value_side(floor, ceiling, column.median);
+            painter.circle_filled(
+                egui::pos2(x, y_scale.y(column.median)),
+                MEDIAN_WIDTH,
+                histogram::side_colour(side),
+            );
+        }
     }
 }
 

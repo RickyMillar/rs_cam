@@ -658,10 +658,10 @@ fn the_line_keeps_spikes_and_breaks_at_gaps_g_cutcards() {
             .all(|column| column.min > 0.0),
         "a gap is never drawn as zero"
     );
-    // A move with no sample is a gap too.
+    // A move with no sample is NOT a gap (round 4): the line joins across it.
     let sparse = vec![(0, 0.03), (1, 0.03), (4, 0.03)];
     let columns = sparkline::columns(&sparse, 100).unwrap();
-    assert!(columns.columns[2].is_none() && !columns.columns[4].unwrap().joined);
+    assert!(columns.columns[2].is_none() && columns.columns[4].unwrap().joined);
     assert!(
         sparkline::columns(&[(0, f64::NAN)], 10).is_none(),
         "a series with no finite value draws nothing"
@@ -957,6 +957,100 @@ fn the_band_collapses_when_zoomed_in_g_cutcards() {
             .flatten()
             .all(|column| column.count <= sparkline::BAND_MIN_SAMPLES),
         "zoomed to one move per column, no column draws a band"
+    );
+}
+
+/// Round 4 (operator, 2026-10-02: "on zoom the graphs render odd"). The
+/// gate population is sparse in move order, so a zoomed window has fewer
+/// samples than pixel columns. Round 3 broke the line at every empty column
+/// and drew isolated dots. The line now joins consecutive samples across
+/// empty columns and breaks only at a non-finite sample.
+#[test]
+fn a_zoomed_sparse_trace_is_a_connected_line_g_cutcards() {
+    // 50 samples, one per ten moves, with one break after the 25th.
+    let mut series: Vec<(usize, f64)> = Vec::new();
+    for k in 0..50_usize {
+        series.push((k * 10, 0.03 + 0.001 * f64::from((k % 5) as u32)));
+        if k == 24 {
+            series.push((k * 10, f64::NAN));
+        }
+    }
+    let columns = sparkline::columns_in(&series, 1000, (0, 499)).unwrap();
+    assert_eq!(columns.columns.len(), 500, "one column per move");
+    let drawn: Vec<_> = columns.columns.iter().flatten().collect();
+    assert_eq!(drawn.len(), 50, "450 columns are empty");
+    let segments = drawn.iter().filter(|column| column.joined).count();
+    assert_eq!(
+        segments, 48,
+        "50 points draw 49 joins less the one real gap; empty columns do not \
+         break the line"
+    );
+    assert!(!drawn[25].joined, "the NaN breaks the line");
+
+    let line = code_only(&read(LINE));
+    let paint = function_source(&line, "fn paint_line(");
+    assert!(
+        paint.contains("drawn.get(k + 1)") && paint.contains("column_x(before_index)"),
+        "paint_line must join each drawn column to the previous DRAWN column, \
+         not to the adjacent pixel column"
+    );
+    assert!(
+        paint.contains("circle_filled("),
+        "a sparse zoomed line marks each sample with a dot"
+    );
+}
+
+/// The gap rule: a rapid or a retract between two population samples breaks
+/// the line; a cutting stretch the gate leaves out (an acceleration ramp,
+/// an air cut) does not.
+#[test]
+fn only_a_rapid_or_a_retract_breaks_the_series_g_cutcards() {
+    use rs_cam_viz::state::simulation::{NonCuttingCounts, series_with_breaks};
+    let sample = |sample_index: usize, move_index: usize, value: f64| PopulationSample {
+        value,
+        weight_s: 0.1,
+        move_index,
+        sample_index,
+    };
+    // Trace samples 0..10. Samples 1, 2 cut but are not in the population
+    // (a ramp). Sample 6 is a rapid.
+    let mut flags = vec![false; 10];
+    flags[6] = true;
+    let breaks = NonCuttingCounts::from_flags(&flags);
+    let population = vec![
+        sample(0, 100, 0.03),
+        sample(3, 130, 0.04),
+        sample(4, 140, 0.05),
+        sample(8, 200, 0.06),
+    ];
+    let series = series_with_breaks(&population, &breaks);
+    assert_eq!(series.len(), 5, "one break: {series:?}");
+    assert_eq!(series[0], (100, 0.03));
+    assert_eq!(
+        series[1],
+        (130, 0.04),
+        "the ramp between 0 and 3 does not break"
+    );
+    assert_eq!(series[2], (140, 0.05));
+    assert!(
+        series[3].0 == 140 && series[3].1.is_nan(),
+        "the rapid between 4 and 8 breaks the line: {series:?}"
+    );
+    assert_eq!(series[4], (200, 0.06));
+
+    let columns = sparkline::columns(&series, 1000).unwrap();
+    let drawn: Vec<_> = columns.columns.iter().flatten().collect();
+    assert_eq!(
+        drawn.iter().map(|column| column.joined).collect::<Vec<_>>(),
+        vec![false, true, true, false],
+        "the line joins across the ramp and breaks at the rapid"
+    );
+
+    let none = NonCuttingCounts::from_flags(&[]);
+    assert_eq!(
+        series_with_breaks(&population, &none).len(),
+        4,
+        "no trace, no break"
     );
 }
 
