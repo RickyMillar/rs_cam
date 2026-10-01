@@ -29,6 +29,7 @@ use std::time::{Duration, Instant};
 
 use rs_cam_viz::compute::{
     CancelOutcome, ComputeLane, GenerationControl, LaneControl, LaneSnapshot, LaneState,
+    MemoryControl, MemoryStatus, MemoryStatusSource,
 };
 use rs_cam_viz::mcp_bridge::{McpReadCache, McpReadSnapshot, McpRequest};
 use rs_cam_viz::mcp_server::EmbeddedCamServer;
@@ -738,4 +739,42 @@ fn read_cache_publish_and_get_are_cheap() {
         "10k publish+get round trips took {elapsed:?}; the per-frame publish is \
          supposed to be free relative to a frame"
     );
+}
+
+/// MCP parity for the memory budget: `generation_status` carries `budget`,
+/// read on the server thread while the GUI frame loop is stalled.
+#[tokio::test]
+async fn generation_status_reports_the_memory_budget_off_the_frame_loop() {
+    struct FixedBudget;
+    impl MemoryStatusSource for FixedBudget {
+        fn read(&self) -> MemoryStatus {
+            MemoryStatus {
+                limit_bytes: Some(24 << 30),
+                setting: rs_cam_core::budget::MemoryLimit::Default,
+                reserved_bytes: 3 << 30,
+                process_rss_bytes: Some(5 << 30),
+            }
+        }
+    }
+    let lane = StuckLane::new("preflight");
+    let (server, _rx) = stalled_gui(&lane, published_cache());
+    let server = server.with_memory(MemoryControl::new(Arc::new(FixedBudget)));
+
+    let started = Instant::now();
+    let v: serde_json::Value = serde_json::from_str(&server.generation_status().await).unwrap();
+    assert!(
+        started.elapsed() < GATE,
+        "the budget read must not wait for the GUI"
+    );
+    assert_eq!(v["budget"]["limit_bytes"], 24_u64 << 30);
+    assert_eq!(v["budget"]["source"], "default half of RAM");
+    assert_eq!(v["budget"]["reserved_bytes"], 3_u64 << 30);
+    assert_eq!(v["budget"]["process_rss_bytes"], 5_u64 << 30);
+
+    // A server with no backend handle reports no limit, never a guess.
+    let (bare, _rx2) = stalled_gui(&lane, published_cache());
+    let v: serde_json::Value = serde_json::from_str(&bare.generation_status().await).unwrap();
+    assert!(v["budget"]["limit_bytes"].is_null());
+    assert_eq!(v["budget"]["source"], "unlimited");
+    assert_eq!(v["budget"]["reserved_bytes"], 0);
 }

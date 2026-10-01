@@ -586,6 +586,7 @@ pub fn run_project_command(
     inject_shapeoko_kinematics: bool,
     apply_suggest: bool,
     spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategy>,
+    sim_artifact: bool,
 ) -> Result<()> {
     // 1. Load project into a session
     let project_path = input
@@ -791,8 +792,11 @@ pub fn run_project_command(
         debug!(path = %file_path.display(), "Wrote toolpath diagnostic");
     }
 
-    // 8. Write simulation.json
-    if let Some(sim_result) = session.simulation_result()
+    // 8. Write simulation.json, only on `--sim-artifact` (default off, as
+    // the GUI cut-trace file). The file is gigabytes on a large project.
+    if !sim_artifact {
+        info!("simulation.json not written; pass --sim-artifact to write it");
+    } else if let Some(sim_result) = session.simulation_result()
         && let Some(trace) = &sim_result.cut_trace
     {
         let included_ids: Vec<rs_cam_core::ToolpathId> = (0..tp_count)

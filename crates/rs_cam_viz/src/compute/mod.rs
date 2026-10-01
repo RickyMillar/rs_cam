@@ -191,6 +191,89 @@ impl std::fmt::Debug for GenerationControl {
     }
 }
 
+/// The memory budget of the heavy lanes at one moment, for a surface on
+/// another thread (MCP `generation_status`, memory programme parity).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryStatus {
+    /// The limit in bytes. `None` means no limit.
+    pub limit_bytes: Option<u64>,
+    /// The settings value that gave the limit.
+    pub setting: rs_cam_core::budget::MemoryLimit,
+    /// The bytes that the running heavy jobs reserved in the ledger.
+    pub reserved_bytes: u64,
+    /// The resident size of the process now. `None` when the platform
+    /// gives no reading.
+    pub process_rss_bytes: Option<u64>,
+}
+
+impl MemoryStatus {
+    /// The source of the limit, as `generation_status` names it.
+    ///
+    /// A `Default` setting reads "default half of RAM" also when the
+    /// platform gives no system memory; the limit is then `None`.
+    #[must_use]
+    pub fn source_text(&self) -> &'static str {
+        use rs_cam_core::budget::MemoryLimit;
+        match self.setting {
+            MemoryLimit::Default => "default half of RAM",
+            MemoryLimit::Bytes(_) => "settings file",
+            MemoryLimit::Unlimited => "unlimited",
+        }
+    }
+}
+
+/// The lane-side half of [`MemoryControl`].
+pub trait MemoryStatusSource: Send + Sync {
+    /// The budget now. Must not block on anything a running job holds.
+    fn read(&self) -> MemoryStatus;
+}
+
+/// No backend: no limit, nothing reserved, the live process RSS.
+struct DetachedMemory;
+
+impl MemoryStatusSource for DetachedMemory {
+    fn read(&self) -> MemoryStatus {
+        use rs_cam_core::budget::UsageProbe as _;
+        MemoryStatus {
+            limit_bytes: None,
+            setting: rs_cam_core::budget::MemoryLimit::Unlimited,
+            reserved_bytes: 0,
+            process_rss_bytes: rs_cam_core::budget::ProcessRss.used_bytes(),
+        }
+    }
+}
+
+/// Read the memory budget of the heavy lanes from any thread. The MCP
+/// server holds one, as it holds a [`GenerationControl`].
+#[derive(Clone)]
+pub struct MemoryControl(Arc<dyn MemoryStatusSource>);
+
+impl MemoryControl {
+    pub fn new(inner: Arc<dyn MemoryStatusSource>) -> Self {
+        Self(inner)
+    }
+
+    /// A control wired to no backend. See [`DetachedMemory`].
+    #[must_use]
+    pub fn detached() -> Self {
+        Self(Arc::new(DetachedMemory))
+    }
+
+    /// The budget now.
+    #[must_use]
+    pub fn read(&self) -> MemoryStatus {
+        self.0.read()
+    }
+}
+
+impl std::fmt::Debug for MemoryControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("MemoryControl")
+            .field(&self.0.read())
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ComputeError {
     /// The operator cancelled the job, or a resubmit superseded it.
@@ -466,12 +549,29 @@ pub trait ComputeBackend: Send {
     ///
     /// Defaulted to a no-op: a scripted test backend runs no lane and has
     /// no budget to change.
-    fn set_memory_budget(&mut self, _budget: rs_cam_core::budget::MemoryBudget) {}
+    /// `setting` is the settings value that gave `budget`;
+    /// `generation_status` names it as the source of the limit.
+    fn set_memory_budget(
+        &mut self,
+        _budget: rs_cam_core::budget::MemoryBudget,
+        _setting: rs_cam_core::budget::MemoryLimit,
+    ) {
+    }
 
     /// The bytes that the running heavy jobs reserved in the ledger (plan
     /// B4). Defaulted to zero for a backend with no ledger.
     fn memory_reserved_bytes(&self) -> u64 {
         0
+    }
+
+    /// A handle that reads the memory budget from any thread. The MCP
+    /// `generation_status` reads it on the server thread, so the reply
+    /// never waits for the GUI frame loop.
+    ///
+    /// Defaulted to [`MemoryControl::detached`]: no limit, nothing
+    /// reserved.
+    fn memory_control(&self) -> MemoryControl {
+        MemoryControl::detached()
     }
 
     /// The simulation preflight (memory programme wave 3): `Err` when even

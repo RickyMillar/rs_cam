@@ -25,7 +25,7 @@ the UI thread. The entry point is `compute::worker`.
   stale label over a live one.
 - A heavy job with an estimate waits in its queue while another heavy job
   runs and RSS + reserved + estimate > limit.
-- A file goes where the request's `ArtifactPolicy` says (cut trace: off).
+- A file goes where `ArtifactPolicy` says (cut trace off; tests: `temp_dir()`).
 
 ## Sentries
 
