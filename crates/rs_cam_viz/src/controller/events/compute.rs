@@ -2049,6 +2049,9 @@ impl<B: ComputeBackend> AppController<B> {
                 // that run.
                 let target = self.plan.as_ref().and_then(|plan| plan.target);
                 if target != Some(id) && self.state.session.get_result(index).is_some() {
+                    if let Some(plan) = self.plan.as_mut() {
+                        plan.note_already_current();
+                    }
                     self.record_step_outcome(StepOutcome::Skipped(
                         "it already holds a current result".to_owned(),
                     ));
@@ -2864,5 +2867,8 @@ fn core_simulation_from_lane(
         column_grid_cell_mm: core.column_grid_cell_mm,
         prior_stocks: core.prior_stocks.clone(),
         prior_stock_sources: core.prior_stock_sources.clone(),
+        // The degrade describes the display mesh. The session copy holds an
+        // empty mesh, so it records no degrade; the view keeps the record.
+        display_degrade: None,
     }
 }

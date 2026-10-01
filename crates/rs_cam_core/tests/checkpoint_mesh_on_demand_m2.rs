@@ -132,6 +132,7 @@ fn simulate() -> SimulationResult {
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     };
     run_simulation(&request, &AtomicBool::new(false)).expect("simulation completes")
 }

@@ -129,6 +129,7 @@ fn the_on_demand_checkpoint_mesh_equals_the_eager_mesh_m2() {
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     };
     let result = run_simulation(&request, &AtomicBool::new(false)).expect("simulation");
     assert_eq!(result.checkpoints.len(), 3, "one checkpoint per pass");

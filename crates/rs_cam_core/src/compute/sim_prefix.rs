@@ -46,6 +46,7 @@
 //! | stock bbox, `stock_top_z`, resolution | `f64::to_bits`, in the global scalar |
 //! | metric options (`enabled`, `capture_arc_engagement`) | global scalar |
 //! | `spindle_rpm`, `rapid_feed_mm_min` | global scalar |
+//! | `display_stride` (the snapshot holds meshes built at it) | global scalar |
 //! | reference model mesh | `Weak<TriangleMesh>` identity (it drives per-group column deviations) |
 //! | group order + count | position in the key vector |
 //! | per-group `local_stock_bbox`, `local_to_global`, `direction` | group scalar, floats by bits |
@@ -507,7 +508,9 @@ fn hash_global_scalar(request: &SimulationRequest) -> u64 {
     // recorded exclusions: `model_mesh` is keyed by `Weak<TriangleMesh>`
     // identity in `PrefixKey`, and `kinematics` is consumed only AFTER the
     // memoized loop, by `apply_kinematics_cycle_time`. `groups` keys by
-    // count here and by position in the key vector.
+    // count here and by position in the key vector. `display_stride` is in
+    // the key: a snapshot holds `composite_mesh` and checkpoints built at
+    // that stride, so a resume at another stride would show the wrong mesh.
     let SimulationRequest {
         groups,
         stock_bbox,
@@ -516,6 +519,7 @@ fn hash_global_scalar(request: &SimulationRequest) -> u64 {
         metric_options,
         spindle_rpm,
         rapid_feed_mm_min,
+        display_stride,
         model_mesh: _,
         kinematics: _,
     } = request;
@@ -539,6 +543,7 @@ fn hash_global_scalar(request: &SimulationRequest) -> u64 {
         hash_f64_bits(&mut hasher, value);
     }
     spindle_rpm.hash(&mut hasher);
+    display_stride.hash(&mut hasher);
     enabled.hash(&mut hasher);
     capture_arc_engagement.hash(&mut hasher);
     groups.len().hash(&mut hasher);
@@ -879,6 +884,7 @@ mod tests {
             mesh_drill_ops: Vec::new(),
             mesh_frame: None,
             mesh_stock_min: bbox.min,
+            display_stride: 1,
             stock,
             stock_local_to_global: None,
         })];

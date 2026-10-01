@@ -1,15 +1,37 @@
 //! Memory estimators: what a job will hold, before it runs (B1).
 //!
 //! The formula is the model R of `planning/memory_budget_2026-10-01/PLAN.md`
-//! ("Model"). Every per-element size is `size_of` of the real type, never a
-//! typed number, so a change to a type moves the estimate with it. W0
-//! measures R on the benchmark fixtures; a term that W0 finds wrong changes
-//! here and nowhere else.
+//! ("Model"), updated to what the code holds after waves 1 and 2 (M1-M5,
+//! M8, W2-E). Every per-element size is `size_of` of the real type, never a
+//! typed number, so a change to a type moves the estimate with it. Each term
+//! of [`SimulationEstimate`] names the code that holds it. A term that a
+//! measurement finds wrong changes here and nowhere else.
+//!
+//! The model per grid column, for E toolpaths in G setup groups:
+//!
+//! `R = C x [E x dexel (checkpoint stock) + E x dexel (prior stock)
+//!      + G x dexel (group tail stock) + G x mesh (composite)
+//!      + (2 x mesh + dexel) (scrub)] + moves x Move + samples x sample`
 //!
 //! The estimate counts the inline size of each element. It does not count
 //! heap memory that an element owns: a dexel ray with more than one segment
 //! (`SmallVec` spill), and the `span_path` vector of a cut sample. So it is a
 //! lower bound on a part with many multi-segment rays.
+//!
+//! The estimate does not count, and says so here:
+//!
+//! - the per-vertex `deviations` (one `f32` per composite vertex, about
+//!   2 x G x 4 B per column) and the `column_deviations` (at most one
+//!   `ColumnDeviation` per column per group). They exist only when the
+//!   request carries a model mesh (`compute/simulate.rs`,
+//!   `compute_deviations` and `collect_column_deviations`). The GUI drops
+//!   the column deviations when it adopts the run
+//!   (`rs_cam_viz/src/controller/events/compute.rs`,
+//!   `core_simulation_from_lane`); the session and the CLI keep them.
+//! - the prefix memo snapshot (`compute/sim_prefix.rs`, at most
+//!   `SimPrefixCache::max_bytes`), which a Generate All ladder can hold.
+//! - the two live grids of a run in progress (the global and the group
+//!   stock), and the per-group mesh build before it is composited.
 
 use std::mem::size_of;
 
@@ -42,7 +64,12 @@ pub fn dexel_cell_bytes() -> u64 {
 /// three `f32` in `vertices` and the same again in `colors`, and per cell
 /// twelve `u32` in `indices`. A grid has `(rows + 1) x (cols + 1)` corners;
 /// the estimate counts one corner per cell, which is exact in the limit of a
-/// large grid. The mesh keeps its reserved capacity.
+/// large grid.
+///
+/// A held mesh is a copy through `StockMesh::append_transformed`
+/// (`stock/stock_mesh.rs`), which reserves the exact length, not the
+/// capacity of the build. A closed Z-grid solid fills about this
+/// reservation, so the term is an upper bound on a held mesh.
 #[must_use]
 pub fn mesh_cell_bytes() -> u64 {
     /// Vertices per corner: the top and the bottom surface.
@@ -88,25 +115,44 @@ pub struct SimulationLoad {
 }
 
 /// The estimate of one kept simulation result, term by term, in bytes.
+///
+/// The lines cited are the state of the code on 2026-10-01 (wave 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SimulationEstimate {
-    /// E checkpoint stocks: `push_checkpoint` keeps `checkpoint()` of a
-    /// stock per toolpath (`compute/simulate.rs`, `push_checkpoint`).
+    /// E checkpoint playback stocks, one grid each: `push_checkpoint` keeps
+    /// `run.global_stock.checkpoint()` per toolpath (a lateral group keeps
+    /// `group_stock.checkpoint()`, also one grid) in
+    /// `SimCheckpointMesh::stock` (`compute/simulate.rs:1312-1316`).
     pub checkpoint_stock: u64,
-    /// E prior stocks: `Arc::new(group_stock.clone())` before each toolpath
-    /// carves (`compute/simulate.rs`, `prior_stocks.insert`).
+    /// E prior stocks: `record_pre_carve` inserts one `Arc` per toolpath
+    /// into `prior_stocks` (`compute/simulate.rs:1515-1522`). The first
+    /// toolpath of a group takes a fresh clone; every later one takes the
+    /// previous checkpoint's `mesh_stock` `Arc` (M3,
+    /// `compute/simulate.rs:1311`), so E prior stocks are E grids.
     pub prior_stock: u64,
-    /// E checkpoint meshes: `dexel_stock_to_mesh` per toolpath
-    /// (`compute/simulate.rs`, `push_checkpoint`).
-    pub checkpoint_mesh: u64,
-    /// G composite meshes, twice: the result's `composite_mesh`
-    /// (`compute/simulate.rs`, `run.composite_mesh.append`) and the copy the
-    /// session keeps (`rs_cam_viz/src/controller/events/compute.rs`, M4).
+    /// G group tail stocks: the `mesh_stock` of the LAST toolpath of each
+    /// group (`compute/simulate.rs:1311`). No prior stock shares it; a tail
+    /// phantom shares it when there is one (`compute/simulate.rs:1835`).
+    /// A group of n toolpaths holds n + 1 local grids.
+    pub group_tail_stock: u64,
+    /// One composite mesh of G group meshes (`compute/simulate.rs:1218-1232`,
+    /// `finish_group`), behind ONE `Arc` (`compute/simulate.rs:1900`). The
+    /// view shares the `Arc` (M4); the session copy holds an empty mesh
+    /// (W2-E, `rs_cam_viz/src/controller/events/compute.rs`,
+    /// `core_simulation_from_lane`).
     pub composite_mesh: u64,
-    /// One live playback stock (`rs_cam_viz/src/controller/events/compute.rs`,
-    /// `playback.live_stock`, M5).
-    pub live_stock: u64,
-    /// The moves the result keeps.
+    /// The scrub working set, at most two meshes and one grid. A checkpoint
+    /// builds its mesh on demand into a one-slot cache
+    /// (`rs_cam_viz/src/state/simulation.rs:722,745`, M2), and the scrub path
+    /// releases every other cache. The scrub path then clones that mesh
+    /// into `playback.display_mesh` (`rs_cam_viz/src/app/simulation.rs:36,45`).
+    /// A forward scrub keeps a `live_stock` grid (`app/simulation.rs:216,225`,
+    /// lazy since W1-A) and replaces the display mesh with one built from it
+    /// (`app/simulation.rs:366,426`). Zero before the first scrub.
+    pub scrub: u64,
+    /// The playback copy of every toolpath, `build_playback_data` in
+    /// `rs_cam_viz/src/compute/worker/execute/mod.rs:40` (the copies at
+    /// `:81` and `:100`).
     pub moves: u64,
     /// The cut trace; zero when metric capture is off.
     pub trace: u64,
@@ -116,12 +162,18 @@ impl SimulationEstimate {
     /// The sum of every term, saturating.
     #[must_use]
     pub fn total(&self) -> u64 {
+        self.at_rest().saturating_add(self.scrub)
+    }
+
+    /// The sum of every term but [`Self::scrub`]: what the result holds
+    /// after the run and before the first scrub, saturating.
+    #[must_use]
+    pub fn at_rest(&self) -> u64 {
         [
             self.checkpoint_stock,
             self.prior_stock,
-            self.checkpoint_mesh,
+            self.group_tail_stock,
             self.composite_mesh,
-            self.live_stock,
             self.moves,
             self.trace,
         ]
@@ -132,7 +184,7 @@ impl SimulationEstimate {
 
 impl SimulationLoad {
     /// The cost of one grid column over the whole result:
-    /// `E x (2 x dexel + mesh) + G x 2 x mesh + dexel`.
+    /// `2 x E x dexel + G x (dexel + mesh) + 2 x mesh + dexel`.
     #[must_use]
     pub fn bytes_per_cell(&self) -> u64 {
         self.estimate(1).total().saturating_sub(self.fixed_bytes())
@@ -162,9 +214,9 @@ impl SimulationLoad {
         SimulationEstimate {
             checkpoint_stock: e.saturating_mul(dexel),
             prior_stock: e.saturating_mul(dexel),
-            checkpoint_mesh: e.saturating_mul(mesh),
-            composite_mesh: g.saturating_mul(2).saturating_mul(mesh),
-            live_stock: dexel,
+            group_tail_stock: g.saturating_mul(dexel),
+            composite_mesh: g.saturating_mul(mesh),
+            scrub: mesh.saturating_mul(2).saturating_add(dexel),
             moves: self.moves.saturating_mul(move_bytes()),
             trace: if self.metrics_on {
                 self.trace_samples.saturating_mul(trace_sample_bytes())
@@ -276,13 +328,13 @@ pub fn largest_cell_that_fits(
 
 /// The smallest trace sample step, in mm.
 ///
-/// COPY of the literal in `compute/simulate.rs` (`run_simulation_memoized`:
-/// `let sample_step_mm = request.resolution.max(0.25);`). The simulator does
-/// not call [`trace_sample_step_mm`] yet; a change there must change this
-/// value too.
+/// The ONE value: `compute/simulate.rs` (`run_simulation_memoized`) calls
+/// [`trace_sample_step_mm`] for its sample step, and the estimator calls the
+/// same function.
 pub const TRACE_SAMPLE_STEP_FLOOR_MM: f64 = 0.25;
 
-/// The trace sample step the simulator uses at `resolution_mm`.
+/// The trace sample step the simulator uses at `resolution_mm`. The
+/// simulator and the estimator both call this function.
 #[must_use]
 pub fn trace_sample_step_mm(resolution_mm: f64) -> f64 {
     resolution_mm.max(TRACE_SAMPLE_STEP_FLOOR_MM)

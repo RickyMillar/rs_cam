@@ -127,6 +127,7 @@ fn request(chain: &[Arc<AnnotatedToolpath>], count: usize) -> SimulationRequest 
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     }
 }
 
@@ -399,6 +400,47 @@ fn a_changed_resolution_or_stock_misses() {
         );
         assert_eq!(fingerprint(&resumed), fingerprint(&run(&req)));
     }
+}
+
+/// The display stride is in the global key (memory programme 2026-10-01,
+/// degrade 4b). A snapshot holds the composite mesh and the checkpoints at
+/// the stride of its run. Two requests that differ only in the stride must
+/// not share a key, or a resume shows a mesh at the wrong stride.
+#[test]
+fn a_changed_display_stride_misses() {
+    let chain = chain(3);
+    for (first, second) in [(1_u32, 2_u32), (2, 1)] {
+        let mut cache = SimPrefixCache::new();
+        let mut warm = request(&chain, 2);
+        warm.display_stride = first;
+        let _ = run_memo(&warm, &mut cache, true);
+        assert_eq!(cache.stats().snapshots_stored, 1, "the warm run stores");
+
+        let mut req = request(&chain, 3);
+        req.display_stride = second;
+        let resumed = run_memo(&req, &mut cache, true);
+        assert_eq!(
+            cache.stats().hits,
+            0,
+            "stride {first} -> {second}: a changed display stride must invalidate the prefix"
+        );
+        assert_eq!(resumed.display_stride(), second.max(1));
+        for checkpoint in &resumed.checkpoints {
+            assert_eq!(checkpoint.display_stride, second);
+        }
+        assert_eq!(fingerprint(&resumed), fingerprint(&run(&req)));
+    }
+
+    // Control: the same stride on both rounds still hits, so the miss above
+    // comes from the stride and not from a cold cache.
+    let mut cache = SimPrefixCache::new();
+    let mut warm = request(&chain, 2);
+    warm.display_stride = 2;
+    let _ = run_memo(&warm, &mut cache, true);
+    let mut req = request(&chain, 3);
+    req.display_stride = 2;
+    let _ = run_memo(&req, &mut cache, true);
+    assert_eq!(cache.stats().hits, 1, "an equal stride must still resume");
 }
 
 /// The tool has no stable object identity, so its key is derived from the
@@ -712,6 +754,7 @@ fn a_multi_group_prefix_resumes_inside_the_last_group() {
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     };
 
     let mut cache = SimPrefixCache::new();
@@ -756,6 +799,7 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     };
 
     let mut cache = SimPrefixCache::new();
@@ -801,6 +845,7 @@ fn layout_request(chain: &[Arc<AnnotatedToolpath>], layout: &[&[usize]]) -> Simu
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     }
 }
 

@@ -1233,6 +1233,7 @@ fn ladder_request(
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     }
 }
 

@@ -10,7 +10,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `sim_triage.rs` — one typed answer to "what should I act on?".
 - `sim_measurability.rs` — can this run measure the metric you will gate on?
 - `collision.rs` — holder/shank collisions, three-state `HolderCollisionCheck`.
-- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction. The
+- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction;
+  `dexel_mesh_mc/stride_tests.rs` — the display-stride tests. The
   `StockMesh` container only; ribbons and colour ramps are `export/ribbon.rs`.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
 
@@ -19,9 +20,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - A `NotMeasurable` metric must abstain. Collision detection stays enabled.
 - On every summary field, `None` means not measured and `Some(0.0)` means
   measured and zero. Never publish `None` for a measured zero.
-- The air-cut threshold reads `air_cut_pct_of_total_runtime`. Do not
-  substitute the cutting-time denominator. Prefer absolute air-cut time when
-  you compare arms.
+- The air-cut threshold reads `air_cut_pct_of_total_runtime`, not the
+  cutting-time denominator. Compare arms by absolute air-cut time.
 - `average_engagement` is a comparative radial-WOC signal, not an absolute
   pass or fail. On a non-flat tool it uses the engaged radius.
 - In a cascade, `claims_reference` must be `machined_stock`. Re-simulating

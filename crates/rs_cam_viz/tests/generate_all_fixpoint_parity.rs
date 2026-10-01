@@ -130,7 +130,7 @@ fn gui_generate_all_walks_a_plan_when_a_resolution_is_pinned() {
 
     let summary = summary(&controller);
     assert!(
-        summary.contains("in 6 steps"),
+        summary.contains("; 6 steps,"),
         "a chain of two rest ops plans three generations, two prefix \
          simulations and one closing simulation: {summary}"
     );
@@ -162,7 +162,7 @@ fn gui_generate_all_reads_the_panel_resolution_r1() {
     controller.handle_internal_event(AppEvent::GenerateAll);
 
     assert!(
-        summary(&controller).contains("in 6 steps"),
+        summary(&controller).contains("; 6 steps,"),
         "auto resolution must walk a plan, not refuse one"
     );
     assert!(
@@ -208,7 +208,7 @@ fn gui_generate_all_without_a_chain_still_walks_a_plan() {
 
     let summary = summary(&controller);
     assert!(
-        summary.contains("in 2 steps"),
+        summary.contains("; 2 steps,"),
         "one generation and the closing simulation: {summary}"
     );
     assert!(

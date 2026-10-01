@@ -307,6 +307,7 @@ fn queued_simulation_naming(ids: &[ToolpathId]) -> ComputeMessage {
             resolution_clamped: false,
             prior_stocks: std::collections::HashMap::new(),
             prior_stock_sources: std::collections::HashMap::new(),
+            display_degrade: None,
         },
         playback_data: Vec::new(),
         cut_trace_path: None,

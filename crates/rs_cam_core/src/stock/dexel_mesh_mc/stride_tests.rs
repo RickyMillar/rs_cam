@@ -516,7 +516,10 @@ fn the_refactored_full_build_matches_the_legacy_body() {
         assert_bit_identical(name, &legacy, &now);
         cavity_seen |= stock.z_grid.rays.iter().any(|r| r.len() > 1);
     }
-    assert!(cavity_seen, "no fixture reaches the multi-segment cavity pass");
+    assert!(
+        cavity_seen,
+        "no fixture reaches the multi-segment cavity pass"
+    );
 }
 
 #[test]
@@ -560,7 +563,11 @@ fn stride_two_keeps_about_a_quarter_of_the_vertices_and_the_bbox() {
         (0.2..=0.32).contains(&index_ratio),
         "stride 2 index ratio {index_ratio}"
     );
-    assert_eq!(half.colors.len(), half.vertices.len(), "one colour per vertex");
+    assert_eq!(
+        half.colors.len(),
+        half.vertices.len(),
+        "one colour per vertex"
+    );
     assert_eq!(bbox(&full), bbox(&half), "the bbox must not move");
 }
 
@@ -580,7 +587,10 @@ fn a_thin_rib_survives_the_stride_at_full_height() {
         }
     }
     let full_top = bbox(&z_grid_marching_cubes(&stock.z_grid, 5.0, 0.0))[5];
-    assert!(full_top > 1.5, "vacuous fixture: no rib in the full build ({full_top})");
+    assert!(
+        full_top > 1.5,
+        "vacuous fixture: no rib in the full build ({full_top})"
+    );
     for stride in [2, 3, 4] {
         let mesh = z_grid_marching_cubes_strided(&stock.z_grid, 5.0, 0.0, stride);
         let top = bbox(&mesh)[5];
@@ -616,9 +626,18 @@ const MB: u64 = 1_000_000;
 fn display_stride_for_rivmap350_numbers() {
     let per_cell = crate::budget::estimate::mesh_cell_bytes();
     // The full mesh: 4 849 451 cells x 96 B = about 466 MB.
-    assert_eq!(display_stride_for(500 * MB, RIVMAP350_CELLS, per_cell), Some(1));
-    assert_eq!(display_stride_for(200 * MB, RIVMAP350_CELLS, per_cell), Some(2));
-    assert_eq!(display_stride_for(50 * MB, RIVMAP350_CELLS, per_cell), Some(4));
+    assert_eq!(
+        display_stride_for(500 * MB, RIVMAP350_CELLS, per_cell),
+        Some(1)
+    );
+    assert_eq!(
+        display_stride_for(200 * MB, RIVMAP350_CELLS, per_cell),
+        Some(2)
+    );
+    assert_eq!(
+        display_stride_for(50 * MB, RIVMAP350_CELLS, per_cell),
+        Some(4)
+    );
 }
 
 #[test]

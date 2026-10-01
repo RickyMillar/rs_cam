@@ -386,6 +386,7 @@ impl<B: ComputeBackend> AppController<B> {
             },
             model_mesh,
             kinematics,
+            display_stride: 1,
         };
 
         // Memory programme wave 3, the preflight: refuse a run that even an
@@ -771,6 +772,7 @@ mod release_for_new_run_m1 {
             resolution_clamped: false,
             prior_stocks: prior_stocks.clone(),
             prior_stock_sources: HashMap::new(),
+            display_degrade: None,
         };
         let epoch = controller.state.session.simulation_epoch();
         let _ = controller

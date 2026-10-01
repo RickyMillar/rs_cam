@@ -1563,7 +1563,8 @@ where
             crate::stock::dexel::DexelGrid::effective_cell_size(request.resolution, sx, sy),
         )
     };
-    let sample_step_mm = request.resolution.max(0.25);
+    // The budget estimator reads the same function, so the two cannot drift.
+    let sample_step_mm = crate::budget::estimate::trace_sample_step_mm(request.resolution);
 
     // Parallel global stock for checkpoint/playback support.
     // Use zero-origin bbox (stock dims only) because local_to_global

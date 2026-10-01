@@ -55,13 +55,17 @@ fn per_element_sizes_come_from_the_real_types() {
 }
 
 #[test]
-fn the_simulation_estimate_is_the_plan_r_formula() {
+fn the_simulation_estimate_is_the_held_result_formula() {
     let d = dexel_cell_bytes();
     let m = mesh_cell_bytes();
     let (cells, e, g, moves, samples) = (1_000_u64, 7_u64, 2_u64, 10_u64, 5_u64);
-    // R = C x [E x (checkpoint stock + prior stock + checkpoint mesh)
-    //          + G x mesh x 2 + live stock] + moves + trace
-    let per_cell = e * (d + d + m) + g * m * 2 + d;
+    // After waves 1-2 (`budget/estimate.rs`, the module doc):
+    // R = C x [E x checkpoint stock + E x prior stock + G x group tail stock
+    //          + G x composite mesh + (2 x mesh + dexel) scrub]
+    //     + moves + trace
+    let at_rest_per_cell = e * d + e * d + g * d + g * m;
+    let scrub_per_cell = 2 * m + d;
+    let per_cell = at_rest_per_cell + scrub_per_cell;
     let with_trace = cells * per_cell + moves * move_bytes() + samples * trace_sample_bytes();
     let without_trace = cells * per_cell + moves * move_bytes();
     assert_eq!(
@@ -88,10 +92,61 @@ fn the_simulation_estimate_is_the_plan_r_formula() {
     let terms = load.estimate(cells);
     assert_eq!(terms.checkpoint_stock, cells * e * d);
     assert_eq!(terms.prior_stock, cells * e * d);
-    assert_eq!(terms.checkpoint_mesh, cells * e * m);
-    assert_eq!(terms.composite_mesh, cells * g * 2 * m);
-    assert_eq!(terms.live_stock, cells * d);
+    assert_eq!(terms.group_tail_stock, cells * g * d);
+    assert_eq!(terms.composite_mesh, cells * g * m);
+    assert_eq!(terms.scrub, cells * scrub_per_cell);
     assert_eq!(terms.total(), with_trace);
+    assert_eq!(terms.at_rest(), with_trace - cells * scrub_per_cell);
+}
+
+/// The MEASURED anchors of `planning/memory_budget_2026-10-01/BASELINES.md`
+/// on rivmap350 at 0.2 mm (C = 1901 x 2551 columns, E = 7, G = 2).
+///
+/// The model has no lower bound from an anchor: RSS also holds the
+/// generation results, the allocator overhead and the terms the module doc
+/// lists as not counted. The moves count of the fixture is not in the
+/// baselines, so the moves term is 0 here. So each check is `<=` only.
+///
+/// - W1, GUI, metrics OFF: held after `generate_all` = 4.28 - 0.65 GiB (the
+///   load step). No scrub had run, so the anchor reads `at_rest`. W1 was
+///   before W2-E; W2-E removed only handles the view shares, so the held
+///   result at rest is the same or smaller now.
+/// - W2, CLI, metrics ON: peak RSS 7 286 720 kB with 5 159 038 trace
+///   samples. The CLI never scrubs, so the anchor reads `at_rest`.
+#[test]
+fn the_held_result_estimate_sits_at_or_below_the_measured_anchors() {
+    const GIB: u64 = 1 << 30;
+    let cells = grid_cells(380.0, 510.0, 0.2) as u64;
+    assert_eq!(cells, 1901 * 2551);
+    let gui_metrics_off = SimulationLoad {
+        simulated_toolpaths: 7,
+        setup_groups: 2,
+        moves: 0,
+        trace_samples: 0,
+        metrics_on: false,
+    };
+    let w1_held = (428 - 65) * GIB / 100;
+    let gui = gui_metrics_off.estimate(cells);
+    assert!(
+        gui.at_rest() <= w1_held,
+        "W1 GUI anchor: estimate {} B > measured {} B",
+        gui.at_rest(),
+        w1_held
+    );
+
+    let cli_metrics_on = SimulationLoad {
+        trace_samples: 5_159_038,
+        metrics_on: true,
+        ..gui_metrics_off
+    };
+    let w2_peak = 7_286_720 * 1024;
+    let cli = cli_metrics_on.estimate(cells);
+    assert!(
+        cli.at_rest() <= w2_peak,
+        "W2 CLI anchor: estimate {} B > measured peak {} B",
+        cli.at_rest(),
+        w2_peak
+    );
 }
 
 #[test]
@@ -330,6 +385,17 @@ fn a_flag_reader_stops_when_the_watcher_trips_the_budget() {
     // An algorithm that only reads `&AtomicBool`, through the adapter.
     let reader = FlagCancel(g.flag());
     assert!(!reader.cancelled());
+    // The stop rule (`budget/guard.rs`): the guard stops a job only when the
+    // process crosses the limit DURING the job. So wait until the watcher
+    // has read a value under the limit, then cross it.
+    let start = Instant::now();
+    while !g.is_armed() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the watcher did not read the probe"
+        );
+        std::thread::yield_now();
+    }
     usage.store(150, Ordering::SeqCst);
     let start = Instant::now();
     while !reader.cancelled() {

@@ -2619,6 +2619,7 @@ mod tests {
             column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
             prior_stock_sources: std::collections::HashMap::new(),
+            display_degrade: None,
         });
         assert!(
             session.simulation_result().is_some(),

@@ -9,8 +9,8 @@ Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3, B5).
   `system_memory_bytes`, `DEFAULT_SYSTEM_FRACTION`.
 - `guard.rs` — `BudgetGuard`: one per job, shared by `Arc`. The cancel flag,
   the first stop reason, a rate-limited RSS probe. Implements `CancelCheck`.
-- `estimate.rs` — the plan's R formula, term by term (`SimulationLoad`),
-  and `largest_cell_that_fits` for a refusal message.
+- `estimate.rs` — the held-result formula R after waves 1-2, term by term
+  (`SimulationEstimate`), the preflight and `largest_cell_that_fits`.
 - `grid.rs` — the ONE source of every dexel grid cap (`GridCapRole`) and the
   dexel rounding (`grid_cells`).
 - `settings.rs` — the ONE `settings.toml` loader for the GUI and the CLI.
@@ -26,12 +26,12 @@ Plan: `planning/memory_budget_2026-10-01/PLAN.md` (B1, B2, B3, B5).
   preflight refusal and the guard; the grid caps stay budget-free.
 - The three caps keep their legacy values (16 M, 8 M, 4 M) as fractions of
   `GRID_CELL_CEILING`. A change moves all three; the sentry pins them.
-- The guard keeps the FIRST stop reason. A set flag with no reason reads
-  as `StopReason::User`.
+- The guard stops a job only when the process crosses the limit during the
+  job; the first writer of the flag owns the reason. A set flag with no
+  reason reads as `StopReason::User`.
 - An `&AtomicBool` algorithm reads `guard.flag()`; `guard.watch()` polls the
   probe for it. `interrupt::FlagCancel` adapts a flag to `CancelCheck`.
-- No `unsafe`, no libc: platform reads go through `memory-stats` and
-  `sysinfo` only.
+- No `unsafe`, no libc: platform reads use `memory-stats` and `sysinfo`.
 
 ## Sentries
 

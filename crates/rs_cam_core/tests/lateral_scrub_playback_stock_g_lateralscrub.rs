@@ -204,6 +204,7 @@ fn run(group: SimGroupEntry) -> SimulationResult {
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,
         kinematics: None,
+        display_stride: 1,
     };
     let cancel = AtomicBool::new(false);
     run_simulation(&request, &cancel).expect("simulation completes")

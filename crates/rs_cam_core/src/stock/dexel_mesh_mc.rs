@@ -79,8 +79,15 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
     }
 
     // ── 2. Per-corner bilinear top/bottom (see [`corner_envelope`]).
-    let (corner_top, corner_bot, corner_empty) =
-        corner_envelope(rows, cols, &cell_top, &cell_bot, &cell_empty, stock_top, stock_bot);
+    let (corner_top, corner_bot, corner_empty) = corner_envelope(
+        rows,
+        cols,
+        &cell_top,
+        &cell_bot,
+        &cell_empty,
+        stock_top,
+        stock_bot,
+    );
 
     // Corner world position helper. Cell-corner (ci, cj) sits at
     // `(origin_u + (cj - 0.5) * cs, origin_v + (ci - 0.5) * cs)` — exactly the

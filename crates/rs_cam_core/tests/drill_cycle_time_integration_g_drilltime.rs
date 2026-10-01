@@ -215,6 +215,7 @@ fn run(with_kinematics: bool) -> SimulationResult {
             max_feed_mm_min: 5000.0,
             use_predicted_feed_in_gates: false,
         }),
+        display_stride: 1,
     };
     let cancel = AtomicBool::new(false);
     run_simulation(&request, &cancel).expect("simulation completes")

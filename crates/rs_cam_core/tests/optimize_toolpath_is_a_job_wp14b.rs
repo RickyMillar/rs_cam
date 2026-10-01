@@ -189,6 +189,7 @@ fn result_carrying(trace: SimulationCutTrace) -> SimulationResult {
         column_grid_cell_mm: SIM_CELL_MM,
         prior_stocks: std::collections::HashMap::new(),
         prior_stock_sources: std::collections::HashMap::new(),
+        display_degrade: None,
     }
 }
 

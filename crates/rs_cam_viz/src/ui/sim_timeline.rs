@@ -57,14 +57,8 @@ pub fn draw(
         .map_or(1, |checkpoint| checkpoint.core.display_stride);
     let degrade = rs_cam_core::stock::stock_mesh::DisplayMeshDegrade::for_stride(shown_stride);
     if let Some(degrade) = degrade {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new(degrade.describe())
-                    .small()
-                    .strong()
-                    .color(crate::ui::tokens::CAUTION),
-            );
-        });
+        super::components::Banner::new(super::components::Role::Caution, degrade.describe())
+            .show(ui);
         ui.add_space(2.0);
     }
     // W0.5/TIM-009 — the spine + strips keep rendering the last trace, so

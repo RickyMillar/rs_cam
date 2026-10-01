@@ -170,6 +170,7 @@ fn simulation_with_prior_stock(for_toolpath: ToolpathId) -> SimulationResult {
         column_grid_cell_mm: CELL_MM,
         prior_stocks,
         prior_stock_sources: std::collections::HashMap::new(),
+        display_degrade: None,
     }
 }
 

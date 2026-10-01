@@ -103,6 +103,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };

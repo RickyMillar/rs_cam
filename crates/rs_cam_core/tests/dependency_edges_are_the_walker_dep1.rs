@@ -218,6 +218,7 @@ fn adopt_simulation(session: &mut ProjectSession) {
                 column_grid_cell_mm: 2.0,
                 prior_stocks,
                 prior_stock_sources,
+                display_degrade: None,
             }),
             epoch: session.simulation_epoch(),
         }))

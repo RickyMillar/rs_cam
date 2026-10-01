@@ -2013,6 +2013,7 @@ fn build_sim_request(
                 max_feed_mm_min: machine.max_feed_mm_min.max(1.0),
                 use_predicted_feed_in_gates,
             }),
+        display_stride: 1,
     }
 }
 

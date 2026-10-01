@@ -23,6 +23,8 @@ the UI thread. The entry point is `compute::worker`.
   it was measured.
 - A generation-input change drops the affected result. It does not paint a
   stale label over a live one.
+- A heavy job with an estimate waits in its queue while another heavy job
+  runs and RSS + reserved + estimate > limit.
 
 ## Sentries
 

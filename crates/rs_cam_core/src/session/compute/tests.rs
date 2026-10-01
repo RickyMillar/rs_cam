@@ -1012,6 +1012,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
         prior_stock_sources: std::collections::HashMap::new(),
+        display_degrade: None,
     });
 
     let diag = s.diagnostics();
@@ -1089,6 +1090,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
         prior_stock_sources: std::collections::HashMap::new(),
+        display_degrade: None,
     });
 
     let diag = s.diagnostics();

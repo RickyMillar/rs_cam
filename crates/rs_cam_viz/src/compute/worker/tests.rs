@@ -365,6 +365,7 @@ fn long_simulation_request() -> SimulationRequest {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     }
@@ -416,6 +417,7 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     }
@@ -1572,6 +1574,7 @@ fn multi_setup_top_bottom_simulation() {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -1728,6 +1731,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -1889,6 +1893,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -1996,6 +2001,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -2100,6 +2106,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -2283,6 +2290,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,
             kinematics: None,
+            display_stride: 1,
         },
         memoize_prefix: false,
     };
@@ -2894,11 +2902,9 @@ fn the_ledger_queues_a_second_heavy_job_until_the_first_finishes() {
     let worker_b = {
         let lane_b = Arc::clone(&lane_b);
         thread::spawn(move || {
-            lane_b
-                .dequeue_reserved(|job| {
-                    RunningJob::labelled(format!("B{job}")).reserving(Some(estimate))
-                })
-                .map(|(job, ticket)| (job, ticket.is_some()))
+            lane_b.dequeue_reserved(|job| {
+                RunningJob::labelled(format!("B{job}")).reserving(Some(estimate))
+            })
         })
     };
 
@@ -2912,8 +2918,14 @@ fn the_ledger_queues_a_second_heavy_job_until_the_first_finishes() {
 
     // A finishes: its ticket drops and gives the reservation back.
     drop(ticket_a);
-    let taken = worker_b.join().expect("lane B thread");
-    assert_eq!(taken, Some((2, true)), "B runs after A finished");
+    // The thread hands B's ticket back, so B's reservation lives until the
+    // ticket drops here, as it does in a lane for the length of the job.
+    let (job_b, ticket_b) = worker_b
+        .join()
+        .expect("lane B thread")
+        .expect("B runs after A finished");
+    assert_eq!(job_b, 2);
+    assert!(ticket_b.is_some(), "B runs with a reservation");
     let running = lane_b.snapshot();
     assert_eq!(running.state, LaneState::Running);
     assert_eq!(running.current_phase, None);
@@ -2922,6 +2934,8 @@ fn the_ledger_queues_a_second_heavy_job_until_the_first_finishes() {
         estimate,
         "B holds its own reservation"
     );
+    drop(ticket_b);
+    assert_eq!(ledger.reserved_bytes(), 0, "B's reservation goes back");
 }
 
 #[test]
@@ -3030,7 +3044,7 @@ fn the_preflight_refuses_a_simulation_that_cannot_fit_and_names_the_cell() {
         Duration::ZERO,
     ));
     let mut controller = AppController::with_backend(backend);
-    controller
+    let _ = controller
         .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(
             expected.resolution,
         ))
