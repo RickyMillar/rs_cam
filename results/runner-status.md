@@ -163,3 +163,24 @@ candidate: controller/tests/stale_cards_g_stalecards.rs real-lane tests
 seen under load: compute::worker::tests timing tests
 (analysis_cancel_completes_quickly, cancel_all_marks_both_lanes_cancelling,
 cancelled_toolpath_reports_cancelled_and_no_partial_trace) fail 2/15 runs.
+
+## 2026-10-02 ~13:30 UTC: test robustness pushed (origin/master 6247c467)
+
+The viz lib hang (39 min) amplifier: stale_cards real-lane tests called
+pump_until_settled 4x with 600 s each; now one 120 s budget, a stricter
+settled check and a lane-state dump on timeout. The three worker cancel
+tests slept 20 ms then cancelled a job the lane had not started under load;
+now wait_until_running. 10/10 under load; full viz 1110/0.
+POSSIBLE DEFECT (read from code, not reproduced, production not changed):
+submit_analysis (compute/worker.rs:1491) clears the analysis queue; if a
+Generate All plan's simulation step is queued but not started and the
+operator starts a collision check, the queued simulation is dropped with no
+result, plan_simulation_landed (controller/events/compute.rs:2360) never
+fires, and the plan stays in flight. Also: Drop for ThreadedComputeBackend
+(worker.rs:1194) joins lanes without a cancel, so a timed-out test waits for
+the running job.
+Two more worker tests still sleep 20 ms before acting
+(duplicate_queued_toolpaths_are_coalesced,
+resubmitting_active_toolpath_cancels_and_replaces_it).
+The runner's disk filled overnight (per-worktree build caches); recovered,
+132 GB free.
