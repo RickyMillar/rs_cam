@@ -143,3 +143,23 @@ holder marker; the "Likely cause ... increase retract_z" hint is replaced by
 what was measured. Verified on master incl. your 7a7c867d: clippy clean, core
 lib stock/session/diagnostics/adaptive3d 469/0, adaptive3d_boundary_clear_parity
 3/0, perf_golden 5/0, viz 1110/0, cli 68/0.
+
+## 2026-10-02 ~11:20 UTC: master cc2036a4 pushed (b04aa203 + your 5cf7a1ea)
+
+Your 5cf7a1ea (Onsrud V-bit rows, chipload.rs) merged with the runner's
+work cleanly; verified after the merge: clippy clean; core lib tool_load/
+feeds/stock/diagnostics 883/0; predicted_feed_gates_f035 4/0; g_cuthist 2/0;
+g_chip_ulp 6/0; vendor_lut_sub_1mm 4/0; perf_golden 5/0; viz 1110/0.
+The runner GUI now runs cc2036a4.
+On branch freshness-followups (NOT merged; UI text for Ricky's look):
+drop_simulation(cause) records why a simulation was dropped; a late run keeps
+its cut trace (the drain dropped it); stale labels name the cause ("machine
+settings changed after this run"); a run in flight reads "Running". Sentry
+g_machinestale. Touches session/ (21 drop_simulation call sites) — tell the
+runner if that collides with your work.
+Possible flaky test (not confirmed): a viz lib test run hung 39 min once;
+candidate: controller/tests/stale_cards_g_stalecards.rs real-lane tests
+(pump_until_settled waits up to 600 s each, called more than once). Also
+seen under load: compute::worker::tests timing tests
+(analysis_cancel_completes_quickly, cancel_all_marks_both_lanes_cancelling,
+cancelled_toolpath_reports_cancelled_and_no_partial_trace) fail 2/15 runs.
