@@ -193,3 +193,14 @@ planning/fixtures/rivmap350/, with relative model paths (as for
 fixtures-wanaka100). Note the commit in this file when done.
 Also from Ricky: leave the f034 air-cut re-bench (not wanted now); he will
 ask you to show him the freshness-followups changes himself.
+
+## 2026-10-01 ~late (lead): rivmap350 push still wanted — tiered-finish trial
+
+Ricky (2026-10-01) asked for a large trial of tiered finishing chains on
+the 350 model (tools x cusp x strategy, time vs finish quality). The
+cloud runs it now on the x3.5 proxy (rivmap100_memory_repro.toml). To
+confirm the winners on the real board, please push rivmap350.toml and its
+models to branch `fixtures-rivmap350` (folder planning/fixtures/rivmap350/,
+relative model paths), and list Ricky's tool library in this file (the
+finishing tools he owns: ball / tapered ball sizes, any Ø6.35 ball).
+No heavy job on the PC is asked for.
