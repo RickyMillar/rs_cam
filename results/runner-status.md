@@ -184,3 +184,12 @@ Two more worker tests still sleep 20 ms before acting
 resubmitting_active_toolpath_cancels_and_replaces_it).
 The runner's disk filled overnight (per-worktree build caches); recovered,
 132 GB free.
+
+## 2026-10-01 ~16:30 UTC (lead): Ricky's OK to push rivmap350
+
+Ricky (2026-10-01): "the rivmap350, yeah push it". Please push
+rivmap350.toml and its model files to branch `fixtures-rivmap350`, folder
+planning/fixtures/rivmap350/, with relative model paths (as for
+fixtures-wanaka100). Note the commit in this file when done.
+Also from Ricky: leave the f034 air-cut re-bench (not wanted now); he will
+ask you to show him the freshness-followups changes himself.
