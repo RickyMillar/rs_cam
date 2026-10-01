@@ -163,7 +163,6 @@ fn optimize_toolpath_full_pipeline() {
     let opts = SimulationOptions {
         resolution: 1.0, // faster than 0.5; the optimizer rescales internally
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -274,7 +273,6 @@ fn optimize_project_full_pipeline() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -328,7 +326,6 @@ fn optimize_toolpath_cancel_returns_quickly() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

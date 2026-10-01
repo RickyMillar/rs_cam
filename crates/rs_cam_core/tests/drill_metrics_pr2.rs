@@ -125,7 +125,6 @@ fn drill_session_produces_drill_summary_with_pecks() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -241,7 +240,6 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

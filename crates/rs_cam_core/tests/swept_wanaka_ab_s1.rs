@@ -227,7 +227,6 @@ fn feed_modulation_enabled() -> bool {
 fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
         resolution,
-        metrics_enabled: true,
         // Explicit: auto-resolution would silently override the cell size the
         // whole A/B is pinned to.
         auto_resolution: false,

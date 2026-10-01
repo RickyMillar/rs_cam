@@ -299,7 +299,6 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: SKIP_IDS.to_vec(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -427,7 +426,6 @@ fn flag_off_byte_identical_to_pre_f034() {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -495,7 +493,6 @@ fn flag_on_overrides_total_runtime_s() {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

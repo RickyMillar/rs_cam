@@ -22,12 +22,12 @@ project. The entry point is `state::AppState` in `mod.rs`.
 
 ## Invariants
 
-- Capture staleness derives from `last_run`, the last accepted run; add no
-  stale boolean. An un-stamped, cancelled or failed result does not clear
-  it. It pairs with `has_results()` except in `SimFreshness::Released`.
+- `last_run` marks the last accepted run; it pairs with `has_results()`
+  except in `SimFreshness::Released`. A cancel or a failure keeps it.
+- Every run captures the cut trace (ruling 2026-10-02): add no capture option.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
 - `AppState::simulation_is_stale` is the ONE door onto simulation freshness.
-  The core answers project inputs, the GUI capture options. Never the counter.
+  The core answers project inputs. Never the counter.
 - A panel draft with CONTENT lives here, not in egui temporary memory. A
   view toggle or a drag index may stay in egui memory, named with a reason.
 

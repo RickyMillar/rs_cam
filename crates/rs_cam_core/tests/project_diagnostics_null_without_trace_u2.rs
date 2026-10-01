@@ -58,10 +58,11 @@ fn no_simulation_publishes_null_and_names_the_reason() {
     }
 }
 
-/// The GUI case: a run with "Capture cutting metrics" off. The evidence
-/// carries the run's toolpath boundaries and no cut trace.
+/// A run whose evidence carries the toolpath boundaries and no cut trace.
+/// Every surface captures the trace since 2026-10-02 ("always capture"),
+/// but evidence without one must still read NOT MEASURED.
 #[test]
-fn a_trace_less_simulation_publishes_null_and_names_the_capture_control_cause() {
+fn a_trace_less_simulation_publishes_null_and_names_the_missing_trace() {
     let session = ProjectSessionBuilder::new().build();
     let evidence = ProjectEvidence {
         boundaries: vec![(ToolpathId(1), 0, 12)],
@@ -79,7 +80,7 @@ fn a_trace_less_simulation_publishes_null_and_names_the_capture_control_cause() 
         .cut_metrics_not_measured
         .expect("a NOT MEASURED figure names its reason");
     assert!(
-        reason.contains("without cutting metrics"),
+        reason.contains("no cut trace"),
         "a run that exists must not read as `no simulation`: {reason}"
     );
     assert!(

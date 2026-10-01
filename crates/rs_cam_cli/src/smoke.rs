@@ -791,7 +791,6 @@ fn run_single_case_inner(
     let sim_opts = SimulationOptions {
         resolution,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         // F-035: predicted-feed plumbing off — smoke baseline must
         // continue exercising commanded-feed gates so the regression

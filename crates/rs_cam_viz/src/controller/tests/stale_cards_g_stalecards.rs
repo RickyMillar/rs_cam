@@ -2,14 +2,14 @@
 //! right after a fresh simulation.
 //!
 //! Operator report, 2026-09-24: Face (fresh stock) + 3D Rough
-//! (`from_remaining_stock`), "Capture cutting metrics" on, Run Simulation.
+//! (`from_remaining_stock`), cutting metrics captured, Run Simulation.
 //! The drawer plots show data, but every card reads
 //! `UnmodeledReason::StaleSimulation` and a re-run does not clear it.
 //!
 //! The tests drive the real threaded backend through the GUI door: open
-//! the project, Generate All (the plan), turn on metric capture, Run
-//! Simulation, then read the cards the way `ui/sim_diagnostics.rs` reads
-//! them (`SimulationState::cached_cut_metrics`).
+//! the project, Generate All (the plan), Run Simulation, then read the
+//! cards the way `ui/sim_diagnostics.rs` reads them
+//! (`SimulationState::cached_cut_metrics`).
 //!
 //! Cause (stage-1 diagnosis). An edit drops the core result of the edited
 //! operation (`ReplaceToolpathConfig`), but the GUI keeps its runtime copy
@@ -192,8 +192,8 @@ fn stale_cards(controller: &mut AppController, toolpath_id: ToolpathId) -> Vec<S
         .collect()
 }
 
-/// Open the fixture, turn on metric capture at 0.5 mm, run Generate All
-/// to the end. Returns the controller and the id of the rest rough.
+/// Open the fixture at 0.5 mm and run Generate All to the end. Returns the
+/// controller and the id of the rest rough.
 fn generated_fixture() -> (AppController, ToolpathId) {
     let mut controller = AppController::new();
     controller
@@ -203,7 +203,6 @@ fn generated_fixture() -> (AppController, ToolpathId) {
     let _ = controller
         .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(0.5))
         .expect("a positive cell");
-    controller.state.simulation.set_metric_capture_enabled(true);
     controller.handle_generate_all();
     if controller.pending_plan_confirm.is_some() {
         controller.accept_plan_resolution();
@@ -218,6 +217,46 @@ fn generated_fixture() -> (AppController, ToolpathId) {
         .map(|tc| tc.id)
         .expect("the fixture holds a rest rough");
     (controller, rough)
+}
+
+/// Operator ruling 2026-10-02 ("always capture"): a simulation that the GUI
+/// door builds keeps its cut trace with the arc engagement, in the view and
+/// in the core. No capture control exists, and no state can switch it off.
+#[test]
+fn a_gui_simulation_always_keeps_the_cut_trace_w4l() {
+    let (mut controller, _rough) = generated_fixture();
+    controller.handle_internal_event(AppEvent::RunSimulation);
+    pump_until_settled(&mut controller, "run simulation");
+
+    let results = controller
+        .state
+        .simulation
+        .results
+        .as_ref()
+        .expect("the run landed in the view");
+    let trace = results
+        .cut_trace
+        .as_ref()
+        .expect("every GUI run keeps the cut trace");
+    assert!(
+        trace
+            .provenance
+            .as_ref()
+            .is_some_and(|provenance| provenance.captured_arc_engagement),
+        "every GUI run captures the arc engagement"
+    );
+    assert!(
+        !trace.samples.is_empty(),
+        "non-vacuity: the fixture cuts, so the trace holds samples"
+    );
+    assert!(
+        controller
+            .state
+            .session
+            .simulation_result()
+            .is_some_and(|sim| sim.cut_trace.is_some()),
+        "the core adopts the same run with its trace"
+    );
 }
 
 /// The control: with no edit, a fresh simulation gives measured cards.

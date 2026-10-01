@@ -79,7 +79,6 @@ fn walk_to(session: &mut ProjectSession, rough_index: usize) {
             Step::Simulate { .. } => {
                 let opts = SimulationOptions {
                     resolution: SIM_CELL_MM,
-                    metrics_enabled: false,
                     adaptive_feed_modulation: false,
                     ..SimulationOptions::default()
                 };

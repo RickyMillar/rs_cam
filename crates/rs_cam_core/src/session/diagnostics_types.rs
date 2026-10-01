@@ -271,11 +271,12 @@ pub(crate) const CUT_METRICS_NOT_MEASURED_NO_SIMULATION: &str = "no simulation h
 /// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None`, when a
 /// simulation exists but it kept no cut trace (U2, 2026-10-01).
 ///
-/// The GUI control that captures the trace is Simulation ▸ Setup & run ▸
-/// "Capture cutting metrics". The MCP `run_simulation` call and the CLI
-/// always capture it.
-pub(crate) const CUT_METRICS_NOT_MEASURED_NO_TRACE: &str = "the simulation ran without cutting \
-     metrics, so it kept no cut trace; run_simulation captures them";
+/// Every simulation captures the trace on every surface (operator ruling
+/// 2026-10-02, "always capture"), so this marks evidence that a caller
+/// built without one. The text names no control: no capture control
+/// exists.
+pub(crate) const CUT_METRICS_NOT_MEASURED_NO_TRACE: &str =
+    "the simulation result holds no cut trace; re-run the simulation";
 
 /// Project-level diagnostics summary.
 ///

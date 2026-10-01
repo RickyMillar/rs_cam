@@ -225,7 +225,6 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
         // to sub-mm grid resolution.
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -377,7 +376,6 @@ fn as013_terrain_model_edge_band_outlier_count_bounded_f027() {
     let opts = SimulationOptions {
         resolution: 1.0,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

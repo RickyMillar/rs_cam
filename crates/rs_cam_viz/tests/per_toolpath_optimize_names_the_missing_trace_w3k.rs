@@ -4,9 +4,9 @@
 //!
 //! Wave 2 fixed the project-level Optimize (`optimize_names_the_missing_
 //! trace_u3.rs`). The per-toolpath modal still opened a card that read "no
-//! simulation has been run yet", directly after a run with "Capture cutting
-//! metrics" off. That run now gives the toast the project-level Optimize
-//! gives. The true no-simulation case keeps its card.
+//! simulation has been run yet", directly after a run that kept no cut
+//! trace. That run now gives the toast the project-level Optimize gives.
+//! The true no-simulation case keeps its card.
 
 #![allow(
     clippy::unwrap_used,
@@ -85,8 +85,7 @@ fn controller_with_one_op() -> AppController<SilentBackend> {
     controller
 }
 
-/// A simulation result with no cut trace: the view state a run with metric
-/// capture off leaves.
+/// A simulation result with no cut trace in the view state.
 fn trace_less_results() -> SimulationResults {
     SimulationResults {
         mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
@@ -120,7 +119,7 @@ fn notification_texts(controller: &AppController<SilentBackend>) -> Vec<String> 
 }
 
 #[test]
-fn a_trace_less_run_names_the_capture_control_not_run_a_simulation() {
+fn a_trace_less_run_names_the_missing_trace_not_run_a_simulation() {
     let mut controller = controller_with_one_op();
     controller.state.simulation.results = Some(trace_less_results());
 
@@ -134,8 +133,11 @@ fn a_trace_less_run_names_the_capture_control_not_run_a_simulation() {
     assert_eq!(texts, vec![OPTIMIZE_NEEDS_CUT_TRACE.to_owned()]);
     let text = &texts[0];
     assert!(!text.to_lowercase().contains("simulation first"), "{text}");
-    assert!(text.contains("\"Capture cutting metrics\""), "{text}");
-    assert!(text.contains("re-run the simulation"), "{text}");
+    assert!(!text.contains("Capture cutting metrics"), "{text}");
+    assert!(
+        text.to_lowercase().contains("re-run the simulation"),
+        "{text}"
+    );
 }
 
 #[test]

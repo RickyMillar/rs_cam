@@ -122,7 +122,6 @@ fn run_back_rough(modulate: bool) -> f64 {
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: SKIP_IDS.to_vec(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: modulate,

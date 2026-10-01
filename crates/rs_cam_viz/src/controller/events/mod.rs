@@ -710,7 +710,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // U3: a simulation that kept no cut trace is a different
                 // cause. The modal's card says "no simulation has been run
                 // yet", which is false directly after a run, so this case
-                // names the capture control in the toast the project-level
+                // names the missing trace in the toast the project-level
                 // Optimize gives (`menu_bar::OPTIMIZE_NEEDS_CUT_TRACE`).
                 use crate::ui::menu_bar::{OPTIMIZE_NEEDS_CUT_TRACE, optimize_baseline_missing};
                 if optimize_baseline_missing(&self.state) == Some(OPTIMIZE_NEEDS_CUT_TRACE) {
@@ -1535,7 +1535,7 @@ impl<B: ComputeBackend> AppController<B> {
             .as_ref()
             .and_then(|r| r.cut_trace.clone());
         let Some(trace) = trace_clone else {
-            // U3: a run with no cut trace names that cause and its control,
+            // U3: a run with no cut trace names that cause and its remedy,
             // not "Run a simulation first". The menu reads the same text.
             let reason = crate::ui::menu_bar::optimize_baseline_missing(&self.state)
                 .unwrap_or(crate::ui::menu_bar::OPTIMIZE_NEEDS_SIMULATION);

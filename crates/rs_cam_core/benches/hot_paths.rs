@@ -1128,7 +1128,6 @@ fn bench_sim_e2e_small(c: &mut Criterion) {
         let opts = SimulationOptions {
             resolution,
             skip_ids: Vec::new(),
-            metrics_enabled: true,
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
             adaptive_feed_modulation: false,
@@ -1225,10 +1224,6 @@ fn ladder_request(
         },
         stock_top_z: 0.0,
         resolution: 0.4,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
-        },
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,

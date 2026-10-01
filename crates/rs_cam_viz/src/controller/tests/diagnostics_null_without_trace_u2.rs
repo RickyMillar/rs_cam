@@ -1,13 +1,15 @@
 //! U2 (memory programme 2026-10-01): MCP `get_diagnostics` publishes a
 //! trace-less simulation as NOT MEASURED.
 //!
-//! The operator simulated with "Capture cutting metrics" off. The run kept
-//! no cut trace, and `get_diagnostics` published
+//! A GUI run with the old capture checkbox off kept no cut trace, and
+//! `get_diagnostics` published
 //! `"air_cut_pct_of_cutting_time": 0.0`, `"total_runtime_s": 0.0` and
 //! `"samples_total": 0`. Those are the values of a measured, clean run.
 //! The `get_diagnostics` contract is that `null` means NOT MEASURED and
 //! 0.0 means measured and clean, so each figure must be `null`, and
-//! `cut_metrics_not_measured` must name the reason.
+//! `cut_metrics_not_measured` must name the reason. Every run captures the
+//! trace since the operator ruling of 2026-10-02 ("always capture"), but a
+//! result without one must still read NOT MEASURED.
 //!
 //! `build_mcp_diagnostics` exists only under the `mcp` feature, so the
 //! whole module is gated on it.
@@ -15,8 +17,7 @@
 
 use super::*;
 
-/// A simulation result with no cut trace: the shape a run with metric
-/// capture off leaves in the view state.
+/// A simulation result with no cut trace in the view state.
 fn trace_less_results() -> crate::state::simulation::SimulationResults {
     crate::state::simulation::SimulationResults {
         mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
@@ -65,7 +66,8 @@ fn a_trace_less_simulation_publishes_null_not_zero() {
     let reason = diag["cut_metrics_not_measured"]
         .as_str()
         .expect("a trace-less run names why the figures are null");
-    assert!(reason.contains("without cutting metrics"), "{reason}");
+    assert!(reason.contains("no cut trace"), "{reason}");
+    assert!(reason.contains("re-run the simulation"), "{reason}");
 
     let counts = diag["triage"]["counts"]
         .as_object()

@@ -95,7 +95,6 @@ fn narrate_toolpath_on_an_idle_lane_is_timed() {
         .run_simulation(
             &SimulationOptions {
                 resolution: SIM_RESOLUTION_MM,
-                metrics_enabled: true,
                 auto_resolution: false,
                 ..SimulationOptions::default()
             },

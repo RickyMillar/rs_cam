@@ -95,10 +95,6 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             stock_bbox: world_stock_bbox,
             stock_top_z: world_stock_bbox.max.z,
             resolution: 1.0,
-            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-                enabled: true,
-                capture_arc_engagement: true,
-            },
             spindle_rpm: 18_000,
             rapid_feed_mm_min: 5_000.0,
             model_mesh: None,

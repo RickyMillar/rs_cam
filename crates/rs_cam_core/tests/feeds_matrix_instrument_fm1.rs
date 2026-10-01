@@ -998,7 +998,6 @@ fn run_sim_cell(cell: &SimCell, machine: &MachineProfile) -> Result<Vec<String>,
         .run_simulation(
             &SimulationOptions {
                 resolution: 1.0,
-                metrics_enabled: true,
                 auto_resolution: false,
                 ..SimulationOptions::default()
             },

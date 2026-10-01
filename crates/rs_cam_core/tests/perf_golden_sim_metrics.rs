@@ -584,7 +584,6 @@ fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
         resolution,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
@@ -622,7 +621,7 @@ fn measure(mut session: ProjectSession, resolution: f64) -> ProjectAggregate {
     let trace = sim
         .cut_trace
         .as_ref()
-        .expect("metrics_enabled means a cut trace");
+        .expect("every simulation keeps a cut trace");
 
     let per_toolpath = diagnostics
         .per_toolpath

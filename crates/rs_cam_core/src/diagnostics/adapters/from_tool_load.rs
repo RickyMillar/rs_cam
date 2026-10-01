@@ -955,10 +955,7 @@ fn unmodeled_to_diagnostic(
         ),
         UnmodeledReason::ArcEngagementNotCaptured => (
             DiagnosticState::NeedsSimulation,
-            format!(
-                "{label}: simulation captured without arc engagement — re-run with \
-                 metrics enabled"
-            ),
+            format!("{label}: the cut trace holds no arc engagement — re-run the simulation"),
         ),
         UnmodeledReason::SteadyStateSamplesNotPresent => (
             DiagnosticState::NeedsSimulation,

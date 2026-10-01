@@ -72,9 +72,9 @@ fn draw_run_controls(
     ui.add_space(4.0);
 
     // --- Setup & run ---
-    // Capture toggles live here: these are the "what should the next sim
-    // record?" controls. Display-only toggles (stock coloring, generator
-    // overlay) live in the right-panel View section.
+    // The generator-trace toggle and the resolution live here: they set what
+    // the next run records and at which cell. Display-only toggles (stock
+    // coloring, generator overlay) live in the right-panel View section.
     let any_compute = session.toolpath_configs().iter().any(|tc| tc.enabled);
     if any_compute {
         let mut capture_trace_all = session
@@ -93,16 +93,9 @@ fn draw_run_controls(
         .id_salt("sim_setup_run")
         .default_open(!sim.has_results())
         .show(ui, |ui| {
-            let mut capture_metrics = sim.metric_options.enabled;
-            if ui
-                .checkbox(&mut capture_metrics, "Capture cutting metrics")
-                .on_hover_text(
-                    "Records per-sample chipload, engagement, depth and MRR during simulation. Required for the Cut metrics section. Re-run simulation to apply.",
-                )
-                .changed()
-            {
-                sim.set_metric_capture_enabled(capture_metrics);
-            }
+            // Every run records the cutting metrics (operator ruling
+            // 2026-10-02, "always capture"), so no capture control exists.
+            // The memory budget governs how much the trace may hold.
             if ui
                 .checkbox(&mut capture_trace_all, "Record generator trace")
                 .on_hover_text(

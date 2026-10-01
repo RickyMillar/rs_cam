@@ -64,7 +64,6 @@ use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -199,7 +198,6 @@ fn run(group: SimGroupEntry) -> SimulationResult {
         stock_bbox: stock_bbox(),
         stock_top_z: STOCK_Z,
         resolution: CELL_MM,
-        metric_options: SimulationMetricOptions::default(),
         spindle_rpm: 18_000,
         rapid_feed_mm_min: 5000.0,
         model_mesh: None,

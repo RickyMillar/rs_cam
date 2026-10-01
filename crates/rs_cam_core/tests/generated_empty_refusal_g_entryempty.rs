@@ -130,7 +130,7 @@ fn simulate(session: &mut ProjectSession) {
             &SimulationOptions {
                 resolution: SIM_CELL_MM,
                 auto_resolution: false,
-                metrics_enabled: false,
+                adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
             &cancel,

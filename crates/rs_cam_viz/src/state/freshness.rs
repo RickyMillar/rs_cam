@@ -115,8 +115,8 @@ pub fn freshness_at(
 /// computed on every read, never stored, so it cannot drift from the thing
 /// it describes. The core answers for every project input, because
 /// `ProjectSession::drop_simulation` is the one site that clears the field.
-/// The GUI answers for the capture options alone, which are runtime-only
-/// and which the core therefore cannot see.
+/// The GUI answers only for its own view: a release, a run in flight, and
+/// the result it draws.
 ///
 /// Before this enum the answer lived in `SimulationState::is_stale`, a
 /// comparison of the project-wide edit counter against a stamp. That
@@ -155,10 +155,6 @@ pub enum SimFreshness {
     Current,
     /// The core dropped the simulation; the view still draws the trace.
     EditedSince,
-    /// The project is unchanged and the capture options are not. The run
-    /// is a true answer about geometry and an incomplete one about
-    /// metrics, so it needs a re-run to answer what is asked now.
-    CaptureOptionsChanged,
     /// An enabled operation holds no core result (G-STALECARDS). An edit
     /// dropped it and nothing regenerated it, so no simulation can carve it:
     /// a re-run does not help, a regenerate of this operation does. The id
@@ -176,7 +172,6 @@ impl SimFreshness {
             Self::Released { in_flight: false } => "released",
             Self::Current => "current",
             Self::EditedSince => "edited_since",
-            Self::CaptureOptionsChanged => "capture_options_changed",
             Self::Ungenerated(_) => "operation_not_generated",
         }
     }
@@ -193,10 +188,7 @@ impl SimFreshness {
     pub fn is_stale(self) -> bool {
         matches!(
             self,
-            Self::Released { .. }
-                | Self::EditedSince
-                | Self::CaptureOptionsChanged
-                | Self::Ungenerated(_)
+            Self::Released { .. } | Self::EditedSince | Self::Ungenerated(_)
         )
     }
 
@@ -220,9 +212,9 @@ impl SimFreshness {
 /// 2. A run in flight with no release: the first run of the project, or a
 ///    run after Reset.
 /// 3. The view: with nothing to draw there is no claim to qualify.
-/// 4. The core, which owns every project input.
-/// 5. The capture options, which only refine a run the core still stands
-///    behind.
+/// 4. The core, which owns every project input. The GUI holds no capture
+///    option of its own: every run captures the cut trace (operator ruling
+///    2026-10-02, "always capture").
 pub fn simulation_freshness(
     session: &ProjectSession,
     sim: &crate::state::simulation::SimulationState,
@@ -245,9 +237,6 @@ pub fn simulation_freshness(
     // evidence calls that row stale, and so does this.
     if let Some(ungenerated) = first_ungenerated(session) {
         return SimFreshness::Ungenerated(ungenerated);
-    }
-    if sim.metric_options_are_stale() {
-        return SimFreshness::CaptureOptionsChanged;
     }
     SimFreshness::Current
 }

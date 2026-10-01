@@ -110,7 +110,6 @@ pub(super) fn build_simulation_cut_artifact(
     let request_snapshot = json!({
         "resolution_mm": req.resolution,
         "sample_step_mm": req.resolution.max(0.25),
-        "metric_options": &req.metric_options,
         "spindle_rpm": req.spindle_rpm,
         "rapid_feed_mm_min": req.rapid_feed_mm_min,
         "stock_bbox": {

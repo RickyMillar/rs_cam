@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn an_accepted_run_and_an_accepted_result_arrive_and_leave_together_ur3() {
-    // The derived metric-options staleness reads `last_run`, not `results`.
+    // The derived simulation freshness reads `last_run` and `results`.
     // The two must arrive and leave together on EVERY transition, or the
     // reader would ask a run that has no evidence (or evidence with no run).
     //

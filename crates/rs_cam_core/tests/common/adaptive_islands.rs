@@ -199,7 +199,6 @@ pub fn adaptive_session_with(
     let opts = SimulationOptions {
         resolution: SIM_RESOLUTION_MM,
         skip_ids: Vec::new(),
-        metrics_enabled: true,
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

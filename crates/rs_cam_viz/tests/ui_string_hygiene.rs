@@ -234,3 +234,70 @@ fn no_operator_string_carries_a_collapsed_line_continuation() {
         findings.join("\n")
     );
 }
+
+/// The control that the operator ruling of 2026-10-02 ("always capture")
+/// deleted. Every simulation captures the cut trace, so no text may tell the
+/// operator to tick it.
+const DELETED_CAPTURE_CONTROL: &str = "Capture cutting metrics";
+
+/// No source text names the deleted capture checkbox.
+///
+/// The scan covers every crate's `src/`, comments included: a comment that
+/// names the control is the next remedy text that copies it. A `\`-continued
+/// literal is joined first, so a name split across two lines still matches.
+/// Tests under `tests/` are not scanned; they may name the control to assert
+/// that it is gone.
+#[test]
+fn no_source_names_the_deleted_capture_checkbox() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for dir in [
+        "src",
+        "../rs_cam_core/src",
+        "../rs_cam_cli/src",
+        "../rs_cam_mcp/src",
+    ] {
+        collect_rs(&manifest.join(dir), &mut files);
+    }
+    files.sort();
+    assert!(
+        files.len() > 100,
+        "the scan found only {} files; the paths are broken",
+        files.len()
+    );
+
+    let mut findings = Vec::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let joined = join_continuations(&text);
+        if joined.contains(DELETED_CAPTURE_CONTROL) {
+            findings.push(path.display().to_string());
+        }
+    }
+    assert!(
+        findings.is_empty(),
+        "these files name the deleted \"{DELETED_CAPTURE_CONTROL}\" checkbox. \
+         Every simulation captures the cut trace (operator ruling \
+         2026-10-02); name the real cause and say to re-run the simulation:\n{}",
+        findings.join("\n")
+    );
+}
+
+/// `text` with every `\`-newline continuation removed, together with the
+/// indentation of the next line, as Rust reads a continued literal.
+fn join_continuations(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek() == Some(&'\n') {
+            let _ = chars.next();
+            while chars.peek().is_some_and(|next| next.is_whitespace()) {
+                let _ = chars.next();
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}

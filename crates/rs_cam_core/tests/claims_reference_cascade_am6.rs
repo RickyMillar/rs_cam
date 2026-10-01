@@ -243,7 +243,7 @@ fn run_cascade(tool: ToolConfig, sim_resolution: f64, rest_claims: RestArm) -> C
             &SimulationOptions {
                 resolution: sim_resolution,
                 auto_resolution: false,
-                metrics_enabled: false,
+                adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
             &cancel,
@@ -581,7 +581,7 @@ fn the_footgun_produces_a_caution_diagnostic_naming_the_consequence() {
             &SimulationOptions {
                 resolution: 0.2,
                 auto_resolution: false,
-                metrics_enabled: false,
+                adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
             &cancel,
@@ -651,7 +651,7 @@ fn the_derived_resolution_is_reported_as_info() {
             &SimulationOptions {
                 resolution: 0.2,
                 auto_resolution: false,
-                metrics_enabled: false,
+                adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
             &cancel,

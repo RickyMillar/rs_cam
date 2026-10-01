@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use rs_cam_core::dexel_stock::TriDexelStock;
-use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 
 use super::{
     ChiploadEnvelopeCache, CutMetricCache, HolderCheckScope, IssueListCache, SetupBoundary,
@@ -60,9 +59,6 @@ impl SimulationState {
             submitted_collision_epoch: None,
             submitted_collision_scope: None,
             resolution_draft: None,
-            metric_options: SimulationMetricOptions::default(),
-            metric_options_revision: 0,
-            submitted_metric_options_revision: None,
             stock_viz_mode: StockVizMode::Solid,
             stock_opacity: 1.0,
             debug: SimulationDebugState {
@@ -140,30 +136,6 @@ impl SimulationState {
         self.results
             .as_ref()
             .and_then(|r| r.selected_toolpaths.as_ref())
-    }
-
-    /// Set metric capture without dirtying the project. The revision bump
-    /// alone carries the staleness: [`Self::metric_options_are_stale`]
-    /// derives it by comparing the accepted run's stamped revision against
-    /// the revision set now, so no separate bool can drift out of step
-    /// with the evidence it describes.
-    pub fn set_metric_capture_enabled(&mut self, enabled: bool) {
-        if self.metric_options.enabled != enabled {
-            self.metric_options.enabled = enabled;
-            self.metric_options_revision += 1;
-        }
-        if enabled {
-            self.metric_options.capture_arc_engagement = true;
-        }
-    }
-
-    /// True when the accepted result did not answer the capture revision
-    /// that is set now. A project with no accepted run returns `false`:
-    /// there is nothing to be stale, which is not the same as "clean".
-    pub fn metric_options_are_stale(&self) -> bool {
-        self.last_run.as_ref().is_some_and(|meta| {
-            meta.accepted_metric_options_revision != Some(self.metric_options_revision)
-        })
     }
 
     /// True when a collision check HAS run and the project has moved under

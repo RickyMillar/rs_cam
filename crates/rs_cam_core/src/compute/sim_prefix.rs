@@ -44,7 +44,6 @@
 //! | Input | How it is keyed |
 //! |---|---|
 //! | stock bbox, `stock_top_z`, resolution | `f64::to_bits`, in the global scalar |
-//! | metric options (`enabled`, `capture_arc_engagement`) | global scalar |
 //! | `spindle_rpm`, `rapid_feed_mm_min` | global scalar |
 //! | `display_stride` (the snapshot holds meshes built at it) | global scalar |
 //! | reference model mesh | `Weak<TriangleMesh>` identity (it drives per-group column deviations) |
@@ -516,17 +515,12 @@ fn hash_global_scalar(request: &SimulationRequest) -> u64 {
         stock_bbox,
         stock_top_z,
         resolution,
-        metric_options,
         spindle_rpm,
         rapid_feed_mm_min,
         display_stride,
         model_mesh: _,
         kinematics: _,
     } = request;
-    let crate::stock::simulation_cut::SimulationMetricOptions {
-        enabled,
-        capture_arc_engagement,
-    } = metric_options;
 
     let mut hasher = DefaultHasher::new();
     for value in [
@@ -544,8 +538,6 @@ fn hash_global_scalar(request: &SimulationRequest) -> u64 {
     }
     spindle_rpm.hash(&mut hasher);
     display_stride.hash(&mut hasher);
-    enabled.hash(&mut hasher);
-    capture_arc_engagement.hash(&mut hasher);
     groups.len().hash(&mut hasher);
     hasher.finish()
 }

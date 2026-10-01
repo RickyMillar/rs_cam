@@ -1112,8 +1112,6 @@ pub struct SimulationOptions {
     pub resolution: f64,
     /// Toolpath IDs to skip.
     pub skip_ids: Vec<ToolpathId>,
-    /// Whether to collect detailed cut metrics.
-    pub metrics_enabled: bool,
     /// When `true`, override `resolution` with an auto-computed value based
     /// on the smallest tool radius and the stock footprint (matching the GUI's
     /// auto-resolution logic).
@@ -1167,9 +1165,8 @@ pub struct SimulationOptions {
     /// active `(tool family, material, op family, pass role, diameter)`
     /// tuple. Since 2026-09-19 (wanaka200 IMPLEMENTATION_PLAN work item
     /// A), a toolpath with no band modulates BANDLESS — machine
-    /// cutting ceiling + geometric plunge guard — instead of skipping,
-    /// and a simulation run with `metrics_enabled: false` (no cut trace)
-    /// still falls through as a no-op.
+    /// cutting ceiling + geometric plunge guard — instead of skipping.
+    /// A simulation with no cut trace still falls through as a no-op.
     ///
     /// **Consumer census taken at the flip** — no shipped surface changed
     /// behaviour, because not one of them inherits this default:
@@ -1225,7 +1222,6 @@ impl Default for SimulationOptions {
         Self {
             resolution: 0.5,
             skip_ids: Vec::new(),
-            metrics_enabled: true,
             auto_resolution: false,
             use_predicted_feed_in_gates: false,
             // Checkpoint J-3, 2026-08-13 (operator, BINDING): was `false`.

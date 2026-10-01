@@ -147,8 +147,9 @@ pub enum UnmodeledReason {
     /// current project state — the toolpath, tool, stock, or machine has
     /// changed since it was captured.
     StaleSimulation,
-    /// The simulation was run without arc-engagement capture enabled.
-    /// Re-run with `MetricOptions::capture_arc_engagement = true`.
+    /// The cut trace holds no per-sample arc engagement. Every simulation
+    /// captures it (operator ruling 2026-10-02, "always capture"), so the
+    /// remedy is a re-run.
     ArcEngagementNotCaptured,
     /// No vendor LUT row matches the (tool family, material family) tuple
     /// for this toolpath. The chipload bounds are unknown.

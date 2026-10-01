@@ -169,8 +169,8 @@ pub fn simulation_request_is_buildable(session: &ProjectSession) -> bool {
 /// or stale.
 pub fn simulation_check(state: &AppState) -> CheckStatus {
     // W4: one function answers this. Only the arm the core stands behind
-    // passes; "no run", "in flight", "edited since" and "capture options
-    // changed" are each a reason the row cannot report evidence.
+    // passes; "no run", "in flight", "released", "edited since" and "not
+    // generated" are each a reason the row cannot report evidence.
     match state.simulation_freshness() {
         crate::state::freshness::SimFreshness::Current => CheckStatus::Pass,
         _ => CheckStatus::Warning,
@@ -427,9 +427,8 @@ impl MissingInputExt for MissingInput {
                  simulation (Simulation \u{25B8} Re-run Simulation) to measure them."
             }
             MissingInput::NoCutTrace => {
-                "The simulation ran without cutting metrics, so it measured no time. \
-                 Turn on Simulation \u{25B8} Setup & run \u{25B8} \"Capture cutting \
-                 metrics\", then re-run the simulation."
+                "The simulation result holds no cut trace, so it measured no time. \
+                 Re-run the simulation (Simulation \u{25B8} Re-run Simulation)."
             }
             MissingInput::KinematicsNotApplied => {
                 "The machine profile has kinematics, but the simulation ran before they \

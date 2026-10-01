@@ -74,7 +74,6 @@ fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution: RESOLUTION_MM,
-        metrics_enabled: false,
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };

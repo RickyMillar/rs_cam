@@ -402,7 +402,6 @@ pub(crate) fn run_generation_plan(
     let sim_opts = SimulationOptions {
         resolution: resolution.mm,
         skip_ids: combined_skip.clone(),
-        metrics_enabled: true,
         auto_resolution: false,
         // F-035: predicted-feed plumbing off by default for CLI runs;
         // protects the smoke baseline from spurious verdict drift.

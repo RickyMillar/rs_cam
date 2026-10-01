@@ -20,7 +20,6 @@ use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
-use crate::stock::simulation_cut::SimulationMetricOptions;
 
 use super::{
     FeedContext, SimRequestContext, auto_resolution_for_groups, build_sim_request,
@@ -49,7 +48,6 @@ impl ProjectSession {
         groups: Vec<SimGroupEntry>,
         stock_bbox: BoundingBox3,
         resolution: f64,
-        metric_options: SimulationMetricOptions,
         model_mesh: Option<Arc<TriangleMesh>>,
         use_predicted_feed_in_gates: bool,
     ) -> SimulationRequest {
@@ -61,7 +59,6 @@ impl ProjectSession {
             groups,
             stock_bbox,
             resolution,
-            metric_options,
             model_mesh,
             use_predicted_feed_in_gates,
         )
@@ -290,10 +287,6 @@ impl ProjectSession {
             groups,
             stock_bbox,
             resolution,
-            SimulationMetricOptions {
-                enabled: opts.metrics_enabled,
-                capture_arc_engagement: opts.metrics_enabled,
-            },
             model_mesh,
             opts.use_predicted_feed_in_gates,
         );
@@ -465,8 +458,7 @@ impl ProjectSession {
     /// pinned to the pre-modulation IR for diagnostic continuity.
     ///
     /// No-op (silently) when:
-    ///  - The simulation produced no `cut_trace` (`metrics_enabled =
-    ///    false`).
+    ///  - The simulation produced no `cut_trace`.
     ///  - A toolpath has no cut samples (drill-only / all-rapid / etc.).
     ///  - The modulator returns
     ///    `ModulationError::EngagementLengthMismatch` (defensive — only
