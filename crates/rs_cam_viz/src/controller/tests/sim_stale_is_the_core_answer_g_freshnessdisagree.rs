@@ -303,9 +303,11 @@ fn an_unmirrored_edit_leaves_edited_since_g_freshnessdisagree() {
              not NoRun",
             class.name
         );
-        assert_eq!(
-            controller.state.simulation_freshness(),
-            SimFreshness::EditedSince,
+        assert!(
+            matches!(
+                controller.state.simulation_freshness(),
+                SimFreshness::EditedSince(_)
+            ),
             "after the '{}' edit: the operator is looking at a picture of \
              material the project no longer cuts",
             class.name
@@ -352,10 +354,12 @@ fn a_late_run_reads_edited_since_and_never_current_g_freshnessdisagree() {
         controller.state.session.simulation_result().is_none(),
         "the core refused the adopt: the epoch the submit stamped has moved"
     );
+    let mut operations = rs_cam_core::session::SimulationDropCauses::EMPTY;
+    operations.insert(rs_cam_core::session::SimulationDropCause::Operations);
     assert_eq!(
         controller.state.simulation_freshness(),
-        SimFreshness::EditedSince,
-        "stored, and marked not-current"
+        SimFreshness::EditedSince(operations),
+        "stored, and marked not-current; the parameter edit is the cause"
     );
 }
 

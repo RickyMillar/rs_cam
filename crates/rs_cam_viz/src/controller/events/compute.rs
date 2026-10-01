@@ -891,6 +891,12 @@ impl<B: ComputeBackend> AppController<B> {
                     modulation_feed_scale: 1.0,
                     ..Default::default()
                 };
+                    // A run that does not answer the live epoch is NOT
+                    // modulated, but the view KEEPS its trace. The put-back
+                    // sat inside the live-epoch branch, so a late run lost
+                    // its trace: the cycle time then read "not simulated"
+                    // beside the run on screen (machine import during a
+                    // run, 2026-10-02).
                     let mut cut_trace = self
                         .state
                         .simulation
@@ -901,9 +907,9 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state
                             .session
                             .modulate_simulation_trace(&mut cut_trace, &opts);
-                        if let Some(results) = self.state.simulation.results.as_mut() {
-                            results.cut_trace = cut_trace;
-                        }
+                    }
+                    if let Some(results) = self.state.simulation.results.as_mut() {
+                        results.cut_trace = cut_trace;
                     }
                 }
 
@@ -1001,9 +1007,12 @@ impl<B: ComputeBackend> AppController<B> {
                 // with nothing and no way to tell a cancelled run
                 // from one that never happened. Stored, and marked
                 // not-current.
-                let _ = self.state.simulation.submitted_simulation_epoch.take();
+                let run_epoch = self.state.simulation.submitted_simulation_epoch.take();
                 let _ = self.state.simulation.submitted_edit_counter.take();
-                self.state.simulation.last_run = Some(SimulationRunMeta);
+                // The run keeps the epoch it was submitted at, so a stale
+                // reading can name the edits after it (a machine import
+                // reads "machine settings changed", not "parameters").
+                self.state.simulation.last_run = Some(SimulationRunMeta { epoch: run_epoch });
 
                 self.pending_upload = true;
 

@@ -55,8 +55,8 @@ pub fn draw(
     // read as fresh after an edit while only the left/right panels say stale.
     // W4: one function, and it carries the "nothing to show" case, so the
     // second `has_results()` read goes.
-    if simulation_freshness(session, sim).is_stale() {
-        FreshnessGate::banner(ui);
+    if let Some(reason) = simulation_freshness(session, sim).stale_reason(session) {
+        FreshnessGate::banner(ui, &reason);
         ui.add_space(2.0);
     }
     sim.sync_debug_state(gui);

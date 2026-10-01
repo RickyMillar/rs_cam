@@ -19,6 +19,7 @@ mod freshness;
 mod generate_all;
 mod generate_all_plan_g_genplan;
 mod inspect_simulation;
+mod machine_import_during_a_run_g_machinestale;
 mod mcp_cancel;
 mod model_relink;
 mod optimize;
@@ -1169,7 +1170,8 @@ fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
     let tp_id = controller.state.session.toolpath_configs()[0].id;
-    controller.state.simulation.last_run = Some(crate::state::simulation::SimulationRunMeta);
+    controller.state.simulation.last_run =
+        Some(crate::state::simulation::SimulationRunMeta { epoch: None });
     controller.state.gui.dirty = false;
     (controller, tp_id)
 }

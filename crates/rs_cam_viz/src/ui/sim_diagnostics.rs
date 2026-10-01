@@ -245,8 +245,8 @@ fn draw_status_header(
     // W4, G-FRESHNESSDISAGREE: this chip and the Optimize window's banner
     // are the two halves of the ledger row. Both ask the core now, so the
     // pair cannot read "live" and "stale" about one run again.
-    if simulation_freshness(session, sim).is_stale() {
-        FreshnessGate::banner(ui);
+    if let Some(reason) = simulation_freshness(session, sim).stale_reason(session) {
+        FreshnessGate::banner(ui, &reason);
     } else {
         ui.label(
             egui::RichText::new("\u{2713} live")

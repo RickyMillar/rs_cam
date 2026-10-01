@@ -314,9 +314,14 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 /// parameter change.
 pub(crate) fn simulation_detail(state: &AppState) -> String {
     use crate::state::freshness::SimFreshness;
-    match state.simulation_freshness() {
+    let freshness = state.simulation_freshness();
+    match freshness {
         SimFreshness::NoRun => "Not run".to_owned(),
-        SimFreshness::Running => "Running".to_owned(),
+        // A run in flight reads as running whatever the core holds. After
+        // an edit dropped the core copy, the view still released its run.
+        SimFreshness::Running => {
+            crate::state::freshness::running_label(&state.simulation).to_owned()
+        }
         // M1: the view released the previous run for a new run. The card
         // names the release, so an empty viewport is not read as "never
         // run".
@@ -327,7 +332,12 @@ pub(crate) fn simulation_detail(state: &AppState) -> String {
             "Stale — previous result released, run again".to_owned()
         }
         SimFreshness::Current => "Up to date".to_owned(),
-        SimFreshness::EditedSince => "Stale — parameters changed".to_owned(),
+        // The arm names the edits after the run: a machine import reads
+        // "machine settings changed after this run", not "parameters".
+        SimFreshness::EditedSince(_) => format!(
+            "Stale — {}, run again",
+            freshness.stale_reason(&state.session).unwrap_or_default()
+        ),
         // G-STALECARDS: a re-run cannot help; the operation needs a
         // regenerate first.
         SimFreshness::Ungenerated(id) => format!(

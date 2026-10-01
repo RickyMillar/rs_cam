@@ -1254,6 +1254,7 @@ pub(super) fn build_session_from_project(
         toolpath_revision: std::collections::HashMap::new(),
         next_revision: 0,
         simulation_epoch: 0,
+        simulation_drop_epochs: [0; super::SimulationDropCause::COUNT],
         simulation: None,
         simulation_resolution: project.job.simulation.resolution(),
         rest_identity_enforced: true,

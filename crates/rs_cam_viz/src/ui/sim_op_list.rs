@@ -1,7 +1,7 @@
 use super::AppEvent;
 use super::sim_debug::{semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
-use crate::state::freshness::simulation_freshness;
+use crate::state::freshness::{SimFreshness, simulation_freshness};
 use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
 use crate::state::selection::Selection;
@@ -51,12 +51,22 @@ fn draw_run_controls(
 
     // The one workspace primary comes before its recording settings, matching
     // Toolpaths' Generate All placement.
+    // The label names the real cause of a stale run: a machine import
+    // reads "machine settings changed", not "params changed".
+    let freshness = simulation_freshness(session, sim);
     let run_label = if !sim.has_results() {
-        "Run Simulation"
-    } else if simulation_freshness(session, sim).is_stale() {
-        "Re-run Simulation · params changed"
+        "Run Simulation".to_owned()
+    } else if let SimFreshness::EditedSince(causes) = freshness {
+        format!(
+            "Re-run Simulation \u{00B7} {}",
+            causes
+                .short_label()
+                .unwrap_or_else(|| "project changed".to_owned())
+        )
+    } else if freshness.is_stale() {
+        "Re-run Simulation \u{00B7} stale".to_owned()
     } else {
-        "Re-run Simulation"
+        "Re-run Simulation".to_owned()
     };
     if ui
         .add(
@@ -184,6 +194,30 @@ fn draw_run_controls(
         ui.separator();
     }
 
+    // A run in flight reads as running whatever the core holds. The view
+    // holds no result while the run works (the submit released it), so the
+    // empty card below would read "Ready to simulate" during every run.
+    if freshness.is_in_flight() && !sim.has_results() {
+        egui::Frame::default()
+            .fill(theme::CARD_FILL)
+            .inner_margin(12.0)
+            .corner_radius(4)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(crate::state::freshness::running_label(sim))
+                        .strong()
+                        .color(theme::TEXT_HEADING),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("The result shows here when the run ends.")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+        return;
+    }
+
     // Empty state: no accepted result yet. An accepted empty result is still
     // a completed run, not the never-run state.
     if !sim.has_results() {
@@ -230,8 +264,8 @@ fn draw_run_controls(
         return;
     }
 
-    // Staleness warning
-    if simulation_freshness(session, sim).is_stale() {
+    // Staleness warning. It names the real cause (`SimFreshness::stale_reason`).
+    if let Some(reason) = freshness.stale_reason(session) {
         egui::Frame::default()
             .fill(crate::ui::tokens::TINT_CAUTION)
             .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))
@@ -239,21 +273,37 @@ fn draw_run_controls(
             .corner_radius(4)
             .show(ui, |ui| {
                 ui.label(
-                    egui::RichText::new("\u{26A0} Results may be stale")
+                    egui::RichText::new("\u{26A0} Results are stale")
                         .strong()
                         .color(theme::WARNING),
                 );
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(
-                        "Toolpath parameters or capture settings changed since the last run.",
-                    )
-                    .small()
-                    .color(crate::ui::tokens::CAUTION),
+                    egui::RichText::new(stale_detail(freshness, &reason))
+                        .small()
+                        .color(crate::ui::tokens::CAUTION),
                 );
             });
         ui.add_space(4.0);
         ui.separator();
+    }
+}
+
+/// The detail line of the stale warning: the reason as a sentence, then the
+/// step. "machine settings changed after this run" becomes "Machine
+/// settings changed after this run. Run the simulation again."
+///
+/// An `Ungenerated` arm gets a different step: a re-run cannot help until
+/// the operation is generated again.
+fn stale_detail(freshness: SimFreshness, reason: &str) -> String {
+    let mut chars = reason.chars();
+    let sentence = chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect::<String>()
+    });
+    if matches!(freshness, SimFreshness::Ungenerated(_)) {
+        format!("{sentence}. A new run cannot carve it until then.")
+    } else {
+        format!("{sentence}. Run the simulation again.")
     }
 }
 

@@ -10,7 +10,9 @@ use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{FixtureId, KeepOutId};
-use crate::session::{Effects, Fixture, KeepOutZone, ProjectSession, SessionError, SetupData};
+use crate::session::{
+    Effects, Fixture, KeepOutZone, ProjectSession, SessionError, SetupData, SimulationDropCause,
+};
 
 use super::{fixture_collision_inputs_moved, keep_out_collision_inputs_moved, polygons_bbox};
 
@@ -177,7 +179,7 @@ impl ProjectSession {
             let removed: std::collections::BTreeSet<usize> =
                 setup.toolpath_indices.iter().copied().collect();
             if removed.is_empty() {
-                session.drop_simulation();
+                session.drop_simulation(SimulationDropCause::Operations);
             } else {
                 session.drop_results_and_their_dependents(
                     &removed.iter().copied().collect::<Vec<_>>(),
@@ -515,7 +517,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Fixtures);
             Ok(())
         })
     }
@@ -537,7 +539,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Fixtures);
             Ok(())
         })
     }
@@ -559,7 +561,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Fixtures);
             Ok(())
         })
     }
@@ -581,7 +583,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Fixtures);
             Ok(())
         })
     }

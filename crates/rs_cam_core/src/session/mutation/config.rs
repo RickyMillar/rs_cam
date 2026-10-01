@@ -11,7 +11,7 @@ use crate::compute::config::{BoundaryConfig, BoundarySource, DressupConfig, Heig
 use crate::compute::stock_config::{ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::geo::BoundingBox3;
-use crate::session::{Effects, ProjectSession, SessionError};
+use crate::session::{Effects, ProjectSession, SessionError, SimulationDropCause};
 
 use super::post_change_reaches_motion;
 
@@ -311,7 +311,7 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub(crate) fn invalidate_machine(&mut self) -> Effects {
         self.with_effects(None, |session| {
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Machine);
         })
     }
 
@@ -530,7 +530,7 @@ impl ProjectSession {
         self.with_effects(None, move |session| {
             session.post = post;
             if reaches_motion {
-                session.drop_simulation();
+                session.drop_simulation(SimulationDropCause::PostSettings);
             }
         })
     }
@@ -550,7 +550,7 @@ impl ProjectSession {
     pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
             session.machine = machine;
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Machine);
         })
     }
 
@@ -569,7 +569,7 @@ impl ProjectSession {
     ) -> Effects {
         self.with_effects(None, move |session| {
             session.machine.kinematics = Some(kinematics);
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Machine);
         })
     }
 
@@ -595,7 +595,7 @@ impl ProjectSession {
             if let Some(max_feed) = max_feed_mm_min {
                 session.machine.max_feed_mm_min = max_feed;
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Machine);
         })
     }
 
@@ -645,7 +645,7 @@ impl ProjectSession {
             // Update the next-ID counter so newly added tools don't
             // collide.
             session.next_tool_id = session.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
         })
     }
 }

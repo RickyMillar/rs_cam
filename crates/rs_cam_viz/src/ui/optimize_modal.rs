@@ -46,7 +46,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
     // W0.5/OPT-003 — flag when the baseline behind these numbers came from
     // a sim that's already out of date relative to the current params.
-    let baseline_stale = state.simulation_is_stale();
+    let baseline_stale = state.simulation_stale_reason();
 
     let mut still_open = true;
     egui::Window::new(format!("Optimize — {toolpath_name}"))
@@ -56,8 +56,8 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
         .default_width(640.0)
         .open(&mut still_open)
         .show(ctx, |ui| {
-            if baseline_stale {
-                FreshnessGate::banner(ui);
+            if let Some(reason) = baseline_stale.as_deref() {
+                FreshnessGate::banner(ui, reason);
                 ui.add_space(4.0);
             }
             draw_status(ui, modal, state.optimize_run.as_ref(), toolpath_id, events);
