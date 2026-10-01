@@ -22,13 +22,14 @@
 //!   capped by the smaller commanded feed and optionally clamped by
 //!   `MachineKinematics::max_junction_velocity_mm_min`. Straight-through
 //!   runs at the commanded feed; direction reversals full-stop.
-//! * Arc moves are treated as straight moves along their chord with
-//!   the commanded feed (length, accel and rate ceiling read the chord).
-//!   The cornering at a junction reads each arc's own tangent at that
-//!   end ([`move_end_tangents`]; a helix's tangent carries its Z slope),
-//!   not the chord: two arcs that meet tangent-continuous in 3D run
-//!   through at the commanded feed (2026-09-30; before, the chord read
-//!   each such junction as a corner of up to half the two sweeps).
+//! * Arc moves are treated as straight moves of equal arc length (a
+//!   helix: `hypot(r * sweep, dz)`, [`move_length`]) with the commanded
+//!   feed; accel and rate ceiling read the chord direction. Until
+//!   2026-09-30 the integrator took the chord length, which under-read a
+//!   half circle by a factor pi / 2. The cornering at a junction reads
+//!   each arc's own tangent at that end ([`move_end_tangents`]; a helix's
+//!   tangent carries its Z slope), not the chord: two arcs that meet
+//!   tangent-continuous in 3D run through at the commanded feed.
 //! * Jerk is ignored unless `jerk_mm_s3` is `Some` — even then it
 //!   only smooths the accel ramp by adding a small fixed time
 //!   penalty per accel/decel ramp (the asymmetry between trapezoidal
@@ -800,11 +801,12 @@ fn digest_moves(
     for i in 1..toolpath.moves.len() {
         let p0 = &toolpath.moves[i - 1].target;
         let p1 = &toolpath.moves[i].target;
-        let length = chord_length(p0, p1, toolpath.moves[i].move_type);
+        let move_type = toolpath.moves[i].move_type;
+        let length = move_length(p0, p1, move_type);
         if length <= 1e-9 {
             continue;
         }
-        let dir = unit_vec(p0, p1);
+        let (dir, dir_start, dir_end) = move_directions(p0, p1, move_type);
         // A rapid is capped by the per-axis rate exactly like a fed move —
         // GRBL clamps `G0` by `$110-112` too.
         let (v_cmd_mm_s, is_rapid) = match toolpath.moves[i].move_type {
@@ -818,7 +820,6 @@ fn digest_moves(
         };
         let accel = kinematics.effective_accel(&dir);
         let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
-        let (dir_start, dir_end) = move_end_tangents(p0, p1, toolpath.moves[i].move_type, dir);
         digests.push(MoveDigest {
             source_index: i,
             length,
@@ -1086,26 +1087,87 @@ pub fn trapezoidal_peak_velocity(
     }
 }
 
-/// Chord length between two points. For arcs, the IR doesn't carry
-/// enough information for the integrator's purposes — we approximate
-/// the arc by its chord. This under-estimates corner-heavy arc paths
-/// slightly; future refinement can re-derive the arc length from
-/// `i`, `j` and the endpoints when fidelity matters.
-fn chord_length(p0: &P3, p1: &P3, _move_type: MoveType) -> f64 {
-    let dx = p1.x - p0.x;
-    let dy = p1.y - p0.y;
-    let dz = p1.z - p0.z;
-    (dx * dx + dy * dy + dz * dz).sqrt()
+/// The XY geometry of an arc move from `p0` to `p1`: centre `p0 + (i, j)`,
+/// the radius at each end, the sweep in the arc's sense in (0, 2 pi] (the
+/// G-code convention the emitter uses: coincident XY ends are a full
+/// turn) and the sense. `None` for a line, a rapid, or an arc whose radius
+/// is below 1e-9 mm at either end.
+struct ArcSpan {
+    radius: f64,
+    radius_end: f64,
+    r0: (f64, f64),
+    r1: (f64, f64),
+    sweep: f64,
+    ccw: bool,
 }
 
-/// Unit direction vector from `p0` to `p1`. Caller has already
-/// guaranteed non-zero distance.
-fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
-    let dx = p1.x - p0.x;
-    let dy = p1.y - p0.y;
+fn arc_span(p0: &P3, p1: &P3, move_type: MoveType) -> Option<ArcSpan> {
+    let (i, j, ccw) = match move_type {
+        MoveType::ArcCW { i, j, .. } => (i, j, false),
+        MoveType::ArcCCW { i, j, .. } => (i, j, true),
+        MoveType::Rapid | MoveType::Linear { .. } => return None,
+    };
+    let (cx, cy) = (p0.x + i, p0.y + j);
+    let r0 = (p0.x - cx, p0.y - cy);
+    let r1 = (p1.x - cx, p1.y - cy);
+    let radius = r0.0.hypot(r0.1);
+    let radius_end = r1.0.hypot(r1.1);
+    if radius <= 1e-9 || radius_end <= 1e-9 {
+        return None;
+    }
+    let a0 = r0.1.atan2(r0.0);
+    let a1 = r1.1.atan2(r1.0);
+    let raw = if ccw { a1 - a0 } else { a0 - a1 };
+    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+    if sweep <= 1e-12 {
+        sweep = std::f64::consts::TAU;
+    }
+    Some(ArcSpan {
+        radius,
+        radius_end,
+        r0,
+        r1,
+        sweep,
+        ccw,
+    })
+}
+
+/// The length the machine travels on a move: the chord for a line or a
+/// rapid, the arc length for an arc (a helix: `hypot(r * sweep, dz)`, the
+/// XY arc at the start radius). A full turn with no Z change has chord 0
+/// and length `2 pi r`.
+pub(crate) fn move_length(p0: &P3, p1: &P3, move_type: MoveType) -> f64 {
     let dz = p1.z - p0.z;
-    let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-12);
-    [dx / len, dy / len, dz / len]
+    match arc_span(p0, p1, move_type) {
+        Some(arc) => (arc.radius * arc.sweep).hypot(dz),
+        None => {
+            let dx = p1.x - p0.x;
+            let dy = p1.y - p0.y;
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        }
+    }
+}
+
+/// The directions a move is read on: the chord direction (the accel and
+/// the per-axis rate ceiling read it) and the unit tangent at the start
+/// and the end (the junctions read them, [`move_end_tangents`]). For a
+/// full turn with no Z change (chord 0) the chord direction is the start
+/// tangent. The caller has checked that [`move_length`] is not zero.
+pub(crate) fn move_directions(
+    p0: &P3,
+    p1: &P3,
+    move_type: MoveType,
+) -> ([f64; 3], [f64; 3], [f64; 3]) {
+    let (dx, dy, dz) = (p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+    let chord = (dx * dx + dy * dy + dz * dz).sqrt();
+    let chord_dir = if chord > 1e-9 {
+        [dx / chord, dy / chord, dz / chord]
+    } else {
+        [0.0, 0.0, 0.0]
+    };
+    let (start, end) = move_end_tangents(p0, p1, move_type, chord_dir);
+    let dir = if chord > 1e-9 { chord_dir } else { start };
+    (dir, start, end)
 }
 
 /// The unit tangent of a move at its start and at its end: the directions
@@ -1130,27 +1192,11 @@ pub(crate) fn move_end_tangents(
     move_type: MoveType,
     chord_dir: [f64; 3],
 ) -> ([f64; 3], [f64; 3]) {
-    let (i, j, ccw) = match move_type {
-        MoveType::ArcCW { i, j, .. } => (i, j, false),
-        MoveType::ArcCCW { i, j, .. } => (i, j, true),
-        MoveType::Rapid | MoveType::Linear { .. } => return (chord_dir, chord_dir),
-    };
-    let (cx, cy) = (p0.x + i, p0.y + j);
-    let (r0x, r0y) = (p0.x - cx, p0.y - cy);
-    let (r1x, r1y) = (p1.x - cx, p1.y - cy);
-    let radius = r0x.hypot(r0y);
-    let radius_end = r1x.hypot(r1y);
-    if radius <= 1e-9 || radius_end <= 1e-9 {
+    let Some(arc) = arc_span(p0, p1, move_type) else {
         return (chord_dir, chord_dir);
-    }
-    let a0 = r0y.atan2(r0x);
-    let a1 = r1y.atan2(r1x);
-    let raw = if ccw { a1 - a0 } else { a0 - a1 };
-    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-    if sweep <= 1e-12 {
-        sweep = std::f64::consts::TAU;
-    }
-    let xy_len = radius * sweep;
+    };
+    let ccw = arc.ccw;
+    let xy_len = arc.radius * arc.sweep;
     let dz = p1.z - p0.z;
     // The XY unit tangent at a radius vector (rx, ry) of length `len`.
     let tangent = |rx: f64, ry: f64, len: f64| -> [f64; 3] {
@@ -1163,7 +1209,10 @@ pub(crate) fn move_end_tangents(
         let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
         [v[0] / n, v[1] / n, v[2] / n]
     };
-    (tangent(r0x, r0y, radius), tangent(r1x, r1y, radius_end))
+    (
+        tangent(arc.r0.0, arc.r0.1, arc.radius),
+        tangent(arc.r1.0, arc.r1.1, arc.radius_end),
+    )
 }
 
 /// Estimate the junction velocity (mm/s) between two moves using GRBL's
@@ -1439,6 +1488,54 @@ mod tests {
             got < speeds[0].1,
             "a slope change is a corner: {got:.4} must be under {:.4}",
             speeds[0].1
+        );
+    }
+
+    /// 2026-09-30: an arc is timed at its arc length. A half circle of
+    /// radius 10 costs what a straight line of 10 pi costs at the same
+    /// feed (this preset's accel is isotropic and has no per-axis rate);
+    /// the chord reading timed it as a 20 mm line. A full turn with no Z
+    /// change (chord 0) costs its 20 pi mm instead of nothing.
+    #[test]
+    fn an_arc_is_timed_at_its_arc_length() {
+        let k = shapeoko();
+        let feed = 1200.0;
+        let mut arc = Toolpath::new();
+        arc.rapid_to(P3::new(10.0, 0.0, 0.0));
+        arc.arc_ccw_to_with_intent(
+            P3::new(-10.0, 0.0, 0.0),
+            -10.0,
+            0.0,
+            feed,
+            crate::toolpath::MoveIntent::ClearingCut,
+        );
+        let mut line = Toolpath::new();
+        line.rapid_to(P3::new(0.0, 0.0, 0.0));
+        line.feed_to(P3::new(10.0 * std::f64::consts::PI, 0.0, 0.0), feed);
+        let t_arc = compute_cycle_time(&arc, &k, 4000.0, 5000.0);
+        let t_line = compute_cycle_time(&line, &k, 4000.0, 5000.0);
+        assert!(
+            (t_arc - t_line).abs() < 1e-9,
+            "half circle {t_arc:.6} s, a line of its arc length {t_line:.6} s"
+        );
+
+        let mut turn = Toolpath::new();
+        turn.rapid_to(P3::new(10.0, 0.0, 0.0));
+        turn.arc_ccw_to_with_intent(
+            P3::new(10.0, 0.0, 0.0),
+            -10.0,
+            0.0,
+            feed,
+            crate::toolpath::MoveIntent::ClearingCut,
+        );
+        let mut turn_line = Toolpath::new();
+        turn_line.rapid_to(P3::new(0.0, 0.0, 0.0));
+        turn_line.feed_to(P3::new(20.0 * std::f64::consts::PI, 0.0, 0.0), feed);
+        let t_turn = compute_cycle_time(&turn, &k, 4000.0, 5000.0);
+        let t_turn_line = compute_cycle_time(&turn_line, &k, 4000.0, 5000.0);
+        assert!(
+            (t_turn - t_turn_line).abs() < 1e-9,
+            "full turn {t_turn:.6} s, a line of 20 pi {t_turn_line:.6} s"
         );
     }
 

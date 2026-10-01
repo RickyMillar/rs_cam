@@ -117,7 +117,9 @@ pub enum MotionClass {
 /// tag.
 ///
 /// `delta` is `target − previous target` in mm. An arc is classified on
-/// its chord, which is what the runtime integrator measures too.
+/// its chord, the direction the runtime integrator reads its accel and
+/// rate ceiling on (its length there is the arc length since 2026-09-30;
+/// the class, and the Z rate below, still read the chord).
 ///
 /// The decision order is:
 ///
@@ -526,8 +528,8 @@ pub fn analyse_toolpath(
     let rapid_eff_mm_min = rapid_feed_mm_min.max(max_feed_mm_min);
 
     // Stage 1 — the integrator's digest list: skip the seed move, skip
-    // every degenerate move, take an arc on its chord (its junctions on
-    // its own end tangents).
+    // every degenerate move, take an arc at its arc length on its chord
+    // direction (its junctions on its own end tangents).
     let mut digests: Vec<Digest> = Vec::with_capacity(moves_total);
     for (offset, pair) in toolpath.moves.windows(2).enumerate() {
         let (Some(prev), Some(curr)) = (pair.first(), pair.get(1)) else {
@@ -536,11 +538,13 @@ pub fn analyse_toolpath(
         let dx = curr.target.x - prev.target.x;
         let dy = curr.target.y - prev.target.y;
         let dz = curr.target.z - prev.target.z;
-        let length = (dx * dx + dy * dy + dz * dz).sqrt();
+        let length =
+            crate::machine::kinematics::move_length(&prev.target, &curr.target, curr.move_type);
         if !length.is_finite() || length <= 1e-9 {
             continue;
         }
-        let dir = [dx / length, dy / length, dz / length];
+        let (dir, dir_start, dir_end) =
+            crate::machine::kinematics::move_directions(&prev.target, &curr.target, curr.move_type);
         let (commanded_mm_min, feed_ceiling_mm_min, is_rapid) = match curr.move_type.feed_rate() {
             Some(feed) => (feed, max_feed_mm_min, false),
             None => (rapid_eff_mm_min, rapid_eff_mm_min, true),
@@ -559,12 +563,6 @@ pub fn analyse_toolpath(
             }
             None => v_cmd_mm_s,
         };
-        let (dir_start, dir_end) = crate::machine::kinematics::move_end_tangents(
-            &prev.target,
-            &curr.target,
-            curr.move_type,
-            dir,
-        );
         digests.push(Digest {
             source_index: offset + 1,
             length,

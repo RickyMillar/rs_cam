@@ -86,6 +86,9 @@ Open from the operator's session (after the memory fix):
   end tangent at a junction. The roughing benchmark's +13 % is mostly the
   model costing an arc at its chord length; arc length is the next
   change (lead decision). RESULTS "Fine-tier burial, part 2–5".
+  Part 6 (working tree, 2026-10-01): an arc is timed at its arc length;
+  only entry time moves, rivmap100 roughing +15 % (live dpp 8) to +31 %
+  (ladder demo dpp 8); EDG-07 bits re-pinned.
 - Suspected gouge source (metrology FINDINGS "stock-blind approach
   family"): arc-fit chords across small knolls; test with arc_fitting off.
 

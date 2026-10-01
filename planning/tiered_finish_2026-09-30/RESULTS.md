@@ -655,6 +655,53 @@ both red at `5b34e710`. `cargo test -p rs_cam_core --lib`: 2 640 passed;
 failed; `cargo fmt --check` clean; the full clippy line of `CLAUDE.md`
 clean (one lint in the new unit test fixed: a manual slice fill).
 
+## Fine-tier burial, part 6 — an arc is timed at its arc length (2026-10-01)
+
+Working tree over `0617bf8e`. The part 5 lead decision, on its own.
+`machine/kinematics.rs`: `move_length` gives the arc length of an arc
+(`hypot(r * sweep, dz)`, a full flat turn `2 pi r`; a line or a rapid its
+chord); `move_directions` gives the chord direction (accel and rate
+ceiling read it; a full flat turn reads its start tangent) and the two end
+tangents. One helper, `arc_span`, holds the arc geometry for both and for
+`move_end_tangents`. `kinematic_utilization` reads the same two functions.
+Unit test `an_arc_is_timed_at_its_arc_length`: a half circle of r 10 costs
+a line of 10 pi at the same feed; red with the chord (1.080 s against
+1.651 s), green now. A full flat turn costs a line of 20 pi (the chord
+gave 0).
+
+Re-pin, `kinematics_per_axis_rate_p1::one_shared_pass_leaves_both_integrators_bit_identical_edg07`:
+the fixture's 270 degree `ArcCW` is 23.562 mm, its chord 7.071 mm; the
+extra 16.491 mm at its 40 mm/s cruise is 0.412 s. `cutting_s` 1.315781 ->
+1.728053 s, `total_s` 6.486188 -> 6.898460 s; every other field and every
+predicted feed is bit-identical. `machine_kinematics_cycle_time_f034` is
+red before and after (stale wall-clock reference); its model value is now
+1 619.6 s against 827 s measured (ratio 1.958). Left for triage.
+
+rivmap100 roughing (`arm.sh`, release CLI, resolution 0.5; before = a
+detached worktree at `0617bf8e`):
+
+| arm | moves | before total (entry) s | after total (entry) s | change |
+|---|---:|---:|---:|---:|
+| ladder demo, by_area, dpp 2 | 14 877 | 2 106 (1 313) | 2 617 (1 824) | +24.3 % |
+| ladder demo, global, dpp 2 | 17 834 | 2 582 (1 662) | 3 287 (2 367) | +27.3 % |
+| ladder demo, by_area, dpp 8 | 11 799 | 1 716 (1 316) | 2 229 (1 829) | +29.9 % |
+| ladder demo, global, dpp 8 | 12 521 | 1 818 (1 395) | 2 382 (1 960) | +31.0 % |
+| live_0925, by_area, dpp 8 | 8 935 | 696 (295) | 799 (398) | +14.8 % |
+| live_0925, global, dpp 8 | 9 510 | 739 (317) | 846 (424) | +14.5 % |
+
+Moves, volume and peak DOC are unchanged; cut and rapid time are
+unchanged; only entry time moves (the arcs on this stream are the helix
+entries). The "before" column equals part 5's "new fitter, tangent"
+column; the by_area dpp 2 / dpp 8 and live by_area values equal the part 5
+experiment (2 617, 2 229, 799 s).
+
+Verification (cloud): `kinematics_per_axis_rate_p1` 9 passed; `--lib
+machine` 62 passed; the 24 kinematics / cycle / modulation / rpm / power
+sentries (`heavy-tests,research,test-support`) all green except F-034
+(above); FM1 (`heavy-tests`) 2 passed, no re-bless; `--lib` 2 680
+passed; `cargo fmt --check` clean; `clippy -p rs_cam_core --all-targets`
+with the gate features clean.
+
 ## Changes that wait for approval, with the measured effect
 
 1. F1: `TierIslandParams::max_close_raises` default 3 → 0. 350 mm proxy:

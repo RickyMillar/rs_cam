@@ -21,6 +21,8 @@ principal type is `MachineProfile` in `mod.rs`.
   second digest loop or a second junction walk (EDG-07).
 - A junction reads each move's end tangent (`move_end_tangents`; an arc's
   own tangent, a helix's with its slope), never an arc's chord.
+- An arc is timed at its arc length (`move_length`, `hypot(r * sweep, dz)`),
+  never its chord; both integrators read `move_length` / `move_directions`.
 
 ## Sentries
 
