@@ -1,9 +1,8 @@
-//! The legend rail: one compact block per active colour encoding, drawn above
-//! the viewport dock (viewport redesign, MOCKUPS §2 and §6).
+//! The viewport legend: one small chip per active colour encoding, in the
+//! bottom-right corner of the 3D view (operator ruling 2026-10-02).
 //!
-//! The rail shows while the dock popovers and the catalogue are closed, so
-//! the operator can always read what a colour means. It reads derived state
-//! each frame. It writes no state and starts no compute.
+//! The legend reads derived state each frame. It writes only its own fold
+//! flag, `OverlayPanelState::legend_collapsed`, and it starts no compute.
 //!
 //! "Active" means the RENDERED result, not the flag. Three kinds of line
 //! exist:
@@ -16,15 +15,28 @@
 //!   colours now (computing, failed, or no data). The line says why, so a
 //!   plain model or a grey move never reads as a result.
 //!
-//! Every line names its target (`#n`, `all drawn`, a count). The rail has no
-//! `+N` overflow: a long line wraps, and a rail taller than its budget
-//! scrolls. On a short viewport the caveat lines fold behind one `ⓘ` per
-//! legend; the name, the scale and the units never fold.
+//! # The layout
+//!
+//! - A chip holds a small swatch and the short name with its target (`#n`,
+//!   `all drawn`, a count). The reach chip also gives the unreachable share
+//!   as an upper bound. A chip with a stale or under-the-floor caveat
+//!   carries the caution glyph.
+//! - The full legend of a line — the scale, every category and every caveat
+//!   line — shows only while the pointer is on its chip
+//!   ([`LEGEND_DETAIL_AREA_ID`]). No caveat is deleted; each one moved from
+//!   the old rail into this hover detail.
+//! - The legend sits beside the dock when the viewport has the width, and
+//!   above the dock when it does not ([`LegendPlacement`]). It never covers
+//!   the dock bar or the orientation gizmo.
+//! - One quiet button folds the legend to one `Legend (n)` chip.
+//! - The legend has no motion.
 
 use crate::render::colors;
 use crate::state::AppState;
 use crate::state::viewport::ToolpathColorMode;
+use crate::ui::components::Button;
 use crate::ui::tokens;
+use crate::ui::viewport_overlay::DOCK_GUTTER;
 
 use super::live;
 use super::panel::{COMPUTING_WORD, FAILED_WORD, RowState};
@@ -32,30 +44,83 @@ use super::registry::{self, Legend};
 
 // ── the layout ─────────────────────────────────────────────────────────────
 
-/// How much room the rail has.
+/// The egui id of the legend area.
+pub const LEGEND_AREA_ID: &str = "viewport_legend";
+
+/// The egui id of the hover detail area. It shows only while the pointer is
+/// on a chip.
+pub const LEGEND_DETAIL_AREA_ID: &str = "viewport_legend_detail";
+
+/// The widest legend.
+pub const LEGEND_MAX_WIDTH: f32 = 300.0;
+
+/// The narrowest legend that sits beside the dock. With less room, the
+/// legend goes above the dock at its full width.
+pub const LEGEND_MIN_WIDTH_BESIDE: f32 = 200.0;
+
+/// The widest hover detail.
+pub const DETAIL_MAX_WIDTH: f32 = 320.0;
+
+/// The highest share of the viewport height that the legend may take. A
+/// taller chip list scrolls; it never drops a line.
+pub const LEGEND_MAX_HEIGHT_FRACTION: f32 = 0.25;
+
+/// The space kept free under the top edge of the viewport for the
+/// orientation gizmo (`app/viewport.rs`): its 50 pt disc, its 10 pt margin
+/// and a 10 pt gap.
+pub const GIZMO_CLEARANCE: f32 = 70.0;
+
+/// The text on the collapsed legend chip.
+pub const COLLAPSED_WORD: &str = "Legend";
+
+/// The glyph of the button that folds the legend.
+pub const FOLD_GLYPH: &str = "\u{25BE}";
+
+/// The height of the swatch on a chip.
+const CHIP_SWATCH_HEIGHT: f32 = 8.0;
+
+/// The number of colour samples in a gradient.
+const RAMP_SAMPLES: usize = 24;
+
+/// Where the legend goes in one viewport, from the dock rect of this frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RailLayout {
-    /// Fold each legend's caveat lines behind one `ⓘ`.
-    pub compact: bool,
-    /// The rail's height budget. A taller rail scrolls; it never drops a
-    /// legend.
+pub struct LegendPlacement {
+    /// The bottom-right corner of the legend.
+    pub anchor: egui::Pos2,
+    pub max_width: f32,
     pub max_height: f32,
+    /// `true` when the legend sits beside the dock, on the viewport bottom.
+    /// `false` when it sits above the dock.
+    pub beside_dock: bool,
 }
 
-impl RailLayout {
-    /// Under this viewport height the caveat lines fold (MOCKUPS §7, the
-    /// height caution).
-    pub const COMPACT_BELOW_HEIGHT: f32 = 480.0;
-    /// The rail's share of the viewport height.
-    pub const MAX_HEIGHT_FRACTION: f32 = 0.3;
-    /// The rail's smallest height budget: about two legend lines.
-    pub const MIN_HEIGHT: f32 = 48.0;
-
-    /// The layout for a viewport.
-    pub fn for_viewport(viewport: egui::Rect) -> Self {
+impl LegendPlacement {
+    /// The legend is right-aligned in the dock gutter. It goes on the
+    /// viewport bottom when at least `LEGEND_MIN_WIDTH_BESIDE` clears the
+    /// dock on the right, and above the dock when it does not. Its height
+    /// stops under the gizmo clearance.
+    pub fn new(viewport: egui::Rect, dock: egui::Rect) -> Self {
+        let right = viewport.right() - DOCK_GUTTER;
+        let beside_room = right - (dock.right() + tokens::SPACE_3);
+        let beside_dock = beside_room >= LEGEND_MIN_WIDTH_BESIDE;
+        let max_width = if beside_dock {
+            LEGEND_MAX_WIDTH.min(beside_room)
+        } else {
+            LEGEND_MAX_WIDTH
+                .min(viewport.width() - 2.0 * DOCK_GUTTER)
+                .max(1.0)
+        };
+        let bottom = if beside_dock {
+            viewport.bottom() - tokens::SPACE_3
+        } else {
+            dock.top() - tokens::SPACE_2
+        };
+        let room = (bottom - viewport.top() - GIZMO_CLEARANCE).max(0.0);
         Self {
-            compact: viewport.height() < Self::COMPACT_BELOW_HEIGHT,
-            max_height: (viewport.height() * Self::MAX_HEIGHT_FRACTION).max(Self::MIN_HEIGHT),
+            anchor: egui::pos2(right, bottom),
+            max_width,
+            max_height: (viewport.height() * LEGEND_MAX_HEIGHT_FRACTION).min(room),
+            beside_dock,
         }
     }
 }
@@ -293,46 +358,360 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
 
 // ── drawing ────────────────────────────────────────────────────────────────
 
-/// Draw the rail when at least one line is active. Returns `true` when it
-/// drew something.
-pub fn draw(ui: &mut egui::Ui, state: &AppState, layout: RailLayout) -> bool {
+/// The egui id of the chip for the line named `name`. The name is the
+/// [`line_name`] of the line, so each chip id is stable from frame to frame.
+pub fn chip_id(name: &str) -> egui::Id {
+    egui::Id::new(("viewport_legend_chip", name))
+}
+
+/// The short text on the chip of `line`: the name with its target, and for
+/// the reach map the unreachable share as an upper bound. The grid's bias is
+/// non-negative, so the true share is AT OR BELOW the figure; the hover
+/// detail gives the full sentence.
+pub fn chip_text(state: &AppState, line: &RailLine) -> String {
+    let name = line_name(state, line);
+    match line {
+        RailLine::Scale(Legend::Reach(_)) => match state.gui.reach_overlay.ready_map() {
+            Some(map) if map.is_measured() => format!(
+                "{name} \u{00B7} \u{2264} {:.1} % unreachable",
+                map.unreachable_pct()
+            ),
+            Some(_) => format!("{name} \u{00B7} not measured"),
+            None => name,
+        },
+        _ => name,
+    }
+}
+
+/// Every caveat line of `line`, in the order the hover detail draws them.
+/// A status line gives its reason here.
+pub fn caveat_lines(state: &AppState, line: &RailLine) -> Vec<(String, egui::Color32)> {
+    let mut caveats = Caveats::default();
+    match line {
+        RailLine::Scale(legend) => {
+            scale_caveats(state, *legend, &mut caveats);
+            live_caveat(state, legend, &mut caveats);
+        }
+        RailLine::Categories(kind) => categories_caveats(state, *kind, &mut caveats),
+        RailLine::Status(status) => caveats.push(
+            format!("{} {}", status.glyph, status.text),
+            status_colour(status.tone),
+        ),
+    }
+    caveats.lines
+}
+
+/// Draw the legend when at least one line is active, beside or above the
+/// dock rect `dock` of this frame. Returns the legend rect when it drew.
+///
+/// While the pointer is on a chip, the hover detail of that line draws
+/// above the legend.
+pub fn draw(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    viewport: egui::Rect,
+    dock: egui::Rect,
+) -> Option<egui::Rect> {
     let lines = active_lines(state);
     if lines.is_empty() {
-        return false;
+        return None;
     }
-    egui::Frame::default()
-        .fill(tokens::SURFACE_RAISED)
-        .corner_radius(tokens::RADIUS_MD)
-        .inner_margin(egui::Margin::same(tokens::SPACE_3 as i8))
-        .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("viewport_legend_rail")
-                .max_height(layout.max_height)
+    let place = LegendPlacement::new(viewport, dock);
+    let mut collapsed = state.overlays.legend_collapsed;
+    let mut hovered: Option<usize> = None;
+    let shown: &AppState = state;
+    let area = egui::Area::new(egui::Id::new(LEGEND_AREA_ID))
+        .order(egui::Order::Middle)
+        .pivot(egui::Align2::RIGHT_BOTTOM)
+        .fixed_pos(place.anchor)
+        .constrain_to(viewport)
+        .show(ctx, |ui| {
+            // An area gives its content the rect of the frame before as
+            // its max rect. A scroll area inside it then grows by the
+            // spare space only, one frame at a time, and the legend creeps
+            // up the viewport. Set the full budget each frame.
+            ui.set_max_width(place.max_width);
+            ui.set_max_height(place.max_height);
+            egui::Frame::default()
+                .fill(tokens::SURFACE_OVERLAY)
+                .stroke(egui::Stroke::new(1.0, tokens::HAIRLINE))
+                .corner_radius(tokens::RADIUS_MD)
+                .inner_margin(egui::Margin::same(tokens::SPACE_2 as i8))
+                .show(ui, |ui| {
+                    if collapsed {
+                        let text = format!("{COLLAPSED_WORD} ({})", lines.len());
+                        if ui
+                            .add(Button::quiet(text))
+                            .on_hover_text("Show the legend: one chip for each colour on screen")
+                            .clicked()
+                        {
+                            collapsed = false;
+                        }
+                        return;
+                    }
+                    // The width comes from the chips of THIS frame, not from
+                    // the area size of the frame before, so a wrapped row
+                    // cannot change the width that wraps it.
+                    let chip_width = place.max_width - 2.0 * tokens::SPACE_2 - 2.0;
+                    let chips: Vec<ChipLayout> = lines
+                        .iter()
+                        .map(|line| chip_layout(ui, shown, line, chip_width))
+                        .collect();
+                    let gap = tokens::SPACE_2;
+                    let fold_width = ui
+                        .painter()
+                        .layout_no_wrap(
+                            FOLD_GLYPH.to_owned(),
+                            egui::TextStyle::Button.resolve(ui.style()),
+                            tokens::TEXT_BODY,
+                        )
+                        .size()
+                        .x
+                        + 2.0 * ui.spacing().button_padding.x;
+                    let row_width: f32 =
+                        chips.iter().map(|chip| chip.size.x + gap).sum::<f32>() + fold_width;
+                    ui.set_width(row_width.min(chip_width));
+                    egui::ScrollArea::vertical()
+                        .id_salt("viewport_legend_chips")
+                        .auto_shrink([false, true])
+                        .max_height(
+                            // The frame adds its margin and a 1 pt stroke
+                            // on each side.
+                            (place.max_height - 2.0 * tokens::SPACE_2 - 2.0)
+                                .max(tokens::ROW_ACTION),
+                        )
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+                                for (index, chip) in chips.into_iter().enumerate() {
+                                    if paint_chip(ui, chip).hovered() {
+                                        hovered = Some(index);
+                                    }
+                                }
+                                if ui
+                                    .add(Button::quiet(FOLD_GLYPH))
+                                    .on_hover_text("Fold the legend to one chip")
+                                    .clicked()
+                                {
+                                    collapsed = true;
+                                }
+                            });
+                        });
+                });
+        });
+    let rect = area.response.rect;
+    if let Some(line) = hovered.and_then(|index| lines.get(index)) {
+        draw_detail(ctx, shown, line, viewport, rect);
+    }
+    state.overlays.legend_collapsed = collapsed;
+    Some(rect)
+}
+
+/// The width of one single-colour cell in a chip swatch.
+const SWATCH_CELL: f32 = 5.0;
+
+/// The width of the gradient part of a chip swatch.
+const SWATCH_RAMP: f32 = 18.0;
+
+/// The swatch on a chip: cells side by side, each `(colour, width)`. It
+/// shows EVERY colour its overlay draws: each single colour as a cell, and
+/// a gradient as a strip of its samples.
+enum Swatch {
+    None,
+    Cells(Vec<(egui::Color32, f32)>),
+}
+
+impl Swatch {
+    fn width(&self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Cells(cells) => cells.iter().map(|(_, width)| width).sum(),
+        }
+    }
+}
+
+fn chip_swatch(state: &AppState, line: &RailLine) -> Swatch {
+    let Some(key) = line_key(state, line) else {
+        return Swatch::None;
+    };
+    let single = |entries: &[LegendEntry]| -> Vec<(egui::Color32, f32)> {
+        let mut cells: Vec<(egui::Color32, f32)> = Vec::new();
+        for colour in entries.iter().filter_map(|(_, colour)| *colour) {
+            let colour = tokens::from_linear_rgb(colour);
+            // A palette that repeats paints one colour once.
+            if !cells.iter().any(|(c, _)| *c == colour) {
+                cells.push((colour, SWATCH_CELL));
+            }
+        }
+        cells
+    };
+    let cells = match &key {
+        Key::Ramp {
+            lead,
+            colours,
+            tail,
+            ..
+        } => {
+            let step = SWATCH_RAMP / RAMP_SAMPLES as f32;
+            single(lead)
+                .into_iter()
+                .chain(colours.iter().map(|c| (tokens::from_linear_rgb(*c), step)))
+                .chain(single(tail))
+                .collect()
+        }
+        Key::Entries(entries) => single(entries),
+    };
+    if cells.is_empty() {
+        Swatch::None
+    } else {
+        Swatch::Cells(cells)
+    }
+}
+
+/// The glyph after a chip's text: the status glyph of a status line, the
+/// caution glyph when a caveat is in the caution colour.
+fn chip_glyph(state: &AppState, line: &RailLine) -> Option<(&'static str, egui::Color32)> {
+    match line {
+        RailLine::Status(status) => Some((status.glyph, status_colour(status.tone))),
+        _ => caveat_lines(state, line)
+            .iter()
+            .any(|(_, colour)| *colour == tokens::CAUTION)
+            .then_some((tokens::GLYPH_CAUTION, tokens::CAUTION)),
+    }
+}
+
+/// One chip, laid out but not yet placed.
+struct ChipLayout {
+    name: String,
+    swatch: Swatch,
+    swatch_width: f32,
+    text: std::sync::Arc<egui::Galley>,
+    glyph: Option<std::sync::Arc<egui::Galley>>,
+    size: egui::Vec2,
+}
+
+/// Lay out one chip: a swatch, the short text and an optional glyph, on one
+/// row of `ROW_DENSE` height. A long text truncates at `max_width`.
+fn chip_layout(ui: &egui::Ui, state: &AppState, line: &RailLine, max_width: f32) -> ChipLayout {
+    let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
+    let pad = tokens::SPACE_2;
+    let swatch = chip_swatch(state, line);
+    let swatch_width = match &swatch {
+        Swatch::None => 0.0,
+        Swatch::Cells(_) => swatch.width() + pad,
+    };
+    let glyph = chip_glyph(state, line).map(|(glyph, colour)| {
+        ui.painter()
+            .layout_no_wrap(glyph.to_owned(), font.clone(), colour)
+    });
+    let glyph_width = glyph.as_ref().map_or(0.0, |g| g.size().x + pad);
+    let text_width = (max_width - 2.0 * pad - swatch_width - glyph_width).max(tokens::SPACE_7);
+    let mut job =
+        egui::text::LayoutJob::simple_singleline(chip_text(state, line), font, tokens::TEXT_BODY);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(text_width);
+    let text = ui.painter().layout_job(job);
+
+    let size = egui::vec2(
+        2.0 * pad + swatch_width + text.size().x + glyph_width,
+        tokens::ROW_DENSE,
+    );
+    ChipLayout {
+        name: line_name(state, line),
+        swatch,
+        swatch_width,
+        text,
+        glyph,
+        size,
+    }
+}
+
+/// Place and paint one chip. The chip senses hover only.
+fn paint_chip(ui: &mut egui::Ui, chip: ChipLayout) -> egui::Response {
+    let ChipLayout {
+        name,
+        swatch,
+        swatch_width,
+        text,
+        glyph,
+        size,
+    } = chip;
+    let pad = tokens::SPACE_2;
+    let (_, rect) = ui.allocate_space(size);
+    let response = ui.interact(rect, chip_id(&name), egui::Sense::hover());
+
+    let painter = ui.painter();
+    let fill = if response.hovered() {
+        tokens::hover_lift(tokens::SURFACE_RAISED)
+    } else {
+        tokens::SURFACE_RAISED
+    };
+    painter.rect_filled(rect, tokens::RADIUS_SM, fill);
+    let mut x = rect.left() + pad;
+    if let Swatch::Cells(cells) = &swatch {
+        let top = rect.center().y - CHIP_SWATCH_HEIGHT * 0.5;
+        let mut left = x;
+        for (colour, width) in cells {
+            let cell = egui::Rect::from_min_size(
+                egui::pos2(left, top),
+                egui::vec2(*width, CHIP_SWATCH_HEIGHT),
+            );
+            painter.rect_filled(cell, 0.0, *colour);
+            left += width;
+        }
+        x += swatch_width;
+    }
+    let text_top = rect.center().y - text.size().y * 0.5;
+    let text_right = x + text.size().x;
+    painter.galley(egui::pos2(x, text_top), text, tokens::TEXT_BODY);
+    if let Some(glyph) = glyph {
+        let top = rect.center().y - glyph.size().y * 0.5;
+        painter.galley(egui::pos2(text_right + pad, top), glyph, tokens::TEXT_BODY);
+    }
+    response
+}
+
+/// The full legend of one line, above the legend rect. The area takes no
+/// pointer input, so it can never take the hover from the chip under it.
+fn draw_detail(
+    ctx: &egui::Context,
+    state: &AppState,
+    line: &RailLine,
+    viewport: egui::Rect,
+    legend: egui::Rect,
+) {
+    let width = DETAIL_MAX_WIDTH
+        .min(viewport.width() - 2.0 * DOCK_GUTTER)
+        .max(1.0);
+    egui::Area::new(egui::Id::new(LEGEND_DETAIL_AREA_ID))
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .pivot(egui::Align2::RIGHT_BOTTOM)
+        .fixed_pos(egui::pos2(legend.right(), legend.top() - tokens::SPACE_2))
+        .constrain_to(viewport)
+        .show(ctx, |ui| {
+            ui.set_max_width(width);
+            egui::Frame::default()
+                .fill(tokens::SURFACE_OVERLAY)
+                .stroke(egui::Stroke::new(1.0, tokens::HAIRLINE))
+                .corner_radius(tokens::RADIUS_MD)
+                .shadow(tokens::SHADOW_OVERLAY)
+                .inner_margin(egui::Margin::same(tokens::SPACE_3 as i8))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = tokens::SPACE_1;
-                    for line in &lines {
-                        let mut caveats = Caveats::default();
-                        match line {
-                            RailLine::Scale(legend) => {
-                                name_label(ui, &scale_name(state, legend));
-                                draw_legend(ui, state, *legend, &mut caveats);
-                                live_caveat(state, legend, &mut caveats);
-                            }
-                            RailLine::Categories(kind) => {
-                                name_label(ui, &categories_name(state, *kind));
-                                draw_categories(ui, state, *kind, &mut caveats);
-                            }
-                            RailLine::Status(status) => draw_status(ui, status),
-                        }
-                        caveats.show(ui, layout.compact);
+                    name_label(ui, &line_name(state, line));
+                    match line {
+                        RailLine::Scale(legend) => draw_key(ui, &scale_key(*legend)),
+                        RailLine::Categories(kind) => draw_key(ui, &categories_key(state, *kind)),
+                        RailLine::Status(_) => {}
+                    }
+                    for (text, colour) in caveat_lines(state, line) {
+                        ui.label(caption(text, colour));
                     }
                 });
         });
-    true
 }
 
-/// The caveat lines of one legend. They draw after the scale, or fold
-/// behind one `ⓘ` on a short viewport.
+/// The caveat lines of one legend.
 #[derive(Default)]
 struct Caveats {
     lines: Vec<(String, egui::Color32)>,
@@ -341,29 +720,6 @@ struct Caveats {
 impl Caveats {
     fn push(&mut self, text: impl Into<String>, color: egui::Color32) {
         self.lines.push((text.into(), color));
-    }
-
-    fn show(self, ui: &mut egui::Ui, compact: bool) {
-        if self.lines.is_empty() {
-            return;
-        }
-        if compact {
-            let text = self
-                .lines
-                .iter()
-                .map(|(line, _)| line.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-            ui.label(caption(
-                format!("{} details", tokens::GLYPH_DETAIL),
-                tokens::TEXT_MUTED,
-            ))
-            .on_hover_text(text);
-        } else {
-            for (line, color) in self.lines {
-                ui.label(caption(line, color));
-            }
-        }
     }
 }
 
@@ -381,16 +737,12 @@ fn caption(text: impl Into<String>, color: egui::Color32) -> egui::RichText {
         .color(color)
 }
 
-fn draw_status(ui: &mut egui::Ui, status: &StatusLine) {
-    let color = match status.tone {
+fn status_colour(tone: StatusTone) -> egui::Color32 {
+    match tone {
         StatusTone::Muted => tokens::TEXT_MUTED,
         StatusTone::Caution => tokens::CAUTION,
         StatusTone::Danger => tokens::DANGER,
-    };
-    ui.horizontal_wrapped(|ui| {
-        ui.label(caption(status.name.as_str(), tokens::TEXT_BODY));
-        ui.label(caption(format!("{} {}", status.glyph, status.text), color));
-    });
+    }
 }
 
 /// The registry row whose data a scale legend draws.
@@ -459,36 +811,155 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
     }
 }
 
-// ── the scale legends ──────────────────────────────────────────────────────
+// ── the keys ───────────────────────────────────────────────────────────────
 
-/// A horizontal gradient bar plus its end labels.
-///
-/// `sample` maps `0..=1` along the bar to the colour the 3D overlay paints.
-/// Every caller passes the overlay's OWN colour function, so a legend cannot
-/// drift from what is drawn. The row wraps at a narrow width; it never
-/// pushes the rail past the viewport.
-fn gradient_strip(ui: &mut egui::Ui, left: &str, right: &str, sample: impl Fn(f32) -> [f32; 3]) {
+/// The colour key of one legend.
+enum Key {
+    /// A gradient with its end labels. `colours` are samples of the
+    /// overlay's OWN colour function at `i / (RAMP_SAMPLES - 1)`, so a legend
+    /// cannot drift from what is drawn. `lead` and `tail` are the single
+    /// colours the same function paints outside the gradient (the reach
+    /// green before it, its greys after it), from the same function.
+    Ramp {
+        lead: Vec<LegendEntry>,
+        left: String,
+        right: String,
+        colours: Vec<[f32; 3]>,
+        tail: Vec<LegendEntry>,
+    },
+    /// A set of classes or categories.
+    Entries(Vec<LegendEntry>),
+}
+
+fn ramp(
+    left: impl Into<String>,
+    right: impl Into<String>,
+    sample: impl Fn(f32) -> [f32; 3],
+) -> Key {
+    Key::Ramp {
+        lead: Vec::new(),
+        left: left.into(),
+        right: right.into(),
+        colours: (0..RAMP_SAMPLES)
+            // Both ends: t runs 0 to 1 inclusive, so the far-end colour
+            // (the deepest miss, the clustered red) is in the key.
+            .map(|i| sample(i as f32 / (RAMP_SAMPLES - 1) as f32))
+            .collect(),
+        tail: Vec::new(),
+    }
+}
+
+/// `key` with single colours before and after its gradient.
+fn with_ends(key: Key, before: Vec<LegendEntry>, after: Vec<LegendEntry>) -> Key {
+    match key {
+        Key::Ramp {
+            left,
+            right,
+            colours,
+            ..
+        } => Key::Ramp {
+            lead: before,
+            left,
+            right,
+            colours,
+            tail: after,
+        },
+        Key::Entries(entries) => Key::Entries(entries),
+    }
+}
+
+impl Key {
+    /// Every colour the key shows, in key order: the lead colours, the
+    /// gradient samples, the tail colours, or each entry colour.
+    fn colours(&self) -> Vec<[f32; 3]> {
+        match self {
+            Self::Ramp {
+                lead,
+                colours,
+                tail,
+                ..
+            } => lead
+                .iter()
+                .filter_map(|(_, colour)| *colour)
+                .chain(colours.iter().copied())
+                .chain(tail.iter().filter_map(|(_, colour)| *colour))
+                .collect(),
+            Self::Entries(entries) => entries.iter().filter_map(|(_, colour)| *colour).collect(),
+        }
+    }
+}
+
+/// The colour key of `line`, or `None` for a status line.
+fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
+    match line {
+        RailLine::Scale(legend) => Some(scale_key(*legend)),
+        RailLine::Categories(kind) => Some(categories_key(state, *kind)),
+        RailLine::Status(_) => None,
+    }
+}
+
+/// Every colour the hover detail of `line` shows, in key order. A status
+/// line shows none.
+pub fn key_colours(state: &AppState, line: &RailLine) -> Vec<[f32; 3]> {
+    line_key(state, line).map_or_else(Vec::new, |key| key.colours())
+}
+
+/// Every colour the chip swatch of `line` paints, in order.
+pub fn swatch_colours(state: &AppState, line: &RailLine) -> Vec<egui::Color32> {
+    match chip_swatch(state, line) {
+        Swatch::None => Vec::new(),
+        Swatch::Cells(cells) => cells.into_iter().map(|(colour, _)| colour).collect(),
+    }
+}
+
+fn draw_key(ui: &mut egui::Ui, key: &Key) {
+    match key {
+        Key::Ramp {
+            lead,
+            left,
+            right,
+            colours,
+            tail,
+        } => {
+            if !lead.is_empty() {
+                entry_row(ui, lead);
+            }
+            gradient_strip(ui, left, right, colours);
+            if !tail.is_empty() {
+                entry_row(ui, tail);
+            }
+        }
+        Key::Entries(entries) => entry_row(ui, entries),
+    }
+}
+
+/// Paint `colours` as equal segments across `rect`.
+fn paint_ramp(painter: &egui::Painter, rect: egui::Rect, colours: &[egui::Color32]) {
+    let count = colours.len().max(1) as f32;
+    for (i, colour) in colours.iter().enumerate() {
+        let t0 = i as f32 / count;
+        let t1 = (i + 1) as f32 / count;
+        let segment = egui::Rect::from_min_max(
+            egui::pos2(rect.left() + t0 * rect.width(), rect.top()),
+            egui::pos2(rect.left() + t1 * rect.width(), rect.bottom()),
+        );
+        painter.rect_filled(segment, 0.0, *colour);
+    }
+}
+
+/// A horizontal gradient bar plus its end labels. The row wraps at a
+/// narrow width; it never pushes the detail past the viewport.
+fn gradient_strip(ui: &mut egui::Ui, left: &str, right: &str, colours: &[[f32; 3]]) {
     ui.horizontal_wrapped(|ui| {
         ui.label(caption(left, tokens::TEXT_MUTED));
         let (rect, _resp) = ui.allocate_exact_size(egui::vec2(96.0, 10.0), egui::Sense::hover());
-        let painter = ui.painter();
-        const SEGMENTS: u32 = 24;
-        for i in 0..SEGMENTS {
-            let t0 = i as f32 / SEGMENTS as f32;
-            let t1 = (i + 1) as f32 / SEGMENTS as f32;
-            let [r, g, b] = sample(t0);
-            let seg = egui::Rect::from_min_max(
-                egui::pos2(rect.left() + t0 * rect.width(), rect.top()),
-                egui::pos2(rect.left() + t1 * rect.width(), rect.bottom()),
-            );
-            painter.rect_filled(seg, 0.0, rgb(r, g, b));
-        }
+        let colours: Vec<egui::Color32> = colours
+            .iter()
+            .map(|c| tokens::from_linear_rgb(*c))
+            .collect();
+        paint_ramp(ui.painter(), rect, &colours);
         ui.label(caption(right, tokens::TEXT_MUTED));
     });
-}
-
-fn rgb(r: f32, g: f32, b: f32) -> egui::Color32 {
-    tokens::from_linear_rgb([r, g, b])
 }
 
 /// A row of labelled entries, for a legend whose scale is a set of classes
@@ -497,59 +968,169 @@ fn rgb(r: f32, g: f32, b: f32) -> egui::Color32 {
 fn entry_row(ui: &mut egui::Ui, entries: &[(String, Option<[f32; 3]>)]) {
     ui.horizontal_wrapped(|ui| {
         for (label, colour) in entries {
-            if let Some([r, g, b]) = colour {
-                let (rect, resp) =
+            if let Some(colour) = colour {
+                let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(12.0, 10.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 0.0, rgb(*r, *g, *b));
-                resp.on_hover_text(label.as_str());
+                ui.painter()
+                    .rect_filled(rect, 0.0, tokens::from_linear_rgb(*colour));
             }
             ui.label(caption(label.as_str(), tokens::TEXT_MUTED));
         }
     });
 }
 
-fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend, caveats: &mut Caveats) {
+/// The colour key of one scale legend.
+fn scale_key(legend: Legend) -> Key {
     match legend {
         Legend::RestHeatmap(threshold, top) => {
             use rs_cam_core::maps::rest_heatmap_mesh::rest_ramp_color;
             let threshold = threshold as f32;
             let top = top.max(threshold + 1e-6);
-            gradient_strip(
-                ui,
-                &format!("{threshold:.2} mm"),
-                &format!("p95 {top:.2} mm"),
+            let strip = ramp(
+                format!("{threshold:.2} mm"),
+                format!("p95 {top:.2} mm"),
                 |t| rest_ramp_color(threshold + t * (top - threshold), threshold, top),
             );
-            caveats.push(
-                "grey = at or below the threshold \u{00B7} full red from the 95th percentile up",
-                tokens::TEXT_FAINT,
-            );
+            with_ends(
+                strip,
+                vec![(
+                    format!("\u{2264} {threshold:.2} mm"),
+                    Some(rest_ramp_color(threshold, threshold, top)),
+                )],
+                Vec::new(),
+            )
         }
-        Legend::Reach(ramp) => {
+        Legend::Reach(reach) => {
             use rs_cam_core::maps::reach_map::reach_color;
-            // The strip draws the DEPTH band only — the bar to the deepest
-            // gap, on the ramp's own log scale — because that is the part
-            // with structure in it. Green and grey are single colours and
-            // are named on the line under it rather than given ramp width.
-            let bar = ramp.bar_mm();
-            let top = ramp.max_gap_mm.max(bar);
+            // The strip draws the DEPTH band — the bar to the deepest gap,
+            // on the ramp's own log scale. Green (reached), grey
+            // (unresolved) and the neutral colour (not measured) are single
+            // colours, so they are entries before and after the strip.
+            // Every colour is a call to `reach_color`, the overlay's own
+            // function.
+            let bar = reach.bar_mm();
+            let top = reach.max_gap_mm.max(bar);
             let ratio = (top / bar).max(1.0);
-            gradient_strip(
-                ui,
-                &format!("miss {bar:.3} mm"),
-                &format!("{top:.2} mm"),
+            let tolerance = reach.tolerance_mm;
+            let miss = ramp(
+                format!("miss {bar:.3} mm"),
+                format!("{top:.2} mm"),
                 move |t| {
                     // Inverse of `ReachRamp::depth_t`, nudged past the bar so
                     // t = 0 samples the first MISS colour and not the green.
                     let gap = bar * ratio.powf(f64::from(t)) * 1.001;
-                    reach_color(gap as f32, f32::NAN, ramp)
+                    reach_color(gap as f32, f32::NAN, reach)
                 },
             );
+            // A gap over the bar and at or under its cell's floor paints the
+            // unresolved grey.
+            let unresolved_gap = (tolerance * 2.0).max(1e-3) as f32;
+            with_ends(
+                miss,
+                vec![(
+                    format!("reached \u{2264} {tolerance:.3} mm"),
+                    Some(reach_color((tolerance * 0.5) as f32, f32::NAN, reach)),
+                )],
+                vec![
+                    (
+                        "unresolved".to_owned(),
+                        Some(reach_color(unresolved_gap, unresolved_gap, reach)),
+                    ),
+                    (
+                        "not measured".to_owned(),
+                        Some(reach_color(f32::NAN, f32::NAN, reach)),
+                    ),
+                ],
+            )
+        }
+        Legend::Deviation => {
+            use crate::render::sim_render::deviation_colors;
+            ramp("Over-cut \u{2212}1 mm", "+1 mm remaining", |t| {
+                let mm = -1.0 + 2.0 * t;
+                deviation_colors(&[mm]).first().copied().unwrap_or([0.0; 3])
+            })
+        }
+        Legend::ByHeight => {
+            use rs_cam_core::export::ribbon::height_gradient_colors;
+            // The function normalises over the vertices it is handed, so one
+            // synthetic ramp of Z values reproduces the mesh's own scale.
+            let mut vertices = Vec::with_capacity(3 * 25);
+            for i in 0..25 {
+                vertices.extend_from_slice(&[0.0, 0.0, i as f32 / 24.0]);
+            }
+            let colors = height_gradient_colors(&vertices);
+            ramp("low", "high", move |t| {
+                let index = ((t * 24.0).round() as usize).min(24);
+                colors.get(index).copied().unwrap_or([0.0; 3])
+            })
+        }
+        Legend::Engagement => {
+            use crate::render::toolpath_render::engagement_color;
+            // The ramp input is `feed / nominal feed`, and the strip spans
+            // 0 to 1.5 of it.
+            ramp("0 %", "150 % of nominal feed", |t| {
+                engagement_color(f64::from(t) * 1.5, 1.0)
+            })
+        }
+        Legend::AdvancePerTooth => {
+            use crate::render::toolpath_render::advance_per_tooth_segment_color;
+            use rs_cam_core::feeds::{AdvancePerToothMm, VendorChiploadBand};
+            // The band is per matched vendor row, so the legend labels the
+            // CLASSES rather than absolute mm/tooth — and it reads them out
+            // of the same classifier the lines use. A probe band supplies the
+            // class boundaries; the RGB comes from the shipped function.
+            let band = VendorChiploadBand::from_advance_range(&(0.05..0.10));
+            let at = |mm: f64| {
+                advance_per_tooth_segment_color(Some(&band), Some(AdvancePerToothMm::new(mm)))
+            };
+            Key::Entries(vec![
+                ("below".to_owned(), Some(at(0.01))),
+                ("within".to_owned(), Some(at(0.075))),
+                ("near max".to_owned(), Some(at(0.099))),
+                ("above".to_owned(), Some(at(0.2))),
+                (
+                    "no band".to_owned(),
+                    Some(advance_per_tooth_segment_color(
+                        None,
+                        Some(AdvancePerToothMm::new(0.05)),
+                    )),
+                ),
+            ])
+        }
+        Legend::TierMap(tier_count) => {
+            use rs_cam_core::maps::rest_heatmap_mesh::{tier_fill_color, tier_overlap_color};
+            // Tier 0 has no colour: it is the coarse tool's complement and
+            // the overlay deliberately draws nothing there.
+            let mut entries = Vec::new();
+            for tier in 1..=tier_count {
+                let Ok(tier) = u8::try_from(tier) else {
+                    break;
+                };
+                if let Some(colour) = tier_fill_color(tier) {
+                    entries.push((format!("tier {tier}"), Some(colour)));
+                }
+            }
+            if let Some(overlap) = tier_overlap_color(1) {
+                entries.push(("overlap band".to_owned(), Some(overlap)));
+            }
+            Key::Entries(entries)
+        }
+    }
+}
+
+/// The caveat lines of one scale legend, without the live stale line.
+fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
+    match legend {
+        Legend::RestHeatmap(..) => caveats.push(
+            "grey = at or below the threshold \u{00B7} full red from the 95th percentile up",
+            tokens::TEXT_FAINT,
+        ),
+        Legend::Reach(reach) => {
             caveats.push(
                 format!(
                     "green \u{2264} {:.3} mm \u{00B7} grey = unresolved \u{00B7} mid {:.2} mm \u{00B7} log scale",
-                    ramp.tolerance_mm,
-                    ramp.mid_stop_mm(),
+                    reach.tolerance_mm,
+                    reach.mid_stop_mm(),
                 ),
                 tokens::TEXT_FAINT,
             );
@@ -595,88 +1176,16 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend, caveats: &mu
                 }
             }
         }
-        Legend::Deviation => {
-            use crate::render::sim_render::deviation_colors;
-            gradient_strip(ui, "Over-cut \u{2212}1 mm", "+1 mm remaining", |t| {
-                let mm = -1.0 + 2.0 * t;
-                deviation_colors(&[mm]).first().copied().unwrap_or([0.0; 3])
-            });
-        }
-        Legend::ByHeight => {
-            use rs_cam_core::export::ribbon::height_gradient_colors;
-            // The function normalises over the vertices it is handed, so one
-            // synthetic ramp of Z values reproduces the mesh's own scale.
-            let mut vertices = Vec::with_capacity(3 * 25);
-            for i in 0..25 {
-                vertices.extend_from_slice(&[0.0, 0.0, i as f32 / 24.0]);
-            }
-            let colors = height_gradient_colors(&vertices);
-            gradient_strip(ui, "low", "high", move |t| {
-                let index = ((t * 24.0).round() as usize).min(24);
-                colors.get(index).copied().unwrap_or([0.0; 3])
-            });
-            caveats.push("scaled to this stock's Z range", tokens::TEXT_FAINT);
-        }
-        Legend::Engagement => {
-            use crate::render::toolpath_render::engagement_color;
-            // The ramp input is `feed / nominal feed`, and the strip spans
-            // 0 to 1.5 of it.
-            gradient_strip(ui, "0 %", "150 % of nominal feed", |t| {
-                engagement_color(f64::from(t) * 1.5, 1.0)
-            });
-            caveats.push("red = heavy load, feed reduced", tokens::TEXT_FAINT);
-        }
+        Legend::Deviation => {}
+        Legend::ByHeight => caveats.push("scaled to this stock's Z range", tokens::TEXT_FAINT),
+        Legend::Engagement => caveats.push("red = heavy load, feed reduced", tokens::TEXT_FAINT),
         Legend::AdvancePerTooth => {
-            use crate::render::toolpath_render::advance_per_tooth_segment_color;
-            use rs_cam_core::feeds::{AdvancePerToothMm, VendorChiploadBand};
-            // The band is per matched vendor row, so the legend labels the
-            // CLASSES rather than absolute mm/tooth — and it reads them out
-            // of the same classifier the lines use. A probe band supplies the
-            // class boundaries; the RGB comes from the shipped function.
-            let band = VendorChiploadBand::from_advance_range(&(0.05..0.10));
-            let at = |mm: f64| {
-                advance_per_tooth_segment_color(Some(&band), Some(AdvancePerToothMm::new(mm)))
-            };
-            entry_row(
-                ui,
-                &[
-                    ("below".to_owned(), Some(at(0.01))),
-                    ("within".to_owned(), Some(at(0.075))),
-                    ("near max".to_owned(), Some(at(0.099))),
-                    ("above".to_owned(), Some(at(0.2))),
-                    (
-                        "no band".to_owned(),
-                        Some(advance_per_tooth_segment_color(
-                            None,
-                            Some(AdvancePerToothMm::new(0.05)),
-                        )),
-                    ),
-                ],
-            );
             caveats.push("against the matched vendor band", tokens::TEXT_FAINT);
         }
-        Legend::TierMap(tier_count) => {
-            use rs_cam_core::maps::rest_heatmap_mesh::{tier_fill_color, tier_overlap_color};
-            // Tier 0 has no colour: it is the coarse tool's complement and
-            // the overlay deliberately draws nothing there.
-            let mut entries = Vec::new();
-            for tier in 1..=tier_count {
-                let Ok(tier) = u8::try_from(tier) else {
-                    break;
-                };
-                if let Some(colour) = tier_fill_color(tier) {
-                    entries.push((format!("tier {tier}"), Some(colour)));
-                }
-            }
-            if let Some(overlap) = tier_overlap_color(1) {
-                entries.push(("overlap band".to_owned(), Some(overlap)));
-            }
-            entry_row(ui, &entries);
-            caveats.push(
-                "each fine tier's overlap band is a lighter tint of its colour",
-                tokens::TEXT_FAINT,
-            );
-        }
+        Legend::TierMap(_) => caveats.push(
+            "each fine tier's overlap band is a lighter tint of its colour",
+            tokens::TEXT_FAINT,
+        ),
     }
 }
 
@@ -854,39 +1363,42 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
     }
 }
 
-fn draw_categories(ui: &mut egui::Ui, state: &AppState, kind: Categories, caveats: &mut Caveats) {
+/// The colour key of one categorical legend. The collisions draw their
+/// density ramp, with the two entries as its end labels.
+fn categories_key(state: &AppState, kind: Categories) -> Key {
     let entries = category_entries(state, kind);
     match kind {
+        Categories::Collisions => {
+            let left = entries.first().map_or("", |(label, _)| label.as_str());
+            let right = entries.last().map_or("", |(label, _)| label.as_str());
+            ramp(left, right, mirrored::collision_density_rgb)
+        }
+        _ => Key::Entries(entries),
+    }
+}
+
+/// The caveat lines of one categorical legend.
+fn categories_caveats(state: &AppState, kind: Categories, caveats: &mut Caveats) {
+    match kind {
         Categories::ToolpathPalette => {
-            entry_row(ui, &entries);
-            if state.viewport.show_all_toolpaths && entries.len() > 1 {
+            if state.viewport.show_all_toolpaths && category_entries(state, kind).len() > 1 {
                 caveats.push("the selected toolpath draws brighter", tokens::TEXT_FAINT);
             }
         }
-        Categories::Moves => {
-            entry_row(ui, &entries);
-            caveats.push(
-                "a cut is darker lower down \u{00B7} spans draw over the cut colour",
-                tokens::TEXT_FAINT,
-            );
-        }
-        Categories::EntryMarkers => {
-            entry_row(ui, &entries);
-            caveats.push(
-                "where an entry starts, not how hard it cuts \u{00B7} only an operation with an entry style draws one",
-                tokens::TEXT_FAINT,
-            );
-        }
-        Categories::HeightPlanes => {
-            entry_row(ui, &entries);
-            caveats.push(
-                "the Heights tab of the inspector gives each Z in mm",
-                tokens::TEXT_FAINT,
-            );
-        }
+        Categories::Moves => caveats.push(
+            "a cut is darker lower down \u{00B7} spans draw over the cut colour",
+            tokens::TEXT_FAINT,
+        ),
+        Categories::EntryMarkers => caveats.push(
+            "where an entry starts, not how hard it cuts \u{00B7} only an operation with an entry style draws one",
+            tokens::TEXT_FAINT,
+        ),
+        Categories::HeightPlanes => caveats.push(
+            "the Heights tab of the inspector gives each Z in mm",
+            tokens::TEXT_FAINT,
+        ),
         Categories::AreaRegions => {
-            entry_row(ui, &entries);
-            if entries.len() == 1 {
+            if category_entries(state, kind).len() == 1 {
                 caveats.push(
                     "one region: By Area cuts the part as Global does",
                     tokens::TEXT_FAINT,
@@ -897,11 +1409,6 @@ fn draw_categories(ui: &mut egui::Ui, state: &AppState, kind: Categories, caveat
                 tokens::TEXT_FAINT,
             );
         }
-        Categories::Collisions => {
-            let left = entries.first().map_or("", |(label, _)| label.as_str());
-            let right = entries.last().map_or("", |(label, _)| label.as_str());
-            gradient_strip(ui, left, right, mirrored::collision_density_rgb);
-            caveats.push("holder and shank strike points", tokens::TEXT_FAINT);
-        }
+        Categories::Collisions => caveats.push("holder and shank strike points", tokens::TEXT_FAINT),
     }
 }

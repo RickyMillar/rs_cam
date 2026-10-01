@@ -820,3 +820,107 @@ fn a_result_adoption_rebuilds_the_cut_metrics_once_g_cachekeys() {
     let fresh = sim.cached_cut_metrics(&session, id);
     assert_eq!(format!("{:?}", *after), format!("{:?}", *fresh));
 }
+
+// The issue list keyed on `Arc::as_ptr` of the cut trace and of each debug
+// and semantic trace, plus `GuiState::edit_counter`. The list reads no
+// session state, so the counter only rebuilt it for no reason, and the bare
+// pointers had the ABA hazard. The key now holds a `Weak` to each trace.
+
+/// An `edit_counter` bump alone moves no input of the issue list, so the
+/// list is a hit: the same shared `Arc`.
+#[test]
+fn an_edit_counter_bump_alone_hits_the_issue_list_g_cachekeys() {
+    let mut gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let _trace = attach_cut_trace(&mut sim);
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(!before.is_empty(), "fixture must produce issues");
+    gui.mark_edited();
+    gui.mark_edited();
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        Arc::ptr_eq(&before, &after),
+        "the issue list reads no session state; a counter bump must hit"
+    );
+}
+
+/// The ABA gesture on the cut trace: the run drops its trace, and a new
+/// trace is allocated. The held `Weak` reserves the old address, and the
+/// key misses.
+#[test]
+fn a_new_cut_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
+    let gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let first = attach_cut_trace(&mut sim);
+    let first_addr = Arc::as_ptr(&first) as usize;
+    drop(first); // only `sim.results` holds the trace, as in the GUI
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+
+    // Drop the trace, then allocate replacements of the same size class.
+    if let Some(results) = sim.results.as_mut() {
+        results.cut_trace = None;
+    }
+    let mut held = Vec::new();
+    for _ in 0..16 {
+        let mut next = simulation_for_toolpath();
+        let replacement = attach_cut_trace(&mut next);
+        assert_ne!(
+            Arc::as_ptr(&replacement) as usize,
+            first_addr,
+            "the cache's Weak reserves the freed address"
+        );
+        held.push(replacement);
+    }
+    let mut refreshed = simulation_for_toolpath();
+    let _second = attach_cut_trace(&mut refreshed);
+    if let (Some(results), Some(fresh)) = (sim.results.as_mut(), refreshed.results.take()) {
+        results.cut_trace = fresh.cut_trace;
+    }
+
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        !Arc::ptr_eq(&before, &after),
+        "a new cut trace must miss the issue list, whatever its address"
+    );
+}
+
+/// The ABA gesture on a debug trace: an equal trace in a new allocation is
+/// a new input, and the key misses. The old key paired the pointer with
+/// the annotation and hotspot counts, which an equal trace repeats.
+#[test]
+fn a_new_debug_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
+    let mut gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let _trace = attach_cut_trace(&mut sim);
+    let id = rs_cam_core::ToolpathId(1);
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+
+    let rt = gui.toolpath_rt.get_mut(&id).expect("fixture toolpath");
+    let old = rt.debug_trace.take().expect("fixture debug trace");
+    if let Some(result) = rt.result.as_mut() {
+        result.debug_trace = None;
+    }
+    let copy = (*old).clone();
+    let old_addr = Arc::as_ptr(&old) as usize;
+    drop(old);
+    let replacement = Arc::new(copy);
+    assert_ne!(
+        Arc::as_ptr(&replacement) as usize,
+        old_addr,
+        "the cache's Weak reserves the freed address"
+    );
+    rt.debug_trace = Some(replacement);
+
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        !Arc::ptr_eq(&before, &after),
+        "a new debug trace must miss the issue list"
+    );
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "an equal trace gives an equal list"
+    );
+    let again = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(Arc::ptr_eq(&after, &again), "the new key then holds");
+}

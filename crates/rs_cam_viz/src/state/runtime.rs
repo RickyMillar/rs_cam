@@ -113,23 +113,24 @@ pub struct ReachOverlayState {
     /// deselect needs, so the generation only has to separate consecutive
     /// live keys.
     pub last_map: Option<Arc<ReachMap>>,
-    /// The session edit counter the request was resolved at. Part of the
-    /// scheduling key.
+    /// The memo key of the request this answer was asked under, or `None`
+    /// when the selected toolpath resolves no request (an operation that a
+    /// reach map does not speak about, no mesh, or no tool). Part of the
+    /// scheduling key, beside [`Self::toolpath`].
     ///
-    /// **Known behaviour: the overlay blinks off on an unrelated edit.**
-    /// `GuiState::mark_edited` bumps this counter for any project edit —
-    /// renaming another toolpath, a post-config change, each keystroke in a
-    /// name field — so the sweep resubmits and the overlay hides behind
-    /// `reach: computing…` until the walk answers (a memo hit, plus one
-    /// `vertex_gaps` pass, off the frame loop). Comparing the resolved
-    /// requests instead would remove the blink, and it cannot be done
-    /// honestly from this crate: the memo's own tool-geometry key
-    /// (`rs_cam_core::maps::tool_shape_key::ToolShapeKey`) is `pub(crate)` to core,
-    /// and the fields that ARE reachable miss the common case — editing the
-    /// selected tool's diameter leaves `tool_id` and, inside the cell clamp,
-    /// `ReachMapParams` unchanged. A blink is a cosmetic cost; showing the
-    /// previous tool's reach map is a wrong answer.
-    pub edit_counter: u64,
+    /// The key is built from the inputs the map reads: the mesh identity
+    /// (the setup transform gives a new mesh `Arc`), the tool shape, the
+    /// tolerance from the operation config, the cell and the ids. It is
+    /// `rs_cam_core::maps::reach_map_cache::ReachRequestKey`, the core memo's
+    /// own key, so the overlay resubmits exactly when the memo would answer
+    /// a new question.
+    ///
+    /// It is NOT `GuiState::edit_counter`. That counter misses each MCP core
+    /// command and each controller command that does not call
+    /// `mark_edited`, so an MCP `set_tool_param` left the previous tool's
+    /// map on screen. It also moved on each unrelated edit, and the overlay
+    /// then blinked to `reach: computing…` for no new question.
+    pub key: Option<rs_cam_core::maps::reach_map_cache::ReachRequestKey>,
     /// When the in-flight request was submitted, or `None` when none is.
     ///
     /// Read only by the scheduler's stuck-`Computing` recovery, which is why
@@ -154,7 +155,7 @@ impl ReachOverlayState {
             status: ReachStatus::Idle,
             generation: 0,
             last_map: None,
-            edit_counter: 0,
+            key: None,
             requested_at: None,
             colors: None,
         }
@@ -178,7 +179,7 @@ impl ReachOverlayState {
     pub fn clear(&mut self) {
         self.toolpath = None;
         self.status = ReachStatus::Idle;
-        self.edit_counter = 0;
+        self.key = None;
         self.requested_at = None;
         self.colors = None;
     }

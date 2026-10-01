@@ -107,6 +107,9 @@ struct ScriptedBackend {
     /// `ComputeBackend::submit_job` has an empty default body, so a backend
     /// that does not override it records nothing.
     job_requests: Vec<JobRequest>,
+    /// Reach-lane submissions, kept WHOLE so a test can read the key each
+    /// walk was asked under.
+    reach_requests: Vec<crate::compute::ReachRequest>,
 }
 
 impl ScriptedBackend {
@@ -122,6 +125,7 @@ impl ScriptedBackend {
             submitted: Vec::new(),
             optimize_requests: Vec::new(),
             job_requests: Vec::new(),
+            reach_requests: Vec::new(),
         }
     }
 }
@@ -143,6 +147,9 @@ impl ComputeBackend for ScriptedBackend {
     }
     fn submit_job(&mut self, request: JobRequest) {
         self.job_requests.push(request);
+    }
+    fn submit_reach_map(&mut self, request: crate::compute::ReachRequest) {
+        self.reach_requests.push(request);
     }
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
