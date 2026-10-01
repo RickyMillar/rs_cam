@@ -82,3 +82,18 @@ The branch is ready for the operator's merge call.
   ui/components/sparkline.rs, ui/sim_trace_modal.rs, ui/sim_timeline.rs,
   core settings/, budget/, compute/worker*.
 - Jobs 001-008 answered; the queue is empty.
+
+## 2026-10-02 ~09:20 UTC: merged and pushed
+
+origin/master = fd4c841c: the memory programme waves 4 + the UI work, merged
+with the lead's 6d78b231 (arc length). Verified after the merge: clippy
+-D warnings clean; kinematics_per_axis_rate_p1 9/0, perf_golden_sim_metrics
+5/0, memory_budget_core 14/0, query_cycle_time 6/0, core --lib machine/budget/
+session/settings 237/0, viz 1104/0, cli 67/0. Ricky saw it on screen and approved.
+The file claims in the earlier status are released.
+New since 0617bf8e: always capture (checkbox and core flag deleted); budget
+default half of RAM; File > Preferences with categories; settings module in
+core; cut-trace files off by default (~/.cache/rs_cam/artifacts when on);
+cut-metric cards flip to a sparkline (median over a band, cutting-only, air =
+gap) and open a zoomable trace modal; SimulationCutSample::is_air() names the
+gates' air rule (no gate result changes).
