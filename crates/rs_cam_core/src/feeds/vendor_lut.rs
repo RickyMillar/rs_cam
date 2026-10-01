@@ -353,6 +353,10 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         "amana_3d_profiling.json",
         include_str!("../../data/vendor_lut/observations/amana_3d_profiling.json"),
     ),
+    // Since 2026-10-01 only the two Whiteside 120 deg rows remain here. The
+    // six amana-vbit-* rows that cited the Amana insert V-groove v16 chart
+    // are retired: no number in them is on that chart (finding G5 D1,
+    // planning/extrapolation_2026-09-24/fetch/G5/lut_discrepancies.md).
     (
         "amana_vbit.json",
         include_str!("../../data/vendor_lut/observations/amana_vbit.json"),
@@ -471,6 +475,9 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
     // V-bit rows of the five wood sheets and the Laminated Chipboard table.
     // The stored texts are data/vendor_lut/sources/onsrud_*_cutting_data.txt;
     // the flute counts and the angles come from onsrud_pct19_catalog.txt.
+    // The Soft Wood and Hard Wood 37-50 / 37-60 rows load since 2026-10-01;
+    // planning/extrapolation_2026-09-24/scripts/check_onsrud_vbit_37.py
+    // asserts every row of the file against the stored text.
     (
         "onsrud_vbit_37.json",
         include_str!("../../data/vendor_lut/observations/onsrud_vbit_37.json"),
@@ -704,8 +711,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            498,
-            "expected 498 embedded observations: 252 before feeds matrix R5 \
+            506,
+            "expected 506 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -729,7 +736,8 @@ mod tests {
              derived onsrud-bull softwood and hardwood adaptive rows, + 6 \
              printed Amana corner-radius bull rows (1/4 and 1/2 in x softwood \
              / hardwood / MDF, pocket only) = 476; \
-             then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498"
+             then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498; \
+             then 2026-10-01 (operator: 'yes to loading the rows'): + 14 printed Onsrud 37-50 and 37-60 V-bit rows of the Soft Wood and Hard Wood sheets (90 deg, 2 flutes, 7 per sheet; unparked), - 6 amana-vbit-* rows that cite the Amana insert V-groove v16 chart and are not on it (finding G5 D1) = 506"
         );
     }
 

@@ -40,6 +40,10 @@
 //!   nearest printed row (6 mm), outside the 0.5x-2x window of the size
 //!   law, so it refuses. The fixture V-bit is 6.0 mm, 90 degrees: the
 //!   printed key of `amana-vbit-softwood-trace-6000-2f`.
+//! - 2026-10-01: that row is retired (finding G5 D1: not on its chart). The
+//!   6.0 mm fixture now reads the nearest printed 90 degree row, the Onsrud
+//!   37-50 1/4 in Soft Wood row `onsrud-softwood-37-50-1_4-trace`. The
+//!   fixture size stays; no assert of this file reads the V-bit's numbers.
 //!
 //! The pill now reads its value from
 //! `feeds::suggest::preview_field_applies` — a dry run of the funnel on a
@@ -111,10 +115,13 @@ fn try_recipe(
     .ok()
 }
 
-/// The fixture V-bit: 6.0 mm, 90 degrees, the printed key of the Amana
-/// softwood V-bit row `amana-vbit-softwood-trace-6000-2f`. Ruling B4
+/// The fixture V-bit: 6.0 mm, 90 degrees. It was the printed key of the
+/// Amana softwood V-bit row `amana-vbit-softwood-trace-6000-2f`, retired
+/// 2026-10-01 (finding G5 D1); it now reads the Onsrud 37-50 1/4 in Soft
+/// Wood row `onsrud-softwood-37-50-1_4-trace`. Ruling B4
 /// (`d5b7e34`, 2026-09-25) reads a V-bit row at its nominal diameter; the
-/// default V-bit (12.7 mm) is 2.1x the 6 mm row and refuses.
+/// default V-bit (12.7 mm) was 2.1x the 6 mm row and refused. Since
+/// 2026-10-01 it has its own printed row (Onsrud 37-60 1/2 in Soft Wood).
 const FIXTURE_VBIT_DIAMETER_MM: f64 = 6.0;
 const FIXTURE_VBIT_ANGLE_DEG: f64 = 90.0;
 

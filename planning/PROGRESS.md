@@ -14,6 +14,28 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-01 (cloud session) — boundary phantom strike; Onsrud 90 degree V-bit rows
+
+- **G-BOUNDARYPHANTOM** (`7a7c867d`): with a boundary, the adaptive3d
+  planner stamped rings in the band between the boundary region and the
+  clip's containment line; the session clip then deleted them, and later
+  entries rapided down onto that phantom-cut floor. This is the rivmap350
+  "3D Rough 8" strike class (8 real rapid strikes, runner job 009). The
+  planner now clips each segment to the containment before it stamps.
+  Repro `planning/fixtures/rivmap100/rivmap100_boundary_strike.toml`:
+  8/7/7/7 -> 0 strikes at 0.5/0.25/0.2/0.125 mm. Sentry
+  `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`.
+  Runner job 010 confirms on rivmap350.
+- **Onsrud 37-50 / 37-60 90 degree rows loaded** (operator: "yes to loading
+  the rows"): 14 rows from the stored Soft Wood / Hard Wood sheets, checked
+  by `planning/extrapolation_2026-09-24/scripts/check_onsrud_vbit_37.py`.
+  The six Amana insert-v16 rows that are not on the chart are retired
+  (G5 D1). The V-bit soft/hard cap is now 1.00, because 1.42 came only
+  from the retired rows. FM1 CSVs unchanged; see
+  `planning/feeds_matrix_2026-09-23/RETAKE_2026-10-01.md`. The GUI default
+  V-bit (12.7 mm, 90 degrees) now ships VCarve and Trace in solid wood; the
+  2026-09-26 note below that it refuses is superseded.
+
 ## Update 2026-10-01/02 (local runner session) — memory programme, Preferences, MCP proxy
 
 The 2026-09-29/30 safety defect below (large-project simulation memory) is

@@ -2,15 +2,22 @@
 //! P2 step 1, `planning/extrapolation_2026-09-24/P2_PLAN.md`, orchestrator
 //! decision 1).
 //!
-//! `data/vendor_lut/observations/onsrud_vbit_37.json` holds 60 printed rows:
-//! the 37-series of the five Onsrud wood sheets and of the Laminated
-//! Chipboard table, 10 rows per table. Two sets of printed cells are parked
-//! and not loaded:
+//! `data/vendor_lut/observations/onsrud_vbit_37.json` holds 54 printed
+//! rows: the 37-series of the MDF, Hard Plywood and Soft Plywood sheets and
+//! of the Laminated Chipboard table (40 rows, P2), and since 2026-10-01 the
+//! 37-50 and 37-60 rows of the Soft Wood and Hard Wood sheets (14 rows,
+//! operator: "yes to loading the rows"). Printed cells that stay parked and
+//! not loaded:
 //!
 //! - the 11 laminated plywood rows. Mapped to `plywood_hardwood` they tie
 //!   with the hard plywood rows and win on id;
 //! - the 11 37-80 rows at 1 1/4 in and 2 in. They have no angle, and a row
-//!   with no angle passes the V-bit angle gate for any angle.
+//!   with no angle passes the V-bit angle gate for any angle;
+//! - the Soft Wood and Hard Wood 37-00, 37-20 and 37-80 1 in rows (P2
+//!   amendment 7, B4_PLAN Q2).
+//!
+//! `planning/extrapolation_2026-09-24/scripts/check_onsrud_vbit_37.py`
+//! asserts every value of the 54 rows against the stored sheet text.
 //!
 //! The sheets print one row for 37-00/37-20 under the 1/4 in shank column.
 //! The LUT holds it as two rows, 60 and 30 deg (PCT-19 page 20), with no
@@ -25,6 +32,9 @@
 //!   row carries an angle;
 //! - a 1-flute 60 deg V-bit in MDF gets the 37-00 row, unscaled
 //!   (`AngleKey`: the row prints no diameter);
+//! - a 90 deg 2-flute V-bit in softwood and in hardwood gets the Onsrud
+//!   Soft Wood / Hard Wood sheet row at each printed size, unscaled
+//!   (2026-10-01);
 //! - since ruling B4 (2026-09-25) the 37-80 1 in row is read at its printed
 //!   25.4 mm through the G1 size claim. Suggest refuses a 6.35 mm V-bit
 //!   Trace in MDF (4.0x, outside the window: orchestrator decision Q1) and
@@ -308,4 +318,62 @@ fn suggest_reads_the_onsrud_vbit_row_at_its_printed_diameter_b4() {
         .as_ref()
         .expect("the recipe names its row");
     assert_eq!(row.observation_id, "onsrud-mdf-37-80-1-trace");
+}
+
+/// The printed 37-50 / 37-60 cells of one solid-wood sheet: (size in mm,
+/// the row's id tag, the band in mm/tooth). The bands are the printed
+/// inch values x 25.4: .003-.006, .004-.006, .006-.008, .008-.010 in
+/// (sources/onsrud_soft_wood_cutting_data.txt lines 24-25 and
+/// sources/onsrud_hard_wood_cutting_data.txt lines 23-24). At 3/8 in both
+/// series print a cell (.003-.006 and .004-.006 in); the lookup serves the
+/// 37-50 row there, and the test pins it.
+const SOLID_WOOD_CELLS: &[(f64, &str, f64, f64)] = &[
+    (4.7625, "37-50-3_16", 0.0762, 0.1524),
+    (6.35, "37-50-1_4", 0.0762, 0.1524),
+    (9.525, "37-50-3_8", 0.0762, 0.1524),
+    (12.7, "37-60-1_2", 0.1016, 0.1524),
+    (19.05, "37-60-3_4", 0.1524, 0.2032),
+    (25.4, "37-60-1", 0.2032, 0.254),
+];
+
+/// 2026-10-01 (operator: "yes to loading the rows"): a 90 deg 2-flute
+/// V-bit on a trace pass in softwood and in hardwood gets the Onsrud sheet
+/// row of its own material at each printed size. The row is read at its
+/// printed key (ruling B4), so the band is the printed band: no size or
+/// hardness scale, not extrapolated.
+#[test]
+fn a_90_degree_vbit_in_solid_wood_gets_the_onsrud_sheet_row_g2() {
+    for (material, janka, tag, source) in [
+        (
+            MaterialFamily::Softwood,
+            600.0,
+            "softwood",
+            "onsrud_soft_wood_cutting_data",
+        ),
+        (
+            MaterialFamily::Hardwood,
+            1450.0,
+            "hardwood",
+            "onsrud_hard_wood_cutting_data",
+        ),
+    ] {
+        for &(d, cell, min_mm, max_mm) in SOLID_WOOD_CELLS {
+            let row = row_at(&trace_query(d, 2, material, janka), 90.0);
+            let label = format!("{tag} {d} mm");
+            assert_eq!(
+                row.observation_id,
+                format!("onsrud-{tag}-{cell}-trace"),
+                "{label}"
+            );
+            assert_eq!(source_of(&row.observation_id), source, "{label}");
+            assert!((row.row_diameter_mm - d).abs() < 1e-9, "{label}");
+            assert!((row.chipload_diameter_scale - 1.0).abs() < 1e-15, "{label}");
+            assert!((row.chipload_hardness_scale - 1.0).abs() < 1e-15, "{label}");
+            assert!(!row.is_extrapolated, "{label}");
+            let min = row.chip_load_min_mm.expect("the row prints a band");
+            let max = row.chip_load_max_mm.expect("the row prints a band");
+            assert!((min - min_mm).abs() < 1e-12, "{label}: min {min}");
+            assert!((max - max_mm).abs() < 1e-12, "{label}: max {max}");
+        }
+    }
 }

@@ -36,7 +36,16 @@ use crate::feeds::vendor_lut::{HardnessKind, MaterialFamily, ToolFamily, VendorO
 ///   3.175 mm: soft 0.152, hard 0.102 mm, printed as 0.006 and 0.004 in,
 ///   so 0.006 / 0.004 = 1.50);
 /// - flat end 1.43: range [1.00, 1.43], n 14;
-/// - V-bit 1.42: range [1.00, 1.42], n 19 (Amana insert V-groove v16, §1.3);
+/// - V-bit 1.00 (2026-10-01; was 1.42). §1.3 took the 1.42 from the
+///   insert V-groove v16 rows of `amana_vbit.json` (softwood 0.040-0.085,
+///   hardwood 0.028-0.060 mm, mid ratio 0.0625 / 0.044). Finding G5 D1
+///   showed that no number in those rows is on the chart, and the rows are
+///   retired. The stored chart text
+///   (`planning/extrapolation_2026-09-24/fetch/G5/sources/amana_insert_v_groove_v16.txt`)
+///   prints .0024 in in both columns, 1.00. The other 18 pairs of §1.3
+///   (Onsrud 37-series, AMS-159, Spektra engraving) print 1.00, and so do
+///   the Onsrud 37-50 / 37-60 Soft Wood and Hard Wood rows loaded on the
+///   same day. So the largest printed V-bit ratio is 1.00;
 /// - tapered ball 1.00: 1.00, n 2 (Onsrud 77-100 prints one band for both);
 /// - facing bit 1.30: 1.30, n 1;
 /// - bull nose 1.33: range [1.25, 1.33], n 2 (A3 step 4, orchestrator
@@ -48,7 +57,7 @@ use crate::feeds::vendor_lut::{HardnessKind, MaterialFamily, ToolFamily, VendorO
 pub const SOFT_OVER_HARD_PRINTED_MAX: &[(ToolFamily, f64)] = &[
     (ToolFamily::BallNose, 1.50),
     (ToolFamily::FlatEnd, 1.43),
-    (ToolFamily::ChamferVbit, 1.42),
+    (ToolFamily::ChamferVbit, 1.00),
     (ToolFamily::TaperedBallNose, 1.00),
     (ToolFamily::FacingBit, 1.30),
     (ToolFamily::BullNose, 1.33),

@@ -1345,15 +1345,17 @@ mod tests {
     /// Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ...
     /// as a trace"): `lut_query_for` now routes `ChamferVbit` to
     /// `(Trace, Finish)` instead of refusing, so this cell is no longer
-    /// `Unmodeled`. The gate's LUT query lands on the same printed row
-    /// `predicted_feed_gates_f035.rs`'s `OperationType::Trace` fixture
-    /// reads for this tool: `amana-vbit-hardwood-trace-6000-2f`
-    /// (0.028-0.060 mm/tooth printed at 6.0 mm; 0.028985-0.062111 at the
-    /// 6.35 mm key, ruling B4 form C x1.035189). 0.045 mm/tooth sits
-    /// inside that band.
+    /// `Unmodeled`. The gate's LUT query lands on the printed trace row of
+    /// this 6.35 mm 90 degree tool: since 2026-10-01 the Onsrud 37-50 1/4 in
+    /// Hard Wood row `onsrud-hardwood-37-50-1_4-trace` (.003-.006 in =
+    /// 0.0762-0.1524 mm/tooth, printed at 6.35 mm, so no size claim). The
+    /// sample sits at the band middle, (0.0762 + 0.1524) / 2 = 0.1143.
+    /// Before, the row was `amana-vbit-hardwood-trace-6000-2f` with the
+    /// sample at 0.045; that row is retired (finding G5 D1: not on its
+    /// chart), and 0.045 is under the Onsrud band.
     #[test]
     fn project_curve_vbit_routes_to_the_printed_trace_row() {
-        let t = trace(vec![sample(0, 0, 0.045, 0.5)]);
+        let t = trace(vec![sample(0, 0, 0.1143, 0.5)]);
         let v = evaluate_args(
             0,
             &vbit_tool(),
@@ -1369,9 +1371,15 @@ mod tests {
             &crate::tool_load::ToleranceBands::default(),
         );
         assert!(
-            matches!(v, ChiploadVerdict::Within { .. }),
-            "expected Within (routing landed in the printed V-bit trace row with the sample in \
-             band), got {v:?}"
+            matches!(
+                v,
+                ChiploadVerdict::Within {
+                    burn_advisory: None,
+                    ..
+                }
+            ),
+            "expected Within with no burn advisory (routing landed in the printed V-bit trace \
+             row with the sample in band), got {v:?}"
         );
     }
 
@@ -1629,22 +1637,11 @@ mod tests {
 
     #[test]
     fn chipload_far_below_min_is_exceeds_burn() {
-        // 0.001 mm/tooth — rubbing, on the V-bit fixture (see `vbit_trace_lut_min`).
-        let t = trace(vec![vbit_sample(0.001)]);
-        let v = evaluate_args(
-            0,
-            &vbit_tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            None,
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
-            1000.0,
-            OperationType::Trace,
-            &crate::tool_load::ToleranceBands::default(),
-        );
+        // 0.001 mm/tooth — rubbing, on the burn fixture (see
+        // `burn_fixture_lut_min`).
+        let min = burn_fixture_lut_min();
+        assert!(0.001 < min);
+        let v = burn_fixture_verdict(0.001, &crate::tool_load::ToleranceBands::default());
         match v {
             ChiploadVerdict::Exceeds {
                 side: ChipSide::Low,
@@ -2131,14 +2128,11 @@ mod tests {
     }
 
     /// The fixture whose matched row lets the gate trip a HARD `Exceeds(Low)`:
-    /// the Ø6.35 90 degree V-bit ([`vbit_tool`]) on a hard-maple trace
-    /// finish, sampled 3 mm deep (the cone is 6 mm wide, so the depth
-    /// de-rate is 1.0). The LUT query lands on the printed Amana insert
-    /// V-groove row `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060
-    /// mm/tooth, ae 0.15-1.0 mm, Janka 1450). Since ruling B4 (2026-09-25)
-    /// the key is the nominal 6.35 mm: the G1 form C claim scales the band
-    /// x1.035 (0.028985-0.062111), and the raw ratio 1.058 is not flagged
-    /// extrapolated, so the low side stays hard.
+    /// a Ø6.0 ball nose ([`burn_fixture_tool`]) on a hard-maple Scallop
+    /// finish, sampled 3 mm deep (3 / 6 = 0.5 x D, so the depth de-rate is
+    /// 1.0). The LUT query lands on `amana-ball-hardwood-scallop-6000-2f`
+    /// (0.025-0.04 mm/tooth, ae window, Janka 1450) at its own 6.0 mm key:
+    /// no size claim and no extrapolation flag, so the low side stays hard.
     ///
     /// The low side is hard only on a row that publishes both chipload
     /// bounds AND an `ae` window and is not extrapolated
@@ -2146,34 +2140,62 @@ mod tests {
     /// Ø6.35 flat hard-maple pocket cell this module used to read now
     /// resolves to `amana-compression-wood-pocket-6350-2f`, a single-point
     /// band whose low side is advisory by policy, and no printed flat
-    /// 6.35 mm row is two-sided and windowed.
-    const VBIT_LOOKUP_DOC_MM: f64 = 3.0;
+    /// 6.35 mm row is two-sided and windowed. Until 2026-10-01 the fixture
+    /// was the Ø6.35 90 degree V-bit on a trace finish, on the insert
+    /// V-groove row `amana-vbit-hardwood-trace-6000-2f`. That row is
+    /// retired (finding G5 D1: not on its chart). The V-bit now reads the
+    /// printed Onsrud 37-50 1/4 in Hard Wood row, which prints no `ae`
+    /// window, so its low side is advisory and it cannot carry this
+    /// fixture.
+    const BURN_FIXTURE_DOC_MM: f64 = 3.0;
 
-    fn vbit_sample(chipload: f64) -> SimulationCutSample {
+    fn burn_fixture_tool() -> ToolDefinition {
+        use crate::tool::BallEndmill;
+        ToolDefinition::new(
+            Box::new(BallEndmill::new(6.0, 20.0)),
+            6.0,
+            30.0,
+            20.0,
+            30.0,
+            2,
+            crate::compute::tool_config::ToolMaterial::Carbide,
+        )
+    }
+
+    fn burn_fixture_sample(chipload: f64) -> SimulationCutSample {
         let mut s = sample(0, 0, chipload, 0.5);
-        s.axial_doc_mm = VBIT_LOOKUP_DOC_MM;
-        s.axial_engagement_mm = VBIT_LOOKUP_DOC_MM;
+        s.axial_doc_mm = BURN_FIXTURE_DOC_MM;
+        s.axial_engagement_mm = BURN_FIXTURE_DOC_MM;
         s
     }
 
-    /// The band minimum of the row the gate matches for [`vbit_tool`] on a
-    /// hard-maple trace finish.
-    fn vbit_trace_lut_min() -> f64 {
-        let t = trace(vec![vbit_sample(0.04)]);
-        let v = evaluate_args(
+    /// The gate's verdict for the burn fixture at `chipload` mm/tooth.
+    fn burn_fixture_verdict(
+        chipload: f64,
+        bands: &crate::tool_load::ToleranceBands,
+    ) -> ChiploadVerdict {
+        let t = trace(vec![burn_fixture_sample(chipload)]);
+        evaluate_args(
             0,
-            &vbit_tool(),
+            &burn_fixture_tool(),
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
             None,
-            LutOperationFamily::Trace,
+            LutOperationFamily::Scallop,
             LutPassRole::Finish,
             1000.0,
-            OperationType::Trace,
-            &crate::tool_load::ToleranceBands::default(),
-        );
+            OperationType::Scallop,
+            bands,
+        )
+    }
+
+    /// The band minimum of the row the gate matches for the burn fixture.
+    /// The bounds must be the hard class, or the low-side tests below
+    /// measure nothing.
+    fn burn_fixture_lut_min() -> f64 {
+        let v = burn_fixture_verdict(0.03, &crate::tool_load::ToleranceBands::default());
         match v {
             ChiploadVerdict::Within {
                 approach_to_max, ..
@@ -2181,10 +2203,17 @@ mod tests {
             | ChiploadVerdict::Exceeds {
                 triggering: approach_to_max,
                 ..
-            } => approach_to_max
-                .bounds
-                .min_mm_per_tooth
-                .expect("LUT row carries a min for the chosen fixture"),
+            } => {
+                assert_eq!(
+                    approach_to_max.bounds.source,
+                    ChipBoundsSource::VendorLut,
+                    "the burn fixture must match a row whose low side is hard"
+                );
+                approach_to_max
+                    .bounds
+                    .min_mm_per_tooth
+                    .expect("LUT row carries a min for the chosen fixture")
+            }
             other => panic!("expected a judged verdict, got {other:?}"),
         }
     }
@@ -2261,27 +2290,13 @@ mod tests {
 
     #[test]
     fn chipload_low_just_below_min_within_tolerance_is_within() {
-        let min = vbit_trace_lut_min();
+        let min = burn_fixture_lut_min();
         let probe = min * 0.96;
-        let t = trace(vec![vbit_sample(probe)]);
         let bands = crate::tool_load::ToleranceBands {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate_args(
-            0,
-            &vbit_tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            None,
-            LutOperationFamily::Contour,
-            LutPassRole::Finish,
-            1000.0,
-            OperationType::Profile,
-            &bands,
-        );
+        let v = burn_fixture_verdict(probe, &bands);
         assert!(
             matches!(v, ChiploadVerdict::Within { .. }),
             "expected Within with burn_tolerance=0.05 at 0.96×min, got {v:?}"
@@ -2290,27 +2305,13 @@ mod tests {
 
     #[test]
     fn chipload_low_below_tolerance_is_exceeds() {
-        let min = vbit_trace_lut_min();
+        let min = burn_fixture_lut_min();
         let probe = min * 0.94;
-        let t = trace(vec![vbit_sample(probe)]);
         let bands = crate::tool_load::ToleranceBands {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
-        let v = evaluate_args(
-            0,
-            &vbit_tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            Some(&t),
-            None,
-            LutOperationFamily::Trace,
-            LutPassRole::Finish,
-            1000.0,
-            OperationType::Trace,
-            &bands,
-        );
+        let v = burn_fixture_verdict(probe, &bands);
         assert!(
             matches!(
                 v,
