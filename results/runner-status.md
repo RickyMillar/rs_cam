@@ -56,3 +56,29 @@ rivmap350 0.2 mm: re-run peak 14.64 -> ~5 GiB; metrics ON now fits at
 Breaking changes are listed in the branch's FEATURE_CATALOG diff (CLI
 `project` needs --output-dir; null trace figures; generate_all reply keys).
 The branch is ready for the operator's merge call.
+
+## 2026-10-02 ~05:50 UTC: state for the lead
+
+- origin/master = 0617bf8e (memory programme waves 1-3, pushed 2026-10-02).
+- Local branch memory-budget-2026-10-01 = 410bb857, 15 commits ahead of
+  master, all gates green (fmt, clippy -D warnings, focused core tests incl.
+  perf goldens, viz 1101/0, cli, mcp), NOT merged until Ricky's on-screen look:
+  - Wave 4 (operator rulings 2026-10-02): "Capture cutting metrics" checkbox
+    and the core metrics flag DELETED (always capture); default memory budget
+    = half of system RAM; File > Preferences sets it, applied live.
+  - Preferences window with a category bar: General, Memory, Display,
+    Simulation, Files & Libraries, Diagnostics, Automation. New core module
+    crates/rs_cam_core/src/settings/ (one loader/writer for
+    ~/.config/rs_cam/settings.toml). Cut-trace files are NOT written by default
+    (operator ruling); artifacts moved from <build tree>/target to
+    ~/.cache/rs_cam/artifacts. Library folders: env > settings > default, CLI
+    resolves the same.
+  - Cut-metric cards: the bottom time-series drawer is DELETED; each card flips
+    to a sparkline (median line over a faint min-max band, whole run + limits),
+    and a < > button opens one trace in a zoomable modal.
+- rivmap350 0.2 mm, metrics always on: generate + simulate peak 7.32 GiB,
+  6.72 GiB at rest (was OOM at 16 GiB).
+- Please avoid these areas until the merge: ui/preferences.rs, ui/sim_diagnostics.rs,
+  ui/components/sparkline.rs, ui/sim_trace_modal.rs, ui/sim_timeline.rs,
+  core settings/, budget/, compute/worker*.
+- Jobs 001-008 answered; the queue is empty.
