@@ -151,7 +151,15 @@ enum Arm {
     },
     /// One whole-board Parallel raster (`DropCutter`) at the equal-cusp
     /// stepover for R1 / h.
-    Raster { cusp: f64 },
+    Raster {
+        cusp: f64,
+        /// The raster stepover holds `cusp` up to this slope (degrees): XY
+        /// stepover = equal-cusp stepover x cos(slope). 0 = the flat value.
+        design_slope_deg: f64,
+        /// Some(θ): the raster runs on slopes 0..θ and an R1 iso scallop
+        /// (h `cusp`) on θ..90.
+        split_deg: Option<f64>,
+    },
     /// R2 iso h `semi` then R1 iso h `cusp`, both whole board.
     Semi { semi: f64, cusp: f64 },
     /// The tier planner.
@@ -204,7 +212,37 @@ fn arm_of(name: &str) -> Arm {
         "T7" => tier(vec![H1, R2, R1], 0.15, iso, None),
         "T8" => tier(vec![H1, R1], 0.15, iso, None),
         "T9" => tier(vec![R2, R1], 0.15, iso, Some(0.05)),
-        "C1" => Arm::Raster { cusp: 0.03 },
+        "C1" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 0.0,
+            split_deg: None,
+        },
+        // Raster family (added 2026-10-02 after C1 ran 3.1 h).
+        "R45" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 45.0,
+            split_deg: None,
+        },
+        "R60" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 60.0,
+            split_deg: None,
+        },
+        "R70" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 70.0,
+            split_deg: None,
+        },
+        "RS30" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 30.0,
+            split_deg: Some(30.0),
+        },
+        "RS45" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 45.0,
+            split_deg: Some(45.0),
+        },
         "C2" => Arm::Whole {
             tool: R1,
             cusp: 0.03,
@@ -639,9 +677,15 @@ fn configure_arm(
                 tool_id(*tool)
             ));
         }
-        Arm::Raster { cusp } => {
-            let stepover = equal_cusp_stepover_mm(1.0, *cusp);
-            let mut cfg = session.toolpath_configs()[scallop].clone();
+        Arm::Raster {
+            cusp,
+            design_slope_deg,
+            split_deg,
+        } => {
+            let stepover = equal_cusp_stepover_mm(1.0, *cusp) * design_slope_deg.to_radians().cos();
+            let slope_to = split_deg.unwrap_or(90.0);
+            let original = session.toolpath_configs()[scallop].clone();
+            let mut cfg = original.clone();
             let mut op = OperationConfig::new_default(OperationType::DropCutter);
             match &mut op {
                 OperationConfig::DropCutter(d) => {
@@ -649,7 +693,7 @@ fn configure_arm(
                     d.scallop_height = Some(*cusp);
                     // The scallop op ran full slope range 0..90 too.
                     d.slope_from = 0.0;
-                    d.slope_to = 90.0;
+                    d.slope_to = slope_to;
                 }
                 _ => unreachable!(),
             }
@@ -664,9 +708,28 @@ fn configure_arm(
                 .expect("replace op 2 with a raster");
             notes.push(format!(
                 "op {SCALLOP_ID} replaced by DropCutter (parallel raster), stepover {stepover} = \
-                 equal_cusp_stepover_mm(1.0, {cusp}); op 2's boundary, heights and dressups kept; \
-                 raster min_z default"
+                 equal_cusp_stepover_mm(1.0, {cusp}) x cos({design_slope_deg} deg); slope 0..{slope_to}; \
+                 op 2's boundary, heights and dressups kept; raster min_z default"
             ));
+            if let Some(split) = split_deg {
+                let mut steep = original;
+                steep.name = format!("R1 iso h {cusp} on slopes {split}..90");
+                let created = session
+                    .apply(Command::AddToolpath(AddToolpathArgs {
+                        setup_index: 0,
+                        config: Box::new(steep),
+                    }))
+                    .expect("add the steep op")
+                    .created
+                    .expect("add_toolpath reports the index");
+                set_tool(session, created, R1_TOOL);
+                dial_scallop(session, created, *cusp, true);
+                set_param(session, created, "slope_from", json!(split));
+                set_param(session, created, "slope_to", json!(90.0));
+                notes.push(format!(
+                    "new op (index {created}) = R1 iso h {cusp}, slopes {split}..90, after the raster"
+                ));
+            }
         }
         Arm::Semi { semi, cusp } => {
             // The R1 finish: a copy of op 2 appended at the end of the setup.
