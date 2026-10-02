@@ -101,7 +101,10 @@ fn a_waterline_level_closes_no_contour_inside_a_hill() {
     let radii: Vec<f64> = contours
         .iter()
         .map(|c| {
-            c.iter().map(|p| (p.x * p.x + p.y * p.y).sqrt()).sum::<f64>() / c.len() as f64
+            c.iter()
+                .map(|p| (p.x * p.x + p.y * p.y).sqrt())
+                .sum::<f64>()
+                / c.len() as f64
         })
         .collect();
     eprintln!("contour mean radii {radii:?}");

@@ -14,6 +14,32 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-02 (cloud session) — G-FLUTETOP: the waterline walked inside hills taller than the flutes
+
+- **Safety defect, fixed.** The push cutter (`surface/pushcutter.rs`), which
+  every waterline and the steep band of Unified Finish use, treated the tool
+  as only as tall as its flutes: mesh more than `cutting_length` above a
+  waterline level was skipped. Under a hill taller than the flutes the
+  fiber read free and the waterline traced a FED loop inside the hill.
+  Found by the tier trial (`planning/tier_trial_2026-10-01/`): arm T5
+  (GUI-default tiers [R2, R1], Unified Finish, 350 board, 42 mm relief, 20 mm
+  flutes) cut columns to the stock bottom. On a x3 rivmap100 tier-0 op: 852
+  fed moves buried > 1 mm (deepest 28.9 mm) -> 0. A second cause: each
+  contact was a separate fiber interval, so under a triangle wider than the
+  cutter the stretch between the edge contacts read free; one triangle now
+  adds the hull of its contacts (exact: the blocked set is convex).
+  Sentry `waterline_sees_material_above_the_flute_top_g_flutetop`. Pins
+  moved with this cause: `finish_resolution_policy_pr3` (two fingerprints,
+  burial audit unchanged or better), `pushcutter_band_query_g1` reference,
+  `ops/waterline.rs` `test_waterline_well_below_mesh`.
+  Any Waterline or Unified Finish op generated before this commit on a part
+  with relief taller than the tool's flutes must be regenerated and
+  re-simulated before it is cut.
+- **Instrument gap (open).** `compute/simulate.rs` column deviations drop a
+  column more than max(0.5 x model thickness, 2 mm) from the model, so a
+  deep gouge leaves the statistics and the minimum reads clipped (-21 mm on
+  the 350 board). Follow-up: report dropped columns instead of hiding them.
+
 ## Update 2026-10-01 (cloud session) — boundary phantom strike; Onsrud 90 degree V-bit rows
 
 - **G-BOUNDARYPHANTOM** (`7a7c867d`): with a boundary, the adaptive3d

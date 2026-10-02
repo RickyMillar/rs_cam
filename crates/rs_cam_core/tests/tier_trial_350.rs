@@ -256,9 +256,10 @@ fn arm_uses_h1(arm: &Arm) -> bool {
 /// defaults.
 fn blob_islands(mut spec: MultitoolPlanSpec, notes: &mut Vec<String>) -> MultitoolPlanSpec {
     let num = |k: &str| {
-        std::env::var(k)
-            .ok()
-            .map(|v| v.parse::<f64>().unwrap_or_else(|_| panic!("{k} is a number")))
+        std::env::var(k).ok().map(|v| {
+            v.parse::<f64>()
+                .unwrap_or_else(|_| panic!("{k} is a number"))
+        })
     };
     if let Some(r) = num("TIER_TRIAL_CLOSE_MM") {
         spec.islands.close_radius_mm = Some(r);
