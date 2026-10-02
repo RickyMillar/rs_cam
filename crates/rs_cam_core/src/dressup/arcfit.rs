@@ -33,6 +33,13 @@ use crate::trace::transform_provenance::Transformed;
 /// near the middle, which the even count samples exactly.
 const ARC_DEVIATION_SAMPLES: usize = 8;
 
+// The number of moves `fit_arcs_within` read to find where a same-feed run
+// ends (G-ARCFITSCAN sentry, `tests::run_scan_reads_are_linear_in_moves`).
+#[cfg(test)]
+thread_local! {
+    static RUN_SCAN_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
 /// `tolerance` is the maximum allowed deviation (mm) between the original linear
@@ -181,33 +188,43 @@ pub(crate) fn fit_arcs_within(
         // finishing pass never cut. Equality is strict: `Unknown` breaks
         // against every tagged intent (Checkpoint F1 Q3).
         let run_intent = m.intent;
-        let mut end_idx = i;
-        while end_idx < moves.len() {
-            match moves[end_idx].move_type {
-                MoveType::Linear { feed_rate: f }
-                    if (f - feed_rate).abs() < FEED_EPS && moves[end_idx].intent == run_intent =>
-                {
-                    end_idx += 1;
+        // G-ARCFITSCAN (2026-10-02): the run end is found LAZILY, one move
+        // past what the greedy loop below has already accepted. The old
+        // code scanned the whole same-feed run up front for every `i`; a
+        // serpentine raster is one run of N linear moves where almost every
+        // `i` is a straight-line reject that advances by one, so the scan
+        // cost N²/2 (160 k moves: 38 s of a 44 s generation). Reading
+        // `moves[k]` only when the loop needs index `k` visits the same
+        // indices the loop reads, so the emitted arcs are unchanged.
+        //
+        // `end_idx` of the old code was `min(first ineligible k >= i,
+        // first barrier b > i)`; `run_end <= end_idx` is therefore
+        // "`run_end` is at most that barrier and every move in
+        // `i..run_end` is eligible", which `extends_to` answers one index
+        // at a time.
+        let barrier_cap = if spans_valid {
+            barriers.range((i + 1)..).next().copied()
+        } else {
+            None
+        };
+        let eligible = |k: usize| -> bool {
+            #[cfg(test)]
+            RUN_SCAN_READS.with(|c| c.set(c.get() + 1));
+            match moves.get(k).map(|mv| (mv.move_type, mv.intent)) {
+                Some((MoveType::Linear { feed_rate: f }, intent)) => {
+                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent
                 }
-                _ => break,
+                _ => false,
             }
-        }
-
-        // Honor span barriers: cap end_idx at the first barrier strictly after
-        // i. A barrier at index b (i < b <= end_idx) means we cannot include
-        // moves[b..] in this arc — that would erase the barrier between moves
-        // i-1..i and moves b. We can still arc-fit moves[i..b].
-        if spans_valid
-            && i < end_idx
-            && let Some(&b) = barriers.range((i + 1)..=end_idx).next()
-        {
-            end_idx = b;
-        }
-
-        let segment_count = end_idx - i;
+        };
+        // `moves[i]` is eligible by construction (its own feed and intent).
+        // `extends_to(n)`: may the run take the moves `i..n`? Called with
+        // n = i + 2, i + 3, ... in order, each call reading one new move.
+        let extends_to =
+            |n: usize| -> bool { barrier_cap.is_none_or(|b| n <= b) && eligible(n - 1) };
 
         // Need at least 3 points (start + 2 segments) to fit an arc
-        if segment_count < 2 {
+        if !extends_to(i + 2) {
             let new_idx = result.moves.len();
             result.moves.push(m.clone());
             old_to_new.push(Some(new_idx..new_idx + 1));
@@ -219,9 +236,9 @@ pub(crate) fn fit_arcs_within(
         let mut best_arc_end = i;
         let mut best_arc: Option<ArcParams> = None;
 
-        // Try progressively longer runs
+        // Try progressively longer runs. `i + 2` was admitted above.
         let mut run_end = i + 2; // minimum 2 segments (3 points)
-        while run_end <= end_idx {
+        loop {
             let points: Vec<&P3> = std::iter::once(start)
                 .chain((i..run_end).map(|j| &moves[j].target))
                 .collect();
@@ -235,6 +252,9 @@ pub(crate) fn fit_arcs_within(
                 best_arc_end = run_end;
                 best_arc = Some(arc);
                 run_end += 1;
+                if !extends_to(run_end) {
+                    break;
+                }
             } else {
                 break;
             }
@@ -1022,6 +1042,49 @@ mod tests {
             })
             .count();
         assert!(arc_count > 0, "Should have at least one arc move");
+    }
+
+    /// G-ARCFITSCAN (2026-10-02): a serpentine raster is one same-feed run
+    /// of linear moves. The run end used to be scanned from every start
+    /// move, N²/2 reads for N moves (the tier trial's 350 mm raster: 411 s
+    /// at stepover 0.486, > 3 h at 0.243). The lazy scan reads each move a
+    /// bounded number of times. The bound below is 4 reads per move; the
+    /// old scan read ~N/2 per move (1500 at N = 3000).
+    #[test]
+    fn run_scan_reads_are_linear_in_moves() {
+        let reads_for = |rows: usize| -> (u64, usize) {
+            // Rows of 30 collinear 1 mm segments, joined by a 0.5 mm
+            // stepover: no three consecutive points lie on a circle that
+            // fits, so every start move is tried.
+            let mut tp = Toolpath::new();
+            tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+            tp.feed_to(P3::new(0.0, 0.0, 0.0), 500.0);
+            for r in 0..rows {
+                let y = r as f64 * 0.5;
+                for k in 1..=30 {
+                    let x = if r % 2 == 0 {
+                        k as f64
+                    } else {
+                        30.0 - k as f64
+                    };
+                    tp.feed_to(P3::new(x, y, 0.0), 1000.0);
+                }
+                let x_end = if r % 2 == 0 { 30.0 } else { 0.0 };
+                tp.feed_to(P3::new(x_end, y + 0.5, 0.0), 1000.0);
+            }
+            let n = tp.moves.len();
+            RUN_SCAN_READS.with(|c| c.set(0));
+            let out = without_provenance(fit_arcs(AnnotatedToolpath::new(tp), 0.015, 3.0));
+            assert_eq!(out.toolpath.moves.len(), n, "no arcs on a straight raster");
+            (RUN_SCAN_READS.with(std::cell::Cell::get), n)
+        };
+        for rows in [25, 100] {
+            let (reads, n) = reads_for(rows);
+            assert!(
+                reads <= 4 * n as u64,
+                "{reads} run-scan reads for {n} moves: the run end is rescanned per start move"
+            );
+        }
     }
 
     #[test]
