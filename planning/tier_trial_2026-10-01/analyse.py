@@ -45,6 +45,8 @@ LABELS = {
     "C1_p": ("R1 parallel raster, s 0.49", "style"),
     "R45_p": ("R1 parallel raster, s 0.34 (cusp held to 45°)", "style"),
     "R60_p": ("R1 parallel raster, s 0.24 (cusp held to 60°)", "style"),
+    "R65_p": ("R1 parallel raster, s 0.21 (cusp held to 65°)", "style"),
+    "R70_p": ("R1 parallel raster, s 0.17 (cusp held to 70°)", "style"),
     "RS45_p": ("R1 raster <45° + iso >45° (split)", "style"),
     "C2_p": ("R1 scallop, not iso (cascade)", "style"),
 }
