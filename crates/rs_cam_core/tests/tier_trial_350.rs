@@ -228,6 +228,11 @@ fn arm_of(name: &str) -> Arm {
             design_slope_deg: 60.0,
             split_deg: None,
         },
+        "R65" => Arm::Raster {
+            cusp: 0.03,
+            design_slope_deg: 65.0,
+            split_deg: None,
+        },
         "R70" => Arm::Raster {
             cusp: 0.03,
             design_slope_deg: 70.0,

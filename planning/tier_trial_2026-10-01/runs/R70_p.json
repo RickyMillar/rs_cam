@@ -1,0 +1,1282 @@
+{
+  "arm": "R70",
+  "arm_spec": "Raster { cusp: 0.03, design_slope_deg: 70.0, split_deg: None }",
+  "board": {
+    "area_dev_gt_0_30_mm2": 996.0,
+    "area_dev_lt_m0_02_mm2": 0.0,
+    "cell_mm": 0.25,
+    "map": "R70_p_board.png",
+    "population_area_mm2_by_columns": 118508.0,
+    "resolution_clamped": false,
+    "stats": {
+      "frac_dev_gt_0_06": 0.07751586390792183,
+      "frac_dev_lt_m0_02": 0.0,
+      "max": 18.54738998413086,
+      "min": -0.008641541935503483,
+      "n": 1896128,
+      "p50": 0.005740240681916475,
+      "p90": 0.04537101089954376,
+      "p99": 0.27466103434562683
+    }
+  },
+  "cell_check": null,
+  "fixture": "planning/fixtures/rivmap100/rivmap100_memory_repro.toml",
+  "frames": {
+    "model_bbox_world": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        350.0,
+        350.0,
+        42.0
+      ]
+    ],
+    "stock_bbox_world": [
+      [
+        -15.0,
+        -80.0,
+        -3.0
+      ],
+      [
+        365.0,
+        430.0,
+        43.0
+      ]
+    ],
+    "window_rule": "centre = model_bbox.min + 350*(k+0.5)/4 in x and y; world frame; identity setup",
+    "window_z": [
+      -3.0,
+      43.0
+    ]
+  },
+  "map_legend": {
+    "bands": [
+      {
+        "from_mm": "-inf",
+        "rgb": [
+          80,
+          0,
+          120
+        ]
+      },
+      {
+        "from_mm": -0.05,
+        "rgb": [
+          200,
+          0,
+          60
+        ]
+      },
+      {
+        "from_mm": -0.02,
+        "rgb": [
+          120,
+          170,
+          255
+        ]
+      },
+      {
+        "from_mm": 0.0,
+        "rgb": [
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "from_mm": 0.015,
+        "rgb": [
+          255,
+          245,
+          170
+        ]
+      },
+      {
+        "from_mm": 0.03,
+        "rgb": [
+          255,
+          210,
+          90
+        ]
+      },
+      {
+        "from_mm": 0.045,
+        "rgb": [
+          250,
+          160,
+          40
+        ]
+      },
+      {
+        "from_mm": 0.06,
+        "rgb": [
+          230,
+          90,
+          20
+        ]
+      },
+      {
+        "from_mm": 0.1,
+        "rgb": [
+          180,
+          30,
+          20
+        ]
+      },
+      {
+        "from_mm": 0.3,
+        "rgb": [
+          90,
+          0,
+          0
+        ]
+      },
+      {
+        "from_mm": 1.0,
+        "rgb": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "orientation": "north (+y) up, +x right",
+    "outside_population_rgb": [
+      150,
+      150,
+      150
+    ]
+  },
+  "notes": [
+    "op 2 replaced by DropCutter (parallel raster), stepover 0.16629355616901337 = equal_cusp_stepover_mm(1.0, 0.03) x cos(70 deg); slope 0..90; op 2's boundary, heights and dressups kept; raster min_z default",
+    "planner dressup policy (for_op, arc = cusp/2) on finish ops (id, cusp) [(2, 0.03)]"
+  ],
+  "ops": [
+    {
+      "arc_fitting": {
+        "tolerance": 0.05
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 0.0,
+        "source": "Stock"
+      },
+      "counts": {
+        "entry_runs": 356,
+        "rapid_runs": 357,
+        "retract_moves": 356
+      },
+      "cutting_mm": 135992.0,
+      "feed_mm_min": 4720.0,
+      "feeds_provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 0.012789077,
+      "hypothetical_tool": false,
+      "id": 7,
+      "iso_field": null,
+      "kind": "face",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "machine_max_feed": 1.0
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -36.440677966101696,
+        "moves_total": 356,
+        "moves_touched": 0,
+        "strategy": "constrained_max"
+      },
+      "move_count": 3575,
+      "name": "Face 5",
+      "pencil": null,
+      "planner_tier": null,
+      "plunge_mm_min": 2360.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 142896.95588651104,
+      "retract_trips": 357,
+      "role": "face_rough",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 2738.7220428452524,
+        "entry": 56.88724488037609,
+        "linking": 0.0,
+        "rapid": 1214.0862240619085,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 4009.695511787655,
+      "scallop_height": null,
+      "stepover": 1.432,
+      "stock_source": "Fresh",
+      "tool_id": 3,
+      "tool_name": "End Mill"
+    },
+    {
+      "arc_fitting": {
+        "tolerance": 0.05
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 1.0,
+        "source": "Model Silhouette"
+      },
+      "counts": {
+        "entry_runs": 2411,
+        "rapid_runs": 2012,
+        "retract_moves": 2009
+      },
+      "cutting_mm": 921182.007201441,
+      "feed_mm_min": 4720.856166118225,
+      "feeds_provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 140.461578782,
+      "hypothetical_tool": false,
+      "id": 1,
+      "iso_field": null,
+      "kind": "adaptive3d",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "chipload_max": 0.09065755980331705,
+          "kinematic_reach": 0.7028200709365628,
+          "machine_max_feed": 0.19998735157868108,
+          "plunge_rate": 0.006535017681438968
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -39.33936521238793,
+        "moves_total": 189747,
+        "moves_touched": 137752,
+        "strategy": "constrained_max"
+      },
+      "move_count": 197176,
+      "name": "3D Rough ladder 8 > 2",
+      "pencil": null,
+      "planner_tier": null,
+      "plunge_mm_min": 2360.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 409890.4687772102,
+      "retract_trips": 2012,
+      "role": "face_rough",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 16513.678386406533,
+        "entry": 4397.86980368572,
+        "linking": 446.7769626386142,
+        "rapid": 4880.84391207283,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 26239.169064803827,
+      "scallop_height": null,
+      "stepover": 0.8260000000000001,
+      "stock_source": "FromRemainingStock",
+      "tool_id": 3,
+      "tool_name": "End Mill"
+    },
+    {
+      "arc_fitting": {
+        "tolerance": 0.015
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 1.0,
+        "source": "Model Silhouette"
+      },
+      "counts": {
+        "entry_runs": 1,
+        "rapid_runs": 2,
+        "retract_moves": 1
+      },
+      "cutting_mm": 940291.536955123,
+      "feed_mm_min": 2743.0,
+      "feeds_provenance": {
+        "feed_rate": {
+          "reference": "spetool-tapered-hardwood-parallel-2000-2f",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "reference": "spetool-tapered-hardwood-parallel-2000-2f",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 122.579102265,
+      "hypothetical_tool": false,
+      "id": 2,
+      "iso_field": null,
+      "kind": "drop_cutter",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "chipload_max": 0.8764567753565486,
+          "kinematic_reach": 0.118618690864651,
+          "machine_max_feed": 0.004354823953564809,
+          "plunge_rate": 0.0005697098252355248
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -1.5922741932988185,
+        "moves_total": 4426815,
+        "moves_touched": 4407537,
+        "strategy": "constrained_max"
+      },
+      "move_count": 4426819,
+      "name": "Parallel raster R1 s 0.1663",
+      "pencil": null,
+      "planner_tier": null,
+      "plunge_mm_min": 240.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 9.00785256024431,
+      "retract_trips": 2,
+      "role": "finish",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 30080.060702523497,
+        "entry": 0.7594110934792445,
+        "linking": 0.0,
+        "rapid": 0.5091559423131637,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 30081.32926955931,
+      "scallop_height": 0.03,
+      "stepover": 0.16629355616901337,
+      "stock_source": "Fresh",
+      "tool_id": 6,
+      "tool_name": "R1.0mm x 6mm x 20mm 2F Tapered Ball"
+    }
+  ],
+  "peak_rss_kb": {
+    "after_board": 8642640,
+    "end": 8642640
+  },
+  "plan": "planning/tier_trial_2026-10-01/PLAN.md",
+  "population": {
+    "inset_area_mm2": 118508.0,
+    "inset_vertex_count": 2758,
+    "rule": "inside silhouette_machining_outline(model_silhouette(mesh, 0.5 mm)) inset 3 mm by offset_polygon",
+    "scanline_vs_contains_point": {
+      "checked": 1969,
+      "mismatched": 0
+    },
+    "silhouette_area_mm2": 122674.875
+  },
+  "quantile_rule": "nearest rank: sorted[ceil(p*n)-1]",
+  "refused": false,
+  "suggest": [
+    {
+      "after": {
+        "dpp": 0.8180000000000001,
+        "feed": 4720.0,
+        "plunge": 2360.0,
+        "rpm": 18000,
+        "stepover": 1.432
+      },
+      "before": {
+        "dpp": 0.812,
+        "feed": 2200.0,
+        "plunge": 500.0,
+        "rpm": 18000,
+        "stepover": 1.422
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 7,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.13113489350328403, chip_load_min_mm: None, chip_load_max_mm: Some(0.13113489350328403), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: None, ap_max_f",
+      "name": "Face 5",
+      "provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      }
+    },
+    {
+      "after": {
+        "dpp": 4.133,
+        "feed": 4720.856166118225,
+        "plunge": 2360.0,
+        "rpm": 18000,
+        "stepover": 0.8260000000000001
+      },
+      "before": {
+        "dpp": 8.0,
+        "feed": 2400.0,
+        "plunge": 500.0,
+        "rpm": 18000,
+        "stepover": 1.2000000000000002
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 1,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.13113489350328403, chip_load_min_mm: None, chip_load_max_mm: Some(0.13113489350328403), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: None, ap_max_f",
+      "name": "3D Rough ladder 8 > 2",
+      "provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      }
+    },
+    {
+      "after": {
+        "dpp": null,
+        "feed": 2743.0,
+        "plunge": 240.0,
+        "rpm": 18000,
+        "stepover": 0.16629355616901337
+      },
+      "before": {
+        "dpp": null,
+        "feed": 1000.0,
+        "plunge": 500.0,
+        "rpm": null,
+        "stepover": 0.16629355616901337
+      },
+      "geometry_put_back_after_suggest": [
+        "stepover: suggest 1 -> arm 0.16629355616901337"
+      ],
+      "id": 2,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.0762, chip_load_min_mm: None, chip_load_max_mm: Some(0.0762), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: None, ap_max_factor: Some(1.0), ae_min_m",
+      "name": "Parallel raster R1 s 0.1663",
+      "provenance": {
+        "feed_rate": {
+          "reference": "spetool-tapered-hardwood-parallel-2000-2f",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "reference": "spetool-tapered-hardwood-parallel-2000-2f",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      }
+    }
+  ],
+  "time": {
+    "face_rough_s": 30248.864576591484,
+    "finish_s": 30081.32926955931,
+    "source": "closing whole-board simulation at 0.25 mm, fixture machine kinematics, default adaptive feed modulation (ConstrainedMax, scale 1.0); trace.toolpath_runtimes[].breakdown.total_s"
+  },
+  "tools": {
+    "H1": null,
+    "R1": 6,
+    "R2": {
+      "id": 12,
+      "source": "planning/fixtures/rivmap100/rivmap100_tiered_finish.toml tool 12"
+    }
+  },
+  "wall": {
+    "closing_sim_s": 315.156764999,
+    "plan_simulations": 1,
+    "total_s": 1474.354316695,
+    "walk_s": 741.168265535,
+    "windows_s": 706.145167323
+  },
+  "windows": {
+    "cell_mm": 0.05,
+    "gouge_attribution_rule": "a column with dev < -0.02 is charged to the first toolpath after which its top was already > 0.02 mm under the model (per-toolpath checkpoints of the window run)",
+    "per_window": [
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          43.75
+        ],
+        "centre_world_mm": [
+          43.75,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 0,
+        "map": "R70_p_w00.png",
+        "max_column_top_z": 27.281858444213867,
+        "secs": 43.295777916,
+        "stats": {
+          "frac_dev_gt_0_06": 0.07803952972298915,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.8792732357978821,
+          "min": -0.0039003363344818354,
+          "n": 251001,
+          "p50": 0.006001398898661137,
+          "p90": 0.04811754822731018,
+          "p99": 0.33731457591056824
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          43.75
+        ],
+        "centre_world_mm": [
+          131.25,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 1,
+        "map": "R70_p_w01.png",
+        "max_column_top_z": 19.004661560058594,
+        "secs": 43.601931973,
+        "stats": {
+          "frac_dev_gt_0_06": 0.05186035115397947,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 1.2406519651412964,
+          "min": -0.004404752980917692,
+          "n": 251001,
+          "p50": 0.004061499610543251,
+          "p90": 0.026315519586205482,
+          "p99": 0.38479530811309814
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          43.75
+        ],
+        "centre_world_mm": [
+          218.75,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 2,
+        "map": "R70_p_w02.png",
+        "max_column_top_z": 24.918132781982422,
+        "secs": 44.685516036,
+        "stats": {
+          "frac_dev_gt_0_06": 0.06509535818582396,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.5595958232879639,
+          "min": -0.006195991765707731,
+          "n": 251001,
+          "p50": 0.005142581649124622,
+          "p90": 0.039328090846538544,
+          "p99": 0.2186833918094635
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          43.75
+        ],
+        "centre_world_mm": [
+          306.25,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 3,
+        "map": "R70_p_w03.png",
+        "max_column_top_z": 32.14288330078125,
+        "secs": 46.571514695,
+        "stats": {
+          "frac_dev_gt_0_06": 0.0515974039944064,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.38674288988113403,
+          "min": -0.003954631742089987,
+          "n": 251001,
+          "p50": 0.005800213664770126,
+          "p90": 0.03578050062060356,
+          "p99": 0.1331205517053604
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          131.25
+        ],
+        "centre_world_mm": [
+          43.75,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 4,
+        "map": "R70_p_w04.png",
+        "max_column_top_z": 25.011226654052734,
+        "secs": 51.121134843,
+        "stats": {
+          "frac_dev_gt_0_06": 0.0982027960047968,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.6848280429840088,
+          "min": -0.006890248507261276,
+          "n": 251001,
+          "p50": 0.006171406712383032,
+          "p90": 0.05892800912261009,
+          "p99": 0.21190862357616425
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          131.25
+        ],
+        "centre_world_mm": [
+          131.25,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 5,
+        "map": "R70_p_w05.png",
+        "max_column_top_z": 32.32133483886719,
+        "secs": 50.872294849,
+        "stats": {
+          "frac_dev_gt_0_06": 0.07468894546236868,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.6807674765586853,
+          "min": -0.007173127494752407,
+          "n": 251001,
+          "p50": 0.005448452662676573,
+          "p90": 0.04648888483643532,
+          "p99": 0.17198356986045837
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          131.25
+        ],
+        "centre_world_mm": [
+          218.75,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 6,
+        "map": "R70_p_w06.png",
+        "max_column_top_z": 21.84048080444336,
+        "secs": 41.292089633,
+        "stats": {
+          "frac_dev_gt_0_06": 0.09316695949418528,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.9688853621482849,
+          "min": -0.003499287413433194,
+          "n": 251001,
+          "p50": 0.005202651489526033,
+          "p90": 0.054163768887519836,
+          "p99": 0.4282378852367401
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          131.25
+        ],
+        "centre_world_mm": [
+          306.25,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 7,
+        "map": "R70_p_w07.png",
+        "max_column_top_z": 27.7875919342041,
+        "secs": 48.141981353,
+        "stats": {
+          "frac_dev_gt_0_06": 0.06840610196772125,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.5662333369255066,
+          "min": -0.003963634371757507,
+          "n": 251001,
+          "p50": 0.006119462661445141,
+          "p90": 0.04307255893945694,
+          "p99": 0.17118582129478455
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          218.75
+        ],
+        "centre_world_mm": [
+          43.75,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 8,
+        "map": "R70_p_w08.png",
+        "max_column_top_z": 14.004186630249023,
+        "secs": 41.413442081,
+        "stats": {
+          "frac_dev_gt_0_06": 0.07072481782941104,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.6043777465820312,
+          "min": -0.00592383835464716,
+          "n": 251001,
+          "p50": 0.004391415510326624,
+          "p90": 0.03911346569657326,
+          "p99": 0.26131510734558105
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          218.75
+        ],
+        "centre_world_mm": [
+          131.25,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 9,
+        "map": "R70_p_w09.png",
+        "max_column_top_z": 29.591588973999023,
+        "secs": 37.161777029,
+        "stats": {
+          "frac_dev_gt_0_06": 0.08811917083995681,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 18.54738998413086,
+          "min": -0.0037648496218025684,
+          "n": 251001,
+          "p50": 0.006472569890320301,
+          "p90": 0.053228672593832016,
+          "p99": 0.2797560691833496
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          218.75
+        ],
+        "centre_world_mm": [
+          218.75,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 10,
+        "map": "R70_p_w10.png",
+        "max_column_top_z": 30.950340270996094,
+        "secs": 41.976131958,
+        "stats": {
+          "frac_dev_gt_0_06": 0.07960127648893829,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.4362139105796814,
+          "min": -0.0046133017167449,
+          "n": 251001,
+          "p50": 0.007098730653524399,
+          "p90": 0.04998725280165672,
+          "p99": 0.17594662308692932
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          218.75
+        ],
+        "centre_world_mm": [
+          306.25,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 11,
+        "map": "R70_p_w11.png",
+        "max_column_top_z": 20.87163543701172,
+        "secs": 44.888324367,
+        "stats": {
+          "frac_dev_gt_0_06": 0.08899167732399473,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.7703279256820679,
+          "min": -0.003786015324294567,
+          "n": 251001,
+          "p50": 0.0060782646760344505,
+          "p90": 0.05326739698648453,
+          "p99": 0.2348351776599884
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          306.25
+        ],
+        "centre_world_mm": [
+          43.75,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 12,
+        "map": "R70_p_w12.png",
+        "max_column_top_z": 21.49425506591797,
+        "secs": 38.241462432,
+        "stats": {
+          "frac_dev_gt_0_06": 0.09667292162182621,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.4359634220600128,
+          "min": -0.004747551865875721,
+          "n": 251001,
+          "p50": 0.007119561545550823,
+          "p90": 0.05826759710907936,
+          "p99": 0.1901782751083374
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          306.25
+        ],
+        "centre_world_mm": [
+          131.25,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 13,
+        "map": "R70_p_w13.png",
+        "max_column_top_z": 23.843551635742188,
+        "secs": 39.709788325,
+        "stats": {
+          "frac_dev_gt_0_06": 0.14062095370137967,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.928931713104248,
+          "min": -0.007465684786438942,
+          "n": 251001,
+          "p50": 0.009231952019035816,
+          "p90": 0.08184938132762909,
+          "p99": 0.3595786690711975
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          306.25
+        ],
+        "centre_world_mm": [
+          218.75,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 14,
+        "map": "R70_p_w14.png",
+        "max_column_top_z": 32.67420196533203,
+        "secs": 44.566588197,
+        "stats": {
+          "frac_dev_gt_0_06": 0.11932223377596105,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.6560031175613403,
+          "min": -0.010394204407930374,
+          "n": 251001,
+          "p50": 0.007967306300997734,
+          "p90": 0.0701981708407402,
+          "p99": 0.266200453042984
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          306.25
+        ],
+        "centre_world_mm": [
+          306.25,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 0,
+            "id": 2,
+            "name": "Parallel raster R1 s 0.1663"
+          }
+        ],
+        "k": 15,
+        "map": "R70_p_w15.png",
+        "max_column_top_z": 31.269058227539062,
+        "secs": 48.605411636,
+        "stats": {
+          "frac_dev_gt_0_06": 0.09117891960589798,
+          "frac_dev_lt_m0_02": 0.0,
+          "max": 0.794380784034729,
+          "min": -0.003468737006187439,
+          "n": 251001,
+          "p50": 0.0081477714702487,
+          "p90": 0.05568123608827591,
+          "p99": 0.20339341461658478
+        }
+      }
+    ],
+    "pooled": {
+      "frac_dev_gt_0_06": 0.0847680885733523,
+      "frac_dev_lt_m0_02": 0.0,
+      "max": 18.54738998413086,
+      "min": -0.010394204407930374,
+      "n": 4016016,
+      "p50": 0.006084767635911703,
+      "p90": 0.05125225707888603,
+      "p99": 0.2456594854593277
+    },
+    "pooled_gouge_columns_by_first_op": [
+      {
+        "columns": 0,
+        "id": 7,
+        "name": "Face 5"
+      },
+      {
+        "columns": 0,
+        "id": 1,
+        "name": "3D Rough ladder 8 > 2"
+      },
+      {
+        "columns": 0,
+        "id": 2,
+        "name": "Parallel raster R1 s 0.1663"
+      }
+    ],
+    "side_mm": 25.0
+  }
+}

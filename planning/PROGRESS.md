@@ -14,6 +14,23 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-02 (cloud session) — tiered finishing trial on the 350 board
+
+Operator request: which tools / finishes give the least time at a good
+finish. `planning/tier_trial_2026-10-01/` (PLAN pre-registered, RESULTS,
+`analyse.py` asserts every claim). 33 arms on the x3.5 rivmap100 terrain.
+- **A fine R1 parallel raster wins**: stepover 2·√(2Rh−h²)·cos 65° = 0.21
+  mm finishes in 6.75 h vs 11.93 h for R1 iso h 0.03, and passes the finish
+  rule (cos 70°: 8.36 h, better on every measure). One entry, no gouge.
+- R2 -> R1 tiers lose (3 900-6 600 fine islands); the operator's blob
+  idea (R3 flats, R1 range as one region) is 9.79 h, one margin short.
+- The iso scallop runs at about 800 mm/min of 4 105 asked: acceleration.
+- Arc tolerance 0.05 gouges 8 % of the surface; cusp/2 does not (a default
+  change waits for the operator).
+- Defects fixed on the way: G-FLUTETOP (`cd7c75f4`), G-ARCFITSCAN
+  (`bd90ffdd`). Open: Unified Finish tiers leave the flanks uncut on tall
+  terrain (investigation running).
+
 ## Update 2026-10-02 (cloud session) — G-FLUTETOP: the waterline walked inside hills taller than the flutes
 
 - **Safety defect, fixed.** The push cutter (`surface/pushcutter.rs`), which
