@@ -115,6 +115,31 @@
 //! | 3D `total_sample_count` | 1754 | 1755 |
 //! | 3D `project_air_cut_pct_of_total_runtime` | 32.25 | 31.85 |
 //!
+//! **2026-10-02, G-FLUTETOP** (`cd7c75f4`; bisected against `198f04fa`).
+//! The 3D arm only. The push cutter now adds the hull of one triangle's
+//! vertex, facet and edge contacts as one interval. Before, the stretch
+//! between a facet's contact point and its edge intervals read free, and the
+//! waterline contour dipped into the faceted dome there. Measured on the
+//! waterline op with `dressup::entry_audit::buried_fed_chords` (0.05 mm
+//! samples): fed moves more than 0.01 mm under the drop-cutter surface
+//! 92 → 32, more than 0.05 mm 45 → 19 (16 of the 19 lie on levels 4.0 and
+//! 8.5, buried as before; 3 are fitted arcs or entries on levels
+//! 1.0 and 2.5, at most 0.143 mm). Contour vertices on levels 1.0 / 2.5 / 5.5 /
+//! 7.0 sat down to 0.135 / 0.038 / 0.039 / 0.012 mm under that surface; now
+//! within 0.0001 mm of it, and none stands off it (no over-blocking). The
+//! smoother loops fit into fewer, longer arcs. `cutting_distance_mm` sums
+//! arc CHORDS (`compute_stats_with_spans`), so it falls by 38 %; the arc
+//! length of the fed moves is 414.4 → 414.2 mm.
+//!
+//! | field | was | now |
+//! |---|---:|---:|
+//! | `[Waterline].move_count` | 166 | 104 |
+//! | `[Waterline].sample_count` | 1082 | 1051 |
+//! | `[Waterline].cutting_distance_mm` (chords) | 385.45 | 240.52 |
+//! | `[Waterline].total_removed_volume_est_mm3` | 2027.38 | 2025.68 |
+//! | 3D `total_sample_count` | 1755 | 1724 |
+//! | 3D `project_air_cut_pct_of_total_runtime` | 31.85 | 31.73 |
+//!
 //! # Why the aggregates and not a trace hash
 //!
 //! A hash over the whole trace would fail on any change at all, including
