@@ -14,6 +14,14 @@
 //!
 //! The fix: material above the flutes still blocks (the shank and the holder
 //! stand there), so no push test has a top.
+//!
+//! Second mechanism, the same audit: each vertex, facet and edge contact was
+//! added as its own interval. Under a triangle wider than twice the cutter
+//! width the stretch between the entry and exit edge contacts stayed free
+//! (the facet test gives one point). With the top removed, 24 moves on the
+//! scale-3 board still sat 1-2.3 mm under the surface. The blocked set of
+//! one triangle is one interval (two convex bodies), so the push cutter now
+//! adds the hull of a triangle's contacts.
 
 #![allow(
     clippy::unwrap_used,
@@ -28,10 +36,11 @@ mod common;
 use common::meshes::height_field;
 use rs_cam_core::dressup::entry_audit::buried_fed_chords;
 use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
+use rs_cam_core::geo::{P3, Triangle};
 use rs_cam_core::geometry::fiber::Fiber;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ops::waterline::{WaterlineParams, waterline_contours, waterline_toolpath};
-use rs_cam_core::surface::pushcutter::push_cutter_fiber;
+use rs_cam_core::surface::pushcutter::{push_cutter_fiber, push_cutter_triangle};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 /// Flute length of the test cutter (mm).
@@ -126,5 +135,31 @@ fn a_waterline_level_closes_no_contour_inside_a_hill() {
         buried.is_empty(),
         "{} fed moves pass more than 0.05 mm under the drop-cutter surface, the deepest {worst:.3} mm",
         buried.len()
+    );
+}
+
+#[test]
+fn a_fiber_under_a_wide_triangle_is_blocked_between_its_edges() {
+    let tool = cutter();
+    // A horizontal triangle 5 mm over the fiber, 100 mm wide where the fiber
+    // crosses it: its edges are 50 mm from the fiber's midpoint.
+    let tri = Triangle::new(
+        P3::new(-50.0, -50.0, 5.0),
+        P3::new(50.0, -50.0, 5.0),
+        P3::new(0.0, 50.0, 5.0),
+    );
+    let mut fiber = Fiber::new_x(-25.0, 0.0, -100.0, 100.0);
+    push_cutter_triangle(&mut fiber, &tri, &tool);
+    // Non-vacuity: the fiber touches the triangle's edges.
+    assert!(!fiber.intervals().is_empty(), "the edges block the fiber");
+    // The midpoint (x = 0) lies 25 mm from every edge, under the facet.
+    let blocked = fiber
+        .intervals()
+        .iter()
+        .any(|iv| iv.lower <= 0.5 && 0.5 <= iv.upper);
+    assert!(
+        blocked,
+        "the fiber under the triangle reads free between its edges: {:?}",
+        fiber.intervals()
     );
 }

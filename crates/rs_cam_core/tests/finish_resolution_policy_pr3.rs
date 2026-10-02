@@ -322,7 +322,11 @@ fn ramp_finish_fingerprint() {
 /// ridge's sloped crest is now exact (the drop-cutter used the mirrored,
 /// downhill point), so the ramp points over the crest rose. The move count
 /// is unchanged. Was `(277, 10_508_855_153_191_199_570)`.
-const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 9_451_927_284_413_260_786);
+// Re-pinned 2026-10-02 for G-FLUTETOP (the push cutter adds the hull of one
+// triangle's contacts): the ramp start points moved up to 0.65 mm, the move
+// count did not; burial audit (0.02 mm samples, > 0.005 mm) 120 moves both,
+// max 0.331 (was 0.331). Was `(277, 9_451_927_284_413_260_786)`.
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 4_015_845_068_922_767_712);
 
 /// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
 /// cutter whose cusp radius is its envelope radius must not move at all.
@@ -437,9 +441,13 @@ fn steep_shallow_fingerprint() {
     // the ridge's sloped crest is exact (the drop-cutter used the mirrored,
     // downhill point), so the raster Z over the crest rose. The move count
     // is unchanged. Was `(913, 17934662407811726553)`.
+    // Re-pinned 2026-10-02 for G-FLUTETOP: the push cutter adds the hull of
+    // one triangle's contacts. 14 points moved, at most 0.027 mm in XY; the
+    // burial audit (0.02 mm samples, > 0.005 mm) went 89 -> 86 moves, max
+    // 0.192 both. Was `(913, 12043875751410126668)`.
     assert_eq!(
         fingerprint(&tp),
-        (913, 12043875751410126668),
+        (913, 3468018952838676096),
         "steep_shallow output moved; captured at HEAD 5fc2411 before the H3 policy refactor"
     );
 }
