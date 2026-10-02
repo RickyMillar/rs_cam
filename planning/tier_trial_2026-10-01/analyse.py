@@ -149,6 +149,19 @@ def main():
     assert R["T5_p"]["min_dev"] < -20.0
     if "T5_flutetop" in R:
         assert R["T5_flutetop"]["min_dev"] > -1.0, "G-FLUTETOP re-run still gouges"
+    # The winners: fine rasters pass the bar in less time than the reference.
+    for s, max_frac in [("R65_p", 0.60), ("R70_p", 0.71)]:
+        assert R[s]["pass"], s
+        assert R[s]["finish_h"] < max_frac * ref["finish_h"], s
+        assert R[s]["entries"] == 1, s
+    # Raster time follows 1 / stepover (within 15 %).
+    so = {"C1_p": 0.4862, "R45_p": 0.3438, "R60_p": 0.2431, "R65_p": 0.2055, "R70_p": 0.1663}
+    k = R["C1_p"]["finish_h"] * so["C1_p"]
+    for s, v in so.items():
+        assert abs(R[s]["finish_h"] * v / k - 1.0) < 0.15, s
+    # The only passing arms are R1 iso h <= 0.03 and the fine rasters.
+    passing = sorted(s for s in R if R[s]["pass"])
+    assert passing == ["A1_arcoff", "A1_planner", "A2_p", "R65_p", "R70_p"], passing
     print("all claims hold")
 
 

@@ -1,0 +1,1477 @@
+{
+  "arm": "T4",
+  "arm_spec": "Tier { tools: [R2, R1], tolerance: 0.25, strategy: Some(IsoScallop), tier0_cusp: None, coarse_skips_fine_islands: false }",
+  "board": {
+    "area_dev_gt_0_30_mm2": 5608.75,
+    "area_dev_lt_m0_02_mm2": 86.9375,
+    "cell_mm": 0.25,
+    "map": "T4_p_board.png",
+    "population_area_mm2_by_columns": 118508.0,
+    "resolution_clamped": false,
+    "stats": {
+      "frac_dev_gt_0_06": 0.2524423456644277,
+      "frac_dev_lt_m0_02": 0.0007336002632733655,
+      "max": 18.742176055908203,
+      "min": -1.2069050073623657,
+      "n": 1896128,
+      "p50": 0.02597433142364025,
+      "p90": 0.1618100106716156,
+      "p99": 0.6747822165489197
+    }
+  },
+  "cell_check": null,
+  "fixture": "planning/fixtures/rivmap100/rivmap100_memory_repro.toml",
+  "frames": {
+    "model_bbox_world": [
+      [
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        350.0,
+        350.0,
+        42.0
+      ]
+    ],
+    "stock_bbox_world": [
+      [
+        -15.0,
+        -80.0,
+        -3.0
+      ],
+      [
+        365.0,
+        430.0,
+        43.0
+      ]
+    ],
+    "window_rule": "centre = model_bbox.min + 350*(k+0.5)/4 in x and y; world frame; identity setup",
+    "window_z": [
+      -3.0,
+      43.0
+    ]
+  },
+  "map_legend": {
+    "bands": [
+      {
+        "from_mm": "-inf",
+        "rgb": [
+          80,
+          0,
+          120
+        ]
+      },
+      {
+        "from_mm": -0.05,
+        "rgb": [
+          200,
+          0,
+          60
+        ]
+      },
+      {
+        "from_mm": -0.02,
+        "rgb": [
+          120,
+          170,
+          255
+        ]
+      },
+      {
+        "from_mm": 0.0,
+        "rgb": [
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "from_mm": 0.015,
+        "rgb": [
+          255,
+          245,
+          170
+        ]
+      },
+      {
+        "from_mm": 0.03,
+        "rgb": [
+          255,
+          210,
+          90
+        ]
+      },
+      {
+        "from_mm": 0.045,
+        "rgb": [
+          250,
+          160,
+          40
+        ]
+      },
+      {
+        "from_mm": 0.06,
+        "rgb": [
+          230,
+          90,
+          20
+        ]
+      },
+      {
+        "from_mm": 0.1,
+        "rgb": [
+          180,
+          30,
+          20
+        ]
+      },
+      {
+        "from_mm": 0.3,
+        "rgb": [
+          90,
+          0,
+          0
+        ]
+      },
+      {
+        "from_mm": 1.0,
+        "rgb": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "orientation": "north (+y) up, +x right",
+    "outside_population_rgb": [
+      150,
+      150,
+      150
+    ]
+  },
+  "notes": [
+    "op 2 disabled; planner emitted [8, 9] (coarse -> fine), tools [12, 6], tolerance 0.25, cusp 0.03, strategy IsoScallop, coarse_skips_fine_islands false",
+    "planner dressup policy (for_op, arc = cusp/2) on finish ops (id, cusp) []"
+  ],
+  "ops": [
+    {
+      "arc_fitting": {
+        "tolerance": 0.05
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 0.0,
+        "source": "Stock"
+      },
+      "counts": {
+        "entry_runs": 356,
+        "rapid_runs": 357,
+        "retract_moves": 356
+      },
+      "cutting_mm": 135992.0,
+      "feed_mm_min": 4720.0,
+      "feeds_provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 0.010741897,
+      "hypothetical_tool": false,
+      "id": 7,
+      "iso_field": null,
+      "kind": "face",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "machine_max_feed": 1.0
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -36.440677966101696,
+        "moves_total": 356,
+        "moves_touched": 0,
+        "strategy": "constrained_max"
+      },
+      "move_count": 3575,
+      "name": "Face 5",
+      "pencil": null,
+      "planner_tier": null,
+      "plunge_mm_min": 2360.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 142896.95588651104,
+      "retract_trips": 357,
+      "role": "face_rough",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 2738.7220428452524,
+        "entry": 56.88724488037609,
+        "linking": 0.0,
+        "rapid": 1214.0862240619085,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 4009.695511787655,
+      "scallop_height": null,
+      "stepover": 1.432,
+      "stock_source": "Fresh",
+      "tool_id": 3,
+      "tool_name": "End Mill"
+    },
+    {
+      "arc_fitting": {
+        "tolerance": 0.05
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 1.0,
+        "source": "Model Silhouette"
+      },
+      "counts": {
+        "entry_runs": 2420,
+        "rapid_runs": 2021,
+        "retract_moves": 2018
+      },
+      "cutting_mm": 923935.7841589416,
+      "feed_mm_min": 4720.856166118225,
+      "feeds_provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 102.826006117,
+      "hypothetical_tool": false,
+      "id": 1,
+      "iso_field": null,
+      "kind": "adaptive3d",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "chipload_max": 0.09053124327614889,
+          "kinematic_reach": 0.7028280845748952,
+          "machine_max_feed": 0.20150824180149354,
+          "plunge_rate": 0.005132430347462386
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -39.368177130237356,
+        "moves_total": 190553,
+        "moves_touched": 0,
+        "strategy": "constrained_max"
+      },
+      "move_count": 198017,
+      "name": "3D Rough ladder 8 > 2",
+      "pencil": null,
+      "planner_tier": null,
+      "plunge_mm_min": 2360.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 411379.8176322751,
+      "retract_trips": 2021,
+      "role": "face_rough",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 16581.228891491035,
+        "entry": 4411.965170483475,
+        "linking": 446.7769626386142,
+        "rapid": 4899.556077494017,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 26339.527102107295,
+      "scallop_height": null,
+      "stepover": 0.8260000000000001,
+      "stock_source": "FromRemainingStock",
+      "tool_id": 3,
+      "tool_name": "End Mill"
+    },
+    {
+      "arc_fitting": {
+        "tolerance": 0.015
+      },
+      "boundary": null,
+      "counts": {
+        "entry_runs": 230,
+        "rapid_runs": 294,
+        "retract_moves": 293
+      },
+      "cutting_mm": 347573.023173436,
+      "feed_mm_min": 3539.0,
+      "feeds_provenance": {
+        "feed_rate": {
+          "reference": "onsrud-hardwood-77-100-1_8-pocket",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "source": "formula"
+        }
+      },
+      "generation_s": 47.849994603,
+      "hypothetical_tool": false,
+      "id": 8,
+      "iso_field": true,
+      "kind": "scallop",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "chipload_max": 0.2135594730137804,
+          "kinematic_reach": 0.736697517392505,
+          "machine_max_feed": 0.04923348268766535,
+          "plunge_rate": 0.0005095269060492959
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -30.4072247337415,
+        "moves_total": 561305,
+        "moves_touched": 0,
+        "strategy": "constrained_max"
+      },
+      "move_count": 564179,
+      "name": "Finish tier 0 iso (R2.0)",
+      "pencil": null,
+      "planner_tier": 0,
+      "plunge_mm_min": 480.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 34995.457234127374,
+      "retract_trips": 294,
+      "role": "finish",
+      "rpm": 15130,
+      "runtime_breakdown_s": {
+        "cutting": 17326.465275383267,
+        "entry": 689.5966396831833,
+        "linking": 0.6925670703108161,
+        "rapid": 583.105265721218,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 18599.859747858078,
+      "scallop_height": 0.03,
+      "stepover": null,
+      "stock_source": "FromRemainingStock",
+      "tool_id": 12,
+      "tool_name": "R2.0mm x 6mm x 20mm 2F Tapered Ball"
+    },
+    {
+      "arc_fitting": {
+        "tolerance": 0.015
+      },
+      "boundary": {
+        "containment": "Center",
+        "offset_mm": 0.0,
+        "planned_tier": {
+          "cell_mm": 0.4,
+          "tier": 1,
+          "tolerance_mm": 0.25,
+          "tool_ids": [
+            12,
+            6
+          ]
+        },
+        "source": "Planned Tier Regions"
+      },
+      "counts": {
+        "entry_runs": 1315,
+        "rapid_runs": 1394,
+        "retract_moves": 1574
+      },
+      "cutting_mm": 81028.3876351662,
+      "feed_mm_min": 4105.0,
+      "feeds_provenance": {
+        "feed_rate": {
+          "reference": "amana-tapered-hardwood-parallel-1587-2f-zrn-v8",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "reference": "amana-tapered-hardwood-parallel-1587-2f-zrn-v8",
+          "source": "vendor_lut"
+        }
+      },
+      "generation_s": 101.912295495,
+      "hypothetical_tool": false,
+      "id": 9,
+      "iso_field": true,
+      "kind": "scallop",
+      "modulation": {
+        "binding_constraint_distribution": {
+          "chipload_max": 0.019110794103661437,
+          "kinematic_reach": 0.32434141702330005,
+          "machine_max_feed": 0.6506324298621018,
+          "plunge_rate": 0.005915359010936757
+        },
+        "feed_scale": 1.0,
+        "median_feed_delta_pct": -30.416005457177135,
+        "moves_total": 210300,
+        "moves_touched": 73472,
+        "strategy": "constrained_max"
+      },
+      "move_count": 217879,
+      "name": "Finish tier 1 iso (R1.0)",
+      "pencil": null,
+      "planner_tier": 1,
+      "plunge_mm_min": 240.0,
+      "rapid_collision_count": 0,
+      "rapid_mm": 82207.33822866272,
+      "retract_trips": 1394,
+      "role": "finish",
+      "rpm": 18000,
+      "runtime_breakdown_s": {
+        "cutting": 5353.21554833695,
+        "entry": 3739.6007214119795,
+        "linking": 188.61459041373982,
+        "rapid": 1985.0982602388076,
+        "retract": 0.0,
+        "unknown": 0.0
+      },
+      "runtime_s": 11266.52912040147,
+      "scallop_height": 0.03,
+      "stepover": null,
+      "stock_source": "FromRemainingStock",
+      "tool_id": 6,
+      "tool_name": "R1.0mm x 6mm x 20mm 2F Tapered Ball"
+    }
+  ],
+  "peak_rss_kb": {
+    "after_board": 9410796,
+    "end": 9410796
+  },
+  "plan": "planning/tier_trial_2026-10-01/PLAN.md",
+  "population": {
+    "inset_area_mm2": 118508.0,
+    "inset_vertex_count": 2758,
+    "rule": "inside silhouette_machining_outline(model_silhouette(mesh, 0.5 mm)) inset 3 mm by offset_polygon",
+    "scanline_vs_contains_point": {
+      "checked": 1969,
+      "mismatched": 0
+    },
+    "silhouette_area_mm2": 122674.875
+  },
+  "quantile_rule": "nearest rank: sorted[ceil(p*n)-1]",
+  "refused": false,
+  "suggest": [
+    {
+      "after": {
+        "dpp": 0.8180000000000001,
+        "feed": 4720.0,
+        "plunge": 2360.0,
+        "rpm": 18000,
+        "stepover": 1.432
+      },
+      "before": {
+        "dpp": 0.812,
+        "feed": 2200.0,
+        "plunge": 500.0,
+        "rpm": 18000,
+        "stepover": 1.422
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 7,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.13113489350328403, chip_load_min_mm: None, chip_load_max_mm: Some(0.13113489350328403), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: None, ap_max_f",
+      "name": "Face 5",
+      "provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      }
+    },
+    {
+      "after": {
+        "dpp": 4.133,
+        "feed": 4720.856166118225,
+        "plunge": 2360.0,
+        "rpm": 18000,
+        "stepover": 0.8260000000000001
+      },
+      "before": {
+        "dpp": 8.0,
+        "feed": 2400.0,
+        "plunge": 500.0,
+        "rpm": 18000,
+        "stepover": 1.2000000000000002
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 1,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.13113489350328403, chip_load_min_mm: None, chip_load_max_mm: Some(0.13113489350328403), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: None, ap_max_f",
+      "name": "3D Rough ladder 8 > 2",
+      "provenance": {
+        "depth_per_pass": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "g10_plunge_flat",
+          "source": "published_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "spindle_rpm": {
+          "reference": "amana-flat-hardwood-pocket-6000-2f-spektra",
+          "source": "vendor_lut"
+        },
+        "stepover": {
+          "source": "formula"
+        }
+      }
+    },
+    {
+      "after": {
+        "dpp": null,
+        "feed": 3539.0,
+        "plunge": 480.0,
+        "rpm": 15130,
+        "stepover": null
+      },
+      "before": {
+        "dpp": null,
+        "feed": 3539.0,
+        "plunge": 480.0,
+        "rpm": 15130,
+        "stepover": null
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 8,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.11697326912729675, chip_load_min_mm: Some(0.08772995184547257), chip_load_max_mm: Some(0.14621658640912094), rpm_nominal: None, rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_factor: No",
+      "name": "Finish tier 0 iso (R2.0)",
+      "provenance": {
+        "feed_rate": {
+          "reference": "onsrud-hardwood-77-100-1_8-pocket",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "source": "formula"
+        }
+      }
+    },
+    {
+      "after": {
+        "dpp": null,
+        "feed": 4105.0,
+        "plunge": 240.0,
+        "rpm": 18000,
+        "stepover": null
+      },
+      "before": {
+        "dpp": null,
+        "feed": 4105.0,
+        "plunge": 240.0,
+        "rpm": 18000,
+        "stepover": null
+      },
+      "geometry_put_back_after_suggest": [],
+      "id": 9,
+      "matched_lut_row": "LookupResult { chip_load_mm: 0.11403858995971493, chip_load_min_mm: Some(0.0855289424697862), chip_load_max_mm: Some(0.14254823744964365), rpm_nominal: Some(18000.0), rpm_min: None, rpm_max: None, ap_min_mm: None, ap_max_mm: None, ap_min_fa",
+      "name": "Finish tier 1 iso (R1.0)",
+      "provenance": {
+        "feed_rate": {
+          "reference": "amana-tapered-hardwood-parallel-1587-2f-zrn-v8",
+          "source": "vendor_lut"
+        },
+        "plunge_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "ramp_feed_rate": {
+          "reference": "material_plunge_base",
+          "source": "repo_rule"
+        },
+        "spindle_rpm": {
+          "reference": "amana-tapered-hardwood-parallel-1587-2f-zrn-v8",
+          "source": "vendor_lut"
+        }
+      }
+    }
+  ],
+  "time": {
+    "face_rough_s": 30349.222613894948,
+    "finish_s": 29866.38886825955,
+    "source": "closing whole-board simulation at 0.25 mm, fixture machine kinematics, default adaptive feed modulation (ConstrainedMax, scale 1.0); trace.toolpath_runtimes[].breakdown.total_s"
+  },
+  "tools": {
+    "H1": null,
+    "R1": 6,
+    "R2": {
+      "id": 12,
+      "source": "planning/fixtures/rivmap100/rivmap100_tiered_finish.toml tool 12"
+    }
+  },
+  "wall": {
+    "closing_sim_s": 163.378476597,
+    "plan_simulations": 3,
+    "total_s": 1104.90152832,
+    "walk_s": 819.657995885,
+    "windows_s": 267.905465758
+  },
+  "windows": {
+    "cell_mm": 0.05,
+    "gouge_attribution_rule": "a column with dev < -0.02 is charged to the first toolpath after which its top was already > 0.02 mm under the model (per-toolpath checkpoints of the window run)",
+    "per_window": [
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          43.75
+        ],
+        "centre_world_mm": [
+          43.75,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 204,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 0,
+        "map": "T4_p_w00.png",
+        "max_column_top_z": 27.29462432861328,
+        "secs": 17.490281529,
+        "stats": {
+          "frac_dev_gt_0_06": 0.3339628128971598,
+          "frac_dev_lt_m0_02": 0.0008127457659531237,
+          "max": 1.5506024360656738,
+          "min": -0.09441304951906204,
+          "n": 251001,
+          "p50": 0.03462407365441322,
+          "p90": 0.17502285540103912,
+          "p99": 0.8946767449378967
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          43.75
+        ],
+        "centre_world_mm": [
+          131.25,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 63,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 363,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 1,
+        "map": "T4_p_w01.png",
+        "max_column_top_z": 19.003408432006836,
+        "secs": 16.753568795,
+        "stats": {
+          "frac_dev_gt_0_06": 0.20147330090318366,
+          "frac_dev_lt_m0_02": 0.0016972043936079935,
+          "max": 1.4251680374145508,
+          "min": -0.3141603469848633,
+          "n": 251001,
+          "p50": 0.02338709682226181,
+          "p90": 0.10258206725120544,
+          "p99": 0.7475558519363403
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          43.75
+        ],
+        "centre_world_mm": [
+          218.75,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 99,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 2,
+        "map": "T4_p_w02.png",
+        "max_column_top_z": 24.9635066986084,
+        "secs": 15.081847402,
+        "stats": {
+          "frac_dev_gt_0_06": 0.2681423579985737,
+          "frac_dev_lt_m0_02": 0.0003944207393596041,
+          "max": 1.1507575511932373,
+          "min": -0.03119204379618168,
+          "n": 251001,
+          "p50": 0.028131922706961632,
+          "p90": 0.14213533699512482,
+          "p99": 0.5485131740570068
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          43.75
+        ],
+        "centre_world_mm": [
+          306.25,
+          43.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 136,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 3,
+        "map": "T4_p_w03.png",
+        "max_column_top_z": 32.140113830566406,
+        "secs": 14.360741742,
+        "stats": {
+          "frac_dev_gt_0_06": 0.2953374687750248,
+          "frac_dev_lt_m0_02": 0.0005418305106354158,
+          "max": 0.7059487104415894,
+          "min": -0.03335599973797798,
+          "n": 251001,
+          "p50": 0.03210486099123955,
+          "p90": 0.13899625837802887,
+          "p99": 0.3495633006095886
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          131.25
+        ],
+        "centre_world_mm": [
+          43.75,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 58,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 4,
+        "map": "T4_p_w04.png",
+        "max_column_top_z": 25.000337600708008,
+        "secs": 17.788490066,
+        "stats": {
+          "frac_dev_gt_0_06": 0.3638869964661495,
+          "frac_dev_lt_m0_02": 0.00023107477659451556,
+          "max": 1.4236739873886108,
+          "min": -0.02819747105240822,
+          "n": 251001,
+          "p50": 0.03688180819153786,
+          "p90": 0.2227579951286316,
+          "p99": 0.48566964268684387
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          131.25
+        ],
+        "centre_world_mm": [
+          131.25,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 463,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 29,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 5,
+        "map": "T4_p_w05.png",
+        "max_column_top_z": 32.31492614746094,
+        "secs": 17.998291044,
+        "stats": {
+          "frac_dev_gt_0_06": 0.21789953028075584,
+          "frac_dev_lt_m0_02": 0.001960151553181063,
+          "max": 0.9272522330284119,
+          "min": -0.29656869173049927,
+          "n": 251001,
+          "p50": 0.02438729628920555,
+          "p90": 0.11244047433137894,
+          "p99": 0.41290339827537537
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          131.25
+        ],
+        "centre_world_mm": [
+          218.75,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 64,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 6,
+        "map": "T4_p_w06.png",
+        "max_column_top_z": 21.870508193969727,
+        "secs": 17.018052873,
+        "stats": {
+          "frac_dev_gt_0_06": 0.2988832713813889,
+          "frac_dev_lt_m0_02": 0.00025497906382843094,
+          "max": 1.7289222478866577,
+          "min": -0.03476930037140846,
+          "n": 251001,
+          "p50": 0.029701730236411095,
+          "p90": 0.2385357916355133,
+          "p99": 1.0471903085708618
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          131.25
+        ],
+        "centre_world_mm": [
+          306.25,
+          131.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 173,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 7,
+        "map": "T4_p_w07.png",
+        "max_column_top_z": 27.786760330200195,
+        "secs": 15.643392917,
+        "stats": {
+          "frac_dev_gt_0_06": 0.32090708801956963,
+          "frac_dev_lt_m0_02": 0.0006892402819112275,
+          "max": 0.779526948928833,
+          "min": -0.27174675464630127,
+          "n": 251001,
+          "p50": 0.0333738811314106,
+          "p90": 0.17810001969337463,
+          "p99": 0.47636276483535767
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          218.75
+        ],
+        "centre_world_mm": [
+          43.75,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 225,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 8,
+        "map": "T4_p_w08.png",
+        "max_column_top_z": 14.003987312316895,
+        "secs": 18.021418999,
+        "stats": {
+          "frac_dev_gt_0_06": 0.25765634399862947,
+          "frac_dev_lt_m0_02": 0.0008964107712718276,
+          "max": 0.9729295372962952,
+          "min": -0.31105443835258484,
+          "n": 251001,
+          "p50": 0.02453792467713356,
+          "p90": 0.1810532659292221,
+          "p99": 0.6259873509407043
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          218.75
+        ],
+        "centre_world_mm": [
+          131.25,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 146,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 9,
+        "map": "T4_p_w09.png",
+        "max_column_top_z": 29.605775833129883,
+        "secs": 15.587818301,
+        "stats": {
+          "frac_dev_gt_0_06": 0.33936119776415236,
+          "frac_dev_lt_m0_02": 0.0005816709893586081,
+          "max": 18.742176055908203,
+          "min": -0.03562844172120094,
+          "n": 251001,
+          "p50": 0.03495166450738907,
+          "p90": 0.2502695322036743,
+          "p99": 0.9478010535240173
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          218.75
+        ],
+        "centre_world_mm": [
+          218.75,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 591,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 1,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 10,
+        "map": "T4_p_w10.png",
+        "max_column_top_z": 30.960765838623047,
+        "secs": 16.570492516,
+        "stats": {
+          "frac_dev_gt_0_06": 0.3079629164824044,
+          "frac_dev_lt_m0_02": 0.0023585563404129864,
+          "max": 0.7611652612686157,
+          "min": -0.14072321355342865,
+          "n": 251001,
+          "p50": 0.03338091820478439,
+          "p90": 0.14666400849819183,
+          "p99": 0.39724835753440857
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          218.75
+        ],
+        "centre_world_mm": [
+          306.25,
+          218.75
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 94,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 144,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 11,
+        "map": "T4_p_w11.png",
+        "max_column_top_z": 20.87441635131836,
+        "secs": 16.305610765,
+        "stats": {
+          "frac_dev_gt_0_06": 0.2923733371580193,
+          "frac_dev_lt_m0_02": 0.0009482033936119776,
+          "max": 0.8728234767913818,
+          "min": -0.07407572120428085,
+          "n": 251001,
+          "p50": 0.029706351459026337,
+          "p90": 0.1673019528388977,
+          "p99": 0.5217834115028381
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          43.75,
+          306.25
+        ],
+        "centre_world_mm": [
+          43.75,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 108,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 0,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 12,
+        "map": "T4_p_w12.png",
+        "max_column_top_z": 21.4875545501709,
+        "secs": 14.28930153,
+        "stats": {
+          "frac_dev_gt_0_06": 0.4269265859498568,
+          "frac_dev_lt_m0_02": 0.00043027717021047724,
+          "max": 1.0855300426483154,
+          "min": -0.04072689637541771,
+          "n": 251001,
+          "p50": 0.04566020518541336,
+          "p90": 0.29976919293403625,
+          "p99": 0.6786056756973267
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          131.25,
+          306.25
+        ],
+        "centre_world_mm": [
+          131.25,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 114,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 954,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 13,
+        "map": "T4_p_w13.png",
+        "max_column_top_z": 23.841703414916992,
+        "secs": 16.957194066,
+        "stats": {
+          "frac_dev_gt_0_06": 0.3718949326895112,
+          "frac_dev_lt_m0_02": 0.0042549631276369414,
+          "max": 1.7983564138412476,
+          "min": -0.6404452919960022,
+          "n": 251001,
+          "p50": 0.03804556280374527,
+          "p90": 0.22876498103141785,
+          "p99": 0.8048028349876404
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          218.75,
+          306.25
+        ],
+        "centre_world_mm": [
+          218.75,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 181,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 350,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 14,
+        "map": "T4_p_w14.png",
+        "max_column_top_z": 32.644378662109375,
+        "secs": 19.234762157,
+        "stats": {
+          "frac_dev_gt_0_06": 0.25723403492416363,
+          "frac_dev_lt_m0_02": 0.002115529420201513,
+          "max": 1.078084945678711,
+          "min": -0.22497843205928802,
+          "n": 251001,
+          "p50": 0.025494011119008064,
+          "p90": 0.14233405888080597,
+          "p99": 0.5026600360870361
+        }
+      },
+      {
+        "centre_model_frame_mm": [
+          306.25,
+          306.25
+        ],
+        "centre_world_mm": [
+          306.25,
+          306.25
+        ],
+        "columns": 251001,
+        "gouge_columns_by_first_op": [
+          {
+            "columns": 0,
+            "id": 7,
+            "name": "Face 5"
+          },
+          {
+            "columns": 0,
+            "id": 1,
+            "name": "3D Rough ladder 8 > 2"
+          },
+          {
+            "columns": 138,
+            "id": 8,
+            "name": "Finish tier 0 iso (R2.0)"
+          },
+          {
+            "columns": 39,
+            "id": 9,
+            "name": "Finish tier 1 iso (R1.0)"
+          }
+        ],
+        "k": 15,
+        "map": "T4_p_w15.png",
+        "max_column_top_z": 31.25372886657715,
+        "secs": 18.804201056,
+        "stats": {
+          "frac_dev_gt_0_06": 0.23882773375404878,
+          "frac_dev_lt_m0_02": 0.0007051764734005044,
+          "max": 1.190747618675232,
+          "min": -0.036607325077056885,
+          "n": 251001,
+          "p50": 0.025404563173651695,
+          "p90": 0.11522143334150314,
+          "p99": 0.29548925161361694
+        }
+      }
+    ],
+    "pooled": {
+      "frac_dev_gt_0_06": 0.299545619340162,
+      "frac_dev_lt_m0_02": 0.0011795271731985131,
+      "max": 18.742176055908203,
+      "min": -0.6404452919960022,
+      "n": 4016016,
+      "p50": 0.03045136108994484,
+      "p90": 0.17366687953472137,
+      "p99": 0.6189303398132324
+    },
+    "pooled_gouge_columns_by_first_op": [
+      {
+        "columns": 0,
+        "id": 7,
+        "name": "Face 5"
+      },
+      {
+        "columns": 0,
+        "id": 1,
+        "name": "3D Rough ladder 8 > 2"
+      },
+      {
+        "columns": 2857,
+        "id": 8,
+        "name": "Finish tier 0 iso (R2.0)"
+      },
+      {
+        "columns": 1880,
+        "id": 9,
+        "name": "Finish tier 1 iso (R1.0)"
+      }
+    ],
+    "side_mm": 25.0
+  }
+}
