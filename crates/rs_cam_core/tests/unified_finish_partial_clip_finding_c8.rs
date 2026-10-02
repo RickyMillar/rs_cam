@@ -21,7 +21,8 @@
 //! * **Kind**: GATE (default CI, synthetic, seconds).
 //! * **Fixture**: the M2.1 / Wave-D1 `two_groove_plateau`, whose very-steep
 //!   groove runs from z = 0 down to z ≈ −8.57. Three arms differ ONLY in
-//!   `HeightsConfig`:
+//!   `HeightsConfig`. The tool is a Ø0.5 / 3° tapered ball that fits the
+//!   groove (see [`tool`]; G-FLUTETOP moved it off the Ø1 / 7° tool):
 //!   - `bottom_z = −4.0` — the ladder is SHORTENED, cutting survives → the
 //!     new finding;
 //!   - `bottom_z = −9.0` (M2.1's pin) — the whole groove is laddered →
@@ -60,12 +61,18 @@
 mod common;
 
 use rs_cam_core::compute::StockConfig;
+use rs_cam_core::compute::ToolConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{HeightMode, HeightsConfig};
+use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
+use rs_cam_core::dressup::entry_audit::buried_fed_chords;
+use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
+use rs_cam_core::mesh::SpatialIndex;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::ProjectSession;
+use rs_cam_core::toolpath::MoveType;
 
 use common::meshes::extrude_profile;
 use common::session::{mesh_model, pinned_heights, single_op_session_with};
@@ -105,10 +112,32 @@ fn stock() -> StockConfig {
     }
 }
 
+/// Ø0.5 tip, 3° taper, Ø6 shaft: a tool that FITS the very-steep groove
+/// down past the -4.0 pin.
+///
+/// G-FLUTETOP (2026-10-02) moved this from the Ø1 / 7° tool of the sibling
+/// files. That tool does not fit the groove: its walls stand 5.0° from
+/// vertical (atan(0.75 / 8.5725)), so a 7° cone wedges on the rim. The free
+/// strip it leaves in the groove is 0.370 mm wide at z = -1, 0.124 mm at
+/// z = -2 and none below -2.5 — narrower than the 0.5 mm waterline sampling,
+/// so the band emits nothing there. Its "cutting" before G-FLUTETOP was
+/// loops under the plateau sheet, which the push cutter read free between
+/// the edges of a wide triangle: 414 fed moves on the -1..-4 levels, every
+/// one buried under the drop-cutter surface, the deepest 4.0 mm. With the
+/// fix the band drops, and this file no longer tested a band that cuts.
+///
+/// A 3° cone is narrower than the 5° wall, so only the tip binds: the free
+/// strip is `2·(0.0875·(z + 0.25 + 8.5725) − 0.25)` wide, 0.867 / 0.692 /
+/// 0.517 / 0.342 mm at z = -1 / -2 / -3 / -4. The waterline cuts the first
+/// three, with no fed move under the drop-cutter surface.
+fn tool() -> ToolConfig {
+    tapered_ball_tool_config(0.5, 3.0, 6.0)
+}
+
 fn session_with(heights: HeightsConfig) -> ProjectSession {
     let mut session = single_op_session_with(
         stock(),
-        tapered_ball_tool_config(1.0, 7.0, 6.0),
+        tool(),
         mesh_model(two_groove_plateau(), "two_groove_plateau"),
         "Unified finish",
         OperationConfig::UnifiedFinish(UnifiedFinishConfig::default()),
@@ -157,6 +186,57 @@ fn a_partly_clipped_band_is_measured_and_reported_everywhere() {
          disjoint by construction: {:?}",
         result.stats.dropped_band
     );
+
+    // G-FLUTETOP: the band's cutting is real. Its waterline levels (z = -1,
+    // -2, -3: flat fed moves at a whole-mm Z, the 1.0 mm `z_step` ladder from
+    // the 0.0 pin) run inside the groove, and none passes under the
+    // drop-cutter surface. Before the fix the Ø1 / 7° tool "cut" here only
+    // with loops buried up to 4.0 mm under the plateau.
+    let tp = result.toolpath();
+    let mesh = two_groove_plateau();
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = build_cutter(&tool());
+    let probe = EntrySurfaceProbe {
+        mesh: &mesh,
+        index: &index,
+        cutter: &cutter,
+        stock_to_leave: 0.0,
+        off_mesh: OffMeshEntry::PlungeFallback,
+        rest_stock: None,
+    };
+    let buried: Vec<usize> = buried_fed_chords(tp, &probe, 0.05, 0.05, |_| true)
+        .iter()
+        .map(|c| c.move_index)
+        .collect();
+    let level_moves: Vec<usize> = (1..tp.moves.len())
+        .filter(|&i| {
+            let (a, b) = (tp.moves[i - 1].target, tp.moves[i].target);
+            !matches!(tp.moves[i].move_type, MoveType::Rapid)
+                && b.z < -0.5
+                && (b.z - b.z.round()).abs() < 1e-6
+                && (a.z - b.z).abs() < 1e-9
+        })
+        .collect();
+    assert!(
+        !level_moves.is_empty(),
+        "the VerySteep band must cut on its own levels below the rim"
+    );
+    for &i in &level_moves {
+        let p = tp.moves[i].target;
+        assert!(
+            (4.0..=5.5).contains(&p.x),
+            "a VerySteep level move at x {:.3} z {:.3} lies outside the groove",
+            p.x,
+            p.z
+        );
+        assert!(
+            !buried.contains(&i),
+            "VerySteep level move {i} at x {:.3} z {:.3} passes under the \
+             drop-cutter surface",
+            p.x,
+            p.z
+        );
+    }
 
     // (a) The typed channel.
     let clipped = result
@@ -342,7 +422,7 @@ fn an_operation_with_no_bands_reports_not_measured() {
 
     let mut session = single_op_session_with(
         stock(),
-        tapered_ball_tool_config(1.0, 7.0, 6.0),
+        tool(),
         mesh_model(two_groove_plateau(), "two_groove_plateau"),
         "Drop cutter",
         OperationConfig::DropCutter(DropCutterConfig::default()),
