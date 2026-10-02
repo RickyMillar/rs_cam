@@ -102,3 +102,25 @@ and the residual maps under `planning/tier_trial_2026-10-01/runs/`. Before
 any arm is trusted: A1 is run twice (determinism), and one window is
 checked at 0.025 mm against 0.05 mm (the cell does not move p99 by more
 than 0.005).
+
+## Amendment 1 (2026-10-02, after A1, A1_rep, T3, A1_arcoff, A1_planner; before any other arm)
+
+Finding: the whole-board arms inherited the fixture op's dressups (arc
+fitting at 0.05 mm, feed optimisation on); the tier ops carry the planner's
+policy (`plan_tier_dressups`: `DressupConfig::for_op`, arc tolerance =
+cusp / 2 = 0.015). The arc tolerance alone decides the gouge read:
+
+| run | finish h | gouge % (dev < −0.02) | p99 |
+|---|---:|---:|---:|
+| A1, fixture dressups (arc 0.05) | 9.67 | 7.98 | 0.250 |
+| A1, arc fitting off | 13.68 | 0.09 | 0.250 |
+| A1, planner policy (arc 0.015) | 11.93 | 0.10 | 0.249 |
+
+Change: every arm runs with `TIER_TRIAL_DRESSUPS=planner` (one dressup
+policy for both families). The reference for the pass rule is A1 under that
+policy (`A1_planner`). The fixture-dressup A1 stays as an information row.
+The pass rule and the windows do not change.
+
+Added arms (arc dimension, R1 iso h 0.03, `TIER_TRIAL_ARC`): 0.02 and
+0.03 mm, to find the largest arc tolerance that stays under the gouge
+margin. The time gap between arcs 0.05 and 0.015 is 2.26 h of 11.93 h.

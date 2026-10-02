@@ -3,7 +3,7 @@
 //! Pre-registration: `planning/tier_trial_2026-10-01/PLAN.md`. This file is
 //! the instrument that plan names. It runs ONE arm per process. The arm
 //! comes from the environment variable `TIER_TRIAL_ARM` (A1..A6, T1..T9, C1,
-//! C2, F1). The run writes `planning/tier_trial_2026-10-01/runs/<ARM>.json`
+//! C2, F1, and the phase-2 arms P1..P3). The run writes `planning/tier_trial_2026-10-01/runs/<ARM>.json`
 //! and the residual maps next to it.
 //!
 //! Run (release build):
@@ -17,6 +17,23 @@
 //!   simulates that window at 0.025 mm and records the p99 difference.
 //! - `TIER_TRIAL_TAG` — a suffix for every output name (for example `rep`
 //!   for the determinism repeat).
+//! - `TIER_TRIAL_PENCIL_PASSES` — P1 only: the CAP on offset passes per
+//!   side of each rest-depth pencil centreline (default 3). It is a cap, not
+//!   a count: the rest-depth detector narrows it per chain to the passes
+//!   that fit the local valley half-width. The half-width of the band where
+//!   an R2 ball leaves more than 0.03 mm over an R1 ball depends on the
+//!   valley's flank angle, so no single value follows from the geometry.
+//!   The default is a judgement call; the value used is in the JSON notes.
+//!
+//! # Phase-2 arms
+//!
+//! - P1: op 2 re-dialled to R2 iso h 0.03 (whole board), then a Pencil op on
+//!   the R1 (tool 6), detector `rest_depth`, `reference_tool_id` = the R2.
+//! - P2: T3 with `MultitoolPlanSpec::coarse_skips_fine_islands = true`.
+//! - P3: T3's planner chain with the planner's tier-0 op DISABLED and op 2
+//!   re-dialled to R2 iso h 0.03 in its place. The R1 cleanup is the
+//!   planner's tier-1 op: iso Scallop h 0.03, boundary
+//!   `PlannedTierRegions { [R2, R1], tier 1, tolerance 0.15 }`.
 //!
 //! # What the run does
 //!
@@ -59,7 +76,8 @@ use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::{ArcFitParams, DressupConfig};
+use rs_cam_core::compute::config::{ArcFitParams, BoundarySource, DressupConfig, StockSource};
+use rs_cam_core::compute::operation_configs::PencilConfig;
 use rs_cam_core::compute::sim_prefix::{SimMemo, SimPrefixCache};
 use rs_cam_core::compute::simulate::{
     ColumnDeviation, SimGroupEntry, SimToolpathEntry, SimulationRequest,
@@ -70,6 +88,7 @@ use rs_cam_core::compute::tool_config::{
     BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType,
 };
 use rs_cam_core::dexel_stock::StockCutDirection;
+use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::geo::{BoundingBox3, P2, P3};
 use rs_cam_core::geometry::boundary::{model_silhouette, silhouette_machining_outline};
 use rs_cam_core::mesh::TriangleMesh;
@@ -142,7 +161,16 @@ enum Arm {
         strategy: Option<TierStrategy>,
         /// Cusp for tier 0 (the coarsest) set after planning, if any.
         tier0_cusp: Option<f64>,
+        /// `MultitoolPlanSpec::coarse_skips_fine_islands` (P2).
+        coarse_skips_fine_islands: bool,
     },
+    /// P1: op 2 = R2 iso h `coarse_cusp` whole board, then an R1 Pencil op
+    /// (rest-depth detector, reference tool = the R2).
+    CoarsePencil { coarse_cusp: f64 },
+    /// P3: the [R2, R1] planner chain at `tolerance`, IsoScallop, cusp
+    /// `CUSP_MM`; the planner's tier-0 op is disabled and op 2 (R2 iso h
+    /// `coarse_cusp`, whole board) runs in its place.
+    CoarseTierCleanup { coarse_cusp: f64, tolerance: f64 },
 }
 
 fn arm_of(name: &str) -> Arm {
@@ -157,6 +185,7 @@ fn arm_of(name: &str) -> Arm {
         tolerance,
         strategy,
         tier0_cusp,
+        coarse_skips_fine_islands: false,
     };
     let iso = Some(TierStrategy::IsoScallop);
     match name {
@@ -184,6 +213,18 @@ fn arm_of(name: &str) -> Arm {
         "F1" => Arm::Semi {
             semi: 0.08,
             cusp: 0.03,
+        },
+        "P1" => Arm::CoarsePencil { coarse_cusp: 0.03 },
+        "P2" => Arm::Tier {
+            tools: vec![R2, R1],
+            tolerance: 0.15,
+            strategy: iso,
+            tier0_cusp: None,
+            coarse_skips_fine_islands: true,
+        },
+        "P3" => Arm::CoarseTierCleanup {
+            coarse_cusp: 0.03,
+            tolerance: 0.15,
         },
         other => panic!("TIER_TRIAL_ARM={other} is not an arm of PLAN.md"),
     }
@@ -267,6 +308,8 @@ fn planner_dressups(session: &mut ProjectSession) -> String {
         let cusp = match &tc.operation {
             OperationConfig::Scallop(s) => s.scallop_height,
             OperationConfig::DropCutter(d) => d.scallop_height.unwrap_or(CUSP_MM),
+            // The pencil has no cusp dial; it cleans to the arm's cusp.
+            OperationConfig::Pencil(_) => CUSP_MM,
             _ => CUSP_MM,
         };
         let mut dressups = DressupConfig::for_op(tc.operation.op_type());
@@ -388,6 +431,31 @@ fn restore_geometry(operation: &mut OperationConfig, planned: &OperationConfig) 
             out.stepover = want.stepover;
             out.scallop_height = want.scallop_height;
         }
+        (OperationConfig::Pencil(out), OperationConfig::Pencil(want)) => {
+            // Suggest maps its stepover onto `offset_stepover`. Every pencil
+            // dial but the four feed fields is the arm's: put them all back.
+            note("offset_stepover", out.offset_stepover, want.offset_stepover);
+            note(
+                "num_offset_passes",
+                out.num_offset_passes as f64,
+                want.num_offset_passes as f64,
+            );
+            note(
+                "min_valley_depth",
+                out.min_valley_depth,
+                want.min_valley_depth,
+            );
+            note("stock_to_leave", out.stock_to_leave, want.stock_to_leave);
+            if out.detector != want.detector || out.reference_tool_id != want.reference_tool_id {
+                changed.push("detector / reference_tool_id: put back".to_owned());
+            }
+            let mut keep = want.clone();
+            keep.feed_rate = out.feed_rate;
+            keep.plunge_rate = out.plunge_rate;
+            keep.ramp_feed_rate = out.ramp_feed_rate;
+            keep.spindle_rpm = out.spindle_rpm;
+            *out = keep;
+        }
         _ => {}
     }
     changed
@@ -400,6 +468,7 @@ fn arm_owns_geometry(op: &OperationConfig) -> bool {
         OperationConfig::Scallop(_)
             | OperationConfig::UnifiedFinish(_)
             | OperationConfig::DropCutter(_)
+            | OperationConfig::Pencil(_)
     )
 }
 
@@ -586,6 +655,7 @@ fn configure_arm(
             tolerance,
             strategy,
             tier0_cusp,
+            coarse_skips_fine_islands,
         } => {
             set_enabled(session, scallop, false);
             let ids: Vec<usize> = tools.iter().map(|t| tool_id(*t)).collect();
@@ -600,6 +670,7 @@ fn configure_arm(
                 tolerance_mm: *tolerance,
                 cusp_height_mm: CUSP_MM,
                 tier_strategies: strategies,
+                coarse_skips_fine_islands: *coarse_skips_fine_islands,
                 ..MultitoolPlanSpec::default()
             };
             let outcome = session
@@ -612,7 +683,8 @@ fn configure_arm(
             );
             notes.push(format!(
                 "op {SCALLOP_ID} disabled; planner emitted {:?} (coarse -> fine), tools {ids:?}, \
-                 tolerance {tolerance}, cusp {CUSP_MM}, strategy {:?}",
+                 tolerance {tolerance}, cusp {CUSP_MM}, strategy {:?}, \
+                 coarse_skips_fine_islands {coarse_skips_fine_islands}",
                 outcome.toolpath_ids.iter().map(|t| t.0).collect::<Vec<_>>(),
                 strategy.unwrap_or_default()
             ));
@@ -624,8 +696,171 @@ fn configure_arm(
                 notes.push(format!("tier 0 scallop_height set to {h} after planning"));
             }
         }
+        Arm::CoarsePencil { coarse_cusp } => {
+            set_tool(session, scallop, r2);
+            dial_scallop(session, scallop, *coarse_cusp, true);
+            let passes = pencil_passes();
+            // R1 tip radius 1.0 mm (tool 6), the arm's cusp.
+            let offset_stepover = equal_cusp_stepover_mm(1.0, CUSP_MM);
+            let r2_diameter = session
+                .get_tool(ToolId(r2))
+                .expect("the R2 was added")
+                .diameter;
+            let pencil = PencilConfig {
+                detector: PencilDetector::RestDepth,
+                reference_tool_id: Some(ToolId(r2)),
+                // Read only when the id does not resolve; kept equal to it.
+                reference_tool_diameter: r2_diameter,
+                // Keep a valley where the R2 leaves more than the arm's cusp
+                // above what the R1 reaches.
+                min_valley_depth: CUSP_MM,
+                num_offset_passes: passes,
+                offset_stepover,
+                ..PencilConfig::default()
+            };
+            // The GUI / MCP add route (`core_add_toolpath`,
+            // `handle_add_toolpath`): a ToolpathConfig with the op, the
+            // op type's `DressupConfig::for_op` and `StockSource::Fresh`,
+            // appended with `Command::AddToolpath`. Boundary and heights are
+            // op 2's (model silhouette, offset 1.0) so every finish op of
+            // the trial shares one boundary; the GUI would give
+            // `BoundaryConfig::for_3d_op(diameter)`. Fresh stock keeps the
+            // rest reference on the R2 tool (reference mode 1), not on the
+            // simulated stock.
+            let mut cfg = session.toolpath_configs()[scallop].clone();
+            cfg.name = format!("Pencil rest_depth R1 after R2, passes {passes}");
+            cfg.tool_id = R1_TOOL;
+            cfg.operation = OperationConfig::Pencil(pencil.clone());
+            cfg.dressups = DressupConfig::for_op(OperationType::Pencil);
+            cfg.stock_source = StockSource::Fresh;
+            cfg.feeds_provenance = rs_cam_core::feeds::FeedsProvenance::default();
+            let created = session
+                .apply(Command::AddToolpath(AddToolpathArgs {
+                    setup_index: 0,
+                    config: Box::new(cfg),
+                }))
+                .expect("add the pencil op")
+                .created
+                .expect("add_toolpath reports the index");
+            notes.push(format!(
+                "op {SCALLOP_ID} = R2 (tool {r2}) iso h {coarse_cusp} whole board; new Pencil op \
+                 (index {created}) on tool {R1_TOOL}: detector rest_depth, reference_tool_id {r2} \
+                 (diameter {r2_diameter}), min_valley_depth {CUSP_MM}, num_offset_passes cap \
+                 {passes} (TIER_TRIAL_PENCIL_PASSES, default 3), offset_stepover \
+                 {offset_stepover} = equal_cusp_stepover_mm(1.0, {CUSP_MM}), rest_cell_mm {}, \
+                 sampling {}, stock_source Fresh, op 2's boundary",
+                pencil.rest_cell_mm, pencil.sampling
+            ));
+        }
+        Arm::CoarseTierCleanup {
+            coarse_cusp,
+            tolerance,
+        } => {
+            let spec = MultitoolPlanSpec {
+                setup_index: 0,
+                model_id: 1,
+                tool_ids: vec![r2, R1_TOOL],
+                tolerance_mm: *tolerance,
+                cusp_height_mm: CUSP_MM,
+                tier_strategies: vec![TierStrategy::IsoScallop; 2],
+                ..MultitoolPlanSpec::default()
+            };
+            let outcome = session
+                .plan_multitool_finishing(&spec)
+                .expect("the planner emits the chain");
+            assert!(
+                outcome.replaced.is_empty(),
+                "the fixture holds no planner op"
+            );
+            assert_eq!(outcome.toolpath_ids.len(), 2, "two tiers");
+            let tier0 = index_of(session, outcome.toolpath_ids[0].0);
+            let tier1 = index_of(session, outcome.toolpath_ids[1].0);
+            {
+                let t1 = &session.toolpath_configs()[tier1];
+                assert_eq!(t1.tool_id, R1_TOOL, "tier 1 is the R1");
+                assert!(
+                    t1.boundary.enabled
+                        && matches!(
+                            t1.boundary.source,
+                            BoundarySource::PlannedTierRegions { tier: 1, .. }
+                        ),
+                    "tier 1 carries its planned tier regions"
+                );
+                assert_eq!(
+                    session.toolpath_configs()[tier0].tool_id,
+                    r2,
+                    "tier 0 is the R2"
+                );
+            }
+            set_enabled(session, tier0, false);
+            set_tool(session, scallop, r2);
+            dial_scallop(session, scallop, *coarse_cusp, true);
+            notes.push(format!(
+                "planner [R2 {r2}, R1 {R1_TOOL}] IsoScallop, tolerance {tolerance}, cusp \
+                 {CUSP_MM}: emitted {:?}; tier-0 op {} DISABLED; op {SCALLOP_ID} = R2 iso h \
+                 {coarse_cusp} whole board (model silhouette, Fresh) in its place; R1 cleanup = \
+                 tier-1 op {} (iso scallop, PlannedTierRegions tier 1, FromRemainingStock)",
+                outcome.toolpath_ids.iter().map(|t| t.0).collect::<Vec<_>>(),
+                outcome.toolpath_ids[0].0,
+                outcome.toolpath_ids[1].0
+            ));
+        }
     }
     notes
+}
+
+/// P1's cap on pencil offset passes per side (`TIER_TRIAL_PENCIL_PASSES`,
+/// default 3). See the module doc: the default is a judgement call.
+fn pencil_passes() -> usize {
+    std::env::var("TIER_TRIAL_PENCIL_PASSES")
+        .ok()
+        .map_or(3, |v| {
+            v.parse().expect("TIER_TRIAL_PENCIL_PASSES is a count")
+        })
+}
+
+/// The boundary of one op: `None` when disabled, else its source label
+/// and, for a planned tier boundary, its tier and tolerance.
+fn boundary_summary(tc: &rs_cam_core::session::ToolpathConfig) -> Value {
+    if !tc.boundary.enabled {
+        return Value::Null;
+    }
+    let mut v = json!({
+        "source": tc.boundary.source.label(),
+        "containment": format!("{:?}", tc.boundary.containment),
+        "offset_mm": tc.boundary.offset,
+    });
+    if let BoundarySource::PlannedTierRegions {
+        tool_ids,
+        tier,
+        tolerance_mm,
+        cell_mm,
+        ..
+    } = &tc.boundary.source
+    {
+        v["planned_tier"] = json!({
+            "tool_ids": tool_ids, "tier": tier, "tolerance_mm": tolerance_mm, "cell_mm": cell_mm,
+        });
+    }
+    v
+}
+
+/// The pencil dials of one op, or `None` for any other op.
+fn pencil_summary(op: &OperationConfig) -> Value {
+    match op {
+        OperationConfig::Pencil(p) => json!({
+            "detector": format!("{:?}", p.detector),
+            "reference_tool_id": p.reference_tool_id.map(|t| t.0),
+            "reference_tool_diameter": p.reference_tool_diameter,
+            "min_valley_depth": p.min_valley_depth,
+            "num_offset_passes": p.num_offset_passes,
+            "offset_stepover": p.offset_stepover,
+            "rest_cell_mm": p.rest_cell_mm,
+            "sampling": p.sampling,
+            "stock_to_leave": p.stock_to_leave,
+        }),
+        _ => Value::Null,
+    }
 }
 
 // ── Toolpath measures ───────────────────────────────────────────────────
@@ -1197,11 +1432,13 @@ fn tier_trial_350() {
                 "tool_name": tool.name,
                 "hypothetical_tool": Some(tc.tool_id) == h1,
                 "stock_source": format!("{:?}", tc.stock_source),
-                "arc_fitting": serde_json::to_value(&tc.dressups.arc_fitting).unwrap(),
+                "arc_fitting": serde_json::to_value(tc.dressups.arc_fitting).unwrap(),
                 "planner_tier": tc.planner_origin.as_ref().map(|p| p.tier),
                 "scallop_height": cusp,
                 "iso_field": iso,
                 "stepover": tc.operation.stepover(),
+                "boundary": boundary_summary(tc),
+                "pencil": pencil_summary(&tc.operation),
                 "feed_mm_min": tc.operation.feed_rate(),
                 "plunge_mm_min": tc.operation.plunge_rate(),
                 "rpm": tc.operation.spindle_rpm(),
@@ -1475,4 +1712,77 @@ fn tier_trial_350() {
         vm_hwm_kb(),
         path.display()
     );
+}
+
+/// Cheap check of the phase-2 arms: load, configure, Suggest, dressup
+/// policy, then print every op. Nothing is generated or simulated.
+/// `TIER_TRIAL_ARM` picks one arm; unset, it runs P1, P2 and P3.
+#[test]
+#[ignore = "tier trial config check: configures arms without generating"]
+fn tier_trial_350_config_only() {
+    let arms: Vec<String> = std::env::var("TIER_TRIAL_ARM").map_or_else(
+        |_| vec!["P1".to_owned(), "P2".to_owned(), "P3".to_owned()],
+        |a| vec![a],
+    );
+    let donor = ProjectSession::load(
+        &repo_root().join("planning/fixtures/rivmap100/rivmap100_tiered_finish.toml"),
+    )
+    .expect("load the rivmap100 tiered donor");
+    let r2_cfg = donor
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == DONOR_R2_TOOL)
+        .expect("the donor's R2.0 taper")
+        .clone();
+    drop(donor);
+    let fixture = repo_root().join("planning/fixtures/rivmap100/rivmap100_memory_repro.toml");
+    for arm_name in arms {
+        let arm = arm_of(&arm_name);
+        let mut session = ProjectSession::load(&fixture).expect("load the x3.5 project");
+        let r2 = add_tool(&mut session, r2_cfg.clone());
+        let h1 = arm_uses_h1(&arm).then(|| add_tool(&mut session, h1_tool()));
+        let mut notes = configure_arm(&mut session, &arm, r2, h1);
+        let feeds = apply_suggest(&mut session);
+        if let Err(reason) = &feeds {
+            eprintln!("== {arm_name}: REFUSED by Suggest: {reason}");
+            continue;
+        }
+        notes.push(planner_dressups(&mut session));
+        eprintln!("== {arm_name} ({arm:?})");
+        for n in &notes {
+            eprintln!("   note: {n}");
+        }
+        for r in feeds.as_ref().unwrap() {
+            let put_back = &r["geometry_put_back_after_suggest"];
+            if put_back.as_array().is_some_and(|a| !a.is_empty()) {
+                eprintln!("   suggest put back on op {}: {put_back}", r["id"]);
+            }
+        }
+        for setup in session.list_setups() {
+            for &idx in &setup.toolpath_indices {
+                let tc = &session.toolpath_configs()[idx];
+                let (cusp, iso) = match &tc.operation {
+                    OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
+                    _ => (None, None),
+                };
+                eprintln!(
+                    "   op {:>3} {:<5} {:<14} tool {:>2} h {:?} iso {:?} feed {:?} rpm {:?} \
+                     stock {:?} tier {:?} arc {:?}\n        boundary {}\n        pencil {}",
+                    tc.id.0,
+                    if tc.enabled { "ON" } else { "off" },
+                    tc.operation.op_type().kind_str(),
+                    tc.tool_id,
+                    cusp,
+                    iso,
+                    tc.operation.feed_rate(),
+                    tc.operation.spindle_rpm(),
+                    tc.stock_source,
+                    tc.planner_origin.as_ref().map(|p| p.tier),
+                    tc.dressups.arc_fitting.as_ref().map(|a| a.tolerance),
+                    boundary_summary(tc),
+                    pencil_summary(&tc.operation),
+                );
+            }
+        }
+    }
 }
