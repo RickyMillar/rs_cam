@@ -214,6 +214,15 @@ fn arm_of(name: &str) -> Arm {
             semi: 0.08,
             cusp: 0.03,
         },
+        // Blob arms: the big ball takes the flats, the R1 one big region
+        // (run with TIER_TRIAL_CLOSE_MM / TIER_TRIAL_H1_DIAM).
+        "B1" => Arm::Tier {
+            tools: vec![H1, R1],
+            tolerance: 0.15,
+            strategy: iso,
+            tier0_cusp: None,
+            coarse_skips_fine_islands: true,
+        },
         "P1" => Arm::CoarsePencil { coarse_cusp: 0.03 },
         "P2" => Arm::Tier {
             tools: vec![R2, R1],
@@ -240,10 +249,41 @@ fn arm_uses_h1(arm: &Arm) -> bool {
 /// `crates/rs_cam_core/tests/fixtures/wanaka100/wanaka_full_tuned.toml`,
 /// with the diameter and both shank fields set to 6.35 mm. Nothing else
 /// changes. The operator's library is not known to hold this tool.
+/// The "blob" dials (operator idea, 2026-10-02: a big ball takes the flats
+/// and the sea, the R1 takes the whole range as one big region). Env
+/// `TIER_TRIAL_CLOSE_MM` sets the tier islands' close radius and
+/// `TIER_TRIAL_MIN_AREA_MM2` their minimum area; both unset = planner
+/// defaults.
+fn blob_islands(mut spec: MultitoolPlanSpec, notes: &mut Vec<String>) -> MultitoolPlanSpec {
+    let num = |k: &str| {
+        std::env::var(k)
+            .ok()
+            .map(|v| v.parse::<f64>().unwrap_or_else(|_| panic!("{k} is a number")))
+    };
+    if let Some(r) = num("TIER_TRIAL_CLOSE_MM") {
+        spec.islands.close_radius_mm = Some(r);
+        notes.push(format!("tier islands close radius {r} mm"));
+    }
+    if let Some(a) = num("TIER_TRIAL_MIN_AREA_MM2") {
+        spec.islands.min_region_area_mm2 = Some(a);
+        notes.push(format!("tier islands min area {a} mm2"));
+    }
+    spec
+}
+
+/// The H1 diameter: env `TIER_TRIAL_H1_DIAM` (6.0 = the R3 ball), default
+/// 6.35.
+fn h1_diameter() -> f64 {
+    std::env::var("TIER_TRIAL_H1_DIAM")
+        .ok()
+        .map_or(6.35, |v| v.parse().expect("TIER_TRIAL_H1_DIAM is a number"))
+}
+
 fn h1_tool() -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
-    t.name = "H1 6.35mm Ball Nose 2F (HYPOTHETICAL)".to_owned();
-    t.diameter = 6.35;
+    let d = h1_diameter();
+    t.name = format!("H1 {d}mm Ball Nose 2F (HYPOTHETICAL)");
+    t.diameter = d;
     t.cutting_length = 25.0;
     t.helix_deg = 30.0;
     t.corner_radius_mm = 0.0;
@@ -673,6 +713,7 @@ fn configure_arm(
                 coarse_skips_fine_islands: *coarse_skips_fine_islands,
                 ..MultitoolPlanSpec::default()
             };
+            let spec = blob_islands(spec, &mut notes);
             let outcome = session
                 .plan_multitool_finishing(&spec)
                 .expect("the planner emits the chain");

@@ -13,11 +13,38 @@ use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
 /// Push a cutter along a fiber against a single triangle.
-/// Adds any gouge intervals to the fiber.
+/// Adds the triangle's gouge interval to the fiber.
 pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
-    vertex_push(fiber, tri, cutter);
-    facet_push(fiber, tri, cutter);
-    edge_push(fiber, tri, cutter);
+    let mut one = fiber.empty_like();
+    push_cutter_triangle_hull(fiber, &mut one, tri, cutter);
+}
+
+/// The vertex, facet and edge tests of one triangle, added to `fiber` as ONE
+/// interval: the hull of their contacts (G-FLUTETOP, second mechanism).
+///
+/// The blocked set of one triangle is a single interval: the triangle and
+/// the cutter body are convex, so their Minkowski sum is convex and meets
+/// the fiber line in one interval. The tests find contact positions inside
+/// it, so their hull is still inside it. Added one by one, the contacts left
+/// the stretch under a large triangle, more than the cutter width from
+/// every edge, free: the facet test gives a single point there, and the
+/// waterline walked under the facet.
+///
+/// `scratch` is a fiber on the same segment; it is cleared here.
+fn push_cutter_triangle_hull(
+    fiber: &mut Fiber,
+    scratch: &mut Fiber,
+    tri: &Triangle,
+    cutter: &dyn MillingCutter,
+) {
+    scratch.clear_intervals();
+    vertex_push(scratch, tri, cutter);
+    facet_push(scratch, tri, cutter);
+    edge_push(scratch, tri, cutter);
+    let ivs = scratch.intervals();
+    if let (Some(first), Some(last)) = (ivs.first(), ivs.last()) {
+        fiber.add_interval(Interval::new(first.lower, last.upper));
+    }
 }
 
 /// Millimetres of headroom added to the fiber's lateral query band on top of
@@ -190,6 +217,7 @@ pub(crate) fn push_cutter_fiber_over(
 ) {
     let z_min = fiber.z();
     let window = FiberWindow::of(fiber, cutter);
+    let mut one = fiber.empty_like();
 
     for &tri_idx in candidates {
         let tri = &mesh.faces[tri_idx];
@@ -206,7 +234,7 @@ pub(crate) fn push_cutter_fiber_over(
         if !window.admits(tri) {
             continue;
         }
-        push_cutter_triangle(fiber, tri, cutter);
+        push_cutter_triangle_hull(fiber, &mut one, tri, cutter);
     }
 }
 
