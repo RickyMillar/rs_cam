@@ -196,6 +196,122 @@ fn ring_cascade_reports_uncut_core_when_capped() {
     );
 }
 
+/// G-HOLERING sentry (tier trial T5, 2026-10-02): the ring cascade must cut
+/// the ground around a region's HOLES, not only inward from its exterior.
+///
+/// A unified finish hands scallop one MidSteep region whose holes are the
+/// Shallow and VerySteep islands. The cascade offsets the holes outward with
+/// the exterior inward, but only every polygon's `exterior` used to be
+/// lifted to a ring, so the grown hole rings were never emitted: the ground
+/// from a hole's edge out to where the exterior front met it stayed uncut
+/// (on this fixture a band of about 10 mm round the hole).
+///
+/// Fixture: the flat 50 mm plate, the whole plate as the region, a 10 mm
+/// square hole in the middle. Every sample of the region must lie within
+/// one flat-ground stepover of an emitted ring.
+#[test]
+fn scallop_rings_cover_the_ground_around_a_region_hole_g_holering() {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = ball_cutter();
+    let tool_radius = cutter.radius();
+    let scallop_height = 0.1;
+    let so = crate::finish::scallop_math::stepover_from_scallop_flat(tool_radius, scallop_height);
+
+    let bbox = &mesh.bbox;
+    let mut boundary = Polygon2::new(vec![
+        P2::new(bbox.min.x, bbox.min.y),
+        P2::new(bbox.max.x, bbox.min.y),
+        P2::new(bbox.max.x, bbox.max.y),
+        P2::new(bbox.min.x, bbox.max.y),
+    ]);
+    // Clockwise hole, the opposite winding of the exterior.
+    boundary.holes = vec![vec![
+        P2::new(-5.0, -5.0),
+        P2::new(-5.0, 5.0),
+        P2::new(5.0, 5.0),
+        P2::new(5.0, -5.0),
+    ]];
+
+    let never_cancel = || false;
+    let surface = crate::finish::finish_setup::build_finish_surface_with_cell_size_and_cancel(
+        &mesh,
+        &si,
+        &cutter,
+        1.0,
+        &never_cancel,
+    )
+    .unwrap();
+    let (rings, metrics) = generate_scallop_rings(
+        &boundary,
+        &mesh,
+        &si,
+        &cutter,
+        &surface.slope_map,
+        &surface.heightmap,
+        tool_radius,
+        scallop_height,
+        0.0,
+        mesh.bbox.min.z,
+        500,
+        0.5,
+    );
+    assert!(
+        metrics.uncut_core_mm2 == 0.0,
+        "the cascade must collapse, not truncate"
+    );
+
+    let segments: Vec<(P2, P2)> = rings
+        .iter()
+        .flat_map(|ring| {
+            (0..ring.len()).map(move |i| {
+                let a = ring[i].0;
+                let b = ring[(i + 1) % ring.len()].0;
+                (P2::new(a.x, a.y), P2::new(b.x, b.y))
+            })
+        })
+        .collect();
+    let dist = |p: P2| -> f64 {
+        segments
+            .iter()
+            .map(|(a, b)| {
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                let l2 = dx * dx + dy * dy;
+                let t = if l2 > 0.0 {
+                    (((p.x - a.x) * dx + (p.y - a.y) * dy) / l2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                ((p.x - a.x - t * dx).powi(2) + (p.y - a.y - t * dy).powi(2)).sqrt()
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    // Samples every 0.5 mm over the region (outside the hole).
+    let mut worst = (0.0_f64, P2::new(0.0, 0.0));
+    let mut y = bbox.min.y + 0.25;
+    while y < bbox.max.y {
+        let mut x = bbox.min.x + 0.25;
+        while x < bbox.max.x {
+            if x.abs() > 5.0 || y.abs() > 5.0 {
+                let d = dist(P2::new(x, y));
+                if d > worst.0 {
+                    worst = (d, P2::new(x, y));
+                }
+            }
+            x += 0.5;
+        }
+        y += 0.5;
+    }
+    assert!(
+        worst.0 <= so,
+        "a region sample at ({:.2}, {:.2}) is {:.2} mm from the nearest ring; \
+         one flat stepover is {so:.2} mm (G-HOLERING: the grown hole rings \
+         were not emitted)",
+        worst.1.x,
+        worst.1.y,
+        worst.0
+    );
+}
+
 #[test]
 fn test_scallop_rings_converge() {
     // Rings should progressively shrink until the polygon collapses

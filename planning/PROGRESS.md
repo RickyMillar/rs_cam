@@ -28,8 +28,16 @@ finish. `planning/tier_trial_2026-10-01/` (PLAN pre-registered, RESULTS,
 - Arc tolerance 0.05 gouges 8 % of the surface; cusp/2 does not (a default
   change waits for the operator).
 - Defects fixed on the way: G-FLUTETOP (`cd7c75f4`), G-ARCFITSCAN
-  (`bd90ffdd`). Open: Unified Finish tiers leave the flanks uncut on tall
-  terrain (investigation running).
+  (`bd90ffdd`), G-HOLERING (below).
+- **G-HOLERING (fixed):** the scallop ring cascade lifted only each offset
+  polygon's exterior; cavalier grows every hole, and no hole ring was ever
+  cut. Unified Finish's MidSteep band is one region with the Shallow /
+  VerySteep islands as holes, so a band around every island stayed as the
+  rough left it (T5: 19 % of the 350 board > 0.3 mm). Holes are now lifted
+  too. x2 rivmap100 tiers: area > 0.3 mm 4 728 -> 1 530 mm². Sentry
+  `finish::scallop::tests` `scallop_rings_cover_the_ground_around_a_region_hole_g_holering`;
+  probe `tests/unified_tier_coverage_probe.rs`. Any non-iso Scallop op on a
+  region with holes emits more rings.
 
 ## Update 2026-10-02 (cloud session) — G-FLUTETOP: the waterline walked inside hills taller than the flutes
 

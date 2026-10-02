@@ -256,11 +256,19 @@ fn truncated_region_with_a_hole_is_untouched_short_by_the_holes_area() {
         0.01,
     );
 
-    // Boundary ring + exactly one offset ring — confirms the loop ran
+    // Boundary rings + exactly one offset step — confirms the loop ran
     // through its single iteration rather than collapsing early (a
     // collapse would zero BOTH area fields and make the assertions below
     // pass vacuously at 0.0 == 0.0, which is why this is checked first).
-    assert_eq!(rings.len(), 2, "boundary ring + one offset iteration");
+    // G-HOLERING (2026-10-02): each step emits the exterior AND the hole,
+    // so the seed is two rings (exterior + hole) and the one offset step
+    // two more (shrunk exterior + grown hole). It was 2 while the hole
+    // rings were never emitted.
+    assert_eq!(
+        rings.len(),
+        4,
+        "(exterior + hole) for the seed and for the one offset iteration"
+    );
 
     let s = stepover_from_scallop_flat(cusp_r, scallop_height);
     assert!(
