@@ -48,7 +48,7 @@
 //! | P1 | pre-clear zone > 0 **and** `effective_boundary` returned exactly 1 polygon | 4005 cells, 1 poly | asserted |
 //! | P2 | F-027 border-clear zone == 0 | 0 | `assert_eq!` |
 //! | B1 | in-scope over-claim, as a fraction of the in-containment population | 27.7% / 27.1% | ≤ 30.0% growth pin |
-//! | B2 | emitted cutting-move endpoints fully outside the containment | 138 / 138 | exact `assert_eq!` |
+//! | B2 | emitted cutting-move endpoints fully outside the containment | 138 / 138 (135 / 135 since G-FLUTETOP) | exact `assert_eq!` |
 //! | B3 | outside-containment `sim_higher` | 4005 / 4005 | **counted, deliberately NOT gated** |
 //! | B4 | `planner_higher` inside the containment (benign direction) | 9 / 38 | ≤ 60 loose pin |
 //!
@@ -92,7 +92,14 @@ const MAX_IN_SCOPE_OVER_CLAIM_FRACTION: f64 = 0.30;
 /// B2 — emitted cutting-move endpoints fully outside the containment.
 /// Deterministic and strategy-independent: `waterline_cleanup` traces the same
 /// mesh contours whichever clearing strategy ran.
-const WATERLINE_LEAK_CUT_MOVES: usize = 138;
+///
+/// Re-pinned 2026-10-02, 138 -> 135, cause G-FLUTETOP (`cd7c75f4`): the push
+/// cutter now adds one interval per triangle (the hull of its contacts), so
+/// the hemisphere's waterline contours sit on the drop-cutter surface and
+/// arc-fit into fewer, longer moves (the same hemisphere's waterline in
+/// `perf_golden_sim_metrics`: 166 -> 104 moves). The leak itself is
+/// unchanged: the contours still run outside the containment.
+const WATERLINE_LEAK_CUT_MOVES: usize = 135;
 /// B4 — `planner_higher` inside the containment. The benign direction; a loose
 /// growth pin only (measured 9 / 38).
 const MAX_IN_SCOPE_PLANNER_HIGHER: u64 = 60;

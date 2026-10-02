@@ -315,6 +315,20 @@ pub(super) fn generate_scallop_rings_with_cancel(
     // see `ScallopReport::standing_mm2`'s doc for this and the estimator's
     // other stated limitations.
     rings_3d.push(first_ring);
+    // G-HOLERING: a region's HOLES are boundary too. The cascade grows every
+    // hole by the ring stepover each iteration (cavalier offsets the holes
+    // with the exterior), so only lifting `exterior` left every grown hole
+    // ring unemitted: the ground between a hole's edge and the point where
+    // the inward exterior front met the grown hole was never visited by any
+    // ring. On a unified finish the MidSteep band is one region with the
+    // Shallow / VerySteep islands as holes, so that ground is a band around
+    // every island (tier trial T5, `tests/unified_tier_coverage_probe.rs`).
+    for hole in &boundary.holes {
+        let hole_ring = ring_to_3d(hole, &lift_ctx);
+        if hole_ring.len() >= 3 {
+            rings_3d.push(hole_ring);
+        }
+    }
 
     // M4 research candidate 3: take the rings from an iso-scallop field
     // instead of an offset cascade. Everything downstream — the 3D lift, the
@@ -599,13 +613,20 @@ pub(super) fn generate_scallop_rings_with_cancel(
             if poly.exterior.len() < 3 {
                 continue;
             }
-            let ring_3d = ring_to_3d(&poly.exterior, &lift_ctx);
-            if ring_3d.len() >= 3 {
-                // M4 §5b: this ring's dropped points, valued at the
-                // stepover that just produced it — see
-                // `ScallopReport::standing_mm2`'s doc for the formula.
-                standing_mm2 += dropped_arc_length_mm(&ring_3d) * stepover;
-                rings_3d.push(ring_3d);
+            // G-HOLERING: the exterior, then every (grown) hole — see the
+            // seed ring above.
+            for ring in std::iter::once(&poly.exterior).chain(poly.holes.iter()) {
+                if ring.len() < 3 {
+                    continue;
+                }
+                let ring_3d = ring_to_3d(ring, &lift_ctx);
+                if ring_3d.len() >= 3 {
+                    // M4 §5b: this ring's dropped points, valued at the
+                    // stepover that just produced it — see
+                    // `ScallopReport::standing_mm2`'s doc for the formula.
+                    standing_mm2 += dropped_arc_length_mm(&ring_3d) * stepover;
+                    rings_3d.push(ring_3d);
+                }
             }
         }
 
