@@ -124,3 +124,23 @@ The pass rule and the windows do not change.
 Added arms (arc dimension, R1 iso h 0.03, `TIER_TRIAL_ARC`): 0.02 and
 0.03 mm, to find the largest arc tolerance that stays under the gouge
 margin. The time gap between arcs 0.05 and 0.015 is 2.26 h of 11.93 h.
+
+## Amendment 2 (2026-10-02, arms added before they run; pass rule unchanged)
+
+- **P1-P3 (fragmentation):** tiers lost on entries and travel (thousands of
+  R1 islands). P1: R2 iso h 0.03 whole board, then an R1 Pencil op
+  (rest-depth detector, reference tool R2, offset passes at the equal-cusp
+  stepover, at most 3). P2: T3 with `coarse_skips_fine_islands`. P3: R2
+  whole board, then the planner's R1 tier op (tier 1, tolerance 0.15).
+- **B1 (operator idea, 2026-10-02: "a R3 that covers the flats and sea,
+  leaving the R1 the whole mountain range as a big blob"):** tiers [Ø6 ball
+  (R3, hypothetical), R1], IsoScallop, tolerance 0.15, coarse skips fine
+  islands, island close radius 5 mm and 10 mm. The preview
+  (`tests/tier_trial_blob_preview.rs`) gives one R1 island of 93-96k mm²
+  (about 80 % of the board) at both radii.
+- **Raster family (after C1: R1 parallel raster 3.07 h vs 11.93 h iso,
+  p99 0.443):** the XY stepover holds the 0.03 cusp up to a design slope θ:
+  s = 2·√(2Rh − h²)·cos θ. R45, R60: whole board at θ 45° / 60°. RS30,
+  RS45: raster on slopes 0..θ at θ's stepover, then R1 iso h 0.03 on
+  θ..90.
+- **T5 re-run after G-FLUTETOP (`cd7c75f4`)**, tag `flutetop`.
