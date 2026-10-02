@@ -462,10 +462,10 @@ fn a_weak_key_pins_the_freed_address_so_it_cannot_false_hit() {
 
 /// The ABA scenario end to end: cache the triage, invalidate the
 /// simulation (no edit-counter bump, no cache clear), re-simulate, and
-/// ask again at the *same* edit counter. The cache must miss.
+/// ask again. The cache must miss.
 ///
-/// Witness of the miss is the stored key itself: `trace` is written only
-/// on a rebuild, so a hit would have left the dead `Weak` in place.
+/// Witness of the miss is the build count and the poisoned value: a hit
+/// keeps both.
 #[test]
 fn invalidate_then_resimulate_misses_the_triage_cache() {
     let session = rs_cam_core::session::ProjectSession::new_empty();
@@ -474,17 +474,15 @@ fn invalidate_then_resimulate_misses_the_triage_cache() {
     let first_addr = Arc::as_ptr(&first) as usize;
     drop(first); // only `sim.results` holds the trace, as in the GUI
 
-    let _ = sim.cached_simulation_triage(&session, 7);
-    assert!(sim.debug.triage_cache.built);
+    let _ = sim.cached_simulation_triage(&session);
+    assert_eq!(sim.debug.triage_cache.builds, 1);
 
     // A second ask at the same version is a hit — the cache still earns
     // its keep after the key change. Witnessed by a sentinel poked into
     // the cached value: a rebuild replaces the whole `triage`.
     poison(&mut sim);
     assert_eq!(
-        sim.cached_simulation_triage(&session, 7)
-            .counts
-            .samples_total,
+        sim.cached_simulation_triage(&session).counts.samples_total,
         POISON,
         "an unchanged project must still hit the cache"
     );
@@ -501,29 +499,24 @@ fn invalidate_then_resimulate_misses_the_triage_cache() {
     sim.results = refreshed.results.take();
 
     assert_ne!(
-        sim.cached_simulation_triage(&session, 7)
-            .counts
-            .samples_total,
+        sim.cached_simulation_triage(&session).counts.samples_total,
         POISON,
         "the invalidate → re-simulate gesture must MISS the cache"
     );
-    let stored_is_second = sim
-        .debug
-        .triage_cache
-        .trace
-        .as_ref()
-        .and_then(|w| w.upgrade())
-        .is_some_and(|up| Arc::ptr_eq(&up, &second));
-    assert!(
-        stored_is_second,
+    assert_eq!(
+        sim.debug.triage_cache.builds, 2,
         "the triage must have been rebuilt against the new trace"
+    );
+    assert!(
+        Arc::strong_count(&second) > 1,
+        "the run holds the new trace"
     );
 }
 
 /// §B.3 — the larger hole, and it is not ABA: the triage is built from
 /// evidence that is not the trace, and the holder-collision report
-/// arrives from a *separate async job* with the same trace, the same edit
-/// counter and no cache invalidation. Each arm below moves one
+/// arrives from a *separate async job* with the same trace and no cache
+/// invalidation. Each arm below moves one
 /// `project_evidence` input and must invalidate.
 #[test]
 fn evidence_movement_invalidates_the_cached_triage() {
@@ -531,13 +524,11 @@ fn evidence_movement_invalidates_the_cached_triage() {
     let mut sim = simulation_for_toolpath();
     attach_cut_trace(&mut sim);
 
-    let _ = sim.cached_simulation_triage(&session, 3);
+    let _ = sim.cached_simulation_triage(&session);
     let baseline_fp = sim.debug.triage_cache.evidence_fp;
     poison(&mut sim);
     assert_eq!(
-        sim.cached_simulation_triage(&session, 3)
-            .counts
-            .samples_total,
+        sim.cached_simulation_triage(&session).counts.samples_total,
         POISON,
         "an unchanged project must not rebuild"
     );
@@ -556,9 +547,7 @@ fn evidence_movement_invalidates_the_cached_triage() {
     sim.checks.checked_scope.toolpath_id = Some(ToolpathId(1));
     sim.checks.holder_collision_count = 1;
     assert_ne!(
-        sim.cached_simulation_triage(&session, 3)
-            .counts
-            .samples_total,
+        sim.cached_simulation_triage(&session).counts.samples_total,
         POISON,
         "the holder report must force a rebuild"
     );
@@ -576,7 +565,7 @@ fn evidence_movement_invalidates_the_cached_triage() {
         end: P3::new(9.0, 9.0, 5.0),
     }];
     sim.checks.rapid_collision_move_indices = vec![5];
-    let _ = sim.cached_simulation_triage(&session, 3);
+    let _ = sim.cached_simulation_triage(&session);
     let after_rapids = sim.debug.triage_cache.evidence_fp;
     assert_ne!(after_rapids, after_holder, "rapid collisions must be keyed");
 
@@ -585,7 +574,7 @@ fn evidence_movement_invalidates_the_cached_triage() {
     if let Some(results) = sim.results.as_mut() {
         results.column_grid_cell_mm *= 2.0;
     }
-    let _ = sim.cached_simulation_triage(&session, 3);
+    let _ = sim.cached_simulation_triage(&session);
     assert_ne!(
         sim.debug.triage_cache.evidence_fp, after_rapids,
         "resolution_mm must be keyed"
@@ -633,55 +622,305 @@ fn span_aggregate_cache_rebuilds_after_its_trace_is_freed() {
     );
 }
 
-/// Load-report and chipload-envelope caches: a hit must still be a hit
-/// (the key change is strictly narrowing, and both are per-frame paths),
-/// and both must miss once their trace is replaced.
+/// The load-report cache: a hit must still be a hit (it is a per-frame
+/// path), and it must miss once its trace is replaced. The load report
+/// reads the session memo, so its builds are counted on the session.
 #[test]
-fn load_report_and_envelope_caches_hit_then_miss_on_a_new_trace() {
+fn load_report_cache_hits_then_misses_on_a_new_trace() {
     let session = rs_cam_core::session::ProjectSession::new_empty();
     let mut sim = simulation_for_toolpath();
     let first = attach_cut_trace(&mut sim);
     drop(first);
 
-    let _ = sim.cached_load_report(&session, 1);
-    let _ = sim.cached_chipload_envelopes(&session, 1);
-    assert!(sim.debug.load_report_cache.report.is_some());
-    assert!(sim.debug.chipload_envelope_cache.envelopes.is_some());
-    let live = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .cloned();
-    assert!(
-        weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "the stored key must match the trace it was built from"
+    let _ = sim.cached_load_report(&session);
+    let _ = sim.cached_load_report(&session);
+    assert_eq!(
+        session.tool_load_report_builds(),
+        1,
+        "an unchanged frame must not rebuild the load report"
     );
-    drop(live);
 
     sim.results = None;
     let mut refreshed = simulation_for_toolpath();
     attach_cut_trace(&mut refreshed);
     sim.results = refreshed.results.take();
-    let live = sim
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_ref())
-        .cloned();
-    assert!(
-        !weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "a freed trace's key must not answer for its replacement"
+
+    let _ = sim.cached_load_report(&session);
+    assert_eq!(
+        session.tool_load_report_builds(),
+        2,
+        "a new trace must rebuild the load report"
     );
-    assert!(
-        !weak_matches(
-            sim.debug.chipload_envelope_cache.trace.as_ref(),
-            live.as_ref()
-        ),
-        "a freed trace's key must not answer for its replacement"
+}
+
+// ── G-CACHEKEYS: the caches key on their inputs, not on a counter ─────
+//
+// The defect: the triage and cut-metric caches keyed on the trace and the
+// GUI edit counter. A regenerate adopts a new result with no edit and no
+// new simulation, so neither part moved and the caches kept the old
+// answer. Each sentry below adopts a result that way and asserts one
+// rebuild, then no rebuild on a repeat call, then the cached value equals
+// a fresh computation.
+
+/// A toolpath with vertical fed descents above the pocket's 500 mm/min
+/// plunge rate, so the triage has a plunge-class finding from the
+/// kinematic rows (the rows the triage reads from the load report).
+fn plunging_result(feed: f64) -> rs_cam_core::session::ToolpathComputeResult {
+    let mut tp = Toolpath::new();
+    for hole in 0..4 {
+        let x = f64::from(hole) * 2.0;
+        tp.rapid_to(P3::new(x, 0.0, 5.0));
+        tp.feed_to(P3::new(x, 0.0, -1.0), feed);
+        tp.feed_to(P3::new(x + 1.0, 1.0, -1.0), feed);
+        tp.rapid_to(P3::new(x + 1.0, 1.0, 5.0));
+    }
+    rs_cam_core::session::ToolpathComputeResult {
+        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
+            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+        )),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+    }
+}
+
+/// Adopt `result` for `index` through the command door, as a worker
+/// completion does. It moves no GUI edit counter and no trace.
+fn adopt(
+    session: &mut rs_cam_core::session::ProjectSession,
+    index: usize,
+    result: rs_cam_core::session::ToolpathComputeResult,
+) {
+    use rs_cam_core::session::{AdoptResultArgs, Command};
+    let revision = session.toolpath_revision(index);
+    let _ = session
+        .apply(Command::AdoptResult(AdoptResultArgs {
+            index,
+            revision,
+            result: Box::new(result),
+        }))
+        .expect("the revision is current");
+}
+
+/// Two pocket rows, so the second has `ToolpathId(1)`: the id the trace
+/// fixture and the simulation boundary name. The second row carries a
+/// result.
+fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
+    let mut builder =
+        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    for name in ["Unused", "Adaptive"] {
+        let config = ToolpathConfig {
+            id: rs_cam_core::ToolpathId(0),
+            name: name.to_owned(),
+            enabled: true,
+            operation: OperationConfig::Pocket(Default::default()),
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id: 1,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            stock_source: Default::default(),
+            coolant: Default::default(),
+            face_selection: None,
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            rest_analysis: Default::default(),
+            planner_origin: None,
+        };
+        let _ = builder.add_toolpath(0, config).expect("setup 0 exists");
+    }
+    let mut session = builder.build();
+    assert_eq!(
+        session.toolpath_configs()[1].id,
+        rs_cam_core::ToolpathId(1),
+        "the fixture trace names toolpath 1"
+    );
+    adopt(&mut session, 1, plunging_result(1200.0));
+    session
+}
+
+#[test]
+fn a_result_adoption_rebuilds_the_triage_once_g_cachekeys() {
+    let mut session = session_for_toolpath_one();
+    let mut sim = simulation_for_toolpath();
+    attach_cut_trace(&mut sim);
+
+    let _ = sim.cached_simulation_triage(&session);
+    assert_eq!(sim.debug.triage_cache.builds, 1);
+    let _ = sim.cached_simulation_triage(&session);
+    assert_eq!(
+        sim.debug.triage_cache.builds, 1,
+        "an unchanged call rebuilt"
     );
 
-    let _ = sim.cached_load_report(&session, 1);
-    assert!(
-        weak_matches(sim.debug.load_report_cache.trace.as_ref(), live.as_ref()),
-        "the rebuild must re-key against the live trace"
+    // The old defect: a regenerate with no edit and no new simulation.
+    adopt(&mut session, 1, plunging_result(1500.0));
+    let _ = sim.cached_simulation_triage(&session);
+    assert_eq!(
+        sim.debug.triage_cache.builds, 2,
+        "a result adoption was missed"
     );
+    let cached = format!("{:?}", sim.cached_simulation_triage(&session));
+    assert_eq!(sim.debug.triage_cache.builds, 2, "a repeat call rebuilt");
+
+    let fresh = session.simulation_triage(&sim.project_evidence());
+    assert!(
+        fresh
+            .actions
+            .iter()
+            .any(|finding| finding.diagnostic.id.as_str()
+                == rs_cam_core::diagnostics::ids::PROJECT_PLUNGE_CLASS_LOAD),
+        "the fixture must give a plunge-class finding, or the equality is vacuous"
+    );
+    assert_eq!(
+        cached,
+        format!("{fresh:?}"),
+        "the cache differs from a fresh triage"
+    );
+}
+
+#[test]
+fn a_result_adoption_rebuilds_the_cut_metrics_once_g_cachekeys() {
+    let mut session = session_for_toolpath_one();
+    let mut sim = simulation_for_toolpath();
+    attach_cut_trace(&mut sim);
+    let id = rs_cam_core::ToolpathId(1);
+
+    let first = sim.cached_cut_metrics(&session, id);
+    assert!(
+        !first.cards.is_empty(),
+        "no cards: the check would be vacuous"
+    );
+    assert_eq!(sim.debug.cut_metric_cache.builds, 1);
+    let again = sim.cached_cut_metrics(&session, id);
+    assert!(Arc::ptr_eq(&first, &again), "an unchanged call rebuilt");
+    assert_eq!(sim.debug.cut_metric_cache.builds, 1);
+
+    adopt(&mut session, 1, plunging_result(1500.0));
+    let after = sim.cached_cut_metrics(&session, id);
+    assert_eq!(
+        sim.debug.cut_metric_cache.builds, 2,
+        "a result adoption was missed"
+    );
+    let repeat = sim.cached_cut_metrics(&session, id);
+    assert!(Arc::ptr_eq(&after, &repeat));
+    assert_eq!(
+        sim.debug.cut_metric_cache.builds, 2,
+        "a repeat call rebuilt"
+    );
+
+    // A fresh computation: the same builder with no memo entry.
+    sim.debug.cut_metric_cache = super::CutMetricCache::default();
+    let fresh = sim.cached_cut_metrics(&session, id);
+    assert_eq!(format!("{:?}", *after), format!("{:?}", *fresh));
+}
+
+// The issue list keyed on `Arc::as_ptr` of the cut trace and of each debug
+// and semantic trace, plus `GuiState::edit_counter`. The list reads no
+// session state, so the counter only rebuilt it for no reason, and the bare
+// pointers had the ABA hazard. The key now holds a `Weak` to each trace.
+
+/// An `edit_counter` bump alone moves no input of the issue list, so the
+/// list is a hit: the same shared `Arc`.
+#[test]
+fn an_edit_counter_bump_alone_hits_the_issue_list_g_cachekeys() {
+    let mut gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let _trace = attach_cut_trace(&mut sim);
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(!before.is_empty(), "fixture must produce issues");
+    gui.mark_edited();
+    gui.mark_edited();
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        Arc::ptr_eq(&before, &after),
+        "the issue list reads no session state; a counter bump must hit"
+    );
+}
+
+/// The ABA gesture on the cut trace: the run drops its trace, and a new
+/// trace is allocated. The held `Weak` reserves the old address, and the
+/// key misses.
+#[test]
+fn a_new_cut_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
+    let gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let first = attach_cut_trace(&mut sim);
+    let first_addr = Arc::as_ptr(&first) as usize;
+    drop(first); // only `sim.results` holds the trace, as in the GUI
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+
+    // Drop the trace, then allocate replacements of the same size class.
+    if let Some(results) = sim.results.as_mut() {
+        results.cut_trace = None;
+    }
+    let mut held = Vec::new();
+    for _ in 0..16 {
+        let mut next = simulation_for_toolpath();
+        let replacement = attach_cut_trace(&mut next);
+        assert_ne!(
+            Arc::as_ptr(&replacement) as usize,
+            first_addr,
+            "the cache's Weak reserves the freed address"
+        );
+        held.push(replacement);
+    }
+    let mut refreshed = simulation_for_toolpath();
+    let _second = attach_cut_trace(&mut refreshed);
+    if let (Some(results), Some(fresh)) = (sim.results.as_mut(), refreshed.results.take()) {
+        results.cut_trace = fresh.cut_trace;
+    }
+
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        !Arc::ptr_eq(&before, &after),
+        "a new cut trace must miss the issue list, whatever its address"
+    );
+}
+
+/// The ABA gesture on a debug trace: an equal trace in a new allocation is
+/// a new input, and the key misses. The old key paired the pointer with
+/// the annotation and hotspot counts, which an equal trace repeats.
+#[test]
+fn a_new_debug_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
+    let mut gui = gui_with_traces();
+    let mut sim = simulation_for_toolpath();
+    let _trace = attach_cut_trace(&mut sim);
+    let id = rs_cam_core::ToolpathId(1);
+    let before = sim.issues(&gui, TEST_MAX_FEED);
+
+    let rt = gui.toolpath_rt.get_mut(&id).expect("fixture toolpath");
+    let old = rt.debug_trace.take().expect("fixture debug trace");
+    if let Some(result) = rt.result.as_mut() {
+        result.debug_trace = None;
+    }
+    let copy = (*old).clone();
+    let old_addr = Arc::as_ptr(&old) as usize;
+    drop(old);
+    let replacement = Arc::new(copy);
+    assert_ne!(
+        Arc::as_ptr(&replacement) as usize,
+        old_addr,
+        "the cache's Weak reserves the freed address"
+    );
+    rt.debug_trace = Some(replacement);
+
+    let after = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(
+        !Arc::ptr_eq(&before, &after),
+        "a new debug trace must miss the issue list"
+    );
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "an equal trace gives an equal list"
+    );
+    let again = sim.issues(&gui, TEST_MAX_FEED);
+    assert!(Arc::ptr_eq(&after, &again), "the new key then holds");
 }

@@ -66,10 +66,7 @@ pub fn diagnostic_from_suggest_warning(
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::FeedsCalculator,
-        message: match row.detail {
-            Some(detail) => format!("{} {detail}", row.headline),
-            None => row.headline,
-        },
+        message: row.message(),
         evidence: None,
         fix: None,
         supersedes: vec![],

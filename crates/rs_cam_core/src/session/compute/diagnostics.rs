@@ -167,6 +167,64 @@ pub(super) fn plunge_stress_offenders_for_session(
     offenders
 }
 
+/// The session parts the simulation triage reads that the load-report key
+/// does not hold.
+///
+/// A cache of the triage keys on three parts, and on no counter:
+///
+/// 1. the load report it read ([`crate::session::LoadReportStamp`]): the
+///    rows, the results, the tools, the material, the post, the machine
+///    and the trace;
+/// 2. this key: each row's name and stock source, the stock (its pins
+///    give the alignment-pin findings) and each setup's face;
+/// 3. the evidence the caller gives (collisions, boundaries, resolution).
+///
+/// A result's `stats` travel with its annotated toolpath. Each write of a
+/// result gives a new `Arc`, and the report key compares that identity.
+/// `self.simulation` decides a reason only when the caller has no trace,
+/// and with no trace the triage is empty.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TriageSessionKey {
+    rows: Vec<(ToolpathId, String, crate::session::StockSource)>,
+    stock: crate::compute::stock_config::StockConfig,
+    faces: Vec<crate::compute::transform::FaceUp>,
+}
+
+impl TriageSessionKey {
+    /// The key for `session` as it is now.
+    pub fn of(session: &ProjectSession) -> Self {
+        Self {
+            rows: session
+                .toolpath_configs
+                .iter()
+                .map(|tc| (tc.id, tc.name.clone(), tc.stock_source))
+                .collect(),
+            stock: session.stock.clone(),
+            faces: session.setups.iter().map(|setup| setup.face_up).collect(),
+        }
+    }
+
+    /// Does this key describe `session` as it is now? It allocates
+    /// nothing, so a frame can ask it.
+    pub fn matches(&self, session: &ProjectSession) -> bool {
+        self.rows.len() == session.toolpath_configs.len()
+            && self
+                .rows
+                .iter()
+                .zip(&session.toolpath_configs)
+                .all(|((id, name, source), tc)| {
+                    *id == tc.id && *name == tc.name && *source == tc.stock_source
+                })
+            && self.stock == session.stock
+            && self.faces.len() == session.setups.len()
+            && self
+                .faces
+                .iter()
+                .zip(&session.setups)
+                .all(|(face, setup)| *face == setup.face_up)
+    }
+}
+
 impl ProjectSession {
     /// Run a collision check for a specific toolpath by index.
     #[instrument(skip(self))]
@@ -630,11 +688,83 @@ impl ProjectSession {
         evidence: &ProjectEvidence<'_>,
         project_diagnostics: &ProjectDiagnostics,
     ) -> crate::stock::sim_triage::SimulationTriage {
+        let Some(trace) = evidence.cut_trace else {
+            return crate::stock::sim_triage::SimulationTriage::default();
+        };
+        // The caller's own trace decides the readings' feeds provenance
+        // (Phase 3), so it is the one to pass — not `self.simulation`,
+        // which may hold a different run, or none.
+        let owned = self.kinematic_utilizations(Some(trace));
+        let kinematics = owned.iter().map(|(id, util)| (*id, util)).collect();
+        self.triage_from_parts(evidence, trace, project_diagnostics, &kinematics)
+    }
+
+    /// [`Self::simulation_triage`] that takes the kinematic readings from
+    /// `report` and does not analyse the moves again.
+    ///
+    /// The kinematic reading walks every move of every toolpath. The load
+    /// report holds the same reading per row
+    /// ([`crate::tool_load::ToolpathLoadVerdict::kinematic_utilization`]),
+    /// so a caller that holds the report gives it here. The numbers are the
+    /// same: the trace decides only the reading's feeds provenance, and the
+    /// triage does not read the provenance.
+    ///
+    /// `report` MUST be [`Self::tool_load_report_for`] on this session as it
+    /// is now. The report leaves out an enabled row whose tool is missing;
+    /// this function reads that row from the session, so the answer equals
+    /// [`Self::simulation_triage`] for each row.
+    pub fn simulation_triage_with_report(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+        report: &crate::tool_load::ToolLoadReport,
+    ) -> crate::stock::sim_triage::SimulationTriage {
+        let Some(trace) = evidence.cut_trace else {
+            return crate::stock::sim_triage::SimulationTriage::default();
+        };
+        let in_report: std::collections::BTreeSet<ToolpathId> = report
+            .per_toolpath
+            .iter()
+            .map(|verdict| verdict.toolpath_id)
+            .collect();
+        let missing: Vec<_> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.enabled && !in_report.contains(&tc.id))
+            .filter_map(|(index, _)| self.kinematic_utilization_for(index, Some(trace)))
+            .collect();
+        let kinematics = report
+            .per_toolpath
+            .iter()
+            .filter_map(|verdict| {
+                let util = verdict.kinematic_utilization.as_ref()?;
+                Some((util.toolpath_id, util))
+            })
+            .chain(missing.iter().map(|util| (util.toolpath_id, util)))
+            .collect();
+        let project_diagnostics = self.diagnostics_with_evidence(evidence);
+        self.triage_from_parts(evidence, trace, &project_diagnostics, &kinematics)
+    }
+
+    /// The one triage assembly behind [`Self::simulation_triage_with_diagnostics`]
+    /// and [`Self::simulation_triage_with_report`]. The two differ only in
+    /// where the kinematic readings come from.
+    ///
+    /// Every session part read here, or in [`Self::diagnostics_with_evidence`],
+    /// must be in the load-report key or in [`TriageSessionKey`]. The GUI
+    /// keys its triage cache on those two and on the evidence.
+    fn triage_from_parts(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+        trace: &crate::stock::simulation_cut::SimulationCutTrace,
+        project_diagnostics: &ProjectDiagnostics,
+        kinematic_utilization: &std::collections::BTreeMap<
+            ToolpathId,
+            &crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
+        >,
+    ) -> crate::stock::sim_triage::SimulationTriage {
         use crate::stock::sim_triage::{SimulationTriage, TriageInputs};
 
-        let Some(trace) = evidence.cut_trace else {
-            return SimulationTriage::default();
-        };
         let diagnostics =
             crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
                 project_diagnostics,
@@ -664,18 +794,11 @@ impl ProjectSession {
             .map(|tc| tc.id)
             .collect();
 
-        // Phase 4 — the plunge-class backstop's population. Every enabled
-        // toolpath with a result, drill ops included; the finding itself is
-        // NOT gated on `rest_driven`, because an untagged vertical descent is
-        // a defect on fresh stock exactly as it is on rest stock.
-        // The trace the caller is triaging decides the readings' feeds
-        // provenance (Phase 3), so it is the one to pass — not
-        // `self.simulation`, which may hold a different run, or none.
-        // Since N12 item 10 the GUI adopts its simulation into the
-        // session through `Command::AdoptSimulation`, so that slot is
-        // populated in the GUI process too; the rule is unchanged,
-        // because the caller's own trace is still the one it displays.
-        let kinematic_utilization = self.kinematic_utilizations(Some(trace));
+        // Phase 4 — the plunge-class backstop's population
+        // (`kinematic_utilization`): every enabled toolpath with a result,
+        // drill ops included. The finding itself is NOT gated on
+        // `rest_driven`, because an untagged vertical descent is a defect on
+        // fresh stock exactly as it is on rest stock.
 
         // G-RAPIDFRAME: the triage names the toolpath and the local move of
         // each rapid collision from the ONE attribution, not from the bare
@@ -696,7 +819,7 @@ impl ProjectSession {
                 toolpath_names: &toolpath_names,
                 holder_collisions: &evidence.holder_collisions,
                 tool_diameters_mm: &tool_diameters_mm,
-                kinematic_utilization: &kinematic_utilization,
+                kinematic_utilization,
                 region_of: None,
             },
             &rest_driven,

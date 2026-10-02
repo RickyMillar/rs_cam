@@ -32,12 +32,6 @@
 //! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
 //! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
 //!
-//! The `contour_spiral` case re-blessed 2026-10-01 (By Area WP2, 840 -> 884
-//! moves): the pocket tree of the hemisphere has one pocket, so By Area has
-//! no valley and emits Global's motion, a waterline cleanup after each level
-//! (sentry `adaptive3d_by_area_flat_plane_is_global`). Before, the flood-fill
-//! detector ran one cleanup at the bottom Z.
-//!
 //! ## Determinism
 //!
 //! `emission_is_deterministic_within_one_process` generates the AgentSearch

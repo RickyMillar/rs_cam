@@ -799,7 +799,7 @@ mod release_for_new_run_m1 {
             column_grid_cell_mm: 1.0,
             prior_stocks,
         });
-        sim.last_run = Some(SimulationRunMeta);
+        sim.last_run = Some(SimulationRunMeta { epoch: None });
         sim.playback.live_stock = Some(TriDexelStock::from_bounds(&bbox(), 1.0));
         sim.playback.live_stock_group = Some(0);
         sim.playback.live_sim_move = 4;

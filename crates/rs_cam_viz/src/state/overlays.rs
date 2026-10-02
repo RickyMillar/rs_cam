@@ -109,6 +109,10 @@ pub struct OverlayPanelState {
     pub rest_confirm: Option<ToolpathId>,
     /// The one `Compute & show` request that waits for its data.
     pub pending_show: Option<PendingShow>,
+    /// `true` while the viewport legend is folded to one `Legend (n)` chip.
+    /// It is the operator's view choice for this window: no project file,
+    /// setup sheet or MCP reply reads it.
+    pub legend_collapsed: bool,
 }
 
 impl OverlayPanelState {
@@ -122,6 +126,7 @@ impl OverlayPanelState {
             displaced: Vec::new(),
             rest_confirm: None,
             pending_show: None,
+            legend_collapsed: false,
         }
     }
 

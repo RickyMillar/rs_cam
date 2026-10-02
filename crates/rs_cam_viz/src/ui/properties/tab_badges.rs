@@ -454,7 +454,7 @@ pub(super) fn rest_region_pathology_caption(
     match pathology {
         rs_cam_core::surface::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
             "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
-             raise min_valley_depth."
+             raise Min Valley Depth."
         ),
         rs_cam_core::surface::rest_field::RestRegionPathology::SingleGiantRegion {
             part_footprint_fraction,
@@ -464,7 +464,7 @@ pub(super) fn rest_region_pathology_caption(
             // so, because the two differ by ~2x on any non-rectangular part.
             format!(
                 "⚠ Rest region covers {:.0}% of the part footprint — regions barely restrict \
-                 the fine pass; raise min_valley_depth, or set Start from to \
+                 the fine pass; raise Min Valley Depth, or set Start from to \
                  After previous ops for an honest rest picture.",
                 part_footprint_fraction * 100.0
             )

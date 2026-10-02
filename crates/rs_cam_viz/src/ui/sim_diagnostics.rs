@@ -39,13 +39,13 @@ pub fn draw(
     ui.heading("Inspector");
     ui.separator();
 
-    let load_report = sim.cached_load_report(session, gui.edit_counter);
+    let load_report = sim.cached_load_report(session);
 
     // DC6 — the page is summary-first. ONE verdict line here, and every dense
     // section below it is closed until the operator opens it. The line also
     // carries freshness, so the stale signal is reachable even when a focused
     // card replaces the scope sections (INS-001/005).
-    draw_status_header(ui, sim, session, gui);
+    draw_status_header(ui, sim, session);
 
     // Scope-tiered body (§2.2/2.3). A focused hotspot/issue card is a
     // mutually-exclusive drill-in overlay (early-return); otherwise the three
@@ -79,7 +79,7 @@ pub fn draw(
         // draws the rows with no card after them, so the Inspector lists
         // every row once, in `criteria()` order. Otherwise "Now playing"
         // draws the rows, as before.
-        let cut_metrics = cut_metrics_view(sim, session, gui);
+        let cut_metrics = cut_metrics_view(sim, session);
         let cards_shown = matches!(cut_metrics, CutMetricsView::Cards(..));
         draw_toolpath_section(ui, sim, &load_report, cards_shown, events);
         ui.add_space(6.0);
@@ -211,12 +211,7 @@ fn verdict_line(
 /// The panel used to hand-roll its own verdict here (collision count, then a
 /// 40 % air-cut bar). It reads the shared triage instead, so the GUI cannot
 /// rank a finding differently from the CLI and the MCP for one project.
-fn draw_status_header(
-    ui: &mut egui::Ui,
-    sim: &mut SimulationState,
-    session: &ProjectSession,
-    gui: &GuiState,
-) {
+fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &ProjectSession) {
     if sim.results.is_none() {
         return;
     }
@@ -224,7 +219,7 @@ fn draw_status_header(
     // Scoped so the triage borrow ends before the freshness read below.
     let verdict = {
         use rs_cam_core::stock::sim_measurability::Measurability;
-        let triage = sim.cached_simulation_triage(session, gui.edit_counter);
+        let triage = sim.cached_simulation_triage(session);
         let not_measured = triage
             .measurability
             .entries
@@ -245,8 +240,8 @@ fn draw_status_header(
     // W4, G-FRESHNESSDISAGREE: this chip and the Optimize window's banner
     // are the two halves of the ledger row. Both ask the core now, so the
     // pair cannot read "live" and "stale" about one run again.
-    if simulation_freshness(session, sim).is_stale() {
-        FreshnessGate::banner(ui);
+    if let Some(reason) = simulation_freshness(session, sim).stale_reason(session) {
+        FreshnessGate::banner(ui, &reason);
     } else {
         ui.label(
             egui::RichText::new("\u{2713} live")
@@ -628,11 +623,10 @@ fn draw_project_section(
             // nobody reads by the time it matters.
             {
                 use rs_cam_core::stock::sim_measurability::Measurability;
-                // Cached by (trace pointer, edit counter) — the same
-                // staleness rule as the load report and chipload envelopes
-                // beside it. Rebuilding the triage per frame is a full
+                // Cached on the load report, the session parts beside it
+                // and the evidence. A triage build per frame is a full
                 // trace pass per toolpath plus a sort, to render one strip.
-                let triage = sim.cached_simulation_triage(session, gui.edit_counter);
+                let triage = sim.cached_simulation_triage(session);
                 let unmeasured: Vec<_> = triage
                     .measurability
                     .entries
@@ -1267,14 +1261,13 @@ fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
 fn verdict_tooltip(row: &LimitRow<'_>) -> String {
     let status = &row.status;
     // X-VAC: the clause comes from core so GUI, CLI, MCP and the
-    // diagnostics list cannot word it differently.
+    // diagnostics list cannot word it differently. The join is the one
+    // `sim_op_list` uses: "Power — VACUOUS: …". The old join gave "Power
+    // reports Within but — VACUOUS: …" with a Rust `Debug` value in it
+    // (audit WRONG #4, 2026-10-02).
     let vacuity = status.vacuity_clause();
     if !vacuity.is_empty() {
-        return format!(
-            "{} reports {:?} but{vacuity}",
-            status.kind.label(),
-            status.state
-        );
+        return format!("{}{vacuity}.", status.kind.label());
     }
     // For burn-risk chipload, the bound the reading sits against is the LUT
     // FLOOR — render as "peak / floor" so the relationship reads correctly
@@ -1618,11 +1611,7 @@ enum CutMetricsView {
 /// Decide what the section shows. The decision is made once per frame,
 /// before "Now playing" draws, because that section draws the limit rows
 /// only when no card will.
-fn cut_metrics_view(
-    sim: &mut SimulationState,
-    session: &ProjectSession,
-    gui: &GuiState,
-) -> CutMetricsView {
+fn cut_metrics_view(sim: &mut SimulationState, session: &ProjectSession) -> CutMetricsView {
     let has_trace = sim
         .results
         .as_ref()
@@ -1640,7 +1629,7 @@ fn cut_metrics_view(
     let Some(toolpath_id) = sim.focused_toolpath() else {
         return CutMetricsView::NoFocus;
     };
-    let set = sim.cached_cut_metrics(session, gui.edit_counter, toolpath_id);
+    let set = sim.cached_cut_metrics(session, toolpath_id);
     if set.cards.is_empty() {
         return CutMetricsView::Empty("No cut metric applies to this operation.");
     }

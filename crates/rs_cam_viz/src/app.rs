@@ -1091,7 +1091,6 @@ impl RsCamApp {
                     ctx,
                     &mut state.simulation,
                     &state.session,
-                    &state.gui,
                     events,
                 );
             } else {

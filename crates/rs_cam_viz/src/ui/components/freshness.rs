@@ -27,20 +27,25 @@ impl Freshness {
 }
 
 pub struct FreshnessGate {
-    stale: bool,
+    /// Why the simulation is stale (`SimFreshness::stale_reason`), or
+    /// `None` when it is not stale.
+    stale_reason: Option<String>,
 }
 
 impl FreshnessGate {
-    pub fn new(stale: bool) -> Self {
-        Self { stale }
+    pub fn new(stale_reason: Option<String>) -> Self {
+        Self { stale_reason }
     }
 
     /// The single "results stale" banner — consulted at every concrete-metric
     /// readout so a stale number is never styled as fresh. Supersedes the
     /// `theme::stale_banner` free function.
-    pub fn banner(ui: &mut egui::Ui) {
+    ///
+    /// `reason` is `SimFreshness::stale_reason`. The banner used to read
+    /// "params changed" for every cause, also for a machine import.
+    pub fn banner(ui: &mut egui::Ui, reason: &str) {
         ui.label(
-            egui::RichText::new("\u{26A0} Results stale (params changed) — re-run sim")
+            egui::RichText::new(banner_text(reason))
                 .small()
                 .color(theme::WARNING),
         );
@@ -49,8 +54,8 @@ impl FreshnessGate {
     /// Render `body`, prefixing the stale banner and dimming the body when
     /// stale. Use this to wrap concrete-metric readouts.
     pub fn show(self, ui: &mut egui::Ui, body: impl FnOnce(&mut egui::Ui)) {
-        if self.stale {
-            Self::banner(ui);
+        if let Some(reason) = self.stale_reason.as_deref() {
+            Self::banner(ui, reason);
             ui.scope(|ui| {
                 ui.set_opacity(0.5);
                 body(ui);
@@ -59,4 +64,9 @@ impl FreshnessGate {
             body(ui);
         }
     }
+}
+
+/// The text of [`FreshnessGate::banner`] for one stale reason.
+pub fn banner_text(reason: &str) -> String {
+    format!("\u{26A0} Results stale ({reason}) \u{2014} run the simulation again")
 }

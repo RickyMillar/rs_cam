@@ -765,7 +765,7 @@ impl<B: ComputeBackend> AppController<B> {
                 if simulation.core.resolution_clamped {
                     self.push_notification(
                         "Sim resolution was coarsened to fit grid limits — \
-                     consider reducing stock size or increasing resolution"
+                     use a smaller stock or a larger Resolution (cell size)"
                             .to_owned(),
                         crate::controller::Severity::Warning,
                     );
@@ -891,6 +891,12 @@ impl<B: ComputeBackend> AppController<B> {
                     modulation_feed_scale: 1.0,
                     ..Default::default()
                 };
+                    // A run that does not answer the live epoch is NOT
+                    // modulated, but the view KEEPS its trace. The put-back
+                    // sat inside the live-epoch branch, so a late run lost
+                    // its trace: the cycle time then read "not simulated"
+                    // beside the run on screen (machine import during a
+                    // run, 2026-10-02).
                     let mut cut_trace = self
                         .state
                         .simulation
@@ -901,9 +907,9 @@ impl<B: ComputeBackend> AppController<B> {
                         self.state
                             .session
                             .modulate_simulation_trace(&mut cut_trace, &opts);
-                        if let Some(results) = self.state.simulation.results.as_mut() {
-                            results.cut_trace = cut_trace;
-                        }
+                    }
+                    if let Some(results) = self.state.simulation.results.as_mut() {
+                        results.cut_trace = cut_trace;
                     }
                 }
 
@@ -1001,9 +1007,12 @@ impl<B: ComputeBackend> AppController<B> {
                 // with nothing and no way to tell a cancelled run
                 // from one that never happened. Stored, and marked
                 // not-current.
-                let _ = self.state.simulation.submitted_simulation_epoch.take();
+                let run_epoch = self.state.simulation.submitted_simulation_epoch.take();
                 let _ = self.state.simulation.submitted_edit_counter.take();
-                self.state.simulation.last_run = Some(SimulationRunMeta);
+                // The run keeps the epoch it was submitted at, so a stale
+                // reading can name the edits after it (a machine import
+                // reads "machine settings changed", not "parameters").
+                self.state.simulation.last_run = Some(SimulationRunMeta { epoch: run_epoch });
 
                 self.pending_upload = true;
 
@@ -1494,9 +1503,10 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// Three outcomes, and they are deliberately not collapsed:
     ///
-    /// * A result for a toolpath the overlay is no longer asking about is a
-    ///   stale supersede. It is DROPPED, never shown — the operator has
-    ///   already moved on, and the sweep has already asked for the new one.
+    /// * A result for a toolpath the overlay is no longer asking about, or
+    ///   for a request key the overlay no longer holds, is a stale
+    ///   supersede. It is DROPPED, never shown — the operator has already
+    ///   moved on, and the sweep has already asked for the new one.
     /// * A cancelled walk is DROPPED too, and it must not clear the key.
     ///   The Reach lane cancels only when a replacement has just been queued,
     ///   so the `Cancelled` is bookkeeping, exactly as G-REGEN-RACE is on the
@@ -1520,6 +1530,17 @@ impl<B: ComputeBackend> AppController<B> {
         if self.state.gui.reach_overlay.toolpath != Some(result.toolpath_id) {
             tracing::debug!(
                 "Reach map for tp {} dropped — the overlay now follows a different selection",
+                result.toolpath_id
+            );
+            return;
+        }
+        // The same toolpath can ask a new question: an edit to its tool or
+        // its parameters moves the key, and the sweep has already queued the
+        // new walk. A result that was sent before that edit answers the old
+        // question, so drop it rather than show the previous tool's map.
+        if self.state.gui.reach_overlay.key.as_ref() != Some(&result.key) {
+            tracing::debug!(
+                "Reach map for tp {} dropped — the request key moved after the walk was sent",
                 result.toolpath_id
             );
             return;
@@ -1664,12 +1685,13 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(sim_results) = self.state.simulation.results.as_ref() else {
             return;
         };
-        let Some(trace) = sim_results.cut_trace.as_deref() else {
+        let Some(trace) = sim_results.cut_trace.as_ref() else {
             return;
         };
 
-        // Compute per-toolpath verdicts off the new trace.
-        let load_report = rs_cam_core::gcode::project_load_report(&self.state.session, Some(trace));
+        // Compute per-toolpath verdicts off the new trace, through the
+        // session memo that the panels read.
+        let load_report = self.state.session.tool_load_report_for(Some(trace));
         // Map toolpath_id -> verdict for fast lookup. Index by id
         // (not toolpath_index) because the report uses ids.
         let mut verdict_by_id: std::collections::HashMap<

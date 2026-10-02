@@ -19,6 +19,7 @@ mod freshness;
 mod generate_all;
 mod generate_all_plan_g_genplan;
 mod inspect_simulation;
+mod machine_import_during_a_run_g_machinestale;
 mod mcp_cancel;
 mod model_relink;
 mod optimize;
@@ -106,6 +107,9 @@ struct ScriptedBackend {
     /// `ComputeBackend::submit_job` has an empty default body, so a backend
     /// that does not override it records nothing.
     job_requests: Vec<JobRequest>,
+    /// Reach-lane submissions, kept WHOLE so a test can read the key each
+    /// walk was asked under.
+    reach_requests: Vec<crate::compute::ReachRequest>,
 }
 
 impl ScriptedBackend {
@@ -121,6 +125,7 @@ impl ScriptedBackend {
             submitted: Vec::new(),
             optimize_requests: Vec::new(),
             job_requests: Vec::new(),
+            reach_requests: Vec::new(),
         }
     }
 }
@@ -142,6 +147,9 @@ impl ComputeBackend for ScriptedBackend {
     }
     fn submit_job(&mut self, request: JobRequest) {
         self.job_requests.push(request);
+    }
+    fn submit_reach_map(&mut self, request: crate::compute::ReachRequest) {
+        self.reach_requests.push(request);
     }
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
@@ -1169,7 +1177,8 @@ fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
     let tp_id = controller.state.session.toolpath_configs()[0].id;
-    controller.state.simulation.last_run = Some(crate::state::simulation::SimulationRunMeta);
+    controller.state.simulation.last_run =
+        Some(crate::state::simulation::SimulationRunMeta { epoch: None });
     controller.state.gui.dirty = false;
     (controller, tp_id)
 }

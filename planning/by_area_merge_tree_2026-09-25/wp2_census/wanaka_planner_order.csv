@@ -1,2 +1,0 @@
-order,kind,cells,area_mm2,saddle_z,depth_mm,x_min,y_min,x_max,y_max,surf_z_min,surf_z_max,levels,anchor_x,anchor_y
-1,rest,40200,10050.0,,6.667,24.75,19.75,125.25,119.75,18.333,23.947,2,75.00,69.50

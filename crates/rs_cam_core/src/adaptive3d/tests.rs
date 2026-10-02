@@ -9,12 +9,14 @@
     clippy::print_stderr
 )]
 
+use super::clearing::detect_material_regions;
 use super::path::Adaptive3dSegment;
 use super::*;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::P3;
 use crate::ids::ToolpathId;
 use crate::mesh::SpatialIndex;
+use crate::stock::dexel::{DexelSegment, ray_subtract_above};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
 use crate::tool::FlatEndmill;
@@ -31,6 +33,65 @@ fn make_stock(
     cell_size: f64,
 ) -> TriDexelStock {
     TriDexelStock::from_stock(x_min, y_min, x_max, y_max, -10.0, z_top, cell_size)
+}
+
+/// Helper: create a TriDexelStock with custom per-cell Z-top values.
+/// `cell_top_z` is row-major; each cell gets a single segment [z_min, cell_z].
+fn make_stock_with_cells(
+    rows: usize,
+    cols: usize,
+    origin_x: f64,
+    origin_y: f64,
+    cell_size: f64,
+    z_min: f64,
+    cell_top_z: &[f64],
+) -> TriDexelStock {
+    use smallvec::SmallVec;
+    let z_max = cell_top_z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let bbox = crate::geo::BoundingBox3 {
+        min: P3::new(origin_x, origin_y, z_min),
+        max: P3::new(
+            origin_x + (cols - 1) as f64 * cell_size,
+            origin_y + (rows - 1) as f64 * cell_size,
+            z_max,
+        ),
+    };
+    let mut rays = Vec::with_capacity(rows * cols);
+    for &z in cell_top_z {
+        if z <= z_min + 1e-9 {
+            // No material
+            rays.push(SmallVec::new());
+        } else {
+            let seg = DexelSegment::new(z_min as f32, z as f32);
+            rays.push(SmallVec::from_buf([seg]));
+        }
+    }
+    // A/M10: this grid is built from an explicit per-cell top array, so
+    // each cell's top IS the stated height — there is no sub-cell blend
+    // to be conservative about. Seed the sliver-safe bound to the same
+    // values rather than to the bbox top, which would make every descent
+    // over this fixture clear the full stock height.
+    let conservative_top: Vec<f32> = cell_top_z.iter().map(|&z| z as f32).collect();
+    let grid = crate::stock::dexel::DexelGrid {
+        rays,
+        rows,
+        cols,
+        origin_u: origin_x,
+        origin_v: origin_y,
+        cell_size,
+        axis: crate::stock::dexel::DexelAxis::Z,
+        conservative_top,
+    };
+    TriDexelStock {
+        z_grid: grid,
+        x_grid: None,
+        y_grid: None,
+        stock_bbox: bbox,
+        stamp_dispatch: Default::default(),
+        last_stamp_dispatch: Default::default(),
+        playback_dispatch: Default::default(),
+        last_playback_dispatch: Default::default(),
+    }
 }
 
 fn make_flat_mesh() -> (TriangleMesh, SpatialIndex) {
@@ -560,6 +621,151 @@ fn test_flat_area_detection_finds_shelf() {
         found_shelf,
         "Should detect shelf near z=10.5, found levels: {:?}",
         flat_levels
+    );
+}
+
+// ── Region detection tests ───────────────────────────────────────────
+
+#[test]
+fn test_detect_regions_single_block() {
+    // Full material → 1 region covering entire grid
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let cell_size = 2.0;
+
+    let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
+    let surface_hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        material_stock.z_grid.rows,
+        material_stock.z_grid.cols,
+        cell_size,
+        -10.0,
+    );
+
+    let regions = detect_material_regions(&material_stock, &surface_hm, 0.5, 3.175);
+    assert!(
+        !regions.is_empty(),
+        "Full material should produce at least 1 region"
+    );
+    // Largest region should cover most of the grid
+    let total_cells = material_stock.z_grid.rows * material_stock.z_grid.cols;
+    assert!(
+        regions[0].cell_count > total_cells / 2,
+        "Largest region should cover most cells: {} / {}",
+        regions[0].cell_count,
+        total_cells
+    );
+}
+
+#[test]
+fn test_detect_regions_two_islands() {
+    // Two separated blocks → 2 regions, sorted by area
+    let cell_size = 1.0;
+    let material_stock = make_stock(0.0, 0.0, 30.0, 10.0, 20.0, cell_size);
+    let rows = material_stock.z_grid.rows;
+    let cols = material_stock.z_grid.cols;
+
+    // Surface at z=0 everywhere
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        material_stock.z_grid.origin_u,
+        material_stock.z_grid.origin_v,
+        cell_size,
+    );
+
+    // Create two islands by clearing a gap in the middle
+    let mut hm = material_stock;
+    for row in 0..rows {
+        for col in 0..cols {
+            let (x, _y) = hm.z_grid.cell_to_world(row, col);
+            if (13.0..=17.0).contains(&x) {
+                // Clear the gap — remove all material
+                ray_subtract_above(hm.z_grid.ray_mut(row, col), hm.stock_bbox.min.z as f32);
+            }
+        }
+    }
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert!(
+        regions.len() >= 2,
+        "Should detect at least 2 separate regions, got {}",
+        regions.len()
+    );
+    // Sorted by area descending
+    assert!(
+        regions[0].cell_count >= regions[1].cell_count,
+        "Regions should be sorted by area descending"
+    );
+}
+
+#[test]
+fn test_detect_regions_diagonal_connected() {
+    // Diagonal-touching blocks → 1 region (8-connected)
+    let cell_size = 1.0;
+    let rows = 10;
+    let cols = 10;
+
+    // Surface at z=0, material at z=20 only on diagonal cells
+    let mut mat_cells = vec![0.0f64; rows * cols];
+    for i in 0..rows.min(cols) {
+        mat_cells[i * cols + i] = 20.0;
+    }
+
+    let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        0.0,
+        0.0,
+        cell_size,
+    );
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert_eq!(
+        regions.len(),
+        1,
+        "Diagonal cells should form 1 region with 8-connectivity, got {}",
+        regions.len()
+    );
+}
+
+#[test]
+fn test_detect_regions_small_filtered() {
+    // Isolated cells (< 4) should be filtered out
+    let cell_size = 1.0;
+    let rows = 10;
+    let cols = 10;
+
+    // Only 2 adjacent cells have material
+    let mut mat_cells = vec![0.0f64; rows * cols];
+    mat_cells[0] = 20.0;
+    mat_cells[1] = 20.0;
+
+    let hm = make_stock_with_cells(rows, cols, 0.0, 0.0, cell_size, -10.0, &mat_cells);
+    let surface_hm = SurfaceHeightmap::from_parts(
+        vec![0.0; rows * cols],
+        vec![true; rows * cols],
+        rows,
+        cols,
+        0.0,
+        0.0,
+        cell_size,
+    );
+
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    assert!(
+        regions.is_empty(),
+        "Tiny regions (< 4 cells) should be filtered out, got {} regions",
+        regions.len()
     );
 }
 
@@ -2249,12 +2455,10 @@ fn make_pocket_plate(w: usize, h: usize, pockets: &[(f64, f64, f64, f64)]) -> Tr
     TriangleMesh::from_raw(vertices, triangles)
 }
 
-/// The By Area planner records its jobs. Two pockets under a plate whose
-/// top is the stock top are two roots with no children: two valleys and no
-/// rest (PLAN §2.1). The first valley has no tool position to be nearest
-/// to, so the deepest goes first, and on a tie the lower tree id (pocket A,
-/// whose floor cell comes first in the grid). Each region's span carries its
-/// order as the `region_id`; the moves of region 1 stay in the region 1 box.
+/// The By Area planner records its detection. Two pockets under a plate
+/// whose top is the stock top are two regions; the larger one is region 1;
+/// each region's span carries its order as the `region_id`; the moves of
+/// region 1 stay in the region 1 box.
 #[test]
 fn by_area_exports_two_pocket_region_map() {
     use crate::trace::toolpath_spans::{SpanKind, SpanPayload};
@@ -2279,18 +2483,8 @@ fn by_area_exports_two_pocket_region_map() {
     assert_eq!(map.labels.len(), map.rows * map.cols);
     let (r1, r2) = (&map.regions[0], &map.regions[1]);
     assert_eq!((r1.order, r2.order), (1, 2));
-    assert_eq!(
-        (r1.kind, r2.kind),
-        (super::AreaRegionKind::Valley, super::AreaRegionKind::Valley),
-        "no rest: the plate is at the top"
-    );
-    for r in [r1, r2] {
-        let saddle = r.saddle_z.expect("a valley has a saddle");
-        assert!((saddle - 10.0).abs() < 1e-9, "a root's saddle is the top");
-        assert!(r.depth_mm > 9.0 && r.area_mm2 > 100.0, "{r:?}");
-    }
-    // Region 1 is pocket A (x < 40), region 2 is pocket B (x > 40): both
-    // floors are Z 0, and A's tree id is lower.
+    assert!(r1.cell_count > r2.cell_count, "the larger region is first");
+    // Region 1 is pocket A (x < 40), region 2 is pocket B (x > 40).
     assert!(r1.bbox_xy[2] < 40.0, "region 1 box {:?}", r1.bbox_xy);
     assert!(r2.bbox_xy[0] > 40.0, "region 2 box {:?}", r2.bbox_xy);
     for r in &map.regions {

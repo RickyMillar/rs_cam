@@ -13,7 +13,7 @@ use crate::compute::config::DressupConfig;
 use crate::compute::tool_config::ToolId;
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::session::dependencies::EdgeKind;
-use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
+use crate::session::{Effects, ProjectSession, SessionError, SimulationDropCause, ToolpathConfig};
 
 impl ProjectSession {
     // ── Toolpath CRUD ─────────────────────────────────────────────
@@ -65,7 +65,7 @@ impl ProjectSession {
         setup.toolpath_indices.push(tp_index);
 
         // Adding a toolpath invalidates simulation
-        self.drop_simulation();
+        self.drop_simulation(SimulationDropCause::Operations);
 
         Ok(tp_index)
     }
@@ -119,7 +119,7 @@ impl ProjectSession {
             // toolpath, so no revision a reader recorded still applies.
             session.bump_all_revisions();
 
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
             Ok(())
         })
     }
@@ -192,7 +192,7 @@ impl ProjectSession {
             session.invalidate_output_dependents(from_index, true);
             session.invalidate_output_dependents(to_index, true);
 
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
             Ok(())
         })
     }
@@ -306,7 +306,7 @@ impl ProjectSession {
         seeds: BTreeSet<usize>,
         chain_seeds: BTreeSet<usize>,
     ) -> (BTreeSet<usize>, BTreeSet<usize>) {
-        self.drop_simulation();
+        self.drop_simulation(SimulationDropCause::Operations);
         self.walk_output_dependents(seeds, chain_seeds)
     }
 
@@ -435,7 +435,7 @@ impl ProjectSession {
             if changed {
                 session.invalidate_output_dependents(index, true);
             }
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
             Ok(())
         })
     }
@@ -523,7 +523,7 @@ impl ProjectSession {
             target.insert(at, tp_index);
 
             session.drop_result(tp_index);
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
             Ok(())
         })
     }
@@ -674,7 +674,7 @@ impl ProjectSession {
             tc.dressups = dressups;
             tc.face_selection = face_selection;
             session.drop_result(index);
-            session.drop_simulation();
+            session.drop_simulation(SimulationDropCause::Operations);
             Ok(())
         })
     }
@@ -803,12 +803,19 @@ impl ProjectSession {
     /// there: two edits must move it twice, or a run submitted between
     /// them reads current.
     ///
+    /// `cause` names the class of the edit. The call records the new epoch
+    /// against it, so a surface can name why a run is stale
+    /// ([`ProjectSession::simulation_drop_causes_since`]).
+    ///
     /// The method sits here beside `drop_result` although it names no
     /// toolpath: the two are one rule, and the reader who finds either
     /// needs the other.
-    pub(crate) fn drop_simulation(&mut self) {
+    pub(crate) fn drop_simulation(&mut self, cause: SimulationDropCause) {
         self.simulation = None;
         self.simulation_epoch += 1;
+        if let Some(slot) = self.simulation_drop_epochs.get_mut(cause.slot()) {
+            *slot = self.simulation_epoch;
+        }
     }
 
     /// Drop a toolpath's cached result and bump its revision.
@@ -853,7 +860,7 @@ impl ProjectSession {
         for index in 0..self.toolpath_configs.len() {
             self.drop_result(index);
         }
-        self.drop_simulation();
+        self.drop_simulation(SimulationDropCause::Operations);
     }
 
     /// Drop the cached result of every named toolpath, then invalidate
@@ -897,7 +904,7 @@ impl ProjectSession {
         for idx in indices {
             self.drop_result(idx);
         }
-        self.drop_simulation();
+        self.drop_simulation(SimulationDropCause::Operations);
     }
 
     /// Public door onto the chain invalidation for callers that write

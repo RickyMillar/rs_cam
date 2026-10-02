@@ -92,7 +92,8 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
              will not be cut by that operation and nothing else will mention \
              it. The usual cause is a threshold below the prior pass's cusp \
              height, which turns the cusp pattern itself into the mask — \
-             raise `min_valley_depth` / `min_rest_depth_mm` until the island \
+             raise Min Valley Depth (`min_valley_depth`) or Min Rest Depth \
+             (`min_rest_depth_mm`) until the island \
              count is a handful to a few dozen. [Count of grouped region \
              polygons before truncation; extraction stage. Report-only — no \
              gate consumes this.]",

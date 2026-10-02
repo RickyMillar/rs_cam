@@ -33,6 +33,7 @@ mod generation;
 mod params;
 mod simulation;
 
+pub use diagnostics::TriageSessionKey;
 pub(crate) use params::strip_outer_quotes;
 
 /// Fully-owned, per-generation inputs resolved from session state by

@@ -736,6 +736,30 @@ fn the_grid_note_says_the_bias_over_states_and_names_its_area_base() {
         note.contains(&map.over_statement_note()),
         "the grid note must quote the shared over-statement sentence"
     );
+
+    // Audit WRONG #2 (2026-10-02): each sentence once. The one-string
+    // note quotes each shared sentence once, and the panel's grid line
+    // quotes neither, because the panel prints both on their own lines.
+    assert_eq!(note.matches(&map.area_basis_note()).count(), 1, "{note}");
+    assert_eq!(
+        note.matches(&map.over_statement_note()).count(),
+        1,
+        "{note}"
+    );
+    let line = map.grid_line();
+    assert!(
+        !line.contains(&map.area_basis_note()) && !line.contains(&map.over_statement_note()),
+        "the grid line must hold neither shared sentence; the panel prints \
+         them on their own lines. Got: {line}"
+    );
+    assert!(
+        line.contains("UNDER the floor"),
+        "the grid line must still mark a bar under the floor. Got: {line}"
+    );
+    assert!(
+        note.starts_with(line.trim_end_matches(" \u{2014} the bar is UNDER the floor")),
+        "the grid line and the grid note must name one grid. Line: {line}; note: {note}"
+    );
 }
 
 // ── FLD-01: the grid keys stay where they were on the wire ──────────────

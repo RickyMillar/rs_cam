@@ -1351,3 +1351,48 @@ fn the_inspector_door_drops_and_bumps_the_same_set() {
          checks for a cached result must reach one answer"
     );
 }
+
+// ── Simulation drop causes ───────────────────────────────────
+
+/// Each drop records its cause against the new epoch, so a run submitted
+/// at one epoch names only the causes of the drops after it. A machine
+/// edit must not read as a parameter change.
+#[test]
+fn a_simulation_drop_records_its_cause_against_the_epoch() {
+    use crate::session::{SimulationDropCause, SimulationDropCauses};
+
+    let mut s = make_session();
+    let start = s.simulation_epoch();
+    assert_eq!(
+        s.simulation_drop_causes_since(start),
+        SimulationDropCauses::EMPTY
+    );
+
+    let _ = s.invalidate_stock();
+    let after_stock = s.simulation_epoch();
+    let _ = s.invalidate_machine();
+    let after_machine = s.simulation_epoch();
+    assert_eq!(after_machine, start + 2, "two drops move the epoch twice");
+
+    let since_start: Vec<_> = s.simulation_drop_causes_since(start).iter().collect();
+    assert_eq!(
+        since_start,
+        vec![
+            SimulationDropCause::Operations,
+            SimulationDropCause::Machine
+        ]
+    );
+    let since_stock: Vec<_> = s.simulation_drop_causes_since(after_stock).iter().collect();
+    assert_eq!(
+        since_stock,
+        vec![SimulationDropCause::Machine],
+        "a run submitted after the stock edit was dropped by the machine edit only"
+    );
+    assert!(s.simulation_drop_causes_since(after_machine).is_empty());
+    assert_eq!(
+        s.simulation_drop_causes_since(start)
+            .short_label()
+            .as_deref(),
+        Some("parameters changed, machine settings changed")
+    );
+}

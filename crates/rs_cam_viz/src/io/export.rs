@@ -445,25 +445,18 @@ fn gcode_phase_for_session_toolpath<'a>(
     })
 }
 
-/// The cut trace lives on viz `SimulationState`, not on `session.simulation`.
-/// Pull from there so the export gate evaluates chipload/power against the
-/// active simulation run.
-fn viz_sim_trace(
-    sim: &SimulationState,
-) -> Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace> {
-    sim.results.as_ref().and_then(|r| r.cut_trace.as_deref())
-}
-
 /// Build the tool-load report the checked export functions enforce the
 /// policy against (C1, 2026-06-11). Evaluated from the shared session +
 /// the viz-side cut trace — the same inputs the readiness panel and the
 /// MCP `tool_load_report` tool use, so what the user sees is what the
-/// gate enforces.
+/// gate enforces. The cut trace lives on viz `SimulationState`, not on
+/// `session.simulation`, so the report reads it from there. The session
+/// memo answers, so the gate and the panels read one report.
 fn viz_load_report(
     session: &ProjectSession,
     sim: &SimulationState,
-) -> rs_cam_core::tool_load::ToolLoadReport {
-    rs_cam_core::gcode::project_load_report(session, viz_sim_trace(sim))
+) -> std::sync::Arc<rs_cam_core::tool_load::ToolLoadReport> {
+    sim.cached_load_report(session)
 }
 
 /// Export all enabled toolpaths as a single G-code file (session-based).

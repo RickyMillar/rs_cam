@@ -345,15 +345,13 @@ pub fn tool_load_check(report: &ToolLoadReport) -> CheckStatus {
     }
 }
 
-/// Build the project tool-load report against the current simulation trace.
+/// The project tool-load report against the current simulation trace.
 /// (The cut trace lives in viz sim state, not `session.simulation`.)
-pub fn load_report(state: &AppState) -> ToolLoadReport {
-    let trace = state
-        .simulation
-        .results
-        .as_ref()
-        .and_then(|r| r.cut_trace.as_deref());
-    rs_cam_core::gcode::project_load_report(&state.session, trace)
+///
+/// The session memo builds it once per change; see
+/// `ProjectSession::tool_load_report_for`.
+pub fn load_report(state: &AppState) -> std::sync::Arc<ToolLoadReport> {
+    state.simulation.cached_load_report(&state.session)
 }
 
 /// The viz-side half of [`CycleTimeBasis`] — the pieces core cannot own.

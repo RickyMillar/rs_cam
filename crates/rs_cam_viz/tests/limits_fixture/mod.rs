@@ -366,6 +366,6 @@ pub fn hovers(texts: &[String]) -> Vec<String> {
 }
 
 /// The project load report the panels read, through the panel's own producer.
-pub fn load_report(state: &AppState) -> rs_cam_core::tool_load::ToolLoadReport {
+pub fn load_report(state: &AppState) -> std::sync::Arc<rs_cam_core::tool_load::ToolLoadReport> {
     rs_cam_viz::ui::readiness::load_report(state)
 }

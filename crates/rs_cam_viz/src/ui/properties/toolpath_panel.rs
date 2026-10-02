@@ -60,7 +60,7 @@ pub(super) fn draw_toolpath_panel(
     let validation = &inputs.validation;
     let height_ctx = inputs.height_ctx.as_ref();
     let stale_default_defects = inputs.stale_default_defects.as_slice();
-    let load_verdict = inputs.load_verdict.as_ref();
+    let load_verdict = inputs.load_verdict();
     let tab_override = inputs.tab_override;
     let reach = &inputs.reach;
     let freshness = &inputs.freshness;
@@ -351,8 +351,8 @@ pub(super) fn draw_toolpath_panel(
         // the checkbox's row as bare `ui.label`s, which under that row's
         // `Extend` mode ran past the panel and clipped — the review's
         // 1400×900 capture shows the summary cut off mid-number with
-        // `grid_note` never drawn at all
-        // (`results/W02/evidence/01_finish_defaults.png`). `grid_note` and
+        // the grid note never drawn at all
+        // (`results/W02/evidence/01_finish_defaults.png`). `grid_line` and
         // `over_statement_note` are the MISSING-GUARANTEE sentences — the
         // cell, the floor and the bar, and the statement that the grid
         // over-states — so a clipped one reads as an unqualified result.
@@ -361,7 +361,7 @@ pub(super) fn draw_toolpath_panel(
             ReachPanelSummary::Measured {
                 unreachable_pct,
                 max_gap_mm,
-                grid_note,
+                grid_line,
                 area_basis_note,
                 over_statement_note,
                 tolerance_below_floor,
@@ -382,7 +382,7 @@ pub(super) fn draw_toolpath_panel(
                 );
                 wrapped_small_label(
                     ui,
-                    grid_note.clone(),
+                    grid_line.clone(),
                     if *tolerance_below_floor {
                         crate::ui::tokens::CAUTION
                     } else {
@@ -1098,7 +1098,7 @@ fn draw_feeds_tab(
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
     let project_default_rpm = inputs.project_default_rpm;
-    let load_verdict = inputs.load_verdict.as_ref();
+    let load_verdict = inputs.load_verdict();
 
     let tool_info = tool_configs
         .iter()

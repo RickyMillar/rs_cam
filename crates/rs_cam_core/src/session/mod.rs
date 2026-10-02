@@ -19,6 +19,7 @@ pub mod dependencies;
 mod diagnostics_types;
 mod eval_context;
 pub mod generation_plan;
+mod load_report;
 pub mod multitool;
 mod mutation;
 pub mod project_file;
@@ -50,8 +51,8 @@ pub use command::{
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, execute_generation, execute_job,
-    execute_optimize_toolpath, execute_recommend_clearing_strategy,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, TriageSessionKey, execute_generation,
+    execute_job, execute_optimize_toolpath, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs, toolpath_cycle_time,
@@ -66,6 +67,7 @@ pub use diagnostics_types::{
     VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
+pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
     equal_cusp_stepover_mm, execute_preview_tier_map,
@@ -1233,6 +1235,107 @@ impl Default for SimulationOptions {
     }
 }
 
+// ── Why the simulation went ────────────────────────────────────────────
+
+/// The class of edit that dropped the simulation.
+///
+/// [`ProjectSession::drop_simulation`] takes one, so a surface can name the
+/// real cause of a stale run. Before this type every stale run read
+/// "parameters changed", also when a machine import had dropped it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SimulationDropCause {
+    /// A toolpath, tool, stock, model or setup edit: the operations that
+    /// the simulation carves changed.
+    Operations,
+    /// The machine profile or its kinematics changed. The run used the old
+    /// rates and accelerations.
+    Machine,
+    /// The post settings that reach the motion changed: the spindle speed,
+    /// the rapid rate or the safe Z.
+    PostSettings,
+    /// The stored simulation resolution changed.
+    Resolution,
+    /// A fixture or a keep-out zone changed.
+    Fixtures,
+}
+
+impl SimulationDropCause {
+    /// The number of variants.
+    pub const COUNT: usize = 5;
+
+    /// Every variant, in display order.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Operations,
+        Self::Machine,
+        Self::PostSettings,
+        Self::Resolution,
+        Self::Fixtures,
+    ];
+
+    /// A short phrase for a stale label, in ASD-STE100.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Operations => "parameters changed",
+            Self::Machine => "machine settings changed",
+            Self::PostSettings => "post settings changed",
+            Self::Resolution => "simulation resolution changed",
+            Self::Fixtures => "fixtures changed",
+        }
+    }
+
+    const fn slot(self) -> usize {
+        match self {
+            Self::Operations => 0,
+            Self::Machine => 1,
+            Self::PostSettings => 2,
+            Self::Resolution => 3,
+            Self::Fixtures => 4,
+        }
+    }
+}
+
+/// A set of [`SimulationDropCause`] values.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct SimulationDropCauses {
+    bits: u8,
+}
+
+impl SimulationDropCauses {
+    /// No cause.
+    pub const EMPTY: Self = Self { bits: 0 };
+
+    /// Add one cause.
+    pub fn insert(&mut self, cause: SimulationDropCause) {
+        self.bits |= 1 << cause.slot();
+    }
+
+    /// True when the set holds `cause`.
+    pub fn contains(self, cause: SimulationDropCause) -> bool {
+        self.bits & (1 << cause.slot()) != 0
+    }
+
+    /// True when the set holds no cause.
+    pub fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    /// The causes in the set, in display order.
+    pub fn iter(self) -> impl Iterator<Item = SimulationDropCause> {
+        SimulationDropCause::ALL
+            .into_iter()
+            .filter(move |cause| self.contains(*cause))
+    }
+
+    /// The short labels joined with ", ", or `None` for an empty set.
+    pub fn short_label(self) -> Option<String> {
+        if self.is_empty() {
+            return None;
+        }
+        let labels: Vec<&str> = self.iter().map(SimulationDropCause::short_label).collect();
+        Some(labels.join(", "))
+    }
+}
+
 // ── ProjectSession ─────────────────────────────────────────────────────
 
 /// Unified project session that owns state and provides compute methods.
@@ -1308,6 +1411,13 @@ pub struct ProjectSession {
     /// edits move it twice. NOT persisted: a load builds a session with no
     /// simulation, and no in-flight run can outlive the process.
     pub(crate) simulation_epoch: u64,
+    /// For each [`SimulationDropCause`] (by slot), the value of
+    /// [`Self::simulation_epoch`] just after the last drop with that cause;
+    /// 0 when no drop had that cause. A run submitted at epoch `e` was
+    /// dropped by every cause with a value above `e`
+    /// ([`Self::simulation_drop_causes_since`]). NOT persisted, for the
+    /// reason the epoch is not.
+    pub(crate) simulation_drop_epochs: [u64; SimulationDropCause::COUNT],
     /// The one stored simulation resolution (G-RESTRES). Every simulation
     /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
     /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
@@ -1316,6 +1426,9 @@ pub struct ProjectSession {
     /// rest-stock identity rule is not enforced there. See
     /// [`Self::what_if_copy`].
     pub(crate) rest_identity_enforced: bool,
+    /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
+    /// starts empty, and the key reads the inputs, not a counter.
+    pub(crate) load_report_memo: load_report::LoadReportMemo,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1353,9 +1466,11 @@ impl ProjectSession {
             toolpath_revision: HashMap::new(),
             next_revision: 0,
             simulation_epoch: 0,
+            simulation_drop_epochs: [0; SimulationDropCause::COUNT],
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
             rest_identity_enforced: true,
+            load_report_memo: load_report::LoadReportMemo::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
@@ -1513,6 +1628,26 @@ impl ProjectSession {
     /// describes material the project no longer cuts.
     pub fn simulation_epoch(&self) -> u64 {
         self.simulation_epoch
+    }
+
+    /// The causes of every simulation drop after a run submitted at
+    /// `epoch` (a value of [`Self::simulation_epoch`]).
+    ///
+    /// Empty when no edit dropped the simulation after that epoch. A
+    /// surface reads it to name why a run is stale: "machine settings
+    /// changed" and not "parameters changed" after a machine import.
+    pub fn simulation_drop_causes_since(&self, epoch: u64) -> SimulationDropCauses {
+        let mut causes = SimulationDropCauses::EMPTY;
+        for cause in SimulationDropCause::ALL {
+            if self
+                .simulation_drop_epochs
+                .get(cause.slot())
+                .is_some_and(|&dropped_at| dropped_at > epoch)
+            {
+                causes.insert(cause);
+            }
+        }
+        causes
     }
 
     /// Number of toolpath configs in the session.

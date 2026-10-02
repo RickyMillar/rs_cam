@@ -179,3 +179,214 @@ fn drain_compute_results_skips_session_write_on_error() {
         "session.results must not be written on compute error"
     );
 }
+
+/// G-CACHEKEYS sentry: the reach overlay keys on the inputs the map reads.
+///
+/// The overlay used to key on `GuiState::edit_counter`. An MCP core command
+/// applies through `ProjectSession::apply` and never calls `mark_edited`, so
+/// an MCP `set_tool_param` or `set_toolpath_param` left the previous map on
+/// screen. These tests apply the edits the way the MCP path does, and assert
+/// that the counter did not move (the non-vacuity anchor), that the sweep
+/// submits exactly one new walk, and that an unrelated edit submits none.
+mod reach_overlay_key_g_cachekeys {
+    use super::*;
+
+    use rs_cam_core::session::{SetToolParamArgs, SetToolpathParamArgs};
+
+    use rs_cam_core::tool::MillingCutter;
+
+    use crate::state::runtime::ReachStatus;
+
+    /// Apply `command` the way the MCP core path does: straight to the session,
+    /// with no `mark_edited` and no controller event.
+    fn apply_like_mcp(controller: &mut AppController<ScriptedBackend>, command: Command) {
+        let _ = controller
+            .state
+            .session
+            .apply(command)
+            .expect("the MCP-style edit applies");
+    }
+
+    fn reach_submits(controller: &AppController<ScriptedBackend>) -> usize {
+        controller.compute.reach_requests.len()
+    }
+
+    /// A sample controller whose overlay has resolved its first walk.
+    fn settled_controller() -> AppController<ScriptedBackend> {
+        let mut controller = sample_controller();
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            1,
+            "the selected scallop toolpath resolves one reach walk"
+        );
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            1,
+            "a pump with no edit resolves no second walk"
+        );
+        controller
+    }
+
+    #[test]
+    fn an_mcp_tool_edit_resubmits_the_reach_walk_once_g_cachekeys() {
+        let mut controller = settled_controller();
+        let counter = controller.state.gui.edit_counter;
+
+        apply_like_mcp(
+            &mut controller,
+            Command::SetToolParam(SetToolParamArgs {
+                index: 0,
+                param: "diameter".to_owned(),
+                value: serde_json::json!(8.0),
+            }),
+        );
+        assert_eq!(
+            controller.state.gui.edit_counter, counter,
+            "anchor: the MCP-style edit does not move edit_counter"
+        );
+
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            2,
+            "the tool edit resolves exactly one new walk"
+        );
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            2,
+            "the new key holds: a second pump submits nothing"
+        );
+        let first = &controller.compute.reach_requests[0].spec;
+        let second = &controller.compute.reach_requests[1].spec;
+        assert!(
+            (second.cutter.diameter() - 8.0).abs() < 1e-9
+                && (first.cutter.diameter() - 8.0).abs() > 1e-3,
+            "the new walk carries the edited tool"
+        );
+    }
+
+    #[test]
+    fn an_mcp_toolpath_param_edit_resubmits_the_reach_walk_once_g_cachekeys() {
+        let mut controller = settled_controller();
+        let counter = controller.state.gui.edit_counter;
+
+        apply_like_mcp(
+            &mut controller,
+            Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "scallop_height".to_owned(),
+                value: serde_json::json!(0.031),
+            }),
+        );
+        assert_eq!(
+            controller.state.gui.edit_counter, counter,
+            "anchor: the MCP-style edit does not move edit_counter"
+        );
+
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            2,
+            "the tolerance edit resolves exactly one new walk"
+        );
+        controller.process_reach_overlay();
+        assert_eq!(reach_submits(&controller), 2);
+        assert!(
+            (controller.compute.reach_requests[1]
+                .spec
+                .params
+                .tolerance_mm
+                - 0.031)
+                .abs()
+                < 1e-12,
+            "the new walk carries the edited tolerance"
+        );
+    }
+
+    #[test]
+    fn an_unrelated_edit_does_not_resubmit_the_reach_walk_g_cachekeys() {
+        let mut controller = settled_controller();
+        // The old key moved here and blinked the overlay to "computing".
+        controller.state.gui.mark_edited();
+        controller.state.gui.mark_edited();
+        controller.process_reach_overlay();
+        assert_eq!(
+            reach_submits(&controller),
+            1,
+            "an edit that moves no input of the map submits no walk"
+        );
+    }
+
+    #[test]
+    fn a_result_for_the_previous_key_is_dropped_g_cachekeys() {
+        let mut controller = settled_controller();
+        let id = controller
+            .state
+            .gui
+            .reach_overlay
+            .toolpath
+            .expect("a toolpath is selected");
+        let old_key = rs_cam_core::maps::reach_map_cache::ReachRequestKey::of(
+            &controller.compute.reach_requests[0].spec,
+        );
+
+        apply_like_mcp(
+            &mut controller,
+            Command::SetToolParam(SetToolParamArgs {
+                index: 0,
+                param: "diameter".to_owned(),
+                value: serde_json::json!(8.0),
+            }),
+        );
+        controller.process_reach_overlay();
+        assert_eq!(reach_submits(&controller), 2);
+
+        // The walk for the old key was already sent when the edit landed.
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Reach(Box::new(
+                crate::compute::ReachResult {
+                    toolpath_id: id,
+                    key: old_key,
+                    result: Err(crate::compute::ComputeError::Message("old walk".to_owned())),
+                    colors: Arc::new(Vec::new()),
+                },
+            )));
+        controller.drain_compute_results();
+        assert!(
+            matches!(
+                controller.state.gui.reach_overlay.status,
+                ReachStatus::Computing
+            ),
+            "a result for the old key must not land on the overlay"
+        );
+
+        // Non-vacuity: the same result under the live key does land.
+        let live_key = rs_cam_core::maps::reach_map_cache::ReachRequestKey::of(
+            &controller.compute.reach_requests[1].spec,
+        );
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Reach(Box::new(
+                crate::compute::ReachResult {
+                    toolpath_id: id,
+                    key: live_key,
+                    result: Err(crate::compute::ComputeError::Message("new walk".to_owned())),
+                    colors: Arc::new(Vec::new()),
+                },
+            )));
+        controller.drain_compute_results();
+        assert!(
+            matches!(
+                controller.state.gui.reach_overlay.status,
+                ReachStatus::Failed(_)
+            ),
+            "a result for the live key lands"
+        );
+    }
+}

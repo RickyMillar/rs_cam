@@ -82,11 +82,11 @@ use crate::toolpath::{Toolpath, simplify_path_3d};
 use std::time::Instant;
 use tracing::{debug, info};
 
-use super::area_plan::{AreaOrder, AreaPlan, AreaPlanInputs, JobKind};
 use super::centre_clip::CentreClip;
 use super::clearing::{
-    AreaMask, ClearZLevelContext, PlannerCursor, clear_z_level_adaptive,
-    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, waterline_cleanup,
+    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_adaptive,
+    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
+    waterline_cleanup,
 };
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -499,221 +499,47 @@ fn clear_planned_level(
     Ok(())
 }
 
-/// The fixed arguments of one waterline cleanup pass. The Global branch and
-/// the By Area jobs run the same pass.
-struct WaterlinePass<'a> {
-    mesh: &'a TriangleMesh,
-    index: &'a SpatialIndex,
-    cutter: &'a dyn MillingCutter,
-    lut: &'a RadialProfileLUT,
-    slope_map: &'a crate::surface::slope::SlopeMap,
-    tool_radius: f64,
-    entry_floor_radius: f64,
-    cell_size: f64,
-    safe_z: f64,
-    tolerance: f64,
-    min_cutting_radius: f64,
-    stock_to_leave: f64,
-    centre_clip: Option<&'a CentreClip>,
-    debug_ctx: Option<&'a ToolpathDebugContext>,
-}
-
-impl WaterlinePass<'_> {
-    /// Push the cleanup marker and run the cleanup at `z_level`.
-    fn run(
-        &self,
-        material_stock: &mut TriDexelStock,
-        z_level: f64,
-        segments: &mut Vec<Adaptive3dSegment>,
-        cursor: &mut PlannerCursor,
-        cancel: &dyn CancelCheck,
-    ) -> Result<(), Cancelled> {
-        segments.push(Adaptive3dSegment::Marker(
-            Adaptive3dRuntimeEvent::WaterlineCleanup,
-        ));
-        waterline_cleanup(
-            self.mesh,
-            self.index,
-            self.cutter,
-            self.lut,
-            self.slope_map,
-            material_stock,
-            z_level,
-            self.tool_radius,
-            self.entry_floor_radius,
-            self.cell_size,
-            self.safe_z,
-            self.tolerance,
-            self.min_cutting_radius,
-            self.stock_to_leave,
-            self.centre_clip,
-            segments,
-            cursor,
-            self.debug_ctx,
-            cancel,
-        )
-    }
-}
-
-/// The mutable planner state that every level writes.
-struct PlannerState<'s> {
-    material_stock: &'s mut TriDexelStock,
-    segments: &'s mut Vec<Adaptive3dSegment>,
-    cursor: &'s mut PlannerCursor,
-    planner_eng: &'s mut Vec<(P3, f64)>,
-}
-
-/// Run the By Area jobs of `plan` (PLAN §2-§4) and return each job that ran,
-/// in cut order, with its levels.
+/// The levels of one By Area job, top down (PLAN §3.4, defect 2).
 ///
-/// - Rest first: the rest, then the valleys nearest next, then one
-///   waterline cleanup at the bottom Z (F9: the cleanup has no mask).
-/// - Rest last: the valleys nearest next, then the rest with a cleanup after
-///   each of its levels, as Global runs it.
-/// - No valley: the rest alone, with a cleanup per level: Global.
-#[allow(clippy::too_many_arguments)]
-fn run_area_jobs(
-    ctx: &ClearZLevelContext<'_>,
-    surface_hm: &SurfaceHeightmap,
-    plan: &AreaPlan,
-    z_levels: &[f64],
-    waterline: &WaterlinePass<'_>,
-    st: &mut PlannerState<'_>,
-    cancel: &dyn CancelCheck,
-) -> Result<Vec<(JobKind, Vec<f64>)>, Cancelled> {
-    let total = plan.job_total();
-    let mut ran: Vec<(JobKind, Vec<f64>)> = Vec::with_capacity(total);
-    let mut left: Vec<usize> = (0..plan.valleys.len())
-        .filter(|&v| plan.runs(JobKind::Valley(v)))
-        .collect();
-
-    let rest_first = plan.rest_first();
-    if rest_first && plan.runs(JobKind::Rest) {
-        run_area_job(
-            ctx,
-            surface_hm,
-            plan,
-            JobKind::Rest,
-            z_levels,
-            waterline,
-            st,
-            &mut ran,
-            total,
-            cancel,
-        )?;
-    }
-    while let Some(v) = plan.nearest_valley(&left, st.cursor.tool_pos.or(st.cursor.last_pos)) {
-        left.retain(|&x| x != v);
-        run_area_job(
-            ctx,
-            surface_hm,
-            plan,
-            JobKind::Valley(v),
-            z_levels,
-            waterline,
-            st,
-            &mut ran,
-            total,
-            cancel,
-        )?;
-    }
-    if !rest_first && plan.runs(JobKind::Rest) {
-        run_area_job(
-            ctx,
-            surface_hm,
-            plan,
-            JobKind::Rest,
-            z_levels,
-            waterline,
-            st,
-            &mut ran,
-            total,
-            cancel,
-        )?;
-    }
-
-    // Rest first with valleys: the cleanup runs once, after every job.
-    //
-    // F9 (known limit, 2026-09-24): the cleanup does not run per job.
-    // `waterline_cleanup` traces every mesh contour at the Z and has no cell
-    // mask. A per-job run would cut the contours of jobs that are not roughed
-    // yet, through their full stock.
-    if !plan.rest_cleans_per_level()
-        && let Some(&bottom) = z_levels.last()
-    {
-        waterline.run(st.material_stock, bottom, st.segments, st.cursor, cancel)?;
-    }
-    Ok(ran)
+/// The job takes the global levels down to and including the first level at
+/// or below `floor_z` (the job's lowest surface plus stock-to-leave). That
+/// level drapes onto the floor, so a floor between two levels is cut. When
+/// no level is at or below `floor_z`, the job takes every level.
+fn job_levels(z_levels: &[f64], floor_z: f64) -> Vec<f64> {
+    let end = z_levels
+        .iter()
+        .position(|&z| z <= floor_z + 0.01)
+        .map_or(z_levels.len(), |i| i + 1);
+    z_levels.iter().take(end).copied().collect()
 }
 
-/// Run one By Area job through all its levels, top down.
-#[allow(clippy::too_many_arguments)]
-fn run_area_job(
-    ctx: &ClearZLevelContext<'_>,
-    surface_hm: &SurfaceHeightmap,
-    plan: &AreaPlan,
-    job: JobKind,
-    z_levels: &[f64],
-    waterline: &WaterlinePass<'_>,
-    st: &mut PlannerState<'_>,
-    ran: &mut Vec<(JobKind, Vec<f64>)>,
-    total: usize,
-    cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
-    check_cancel(cancel)?;
-    let run_index = ran.len();
-    let levels = plan.job_levels(job, z_levels);
-    let pocket = match job {
-        JobKind::Valley(v) => plan.valleys.get(v).map(|x| x.pocket),
-        JobKind::Rest => None,
-    };
-    debug!(
-        job = run_index + 1,
-        kind = ?job,
-        tree_pocket = ?pocket,
-        cells = plan.job_cells(job),
-        levels = levels.len(),
-        "By Area job"
-    );
-    st.segments.push(Adaptive3dSegment::Marker(
-        Adaptive3dRuntimeEvent::RegionStart {
-            region_index: run_index + 1,
-            region_total: total,
-            cell_count: plan.job_cells(job),
-        },
-    ));
-    // A valley and a rest-last rest own the same cells at every level; a
-    // rest-first rest gives a valley's cells back below its saddle.
-    let per_level_mask = job == JobKind::Rest && !plan.rest_cleans_per_level();
-    let mut fixed: Option<AreaMask> = None;
-    for (li, &z_level) in levels.iter().enumerate() {
-        check_cancel(cancel)?;
-        if per_level_mask || li == 0 {
-            fixed = plan.mask(job, run_index, z_level);
-        }
-        if let Some(mask) = fixed.as_ref() {
-            clear_planned_level(
-                ctx,
-                st.material_stock,
-                surface_hm,
-                z_level,
-                LevelSlot {
-                    index: li,
-                    total: levels.len(),
-                    region: Some(mask),
-                },
-                st.segments,
-                st.cursor,
-                st.planner_eng,
-                cancel,
-            )?;
-        }
-        if job == JobKind::Rest && plan.rest_cleans_per_level() {
-            waterline.run(st.material_stock, z_level, st.segments, st.cursor, cancel)?;
-        }
+/// One cell mask per kept region, in the order of `regions`.
+///
+/// A region owns the cells with its flood-fill label. The detector drops a
+/// region with fewer than 4 cells, but those cells still hold material. The
+/// first (largest) region owns them, so every material cell has a job and
+/// By Area cuts the same cells as Global.
+fn region_masks(regions: &[MaterialRegion], bfs_labels: &[usize], cols: usize) -> Vec<AreaMask> {
+    let orphan =
+        |label: usize| label != usize::MAX && !regions.iter().any(|r| r.bfs_label == label);
+    let orphan_count = bfs_labels.iter().filter(|&&l| orphan(l)).count();
+    if orphan_count > 0 {
+        debug!(
+            cells = orphan_count,
+            "By Area: cells of dropped regions go to region 1"
+        );
     }
-    ran.push((job, levels));
-    Ok(())
+    regions
+        .iter()
+        .enumerate()
+        .filter_map(|(job, r)| {
+            let owned = bfs_labels
+                .iter()
+                .map(|&l| l == r.bfs_label || (job == 0 && orphan(l)))
+                .collect();
+            AreaMask::from_owned(job, owned, cols)
+        })
+        .collect()
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────
@@ -1128,78 +954,129 @@ pub(super) fn adaptive_3d_segments(
     let mut cursor = PlannerCursor::default();
     let mut area_regions: Option<AreaRegionMap> = None;
 
-    let waterline = WaterlinePass {
-        mesh,
-        index,
-        cutter,
-        lut: &lut,
-        slope_map: &slope_map,
-        tool_radius,
-        entry_floor_radius: entry_floor_radius(params, tool_radius),
-        cell_size,
-        safe_z: params.safe_z,
-        tolerance: params.geometry.cut_simplify_tolerance(),
-        min_cutting_radius: params.geometry.min_cutting_radius,
-        stock_to_leave: params.depth.stock_to_leave,
-        centre_clip: ctx.centre_clip,
-        debug_ctx,
-    };
-
     match params.linking.region_ordering {
         RegionOrdering::ByArea => {
-            let region_scope = debug_ctx.map(|ctx| ctx.start_span("region_detect", "Pocket tree"));
-            #[cfg(not(target_arch = "wasm32"))]
-            let t_tree = Instant::now();
-            let plan = AreaPlan::build(
+            let region_scope =
+                debug_ctx.map(|ctx| ctx.start_span("region_detect", "Detect regions"));
+            let (regions, bfs_labels) = detect_material_regions_labeled(
                 &material_stock,
                 &surface_hm,
-                &AreaPlanInputs {
-                    top_z: level_top,
-                    z_floor: params.depth.z_floor,
-                    boundary: params.geometry.boundary.as_ref(),
-                    stock_to_leave: params.depth.stock_to_leave,
-                    tool_diameter: cutter.diameter(),
-                    order: super::area_plan::area_order_xexp(), // XEXP
-                },
+                params.depth.stock_to_leave,
+                tool_radius,
             );
-            #[cfg(not(target_arch = "wasm32"))]
-            let tree_ms = t_tree.elapsed().as_millis() as u64;
-            #[cfg(target_arch = "wasm32")]
-            let tree_ms = 0u64;
+            // Record the detection for the overlay. No planner stage reads it.
+            let mut region_map =
+                AreaRegionMap::from_detection(&material_stock, &bfs_labels, &regions);
+            let masks = region_masks(&regions, &bfs_labels, material_stock.z_grid.cols);
+            drop(bfs_labels);
             info!(
-                pockets = plan.pocket_count,
-                valleys = plan.valleys.len(),
-                jobs = plan.job_total(),
-                rest_first = plan.order == AreaOrder::RestFirst,
-                min_depth_mm = plan.params.persistence_h_mm,
-                min_area_mm2 = plan.params.min_area_mm2,
-                tree_ms,
-                "By Area: pocket tree"
+                regions = regions.len(),
+                "Detected material regions for by-area ordering"
             );
-            if let Some(scope) = region_scope.as_ref() {
-                scope.set_counter("pockets", plan.pocket_count as f64);
-                scope.set_counter("valleys", plan.valleys.len() as f64);
-                scope.set_counter("regions", plan.job_total() as f64);
+            if regions.len() == 1 {
+                info!(
+                    "region_ordering=ByArea detected a single material region — \
+                     pass ordering matches Global. If you expected multiple \
+                     regions, check mesh for connected islands or adjust \
+                     min_cells detection threshold."
+                );
             }
-            drop(region_scope);
+            if let Some(scope) = region_scope.as_ref() {
+                scope.set_counter("regions", regions.len() as f64);
+            }
 
-            let mut st = PlannerState {
-                material_stock: &mut material_stock,
-                segments: &mut segments,
-                cursor: &mut cursor,
-                planner_eng: &mut planner_eng,
-            };
-            let ran = run_area_jobs(
-                &ctx,
-                &surface_hm,
-                &plan,
-                &z_levels,
-                &waterline,
-                &mut st,
-                cancel,
-            )?;
-            // Record the jobs for the overlay. No planner stage reads it.
-            area_regions = Some(AreaRegionMap::from_plan(&material_stock, &plan, &ran));
+            for mask in &masks {
+                check_cancel(cancel)?;
+                let region_idx = mask.job;
+                let Some(region) = regions.get(region_idx) else {
+                    continue;
+                };
+                let bbox = region_map
+                    .regions
+                    .get(region_idx)
+                    .map_or([0.0; 4], |r| r.bbox_xy);
+                debug!(
+                    region = region_idx,
+                    cells = region.cell_count,
+                    z_min = format!("{:.1}", region.surface_z_min),
+                    z_max = format!("{:.1}", region.surface_z_max),
+                    bbox_xy = format!(
+                        "[{:.1}, {:.1}, {:.1}, {:.1}]",
+                        bbox[0], bbox[1], bbox[2], bbox[3]
+                    ),
+                    "Processing region"
+                );
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::RegionStart {
+                        region_index: region_idx + 1,
+                        region_total: regions.len(),
+                        cell_count: region.cell_count,
+                    },
+                ));
+
+                let region_levels = job_levels(
+                    &z_levels,
+                    region.surface_z_min + params.depth.stock_to_leave,
+                );
+                region_map.set_levels(
+                    u16::try_from(region_idx + 1).unwrap_or(u16::MAX),
+                    &region_levels,
+                );
+
+                for (li, &z_level) in region_levels.iter().enumerate() {
+                    check_cancel(cancel)?;
+                    clear_planned_level(
+                        &ctx,
+                        &mut material_stock,
+                        &surface_hm,
+                        z_level,
+                        LevelSlot {
+                            index: li,
+                            total: region_levels.len(),
+                            region: Some(mask),
+                        },
+                        &mut segments,
+                        &mut cursor,
+                        &mut planner_eng,
+                        cancel,
+                    )?;
+                }
+            }
+
+            area_regions = Some(region_map);
+
+            // Waterline cleanup once at bottom Z, after every region.
+            //
+            // F9 (known limit, 2026-09-24): the cleanup does not run per
+            // region. `waterline_cleanup` traces every mesh contour at the Z
+            // and has no cell mask. A per-region run would cut the contours
+            // of regions that are not roughed yet, through their full stock.
+            if let Some(&bottom) = z_levels.last() {
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::WaterlineCleanup,
+                ));
+                waterline_cleanup(
+                    mesh,
+                    index,
+                    cutter,
+                    &lut,
+                    &slope_map,
+                    &mut material_stock,
+                    bottom,
+                    tool_radius,
+                    entry_floor_radius(params, tool_radius),
+                    cell_size,
+                    params.safe_z,
+                    params.geometry.cut_simplify_tolerance(),
+                    params.geometry.min_cutting_radius,
+                    params.depth.stock_to_leave,
+                    ctx.centre_clip,
+                    &mut segments,
+                    &mut cursor,
+                    debug_ctx,
+                    cancel,
+                )?;
+            }
         }
         RegionOrdering::Global => {
             for (level_idx, &z_level) in z_levels.iter().enumerate() {
@@ -1225,11 +1102,28 @@ pub(super) fn adaptive_3d_segments(
                 // levels stayed for the finish pass to deal with. Running it
                 // per-level trades some generation time for cleaner roughing
                 // output and reduces load on the subsequent finish.
-                waterline.run(
+                segments.push(Adaptive3dSegment::Marker(
+                    Adaptive3dRuntimeEvent::WaterlineCleanup,
+                ));
+                waterline_cleanup(
+                    mesh,
+                    index,
+                    cutter,
+                    &lut,
+                    &slope_map,
                     &mut material_stock,
                     z_level,
+                    tool_radius,
+                    entry_floor_radius(params, tool_radius),
+                    cell_size,
+                    params.safe_z,
+                    params.geometry.cut_simplify_tolerance(),
+                    params.geometry.min_cutting_radius,
+                    params.depth.stock_to_leave,
+                    ctx.centre_clip,
                     &mut segments,
                     &mut cursor,
+                    debug_ctx,
                     cancel,
                 )?;
             }

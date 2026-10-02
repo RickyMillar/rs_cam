@@ -51,9 +51,9 @@
 //! - The grid type and the neighbour walk are those of `flow_accum`
 //!   (Barnes, Lehman & Soille 2014).
 //!
-//! **Readers.** The By Area planner (`adaptive3d/area_plan.rs`) builds the
-//! tree once per 3D Rough from its own tool-CL grid. The research probe
-//! `tests/pocket_merge_tree_census_by_area.rs` also reads it.
+//! **Test door.** The research probe
+//! `tests/pocket_merge_tree_census_by_area.rs` is the only caller. No
+//! production path reads it. The By Area planner does not use it yet.
 
 use super::flow_accum::{FlowField, neighbour};
 
@@ -117,22 +117,28 @@ impl PocketTree {
         roots
     }
 
-    /// The valleys: every pocket with no children, also a root with no
-    /// children. Deepest first (lowest `min_z`, then the lower id).
-    ///
-    /// A valley is a job of the By Area planner (`adaptive3d/area_plan.rs`).
-    /// This is not the planner's cut order: the planner takes the valleys
-    /// nearest next, at run time.
+    /// The order of a depth-first rough, pocket by pocket: children before
+    /// parents (post-order), and among siblings the one with the lowest
+    /// `min_z` first. The roots go in the same order.
     #[must_use]
-    pub fn valleys(&self) -> Vec<usize> {
-        let mut valleys: Vec<usize> = self
-            .pockets
-            .iter()
-            .filter(|p| p.children.is_empty())
-            .map(|p| p.id)
-            .collect();
-        valleys.sort_by(|&a, &b| self.deeper_first(a, b));
-        valleys
+    pub fn cut_order(&self) -> Vec<usize> {
+        let mut order = Vec::with_capacity(self.pockets.len());
+        for root in self.roots() {
+            self.post_order(root, &mut order);
+        }
+        order
+    }
+
+    fn post_order(&self, id: usize, order: &mut Vec<usize>) {
+        let Some(p) = self.pockets.get(id) else {
+            return;
+        };
+        let mut kids = p.children.clone();
+        kids.sort_by(|&a, &b| self.deeper_first(a, b));
+        for kid in kids {
+            self.post_order(kid, order);
+        }
+        order.push(id);
     }
 
     fn deeper_first(&self, a: usize, b: usize) -> std::cmp::Ordering {
@@ -437,13 +443,11 @@ mod tests {
             assert!(leaf.saddle_z > 6.0 && leaf.saddle_z <= 7.0 + 1e-9);
             assert!(leaf.depth_mm > 5.0);
         }
-        // The two leaves are the valleys; the left bowl (floor 0) is the
-        // deeper one and goes first. The parent is not a valley.
-        let valleys = t.valleys();
-        assert_eq!(valleys.len(), 2);
-        assert!(t.pockets[valleys[0]].min_z.abs() < 1e-9);
-        assert!((t.pockets[valleys[1]].min_z - 1.0).abs() < 1e-9);
-        assert!(!valleys.contains(&roots[0]), "the parent is not a valley");
+        // The left bowl (floor 0) is the deeper leaf and goes first.
+        let order = t.cut_order();
+        assert_eq!(order.len(), 3);
+        assert!(t.pockets[order[0]].min_z.abs() < 1e-9);
+        assert_eq!(order[2], roots[0], "the parent goes last");
         // Each cell below the ridge is in a leaf.
         let left_floor = 10 * 41 + 10;
         let right_floor = 10 * 41 + 30;
@@ -524,47 +528,6 @@ mod tests {
         let above = build_pocket_tree(&field(10, 10, |_, _| TOP), TOP, &params(1.0, 1.0));
         assert!(above.pockets.is_empty());
         assert!(above.labels.iter().all(Option::is_none));
-    }
-
-    /// S5 (`planning/by_area_merge_tree_2026-09-25/PLAN.md` §8): the valleys
-    /// are the pockets with no children, and a root with no children is a
-    /// valley too (PLAN §2.1).
-    #[test]
-    fn valleys_are_the_leaves_and_a_childless_root_s5() {
-        // Two leaves under one root: the leaves only.
-        let t = build_pocket_tree(&two_bowls(7.0), TOP, &params(2.0, 10.0));
-        let valleys = t.valleys();
-        assert_eq!(valleys.len(), 2);
-        for &v in &valleys {
-            assert!(t.pockets[v].children.is_empty());
-            assert!(t.pockets[v].parent.is_some());
-        }
-        let leaves = t.pockets.iter().filter(|p| p.children.is_empty()).count();
-        assert_eq!(valleys.len(), leaves, "every leaf is a valley");
-
-        // Two roots with no children (a masked ridge): two valleys.
-        let mut f = two_bowls(7.0);
-        for r in 0..f.ny {
-            f.nodata[r * f.nx + 20] = true;
-        }
-        let t = build_pocket_tree(&f, TOP, &params(2.0, 10.0));
-        let roots = t.roots();
-        assert_eq!(roots.len(), 2);
-        let mut valleys = t.valleys();
-        valleys.sort_unstable();
-        let mut roots = roots;
-        roots.sort_unstable();
-        assert_eq!(valleys, roots, "a childless root is a valley");
-        // Deepest first: the bowl with floor 0 before the bowl with floor 1.
-        let ordered = t.valleys();
-        assert!(t.pockets[ordered[0]].min_z < t.pockets[ordered[1]].min_z);
-
-        // One plane: one root, and it is a valley.
-        let t = build_pocket_tree(&field(10, 10, |_, _| 4.0), TOP, &params(1.0, 1.0));
-        assert_eq!(t.valleys(), vec![0]);
-        // Nothing below the top: no valley.
-        let t = build_pocket_tree(&field(10, 10, |_, _| TOP), TOP, &params(1.0, 1.0));
-        assert!(t.valleys().is_empty());
     }
 
     #[test]

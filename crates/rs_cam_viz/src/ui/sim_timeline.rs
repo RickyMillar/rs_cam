@@ -55,8 +55,8 @@ pub fn draw(
     // read as fresh after an edit while only the left/right panels say stale.
     // W4: one function, and it carries the "nothing to show" case, so the
     // second `has_results()` read goes.
-    if simulation_freshness(session, sim).is_stale() {
-        FreshnessGate::banner(ui);
+    if let Some(reason) = simulation_freshness(session, sim).stale_reason(session) {
+        FreshnessGate::banner(ui, &reason);
         ui.add_space(2.0);
     }
     sim.sync_debug_state(gui);
@@ -71,7 +71,7 @@ pub fn draw(
     // wanaka-sized job (8 TPs, ~600k samples) that's the worst hot path
     // in the bottom panel. Right panel (sim_diagnostics) already memoes
     // per its own draw.
-    let load_report = sim.cached_load_report(session, gui.edit_counter);
+    let load_report = sim.cached_load_report(session);
 
     // DC6 — ONE bar. The transport controls and the project chips used to sit
     // as two loose rows at the bottom left, beside nothing they drive. They

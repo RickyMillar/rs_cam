@@ -1,50 +1,26 @@
-//! The By Area region map: the jobs that `RegionOrdering::ByArea` ran,
-//! as a label grid in the planner's cell frame.
+//! The By Area region map: the regions that `RegionOrdering::ByArea`
+//! detected, as a label grid in the planner's cell frame.
 //!
-//! The planner builds the pocket tree ONCE, before the first level, and
-//! makes its jobs from it (`area_plan.rs`): one job per valley and one rest
-//! job. This map records those jobs for the viewport overlay and for MCP
-//! `inspect_spans`. It is evidence only: no planner stage reads it.
+//! The planner detects the regions ONCE, from the stock before the first
+//! level (see `clearing.rs::detect_material_regions`). This map records
+//! that result for the viewport overlay and for MCP `inspect_spans`. It is
+//! evidence only: no planner stage reads it.
 //!
 //! The region order is the planner's order. Region `k` (1-based) is the
-//! `k`-th job the planner runs, and it is the `region_id` of the
-//! `SpanKind::Region` span that the planner emits for it. Nearest next fixes
-//! the valley order only at run time, so the map is built after the jobs
-//! run.
+//! `k`-th region the planner clears, and it is the `region_id` of the
+//! `SpanKind::Region` span that the planner emits for it.
 
-use super::area_plan::{AreaPlan, JobKind};
+use super::clearing::MaterialRegion;
 use crate::dexel_stock::TriDexelStock;
+use crate::stock::dexel::ray_top;
 
-/// What a region is: a valley of the pocket tree, or the rest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AreaRegionKind {
-    /// Every cell that no valley owns: the high ground, the bands between
-    /// the valleys and the stock beside the model.
-    Rest,
-    /// A pocket of the tree with no children.
-    Valley,
-}
-
-impl AreaRegionKind {
-    /// The lower-case name, as MCP writes it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Rest => "rest",
-            Self::Valley => "valley",
-        }
-    }
-}
-
-/// One job of a By Area run.
+/// One detected region.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct AreaRegion {
     /// The planner order, 1-based. The same number is the `region_id` of
     /// the region's span and the value of its cells in
     /// [`AreaRegionMap::labels`].
     pub order: u16,
-    /// A valley or the rest.
-    pub kind: AreaRegionKind,
     /// The number of grid cells with material in the region.
     pub cell_count: usize,
     /// The world XY box of the region cells: `[x_min, y_min, x_max, y_max]`.
@@ -53,7 +29,7 @@ pub struct AreaRegion {
     /// The box is evidence only. The planner confines the region to its
     /// labelled cells (`clearing.rs::AreaMask`), not to this box.
     pub bbox_xy: [f64; 4],
-    /// The lowest and the highest tool-CL Z under the region cells.
+    /// The lowest and the highest surface Z under the region cells.
     pub surface_z_range: [f64; 2],
     /// The highest and the lowest planned level Z of the region. `None`
     /// when no level cuts the region.
@@ -61,18 +37,8 @@ pub struct AreaRegion {
     /// The number of planned levels of the region.
     pub level_count: usize,
     /// A world XY point inside the region for its order label: the region
-    /// cell that is nearest to the region centroid. For a valley it is also
-    /// the anchor that the nearest-next order reads.
+    /// cell that is nearest to the region centroid.
     pub anchor_xy: [f64; 2],
-    /// The Z where the valley joins its neighbour (its rim). `None` for the
-    /// rest.
-    pub saddle_z: Option<f64>,
-    /// A valley: its depth below the saddle. The rest: the level top minus
-    /// its lowest tool-CL Z.
-    pub depth_mm: f64,
-    /// A valley: the area of its tree cells. The rest: the area of its
-    /// labelled cells.
-    pub area_mm2: f64,
 }
 
 /// The label grid and the region list of one By Area run.
@@ -92,20 +58,11 @@ pub struct AreaRegionMap {
     /// Row-major, `rows * cols` values. `0` is a cell in no region; `k` is
     /// a cell of the region with order `k`.
     pub labels: Vec<u16>,
-    /// The highest material top over the region cells before the first
-    /// job. The overlay draws at this Z.
+    /// The highest material top over the region cells at detection. The
+    /// overlay draws at this Z.
     pub top_z: f64,
     /// The regions in planner order.
     pub regions: Vec<AreaRegion>,
-    /// True when the rest job ran before the valleys (or there is no
-    /// valley); false when it ran after them.
-    pub rest_first: bool,
-    /// The tree dial that was used: a valley less deep than this below its
-    /// rim joins its neighbour (mm).
-    pub pocket_min_depth_mm: f64,
-    /// The tree dial that was used: a valley smaller than this at its rim
-    /// joins its neighbour (mm²).
-    pub pocket_min_area_mm2: f64,
 }
 
 /// One run of cells in a grid row that have the same region label.
@@ -120,95 +77,82 @@ pub struct AreaRegionRun {
 }
 
 impl AreaRegionMap {
-    /// Build the map from the plan and the jobs that ran, in cut order:
-    /// `ran[k]` is the job of order `k + 1`, with its levels.
+    /// Build the map from the BFS labels of `detect_material_regions`.
     ///
-    /// A valley cell gets the valley's order. Every other cell with material
-    /// before the first job gets the rest's order (PLAN §6.1).
-    pub(super) fn from_plan(
+    /// `bfs_labels` holds the flood-fill id of each cell; `regions` holds
+    /// the kept regions in planner order, each with its flood-fill id. A
+    /// cell whose id belongs to no kept region gets label 0.
+    pub(super) fn from_detection(
         stock: &TriDexelStock,
-        plan: &AreaPlan,
-        ran: &[(JobKind, Vec<f64>)],
+        bfs_labels: &[usize],
+        regions: &[MaterialRegion],
     ) -> Self {
         let grid = &stock.z_grid;
         let (rows, cols, cell_mm) = (grid.rows, grid.cols, grid.cell_size);
         let (origin_x, origin_y) = (grid.origin_u, grid.origin_v);
-        let order_of = |job: JobKind| -> u16 {
-            ran.iter()
-                .position(|(j, _)| *j == job)
-                .map_or(0, |k| u16::try_from(k + 1).unwrap_or(u16::MAX))
+
+        // Flood-fill id -> planner order.
+        let order_of = |bfs: usize| -> u16 {
+            regions
+                .iter()
+                .position(|r| r.bfs_label == bfs)
+                .map_or(0, |i| u16::try_from(i + 1).unwrap_or(u16::MAX))
         };
-        let labels: Vec<u16> = plan
-            .cell_job
-            .iter()
-            .map(|job| job.map_or(0, order_of))
-            .collect();
+        let mut labels = vec![0u16; rows * cols];
+        let mut top_z = f64::NEG_INFINITY;
+        let mut sums = vec![(0.0f64, 0.0f64); regions.len()];
+        for row in 0..rows {
+            for col in 0..cols {
+                let i = row * cols + col;
+                let Some(&bfs) = bfs_labels.get(i) else {
+                    continue;
+                };
+                let order = order_of(bfs);
+                if order == 0 {
+                    continue;
+                }
+                if let Some(slot) = labels.get_mut(i) {
+                    *slot = order;
+                }
+                if let Some(top) = ray_top(grid.ray(row, col)) {
+                    top_z = top_z.max(f64::from(top));
+                }
+                if let Some(s) = sums.get_mut(usize::from(order) - 1) {
+                    s.0 += col as f64;
+                    s.1 += row as f64;
+                }
+            }
+        }
+        if !top_z.is_finite() {
+            top_z = 0.0;
+        }
 
         let half = cell_mm * 0.5;
-        let cell_area = cell_mm * cell_mm;
-        let regions = ran
+        let regions = regions
             .iter()
             .enumerate()
-            .map(|(k, (job, levels))| {
-                let order = u16::try_from(k + 1).unwrap_or(u16::MAX);
-                let stats = RegionCells::of(&labels, &plan.cl_z, cols, order);
-                let (ac, ar) = stats.nearest_to_centroid(&labels, cols, order);
-                let (kind, saddle_z, depth_mm, area_mm2, anchor_xy) = match job {
-                    JobKind::Valley(v) => {
-                        let valley = plan.valleys.get(*v);
-                        (
-                            AreaRegionKind::Valley,
-                            valley.map(|x| x.saddle_z),
-                            valley.map_or(0.0, |x| x.depth_mm),
-                            valley.map_or(0.0, |x| x.area_mm2),
-                            valley.map_or(
-                                [
-                                    origin_x + ac as f64 * cell_mm,
-                                    origin_y + ar as f64 * cell_mm,
-                                ],
-                                |x| [x.anchor.x, x.anchor.y],
-                            ),
-                        )
-                    }
-                    JobKind::Rest => (
-                        AreaRegionKind::Rest,
-                        None,
-                        if stats.count > 0 {
-                            plan.level_top - stats.z_min
-                        } else {
-                            0.0
-                        },
-                        stats.count as f64 * cell_area,
-                        [
-                            origin_x + ac as f64 * cell_mm,
-                            origin_y + ar as f64 * cell_mm,
-                        ],
-                    ),
-                };
+            .map(|(i, r)| {
+                let order = u16::try_from(i + 1).unwrap_or(u16::MAX);
+                let n = r.cell_count.max(1) as f64;
+                let (sc, sr) = sums.get(i).copied().unwrap_or((0.0, 0.0));
+                let (cc, cr) = (sc / n, sr / n);
+                let (ac, ar) = nearest_cell(&labels, cols, r, order, cc, cr);
                 AreaRegion {
                     order,
-                    kind,
-                    cell_count: stats.count,
+                    cell_count: r.cell_count,
                     bbox_xy: [
-                        origin_x + stats.col_min as f64 * cell_mm - half,
-                        origin_y + stats.row_min as f64 * cell_mm - half,
-                        origin_x + stats.col_max as f64 * cell_mm + half,
-                        origin_y + stats.row_max as f64 * cell_mm + half,
+                        origin_x + r.col_min as f64 * cell_mm - half,
+                        origin_y + r.row_min as f64 * cell_mm - half,
+                        origin_x + r.col_max as f64 * cell_mm + half,
+                        origin_y + r.row_max as f64 * cell_mm + half,
                     ],
-                    surface_z_range: if stats.count > 0 {
-                        [stats.z_min, stats.z_max]
-                    } else {
-                        [0.0, 0.0]
-                    },
-                    level_z_range: match (levels.first(), levels.last()) {
-                        (Some(top), Some(bottom)) => Some([*top, *bottom]),
-                        _ => None,
-                    },
-                    level_count: levels.len(),
-                    anchor_xy,
-                    saddle_z,
-                    depth_mm,
-                    area_mm2,
+                    surface_z_range: [r.surface_z_min, r.surface_z_max],
+                    level_z_range: None,
+                    level_count: 0,
+                    anchor_xy: [
+                        origin_x + ac as f64 * cell_mm,
+                        origin_y + ar as f64 * cell_mm,
+                    ],
                 }
             })
             .collect();
@@ -220,11 +164,19 @@ impl AreaRegionMap {
             rows,
             cols,
             labels,
-            top_z: plan.top_material_z,
+            top_z,
             regions,
-            rest_first: plan.rest_first(),
-            pocket_min_depth_mm: plan.params.persistence_h_mm,
-            pocket_min_area_mm2: plan.params.min_area_mm2,
+        }
+    }
+
+    /// Record the planned levels of the region with `order`.
+    pub(super) fn set_levels(&mut self, order: u16, level_z: &[f64]) {
+        if let Some(region) = self.regions.iter_mut().find(|r| r.order == order) {
+            region.level_count = level_z.len();
+            region.level_z_range = match (level_z.first(), level_z.last()) {
+                (Some(top), Some(bottom)) => Some([*top, *bottom]),
+                _ => None,
+            };
         }
     }
 
@@ -292,79 +244,33 @@ impl AreaRegionMap {
                 z[0] += dz;
                 z[1] += dz;
             }
-            if let Some(z) = r.saddle_z.as_mut() {
-                *z += dz;
-            }
         }
     }
 }
 
-/// The cells of one region in the label grid.
-struct RegionCells {
-    count: usize,
-    row_min: usize,
-    row_max: usize,
-    col_min: usize,
-    col_max: usize,
-    /// The sums of the rows and the columns, for the centroid.
-    row_sum: f64,
-    col_sum: f64,
-    z_min: f64,
-    z_max: f64,
-}
-
-impl RegionCells {
-    fn of(labels: &[u16], cl_z: &[f64], cols: usize, order: u16) -> Self {
-        let mut s = Self {
-            count: 0,
-            row_min: usize::MAX,
-            row_max: 0,
-            col_min: usize::MAX,
-            col_max: 0,
-            row_sum: 0.0,
-            col_sum: 0.0,
-            z_min: f64::INFINITY,
-            z_max: f64::NEG_INFINITY,
-        };
-        for (i, _) in labels.iter().enumerate().filter(|&(_, &l)| l == order) {
-            let (row, col) = (i / cols.max(1), i % cols.max(1));
-            s.count += 1;
-            s.row_min = s.row_min.min(row);
-            s.row_max = s.row_max.max(row);
-            s.col_min = s.col_min.min(col);
-            s.col_max = s.col_max.max(col);
-            s.row_sum += row as f64;
-            s.col_sum += col as f64;
-            if let Some(&z) = cl_z.get(i) {
-                s.z_min = s.z_min.min(z);
-                s.z_max = s.z_max.max(z);
+/// The cell of region `order` that is nearest to `(cc, cr)`, in grid
+/// units. The search stays inside the region's row/col box.
+fn nearest_cell(
+    labels: &[u16],
+    cols: usize,
+    r: &MaterialRegion,
+    order: u16,
+    cc: f64,
+    cr: f64,
+) -> (usize, usize) {
+    let mut best = (r.col_min, r.row_min);
+    let mut best_d = f64::INFINITY;
+    for row in r.row_min..=r.row_max {
+        for col in r.col_min..=r.col_max {
+            if labels.get(row * cols + col).copied() != Some(order) {
+                continue;
+            }
+            let d = (col as f64 - cc).powi(2) + (row as f64 - cr).powi(2);
+            if d < best_d {
+                best_d = d;
+                best = (col, row);
             }
         }
-        if s.count == 0 {
-            (s.row_min, s.col_min) = (0, 0);
-        }
-        s
     }
-
-    /// The cell of region `order` nearest to the centroid of its cells, as
-    /// `(col, row)`. The search reads the label grid inside the region box.
-    fn nearest_to_centroid(&self, labels: &[u16], cols: usize, order: u16) -> (usize, usize) {
-        let n = self.count.max(1) as f64;
-        let (cc, cr) = (self.col_sum / n, self.row_sum / n);
-        let mut best = (self.col_min, self.row_min);
-        let mut best_d = f64::INFINITY;
-        for row in self.row_min..=self.row_max {
-            for col in self.col_min..=self.col_max {
-                if labels.get(row * cols + col).copied() != Some(order) {
-                    continue;
-                }
-                let d = (col as f64 - cc).powi(2) + (row as f64 - cr).powi(2);
-                if d < best_d {
-                    best_d = d;
-                    best = (col, row);
-                }
-            }
-        }
-        best
-    }
+    best
 }

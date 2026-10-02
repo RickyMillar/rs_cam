@@ -1,2 +1,0 @@
-id,valley_rank,parent,children,min_z,saddle_z,depth_mm,area_mm2,basin_area_mm2,x_min,y_min,x_max,y_max,cells,label_px_x,label_px_y,centroid_x,centroid_y
-0,1,,,-1.667,25.000,26.667,10100.2,10100.2,0.00,0.00,100.00,100.00,40401,421,451,50.00,50.00
