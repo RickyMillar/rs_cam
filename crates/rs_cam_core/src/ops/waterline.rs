@@ -510,9 +510,21 @@ mod tests {
         let index = SpatialIndex::build(&mesh, 10.0);
         let tool = BallEndmill::new(6.0, 25.0);
 
-        // Well below the mesh — z=-30, cutter length=25, so can't reach z=0 base
+        // Well below the mesh — z=-30. G-FLUTETOP: the cutter has no top (the
+        // shank and the holder stand above the 25 mm flutes), so the
+        // hemisphere still blocks the tool under it. One loop: the base rim
+        // (radius 20) offset by the ball radius 3. It used to read free.
         let contours = waterline_contours(&mesh, &index, &tool, -30.0, 2.0);
-        assert!(contours.is_empty(), "No contours well below mesh");
+        assert_eq!(contours.len(), 1, "one loop round the footprint");
+        let mean_r = contours[0]
+            .iter()
+            .map(|p| (p.x * p.x + p.y * p.y).sqrt())
+            .sum::<f64>()
+            / contours[0].len() as f64;
+        assert!(
+            (mean_r - 23.0).abs() < 1.0,
+            "loop mean radius {mean_r}, expected about 23"
+        );
     }
 
     #[test]

@@ -13,11 +13,38 @@ use crate::mesh::{QueryScratch, SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
 
 /// Push a cutter along a fiber against a single triangle.
-/// Adds any gouge intervals to the fiber.
+/// Adds the triangle's gouge interval to the fiber.
 pub fn push_cutter_triangle(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
-    vertex_push(fiber, tri, cutter);
-    facet_push(fiber, tri, cutter);
-    edge_push(fiber, tri, cutter);
+    let mut one = fiber.empty_like();
+    push_cutter_triangle_hull(fiber, &mut one, tri, cutter);
+}
+
+/// The vertex, facet and edge tests of one triangle, added to `fiber` as ONE
+/// interval: the hull of their contacts (G-FLUTETOP, second mechanism).
+///
+/// The blocked set of one triangle is a single interval: the triangle and
+/// the cutter body are convex, so their Minkowski sum is convex and meets
+/// the fiber line in one interval. The tests find contact positions inside
+/// it, so their hull is still inside it. Added one by one, the contacts left
+/// the stretch under a large triangle, more than the cutter width from
+/// every edge, free: the facet test gives a single point there, and the
+/// waterline walked under the facet.
+///
+/// `scratch` is a fiber on the same segment; it is cleared here.
+fn push_cutter_triangle_hull(
+    fiber: &mut Fiber,
+    scratch: &mut Fiber,
+    tri: &Triangle,
+    cutter: &dyn MillingCutter,
+) {
+    scratch.clear_intervals();
+    vertex_push(scratch, tri, cutter);
+    facet_push(scratch, tri, cutter);
+    edge_push(scratch, tri, cutter);
+    let ivs = scratch.intervals();
+    if let (Some(first), Some(last)) = (ivs.first(), ivs.last()) {
+        fiber.add_interval(Interval::new(first.lower, last.upper));
+    }
 }
 
 /// Millimetres of headroom added to the fiber's lateral query band on top of
@@ -189,15 +216,16 @@ pub(crate) fn push_cutter_fiber_over(
     candidates: &[usize],
 ) {
     let z_min = fiber.z();
-    let z_max = fiber.z() + cutter.length();
     let window = FiberWindow::of(fiber, cutter);
+    let mut one = fiber.empty_like();
 
     for &tri_idx in candidates {
         let tri = &mesh.faces[tri_idx];
-        // Quick Z check: skip triangles entirely above or below the cutter at this Z
-        let tri_z_min = tri.v[0].z.min(tri.v[1].z).min(tri.v[2].z);
+        // Quick Z check: skip triangles entirely below the fiber. A triangle
+        // above the flute top is NOT skipped (G-FLUTETOP): the shank and the
+        // holder stand above the flutes, so material there still blocks.
         let tri_z_max = tri.v[0].z.max(tri.v[1].z).max(tri.v[2].z);
-        if tri_z_min > z_max || tri_z_max < z_min {
+        if tri_z_max < z_min {
             continue;
         }
         // Exact XY reject, one cell finer than the query could be. Same bound
@@ -206,7 +234,7 @@ pub(crate) fn push_cutter_fiber_over(
         if !window.admits(tri) {
             continue;
         }
-        push_cutter_triangle(fiber, tri, cutter);
+        push_cutter_triangle_hull(fiber, &mut one, tri, cutter);
     }
 }
 
@@ -270,8 +298,8 @@ fn vertex_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     for v in &tri.v {
         // Height of vertex above fiber Z
         let h = v.z - fiber.z();
-        if h < -1e-10 || h > cutter.length() {
-            continue; // vertex below fiber or above cutter
+        if h < -1e-10 {
+            continue; // vertex below fiber (above the flutes still blocks: G-FLUTETOP)
         }
 
         // Cutter width at this height
@@ -434,12 +462,19 @@ fn facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
 /// A rectangular wall is two triangles whose clipped polygons together span
 /// the full width at every height, so on a wall the union is exact for
 /// every profile; only a gable-shaped vertical facet sees the margin.
+///
+/// G-FLUTETOP (2026-10-02): the slab once ended at `z + length`; it now has
+/// no top, as every push test here: material above the flutes meets the
+/// shank and the holder, which stand there too.
 fn vertical_facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     let z_lo = fiber.z();
-    let z_hi = z_lo + cutter.length();
     let tri_z_min = tri.v[0].z.min(tri.v[1].z).min(tri.v[2].z);
     let tri_z_max = tri.v[0].z.max(tri.v[1].z).max(tri.v[2].z);
-    if tri_z_max < z_lo - 1e-10 || tri_z_min > z_hi + 1e-10 {
+    // The slab has no top (G-FLUTETOP): the shank and the holder stand above
+    // the flutes. Its top is the facet's own top, so the top-plane cut below
+    // never fires.
+    let z_hi = tri_z_max.max(z_lo);
+    if tri_z_max < z_lo - 1e-10 {
         return;
     }
 
@@ -656,18 +691,21 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
         s_lo = s_lo.max(a.min(b));
         s_hi = s_hi.min(a.max(b));
     }
-    // Height above the fiber: `h0 + ez·s`, inside `[-1e-10, length]`. The
-    // window again keeps half the slack on each side.
+    // Height above the fiber: `h0 + ez·s`, at least `-1e-10`, with no top
+    // (G-FLUTETOP: above the flutes the shank and holder still block). The
+    // window keeps half the slack.
     let h0 = p1.z - z;
     if ez.abs() < 1e-15 {
-        if h0 < -1e-10 || h0 > cutter.length() {
+        if h0 < -1e-10 {
             return;
         }
     } else {
         let a = (-5e-11 - h0) / ez;
-        let b = (cutter.length() - 5e-11 - h0) / ez;
-        s_lo = s_lo.max(a.min(b));
-        s_hi = s_hi.min(a.max(b));
+        if ez > 0.0 {
+            s_lo = s_lo.max(a);
+        } else {
+            s_hi = s_hi.min(a);
+        }
     }
     if s_lo > s_hi {
         return;
@@ -689,7 +727,7 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
         let edge_z = p1.z + s * ez;
 
         let h = edge_z - z;
-        if h < -1e-10 || h > cutter.length() {
+        if h < -1e-10 {
             return None;
         }
 

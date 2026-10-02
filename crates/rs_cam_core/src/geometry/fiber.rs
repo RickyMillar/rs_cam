@@ -80,6 +80,21 @@ impl Fiber {
         }
     }
 
+    /// A fiber on the same segment with no intervals (a per-triangle
+    /// scratch for the push cutter, G-FLUTETOP).
+    pub(crate) fn empty_like(&self) -> Self {
+        Self {
+            p1: self.p1,
+            p2: self.p2,
+            intervals: Vec::new(),
+        }
+    }
+
+    /// Drop every interval, keeping the allocation.
+    pub(crate) fn clear_intervals(&mut self) {
+        self.intervals.clear();
+    }
+
     /// The Z height of this fiber.
     pub fn z(&self) -> f64 {
         self.p1.z

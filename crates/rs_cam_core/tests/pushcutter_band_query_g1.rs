@@ -57,7 +57,8 @@ use rs_cam_core::tool::{
 /// `push_cutter_fiber` exactly as it stood before G1 (commit-era
 /// `pushcutter.rs:31-54`): a square query centred on the fiber midpoint whose
 /// half-side is `fiber.length()/2 + cutter.radius()`, then the same per-triangle
-/// Z reject and the same `push_cutter_triangle` call.
+/// Z reject and the same `push_cutter_triangle` call. The Z reject is the
+/// shipped one since G-FLUTETOP (no top).
 ///
 /// Kept here rather than behind a feature flag in the library so the shipped
 /// crate carries one query path, not two.
@@ -68,22 +69,22 @@ fn reference_push_cutter_fiber(
     cutter: &dyn MillingCutter,
 ) {
     let r = cutter.radius();
-    let length = cutter.length();
 
     let cx = (fiber.p1.x + fiber.p2.x) / 2.0;
     let cy = (fiber.p1.y + fiber.p2.y) / 2.0;
     let half_len = fiber.length() / 2.0;
     let query_r = half_len + r;
     let z_min = fiber.z();
-    let z_max = fiber.z() + length;
 
     let candidates = index.query(cx, cy, query_r);
 
     for &tri_idx in &candidates {
         let tri = &mesh.faces[tri_idx];
-        let tri_z_min = tri.v[0].z.min(tri.v[1].z).min(tri.v[2].z);
+        // G-FLUTETOP (2026-10-02): the Z reject has no top any more (the
+        // shank and the holder stand above the flutes); the reference
+        // follows, since this file tests the XY pruning only.
         let tri_z_max = tri.v[0].z.max(tri.v[1].z).max(tri.v[2].z);
-        if tri_z_min > z_max || tri_z_max < z_min {
+        if tri_z_max < z_min {
             continue;
         }
         push_cutter_triangle(fiber, tri, cutter);
