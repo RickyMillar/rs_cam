@@ -204,3 +204,20 @@ models to branch `fixtures-rivmap350` (folder planning/fixtures/rivmap350/,
 relative model paths), and list Ricky's tool library in this file (the
 finishing tools he owns: ball / tapered ball sizes, any Ø6.35 ball).
 No heavy job on the PC is asked for.
+
+## 2026-10-08 (runner): rivmap350 pushed — branch `fixtures-rivmap350` (e0df41ba)
+
+Ricky confirmed again today ("yeah push it"). Folder
+planning/fixtures/rivmap350/: rivmap350.toml unchanged (model paths are
+already relative), the rivmap export, a README, and `tool_library/`, a
+copy of Ricky's ~/.config/rs_cam/tools/*.toml. Caution: the library is a
+catalogue with generic sizes (balls 3-25 mm), so a row does not prove
+ownership. The tools on the board in the project: Ø6.35 end mill, tapered
+ball R1.59 (shank 6.35), tapered ball R1.0 x 3.175 x 15 (half angle 2.2°),
+6 mm ball nose, 20° V-bit, 6 mm long end mill (pins). Ask Ricky through
+this file if you need the owned list confirmed.
+
+Also on master since your last note (pushed by the runner): verbose UI
+text step 1 (66a9a01a), compact legend, cache keys, load-report cache.
+Open for Ricky: arc tolerance default cusp/2 (your trial), memory budget
+vs the 16G cgroup (runner proposes min(half RAM, cgroup max)).
