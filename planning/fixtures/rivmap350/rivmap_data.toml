@@ -1,0 +1,115 @@
+version = 1
+current_tab = "export"
+output_dir = "/home/ricky/Downloads/big"
+physical_width_mm = 350.0
+
+[bounds]
+west = "167.865267"
+south = "-45.480269"
+east = "169.810819"
+north = "-43.497806"
+lock_aspect = true
+aspect_w = 3.5
+aspect_h = 5.0
+selected_preset = 0
+
+[generate]
+elevation = true
+natural_water = true
+island_mask = true
+rivers = true
+zoom = 9
+
+[rivers]
+merge_tolerance = 0.800000011920929
+min_length = 9.199999809265137
+simplify_tolerance = 0.18000000715255737
+algorithm = "visvalingam"
+view_zoom = 1.0
+pan_x = 0.0
+pan_y = 2.53125
+
+[lakes]
+min_length = 50.0
+simplify_tolerance = 7.099999904632568
+algorithm = "visvalingam"
+stitch_tolerance = 0.0
+close_tolerance = 11.5
+force_close = false
+colored_loops = true
+
+[holes]
+shape = "circle"
+pattern = "honeycomb"
+size = 8.5
+spacing = 28.0
+density = 0.6700000166893005
+seed = 48
+use_coastal_buffer = true
+coastal_buffer = 21
+
+[mesh]
+land_peak_mm = 12.5
+base_height_mm = 0.0
+max_error = 0.029999999329447746
+max_triangles = 1500000
+max_pixels_per_mm = 10.0
+coastline_weight = 14.5
+terrain_detail = 3.0
+ocean_detail = 1.0
+enclose_mesh = false
+river_through_cut = false
+water_as_holes = false
+flip_x = false
+flip_y = true
+edge_profile = 3
+edge_wall_deg = 38.0
+edge_top_offset_mm = 0.0
+clip_features_to_edge = false
+output_path = "terrain.stl"
+generate_html_preview = false
+
+[mesh.waves]
+offset = 0.8999999761581421
+depth = 2.0
+scale = 11.0
+jitter = 1.0
+distance_fn = 3
+return_type = 3
+seed = 1333
+
+[mesh.view]
+color_scheme = 0
+show_wireframe = false
+show_vertices = false
+show_dxf_overlay = true
+show_lakes_overlay = false
+show_holes_overlay = false
+camera_yaw = -13.101400375366211
+camera_pitch = -0.7906249165534973
+camera_zoom = 1.2163105010986328
+camera_pan_x = -89.859375
+camera_pan_y = -110.109375
+show_rivers_in_traces = true
+show_lakes_in_traces = true
+
+[export]
+elevation_png = false
+water_shapes_png = false
+island_mask_png = false
+river_lines_dxf = false
+river_lines_aligned = true
+river_lines_svg = false
+lake_shapes_dxf = true
+holes_dxf = true
+stl = true
+project_toml = true
+edge_band_dxf = true
+
+[files]
+elevation = "/home/ricky/Downloads/big/elevation.png"
+island = "/home/ricky/Downloads/big/island_mask.png"
+water = "/home/ricky/Downloads/big/natural_water.png"
+natural_water = ""
+rivers = ""
+holes_mask = "/home/ricky/Downloads/big/island_mask.png"
