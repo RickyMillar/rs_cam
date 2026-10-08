@@ -462,6 +462,14 @@ struct EnvelopeGrid<'a> {
 /// 2026-10-01, degrade 4b) both call this function, so the two builds
 /// triangulate in the same way. `corner_xy(ci, cj)` gives the planar world
 /// position of a corner. Returns `(vertices, colors, indices)`.
+///
+/// # Winding
+///
+/// A corner row `ci` goes along +V (world Y) and a corner column `cj` goes
+/// along +U (world X). Each triangle is counter-clockwise when you look at
+/// it from outside the material, so `(b - a) x (c - a)` points out of the
+/// solid. Render review 2026-10-09 F1: before the fix, every triangle here
+/// had the opposite order and each normal pointed into the solid.
 // SAFETY: every index is below the corner or cell count by the loop bounds.
 #[allow(clippy::indexing_slicing)]
 fn emit_envelope(
@@ -534,17 +542,18 @@ fn emit_envelope(
             if corner_empty[c00] || corner_empty[c01] || corner_empty[c10] || corner_empty[c11] {
                 continue;
             }
-            // Winding for +Z normal (CCW viewed from +Z): (c00, c10, c01),
-            // (c01, c10, c11).
+            // Winding for a +Z normal (CCW from +Z): c01 is +U from c00 and
+            // c10 is +V, so (c00, c01, c10) and (c01, c11, c10).
             let v00 = top_idx[c00];
             let v01 = top_idx[c01];
             let v10 = top_idx[c10];
             let v11 = top_idx[c11];
-            indices.extend_from_slice(&[v00, v10, v01, v01, v10, v11]);
+            indices.extend_from_slice(&[v00, v01, v10, v01, v11, v10]);
         }
     }
 
-    // ── 5. Bottom face: same cells, reversed winding (−Z normal).
+    // ── 5. Bottom face: same cells, reversed winding (−Z normal):
+    //       (c00, c10, c01) and (c01, c10, c11).
     for ci in 0..rows {
         for cj in 0..cols {
             if cell_empty[ci * cols + cj] {
@@ -561,7 +570,7 @@ fn emit_envelope(
             let v01 = bot_idx[c01];
             let v10 = bot_idx[c10];
             let v11 = bot_idx[c11];
-            indices.extend_from_slice(&[v00, v01, v10, v01, v11, v10]);
+            indices.extend_from_slice(&[v00, v10, v01, v01, v10, v11]);
         }
     }
 
@@ -577,7 +586,7 @@ fn emit_envelope(
         let tr = top_idx[cr];
         let bl = bot_idx[cl];
         let br = bot_idx[cr];
-        indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+        indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
     }
     // Back edge (ci = rows): normals face +V.
     for cj in 0..cols {
@@ -590,7 +599,7 @@ fn emit_envelope(
         let tr = top_idx[cr];
         let bl = bot_idx[cl];
         let br = bot_idx[cr];
-        indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+        indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
     }
     // Left edge (cj = 0): normals face −U.
     for ci in 0..rows {
@@ -603,7 +612,7 @@ fn emit_envelope(
         let tt = top_idx[ct];
         let bb = bot_idx[cb];
         let bt = bot_idx[ct];
-        indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
+        indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
     }
     // Right edge (cj = cols): normals face +U.
     for ci in 0..rows {
@@ -616,7 +625,7 @@ fn emit_envelope(
         let tt = top_idx[ct];
         let bb = bot_idx[cb];
         let bt = bot_idx[ct];
-        indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
+        indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
     }
 
     // ── 7. Hole walls — vertical quads at material/empty cell boundaries.
@@ -638,9 +647,9 @@ fn emit_envelope(
             let bb = bot_idx[cb];
             let bt = bot_idx[ct];
             if !a_empty {
-                indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
-            } else {
                 indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
+            } else {
+                indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
             }
         }
     }
@@ -662,9 +671,9 @@ fn emit_envelope(
             let bl = bot_idx[cl];
             let br = bot_idx[cr];
             if !a_empty {
-                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
-            } else {
                 indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+            } else {
+                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
             }
         }
     }
@@ -693,10 +702,11 @@ fn ray_gaps(ray: &crate::stock::dexel::DexelRay) -> Vec<[f32; 2]> {
 }
 
 /// Multi-segment cavity emission. Walks each cell with gaps; per gap
-/// between segments, emits a ceiling face (at gap_bot, normal −Z) and a floor
-/// face (at gap_top, normal +Z) for the 2x2 cell block sharing the gap.
-/// Vertical cavity walls are emitted where adjacent cells differ in gap
-/// topology.
+/// between segments, emits a floor face (at gap_bot, the top of the lower
+/// segment, normal +Z) and a ceiling face (at gap_top, the bottom of the
+/// upper segment, normal −Z) for the 2x2 cell block sharing the gap. Both
+/// normals point out of the material, into the gap. The function emits no
+/// cavity walls (render review 2026-10-09, F14).
 ///
 /// `cell_gaps` has `rows x cols` entries (see [`ray_gaps`]). `centre(row,
 /// col, z)` gives the world position of a cell at height `z`.

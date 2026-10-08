@@ -561,11 +561,15 @@ impl RsCamApp {
             show_tool_model: state.workspace == Workspace::Simulation
                 && state.simulation.has_results()
                 && state.simulation.playback.tool_position.is_some(),
-            toolpath_move_limit: if state.workspace == Workspace::Simulation
+            toolpath_move_limits: if state.workspace == Workspace::Simulation
                 && state.simulation.has_results()
                 && state.simulation.playback.current_move < state.simulation.total_moves()
             {
-                Some(state.simulation.playback.current_move)
+                Some(
+                    state
+                        .simulation
+                        .toolpath_move_limits(state.simulation.playback.current_move),
+                )
             } else {
                 None
             },

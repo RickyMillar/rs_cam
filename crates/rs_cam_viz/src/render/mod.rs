@@ -903,8 +903,11 @@ pub struct ViewportCallback {
     /// "this is last generation's answer" while leaving it locatable.
     pub stale_toolpaths: std::collections::HashSet<rs_cam_core::ToolpathId>,
     pub show_tool_model: bool,
-    /// If Some, only draw toolpath moves up to this index (sim scrubbing).
-    pub toolpath_move_limit: Option<usize>,
+    /// Sim scrubbing: if Some, each toolpath in the map draws only its first
+    /// N moves, N counted in its OWN moves (render review 2026-10-09, F6;
+    /// see `SimulationState::toolpath_move_limits`). A toolpath that is not
+    /// in the map is not in the run; it draws in full.
+    pub toolpath_move_limits: Option<std::collections::HashMap<rs_cam_core::ToolpathId, usize>>,
     /// Show XYZ axes at the stock origin.
     ///
     /// The origin and the length that used to ride here were never read: the
@@ -1279,7 +1282,11 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
 
             // Draw toolpaths (with optional move limit for sim scrubbing)
             for tp_gpu in &resources.toolpath_data {
-                let (max_cut, max_rapid) = if let Some(limit) = self.toolpath_move_limit {
+                let limit = self
+                    .toolpath_move_limits
+                    .as_ref()
+                    .and_then(|limits| tp_gpu.toolpath_id.and_then(|id| limits.get(&id).copied()));
+                let (max_cut, max_rapid) = if let Some(limit) = limit {
                     tp_gpu.vertices_for_moves(limit)
                 } else {
                     (tp_gpu.cut_vertex_count, tp_gpu.rapid_vertex_count)
@@ -1342,7 +1349,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 // therefore "not scrubbing": under a move limit they are
                 // hidden outright rather than shown untrimmed.
                 let overlays_allowed =
-                    self.show_cutting && tp_show_cut && self.toolpath_move_limit.is_none();
+                    self.show_cutting && tp_show_cut && self.toolpath_move_limits.is_none();
 
                 // Draw entry path preview overlay (ramp/helix/lead-in indicator)
                 if overlays_allowed

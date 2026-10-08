@@ -42,6 +42,7 @@ impl SimulationState {
                 display_mesh_preview: false,
                 scrub_drag_active: false,
                 display_deviations: None,
+                display_mesh_is_final: false,
             },
             checks: SimulationChecks {
                 rapid_collisions: Vec::new(),
@@ -91,6 +92,46 @@ impl SimulationState {
     /// Total moves from results (0 if no results).
     pub fn total_moves(&self) -> usize {
         self.results.as_ref().map_or(0, |r| r.total_moves)
+    }
+
+    /// How many of its OWN moves each simulated toolpath draws while the
+    /// playhead is at `current_move`, a run-global move index.
+    ///
+    /// A toolpath's local count is `current_move - start_move`, clamped to
+    /// `0 ..= end_move - start_move`. A toolpath that starts after the
+    /// playhead draws nothing; one that ends before it draws in full.
+    ///
+    /// Render review 2026-10-09, F6: the overlay trimmed every toolpath by
+    /// the GLOBAL cursor, so a toolpath that starts at global move 50 000
+    /// drew in full as soon as the cursor reached it, and a later toolpath
+    /// showed its first moves too early.
+    #[must_use]
+    pub fn toolpath_move_limits(&self, current_move: usize) -> HashMap<ToolpathId, usize> {
+        self.boundaries()
+            .iter()
+            .map(|b| {
+                let len = b.end_move.saturating_sub(b.start_move);
+                (b.id, current_move.saturating_sub(b.start_move).min(len))
+            })
+            .collect()
+    }
+
+    /// Whether the Simulation view shows the run's final composite mesh
+    /// (`SimulationResults::mesh`) instead of a mesh of the live stock.
+    ///
+    /// True only in the Deviation colour mode, with deviations held, with
+    /// the playhead at the end and the playback paused. The deviation
+    /// colours belong to the final composite mesh and to no other mesh
+    /// (render review 2026-10-09, F4), so this is the one state in which the
+    /// view can show them. Everywhere else the stock draws in its plain
+    /// colours and the legend says why.
+    #[must_use]
+    pub fn wants_final_mesh(&self) -> bool {
+        self.stock_viz_mode == StockVizMode::Deviation
+            && self.playback.display_deviations.is_some()
+            && !self.playback.playing
+            && self.has_results()
+            && self.playback.current_move >= self.total_moves()
     }
 
     /// Toolpath boundaries (empty slice if no results).

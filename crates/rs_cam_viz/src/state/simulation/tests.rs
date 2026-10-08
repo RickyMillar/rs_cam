@@ -924,3 +924,127 @@ fn a_new_debug_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
     let again = sim.issues(&gui, TEST_MAX_FEED);
     assert!(Arc::ptr_eq(&after, &again), "the new key then holds");
 }
+
+// ── Render review 2026-10-09, P1 (F4 and F6) ─────────────────────────────
+
+/// Two toolpaths back to back: A owns global moves 0..100, B 100..150.
+fn simulation_with_two_toolpaths() -> SimulationState {
+    let mut sim = simulation_for_toolpath();
+    let results = sim.results.as_mut().unwrap();
+    results.total_moves = 150;
+    let a = results.boundaries[0].clone();
+    results.boundaries = vec![
+        ToolpathBoundary {
+            id: ToolpathId(1),
+            start_move: 0,
+            end_move: 100,
+            ..a.clone()
+        },
+        ToolpathBoundary {
+            id: ToolpathId(2),
+            start_move: 100,
+            end_move: 150,
+            ..a
+        },
+    ];
+    sim
+}
+
+/// F6: each toolpath counts its own moves from the global cursor. The old
+/// draw used the global cursor (50) as B's local limit, so B showed its
+/// first 50 moves while the playhead was still inside A.
+#[test]
+fn each_toolpath_is_trimmed_by_its_own_move_range_f6() {
+    let sim = simulation_with_two_toolpaths();
+    let at = |cursor: usize| {
+        let limits = sim.toolpath_move_limits(cursor);
+        (limits[&ToolpathId(1)], limits[&ToolpathId(2)])
+    };
+    assert_eq!(at(0), (0, 0));
+    assert_eq!(
+        at(50),
+        (50, 0),
+        "B must draw nothing while the playhead is in A"
+    );
+    assert_eq!(at(100), (100, 0));
+    assert_eq!(at(120), (100, 20), "B counts from its own first move");
+    assert_eq!(at(150), (100, 50));
+    assert_eq!(
+        at(10_000),
+        (100, 50),
+        "the limit never passes the toolpath's end"
+    );
+}
+
+fn mesh_with_vertices(n: usize) -> StockMesh {
+    StockMesh {
+        vertices: vec![0.0; n * 3],
+        indices: Vec::new(),
+        colors: vec![0.5; n * 3],
+    }
+}
+
+/// F4: the deviations fit the shown mesh only when it is the final
+/// composite mesh and has one vertex per value. A mesh with the same vertex
+/// count that is not the final one (the uncut block at move 0, a preview, a
+/// checkpoint) gets no deviation colours.
+#[test]
+fn deviation_colours_go_only_on_the_final_mesh_f4() {
+    use crate::render::sim_render::deviation_colors_for_mesh;
+
+    let devs = [0.0_f32, 0.5, -0.7];
+    assert!(
+        deviation_colors_for_mesh(Some(&devs), true, 3).is_some(),
+        "the control: the final mesh with one vertex per value takes the colours"
+    );
+    assert!(
+        deviation_colors_for_mesh(Some(&devs), false, 3).is_none(),
+        "a mesh that is not the final one abstains, also with the same count"
+    );
+    assert!(
+        deviation_colors_for_mesh(Some(&devs), true, 4).is_none(),
+        "a vertex count that differs abstains"
+    );
+    assert!(deviation_colors_for_mesh(None, true, 3).is_none());
+
+    let mut sim = simulation_for_toolpath();
+    sim.playback.display_deviations = Some(devs.to_vec());
+    sim.playback.display_mesh = Some(mesh_with_vertices(3));
+    sim.playback.display_mesh_is_final = false;
+    assert!(
+        !sim.playback.deviations_fit_display(),
+        "a live mesh with the same vertex count is not the deviations' mesh"
+    );
+    sim.playback.display_mesh_is_final = true;
+    assert!(sim.playback.deviations_fit_display());
+    sim.playback.display_mesh = Some(mesh_with_vertices(4));
+    assert!(!sim.playback.deviations_fit_display());
+}
+
+/// F4: right after a run the playhead is at move 0 and the view shows the
+/// uncut block, not the final mesh. Only the Deviation mode, paused at the
+/// end, asks for the final mesh.
+#[test]
+fn only_a_paused_deviation_view_at_the_end_asks_for_the_final_mesh_f4() {
+    let mut sim = simulation_for_toolpath();
+    sim.playback.display_deviations = Some(vec![0.0; 3]);
+    sim.stock_viz_mode = StockVizMode::Deviation;
+    sim.playback.current_move = 0;
+    assert!(!sim.wants_final_mesh(), "move 0 shows the uncut block");
+    sim.playback.current_move = sim.total_moves();
+    assert!(
+        sim.wants_final_mesh(),
+        "paused at the end in Deviation mode"
+    );
+    sim.playback.playing = true;
+    assert!(!sim.wants_final_mesh(), "playing shows the live stock");
+    sim.playback.playing = false;
+    sim.stock_viz_mode = StockVizMode::Solid;
+    assert!(
+        !sim.wants_final_mesh(),
+        "the Solid mode shows the live stock"
+    );
+    sim.stock_viz_mode = StockVizMode::Deviation;
+    sim.playback.display_deviations = None;
+    assert!(!sim.wants_final_mesh(), "no deviations, no reason to swap");
+}

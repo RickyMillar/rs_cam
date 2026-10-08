@@ -4,7 +4,10 @@
 //!
 //! 1. The refactor of `z_grid_marching_cubes` into shared helpers keeps the
 //!    mesh bit for bit: the legacy body below is a verbatim copy of the
-//!    function at `b3a4a7ac`, and each fixture compares the two.
+//!    function at `b3a4a7ac` with one change, and each fixture compares the
+//!    two. The change: the render review 2026-10-09 (F1) reversed every
+//!    envelope triangle (top, bottom, skirt, walls) so that each normal
+//!    points out of the solid. The oracle has the same swap.
 //! 2. The block path at `k = 1` gives the same mesh as the full build.
 //! 3. Stride 2 keeps about 1/4 of the vertices and the same bounding box.
 //! 4. `display_stride_for` arithmetic, on the plan's rivmap350 numbers.
@@ -24,7 +27,7 @@ use crate::stock::dexel::{
 };
 use crate::stock::stock_mesh::StockMesh;
 
-// ── The legacy oracle: verbatim from `b3a4a7ac` (renamed only). ──────────
+// ── The legacy oracle: from `b3a4a7ac`, renamed, plus the F1 winding swap. ─
 
 #[allow(clippy::indexing_slicing)]
 fn legacy_z_grid_marching_cubes(
@@ -168,13 +171,12 @@ fn legacy_z_grid_marching_cubes(
             if corner_empty[c00] || corner_empty[c01] || corner_empty[c10] || corner_empty[c11] {
                 continue;
             }
-            // Winding for +Z normal (CCW viewed from +Z): (c00, c10, c01),
-            // (c01, c10, c11).
+            // Winding for a +Z normal (F1): (c00, c01, c10), (c01, c11, c10).
             let v00 = top_idx[c00];
             let v01 = top_idx[c01];
             let v10 = top_idx[c10];
             let v11 = top_idx[c11];
-            indices.extend_from_slice(&[v00, v10, v01, v01, v10, v11]);
+            indices.extend_from_slice(&[v00, v01, v10, v01, v11, v10]);
         }
     }
 
@@ -195,7 +197,7 @@ fn legacy_z_grid_marching_cubes(
             let v01 = bot_idx[c01];
             let v10 = bot_idx[c10];
             let v11 = bot_idx[c11];
-            indices.extend_from_slice(&[v00, v01, v10, v01, v11, v10]);
+            indices.extend_from_slice(&[v00, v10, v01, v01, v10, v11]);
         }
     }
 
@@ -211,7 +213,7 @@ fn legacy_z_grid_marching_cubes(
         let tr = top_idx[cr];
         let bl = bot_idx[cl];
         let br = bot_idx[cr];
-        indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+        indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
     }
     // Back edge (ci = rows): normals face +V.
     for cj in 0..cols {
@@ -224,7 +226,7 @@ fn legacy_z_grid_marching_cubes(
         let tr = top_idx[cr];
         let bl = bot_idx[cl];
         let br = bot_idx[cr];
-        indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+        indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
     }
     // Left edge (cj = 0): normals face −U.
     for ci in 0..rows {
@@ -237,7 +239,7 @@ fn legacy_z_grid_marching_cubes(
         let tt = top_idx[ct];
         let bb = bot_idx[cb];
         let bt = bot_idx[ct];
-        indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
+        indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
     }
     // Right edge (cj = cols): normals face +U.
     for ci in 0..rows {
@@ -250,7 +252,7 @@ fn legacy_z_grid_marching_cubes(
         let tt = top_idx[ct];
         let bb = bot_idx[cb];
         let bt = bot_idx[ct];
-        indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
+        indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
     }
 
     // ── 7. Hole walls — vertical quads at material/empty cell boundaries.
@@ -272,9 +274,9 @@ fn legacy_z_grid_marching_cubes(
             let bb = bot_idx[cb];
             let bt = bot_idx[ct];
             if !a_empty {
-                indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
-            } else {
                 indices.extend_from_slice(&[tb, bb, tt, tt, bb, bt]);
+            } else {
+                indices.extend_from_slice(&[tb, tt, bb, tt, bt, bb]);
             }
         }
     }
@@ -296,9 +298,9 @@ fn legacy_z_grid_marching_cubes(
             let bl = bot_idx[cl];
             let br = bot_idx[cr];
             if !a_empty {
-                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
-            } else {
                 indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+            } else {
+                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
             }
         }
     }

@@ -48,42 +48,29 @@ impl RsCamApp {
     }
 
     /// Compute per-vertex colors for the sim mesh based on current viz mode.
-    // SAFETY: color indices bounded by `num_verts * 3` guard above
-    #[allow(clippy::indexing_slicing)]
+    ///
+    /// `mesh_is_final` says whether `mesh` is the run's final composite mesh.
+    /// The deviation colours go only on that mesh; any other mesh draws in
+    /// its plain colours (render review 2026-10-09, F4).
     pub(super) fn compute_sim_colors(
         &self,
         mesh: &rs_cam_core::stock::stock_mesh::StockMesh,
+        mesh_is_final: bool,
     ) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
         match self.controller.state().simulation.stock_viz_mode {
-            StockVizMode::Solid => {
-                if mesh.colors.len() >= num_verts * 3 {
-                    (0..num_verts)
-                        .map(|i| {
-                            [
-                                mesh.colors[i * 3],
-                                mesh.colors[i * 3 + 1],
-                                mesh.colors[i * 3 + 2],
-                            ]
-                        })
-                        .collect()
-                } else {
-                    vec![[0.65, 0.45, 0.25]; num_verts]
-                }
-            }
-            StockVizMode::Deviation => {
-                if let Some(devs) = &self
-                    .controller
+            StockVizMode::Solid => solid_sim_colors(mesh),
+            StockVizMode::Deviation => sim_render::deviation_colors_for_mesh(
+                self.controller
                     .state()
                     .simulation
                     .playback
                     .display_deviations
-                {
-                    sim_render::deviation_colors(devs)
-                } else {
-                    vec![[0.65, 0.45, 0.25]; num_verts]
-                }
-            }
+                    .as_deref(),
+                mesh_is_final,
+                num_verts,
+            )
+            .unwrap_or_else(|| solid_sim_colors(mesh)),
             StockVizMode::ByHeight => {
                 rs_cam_core::export::ribbon::height_gradient_colors(&mesh.vertices)
             }
@@ -863,8 +850,9 @@ impl RsCamApp {
         // change), update the single vertex buffer in-place instead of
         // recreating GPU buffers.
         if self.controller.state().simulation.has_results() {
-            if let Some(mesh) = &self.controller.state().simulation.playback.display_mesh {
-                let colors = self.compute_sim_colors(mesh);
+            let playback = &self.controller.state().simulation.playback;
+            if let Some(mesh) = &playback.display_mesh {
+                let colors = self.compute_sim_colors(mesh, playback.display_mesh_is_final);
                 let can_update_existing = resources
                     .sim_mesh_data
                     .as_ref()
@@ -1555,6 +1543,25 @@ impl RsCamApp {
 /// engagement samples, rest-grid heatmap) in lockstep — arc center offsets
 /// (`i`/`j` on the `MoveType`) are relative and survive translation
 /// unchanged.
+/// The plain colours of a sim mesh: the per-vertex colours core baked in,
+/// or one wood tone when the mesh has none.
+fn solid_sim_colors(mesh: &rs_cam_core::stock::stock_mesh::StockMesh) -> Vec<[f32; 3]> {
+    let num_verts = mesh.vertices.len() / 3;
+    let baked: Vec<[f32; 3]> = mesh
+        .colors
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .take(num_verts)
+        .copied()
+        .collect();
+    if baked.len() == num_verts {
+        baked
+    } else {
+        vec![[0.65, 0.45, 0.25]; num_verts]
+    }
+}
+
 fn translate_annotated(
     annotated: &rs_cam_core::trace::toolpath_spans::AnnotatedToolpath,
     shift: rs_cam_core::geo::P3,
