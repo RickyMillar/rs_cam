@@ -23,6 +23,7 @@ use crate::geo::P3;
 use crate::geometry::arc_util::linearize_arc_into;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::stock::collision::RapidClearanceCheck;
+use crate::stock::material_slot::{MaterialCut, MaterialSlot};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::{EngagementMode, MillingCutter};
@@ -1021,7 +1022,7 @@ impl TriDexelStock {
             match dispatch.as_mut() {
                 // Per-stamp dispatch (wave 2): stamp now, patch now.
                 None => {
-                    let metrics = self.estimate_and_stamp_cutting_subsegment(
+                    let (metrics, material) = self.estimate_and_stamp_cutting_subsegment(
                         lut,
                         cutter,
                         radius,
@@ -1034,7 +1035,7 @@ impl TriDexelStock {
                         band_scratch,
                     );
                     if let Some(sample) = samples.slice_mut().get_mut(slot) {
-                        apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+                        apply_subsegment_metrics(sample, cutter, flute_length, metrics, material);
                     }
                 }
                 // Whole-toolpath dispatch (wave 4): queue, and run the batch
@@ -1123,6 +1124,8 @@ fn push_cutting_sample(
         span_path: params.span_path.to_vec(),
         in_transit_span: params.in_transit_span,
         source_intent: params.source_intent,
+        material_slot: MaterialSlot::STOCK,
+        cuts_several_materials: false,
     });
     *next_sample_index += 1;
     slot
@@ -1231,6 +1234,7 @@ fn apply_subsegment_metrics(
     cutter: &dyn MillingCutter,
     flute_length: f64,
     metrics: (f64, f64, Option<f64>, f64),
+    material: MaterialCut,
 ) {
     let (measured_axial_mm, radial_engagement, arc_engagement_radians, removed_volume_est_mm3) =
         metrics;
@@ -1274,6 +1278,10 @@ fn apply_subsegment_metrics(
         peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
     };
     sample.removed_volume_est_mm3 = removed_volume_est_mm3;
+    // S1: the material the stamp removed. A one-material stock gives the
+    // stock slot and no flag, the values the sample already holds.
+    sample.material_slot = material.slot;
+    sample.cuts_several_materials = material.several;
     sample.mrr_mm3_s = if sample.segment_time_s <= 1e-9 {
         0.0
     } else {
@@ -1308,9 +1316,9 @@ fn run_batch_into_samples(
         capture_arc_engagement,
         air_mip,
         cancel,
-        |slot, metrics| {
+        |slot, metrics, material| {
             if let Some(sample) = samples.get_mut(slot) {
-                apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+                apply_subsegment_metrics(sample, cutter, flute_length, metrics, material);
             }
         },
     )
@@ -1343,9 +1351,9 @@ fn run_swept_batch_into_samples(
         capture_arc_engagement,
         air_mip,
         cancel,
-        |slot, metrics| {
+        |slot, metrics, material| {
             if let Some(sample) = samples.get_mut(slot) {
-                apply_subsegment_metrics(sample, cutter, flute_length, metrics);
+                apply_subsegment_metrics(sample, cutter, flute_length, metrics, material);
             }
         },
     )
@@ -1559,7 +1567,7 @@ impl TriDexelStock {
         capture_arc_engagement: bool,
         air_mip: &mut Option<TileMaxTop>,
         band_scratch: &mut Vec<StampPartial>,
-    ) -> (f64, f64, Option<f64>, f64) {
+    ) -> ((f64, f64, Option<f64>, f64), MaterialCut) {
         let (su, sv, sd) = direction.decompose(seg_start.x, seg_start.y, seg_start.z);
         let (eu, ev, ed) = direction.decompose(seg_end.x, seg_end.y, seg_end.z);
         let (mu, mv, _md) = direction.decompose(midpoint.x, midpoint.y, midpoint.z);
@@ -1616,7 +1624,10 @@ impl TriDexelStock {
         if let Some(m) = air_mip.as_mut() {
             m.absorb(&reduced);
         }
-        reduced.finish(cutter, capture_arc_engagement)
+        (
+            reduced.finish(cutter, capture_arc_engagement),
+            reduced.material_cut(),
+        )
     }
 }
 

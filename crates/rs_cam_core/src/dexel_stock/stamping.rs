@@ -17,6 +17,7 @@ use crate::stock::dexel::{
     DexelGrid, DexelRay, ray_blend_above, ray_blend_below, ray_material_length,
     ray_material_length_above,
 };
+use crate::stock::material_slot::{MaterialCut, SlotTally, tally_blend_above, tally_blend_below};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
 use crate::tool::MillingCutter;
@@ -1269,6 +1270,12 @@ pub(super) struct StampPartial {
     pub(super) bbox_cells: u64,
     pub(super) cells_skipped: u64,
     pub(super) stamp_skipped: bool,
+    /// S1: what material this stamp removed. Filled only on a grid with
+    /// [`crate::stock::dexel::DexelGrid::has_added_material`]; empty on a
+    /// one-material stock. It sits BESIDE the volume sums above and never
+    /// feeds them, so the published numbers do not move. Six bytes in the
+    /// tail padding: the partial stays at 80 B.
+    pub(super) removed_by_slot: SlotTally,
 }
 
 impl StampPartial {
@@ -1285,6 +1292,22 @@ impl StampPartial {
             bbox_cells: 0,
             cells_skipped: 0,
             stamp_skipped: true,
+            removed_by_slot: SlotTally::default(),
+        }
+    }
+
+    /// The material this stamp removed (S1). A one-material stock gives the
+    /// stock slot and no flag.
+    pub(super) fn material_cut(&self) -> MaterialCut {
+        self.removed_by_slot.material_cut(self.removed_volume_mm3())
+    }
+
+    /// The removed volume `finish` publishes, without its other metrics.
+    fn removed_volume_mm3(&self) -> f64 {
+        if self.degenerate {
+            self.removed_volume
+        } else {
+            (self.pre_volume - self.post_volume).max(0.0)
         }
     }
 
@@ -1296,6 +1319,7 @@ impl StampPartial {
         self.pre_volume += other.pre_volume;
         self.post_volume += other.post_volume;
         self.removed_volume += other.removed_volume;
+        self.removed_by_slot.merge(&other.removed_by_slot);
         if other.max_penetration > self.max_penetration {
             self.max_penetration = other.max_penetration;
         }
@@ -1607,9 +1631,19 @@ pub(super) fn stamp_segment_with_metrics(
                         idx, coverage, h, ..
                     } => (idx, coverage, h),
                 };
+                let tally = band.has_added_material;
                 let ray = band.ray_at_index(idx);
                 if from_high {
                     let surface = (d + h) as f32;
+                    if tally {
+                        tally_blend_above(
+                            ray,
+                            surface,
+                            coverage,
+                            cell_area,
+                            &mut out.removed_by_slot,
+                        );
+                    }
                     let above = ray_material_length_above(ray, surface) as f64;
                     ray_blend_above(ray, surface, coverage);
                     // §6.F gap 1: scale per-cell removed volume by coverage so
@@ -1621,6 +1655,15 @@ pub(super) fn stamp_segment_with_metrics(
                     out.removed_volume += coverage as f64 * above * cell_area;
                 } else {
                     let surface = (d - h) as f32;
+                    if tally {
+                        tally_blend_below(
+                            ray,
+                            surface,
+                            coverage,
+                            cell_area,
+                            &mut out.removed_by_slot,
+                        );
+                    }
                     let total_before = ray_material_length(ray) as f64;
                     ray_blend_below(ray, surface, coverage);
                     let total_after = ray_material_length(ray) as f64;
@@ -1789,12 +1832,34 @@ pub(super) fn stamp_segment_with_metrics(
 
             // 2. Apply the stamp under coverage-weighted blend. f=1 (fully
             //    covered) is identical to the prior subtract-above call;
-            //    f<1 leaves (1-f) of the above-surface slice intact.
+            //    f<1 leaves (1-f) of the above-surface slice intact. S1: on a
+            //    stock with added material, sum the removal per slot first.
             if from_high {
+                if band.has_added_material {
+                    tally_blend_above(
+                        band.ray_at_index(idx),
+                        cell_tool_surface as f32,
+                        coverage,
+                        cell_area,
+                        &mut out.removed_by_slot,
+                    );
+                }
+                let ray = band.ray_at_index(idx);
                 ray_blend_above(ray, cell_tool_surface as f32, coverage);
             } else {
+                if band.has_added_material {
+                    tally_blend_below(
+                        band.ray_at_index(idx),
+                        cell_tool_surface as f32,
+                        coverage,
+                        cell_area,
+                        &mut out.removed_by_slot,
+                    );
+                }
+                let ray = band.ray_at_index(idx);
                 ray_blend_below(ray, cell_tool_surface as f32, coverage);
             }
+            let ray = band.ray_at_index(idx);
             // 3. Post-stamp material height. The pre/post diff naturally
             //    scales with coverage — no separate volume correction needed
             //    (unlike the degenerate branch, §6.F gap 1).
@@ -1908,6 +1973,8 @@ pub(super) fn sample_segment_runtime(
             span_path: params.span_path.to_vec(),
             in_transit_span: params.in_transit_span,
             source_intent: params.source_intent,
+            material_slot: crate::stock::material_slot::MaterialSlot::STOCK,
+            cuts_several_materials: false,
         });
         *next_sample_index += 1;
     }

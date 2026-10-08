@@ -394,111 +394,129 @@ fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
         .extend(other.indices.iter().map(|i| i + index_offset));
 }
 
-/// Append analytic drill-hole geometry to a stock mesh — DEXEL roadmap §6.E
-/// Step 3.
+/// One wall column of a drill decoration: the wall point (XY) and the
+/// clipped material span `(low z, high z)`; `None` = no material there.
+type WallColumn = ([f32; 2], Option<(f32, f32)>);
+
+/// Append analytic drill-hole walls to a stock mesh where the display grid
+/// cannot show the hole — DEXEL roadmap §6.E Step 3.
 ///
-/// Each [`crate::ops::drill_op::DrillOp`] adds a 16-sided cylinder side wall
-/// (and a flat-bottom cap for [`crate::ops::drill_op::ToolProfile::Flat`])
-/// inside the existing heightmap mesh. This gives clean circular walls
-/// at low dexel resolutions instead of cell-stepped approximations.
+/// [`TriDexelStock::apply_drill_op`] carves every hole into the dexel stock.
+/// The display mesh samples that stock on a grid of `cell_size × stride`. By
+/// the sampling theorem, the grid resolves a hole when the hole diameter
+/// spans at least two display cells. The mesh then already shows the hole,
+/// and this function adds nothing for it.
 ///
-/// Composition: call AFTER [`dexel_stock_to_mesh`] so the analytic
-/// cylinders sit on top of the heightmap-rendered approximation. The
-/// "seam" between heightmap walls and analytic cylinders is visible
-/// at low dexel resolution — Step 5 (marching cubes) replaces the
-/// heightmap walls so they align cleanly.
-pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::ops::drill_op::DrillOp]) {
+/// A smaller hole gets a 16-sided wall, and a floor (`Flat`) or a cone tip.
+/// The wall is clipped to the CURRENT `stock`: each wall column spans only
+/// the material of the ray one cell outside the wall. A later cut that
+/// removes the material of the hole thus also removes its wall, and the
+/// wall is never drawn as a pillar outside the stock (drill-pillar defect,
+/// 2026-10-09). The floor is drawn only when every wall column reaches it,
+/// so a through hole has no floating floor.
+///
+/// Frame: `stock` and `drill_ops` are in the same frame, and `base` is the
+/// mesh of `stock` at the same `stride`.
+pub fn append_drill_cylinders(
+    base: &mut StockMesh,
+    stock: &TriDexelStock,
+    stride: u32,
+    drill_ops: &[&crate::ops::drill_op::DrillOp],
+) {
     const AZIMUTH_SEGMENTS: usize = 16;
+    let grid = &stock.z_grid;
+    let display_cell = grid.cell_size * f64::from(stride.max(1));
+    let azimuth: Vec<(f64, f64)> = (0..AZIMUTH_SEGMENTS)
+        .map(|i| {
+            let theta = (i as f64) * std::f64::consts::TAU / AZIMUTH_SEGMENTS as f64;
+            (theta.cos(), theta.sin())
+        })
+        .collect();
+
     for drill_op in drill_ops {
-        let radius = drill_op.tool_diameter_mm as f32 * 0.5;
-        if radius <= 0.0 {
+        let radius = drill_op.tool_diameter_mm * 0.5;
+        // The display grid resolves the hole: the mesh already shows it.
+        if radius <= 0.0 || drill_op.tool_diameter_mm >= 2.0 * display_cell {
             continue;
         }
-        // Cone-tip protrusion for non-flat profiles. For Flat, tip is at
-        // bottom_z; for coned profiles, the cylindrical shoulder starts
-        // at bottom_z + tip_protrusion.
-        let tip_protrusion = drill_op
-            .tool_profile
-            .tip_protrusion_mm(drill_op.tool_diameter_mm * 0.5) as f32;
+        // Cone-tip protrusion for non-flat profiles. For Flat, the tip is at
+        // bottom_z; for coned profiles, the cylindrical shoulder starts at
+        // bottom_z + tip_protrusion.
+        let tip_protrusion = drill_op.tool_profile.tip_protrusion_mm(radius) as f32;
+        // One full cell outside the wall: this hole did not clear that ray.
+        let sample_r = radius + grid.cell_size;
 
         for hole in &drill_op.holes {
-            let cx = hole.xy[0] as f32;
-            let cy = hole.xy[1] as f32;
+            let (cx, cy) = (hole.xy[0], hole.xy[1]);
             let bottom_z = hole.bottom_z as f32;
             let top_z = hole.top_z as f32;
             // Skip degenerate holes (e.g. zero-depth).
             if top_z <= bottom_z {
                 continue;
             }
-            // Cylinder section bottom is at the shoulder where the cone
-            // meets the cylindrical body (or `bottom_z` for Flat).
             let cylinder_bottom = bottom_z + tip_protrusion;
-            let is_flat = matches!(
-                drill_op.tool_profile,
-                crate::ops::drill_op::ToolProfile::Flat
-            );
 
-            let azimuth: Vec<(f32, f32)> = (0..AZIMUTH_SEGMENTS)
-                .map(|i| {
-                    let theta = (i as f32) * std::f32::consts::TAU / AZIMUTH_SEGMENTS as f32;
-                    (theta.cos(), theta.sin())
+            // Per azimuth: the wall point and the material span of the ray
+            // outside it, clipped to the hole. `None` = no material there.
+            let columns: Vec<WallColumn> = azimuth
+                .iter()
+                .map(|&(cos_t, sin_t)| {
+                    let wall = [(cx + radius * cos_t) as f32, (cy + radius * sin_t) as f32];
+                    let span = grid
+                        .world_to_cell(cx + sample_r * cos_t, cy + sample_r * sin_t)
+                        .and_then(|(row, col)| {
+                            let ray = grid.ray(row, col);
+                            let lo = ray_bottom(ray)?.max(cylinder_bottom);
+                            let hi = ray_top(ray)?.min(top_z);
+                            (hi > lo).then_some((lo, hi))
+                        });
+                    (wall, span)
                 })
                 .collect();
 
             let mut cyl = StockMesh::empty();
+            let push = |cyl: &mut StockMesh, x: f32, y: f32, z: f32| -> u32 {
+                let idx = (cyl.vertices.len() / 3) as u32;
+                cyl.vertices.extend_from_slice(&[x, y, z]);
+                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
+                idx
+            };
 
-            // ── Cylinder side wall (cylinder_bottom → top_z) ─────────
-            // Vertices: ring at cylinder_bottom + ring at top_z.
-            for &(cos_t, sin_t) in &azimuth {
-                let px = cx + radius * cos_t;
-                let py = cy + radius * sin_t;
-                cyl.vertices.extend_from_slice(&[px, py, cylinder_bottom]);
-                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
-            }
-            for &(cos_t, sin_t) in &azimuth {
-                let px = cx + radius * cos_t;
-                let py = cy + radius * sin_t;
-                cyl.vertices.extend_from_slice(&[px, py, top_z]);
-                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
-            }
-            // Triangles: 2 per quad. The normal points out of the material,
-            // which is toward the hole axis. Winding `bot_i, top_i,
-            // bot_{i+1}` gives `+z x +θ = -r` (render review 2026-10-09,
-            // F1: the old order gave `+θ x +z = +r`, into the material).
-            for i in 0..AZIMUTH_SEGMENTS {
-                let next = (i + 1) % AZIMUTH_SEGMENTS;
-                let bi = i as u32;
-                let bn = next as u32;
-                let ti = (AZIMUTH_SEGMENTS + i) as u32;
-                let tn = (AZIMUTH_SEGMENTS + next) as u32;
+            // ── Wall: one quad per azimuth step where both columns hold
+            // material. The normal points out of the material, which is
+            // toward the hole axis: `lo_i, hi_i, lo_{i+1}` gives
+            // `+z x +θ = -r` (render review 2026-10-09, F1).
+            for (&(wall_i, span_i), &(wall_n, span_n)) in
+                columns.iter().zip(columns.iter().cycle().skip(1))
+            {
+                let (Some((lo_i, hi_i)), Some((lo_n, hi_n))) = (span_i, span_n) else {
+                    continue;
+                };
+                let bi = push(&mut cyl, wall_i[0], wall_i[1], lo_i);
+                let ti = push(&mut cyl, wall_i[0], wall_i[1], hi_i);
+                let bn = push(&mut cyl, wall_n[0], wall_n[1], lo_n);
+                let tn = push(&mut cyl, wall_n[0], wall_n[1], hi_n);
                 cyl.indices.extend_from_slice(&[bi, ti, bn, ti, tn, bn]);
             }
 
-            // ── Bottom cap or cone tip ────────────────────────────────
-            if is_flat {
-                // Flat-bottom cap: fan from center (axis, bottom_z) out
-                // to the cylinder_bottom ring. The hole floor has material
-                // below it, so the normal is +Z: CCW seen from above,
-                // `center, i, i+1` (F1).
-                let center_idx = cyl.vertices.len() / 3;
-                cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
-                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
-                for i in 0..AZIMUTH_SEGMENTS {
-                    let next = (i + 1) % AZIMUTH_SEGMENTS;
-                    cyl.indices
-                        .extend_from_slice(&[center_idx as u32, i as u32, next as u32]);
-                }
-            } else {
-                // Conical tip: apex at (axis, bottom_z), base on the
-                // cylinder_bottom ring. The normal points up and toward the
-                // axis, out of the material (F1).
-                let apex_idx = cyl.vertices.len() / 3;
-                cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
-                cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
-                for i in 0..AZIMUTH_SEGMENTS {
-                    let next = (i + 1) % AZIMUTH_SEGMENTS;
-                    cyl.indices
-                        .extend_from_slice(&[apex_idx as u32, i as u32, next as u32]);
+            // ── Floor or cone tip: only when every column reaches the
+            // shoulder, i.e. the hole bottom is inside the material.
+            let floor_in_material = columns
+                .iter()
+                .all(|(_, span)| span.is_some_and(|(lo, _)| lo <= cylinder_bottom));
+            if floor_in_material {
+                // Flat: a fan from the centre at bottom_z out to the ring at
+                // cylinder_bottom (= bottom_z); the normal is +Z. Coned: the
+                // apex is at bottom_z, and the normal points up and toward
+                // the axis. Both are CCW seen from above: `centre, i, i+1`
+                // (F1).
+                let centre = push(&mut cyl, cx as f32, cy as f32, bottom_z);
+                let ring: Vec<u32> = columns
+                    .iter()
+                    .map(|&(wall, _)| push(&mut cyl, wall[0], wall[1], cylinder_bottom))
+                    .collect();
+                for (&a, &b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                    cyl.indices.extend_from_slice(&[centre, a, b]);
                 }
             }
 
@@ -519,6 +537,107 @@ mod tests {
     use crate::dexel_stock::{StockCutDirection, TriDexelStock};
     use crate::stock::dexel::{ray_subtract_above, ray_subtract_below};
     use crate::tool::{FlatEndmill, MillingCutter};
+
+    /// A Ø6 through hole drilled from the top of a 25.5 mm block, the shape
+    /// of the `testpiece.toml` dowel holes (31.8 mm deep).
+    fn dowel_drill() -> crate::ops::drill_op::DrillOp {
+        use crate::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
+        DrillOp {
+            holes: vec![DrillHole {
+                xy: [20.0, 15.0],
+                top_z: 25.5,
+                bottom_z: 25.5 - 31.8,
+            }],
+            hole_source: HoleSource::ModelDerived,
+            tool_profile: ToolProfile::Flat,
+            tool_diameter_mm: 6.0,
+            cycle: crate::ops::drill::DrillCycle::Simple,
+            feed_rate_mm_min: 300.0,
+            spindle_rpm: 18_000,
+            flute_count: 2,
+            material: crate::material::Material::default(),
+            retract_z_mm: 30.5,
+        }
+    }
+
+    /// The drilled block after a Bottom setup cuts its face into a 10 %
+    /// ramp. In the global frame a Bottom setup removes from below: the
+    /// material bottom rises from z 2 at x 0 to z 6 at x 40, so the hole
+    /// keeps material only above the ramp.
+    fn drilled_then_bottom_ramp(cell: f64) -> TriDexelStock {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 40.0, 30.0, 0.0, 25.5, cell);
+        let _ = stock.apply_drill_op(&dowel_drill(), StockCutDirection::FromTop);
+        for row in 0..stock.z_grid.rows {
+            for col in 0..stock.z_grid.cols {
+                let (x, _) = stock.z_grid.cell_to_world(row, col);
+                ray_subtract_below(stock.z_grid.ray_mut(row, col), (2.0 + 0.1 * x) as f32);
+            }
+        }
+        stock
+    }
+
+    /// Every decoration vertex lies inside the material span of the cells
+    /// within one cell of its XY: never above the top surface, never below
+    /// the bottom surface (which is the top in the flipped frame).
+    fn assert_decoration_inside_stock(stock: &TriDexelStock, decoration: &StockMesh) {
+        let grid = &stock.z_grid;
+        for v in decoration.vertices.as_chunks::<3>().0 {
+            let (row, col) = grid
+                .world_to_cell(f64::from(v[0]), f64::from(v[1]))
+                .expect("decoration vertex on the grid");
+            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+            for r in row.saturating_sub(1)..=(row + 1).min(grid.rows - 1) {
+                for c in col.saturating_sub(1)..=(col + 1).min(grid.cols - 1) {
+                    let ray = grid.ray(r, c);
+                    if let (Some(b), Some(t)) = (ray_bottom(ray), ray_top(ray)) {
+                        lo = lo.min(b);
+                        hi = hi.max(t);
+                    }
+                }
+            }
+            assert!(
+                v[2] >= lo - 1e-4 && v[2] <= hi + 1e-4,
+                "decoration vertex {v:?} is outside the stock span [{lo}, {hi}] at its XY"
+            );
+        }
+    }
+
+    #[test]
+    fn a_resolved_drill_hole_gets_no_decoration_after_a_bottom_cut() {
+        // Cell 0.5 mm: the Ø6 hole spans 12 cells, so the dexel mesh shows
+        // it. The old code drew a fixed tube from z -6.3 to z 25.5 here: a
+        // pillar below the ramp, which is above it in the flipped view.
+        let stock = drilled_then_bottom_ramp(0.5);
+        let mut decoration = StockMesh::empty();
+        append_drill_cylinders(&mut decoration, &stock, 1, &[&dowel_drill()]);
+        assert!(
+            decoration.vertices.is_empty(),
+            "a resolved hole needs no decoration: {} vertices",
+            decoration.vertices.len() / 3
+        );
+    }
+
+    #[test]
+    fn an_unresolved_drill_decoration_is_clipped_to_the_current_stock() {
+        // Cell 1 mm at stride 4: the 4 mm display cell cannot resolve the
+        // Ø6 hole (6 < 2 x 4), so the decoration is drawn. It must follow
+        // the ramp, and the through hole must get no floor.
+        let stock = drilled_then_bottom_ramp(1.0);
+        let mut decoration = StockMesh::empty();
+        append_drill_cylinders(&mut decoration, &stock, 4, &[&dowel_drill()]);
+        assert!(!decoration.indices.is_empty(), "the wall is drawn");
+        assert_decoration_inside_stock(&stock, &decoration);
+        // At the hole (x 17..23) the ramp bottom is 3.7..4.3: no vertex of
+        // the wall reaches below it, and no floor sits at z -6.3.
+        let min_z = decoration
+            .vertices
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|v| v[2])
+            .fold(f32::INFINITY, f32::min);
+        assert!(min_z > 3.5, "lowest decoration vertex {min_z}");
+    }
 
     #[test]
     fn solid_mesh_is_non_empty_and_well_formed() {

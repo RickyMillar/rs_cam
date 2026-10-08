@@ -212,13 +212,12 @@ fn drill_session_produces_drill_summary_with_pecks() {
         drill_gates.peck_adequacy
     );
 
-    // PR2 assertion 4: composite simulation mesh includes drill cylinder
-    // geometry (analytic, from `append_drill_cylinders`). Two holes × 33
-    // verts/hole × 3 floats/vert = 198 floats minimum added on top of the
-    // dexel mesh.
+    // PR2 assertion 4: the composite simulation mesh is not empty. Since
+    // 2026-10-09 `append_drill_cylinders` adds a wall only for a hole the
+    // display grid cannot resolve; a resolved hole is in the dexel mesh.
     assert!(
         sim.mesh.vertices.len() > 198,
-        "composite mesh should carry drill-cylinder verts on top of dexel mesh; got {} verts",
+        "composite mesh should carry the drilled stock; got {} verts",
         sim.mesh.vertices.len() / 3
     );
 }

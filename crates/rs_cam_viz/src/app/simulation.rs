@@ -431,12 +431,11 @@ impl RsCamApp {
                 dexel_stock_to_mesh_strided(stock, self.display_stride())
             };
 
-            // Append analytical drill cylinders for drill ops whose TP the
-            // playhead has entered. This matches the compute path's checkpoint
-            // mesh (which appends cylinders at every boundary) — without it
-            // the live-sim mesh drops the cylinder geometry between
-            // checkpoints and drill holes render as the dexel-stamped
-            // approximation only. See `compute/simulate.rs:504-508`.
+            // Append the analytic drill walls for drill ops whose TP the
+            // playhead has entered, as `SimCheckpointMesh::build_mesh` does.
+            // `append_drill_cylinders` draws them only for a hole the mesh
+            // grid cannot resolve, and clips them to the live stock, so a
+            // later cut (for example a Bottom setup) removes them.
             if !mesh_is_final
                 && let Some(results) = self.controller.state().simulation.results.as_ref()
             {
@@ -463,7 +462,17 @@ impl RsCamApp {
                     })
                     .collect();
                 if !completed.is_empty() {
-                    rs_cam_core::stock::dexel_mesh::append_drill_cylinders(&mut mesh, &completed);
+                    // The walls are clipped to `stock`, the stock this mesh
+                    // came from, and drawn only for a hole the mesh grid
+                    // cannot resolve. The preview mesh samples every cell.
+                    let stride = if use_preview_mesh {
+                        1
+                    } else {
+                        self.display_stride()
+                    };
+                    rs_cam_core::stock::dexel_mesh::append_drill_cylinders(
+                        &mut mesh, stock, stride, &completed,
+                    );
                 }
             }
 

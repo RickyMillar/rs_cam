@@ -57,6 +57,7 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::stock::dexel::{
     DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
 };
+use crate::stock::material_slot::{MaterialCut, SlotTally, tally_blend_above, tally_blend_below};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 
@@ -360,14 +361,33 @@ fn stamp_plunge_chunk(
                     out[0].cells_skipped += 1;
                     continue;
                 }
+                let tally = band.has_added_material;
                 let ray = &mut band.rays[idx];
                 if from_high {
                     let surface = (d + h) as f32;
+                    if tally {
+                        tally_blend_above(
+                            ray,
+                            surface,
+                            coverage,
+                            cell_area,
+                            &mut out[b].removed_by_slot,
+                        );
+                    }
                     let above = ray_material_length_above(ray, surface) as f64;
                     ray_blend_above(ray, surface, coverage);
                     out[b].removed_volume += coverage as f64 * above * cell_area;
                 } else {
                     let surface = (d - h) as f32;
+                    if tally {
+                        tally_blend_below(
+                            ray,
+                            surface,
+                            coverage,
+                            cell_area,
+                            &mut out[b].removed_by_slot,
+                        );
+                    }
                     let total_before = ray_material_length(ray) as f64;
                     ray_blend_below(ray, surface, coverage);
                     let total_after = ray_material_length(ray) as f64;
@@ -651,12 +671,50 @@ fn stamp_swept_chunk(
             let above = ray_material_length_above(ray, cell_tool_surface as f32) as f64;
             let pre_fresh = if from_high { above } else { pre_len - above };
 
+            // S1: on a stock with added material, the per-slot share of the
+            // removal, weighted per bin like the volume sums below.
+            let mut by_slot = SlotTally::default();
+            let tally = band.has_added_material;
             if from_high {
+                if tally {
+                    tally_blend_above(
+                        ray,
+                        cell_tool_surface as f32,
+                        coverage,
+                        cell_area,
+                        &mut by_slot,
+                    );
+                }
                 ray_blend_above(ray, cell_tool_surface as f32, coverage);
             } else {
+                if tally {
+                    tally_blend_below(
+                        ray,
+                        cell_tool_surface as f32,
+                        coverage,
+                        cell_area,
+                        &mut by_slot,
+                    );
+                }
                 ray_blend_below(ray, cell_tool_surface as f32, coverage);
             }
             let post_len = ray_material_length(ray) as f64;
+            if tally {
+                if single {
+                    out[0].removed_by_slot.merge(&by_slot);
+                } else {
+                    // SAFETY: `b` addresses `weight(b)` as well as `out[b]`, as in the
+                    // volume loop below, so `enumerate()` would only move the integer.
+                    #[allow(clippy::needless_range_loop)]
+                    for b in b_lo..=b_hi {
+                        let w = weight(b);
+                        if w <= 0.0 {
+                            continue;
+                        }
+                        out[b].removed_by_slot.merge(&by_slot.scaled(w));
+                    }
+                }
+            }
             if single {
                 out[0].pre_volume += pre_len * cell_area;
                 out[0].post_volume += post_len * cell_area;
@@ -943,7 +1001,7 @@ impl SweptDispatch {
         capture_arc_engagement: bool,
         air_mip: &mut Option<TileMaxTop>,
         cancel: &dyn CancelCheck,
-        mut patch: impl FnMut(usize, (f64, f64, Option<f64>, f64)),
+        mut patch: impl FnMut(usize, (f64, f64, Option<f64>, f64), MaterialCut),
     ) -> Result<(), Cancelled> {
         if self.jobs.is_empty() {
             return Ok(());
@@ -1065,7 +1123,11 @@ impl SweptDispatch {
                 {
                     m.absorb(r);
                 }
-                patch(job.first_slot + b, r.finish(cutter, capture_arc_engagement));
+                patch(
+                    job.first_slot + b,
+                    r.finish(cutter, capture_arc_engagement),
+                    r.material_cut(),
+                );
             }
         }
 

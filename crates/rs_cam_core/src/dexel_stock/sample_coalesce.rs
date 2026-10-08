@@ -37,6 +37,10 @@
 //!   kept exactly or over-stated, never under-stated.
 //! * **Identity fields** (move, feed, spans, intent, kinematics) are equal
 //!   across a group; `position` is the time-weighted mean of the midpoints.
+//! * **Material** (S1) — `material_slot` is the slot with the most removed
+//!   volume over the group, each sample counted under its own main slot;
+//!   `cuts_several_materials` is set when one sample has it set or when the
+//!   samples that removed material name more than one slot.
 //!
 //! # Memory bound
 //!
@@ -49,6 +53,7 @@
 
 use crate::geo::P3;
 use crate::stock::dexel::{DexelGrid, DexelRay};
+use crate::stock::material_slot::SlotVolumes;
 use crate::stock::simulation_cut::SimulationCutSample;
 
 /// Per-subsegment Z-drop cap of the stamping subdivision. See
@@ -212,7 +217,13 @@ fn merge_into_first(samples: &mut [SimulationCutSample], first: usize, end: usiz
     let mut mean_chip: Option<f64> = None;
     let mut peak_chip: Option<f64> = None;
     let mut engagement_arc: Option<f64> = None;
+    let mut by_slot = SlotVolumes::default();
+    let mut several = false;
     for sample in &samples[first..end] {
+        if sample.removed_volume_est_mm3 > 0.0 {
+            by_slot.add(sample.material_slot, sample.removed_volume_est_mm3);
+        }
+        several |= sample.cuts_several_materials;
         let t = sample.segment_time_s;
         t_sum += t;
         removed += sample.removed_volume_est_mm3;
@@ -257,6 +268,9 @@ fn merge_into_first(samples: &mut [SimulationCutSample], first: usize, end: usiz
     head.engagement.mean_chip_thickness_mm = mean_chip;
     head.engagement.peak_chip_thickness_mm = peak_chip;
     head.engagement.arc_radians = engagement_arc;
+    let material = by_slot.material_cut();
+    head.material_slot = material.slot;
+    head.cuts_several_materials = several || material.several;
 }
 
 #[cfg(test)]
@@ -389,5 +403,35 @@ mod tests {
             columns * per_column / std::mem::size_of::<SimulationCutSample>()
         );
         assert!(budget * std::mem::size_of::<SimulationCutSample>() <= columns * per_column);
+    }
+
+    #[test]
+    fn a_coalesced_sample_keeps_the_main_slot_by_volume_and_the_flag() {
+        use crate::stock::material_slot::MaterialSlot;
+        let with_slot = |i: usize, removed: f64, k: u8, several: bool| SimulationCutSample {
+            material_slot: MaterialSlot(k),
+            cuts_several_materials: several,
+            ..raw(i, 0.5, 1.0, removed)
+        };
+        // Slot 2 removes 3.0 over two samples; the stock removes 2.5 in one.
+        let mut samples = vec![
+            with_slot(0, 1.5, 2, false),
+            with_slot(1, 2.5, 0, false),
+            with_slot(2, 1.5, 2, false),
+        ];
+        merge_into_first(&mut samples, 0, 3);
+        assert_eq!(samples[0].material_slot, MaterialSlot(2));
+        assert!(samples[0].cuts_several_materials);
+
+        // One slot over the whole group: no flag.
+        let mut samples = vec![with_slot(0, 1.0, 1, false), with_slot(1, 1.0, 1, false)];
+        merge_into_first(&mut samples, 0, 2);
+        assert_eq!(samples[0].material_slot, MaterialSlot(1));
+        assert!(!samples[0].cuts_several_materials);
+
+        // A flag on one sample stays on the group.
+        let mut samples = vec![with_slot(0, 1.0, 1, true), with_slot(1, 1.0, 1, false)];
+        merge_into_first(&mut samples, 0, 2);
+        assert!(samples[0].cuts_several_materials);
     }
 }

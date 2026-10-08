@@ -57,6 +57,7 @@ use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 
 use crate::geo::{BoundingBox3, P3};
 use crate::stock::dexel::{DexelAxis, DexelGrid, ray_top};
+use crate::stock::material_slot::MaterialSlotTable;
 use crate::stock::radial_profile::RadialProfileLUT;
 
 /// What one [`TriDexelStock::apply_drill_op`] call actually removed.
@@ -125,6 +126,10 @@ pub struct TriDexelStock {
     /// `simulate_toolpath_with_lut_cancel` and left all-zero when that run was
     /// serial.
     pub last_playback_dispatch: PlaybackDispatchStats,
+    /// S1: slot -> material for the added materials. Slot 0 is the stock's
+    /// own material (`StockConfig.material`) and is not in the table. Each
+    /// segment's [`crate::stock::dexel::DexelSegment::material`] indexes it.
+    pub materials: MaterialSlotTable,
 }
 
 impl Clone for TriDexelStock {
@@ -138,6 +143,7 @@ impl Clone for TriDexelStock {
             last_stamp_dispatch: self.last_stamp_dispatch,
             playback_dispatch: self.playback_dispatch,
             last_playback_dispatch: self.last_playback_dispatch,
+            materials: self.materials.clone(),
         }
     }
 }
@@ -154,6 +160,7 @@ impl TriDexelStock {
             last_stamp_dispatch: StampDispatchStats::default(),
             playback_dispatch: PlaybackDispatch::default(),
             last_playback_dispatch: PlaybackDispatchStats::default(),
+            materials: MaterialSlotTable::default(),
         }
     }
 

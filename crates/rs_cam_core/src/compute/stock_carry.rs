@@ -117,6 +117,9 @@ pub fn group_is_lateral(group: &SimGroupEntry) -> bool {
 /// - Both frames must have their tool axis on global Z. The caller does not
 ///   carry into or out of a lateral group.
 ///
+/// Each segment keeps its material slot, and the result gets the slot table
+/// of `src` (S1).
+///
 /// `conservative_top` follows the rays. When Z keeps its sense, the old
 /// sliver-safe bound maps with the ray. When Z reverses, the old bound
 /// describes the far face and means nothing here, so the new bound of a
@@ -160,6 +163,9 @@ pub fn carry_stock_into_group(
     let map_z = |z: f32| (z_offset + z_sign * f64::from(z)) as f32;
 
     let mut dst = TriDexelStock::from_bounds(dst_bbox, resolution);
+    // S1: the slots and the slot table travel with the rays.
+    dst.materials = src.materials.clone();
+    dst.z_grid.has_added_material = src.z_grid.has_added_material;
     let src_grid = &src.z_grid;
     let cols = dst.z_grid.cols;
     let (dst_origin_u, dst_origin_v, dst_cell) = (
@@ -195,12 +201,12 @@ pub fn carry_stock_into_group(
             src_ray
                 .iter()
                 .rev()
-                .map(|seg| DexelSegment::new(map_z(seg.exit), map_z(seg.enter)))
+                .map(|seg| DexelSegment::new(map_z(seg.exit), map_z(seg.enter), seg.material))
                 .collect::<DexelRay>()
         } else {
             src_ray
                 .iter()
-                .map(|seg| DexelSegment::new(map_z(seg.enter), map_z(seg.exit)))
+                .map(|seg| DexelSegment::new(map_z(seg.enter), map_z(seg.exit), seg.material))
                 .collect::<DexelRay>()
         };
         if !z_flipped {

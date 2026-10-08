@@ -67,6 +67,7 @@ use super::stamping::{StampPartial, stamp_segment_with_metrics};
 use super::tile_mip::TileMaxTop;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::stock::dexel::DexelGrid;
+use crate::stock::material_slot::MaterialCut;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
 
@@ -335,7 +336,7 @@ impl BandDispatch {
         capture_arc_engagement: bool,
         air_mip: &mut Option<TileMaxTop>,
         cancel: &dyn CancelCheck,
-        mut patch: impl FnMut(usize, (f64, f64, Option<f64>, f64)),
+        mut patch: impl FnMut(usize, (f64, f64, Option<f64>, f64), MaterialCut),
     ) -> Result<(), Cancelled> {
         self.run(
             grid,
@@ -355,7 +356,11 @@ impl BandDispatch {
                 if let Some(m) = air_mip.as_mut() {
                     m.absorb(r);
                 }
-                patch(job.sample_slot, r.finish(cutter, capture_arc_engagement));
+                patch(
+                    job.sample_slot,
+                    r.finish(cutter, capture_arc_engagement),
+                    r.material_cut(),
+                );
             },
         )
     }

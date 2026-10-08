@@ -57,6 +57,9 @@ pub(super) struct GridBand<'a> {
     pub(super) origin_u: f64,
     pub(super) origin_v: f64,
     pub(super) cell_size: f64,
+    /// S1: the grid's [`DexelGrid::has_added_material`]. The metric kernels
+    /// sum the removed volume per material slot only when it is set.
+    pub(super) has_added_material: bool,
 }
 
 impl GridBand<'_> {
@@ -146,6 +149,7 @@ impl DexelGrid {
         let cols = self.cols;
         let grid_rows = self.rows;
         let (origin_u, origin_v, cell_size) = (self.origin_u, self.origin_v, self.cell_size);
+        let has_added_material = self.has_added_material;
         let chunk = BAND_ROWS.saturating_mul(cols).max(1);
         self.rays
             .chunks_mut(chunk)
@@ -161,6 +165,7 @@ impl DexelGrid {
                 origin_u,
                 origin_v,
                 cell_size,
+                has_added_material,
                 rays,
                 conservative_top,
             })
@@ -179,6 +184,7 @@ impl DexelGrid {
         let cols = self.cols;
         let grid_rows = self.rows;
         let (origin_u, origin_v, cell_size) = (self.origin_u, self.origin_v, self.cell_size);
+        let has_added_material = self.has_added_material;
         let chunk = BAND_ROWS.saturating_mul(cols).max(1);
         self.rays
             .par_chunks_mut(chunk)
@@ -194,6 +200,7 @@ impl DexelGrid {
                 origin_u,
                 origin_v,
                 cell_size,
+                has_added_material,
                 rays,
                 conservative_top,
             })
