@@ -10,6 +10,7 @@
 
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::stock::dexel::{DexelAxis, DexelGrid, DexelSegment, ray_bottom, ray_top};
+use crate::stock::dexel_mesh_mc::MIN_MATERIAL_THICKNESS;
 use crate::stock::stock_mesh::StockMesh;
 
 // Wood colors: uncut = light tan, cut = dark walnut. This is their one
@@ -29,7 +30,22 @@ pub(crate) const CUT_B: f32 = 0.10;
 /// [`dexel_stock_to_mesh`]. Direction matters for multi-setup playback: a
 /// bottom setup previews the Z-grid bottom surface, and side setups preview
 /// the appropriate X/Y side grid.
-#[allow(clippy::indexing_slicing)] // grid indexing bounded by row/col loops
+///
+/// # Holes
+///
+/// An empty ray, or a ray with less material than
+/// `dexel_mesh_mc::MIN_MATERIAL_THICKNESS` (the rule of the
+/// paused mesh), has no surface. The preview emits no triangle on such a
+/// cell, so a through-hole shows as a gap. The vertex array stays dense (one
+/// vertex per cell, row-major); the vertex of an empty cell is not used.
+///
+/// An earlier version put an empty cell at the uncut entry face and joined
+/// it to its neighbours. A through-channel then showed as a column of uncut
+/// stock with tall false walls down to the cut floor around it. The cost of
+/// the gap: the hole edge in the preview is up to one cell wider than the
+/// true edge. The paused mesh draws the true hole walls.
+// SAFETY: every index is below rows x cols by the row and column loops.
+#[allow(clippy::indexing_slicing)]
 pub fn dexel_stock_to_entry_surface_mesh(
     stock: &TriDexelStock,
     direction: StockCutDirection,
@@ -52,14 +68,17 @@ pub fn dexel_stock_to_entry_surface_mesh(
     let mut vertices = Vec::with_capacity(cells * 3);
     let mut colors = Vec::with_capacity(cells * 3);
     let mut depths = Vec::with_capacity(cells);
+    let mut empty = Vec::with_capacity(cells);
 
     for ray in &grid.rays {
-        let depth = if from_high {
-            ray_top(ray)
-        } else {
-            ray_bottom(ray)
-        }
-        .unwrap_or(fallback_depth);
+        let (top, bottom) = (ray_top(ray), ray_bottom(ray));
+        let is_empty = match (top, bottom) {
+            (Some(t), Some(b)) => (t - b) < MIN_MATERIAL_THICKNESS,
+            _ => true,
+        };
+        empty.push(is_empty);
+        // An empty cell is never indexed; the fallback only fills the slot.
+        let depth = if from_high { top } else { bottom }.unwrap_or(fallback_depth);
         depths.push(depth);
     }
 
@@ -91,7 +110,15 @@ pub fn dexel_stock_to_entry_surface_mesh(
             let tr = tl + 1;
             let bl = ((row + 1) * cols + col) as u32;
             let br = bl + 1;
-            indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+            // Each triangle needs material at its three cells. A triangle
+            // that touches a hole would draw a false wall to the fallback.
+            let solid = |i: u32| !empty[i as usize];
+            if solid(tl) && solid(bl) && solid(tr) {
+                indices.extend_from_slice(&[tl, bl, tr]);
+            }
+            if solid(tr) && solid(bl) && solid(br) {
+                indices.extend_from_slice(&[tr, bl, br]);
+            }
         }
     }
 
@@ -451,7 +478,7 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::ops::dr
 mod tests {
     use super::*;
     use crate::dexel_stock::{StockCutDirection, TriDexelStock};
-    use crate::stock::dexel::ray_subtract_above;
+    use crate::stock::dexel::{ray_subtract_above, ray_subtract_below};
     use crate::tool::{FlatEndmill, MillingCutter};
 
     #[test]
@@ -864,6 +891,138 @@ mod tests {
         assert!(
             v3 > v2,
             "3-segment mesh ({v3} verts) should have more vertices than 2-segment ({v2})"
+        );
+    }
+
+    /// The largest `|dz|` over the edges of the emitted triangles, and a
+    /// flag that is `true` when an edge touches an empty cell.
+    ///
+    /// The preview mesh has one vertex per grid cell, row-major, so vertex
+    /// `i` is grid cell `i`. An edge is a "wall" of the preview when its two
+    /// cells have a large depth difference.
+    fn preview_edge_walls(mesh: &StockMesh, empty: &[bool], inside: &[bool]) -> (f32, bool) {
+        let mut max_dz = 0.0_f32;
+        let mut touches_empty = false;
+        for tri in mesh.indices.as_chunks::<3>().0 {
+            for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+                let (a, b) = (a as usize, b as usize);
+                if empty[a] || empty[b] {
+                    touches_empty = true;
+                }
+                if inside[a] && inside[b] {
+                    let dz = (mesh.vertices[a * 3 + 2] - mesh.vertices[b * 3 + 2]).abs();
+                    max_dz = max_dz.max(dz);
+                }
+            }
+        }
+        (max_dz, touches_empty)
+    }
+
+    /// The playback preview must not draw a through-hole at the uncut face.
+    ///
+    /// A 20 x 20 stock (10 mm high) has a pocket cut to the same floor over
+    /// rows and columns 4..16. A through-hole (empty rays) sits at rows and
+    /// columns 8..12. Every material cell in the pocket is at the same floor,
+    /// so the true step between two neighbouring material cells there is 0.
+    /// An edge that touches an empty cell has no true step: the mesh must not
+    /// emit it. The old mesh drew the hole cells at the uncut face and gave
+    /// 7 mm walls (FromTop: 3 -> 10) inside the pocket.
+    #[test]
+    fn entry_surface_preview_draws_no_false_wall_at_a_through_hole() {
+        for direction in [StockCutDirection::FromTop, StockCutDirection::FromBottom] {
+            let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, 0.0, 10.0, 1.0);
+            let rows = stock.z_grid.rows;
+            let cols = stock.z_grid.cols;
+            let mut empty = vec![false; rows * cols];
+            let mut inside = vec![false; rows * cols];
+            for r in 4..16 {
+                for c in 4..16 {
+                    let ray = stock.z_grid.ray_mut(r, c);
+                    if direction == StockCutDirection::FromTop {
+                        ray_subtract_above(ray, 3.0);
+                    } else {
+                        ray_subtract_below(ray, 7.0);
+                    }
+                    inside[r * cols + c] = true;
+                    if (8..12).contains(&r) && (8..12).contains(&c) {
+                        ray.clear();
+                        empty[r * cols + c] = true;
+                    }
+                }
+            }
+
+            let mesh = dexel_stock_to_entry_surface_mesh(&stock, direction);
+            let (max_dz, touches_empty) = preview_edge_walls(&mesh, &empty, &inside);
+
+            // Non-vacuity: the uncut rim and the pocket floor still draw.
+            let full_quads = (rows - 1) * (cols - 1);
+            assert!(
+                mesh.indices.len() / 6 >= full_quads / 2,
+                "{direction:?}: preview lost too many faces ({} of {full_quads} quads)",
+                mesh.indices.len() / 6
+            );
+            assert!(
+                max_dz <= 1e-4,
+                "{direction:?}: false wall of {max_dz} mm inside a flat pocket"
+            );
+            assert!(
+                !touches_empty,
+                "{direction:?}: preview emits a triangle on an empty (through-hole) cell"
+            );
+        }
+    }
+
+    /// A sliver thinner than the marching-cubes threshold counts as a hole
+    /// in the preview too, so the preview and the paused mesh agree.
+    #[test]
+    fn entry_surface_preview_treats_a_sliver_as_a_hole() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 6.0, 6.0, 0.0, 10.0, 1.0);
+        let cols = stock.z_grid.cols;
+        let mut empty = vec![false; stock.z_grid.rows * cols];
+        // A 0.01 mm sliver at the bottom of cell (3, 3).
+        ray_subtract_above(stock.z_grid.ray_mut(3, 3), 0.01);
+        empty[3 * cols + 3] = true;
+        let mesh = dexel_stock_to_entry_surface_mesh(&stock, StockCutDirection::FromTop);
+        let inside = vec![true; empty.len()];
+        let (_, touches_empty) = preview_edge_walls(&mesh, &empty, &inside);
+        assert!(!touches_empty, "a sliver cell must not draw as a 10 mm pit");
+    }
+
+    /// The memory cost of the preview mesh at the size of the operator's
+    /// case (planning/rivmap_block_job/testpiece.toml: 120 x 120 mm, cell
+    /// 0.2 mm) with through-channels over 10 % of the cells. The vertex
+    /// arrays stay dense; the fix only removes indices. So the preview
+    /// never costs more than the dense full-index mesh.
+    #[test]
+    // SAFETY: the test prints the measured byte count for the report.
+    #[allow(clippy::print_stderr)]
+    fn entry_surface_preview_bytes_do_not_grow() {
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 120.0, 120.0, 0.0, 25.5, 0.2);
+        let rows = stock.z_grid.rows;
+        let cols = stock.z_grid.cols;
+        // Through-channels: one band of 10 columns in every 100 columns is
+        // cleared through the full height.
+        let mut cleared = 0usize;
+        for r in 0..rows {
+            for c in 0..cols {
+                if (c / 10) % 10 == 5 {
+                    stock.z_grid.ray_mut(r, c).clear();
+                    cleared += 1;
+                }
+            }
+        }
+        let mesh = dexel_stock_to_entry_surface_mesh(&stock, StockCutDirection::FromTop);
+        let bytes = 4 * (mesh.vertices.len() + mesh.colors.len() + mesh.indices.len());
+        let cells = rows * cols;
+        let dense_bytes = 4 * (cells * 3 + cells * 3 + (rows - 1) * (cols - 1) * 6);
+        eprintln!(
+            "preview mesh {rows}x{cols} ({cleared} cleared cells): {bytes} B \
+             (dense full-index layout {dense_bytes} B)"
+        );
+        assert_eq!(mesh.vertices.len(), cells * 3, "vertex layout stays dense");
+        assert!(
+            bytes <= dense_bytes,
+            "preview bytes {bytes} > {dense_bytes}"
         );
     }
 }

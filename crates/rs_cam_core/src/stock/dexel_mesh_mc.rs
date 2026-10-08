@@ -37,7 +37,9 @@ use crate::stock::dexel_mesh::{CUT_B, CUT_G, CUT_R, UNCUT_B, UNCUT_G, UNCUT_R};
 use crate::stock::stock_mesh::StockMesh;
 
 /// Below this material thickness, a ray is treated as a through-hole.
-const MIN_MATERIAL_THICKNESS: f32 = 0.05;
+/// The playback preview (`dexel_mesh::dexel_stock_to_entry_surface_mesh`)
+/// reads the same value, so the preview and the paused mesh agree.
+pub(crate) const MIN_MATERIAL_THICKNESS: f32 = 0.05;
 
 /// Build a closed solid mesh from a Z-grid using marching cubes
 /// (height-field reduction per §6.J).
