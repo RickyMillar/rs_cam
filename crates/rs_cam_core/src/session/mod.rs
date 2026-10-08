@@ -2752,6 +2752,7 @@ mod tests {
             prior_stocks: std::collections::HashMap::new(),
             prior_stock_sources: std::collections::HashMap::new(),
             display_degrade: None,
+            group_starts: Vec::new(),
         });
         assert!(
             session.simulation_result().is_some(),

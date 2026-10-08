@@ -7,6 +7,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::compute::sim_prefix::{PrefixState, SimMemo};
+use crate::compute::stock_carry::{
+    CarrySource, SimGroupStart, StockCarry, carry_stock_into_group, group_is_lateral,
+};
 use crate::compute::tool_config::ToolConfig;
 use crate::compute::transform::{FaceUp, SetupTransformInfo};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -620,8 +623,14 @@ pub struct ColumnDeviation {
 /// meshes that carry none.
 #[derive(Clone)]
 pub struct SimulationResult {
-    /// The composite display mesh of every setup group, in the zero-rooted
+    /// The display mesh of the final stock, in the zero-rooted
     /// stock-relative global frame.
+    ///
+    /// S0: the stock carries across Z-axis groups, so the mesh of the LAST
+    /// Z-axis group holds every Z-axis cut, and it is the only Z-axis mesh
+    /// here. A lateral group's mesh is appended only when the run has no
+    /// Z-axis group (G-LATERALSCRUB: its fresh block would cover the carried
+    /// cuts).
     ///
     /// **`Arc`-shared** (M4, memory programme 2026-10-01). The GUI keeps the
     /// same mesh in its view state and in the session it adopts the run
@@ -694,6 +703,10 @@ pub struct SimulationResult {
     /// [`Self::deviations`] are per vertex of [`Self::mesh`], so they follow
     /// the stride. [`Self::column_deviations`] read the grid and do not.
     pub display_degrade: Option<DisplayMeshDegrade>,
+    /// S0: one record per group this run simulated, in group order: the
+    /// stock the group started from (carried, or fresh and why). See
+    /// [`crate::compute::stock_carry`].
+    pub group_starts: Vec<SimGroupStart>,
 }
 
 impl SimulationResult {
@@ -995,10 +1008,41 @@ fn rederive_phantom_prior_stocks(
 /// This is the same frame-map the deviation pass applies to its query
 /// points; see [`collect_column_deviations`].
 #[inline]
-fn group_point_to_global(p: P3, transform: &Option<SetupTransformInfo>, stock_min: P3) -> P3 {
+pub(crate) fn group_point_to_global(
+    p: P3,
+    transform: &Option<SetupTransformInfo>,
+    stock_min: P3,
+) -> P3 {
     match transform {
         Some(info) => info.local_to_global(p),
         None => P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
+    }
+}
+
+/// The inverse of [`group_point_to_global`]: map a point from the
+/// ZERO-ROOTED stock-relative global frame into one setup group's frame.
+///
+/// The non-identity arm applies the face-up map and then the Z rotation to
+/// the zero-rooted point. It does not read `SetupTransformInfo::stock_origin_*`,
+/// because [`SetupTransformInfo::local_to_global`] does not re-add the
+/// origin either. The S0 stock carry reads it (`compute/stock_carry.rs`).
+#[inline]
+pub(crate) fn global_point_to_group(
+    g: P3,
+    transform: &Option<SetupTransformInfo>,
+    stock_min: P3,
+) -> P3 {
+    match transform {
+        Some(info) => {
+            let flipped = info
+                .face_up
+                .transform_point(g, info.stock_x, info.stock_y, info.stock_z);
+            let (eff_w, eff_d, _) =
+                info.face_up
+                    .effective_stock(info.stock_x, info.stock_y, info.stock_z);
+            info.z_rotation.transform_point(flipped, eff_w, eff_d)
+        }
+        None => P3::new(g.x + stock_min.x, g.y + stock_min.y, g.z + stock_min.z),
     }
 }
 
@@ -1187,6 +1231,9 @@ fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) ->
         global_drill_ops: Vec::new(),
         group_stock: None,
         group_drill_ops: Vec::new(),
+        carry: None,
+        group_starts: Vec::new(),
+        composite_from_z: false,
     }
 }
 
@@ -1253,6 +1300,16 @@ fn assemble_cut_trace(
 /// group's mesh extracted, drill cylinders appended, framed to the
 /// zero-rooted stock-relative frame and composited. Runs once per group,
 /// after its last entry has carved.
+///
+/// S0: the stock carries across Z-axis groups, so a Z-axis group's final
+/// mesh holds the cuts of every Z-axis group before it. A Z-axis group
+/// therefore REPLACES the composite; appending it would stack one closed
+/// solid per setup, and the uncut face of a later setup would hide the cuts
+/// of an earlier one (`sim_render_review_2026-10-09` F2). A lateral group
+/// starts fresh, so its block would cover the carried cuts: it is appended
+/// only while no Z-axis group has written the composite. The replace keeps
+/// an S5 resume correct, because the restored composite never survives a
+/// later Z-axis group.
 #[allow(clippy::too_many_arguments)]
 fn finish_group<F>(
     run: &mut PrefixState,
@@ -1261,6 +1318,7 @@ fn finish_group<F>(
     request: &SimulationRequest,
     group: &SimGroupEntry,
     group_ordinal: usize,
+    lateral: bool,
     model_index: Option<&SpatialIndex>,
     set_phase: &mut F,
 ) where
@@ -1285,6 +1343,10 @@ fn finish_group<F>(
         );
     }
 
+    if lateral && run.composite_from_z {
+        return;
+    }
+
     // After all toolpaths in this group, extract mesh and composite.
     // Degrade 4b: a display stride above 1 samples the Z-grid coarser; the
     // stock itself is untouched.
@@ -1302,7 +1364,12 @@ fn finish_group<F>(
     // surfaces from each other by the stock origin.
     let group_global =
         transform_stock_mesh_to_global(&group_mesh, &group.local_to_global, request.stock_bbox.min);
-    run.composite_mesh.append(&group_global);
+    if lateral {
+        run.composite_mesh.append(&group_global);
+    } else {
+        run.composite_mesh = group_global;
+        run.composite_from_z = true;
+    }
 }
 
 /// CMP-18 seam: stamp one entry into the global playback stock.
@@ -1604,6 +1671,54 @@ fn record_pre_carve(
     }
 }
 
+/// S0: the stock a group starts from, and the record of where it came from.
+///
+/// - A lateral group starts from a full block (G-LATERALSCRUB).
+/// - A Z-axis group starts from the final stock of the last Z-axis group
+///   before it, mapped into its own frame ([`carry_stock_into_group`]).
+/// - The first Z-axis group starts from a full block.
+fn group_start_stock<F>(
+    run: &PrefixState,
+    request: &SimulationRequest,
+    group: &SimGroupEntry,
+    local_bbox: &BoundingBox3,
+    lateral: bool,
+    set_phase: &mut F,
+) -> (TriDexelStock, StockCarry)
+where
+    F: FnMut(&str),
+{
+    if lateral {
+        return (
+            TriDexelStock::from_bounds(local_bbox, request.resolution),
+            StockCarry::FreshLateral,
+        );
+    }
+    let Some(source) = run.carry.as_ref() else {
+        return (
+            TriDexelStock::from_bounds(local_bbox, request.resolution),
+            StockCarry::FreshFirst,
+        );
+    };
+    set_phase("Carry stock");
+    let (stock, map) = carry_stock_into_group(
+        &source.stock,
+        &source.frame,
+        local_bbox,
+        &group.local_to_global,
+        request.stock_bbox.min,
+        request.resolution,
+    );
+    (
+        stock,
+        StockCarry::Carried {
+            from_group: source.group_ordinal,
+            z_flipped: map.z_flipped,
+            max_node_offset_mm: map.max_node_offset_mm,
+        },
+    )
+}
+
 pub fn run_simulation_memoized<F>(
     request: &SimulationRequest,
     cancel: &AtomicBool,
@@ -1725,12 +1840,19 @@ where
         // §6.E per-group accumulator: holes drilled into `group_stock`
         // get appended as analytic cylinders when this group's mesh
         // is extracted.
+        let lateral = group_is_lateral(group);
         let (mut group_stock, mut group_drill_ops) = match restored_here {
+            // The S5 snapshot holds this group's start record too.
             Some(stock) => (stock, std::mem::take(&mut resumed_group_drill_ops)),
-            None => (
-                TriDexelStock::from_bounds(local_bbox, request.resolution),
-                Vec::new(),
-            ),
+            None => {
+                let (stock, carry) =
+                    group_start_stock(&run, request, group, local_bbox, lateral, &mut set_phase);
+                run.group_starts.push(SimGroupStart {
+                    group_ordinal,
+                    carry,
+                });
+                (stock, Vec::new())
+            }
         };
         // Per-setup stocks are always simulated from the top (Z-axis).
         let direction = StockCutDirection::FromTop;
@@ -1750,10 +1872,7 @@ where
         // checkpoint carries its LOCAL stock instead — the same object its
         // mesh is extracted from — and the global stamp is skipped outright
         // rather than done and discarded.
-        let lateral_playback = !matches!(
-            playback_direction,
-            StockCutDirection::FromTop | StockCutDirection::FromBottom
-        );
+        let lateral_playback = lateral;
         let checkpoint_frame = if lateral_playback {
             group.local_to_global.clone()
         } else {
@@ -1894,10 +2013,8 @@ where
         if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
             && phantom_k == group.toolpaths.len()
         {
-            let tail = carried_stock
-                .take()
-                .unwrap_or_else(|| Arc::new(group_stock.clone()));
-            run.prior_stocks.insert(phantom_id, tail);
+            let tail = carried_stock.get_or_insert_with(|| Arc::new(group_stock.clone()));
+            run.prior_stocks.insert(phantom_id, Arc::clone(tail));
         }
 
         finish_group(
@@ -1907,9 +2024,22 @@ where
             request,
             group,
             group_ordinal,
+            lateral,
             model_index.as_ref(),
             &mut set_phase,
         );
+
+        // S0: this group's final stock is the start of the next Z-axis
+        // group. The `Arc` is the last checkpoint's `mesh_stock` when this
+        // run carved an entry of the group, so the carry holds no grid of
+        // its own. A lateral group is not a source (`group_is_lateral`).
+        if !lateral {
+            run.carry = Some(CarrySource {
+                group_ordinal,
+                stock: carried_stock.unwrap_or_else(|| Arc::new(group_stock)),
+                frame: group.local_to_global.clone(),
+            });
+        }
     }
 
     // S5: hand the captured prefix to the memo. `store` enforces the size
@@ -1940,6 +2070,9 @@ where
         global_drill_ops,
         group_stock: _,
         group_drill_ops: _,
+        carry: _,
+        group_starts,
+        composite_from_z: _,
     } = run;
 
     // `global_drill_ops` is currently accumulated for future use by
@@ -2002,6 +2135,7 @@ where
         prior_stocks,
         prior_stock_sources,
         display_degrade: DisplayMeshDegrade::for_stride(request.display_stride),
+        group_starts,
     })
 }
 

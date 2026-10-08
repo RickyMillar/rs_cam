@@ -2863,5 +2863,6 @@ fn core_simulation_from_lane(
         // The degrade describes the display mesh. The session copy holds an
         // empty mesh, so it records no degrade; the view keeps the record.
         display_degrade: None,
+        group_starts: core.group_starts.clone(),
     }
 }

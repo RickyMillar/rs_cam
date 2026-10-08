@@ -773,6 +773,7 @@ mod release_for_new_run_m1 {
             prior_stocks: prior_stocks.clone(),
             prior_stock_sources: HashMap::new(),
             display_degrade: None,
+            group_starts: Vec::new(),
         };
         let epoch = controller.state.session.simulation_epoch();
         let _ = controller

@@ -100,9 +100,19 @@ impl RsCamApp {
     ///
     /// The price, stated plainly: a lateral group's stock starts fresh at the
     /// group boundary, so cuts made by *earlier* setups are not shown while it
-    /// replays. That is already true of every checkpoint mesh and of the
-    /// per-setup stock every metric and gate is computed on — the simulator
-    /// has no cross-setup material carry-over anywhere.
+    /// replays. The simulator makes the same call: a lateral group's local
+    /// stock starts fresh too (S0, `rs_cam_core::compute::stock_carry`).
+    ///
+    /// # The carry (S0)
+    ///
+    /// A Z-axis group starts from the final stock of the Z-axis group before
+    /// it, mapped into its own frame. When the playhead crosses into a
+    /// Z-axis group and no checkpoint of that group is at or before the
+    /// playhead, playback resumes from that carried start stock, mapped into
+    /// the global frame ([`carried_group_start_stock`]), and not from the
+    /// playback stock of the group before it. The metrics, the gates and the
+    /// checkpoint meshes read the carried stock, so the scrub shows the same
+    /// material at the group boundary.
     // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
     #[allow(clippy::indexing_slicing)]
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
@@ -208,7 +218,30 @@ impl RsCamApp {
                 }
             }
 
-            if let Some(cp_idx) = best_cp {
+            // S0: crossing into a Z-axis group with no checkpoint of its own
+            // yet. Resume from the group's carried start stock.
+            let carried_start = if active.frame.is_none()
+                && best_cp.is_none_or(|i| {
+                    boundaries
+                        .get(i)
+                        .is_none_or(|b| b.end_move <= active.start_move)
+                }) {
+                let stock_bbox = self.controller.state().session.stock_bbox();
+                self.controller
+                    .state()
+                    .simulation
+                    .results
+                    .as_ref()
+                    .and_then(|r| carried_group_start_stock(r, active.group, &stock_bbox))
+            } else {
+                None
+            };
+
+            if let Some(stock) = carried_start {
+                let pb = &mut self.controller.state_mut().simulation.playback;
+                pb.live_stock = Some(stock);
+                pb.live_sim_move = active.start_move;
+            } else if let Some(cp_idx) = best_cp {
                 if let Some(cp) = self.controller.state().simulation.checkpoints().get(cp_idx) {
                     let stock_clone = cp.stock().clone();
                     let cp_end = boundaries[cp_idx].end_move;
@@ -676,6 +709,33 @@ struct ActivePlaybackGroup {
     stock_bbox: rs_cam_core::geo::BoundingBox3,
 }
 
+/// S0: the carried start stock of playback group `group`, in the ZERO-ROOTED
+/// global playback frame. `None` when the run kept no start stock for it.
+///
+/// The group's first playback entry is also its first boundary and its
+/// first checkpoint: the request builder pushes one of each per entry, in
+/// the same order. The start stock is that entry's `prior_stocks` snapshot
+/// (the carried stock, in the group's frame); the checkpoint names the frame
+/// (`SimCheckpointMesh::mesh_frame`). `stock_bbox` is the WORLD stock box.
+fn carried_group_start_stock(
+    results: &crate::state::simulation::SimulationResults,
+    group: usize,
+    stock_bbox: &rs_cam_core::geo::BoundingBox3,
+) -> Option<rs_cam_core::dexel_stock::TriDexelStock> {
+    let first = results
+        .playback_data
+        .iter()
+        .position(|e| e.group == group)?;
+    let boundary = results.boundaries.get(first)?;
+    let checkpoint = results.checkpoints.get(first)?;
+    let start = results.prior_stocks.get(&boundary.id)?;
+    Some(rs_cam_core::compute::stock_carry::map_stock_to_global(
+        start,
+        &checkpoint.core.mesh_frame,
+        stock_bbox,
+    ))
+}
+
 /// Resolve `move_idx` to the group that owns it. A playhead parked at the very
 /// end of the timeline belongs to the last group, not to nothing.
 fn active_playback_group(
@@ -755,5 +815,163 @@ fn deflection_render_color(deflection_mm: Option<f64>) -> [f32; 3] {
         [1.0, 0.72, 0.20]
     } else {
         [1.0, 0.18, 0.12]
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use rs_cam_core::compute::simulate::{
+        SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
+    };
+    use rs_cam_core::compute::tool_config::ToolMaterial;
+    use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo};
+    use rs_cam_core::dexel_stock::StockCutDirection;
+    use rs_cam_core::geo::{BoundingBox3, P3};
+    use rs_cam_core::ids::ToolpathId;
+    use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
+    use rs_cam_core::toolpath::Toolpath;
+    use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+
+    use crate::compute::worker::PlaybackToolpath;
+    use crate::state::simulation::{SimCheckpoint, SimulationResults};
+
+    use super::carried_group_start_stock;
+
+    fn entry(id: usize, tp: Toolpath, tool: &Arc<ToolDefinition>) -> SimToolpathEntry {
+        SimToolpathEntry {
+            id: ToolpathId(id),
+            name: format!("tp{id}"),
+            annotated: Arc::new(AnnotatedToolpath::new(tp)),
+            tool: Arc::clone(tool),
+            flute_count: 2,
+            tool_summary: "6mm Flat".into(),
+            semantic_trace: None,
+            spindle_rpm: None,
+            metrics_not_applicable: false,
+            drill_op: None,
+            operation_config_hash: 0,
+        }
+    }
+
+    fn cut(x: f64, y: f64, z: f64) -> Toolpath {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(x, y, 25.0));
+        tp.feed_to(P3::new(x, y, z), 300.0);
+        tp.feed_to(P3::new(x + 6.0, y, z), 600.0);
+        tp.rapid_to(P3::new(x + 6.0, y, 25.0));
+        tp
+    }
+
+    /// S0: the scrub's start stock for a Bottom setup is its carried start
+    /// stock mapped to the global frame: the final stock of the Top setup.
+    #[test]
+    fn the_scrub_resumes_a_bottom_setup_from_the_carried_top_stock() {
+        let tool = Arc::new(ToolDefinition::new(
+            Box::new(FlatEndmill::new(6.0, 25.0)),
+            6.0,
+            20.0,
+            25.0,
+            45.0,
+            2,
+            ToolMaterial::Carbide,
+        ));
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(40.0, 30.0, 20.0),
+        };
+        let bottom = SetupTransformInfo {
+            face_up: FaceUp::Bottom,
+            stock_x: 40.0,
+            stock_y: 30.0,
+            stock_z: 20.0,
+            ..SetupTransformInfo::default()
+        };
+        let req = SimulationRequest {
+            groups: vec![
+                SimGroupEntry {
+                    toolpaths: vec![entry(1, cut(10.0, 8.0, 15.0), &tool)],
+                    direction: StockCutDirection::FromTop,
+                    local_stock_bbox: None,
+                    local_to_global: None,
+                    phantom_prior_stock: None,
+                },
+                SimGroupEntry {
+                    toolpaths: vec![entry(2, cut(25.0, 25.0, 19.0), &tool)],
+                    direction: StockCutDirection::FromBottom,
+                    local_stock_bbox: Some(bottom.effective_stock_bbox()),
+                    local_to_global: Some(bottom),
+                    phantom_prior_stock: None,
+                },
+            ],
+            stock_bbox: bbox,
+            stock_top_z: 20.0,
+            resolution: 0.5,
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+            display_stride: 1,
+        };
+        let core = run_simulation(&req, &AtomicBool::new(false)).unwrap();
+        let playback_data = req
+            .groups
+            .iter()
+            .enumerate()
+            .flat_map(|(group, g)| {
+                g.toolpaths.iter().map(move |tp| PlaybackToolpath {
+                    toolpath: Arc::new(tp.annotated.toolpath.clone()),
+                    tool: Arc::clone(&tp.tool),
+                    direction: StockCutDirection::FromTop,
+                    drill_op: None,
+                    group,
+                    frame: None,
+                    stock_bbox: bbox,
+                })
+            })
+            .collect();
+        let results = SimulationResults {
+            mesh: Arc::clone(&core.mesh),
+            total_moves: core.total_moves,
+            boundaries: core.boundaries.clone(),
+            setup_boundaries: Vec::new(),
+            checkpoints: core
+                .checkpoints
+                .iter()
+                .enumerate()
+                .map(|(i, cp)| SimCheckpoint::new(i, Arc::clone(cp)))
+                .collect(),
+            selected_toolpaths: None,
+            playback_data,
+            stock_bbox: bbox,
+            cut_trace: None,
+            cut_trace_path: None,
+            column_grid_cell_mm: 0.5,
+            prior_stocks: core.prior_stocks.clone(),
+        };
+
+        let start = carried_group_start_stock(&results, 1, &bbox).expect("a carried start");
+        let top_final = &core.checkpoints[0].mesh_stock;
+        assert_eq!(start.z_grid.rays.len(), top_final.z_grid.rays.len());
+        assert!(
+            start
+                .z_grid
+                .rays
+                .iter()
+                .zip(top_final.z_grid.rays.iter())
+                .all(|(a, b)| a == b),
+            "the Bottom setup's scrub start is the Top setup's final stock"
+        );
+        // The Top cut is in it: a column on the cut line lost 5 mm.
+        let (r, c) = start.z_grid.world_to_cell(13.0, 8.0).unwrap();
+        assert!((start.z_grid.ray(r, c)[0].exit - 15.0).abs() < 0.05);
     }
 }

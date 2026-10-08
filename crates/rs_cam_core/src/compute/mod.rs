@@ -18,6 +18,7 @@ pub mod simulate;
 pub mod source_stock;
 pub mod spans;
 pub mod stats;
+pub mod stock_carry;
 pub mod stock_config;
 pub mod tool_config;
 pub mod toolpath_stats;

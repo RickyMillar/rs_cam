@@ -60,10 +60,7 @@ fn build_playback_data(
         // removes nothing an operator can see. The core simulator makes the
         // matching call — same predicate, same consequence — and publishes
         // that group's checkpoints with the local stock.
-        let lateral = !matches!(
-            playback_direction,
-            StockCutDirection::FromTop | StockCutDirection::FromBottom
-        );
+        let lateral = rs_cam_core::compute::stock_carry::group_is_lateral(group);
 
         for tp in &group.toolpaths {
             let entry = if lateral {

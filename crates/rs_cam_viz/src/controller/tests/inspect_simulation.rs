@@ -125,6 +125,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                 prior_stocks: std::collections::HashMap::new(),
                 prior_stock_sources: std::collections::HashMap::new(),
                 display_degrade: None,
+                group_starts: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

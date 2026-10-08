@@ -34,7 +34,11 @@
 //!
 //! R2, ruled 2026-09-19. The simulator runs setups sequentially on ONE
 //! stock, so the material a setup starts from is the material the setup
-//! before it finished. A consumer with no ENABLED row above it in its own
+//! before it finished. (The simulation made this true only with S0,
+//! 2026-10-09, `compute/stock_carry.rs`; before it, each setup started from
+//! a fresh block. A lateral setup still starts fresh, and the Z-axis setup
+//! after a lateral one carries from the Z-axis setup before it. The edges
+//! below do not model that lateral case yet.) A consumer with no ENABLED row above it in its own
 //! setup therefore declares its Stock edges on the previous setup's rows.
 //!
 //! The live evidence: on wanaka, "3D Rough 6" is the first enabled row of

@@ -203,8 +203,10 @@ impl ProjectSession {
             // F.4: a setup whose every toolpath is still ungenerated builds
             // an empty `entries` vec — but if the FIRST enabled config in
             // plan order is a pending `FromRemainingStock` op, the "stock
-            // before it" is simply the setup's untouched initial stock
-            // (there are zero predecessors to distrust), so the phantom is
+            // before it" is simply the setup's start stock — since S0 the
+            // final stock of the Z-axis setup before it, carried into this
+            // setup's frame (there are zero predecessors in this setup to
+            // distrust), so the phantom is
             // still valid and the group must still be emitted (with an
             // empty `toolpaths` vec) to carry it.
             if !entries.is_empty() || phantom_prior_stock.is_some() {

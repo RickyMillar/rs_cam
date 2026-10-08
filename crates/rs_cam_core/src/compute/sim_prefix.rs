@@ -576,6 +576,17 @@ pub(crate) struct PrefixState {
     /// cold-start value, where the group loop allocates its own.
     pub(crate) group_stock: Option<TriDexelStock>,
     pub(crate) group_drill_ops: Vec<Arc<DrillOp>>,
+    /// S0: the final stock of the last Z-axis group, which the next Z-axis
+    /// group starts from. A resume needs it when the resume group is
+    /// lateral: the groups before it are not replayed. The `Arc` is
+    /// usually shared with that group's last checkpoint; the size estimate
+    /// counts it only when it is not.
+    pub(crate) carry: Option<crate::compute::stock_carry::CarrySource>,
+    /// S0: the start record of every group so far.
+    pub(crate) group_starts: Vec<crate::compute::stock_carry::SimGroupStart>,
+    /// S0: a Z-axis group has written `composite_mesh` (see
+    /// `simulate::finish_group`).
+    pub(crate) composite_from_z: bool,
 }
 
 impl PrefixState {
@@ -606,6 +617,13 @@ impl PrefixState {
             + self.composite_mesh.vertices.len() * 4
             + self.composite_mesh.indices.len() * 4
             + grid(&self.global_stock)
+            // S0: the carry shares its `Arc` with a checkpoint, except when
+            // its group carved no entry in the run (a phantom-only group).
+            + self
+                .carry
+                .as_ref()
+                .filter(|c| Arc::strong_count(&c.stock) == 1)
+                .map_or(0, |c| grid(&c.stock))
             + self
                 .group_stock
                 .as_ref()
@@ -867,6 +885,9 @@ mod tests {
             global_drill_ops: Vec::new(),
             group_stock: Some(stock.clone()),
             group_drill_ops: Vec::new(),
+            carry: None,
+            group_starts: Vec::new(),
+            composite_from_z: false,
         };
         let bare = state.estimated_bytes();
         let mut with_cp = state;

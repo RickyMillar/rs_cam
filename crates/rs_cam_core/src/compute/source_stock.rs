@@ -145,18 +145,25 @@ pub struct SourceStock {
 
 /// One [`SourceStock`] per snapshot the simulation keeps.
 ///
-/// The simulator runs its groups in request order on one stock. A
-/// snapshot keyed by a carved entry holds everything before that entry; a
-/// phantom snapshot (`SimGroupEntry::phantom_prior_stock`) holds everything
-/// before its slot.
+/// The simulator runs its groups in request order. A snapshot keyed by a
+/// carved entry holds everything before that entry; a phantom snapshot
+/// (`SimGroupEntry::phantom_prior_stock`) holds everything before its slot.
+///
+/// S0 (`compute/stock_carry.rs`): a Z-axis group starts from the final stock
+/// of the Z-axis groups before it, so its records list those groups' entries.
+/// A lateral group starts from a fresh stock, so its records list only its
+/// own entries, and its entries are not in any later group's record.
 #[must_use]
 pub fn snapshot_sources(
     request: &SimulationRequest,
     prior_stocks: &HashMap<ToolpathId, Arc<TriDexelStock>>,
 ) -> HashMap<ToolpathId, SourceStock> {
     let mut out: HashMap<ToolpathId, SourceStock> = HashMap::new();
-    let mut carved: Vec<SourceEntry> = Vec::new();
+    // The entries the last Z-axis group's final stock holds.
+    let mut carried: Vec<SourceEntry> = Vec::new();
     for group in &request.groups {
+        let lateral = crate::compute::stock_carry::group_is_lateral(group);
+        let mut carved: Vec<SourceEntry> = if lateral { Vec::new() } else { carried.clone() };
         let phantom = group.phantom_prior_stock;
         for (k, entry) in group.toolpaths.iter().enumerate() {
             if let Some((phantom_k, phantom_id)) = phantom
@@ -193,6 +200,9 @@ pub fn snapshot_sources(
                     after: carved.clone(),
                 },
             );
+        }
+        if !lateral {
+            carried = carved;
         }
     }
     out

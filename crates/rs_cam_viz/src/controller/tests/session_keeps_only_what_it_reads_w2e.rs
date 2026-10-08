@@ -102,6 +102,7 @@ fn land_run(controller: &mut AppController<ScriptedBackend>, artifacts: &LaneArt
                 prior_stocks,
                 prior_stock_sources: std::collections::HashMap::new(),
                 display_degrade: None,
+                group_starts: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

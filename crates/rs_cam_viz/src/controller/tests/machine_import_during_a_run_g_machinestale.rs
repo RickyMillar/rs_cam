@@ -90,6 +90,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
                 prior_stocks: std::collections::HashMap::new(),
                 prior_stock_sources: std::collections::HashMap::new(),
                 display_degrade: None,
+                group_starts: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

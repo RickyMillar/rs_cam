@@ -184,6 +184,7 @@ fn full_material_simulation(
         prior_stocks,
         prior_stock_sources: std::collections::HashMap::new(),
         display_degrade: None,
+        group_starts: Vec::new(),
     }
 }
 
