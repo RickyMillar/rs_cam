@@ -21,6 +21,11 @@
 //! 3. every enabled toolpath before the consumer (all earlier setups, then
 //!    the rows above it) whose result has simulated motion is in the list.
 //!
+//! S2 adds the stock changes to rules 2 and 3: every stock change the
+//! record applied still exists, is enabled and has the same effect digest,
+//! and every enabled stock change of an earlier setup or of the consumer's
+//! own setup is in the list.
+//!
 //! [`ProjectSession::snapshot_is_current`] asks it of a `prior_stocks`
 //! snapshot, and the plan, the card and `start` read that answer.
 //! [`ProjectSession::rest_results_out_of_date`] asks it of every rest
@@ -32,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::config::StockSource;
 use crate::compute::simulate::contributes_simulated_motion;
-use crate::compute::source_stock::SourceStock;
+use crate::compute::source_stock::{SourceEntry, SourceStock};
 use crate::ids::ToolpathId;
 use crate::session::ProjectSession;
 
@@ -77,6 +82,15 @@ pub enum SnapshotMiss {
         /// The name of the first toolpath that differs.
         toolpath: String,
     },
+    /// S2: a stock change the snapshot applied has changed or gone, or an
+    /// enabled stock change it did not apply now acts before the consumer.
+    StockChangeMoved {
+        /// The name of the setup that holds the change.
+        setup: String,
+        /// The name of the change, or `#<id>` when it has no name or no
+        /// longer exists.
+        change: String,
+    },
 }
 
 impl SnapshotMiss {
@@ -95,6 +109,10 @@ impl SnapshotMiss {
             Self::SourceMoved { toolpath } => {
                 format!("'{toolpath}' changed after the stock was simulated")
             }
+            Self::StockChangeMoved { setup, change } => format!(
+                "the stock change '{change}' of setup '{setup}' changed after the stock \
+                 was simulated"
+            ),
         }
     }
 }
@@ -244,8 +262,18 @@ impl ProjectSession {
                 project_mm,
             });
         }
-        // (2) every carved toolpath is unchanged.
+        // (2) every carved toolpath and every applied stock change is
+        // unchanged.
+        let mut applied: HashSet<(usize, crate::ids::StockChangeId)> = HashSet::new();
         for entry in &source.after {
+            let entry = match entry {
+                SourceEntry::Carved(carved) => carved,
+                SourceEntry::StockChange(applied_change) => {
+                    self.stock_change_is_current(applied_change)?;
+                    let _ = applied.insert((applied_change.setup_id, applied_change.id));
+                    continue;
+                }
+            };
             let moved = || SnapshotMiss::SourceMoved {
                 toolpath: self
                     .find_toolpath_config_by_id(entry.id)
@@ -264,8 +292,17 @@ impl ProjectSession {
                 return Err(moved());
             }
         }
-        // (3) nothing new cuts before the consumer.
-        let carved: HashSet<ToolpathId> = source.after.iter().map(|e| e.id).collect();
+        // (3) nothing new cuts or changes the stock before the consumer.
+        for (setup, change) in self.stock_changes_before(consumer) {
+            if !applied.contains(&(setup.id, change.id)) {
+                return Err(stock_change_moved(setup, change.id, Some(change)));
+            }
+        }
+        let carved: HashSet<ToolpathId> = source
+            .after
+            .iter()
+            .filter_map(SourceEntry::toolpath_id)
+            .collect();
         for index in self.carve_order_before(consumer) {
             let Some(tc) = self.toolpath_configs.get(index) else {
                 continue;
@@ -296,23 +333,88 @@ impl ProjectSession {
     #[must_use]
     pub fn expected_source(&self, consumer: ToolpathId) -> Option<SourceStock> {
         let mut after = Vec::new();
-        for index in self.carve_order_before(consumer) {
-            let tc = self.toolpath_configs.get(index)?;
-            if !tc.enabled {
-                continue;
-            }
-            let result = self.results.get(&index)?;
-            if contributes_simulated_motion(result.annotated().toolpath.moves.len()) {
-                after.push(crate::compute::source_stock::SourceEntry::of(
-                    tc.id,
-                    result.annotated(),
+        // The walk of `carve_order_before`, with each setup's enabled stock
+        // changes (S2) before its own rows.
+        'setups: for setup in &self.setups {
+            for change in setup.stock_changes.iter().filter(|c| c.enabled) {
+                after.push(SourceEntry::StockChange(
+                    crate::compute::source_stock::StockChangeEntry {
+                        setup_id: setup.id,
+                        id: change.id,
+                        effect: change.effect_digest(),
+                    },
                 ));
+            }
+            for &index in &setup.toolpath_indices {
+                let tc = self.toolpath_configs.get(index)?;
+                if tc.id == consumer {
+                    break 'setups;
+                }
+                if !tc.enabled {
+                    continue;
+                }
+                let result = self.results.get(&index)?;
+                if contributes_simulated_motion(result.annotated().toolpath.moves.len()) {
+                    after.push(SourceEntry::of(tc.id, result.annotated()));
+                }
             }
         }
         Some(SourceStock {
             cell_mm: self.simulation_resolution_mm(),
             after,
         })
+    }
+
+    /// Every ENABLED stock change the simulator applies before `consumer`
+    /// carves: the changes of every earlier setup, then of the consumer's
+    /// own setup (S2). A setup applies its changes before its first row,
+    /// so the consumer's own setup counts whatever its row position. The
+    /// walk mirrors [`Self::carve_order_before`], lateral setups included.
+    fn stock_changes_before(
+        &self,
+        consumer: ToolpathId,
+    ) -> Vec<(
+        &crate::session::SetupData,
+        &crate::compute::stock_change::StockChange,
+    )> {
+        let mut out = Vec::new();
+        for setup in &self.setups {
+            out.extend(
+                setup
+                    .stock_changes
+                    .iter()
+                    .filter(|c| c.enabled)
+                    .map(|c| (setup, c)),
+            );
+            let owns_consumer = setup.toolpath_indices.iter().any(|&index| {
+                self.toolpath_configs
+                    .get(index)
+                    .is_some_and(|tc| tc.id == consumer)
+            });
+            if owns_consumer {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Rule (2) for one applied stock change: the change still exists in
+    /// its setup, is enabled, and has the same effect.
+    fn stock_change_is_current(
+        &self,
+        applied: &crate::compute::source_stock::StockChangeEntry,
+    ) -> Result<(), SnapshotMiss> {
+        let Some(setup) = self.setups.iter().find(|s| s.id == applied.setup_id) else {
+            return Err(SnapshotMiss::StockChangeMoved {
+                setup: format!("#{}", applied.setup_id),
+                change: format!("#{}", applied.id.0),
+            });
+        };
+        let change = setup.stock_changes.iter().find(|c| c.id == applied.id);
+        match change {
+            Some(change) if change.enabled && change.effect_digest() == applied.effect => Ok(()),
+            _ => Err(stock_change_moved(setup, applied.id, change)),
+        }
     }
 
     /// Every toolpath index the simulator carves before `consumer`: all rows
@@ -407,8 +509,10 @@ impl ProjectSession {
             .collect();
         let refresh = |source: &mut SourceStock| {
             for entry in &mut source.after {
-                if let Some(arc) = current.get(&entry.id) {
-                    entry.refresh(arc);
+                if let SourceEntry::Carved(carved) = entry
+                    && let Some(arc) = current.get(&carved.id)
+                {
+                    carved.refresh(arc);
                 }
             }
         };
@@ -489,6 +593,22 @@ impl ProjectSession {
             self.drop_simulation(crate::session::SimulationDropCause::Resolution);
         }
         Ok(())
+    }
+}
+
+/// The miss for a stock change of `setup` that moved.
+fn stock_change_moved(
+    setup: &crate::session::SetupData,
+    id: crate::ids::StockChangeId,
+    change: Option<&crate::compute::stock_change::StockChange>,
+) -> SnapshotMiss {
+    let name = change
+        .map(|c| c.name.clone())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| format!("#{}", id.0));
+    SnapshotMiss::StockChangeMoved {
+        setup: setup.name.clone(),
+        change: name,
     }
 }
 

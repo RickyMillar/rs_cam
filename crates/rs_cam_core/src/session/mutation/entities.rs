@@ -178,6 +178,14 @@ impl ProjectSession {
 
             let removed: std::collections::BTreeSet<usize> =
                 setup.toolpath_indices.iter().copied().collect();
+            // S2: the setup's enabled stock changes leave with it, so the
+            // stock of every later setup moves.
+            let had_stock_changes =
+                !crate::compute::stock_change::stock_change_effects(&setup.stock_changes)
+                    .is_empty();
+            if had_stock_changes {
+                session.drop_stock_change_dependents(setup_index);
+            }
             if removed.is_empty() {
                 session.drop_simulation(SimulationDropCause::Operations);
             } else {
@@ -226,6 +234,7 @@ impl ProjectSession {
             model_ids: Vec::new(),
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
+            stock_changes: Vec::new(),
             toolpath_indices: Vec::new(),
             pause_message: None,
         });

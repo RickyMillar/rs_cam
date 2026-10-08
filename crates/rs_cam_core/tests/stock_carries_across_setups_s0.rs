@@ -149,6 +149,7 @@ fn identity_group(entries: Vec<SimToolpathEntry>) -> SimGroupEntry {
         local_stock_bbox: None,
         local_to_global: None,
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 
@@ -160,6 +161,7 @@ fn setup_group(entries: Vec<SimToolpathEntry>, info: SetupTransformInfo) -> SimG
         local_stock_bbox: Some(info.effective_stock_bbox()),
         local_to_global: Some(info),
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 
@@ -487,7 +489,7 @@ fn a_lateral_setup_starts_fresh_and_the_next_z_setup_carries_past_it() {
     let after: Vec<ToolpathId> = result.prior_stock_sources[&ToolpathId(3)]
         .after
         .iter()
-        .map(|e: &SourceEntry| e.id)
+        .filter_map(|e: &SourceEntry| e.toolpath_id())
         .collect();
     assert_eq!(after, vec![ToolpathId(1)]);
     assert!(result.prior_stock_sources[&ToolpathId(2)].after.is_empty());

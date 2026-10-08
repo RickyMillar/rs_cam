@@ -29,17 +29,18 @@ mod save;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AddAlignmentPinArgs, AddFixtureArgs, AddKeepOutArgs, AddModelArgs, AddSetupArgs, AddToolArgs,
-    AddToolpathArgs, AdoptModelGeometryArgs, AdoptResultArgs, AdoptSimulationArgs,
-    AutoEnableRestAnalysisArgs, Command, CommandId, CommandKind, Effects, ForgetResultArgs,
-    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    AddAlignmentPinArgs, AddFixtureArgs, AddKeepOutArgs, AddModelArgs, AddSetupArgs,
+    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptResultArgs,
+    AdoptSimulationArgs, AutoEnableRestAnalysisArgs, Command, CommandId, CommandKind, Effects,
+    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
     ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle,
-    MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
-    RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs,
-    ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
-    ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
+    MoveStockChangeArgs, MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query,
+    QueryAnswer, Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs,
+    RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs,
+    RemoveToolpathArgs, ReorderToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs,
+    ReplaceStockChangeArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, ReplaceToolsArgs,
+    RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
     SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs,
     SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs,
     SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
@@ -238,6 +239,10 @@ pub enum SessionError {
     /// `submitted` is the epoch the lane started from. `current` is the
     /// epoch the session carries now.
     StaleSimulation { submitted: u64, current: u64 },
+    /// S2: a stock change breaks a named rule
+    /// ([`crate::compute::stock_change::StockChangeRefusal`]). The session
+    /// writes nothing.
+    StockChangeRefused(crate::compute::stock_change::StockChangeRefusal),
 }
 
 impl std::fmt::Display for SessionError {
@@ -290,6 +295,7 @@ impl std::fmt::Display for SessionError {
                  answers simulation epoch {submitted} and the project is \
                  at epoch {current}. Simulate it again."
             ),
+            Self::StockChangeRefused(refusal) => write!(f, "Stock change refused: {refusal}"),
         }
     }
 }
@@ -865,6 +871,11 @@ pub struct SetupData {
     pub fixtures: Vec<Fixture>,
     /// Keep-out zones in this setup.
     pub keep_out_zones: Vec<KeepOutZone>,
+    /// S2: the stock changes of this setup, applied in order before the
+    /// setup's first toolpath. Values are in this setup's frame. Write the
+    /// list through the `AddStockChange`, `ReplaceStockChange`,
+    /// `MoveStockChange` and `RemoveStockChange` command rows.
+    pub stock_changes: Vec<crate::compute::stock_change::StockChange>,
     /// Indices into the session's `toolpath_configs` vec.
     pub toolpath_indices: Vec<usize>,
     /// Optional override for the M0 pause message emitted before this setup.
@@ -1258,11 +1269,14 @@ pub enum SimulationDropCause {
     Resolution,
     /// A fixture or a keep-out zone changed.
     Fixtures,
+    /// S2: a stock change of a setup changed. The run carved a stock that
+    /// the project no longer starts that setup, or a later one, from.
+    StockChanges,
 }
 
 impl SimulationDropCause {
     /// The number of variants.
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 6;
 
     /// Every variant, in display order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -1271,6 +1285,7 @@ impl SimulationDropCause {
         Self::PostSettings,
         Self::Resolution,
         Self::Fixtures,
+        Self::StockChanges,
     ];
 
     /// A short phrase for a stale label, in ASD-STE100.
@@ -1281,6 +1296,7 @@ impl SimulationDropCause {
             Self::PostSettings => "post settings changed",
             Self::Resolution => "simulation resolution changed",
             Self::Fixtures => "fixtures changed",
+            Self::StockChanges => "stock changes edited",
         }
     }
 
@@ -1291,6 +1307,7 @@ impl SimulationDropCause {
             Self::PostSettings => 2,
             Self::Resolution => 3,
             Self::Fixtures => 4,
+            Self::StockChanges => 5,
         }
     }
 }
@@ -1459,6 +1476,7 @@ impl ProjectSession {
                 model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
+                stock_changes: Vec::new(),
                 toolpath_indices: Vec::new(),
                 pause_message: None,
             }],
@@ -2204,6 +2222,7 @@ mod tests {
                 model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
+                stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
                     name: "Bare".to_owned(),
@@ -2504,6 +2523,7 @@ mod tests {
                 model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
+                stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
                     name: "Test Pocket".to_owned(),

@@ -6,18 +6,17 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 - `mod.rs` — `ProjectSession` and the facade. `command.rs` — the registry and
   the `Effects` door. `dependencies.rs`, `generation_plan.rs` — edges, order.
-- `mutation.rs`, `mutation/` (CRUD); `compute.rs`, `compute/` (generation,
-  simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`.
+- `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/`
+  (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`.
 - `diagnostics_types.rs` — the diagnostic types. Keep the `mod.rs` re-export.
-- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs` — context,
-  cycle time, reach, the planner. `rest_stock.rs` — the stored resolution.
-- `load_report.rs` — the memo and `LoadReportStamp` (`--lib session::load_report`).
+- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`; `rest_stock.rs` — the
+  stored resolution; `load_report.rs` — the memo (`--lib session::load_report`).
 
 ## Invariants
 
 - A command returns `Effects`. `Effects.stale` is the stale set.
-- A parameter, tool, model, stock or setup edit invalidates the affected
-  cached result chain, to fixpoint: `invalidate_output_dependents_of_set`.
+- An edit invalidates the result chain to fixpoint: `invalidate_output_dependents_of_set`;
+  an S2 stock change, from its setup on: `drop_stock_change_dependents`.
 - `dependencies::edges` (rules) and `generation_plan` (order): no surface
   re-derives either. The pure `walk_output_dependents` touches no simulation.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
@@ -37,4 +36,5 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
 `adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`,
 `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`,
-`a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`.
+`a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
+`stock_changes_stale_from_their_setup_on_s2`.

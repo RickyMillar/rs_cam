@@ -91,6 +91,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
                 local_stock_bbox: None,
                 local_to_global: None,
                 phantom_prior_stock: None,
+                stock_changes: Vec::new(),
             }],
             stock_bbox: world_stock_bbox,
             stock_top_z: world_stock_bbox.max.z,

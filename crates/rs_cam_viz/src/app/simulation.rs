@@ -938,6 +938,7 @@ mod tests {
                     local_stock_bbox: None,
                     local_to_global: None,
                     phantom_prior_stock: None,
+                    stock_changes: Vec::new(),
                 },
                 SimGroupEntry {
                     toolpaths: vec![entry(2, cut(25.0, 25.0, 19.0), &tool)],
@@ -945,6 +946,7 @@ mod tests {
                     local_stock_bbox: Some(bottom.effective_stock_bbox()),
                     local_to_global: Some(bottom),
                     phantom_prior_stock: None,
+                    stock_changes: Vec::new(),
                 },
             ],
             stock_bbox: bbox,

@@ -164,6 +164,7 @@ fn front_group() -> SimGroupEntry {
         local_stock_bbox: Some(local_bbox()),
         local_to_global: Some(front_transform()),
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 
@@ -189,6 +190,7 @@ fn top_group() -> SimGroupEntry {
         local_stock_bbox: None,
         local_to_global: None,
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 

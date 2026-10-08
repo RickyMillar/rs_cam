@@ -2419,3 +2419,122 @@ fn the_group_rule_and_the_global_accessor_diverge_on_the_laterals() {
         );
     }
 }
+
+/// S2: one stock change for the request tests, on model 0 (the square).
+fn s2_fill(id: usize, enabled: bool, level_z: f64) -> crate::compute::stock_change::StockChange {
+    crate::compute::stock_change::StockChange {
+        id: crate::ids::StockChangeId(id),
+        name: format!("Fill {id}"),
+        enabled,
+        op: crate::compute::stock_change::StockChangeOp::Add,
+        geometry: crate::compute::stock_change::StockGeometry::OutlineFill {
+            model_ids: vec![crate::ids::ModelId(0)],
+            level_z,
+        },
+        material: crate::material::Material::Custom {
+            name: "Filler".to_owned(),
+            feed_scale_factor: 1.0,
+        },
+    }
+}
+
+/// S2: the core request builder carries every ENABLED stock change of a
+/// setup, in order, with the model geometry it reads. A setup that holds
+/// stock changes and no generated toolpath still emits a group, and the
+/// simulation receives it. The rest record of a later consumer lists the
+/// changes, and an edit to one of them makes that record out of date.
+#[test]
+fn the_simulation_request_carries_the_stock_changes_s2() {
+    let mut s = make_session_with_pocket_model();
+    let tool_id = s.tools()[0].id.0;
+    let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
+    let cancel = AtomicBool::new(false);
+    s.generate_toolpath(0, &cancel)
+        .expect("TP0 (Fresh) generates against the square");
+
+    let _ = s.add_setup("Setup 2".to_owned(), crate::compute::transform::FaceUp::Top);
+    for change in [
+        s2_fill(1, true, 5.0),
+        s2_fill(2, false, 6.0),
+        s2_fill(3, true, 7.0),
+    ] {
+        let _ = s.add_stock_change(1, change).unwrap();
+    }
+
+    let groups = s.simulation_groups(&SimulationOptions::default());
+    assert_eq!(
+        groups.len(),
+        2,
+        "setup 2 has no toolpath and still emits a group"
+    );
+    assert!(groups[0].stock_changes.is_empty());
+    let carried: Vec<usize> = groups[1]
+        .stock_changes
+        .iter()
+        .map(|c| c.change.id.0)
+        .collect();
+    assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
+    let model_polys = s.models()[0].polygons.clone().unwrap();
+    for resolved in &groups[1].stock_changes {
+        assert_eq!(resolved.setup_id, s.list_setups()[1].id);
+        match resolved.sources.as_slice() {
+            [crate::compute::stock_change::StockChangeSource::Outlines(polys)] => {
+                assert!(Arc::ptr_eq(polys, &model_polys), "the session's own Arc");
+            }
+            other => panic!("expected one outline source, got {other:?}"),
+        }
+    }
+
+    // A pending rest operation in setup 2 takes the phantom snapshot.
+    let mut rest_tc = make_tc(tool_id);
+    rest_tc.name = "rest".to_owned();
+    rest_tc.stock_source = crate::session::StockSource::FromRemainingStock;
+    let _ = s.add_toolpath(1, rest_tc).unwrap();
+    let rest_id = s.toolpath_configs()[1].id;
+
+    let result = s
+        .run_simulation(&SimulationOptions::default(), &cancel)
+        .expect("the simulation runs with a stock-change group");
+    assert_eq!(
+        result.group_starts.len(),
+        2,
+        "the simulation received both groups"
+    );
+    let recorded = result.prior_stock_sources[&rest_id].clone();
+    let kinds: Vec<Option<usize>> = recorded
+        .after
+        .iter()
+        .map(|e| match e {
+            crate::compute::source_stock::SourceEntry::Carved(_) => None,
+            crate::compute::source_stock::SourceEntry::StockChange(c) => Some(c.id.0),
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![None, Some(1), Some(3)],
+        "TP0, then the two enabled changes of setup 2"
+    );
+    assert_eq!(s.expected_source(rest_id), Some(recorded.clone()));
+    assert_eq!(s.source_is_current(rest_id, &recorded), Ok(()));
+
+    // An edit to change 3 makes the record out of date by name.
+    let _ = s
+        .replace_stock_change(1, crate::ids::StockChangeId(3), s2_fill(3, true, 8.0))
+        .unwrap();
+    assert!(matches!(
+        s.source_is_current(rest_id, &recorded),
+        Err(crate::session::SnapshotMiss::StockChangeMoved { .. })
+    ));
+    // Enabling change 2 adds a change the record did not apply.
+    let _ = s
+        .replace_stock_change(1, crate::ids::StockChangeId(3), s2_fill(3, true, 7.0))
+        .unwrap();
+    assert_eq!(s.source_is_current(rest_id, &recorded), Ok(()));
+    let _ = s
+        .replace_stock_change(1, crate::ids::StockChangeId(2), s2_fill(2, true, 6.0))
+        .unwrap();
+    assert!(matches!(
+        s.source_is_current(rest_id, &recorded),
+        Err(crate::session::SnapshotMiss::StockChangeMoved { .. })
+    ));
+}

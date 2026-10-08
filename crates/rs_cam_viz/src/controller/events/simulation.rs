@@ -275,6 +275,12 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             let phantom_prior_stock = phantom_scan.finish();
+            // S2: the shared resolution of the setup's stock changes, the
+            // same call core's builder makes.
+            let stock_changes = rs_cam_core::compute::simulate::group_stock_changes(
+                setup,
+                self.state.session.models(),
+            );
             // F.4: a setup whose every toolpath is still ungenerated
             // builds an empty `toolpaths` vec — but if the FIRST enabled
             // config in plan order is a pending `FromRemainingStock` op,
@@ -282,7 +288,9 @@ impl<B: ComputeBackend> AppController<B> {
             // initial stock (zero predecessors to distrust), so the
             // phantom is still valid and the group must still be
             // emitted (with an empty `toolpaths` vec) to carry it.
-            if !toolpaths.is_empty() || phantom_prior_stock.is_some() {
+            // S2: a setup with stock changes and no toolpath still emits a
+            // group, so its changes reach the stock of the setups after it.
+            if !toolpaths.is_empty() || phantom_prior_stock.is_some() || !stock_changes.is_empty() {
                 all_tools_flat.extend(tools);
 
                 // F-030: drive per-setup frame decisions through the shared
@@ -306,6 +314,7 @@ impl<B: ComputeBackend> AppController<B> {
                     local_stock_bbox: setup_ctx.sim_local_stock_bbox(),
                     local_to_global: setup_ctx.local_to_global,
                     phantom_prior_stock,
+                    stock_changes,
                 });
             }
 

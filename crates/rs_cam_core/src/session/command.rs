@@ -631,6 +631,54 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            (Command, AddStockChange, "add_stock_change", AddStockChangeArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
+                 ),
+                 mcp: Reach::Skip(
+                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI reads stock changes from the project file only",
+                 ),
+             }),
+            (Command, ReplaceStockChange, "replace_stock_change", ReplaceStockChangeArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
+                 ),
+                 mcp: Reach::Skip(
+                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI reads stock changes from the project file only",
+                 ),
+             }),
+            (Command, MoveStockChange, "move_stock_change", MoveStockChangeArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
+                 ),
+                 mcp: Reach::Skip(
+                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI reads stock changes from the project file only",
+                 ),
+             }),
+            (Command, RemoveStockChange, "remove_stock_change", RemoveStockChangeArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
+                 ),
+                 mcp: Reach::Skip(
+                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI reads stock changes from the project file only",
+                 ),
+             }),
             (Command, AutoEnableRestAnalysis, "auto_enable_rest_analysis",
              AutoEnableRestAnalysisArgs, Effects,
              Surfaces {
@@ -1781,6 +1829,55 @@ pub struct RemoveKeepOutArgs {
     pub zone_id: crate::ids::KeepOutId,
 }
 
+/// The arguments of the `add_stock_change` command (S2).
+///
+/// The change joins the END of the setup's list. The record is boxed, as
+/// [`AddFixtureArgs`] boxes its fixture.
+#[derive(Debug, Clone)]
+pub struct AddStockChangeArgs {
+    /// The index of the setup the change joins.
+    pub setup_index: usize,
+    /// The change to add. Its id must be new in the setup.
+    pub change: Box<crate::compute::stock_change::StockChange>,
+}
+
+/// The arguments of the `replace_stock_change` command (S2).
+///
+/// The edit door, the enable and disable flip included. The payload is
+/// the whole record; the position in the list does not move.
+#[derive(Debug, Clone)]
+pub struct ReplaceStockChangeArgs {
+    /// The index of the setup that holds the change.
+    pub setup_index: usize,
+    /// The id of the change to replace.
+    pub change_id: crate::ids::StockChangeId,
+    /// The change to install. Its id must be `change_id`.
+    pub change: Box<crate::compute::stock_change::StockChange>,
+}
+
+/// The arguments of the `move_stock_change` command (S2).
+///
+/// The reorder door. The setup applies its changes in list order.
+#[derive(Debug, Clone)]
+pub struct MoveStockChangeArgs {
+    /// The index of the setup that holds the change.
+    pub setup_index: usize,
+    /// The id of the change to move.
+    pub change_id: crate::ids::StockChangeId,
+    /// The position the change takes in the list. It must be less than
+    /// the list length.
+    pub to_position: usize,
+}
+
+/// The arguments of the `remove_stock_change` command (S2).
+#[derive(Debug, Clone)]
+pub struct RemoveStockChangeArgs {
+    /// The index of the setup that holds the change.
+    pub setup_index: usize,
+    /// The id of the change to remove.
+    pub change_id: crate::ids::StockChangeId,
+}
+
 /// The arguments of the `auto_enable_rest_analysis` command.
 ///
 /// The command names the SOURCE operation — the one whose derived rest
@@ -2432,6 +2529,16 @@ impl ProjectSession {
             Command::RemoveFixture(args) => self.remove_fixture(args.setup_index, args.fixture_id),
             Command::AddKeepOut(args) => self.add_keep_out(args.setup_index, *args.zone),
             Command::RemoveKeepOut(args) => self.remove_keep_out(args.setup_index, args.zone_id),
+            Command::AddStockChange(args) => self.add_stock_change(args.setup_index, *args.change),
+            Command::ReplaceStockChange(args) => {
+                self.replace_stock_change(args.setup_index, args.change_id, *args.change)
+            }
+            Command::MoveStockChange(args) => {
+                self.move_stock_change(args.setup_index, args.change_id, args.to_position)
+            }
+            Command::RemoveStockChange(args) => {
+                self.remove_stock_change(args.setup_index, args.change_id)
+            }
             Command::AutoEnableRestAnalysis(args) => {
                 let enabled = self.auto_enable_rest_analysis_for_source(args.source_id);
                 // The setter reports `None` when the source already

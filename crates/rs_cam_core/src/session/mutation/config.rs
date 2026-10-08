@@ -396,6 +396,8 @@ impl ProjectSession {
     /// A toolpath reads a model through two doors: its own `model_id`, and
     /// a `ModelOutline` boundary that names the model. A reload of the
     /// outline model moves the boundary, so the second door drops too.
+    /// S2 adds a third reader: a setup stock change whose geometry names
+    /// the model.
     fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
@@ -412,6 +414,16 @@ impl ProjectSession {
             .map(|(idx, _)| idx)
             .collect();
         self.drop_results_and_their_dependents(&affected);
+        // S2: an enabled stock change that reads the model changes the stock
+        // in a new way. The first such setup and every later one are stale.
+        let first_reader = self.setups.iter().position(|setup| {
+            setup.stock_changes.iter().any(|change| {
+                change.enabled && change.geometry.reads_model(crate::ids::ModelId(model_id))
+            })
+        });
+        if let Some(from_setup) = first_reader {
+            self.drop_stock_change_dependents(from_setup);
+        }
     }
 
     /// Replace one model's geometry, and drop the results that read it.

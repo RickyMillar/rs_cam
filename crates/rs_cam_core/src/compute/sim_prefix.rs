@@ -49,6 +49,8 @@
 //! | reference model mesh | `Weak<TriangleMesh>` identity (it drives per-group column deviations) |
 //! | group order + count | position in the key vector |
 //! | per-group `local_stock_bbox`, `local_to_global`, `direction` | group scalar, floats by bits |
+//! | per-group `stock_changes` (S2): setup id, change id, effect digest, source kinds | group scalar |
+//! | per-group stock-change model geometry (S2) | `Weak` identity of each source `Arc` |
 //! | per-entry toolpath geometry, spans, move intents | `Weak<AnnotatedToolpath>` identity |
 //! | per-entry semantic trace | `Weak<ToolpathSemanticTrace>` identity |
 //! | per-entry analytic drill op | `Weak<DrillOp>` identity |
@@ -188,6 +190,7 @@ use crate::compute::simulate::{
     ColumnDeviation, SimBoundary, SimCheckpointMesh, SimGroupEntry, SimToolpathEntry,
     SimulationRequest,
 };
+use crate::compute::stock_change::StockChangeSource;
 use crate::dexel_stock::TriDexelStock;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -272,10 +275,50 @@ impl EntryKey {
     }
 }
 
+/// The identity of one model source a group's stock change reads (S2).
+///
+/// The source `Arc` is the one the session holds, so a model refresh swaps
+/// it and the key misses, as the reference model mesh does.
+enum StockChangeSourceKey {
+    Mesh(Weak<crate::mesh::TriangleMesh>),
+    Outlines(Weak<Vec<crate::polygon::Polygon2>>),
+    Missing,
+}
+
+impl StockChangeSourceKey {
+    fn new(source: &StockChangeSource) -> Self {
+        match source {
+            StockChangeSource::Mesh(mesh) => Self::Mesh(Arc::downgrade(mesh)),
+            StockChangeSource::Outlines(polys) => Self::Outlines(Arc::downgrade(polys)),
+            StockChangeSource::Missing(_) => Self::Missing,
+        }
+    }
+
+    fn matches(&self, source: &StockChangeSource) -> bool {
+        match (self, source) {
+            (Self::Mesh(w), StockChangeSource::Mesh(a)) => weak_matches(Some(w), Some(a)),
+            (Self::Outlines(w), StockChangeSource::Outlines(a)) => weak_matches(Some(w), Some(a)),
+            // The model id is in the group scalar.
+            (Self::Missing, StockChangeSource::Missing(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Every stock-change source of one group, in change order, then source
+/// order.
+fn stock_change_sources(group: &SimGroupEntry) -> impl Iterator<Item = &StockChangeSource> {
+    group.stock_changes.iter().flat_map(|c| c.sources.iter())
+}
+
 /// Identity key for one simulated setup group.
 struct GroupKey {
     scalar: u64,
     entries: Vec<EntryKey>,
+    /// S2: the model geometry each stock change of the group reads. A group
+    /// applies its stock changes before its first entry, so a source that
+    /// moved invalidates every prefix of the group.
+    stock_change_sources: Vec<StockChangeSourceKey>,
     /// `true` for a group the snapshot replayed in FULL — its end-of-group
     /// work (column deviations, composite-mesh append) is baked into the
     /// restored state, so it must match on the exact entry count, not merely
@@ -303,6 +346,9 @@ impl GroupKey {
                 .take(entry_count)
                 .map(EntryKey::new)
                 .collect(),
+            stock_change_sources: stock_change_sources(group)
+                .map(StockChangeSourceKey::new)
+                .collect(),
             exact,
         }
     }
@@ -314,8 +360,15 @@ impl GroupKey {
         } else {
             group.toolpaths.len() >= self.entries.len()
         };
+        let sources_ok = self.stock_change_sources.len() == stock_change_sources(group).count()
+            && self
+                .stock_change_sources
+                .iter()
+                .zip(stock_change_sources(group))
+                .all(|(key, source)| key.matches(source));
         self.scalar == hash_group_scalar(group)
             && count_ok
+            && sources_ok
             && self
                 .entries
                 .iter()
@@ -452,12 +505,39 @@ fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
         direction,
         local_stock_bbox,
         local_to_global,
+        stock_changes,
         toolpaths: _,
         phantom_prior_stock: _,
     } = group;
 
     let mut hasher = DefaultHasher::new();
     format!("{direction:?}").hash(&mut hasher);
+    // S2: every stock change of the group, in order. The record digest
+    // covers the op, the geometry and the material; the source kinds and
+    // the missing model ids are here, and `GroupKey` keys the source
+    // `Arc`s by identity.
+    stock_changes.len().hash(&mut hasher);
+    for resolved in stock_changes {
+        let crate::compute::stock_change::ResolvedStockChange {
+            setup_id,
+            change,
+            sources,
+        } = resolved;
+        setup_id.hash(&mut hasher);
+        change.id.hash(&mut hasher);
+        change.effect_digest().hash(&mut hasher);
+        sources.len().hash(&mut hasher);
+        for source in sources {
+            match source {
+                StockChangeSource::Mesh(_) => 0_u8.hash(&mut hasher),
+                StockChangeSource::Outlines(_) => 1_u8.hash(&mut hasher),
+                StockChangeSource::Missing(model_id) => {
+                    2_u8.hash(&mut hasher);
+                    model_id.hash(&mut hasher);
+                }
+            }
+        }
+    }
     match local_stock_bbox.as_ref() {
         Some(bbox) => {
             1_u8.hash(&mut hasher);
@@ -903,5 +983,83 @@ mod tests {
         })];
         // One pointer, not one grid.
         assert!(with_cp.estimated_bytes() - bare < 64);
+    }
+
+    /// S2: a group's stock changes are part of its key. An edit to the
+    /// effect, or a new model `Arc` under a change, misses; a rename hits.
+    #[test]
+    fn a_stock_change_edit_moves_the_group_key() {
+        use crate::compute::stock_change::{
+            ResolvedStockChange, StockChange, StockChangeOp, StockGeometry,
+        };
+        use crate::ids::{ModelId, StockChangeId};
+
+        let outlines = Arc::new(vec![crate::polygon::Polygon2::rectangle(
+            0.0, 0.0, 10.0, 10.0,
+        )]);
+        let change = StockChange {
+            id: StockChangeId(4),
+            name: "Fill".to_owned(),
+            enabled: true,
+            op: StockChangeOp::Add,
+            geometry: StockGeometry::OutlineFill {
+                model_ids: vec![ModelId(1)],
+                level_z: 5.0,
+            },
+            material: crate::material::Material::default(),
+        };
+        let group_with =
+            |change: StockChange, polys: &Arc<Vec<crate::polygon::Polygon2>>| SimGroupEntry {
+                toolpaths: Vec::new(),
+                direction: crate::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
+                stock_changes: vec![ResolvedStockChange {
+                    setup_id: 0,
+                    change,
+                    sources: vec![StockChangeSource::Outlines(Arc::clone(polys))],
+                }],
+            };
+        let base = group_with(change.clone(), &outlines);
+        let key = GroupKey::new(&base, 0, true);
+        assert!(key.is_prefix_of(&base), "the key matches its own group");
+
+        let mut renamed = change.clone();
+        renamed.name = "Other name".to_owned();
+        assert!(
+            key.is_prefix_of(&group_with(renamed, &outlines)),
+            "the name is not an input of the simulation"
+        );
+
+        let mut raised = change.clone();
+        raised.geometry = StockGeometry::OutlineFill {
+            model_ids: vec![ModelId(1)],
+            level_z: 6.0,
+        };
+        assert!(
+            !key.is_prefix_of(&group_with(raised, &outlines)),
+            "a new fill level must miss"
+        );
+
+        let mut removed = change.clone();
+        removed.op = StockChangeOp::Remove;
+        assert!(
+            !key.is_prefix_of(&group_with(removed, &outlines)),
+            "a new op must miss"
+        );
+
+        let reloaded = Arc::new((*outlines).clone());
+        assert!(
+            !key.is_prefix_of(&group_with(change.clone(), &reloaded)),
+            "a refreshed model Arc must miss"
+        );
+
+        let mut without = group_with(change, &outlines);
+        without.stock_changes.clear();
+        assert!(
+            !key.is_prefix_of(&without),
+            "a group that lost its stock change must miss"
+        );
     }
 }

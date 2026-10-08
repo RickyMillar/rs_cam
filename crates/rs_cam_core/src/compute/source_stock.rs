@@ -4,12 +4,13 @@
 //!
 //! A `prior_stocks` snapshot is the stock before one toolpath carves. Its
 //! key names the consumer, and the key alone says nothing about HOW the
-//! snapshot was made. Two snapshots under one key can differ in two ways:
+//! snapshot was made. Two snapshots under one key can differ in three ways:
 //!
-//! - the cell size the simulation was asked for, and
-//! - the toolpaths the simulation carved before the consumer.
+//! - the cell size the simulation was asked for,
+//! - the toolpaths the simulation carved before the consumer, and
+//! - (S2) the setup stock changes the simulation applied before it.
 //!
-//! [`SourceStock`] records both. The simulator writes one per snapshot
+//! [`SourceStock`] records all three. The simulator writes one per snapshot
 //! ([`snapshot_sources`]), from the request it carved. A rest generation
 //! copies the record it read onto its result. The session compares a
 //! record with the current project state; an unequal record is a stale
@@ -37,9 +38,20 @@ use crate::dexel_stock::TriDexelStock;
 use crate::ids::ToolpathId;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 
+/// One thing a simulation did to the stock before the consumer: a carved
+/// toolpath, or (S2) a setup stock change.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SourceEntry {
+    /// A toolpath the simulation carved.
+    Carved(CarvedEntry),
+    /// A stock change the simulation applied before a setup's first
+    /// toolpath (S2).
+    StockChange(StockChangeEntry),
+}
+
 /// One toolpath a simulation carved before the consumer.
 #[derive(Debug, Clone)]
-pub struct SourceEntry {
+pub struct CarvedEntry {
     /// The carved toolpath's id.
     pub id: ToolpathId,
     /// A content digest of the carved moves. Two entries with equal ids
@@ -49,23 +61,62 @@ pub struct SourceEntry {
     pub carved: Weak<AnnotatedToolpath>,
 }
 
-impl PartialEq for SourceEntry {
+impl PartialEq for CarvedEntry {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id && self.output == other.output
     }
+}
+
+/// One stock change a simulation applied before the consumer (S2).
+///
+/// The digest is [`crate::compute::stock_change::StockChange::effect_digest`]:
+/// the op, the geometry and the material of an `Add`. The model geometry
+/// is not in it. A model refresh under a stock change drops the dependent
+/// rest results through the invalidation rule instead
+/// (`ProjectSession::drop_results_for_model`), so the record need not hash
+/// a mesh after every command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StockChangeEntry {
+    /// The `SetupData::id` of the setup that owns the change.
+    pub setup_id: usize,
+    /// The change id, unique within the setup.
+    pub id: crate::ids::StockChangeId,
+    /// The effect digest of the change the simulation applied.
+    pub effect: u64,
 }
 
 impl SourceEntry {
     /// The entry for one carved toolpath.
     #[must_use]
     pub fn of(id: ToolpathId, annotated: &Arc<AnnotatedToolpath>) -> Self {
-        Self {
+        Self::Carved(CarvedEntry {
             id,
             output: carve_digest(&annotated.toolpath),
             carved: Arc::downgrade(annotated),
-        }
+        })
     }
 
+    /// The entry for one applied stock change.
+    #[must_use]
+    pub fn of_stock_change(resolved: &crate::compute::stock_change::ResolvedStockChange) -> Self {
+        Self::StockChange(StockChangeEntry {
+            setup_id: resolved.setup_id,
+            id: resolved.change.id,
+            effect: resolved.effect_digest(),
+        })
+    }
+
+    /// The carved toolpath's id, or `None` for a stock change.
+    #[must_use]
+    pub fn toolpath_id(&self) -> Option<ToolpathId> {
+        match self {
+            Self::Carved(carved) => Some(carved.id),
+            Self::StockChange(_) => None,
+        }
+    }
+}
+
+impl CarvedEntry {
     /// Does `current` carry the moves this entry carved?
     ///
     /// The pointer answers the common case. A different `Arc` with the
@@ -138,8 +189,10 @@ pub struct SourceStock {
     /// requests give equal grids. The cell the grid actually used is on
     /// `ToolpathStats::stock_snapshot`.
     pub cell_mm: f64,
-    /// Every toolpath the simulation carved before the consumer, in carve
-    /// order: every earlier setup group, then the rows above it.
+    /// Everything the simulation did to the stock before the consumer, in
+    /// order: per group, its stock changes (S2), then its carved toolpaths;
+    /// every earlier setup group, then the consumer's own group up to the
+    /// rows above it.
     pub after: Vec<SourceEntry>,
 }
 
@@ -164,6 +217,10 @@ pub fn snapshot_sources(
     for group in &request.groups {
         let lateral = crate::compute::stock_carry::group_is_lateral(group);
         let mut carved: Vec<SourceEntry> = if lateral { Vec::new() } else { carried.clone() };
+        // S2: the group applies its stock changes before its first entry,
+        // so every record of the group (the k = 0 phantom included) and of
+        // every group that carries from it lists them.
+        carved.extend(group.stock_changes.iter().map(SourceEntry::of_stock_change));
         let phantom = group.phantom_prior_stock;
         for (k, entry) in group.toolpaths.iter().enumerate() {
             if let Some((phantom_k, phantom_id)) = phantom
@@ -244,14 +301,106 @@ impl SourceStockWire {
         Self {
             cell_mm: source.cell_mm,
             stock_digest: stamp.map(|s| format!("{:016x}", s.digest)),
+            // S2: the wire lists the carved toolpaths only. S4 adds the
+            // stock changes to the wire with its MCP tools.
             after: source
                 .after
                 .iter()
-                .map(|e| SourceEntryWire {
-                    id: e.id,
-                    output: format!("{:016x}", e.output),
+                .filter_map(|e| match e {
+                    SourceEntry::Carved(carved) => Some(SourceEntryWire {
+                        id: carved.id,
+                        output: format!("{:016x}", carved.output),
+                    }),
+                    SourceEntry::StockChange(_) => None,
                 })
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    // SAFETY: test code; a missing record is a failed test.
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::compute::simulate::SimGroupEntry;
+    use crate::compute::stock_change::{
+        ResolvedStockChange, StockChange, StockChangeOp, StockGeometry,
+    };
+    use crate::geo::{BoundingBox3, P3};
+    use crate::ids::{ModelId, StockChangeId};
+
+    fn resolved(setup_id: usize, id: usize) -> ResolvedStockChange {
+        ResolvedStockChange {
+            setup_id,
+            change: StockChange {
+                id: StockChangeId(id),
+                name: String::new(),
+                enabled: true,
+                op: StockChangeOp::Add,
+                geometry: StockGeometry::OutlineExtrude {
+                    model_ids: vec![ModelId(1)],
+                    z_bottom: 0.0,
+                    z_top: 1.0,
+                },
+                material: crate::material::Material::default(),
+            },
+            sources: Vec::new(),
+        }
+    }
+
+    fn group(change: ResolvedStockChange, phantom: ToolpathId) -> SimGroupEntry {
+        SimGroupEntry {
+            toolpaths: Vec::new(),
+            direction: crate::dexel_stock::StockCutDirection::FromTop,
+            local_stock_bbox: None,
+            local_to_global: None,
+            phantom_prior_stock: Some((0, phantom)),
+            stock_changes: vec![change],
+        }
+    }
+
+    /// S2: a group's stock changes come first in every record of the group,
+    /// and a later Z-axis group's records list them too (the S0 carry).
+    #[test]
+    fn a_rest_record_lists_the_stock_changes_before_it() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(10.0, 10.0, 5.0),
+        };
+        let request = SimulationRequest {
+            groups: vec![
+                group(resolved(0, 1), ToolpathId(10)),
+                group(resolved(1, 2), ToolpathId(11)),
+            ],
+            stock_bbox: bbox,
+            stock_top_z: 5.0,
+            resolution: 1.0,
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+            display_stride: 1,
+        };
+        let stock = Arc::new(TriDexelStock::from_bounds(&bbox, 1.0));
+        let prior: HashMap<ToolpathId, Arc<TriDexelStock>> = [
+            (ToolpathId(10), Arc::clone(&stock)),
+            (ToolpathId(11), stock),
+        ]
+        .into_iter()
+        .collect();
+        let sources = snapshot_sources(&request, &prior);
+        let entry =
+            |setup_id: usize, id: usize| SourceEntry::of_stock_change(&resolved(setup_id, id));
+        assert_eq!(sources[&ToolpathId(10)].after, vec![entry(0, 1)]);
+        assert_eq!(
+            sources[&ToolpathId(11)].after,
+            vec![entry(0, 1), entry(1, 2)]
+        );
     }
 }

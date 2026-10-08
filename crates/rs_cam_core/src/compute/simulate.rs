@@ -129,6 +129,65 @@ pub struct SimGroupEntry {
     /// fresh project load. This field turns that into a ladder: each
     /// simulation run unlocks exactly one more pending op.
     pub phantom_prior_stock: Option<(usize, ToolpathId)>,
+    /// S2: the setup's ENABLED stock changes, in application order, with
+    /// the model geometry each one reads. The simulation applies them to
+    /// the group's start stock before `toolpaths[0]` (S3). Both request
+    /// builders fill it through [`group_stock_changes`]. The S5 memo keys
+    /// it per group (`sim_prefix`), and `snapshot_sources` lists it in every
+    /// rest record of the group and of the groups that carry from it.
+    pub stock_changes: Vec<crate::compute::stock_change::ResolvedStockChange>,
+}
+
+/// The stock changes a setup's simulation group carries: every ENABLED
+/// change, in list order, with the model geometry it reads.
+///
+/// **One resolution, two builders** (the fifth shared decision of the
+/// request, beside [`group_stock_cut_direction`]). The geometry is the
+/// `Arc` the session holds, in the model's own frame; S3 maps it into the
+/// setup frame. A model that is absent, or that holds no geometry of the
+/// kind the change needs, resolves to
+/// [`crate::compute::stock_change::StockChangeSource::Missing`]; the
+/// command doors refuse that case, so only a later model removal or a
+/// failed reload reaches it.
+///
+/// A builder emits a group for a setup whose list is not empty even when
+/// the setup holds no generated toolpath, so the change reaches the carry.
+pub fn group_stock_changes(
+    setup: &crate::session::SetupData,
+    models: &[crate::session::LoadedModel],
+) -> Vec<crate::compute::stock_change::ResolvedStockChange> {
+    use crate::compute::stock_change::{ResolvedStockChange, StockChangeSource, StockGeometry};
+    setup
+        .stock_changes
+        .iter()
+        .filter(|change| change.enabled)
+        .map(|change| {
+            let wants_mesh = matches!(change.geometry, StockGeometry::Model { .. });
+            let sources = change
+                .geometry
+                .model_ids()
+                .into_iter()
+                .map(|model_id| {
+                    let model = models.iter().find(|m| m.id == model_id.0);
+                    let source = if wants_mesh {
+                        model
+                            .and_then(|m| m.mesh.clone())
+                            .map(StockChangeSource::Mesh)
+                    } else {
+                        model
+                            .and_then(|m| m.polygons.clone())
+                            .map(StockChangeSource::Outlines)
+                    };
+                    source.unwrap_or(StockChangeSource::Missing(model_id))
+                })
+                .collect();
+            ResolvedStockChange {
+                setup_id: setup.id,
+                change: change.clone(),
+                sources,
+            }
+        })
+        .collect()
 }
 
 /// The cut direction a per-setup simulation GROUP stock is stamped with.
@@ -1847,6 +1906,10 @@ where
             None => {
                 let (stock, carry) =
                     group_start_stock(&run, request, group, local_bbox, lateral, &mut set_phase);
+                // TODO(S3): apply `group.stock_changes` to `stock` here, in
+                // order, before the group's first entry. A resumed group
+                // (the arm above) restores a stock that already holds them.
+                // S2 carries the list to this point and applies nothing.
                 run.group_starts.push(SimGroupStart {
                     group_ordinal,
                     carry,
@@ -2483,6 +2546,7 @@ mod tests {
             local_stock_bbox: None,
             local_to_global: None,
             phantom_prior_stock: None,
+            stock_changes: Vec::new(),
         };
 
         SimulationRequest {
@@ -2805,6 +2869,7 @@ mod tests {
             local_stock_bbox: None,
             local_to_global: None,
             phantom_prior_stock: None,
+            stock_changes: Vec::new(),
         };
 
         let req = SimulationRequest {
@@ -2904,6 +2969,7 @@ mod tests {
             local_stock_bbox: Some(stock_bbox),
             local_to_global: None, // identity setup
             phantom_prior_stock: None,
+            stock_changes: Vec::new(),
         };
 
         let bottom_group = SimGroupEntry {
@@ -2934,6 +3000,7 @@ mod tests {
                 ..Default::default()
             }),
             phantom_prior_stock: None,
+            stock_changes: Vec::new(),
         };
 
         let req = SimulationRequest {

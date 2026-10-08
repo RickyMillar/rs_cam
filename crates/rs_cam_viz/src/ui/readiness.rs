@@ -158,7 +158,10 @@ pub fn simulation_request_is_buildable(session: &ProjectSession) -> bool {
                 admissible += 1;
             }
         }
-        if admissible > 0 || phantom_scan.finish().is_some() {
+        // S2: the builder emits a group for a setup with an enabled stock
+        // change (`group_stock_changes` keeps the enabled ones only).
+        let has_stock_change = setup.stock_changes.iter().any(|c| c.enabled);
+        if admissible > 0 || phantom_scan.finish().is_some() || has_stock_change {
             return true;
         }
     }

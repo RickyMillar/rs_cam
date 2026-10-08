@@ -504,3 +504,79 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
     );
     assert_eq!(rt.debug_trace_path.as_ref(), Some(&debug_path));
 }
+
+/// S2. The GUI request builder carries a setup's ENABLED stock changes, in
+/// order, through the shared `group_stock_changes`, so its list is the one
+/// core's builder carries. A setup with a stock change and no generated
+/// toolpath still emits a group, and the readiness predicate agrees.
+#[test]
+fn the_gui_builder_carries_the_stock_changes_s2() {
+    use rs_cam_core::compute::stock_change::{
+        StockChange, StockChangeOp, StockChangeSource, StockGeometry,
+    };
+    use rs_cam_core::ids::{ModelId, StockChangeId};
+
+    let mut controller = sample_controller();
+    for rt in controller.state.gui.toolpath_rt.values_mut() {
+        rt.result = None;
+    }
+    let model_id = ModelId(controller.state.session.models()[0].id);
+    let change = |id: usize, enabled: bool| StockChange {
+        id: StockChangeId(id),
+        name: format!("Change {id}"),
+        enabled,
+        op: StockChangeOp::Remove,
+        geometry: StockGeometry::Model { model_id },
+        material: Default::default(),
+    };
+    for (id, enabled) in [(1, true), (2, false), (3, true)] {
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AddStockChange(
+                rs_cam_core::session::AddStockChangeArgs {
+                    setup_index: 0,
+                    change: Box::new(change(id, enabled)),
+                },
+            ))
+            .expect("the flat mesh is a valid Model geometry");
+    }
+
+    let predicate =
+        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+    let (groups, _, _) = controller
+        .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+        .expect("a setup with a stock change emits a group");
+    assert!(predicate, "the primary and the builder agree");
+    assert_eq!(groups.len(), 1);
+    assert!(groups[0].toolpaths.is_empty(), "nothing is generated");
+    let carried: Vec<usize> = groups[0]
+        .stock_changes
+        .iter()
+        .map(|c| c.change.id.0)
+        .collect();
+    assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
+    let mesh = controller.state.session.models()[0]
+        .mesh
+        .clone()
+        .expect("the fixture model is a mesh");
+    for resolved in &groups[0].stock_changes {
+        match resolved.sources.as_slice() {
+            [StockChangeSource::Mesh(source)] => assert!(Arc::ptr_eq(source, &mesh)),
+            other => panic!("expected one mesh source, got {other:?}"),
+        }
+    }
+    let core = rs_cam_core::compute::simulate::group_stock_changes(
+        &controller.state.session.list_setups()[0],
+        controller.state.session.models(),
+    );
+    assert_eq!(
+        core.iter().map(|c| &c.change).collect::<Vec<_>>(),
+        groups[0]
+            .stock_changes
+            .iter()
+            .map(|c| &c.change)
+            .collect::<Vec<_>>(),
+        "one resolution, two builders"
+    );
+}

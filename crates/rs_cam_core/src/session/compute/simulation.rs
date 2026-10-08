@@ -78,31 +78,11 @@ impl ProjectSession {
         self.run_simulation_memoized(opts, cancel, None)
     }
 
-    /// Run tri-dexel stock simulation, resuming from a cached prefix.
-    ///
-    /// CMP-23: the S5 prefix memo used to reach exactly one production
-    /// caller, the GUI compute worker, because `run_simulation` offered no
-    /// way to pass one. The CLI ran the same fixpoint ladder the memo was
-    /// built for and paid the full replay every round.
-    ///
-    /// The CACHE IS THE CALLER'S. `ProjectSession` derives `Clone` and the
-    /// `optimize_toolpath` job copies the session, so a session-owned cache
-    /// would be copied per job and the memo's soundness argument — one
-    /// in-process, single-slot cache — would not survive. `SimulationOptions`
-    /// stays lifetime-free for the same kind of reason: it has 188 use sites
-    /// and is stored by value in several of them.
-    ///
-    /// `memo: None` is byte-identical to no memo at all.
-    #[instrument(skip(self, opts, memo))]
-    pub fn run_simulation_memoized(
-        &mut self,
-        opts: &SimulationOptions,
-        cancel: &AtomicBool,
-        memo: Option<SimMemo<'_>>,
-    ) -> Result<&super::SimulationResult, SessionError> {
-        let stock_bbox = self.stock_bbox();
-
-        // Build simulation groups from setups
+    /// The simulation groups of the project as it stands: one per setup
+    /// that has a generated toolpath, a phantom prior-stock slot, or (S2) a
+    /// stock change. The core half of the "one request, two builders" rule
+    /// (`compute/CLAUDE.md`); the GUI controller builds the other.
+    pub(crate) fn simulation_groups(&self, opts: &SimulationOptions) -> Vec<SimGroupEntry> {
         let mut groups = Vec::new();
         for setup in &self.setups {
             let direction = group_stock_cut_direction(setup.face_up);
@@ -200,6 +180,8 @@ impl ProjectSession {
             }
 
             let phantom_prior_stock = phantom_scan.finish();
+            // S2: the shared resolution of the setup's stock changes.
+            let stock_changes = crate::compute::simulate::group_stock_changes(setup, &self.models);
             // F.4: a setup whose every toolpath is still ungenerated builds
             // an empty `entries` vec — but if the FIRST enabled config in
             // plan order is a pending `FromRemainingStock` op, the "stock
@@ -209,7 +191,9 @@ impl ProjectSession {
             // distrust), so the phantom is
             // still valid and the group must still be emitted (with an
             // empty `toolpaths` vec) to carry it.
-            if !entries.is_empty() || phantom_prior_stock.is_some() {
+            // S2: a setup with stock changes and no toolpath still emits a
+            // group, so its changes reach the stock of the setups after it.
+            if !entries.is_empty() || phantom_prior_stock.is_some() || !stock_changes.is_empty() {
                 // Per-setup local stock bbox and transform info derived from
                 // the shared SetupTransformInfo helper (Phase E/D dedup).
                 //
@@ -249,9 +233,40 @@ impl ProjectSession {
                     local_stock_bbox,
                     local_to_global,
                     phantom_prior_stock,
+                    stock_changes,
                 });
             }
         }
+
+        groups
+    }
+
+    /// Run tri-dexel stock simulation, resuming from a cached prefix.
+    ///
+    /// CMP-23: the S5 prefix memo used to reach exactly one production
+    /// caller, the GUI compute worker, because `run_simulation` offered no
+    /// way to pass one. The CLI ran the same fixpoint ladder the memo was
+    /// built for and paid the full replay every round.
+    ///
+    /// The CACHE IS THE CALLER'S. `ProjectSession` derives `Clone` and the
+    /// `optimize_toolpath` job copies the session, so a session-owned cache
+    /// would be copied per job and the memo's soundness argument — one
+    /// in-process, single-slot cache — would not survive. `SimulationOptions`
+    /// stays lifetime-free for the same kind of reason: it has 188 use sites
+    /// and is stored by value in several of them.
+    ///
+    /// `memo: None` is byte-identical to no memo at all.
+    #[instrument(skip(self, opts, memo))]
+    pub fn run_simulation_memoized(
+        &mut self,
+        opts: &SimulationOptions,
+        cancel: &AtomicBool,
+        memo: Option<SimMemo<'_>>,
+    ) -> Result<&super::SimulationResult, SessionError> {
+        let stock_bbox = self.stock_bbox();
+
+        // Build simulation groups from setups
+        let groups = self.simulation_groups(opts);
 
         // Compute effective resolution: auto-resolution matches the GUI's
         // heuristic (5 cells across the smallest tool radius, clamped to

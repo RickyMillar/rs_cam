@@ -128,6 +128,7 @@ fn setup() -> SetupData {
         model_ids: Vec::new(),
         fixtures: Vec::new(),
         keep_out_zones: Vec::new(),
+        stock_changes: Vec::new(),
         toolpath_indices: Vec::new(),
         pause_message: None,
     }

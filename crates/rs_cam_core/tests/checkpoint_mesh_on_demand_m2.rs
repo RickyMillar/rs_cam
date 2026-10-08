@@ -122,6 +122,7 @@ fn simulate() -> SimulationResult {
             local_to_global: None,
             // The first pending rest operation sits after every carved one.
             phantom_prior_stock: Some((PASSES, PHANTOM_ID)),
+            stock_changes: Vec::new(),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,

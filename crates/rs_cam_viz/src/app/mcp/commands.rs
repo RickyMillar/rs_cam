@@ -1816,6 +1816,10 @@ impl RsCamApp {
             | CommandId::RemoveFixture
             | CommandId::AddKeepOut
             | CommandId::RemoveKeepOut
+            | CommandId::AddStockChange
+            | CommandId::ReplaceStockChange
+            | CommandId::MoveStockChange
+            | CommandId::RemoveStockChange
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation
@@ -2676,6 +2680,10 @@ impl RsCamApp {
             | CommandId::RemoveFixture
             | CommandId::AddKeepOut
             | CommandId::RemoveKeepOut
+            | CommandId::AddStockChange
+            | CommandId::ReplaceStockChange
+            | CommandId::MoveStockChange
+            | CommandId::RemoveStockChange
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation

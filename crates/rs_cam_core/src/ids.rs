@@ -44,3 +44,8 @@ pub struct FixtureId(pub usize);
 /// Unique identifier for a keep-out zone within a setup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KeepOutId(pub usize);
+
+/// Unique identifier for a stock change within a setup (S2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct StockChangeId(pub usize);

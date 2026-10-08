@@ -2,19 +2,18 @@
 
 ## Files
 
-- `execute.rs` + `execute/` — the dispatch (`execute_operation_annotated`);
-  `catalog.rs` + `catalog/` — the registry; `operation_configs.rs`,
-  `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
-- Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`,
-  `source_stock.rs`, `stock_carry.rs` (S0). Also `toolpath_stats.rs`, `stats.rs`,
+- `execute.rs`/`execute/` — the dispatch (`execute_operation_annotated`); `catalog.rs` — the registry;
+  `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
+- Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`,
+  `stock_carry.rs` (S0), `stock_change.rs` (S2). Also `toolpath_stats.rs`, `stats.rs`,
   `alignment_pins.rs`, `annotate.rs`, `spans.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
-- One simulation request, two builders: `ProjectSession::run_simulation` and
-  the GUI controller. Four decisions are SHARED functions in `simulate.rs`:
-  `PhantomPriorStockScan`, `group_stock_cut_direction`, `entry_tool_fields`,
-  `entry_metrics_not_applicable`. Put a fifth there, not in one builder.
+- One request, two builders (`ProjectSession::run_simulation`, the GUI). Five
+  SHARED decisions in `simulate.rs`: `PhantomPriorStockScan`, `entry_tool_fields`,
+  `group_stock_cut_direction`, `entry_metrics_not_applicable`,
+  `group_stock_changes` (S2). Put a sixth there, not in one builder.
 - A new operation needs a catalogue row and a config variant. The row's
   `generate` field IS the dispatch; add no second path beside `execute.rs`.
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig`
@@ -34,6 +33,7 @@
 - `cargo test -p rs_cam_core -q --test capability_link_moves_safety`
 - `cargo test -p rs_cam_core -q --test sim_prefix_memo_s5`
 - `cargo test -p rs_cam_core -q --test stock_carries_across_setups_s0`
+- `cargo test -p rs_cam_core -q --test stock_changes_stale_from_their_setup_on_s2`
 - `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5`
 - `cargo test -p rs_cam_core -q --test generated_empty_refusal_g_entryempty`
 - `cargo test -p rs_cam_core -q --test sim_peak_memory_g_simmem` (Linux)

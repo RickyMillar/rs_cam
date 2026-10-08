@@ -222,6 +222,7 @@ fn a_datum_set_on_the_session_survives_save_and_load() {
             model_ids: vec![ModelId(3)],
             fixtures: Vec::new(),
             keep_out_zones: Vec::new(),
+            stock_changes: Vec::new(),
             toolpath_indices: Vec::new(),
             pause_message: None,
         })

@@ -2094,6 +2094,7 @@ fn simulate_candidate_isolated(
         // `SetupTransformInfo` is `Clone` and not `Copy`.
         local_to_global: setup_ctx.local_to_global.clone(),
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }];
     let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
     // Deviation (model_mesh) is not needed for engagement capture;

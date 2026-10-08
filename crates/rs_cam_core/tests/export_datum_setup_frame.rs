@@ -456,6 +456,7 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
                 model_ids: Vec::new(),
                 fixtures: Vec::new(),
                 keep_out_zones: Vec::new(),
+                stock_changes: Vec::new(),
                 toolpath_indices: Vec::new(),
                 pause_message: None,
             })

@@ -1216,6 +1216,7 @@ fn ladder_request(
             local_stock_bbox: None,
             local_to_global: None,
             phantom_prior_stock: None,
+            stock_changes: Vec::new(),
         }],
         stock_bbox: BoundingBox3 {
             min: P3::new(0.0, 0.0, -8.0),

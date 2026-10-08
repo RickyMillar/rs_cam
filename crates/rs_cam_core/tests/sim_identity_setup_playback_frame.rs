@@ -141,6 +141,7 @@ fn non_identity_group() -> SimGroupEntry {
             stock_origin_z: ORIGIN_Z,
         }),
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 
@@ -160,6 +161,7 @@ fn identity_group() -> SimGroupEntry {
         local_stock_bbox: None,
         local_to_global: None,
         phantom_prior_stock: None,
+        stock_changes: Vec::new(),
     }
 }
 

@@ -446,6 +446,12 @@ pub struct ProjectSetupSection {
     pub fixtures: Vec<ProjectFixtureSection>,
     #[serde(default)]
     pub keep_out_zones: Vec<ProjectKeepOutSection>,
+    /// S2: `[[setups.stock_changes]]`, the setup's stock changes in
+    /// application order. Additive under `format_version = 3`: a file with
+    /// no key loads an empty list, and an empty list writes no key, so a
+    /// project with no stock change saves byte-identical to before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stock_changes: Vec<crate::compute::stock_change::StockChange>,
     #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
 }
@@ -1186,6 +1192,7 @@ pub(super) fn build_session_from_project(
                 .collect(),
             fixtures,
             keep_out_zones,
+            stock_changes: setup_section.stock_changes.clone(),
             toolpath_indices: tp_indices,
             pause_message: setup_section.pause_message.clone(),
         });

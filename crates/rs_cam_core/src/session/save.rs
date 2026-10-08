@@ -306,6 +306,7 @@ impl ProjectSession {
                     model_ids: s.model_ids.iter().map(|id| id.0).collect(),
                     fixtures,
                     keep_out_zones,
+                    stock_changes: s.stock_changes.clone(),
                     toolpaths,
                 }
             })

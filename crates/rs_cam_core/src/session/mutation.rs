@@ -33,7 +33,66 @@ use super::{Command, RestoreToolpathSnapshotArgs};
 
 mod config;
 mod entities;
+mod stock_change;
 mod toolpath;
+
+impl super::ProjectSession {
+    /// S2: the one invalidation rule of a stock change in setup
+    /// `from_setup`.
+    ///
+    /// A setup applies its stock changes before its first toolpath, and
+    /// since S0 a setup starts from the final stock of the Z-axis setup
+    /// before it. So a change in setup N moves the stock of setup N and of
+    /// every later setup. The rule:
+    ///
+    /// 1. drop the result of every `StockSource::FromRemainingStock`
+    ///    operation of setup N and of every later setup, enabled or not
+    ///    (a disabled one keeps a result for a re-enable, and that result
+    ///    read the old stock);
+    /// 2. clear the simulation, with [`super::SimulationDropCause::StockChanges`];
+    /// 3. walk the dependents of the dropped operations to fixpoint, with
+    ///    the edges every other edit uses (`walk_output_dependents`). The
+    ///    enabled ones are chain seeds: their regenerated output may cut
+    ///    differently.
+    ///
+    /// An operation that does not read the remaining stock keeps its
+    /// result: the stock change does not move its generation inputs.
+    /// Setups before N keep everything; the S5 prefix memo keys every group
+    /// by its own stock changes, so their simulation prefix stays a hit.
+    ///
+    /// A lateral setup starts from a fresh stock and passes no stock on, so
+    /// for a change in a lateral setup the rule over-approximates. That is
+    /// the safe side.
+    ///
+    /// Private: the four stock-change doors and the model refresh call it.
+    /// It is not a setter and takes no command row.
+    fn drop_stock_change_dependents(&mut self, from_setup: usize) {
+        let indices: Vec<usize> = self
+            .setups
+            .iter()
+            .skip(from_setup)
+            .flat_map(|s| s.toolpath_indices.iter().copied())
+            .collect();
+        let mut seeds = std::collections::BTreeSet::new();
+        let mut chain_seeds = std::collections::BTreeSet::new();
+        for index in indices {
+            let Some(tc) = self.toolpath_configs.get(index) else {
+                continue;
+            };
+            if tc.stock_source != crate::compute::config::StockSource::FromRemainingStock {
+                continue;
+            }
+            let enabled = tc.enabled;
+            let _ = self.drop_result(index);
+            let _ = seeds.insert(index);
+            if enabled {
+                let _ = chain_seeds.insert(index);
+            }
+        }
+        self.drop_simulation(super::SimulationDropCause::StockChanges);
+        let _ = self.walk_output_dependents(seeds, chain_seeds);
+    }
+}
 
 /// Whether a fixture edit moved something a collision check reads.
 ///
