@@ -14,7 +14,7 @@
 //! 5. Preview + validator findings inline.
 //! 6. Save with summary.
 
-use rs_cam_core::export::gcode_validator::{Finding, Severity, validate};
+use rs_cam_core::export::gcode_validator::{Finding, Severity};
 use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
 
 use super::AppEvent;
@@ -178,11 +178,15 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         ui.end_row();
 
         ui.label("Cutter comp:");
-        ui.label(if post_def.supports_cutter_comp {
-            "supported"
+        if post_def.supports_cutter_comp {
+            ui.label("supported");
         } else {
-            "not supported (lines dropped)"
-        });
+            // G1: the export refuses an "In Control" profile on this post.
+            ui.label("not supported").on_hover_text(
+                "This controller has no G41/G42. The export refuses a profile \
+                 with compensation \"In Control\". Use \"In Computer\".",
+            );
+        }
         ui.end_row();
 
         ui.label("Arc linearise:");
@@ -209,7 +213,8 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     ui.add_space(4.0);
 
     let wiz = &state.gui.wizard;
-    let current = wiz.output_layout;
+    let setups_with_ops = crate::io::export::setups_with_enabled_ops(&state.session);
+    let current = wiz.effective_layout(state.gui.post.format.definition(), setups_with_ops);
     let mut selected = current;
 
     ui.label("How should the emitted g-code be split across files?");
@@ -526,7 +531,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     {
         use rs_cam_core::gcode::ToolChangeMode;
         let post = state.gui.post.format.definition();
-        let post_uses_m6 = post.tool_change.contains("M6");
+        let post_uses_m6 = post.tool_change_commands_m6();
         ui.label(
             egui::RichText::new(format!(
                 "Post default: {}",
@@ -575,6 +580,11 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
                 .italics(),
             );
         }
+    }
+
+    if state.gui.post.format == rs_cam_core::gcode::PostFormat::GrblHal {
+        ui.add_space(12.0);
+        draw_grblhal_options(ui, state, events);
     }
 
     ui.add_space(12.0);
@@ -631,6 +641,105 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
             .small()
             .italics(),
     );
+}
+
+/// G11: the grblHAL options. Each checkbox shows the value the export
+/// uses: the project's own choice, else the machine profile's fact. A
+/// click writes the project's post block. Labels stay short; the hover
+/// text says what each option does and where the default comes from.
+fn draw_grblhal_options(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    use crate::state::wizard::{ControllerOption, OutputLayout};
+    ui.heading("grblHAL");
+    ui.add_space(4.0);
+    let session = &state.session;
+    let post = session.post_config();
+    let mut resolved = rs_cam_core::gcode::WizardOverlay::default();
+    post.apply_controller_options(session.machine(), &mut resolved);
+    let profile = session.machine().controller.as_ref();
+    let source = |own: Option<bool>| {
+        if own.is_some() {
+            "Set for this project."
+        } else if profile.is_some() {
+            "From the machine profile ($$ import)."
+        } else {
+            "No machine profile facts. Import $$ and $I on the Machine panel."
+        }
+    };
+
+    let mut row = |ui: &mut egui::Ui,
+                   option: ControllerOption,
+                   label: &str,
+                   value: bool,
+                   own: Option<bool>,
+                   hover: &str| {
+        let mut checked = value;
+        let resp = ui
+            .checkbox(&mut checked, label)
+            .on_hover_text(format!("{hover}\n\n{}", source(own)));
+        if resp.changed() {
+            events.push(AppEvent::WizardSetControllerOption(option, Some(checked)));
+        }
+    };
+    row(
+        ui,
+        ControllerOption::WaitsForSpindle,
+        "Controller waits for spindle",
+        resolved.controller_waits_for_spindle,
+        post.controller_waits_for_spindle,
+        "On: the export writes no warm-up dwell (G4). Use it when $394 (spindle \
+         delay) or $340 (at-speed, with an encoder) is above 0.",
+    );
+    row(
+        ui,
+        ControllerOption::MistOutput,
+        "Mist output present",
+        resolved.mist_output == Some(true),
+        post.mist_output,
+        "On: the export writes M7. Off: grblHAL refuses M7 on a board with no \
+         mist output, so the export drops it with a warning.",
+    );
+    row(
+        ui,
+        ControllerOption::NativeDrillCycles,
+        "Native drill cycles",
+        resolved.native_drill_cycles,
+        post.native_drill_cycles,
+        "On: drill operations export as G81/G82/G83. The simulation shows the \
+         expanded moves. grblHAL's G83 retracts fully and dwells 0.25 s at each \
+         peck, so its time differs.",
+    );
+
+    // One file per setup: the layout of step 2, here too.
+    let setups = crate::io::export::setups_with_enabled_ops(session);
+    let layout = state
+        .gui
+        .wizard
+        .effective_layout(state.gui.post.format.definition(), setups);
+    let mut per_setup = layout == OutputLayout::PerSetup;
+    if ui
+        .checkbox(&mut per_setup, "One file per setup")
+        .on_hover_text(
+            "An M0 setup pause is a feed hold on grblHAL: you cannot jog to \
+             re-zero. One file per setup lets you zero each side (BitZero) \
+             before you start it.",
+        )
+        .changed()
+    {
+        events.push(AppEvent::WizardSetOutputLayout(if per_setup {
+            OutputLayout::PerSetup
+        } else {
+            OutputLayout::SingleFile
+        }));
+    }
+
+    if profile.is_some_and(rs_cam_core::machine::ControllerSettings::ignores_m6) {
+        ui.colored_label(crate::ui::tokens::CAUTION, "$341=4: M6 is ignored")
+            .on_hover_text(
+                "The machine profile says $341=4. The board ignores M6, so a \
+                 multi-tool file runs on with the old tool. Set $341=3, or use \
+                 tool change = pause.",
+            );
+    }
 }
 
 // ── Step 5 — Setup pauses ────────────────────────────────────────────
@@ -764,8 +873,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
         }
     };
 
-    let format = state.gui.post.format;
-    let findings = validate(&gcode, format);
+    let findings = crate::io::export::validate_export(&state.session, &state.gui, &gcode);
 
     let line_count = gcode.lines().count();
     let preview: String = gcode
@@ -903,7 +1011,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     };
 
     let line_count = gcode.lines().count();
-    let findings = validate(&gcode, post);
+    let findings = crate::io::export::validate_export(session, &state.gui, &gcode);
     let (errors, warnings, infos) = count_by_severity(&findings);
 
     let mut total_moves = 0usize;
@@ -939,7 +1047,13 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         ui.end_row();
 
         ui.label("Layout:");
-        ui.label(wiz.output_layout.label());
+        ui.label(
+            wiz.effective_layout(
+                post_def,
+                crate::io::export::setups_with_enabled_ops(&state.session),
+            )
+            .label(),
+        );
         ui.end_row();
 
         ui.label("Filename template:");

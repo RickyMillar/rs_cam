@@ -14,7 +14,7 @@
 
 use std::fmt::Write;
 
-use super::ir::{Program, Statement};
+use super::ir::{CannedDrillKind, Program, Statement};
 use super::post::PostDefinition;
 use super::wizard_overlay::WizardOverlay;
 
@@ -27,7 +27,17 @@ pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
     // pauses where motion state can't be trusted) → arc emission falls
     // back to the plain non-degenerate path.
     let mut pos: Option<(f64, f64)> = None;
+    let first_tool = program
+        .metadata
+        .first_tool
+        .as_ref()
+        .map(|(n, label)| (*n, label.as_str()));
     for statement in &program.statements {
+        if let Statement::Preamble { spindle_rpm } = *statement {
+            let rpm = clamp_rpm(&mut output, post, spindle_rpm);
+            output.push_str(&post.render_preamble_with_tool(rpm, first_tool));
+            continue;
+        }
         emit_statement(&mut output, statement, post, &mut pos);
     }
     output
@@ -61,6 +71,20 @@ fn clamp_rpm(output: &mut String, post: &PostDefinition, requested: u32) -> u32 
         ));
         output.push_str(&line);
         return max.get();
+    }
+    // G5: a running spindle below the controller minimum (`$31`). S0 is
+    // "off" and stays.
+    if let Some(min) = post.limits.min_rpm
+        && requested > 0
+        && requested < min.get()
+    {
+        let line = post.render_comment(&format!(
+            "WARNING: requested S{requested} raised to S{} ({} min_rpm)",
+            min.get(),
+            post.name
+        ));
+        output.push_str(&line);
+        return min.get();
     }
     requested
 }
@@ -274,6 +298,62 @@ fn emit_statement(
         Statement::SafeZRetract { z } => {
             let _ = writeln!(output, "G0 Z{z:.xyz$}");
         }
+        Statement::Dwell { seconds } => {
+            let _ = writeln!(output, "G4 P{}", format_seconds(seconds));
+        }
+        Statement::CannedDrill {
+            kind,
+            x,
+            y,
+            z,
+            r,
+            feed,
+            first,
+        } => {
+            // G7. grblHAL: G98 returns to the start Z after each hole
+            // (gcode.h:176, motion_control.c:554); R is required on the
+            // first line of a cycle and must not be below Z
+            // (gcode.c:3493-3494, 3533-3534); P is the G82 dwell in
+            // seconds (gcode.c:3552-3556); Q is the G83 peck in mm
+            // (gcode.c:3570-3574).
+            let word = match kind {
+                CannedDrillKind::Simple => "G81".to_owned(),
+                CannedDrillKind::Dwell { seconds } => format!("G82 P{}", format_seconds(seconds)),
+                CannedDrillKind::Peck { peck_mm } => format!("G83 Q{peck_mm:.xyz$}"),
+            };
+            let (code, rest) = word.split_once(' ').unwrap_or((word.as_str(), ""));
+            let rest = if rest.is_empty() {
+                String::new()
+            } else {
+                format!(" {rest}")
+            };
+            if first {
+                let feed = clamp_feed(output, post, feed);
+                let _ = writeln!(
+                    output,
+                    "G98 {code} X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} R{r:.xyz$}{rest} F{feed:.feed_dp$}"
+                );
+            } else {
+                let _ = writeln!(
+                    output,
+                    "{code} X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} R{r:.xyz$}{rest}"
+                );
+            }
+            *pos = Some((x, y));
+        }
+        Statement::CannedCancel => output.push_str("G80\n"),
+    }
+}
+
+/// A dwell or cycle time in seconds: up to three decimals, with no
+/// trailing zeros (`0.5`, `2`).
+fn format_seconds(seconds: f64) -> String {
+    let text = format!("{seconds:.3}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text.is_empty() {
+        "0".to_owned()
+    } else {
+        text.to_owned()
     }
 }
 
@@ -627,6 +707,7 @@ M3 S{spindle_rpm}
                     }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -645,6 +726,7 @@ M3 S{spindle_rpm}
                     }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -781,5 +863,121 @@ M3 S{spindle_rpm}
         assert!(gcode.contains("F9999"));
         assert!(!gcode.contains("WARNING"));
         assert!(!gcode.contains("clamped"));
+    }
+
+    /// G5: a running S below the controller minimum is raised, with a
+    /// warning; S0 stays.
+    #[test]
+    fn min_rpm_raises_a_low_s_word_g5() {
+        let overlay = WizardOverlay {
+            rpm_range: Some((8_000.0, 24_000.0)),
+            ..Default::default()
+        };
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        let low = emit_program_with_overlay(
+            &program_builder::build_single(&tp, 5_000),
+            post::grblhal(),
+            &overlay,
+        );
+        assert!(low.contains("M3 S8000"), "{low}");
+        assert!(
+            low.contains("WARNING: requested S5000 raised to S8000"),
+            "{low}"
+        );
+        let off = emit_program_with_overlay(
+            &program_builder::build_single(&tp, 0),
+            post::grblhal(),
+            &overlay,
+        );
+        assert!(off.contains("M3 S0"), "{off}");
+    }
+
+    /// G7: a drill toolpath that does not read back as plain holes keeps
+    /// its expanded moves even with native cycles on, and says so.
+    #[test]
+    fn native_drill_cycles_fall_back_on_an_unknown_shape_g7() {
+        use crate::gcode::{CoolantMode, GcodePhase, PhaseDrill};
+        use crate::ops::drill::DrillCycle;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        // A ramp, not a plunge: no drill generator writes this.
+        tp.feed_to(P3::new(3.0, 0.0, -2.0), 200.0);
+        let phase = GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 12_000,
+            label: "Odd drill",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: None,
+            coolant: CoolantMode::Off,
+            controller_compensation: None,
+            drill: Some(PhaseDrill {
+                cycle: DrillCycle::Simple,
+            }),
+        };
+        let program = program_builder::build_phased_with(
+            &[phase],
+            program_builder::BuildOptions {
+                native_drill_cycles: true,
+            },
+        );
+        let gcode = emit_program(&program, post::grblhal());
+        assert!(!gcode.contains("G81"), "{gcode}");
+        assert!(gcode.contains("native drill cycles not used"), "{gcode}");
+        assert!(gcode.contains("G1 X3.000 Y0.000 Z-2.000 F200"), "{gcode}");
+    }
+
+    /// G2: on grblHAL each program file starts with `M6 T<first tool>`
+    /// before the first spindle start, so the first probe after homing
+    /// sets the tool length reference with the tool the operator zeroes
+    /// with (tool_change.c:62, 339-346). Other posts, a pause-style
+    /// change and Suppress write no program-start change.
+    #[test]
+    fn grblhal_program_starts_with_m6_for_the_first_tool_g2() {
+        use crate::gcode::{CoolantMode, GcodePhase, PhaseTool, ToolChangeMode};
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+        let phase = GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18_000,
+            label: "Rough",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: Some(PhaseTool {
+                id: 7,
+                number: 3,
+                label: "End Mill 6mm",
+            }),
+            coolant: CoolantMode::Off,
+            controller_compensation: None,
+            drill: None,
+        };
+        let program = program_builder::build_phased(std::slice::from_ref(&phase));
+        let hal = emit_program(&program, post::grblhal());
+        assert!(
+            hal.starts_with(
+                "(Generated by rs_cam)\nG17 G21 G90 G40 G49 G80\nG54\nM5\n\
+                 (MSG,TOOL CHANGE: End Mill 6mm [T3])\nM6 T3\nM3 S18000\n"
+            ),
+            "{hal}"
+        );
+        for other in [post::grbl(), post::linuxcnc(), post::mach3()] {
+            let text = emit_program(&program, other);
+            assert!(!text.contains("M6 T3"), "{}: {text}", other.name);
+        }
+        for mode in [ToolChangeMode::Pause, ToolChangeMode::Suppress] {
+            let overlay = WizardOverlay {
+                tool_change_override: Some(mode),
+                ..Default::default()
+            };
+            let text = emit_program_with_overlay(&program, post::grblhal(), &overlay);
+            assert!(!text.contains("M6"), "{mode:?}: {text}");
+            assert!(!text.contains("\nM0\n"), "{mode:?}: no start pause: {text}");
+        }
+        // A single toolpath with no tool writes no change.
+        let bare = emit_program(&program_builder::build_single(&tp, 18_000), post::grblhal());
+        assert!(!bare.contains("M6"), "{bare}");
     }
 }

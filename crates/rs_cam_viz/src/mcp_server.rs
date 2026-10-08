@@ -851,27 +851,10 @@ impl EmbeddedCamServer {
         name = "export_gcode",
         description = "Export G-code to a file path. Refuses if any toolpath has tool-load Exceeds or Unmodeled verdicts unless the corresponding accept flag is set. Also refuses, naming the operation, when an ENABLED toolpath's result is not the answer for its current parameters: no result (still waiting on upstream stock / failed to generate / not generated / still generating), or EDITED SINCE it was generated — regenerate it, disable it, or pass accept_previous_geometry to cut the geometry from before the edit. A disabled toolpath is skipped."
     )]
-    async fn export_gcode(
-        &self,
-        Parameters(ExportParam {
-            path,
-            accept_unmodeled_tool_load,
-            accept_exceeded_tool_load,
-            tool_change_mode,
-            split_setups,
-            accept_previous_geometry,
-        }): Parameters<ExportParam>,
-    ) -> String {
+    async fn export_gcode(&self, Parameters(param): Parameters<ExportParam>) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::ExportGcode {
-                path,
-                accept_unmodeled_tool_load,
-                accept_exceeded_tool_load,
-                tool_change_mode,
-                split_setups,
-                accept_previous_geometry,
-            })
-            .await,
+            self.send_request(McpRequestKind::ExportGcode(Box::new(param)))
+                .await,
         )
     }
 

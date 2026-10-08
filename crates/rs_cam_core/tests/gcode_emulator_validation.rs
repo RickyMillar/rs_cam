@@ -100,10 +100,12 @@ fn workspace_root() -> PathBuf {
         .expect("canonicalize workspace root")
 }
 
+/// The golden the byte test (`gcode_phase0_capture`) pins (G9).
 fn fixture_output(fixture: &str, dialect: &str) -> PathBuf {
-    workspace_root()
-        .join("planning")
-        .join("gcode_current_outputs")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("gcode_golden")
         .join(format!("{fixture}_{dialect}.nc"))
 }
 
@@ -583,12 +585,26 @@ fn validate_f4_grblhal() {
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f5_grblhal() {
-    assert_gvalidate_accepts("f5_two_tool_changes", "grblhal");
+    // G2 (2026-10-08): the grblHAL post writes M6 (the board runs the
+    // change). gvalidate is the Grbl 1.1 parser, which has no M6.
+    assert_gvalidate_rejects(
+        "f5_two_tool_changes",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid on grblHAL with $341 set",
+    );
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f6_grblhal() {
-    assert_gvalidate_accepts("f6_two_setups", "grblhal");
+    // G2 (2026-10-08): every grblHAL file starts with `M6 T<first tool>`.
+    // gvalidate is the Grbl 1.1 parser, which has no M6.
+    assert_gvalidate_rejects(
+        "f6_two_setups",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid on grblHAL with $341 set",
+    );
 }
 
 // gvalidate cross-check on Mach3 captures (auxiliary, syntax-only).
@@ -809,7 +825,13 @@ fn validate_f12_grbl() {
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f12_grblhal() {
-    assert_gvalidate_accepts("f12_tool_change_at_z_zero", "grblhal");
+    // G2: the grblHAL file starts with `M6 T<first tool>`; Grbl 1.1 has no M6.
+    assert_gvalidate_rejects(
+        "f12_tool_change_at_z_zero",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid on grblHAL with $341 set",
+    );
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
@@ -851,7 +873,13 @@ fn validate_f13_grbl() {
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f13_grblhal() {
-    assert_gvalidate_accepts("f13_climb_vs_conventional", "grblhal");
+    // G2: the grblHAL file starts with `M6 T<first tool>`; Grbl 1.1 has no M6.
+    assert_gvalidate_rejects(
+        "f13_climb_vs_conventional",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid on grblHAL with $341 set",
+    );
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
@@ -885,7 +913,13 @@ fn validate_f14_grbl() {
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f14_grblhal() {
-    assert_gvalidate_accepts("f14_multi_line_pause_message", "grblhal");
+    // G2: the grblHAL file starts with `M6 T<first tool>`; Grbl 1.1 has no M6.
+    assert_gvalidate_rejects(
+        "f14_multi_line_pause_message",
+        "grblhal",
+        20,
+        "gvalidate (Grbl 1.1 parser) rejects M6 — valid on grblHAL with $341 set",
+    );
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
@@ -969,12 +1003,16 @@ const F16_REASON_LINUX: &str = "rs274ngc offline parse rejects compensated profi
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f16_grbl() {
-    assert_gvalidate_accepts("f16_comp_round_trip", "grbl");
+    // G1 (2026-10-08): the export refuses controller compensation on
+    // this post, so the pair has no golden. `gcode_phase0_capture` pins
+    // the refusal.
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]
 fn validate_f16_grblhal() {
-    assert_gvalidate_accepts("f16_comp_round_trip", "grblhal");
+    // G1 (2026-10-08): the export refuses controller compensation on
+    // this post, so the pair has no golden. `gcode_phase0_capture` pins
+    // the refusal.
 }
 #[test]
 #[ignore = "phase 4b emulator validation"]

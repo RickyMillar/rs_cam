@@ -1,6 +1,6 @@
 use crate::state::wizard::OutputLayout;
 use crate::ui::components::format::slugify;
-use rs_cam_core::export::gcode_validator::{Severity, validate};
+use rs_cam_core::export::gcode_validator::Severity;
 use std::path::Path;
 
 use super::RsCamApp;
@@ -12,7 +12,10 @@ impl RsCamApp {
     /// success.
     pub(super) fn handle_wizard_save(&mut self) {
         let state = self.controller.state();
-        let layout = state.gui.wizard.output_layout;
+        let layout = state.gui.wizard.effective_layout(
+            state.gui.post.format.definition(),
+            crate::io::export::setups_with_enabled_ops(&state.session),
+        );
         let template = state.gui.wizard.filename_template.clone();
         let allow_errors = state.gui.wizard.allow_validator_errors;
         let job = if state.session.name().is_empty() {
@@ -130,42 +133,31 @@ impl RsCamApp {
         }
     }
 
+    /// G3: the GUI layout takes the one per-setup door that MCP
+    /// `split_setups` takes, header included.
     fn collect_setup_outputs(&mut self) -> Result<Vec<(String, String)>, ()> {
-        let setups: Vec<(crate::state::job::SetupId, String)> = self
-            .controller
-            .state()
-            .session
-            .list_setups()
-            .iter()
-            .map(|s| (crate::state::job::SetupId(s.id), s.name.clone()))
-            .collect();
-        let mut out = Vec::new();
-        for (sid, name) in setups {
-            let state = self.controller.state();
-            match crate::io::export::export_setup_gcode_from_session(
-                &state.session,
-                &state.gui,
-                &state.simulation,
-                sid,
-            ) {
-                Ok(g) => out.push((name, g)),
-                Err(crate::error::VizError::Export(msg)) if msg.starts_with("No computed") => {
-                    // Skip empty setups silently.
-                }
-                Err(e) => {
-                    self.controller.push_error(&e);
-                    return Err(());
-                }
+        let state = self.controller.state();
+        let files = crate::io::export::export_per_setup_files(
+            &state.session,
+            &state.gui,
+            &state.simulation,
+            state.gui.tool_load_overrides.as_policy(),
+            state.gui.stale_export,
+        );
+        match files {
+            Ok(files) if files.is_empty() => {
+                self.controller.push_notification(
+                    "No setups have computed toolpaths to export".to_owned(),
+                    crate::controller::Severity::Warning,
+                );
+                Err(())
+            }
+            Ok(files) => Ok(files.into_iter().map(|f| (f.name, f.gcode)).collect()),
+            Err(e) => {
+                self.controller.push_error(&e);
+                Err(())
             }
         }
-        if out.is_empty() {
-            self.controller.push_notification(
-                "No setups have computed toolpaths to export".to_owned(),
-                crate::controller::Severity::Warning,
-            );
-            return Err(());
-        }
-        Ok(out)
     }
 
     fn collect_toolpath_outputs(&mut self) -> Result<Vec<(String, String)>, ()> {
@@ -229,7 +221,13 @@ impl RsCamApp {
         if allow_errors {
             return true;
         }
-        let findings = validate(gcode, post);
+        // G8: the controller options this export emits with.
+        let state = self.controller.state();
+        let findings = if state.gui.post.format == post {
+            crate::io::export::validate_export(&state.session, &state.gui, gcode)
+        } else {
+            rs_cam_core::export::gcode_validator::validate(gcode, post)
+        };
         let errors = findings
             .iter()
             .filter(|f| f.severity == Severity::Error)

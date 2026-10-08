@@ -2,10 +2,10 @@
 //!
 //! A `PostDefinition` captures a controller's dialect as **data** rather
 //! than as Rust code: decimal-place rules, preamble/postamble templates,
-//! comment style, and (future) limits and command overrides. Three
+//! comment style, and (future) limits and command overrides. Four
 //! built-in dialects ship as TOML files embedded via `include_str!`
-//! (`grbl`, `linuxcnc`, `mach3`); end users can layer custom posts
-//! alongside in a future config-dir lookup.
+//! (`grbl`, `grblhal`, `linuxcnc`, `mach3`); end users can layer custom
+//! posts alongside in a future config-dir lookup.
 //!
 //! The intended consumer is `gcode::emitter` — it walks a `Program` IR
 //! and renders bytes using `PostDefinition` formatting rules, replacing
@@ -67,6 +67,10 @@ pub struct Decimals {
 pub struct PostLimits {
     #[serde(default)]
     pub max_rpm: Option<Rpm>,
+    /// G5: the lowest S the controller runs. A non-zero S below it is
+    /// raised to it, with a warning comment.
+    #[serde(default)]
+    pub min_rpm: Option<Rpm>,
     #[serde(default)]
     pub max_feed: Option<Feedrate>,
 }
@@ -153,7 +157,28 @@ fn default_arc_linearize_threshold() -> f64 {
 /// parsers) end a `(...)` comment at the FIRST `)`, so a toolpath named
 /// `Rivers (back)` would render `(Rivers (back))` and leave a stray `)`
 /// on the line as bare g-code.
-fn sanitize_comment_text(text: &str) -> String {
+///
+/// The output is ASCII only (G-ASCII, 2026-10-08). The controller reads
+/// a byte above 0x7F as a real-time command, also inside a comment:
+///
+/// - grblHAL: `protocol_enqueue_realtime_command` (protocol.c:833)
+///   acts on 0x80 (protocol.c:883) and on the override bytes 0x90..0x9E
+///   (protocol.c:958-979) before it looks at the comment flags.
+/// - Grbl 1.1: the serial ISR acts on every byte above 0x7F
+///   (serial.c:156-183).
+///
+/// A UTF-8 em dash is `E2 80 94`, and 0x94 is "feed override -1 %"
+/// (grbl.h:132, Grbl 1.1 config.h:71). So each `—` in a toolpath name
+/// lowered the feed override by 1 %. A known character maps to an ASCII
+/// look-alike. Any other non-ASCII character maps to `_`.
+///
+/// The printable real-time characters `!` (feed hold), `~` (cycle start)
+/// and `?` (status) also map. Grbl 1.1 acts on them anywhere in the
+/// stream, comments included (serial.c:151-154, config.h:52-54). A `~`
+/// that the sender streams after an `M0` would resume the pause.
+/// DEL (0x7F) is a backspace for grblHAL (protocol.c:320-325), so it
+/// maps to a space, as the other control characters do.
+pub(crate) fn sanitize_comment_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
@@ -161,10 +186,35 @@ fn sanitize_comment_text(text: &str) -> String {
             '\r' | '\t' => out.push(' '),
             '(' => out.push('['),
             ')' => out.push(']'),
-            other => out.push(other),
+            '!' | '?' => out.push('.'),
+            '~' => out.push('-'),
+            c if c.is_ascii_control() => out.push(' '),
+            c if c.is_ascii() => out.push(c),
+            other => out.push_str(ascii_look_alike(other)),
         }
     }
     out
+}
+
+/// The ASCII text that stands in for one non-ASCII character in a
+/// comment. See [`sanitize_comment_text`].
+fn ascii_look_alike(ch: char) -> &'static str {
+    match ch {
+        '\u{2010}'..='\u{2015}' | '\u{2212}' => "-",
+        '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{2032}' => "'",
+        '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{2033}' => "\"",
+        '\u{2026}' => "...",
+        '\u{00D7}' => "x",
+        '\u{00B0}' => "deg",
+        '\u{00B1}' => "+/-",
+        '\u{2264}' => "<=",
+        '\u{2265}' => ">=",
+        '\u{2192}' => "->",
+        '\u{2190}' => "<-",
+        '\u{00B5}' | '\u{03BC}' => "u",
+        '\u{00A0}' => " ",
+        _ => "_",
+    }
 }
 
 /// Data-driven post processor definition. Loaded from TOML.
@@ -194,6 +244,16 @@ pub struct PostDefinition {
     #[serde(default = "default_tool_change")]
     pub tool_change: String,
     pub comment: CommentStyle,
+    /// The format of an operator message: `{message_comment}` in the
+    /// `program_pause` and `tool_change` templates. It contains `{text}`.
+    /// `None` uses `comment.format`.
+    ///
+    /// grblHAL sets `(MSG,{text})`. The parser sends the text of a
+    /// comment that starts with `MSG,` to the sender as a message
+    /// (gcode.c:1139-1150). Grbl 1.1 has no MSG (gcode.c:387), so the GRBL
+    /// post keeps the plain comment.
+    #[serde(default)]
+    pub message_format: Option<String>,
     #[serde(default)]
     pub limits: PostLimits,
     /// Default work-coordinate system. When set, the preamble template
@@ -225,6 +285,24 @@ pub struct PostDefinition {
     /// cutter comp; LinuxCNC and Mach3 do.
     #[serde(default = "default_supports_cutter_comp")]
     pub supports_cutter_comp: bool,
+    /// G3: a project with two or more setups exports one file per setup
+    /// by default. True for grblHAL, where an `M0` setup pause is a feed
+    /// hold that refuses a jog (gcode.c:4979-4981, system.c:239-242), so
+    /// the operator cannot re-zero inside one program. A single-file
+    /// export is still possible; it keeps the `M0`.
+    #[serde(default)]
+    pub prefer_one_file_per_setup: bool,
+    /// G7: the controller runs G81/G82/G83 drill cycles, so the export
+    /// option "native drill cycles" applies. True for grblHAL
+    /// (gcode.c:1606-1613). Off by default in the export.
+    #[serde(default)]
+    pub canned_drill_cycles: bool,
+    /// G6: M7 depends on the board, so the export option "mist output
+    /// present" may lift it off `unsupported_mcodes`. True for grblHAL
+    /// (gcode.c:1855-1856 refuses M7 only when the board has no mist
+    /// output). False for Grbl 1.1, whose post denies M7 always.
+    #[serde(default)]
+    pub mist_option: bool,
 }
 
 /// Backward-compat default for post TOMLs lacking a `tool_change`
@@ -269,12 +347,27 @@ impl PostDefinition {
     ///   use this in templates instead of `{wcs_word}\n` to avoid leaving
     ///   an empty blank line when no WCS is configured)
     pub fn render_preamble(&self, rpm: u32) -> String {
+        self.render_preamble_with_tool(rpm, None)
+    }
+
+    /// [`Self::render_preamble`], plus the `{first_tool_change}` token
+    /// (G2): this post's tool-change block for `first_tool` when the block
+    /// commands M6, else nothing. A pause-style template never writes an
+    /// M0 at the program start.
+    pub fn render_preamble_with_tool(&self, rpm: u32, first_tool: Option<(u32, &str)>) -> String {
         let wcs_word = self.wcs.map(WcsCode::as_word).unwrap_or("");
         let wcs_line = match self.wcs {
             Some(w) => format!("{}\n", w.as_word()),
             None => String::new(),
         };
+        let first_tool_change = match first_tool {
+            Some((number, label)) if self.tool_change_commands_m6() => {
+                self.render_tool_change(number, label)
+            }
+            _ => String::new(),
+        };
         self.preamble
+            .replace("{first_tool_change}", &first_tool_change)
             .replace("{spindle_rpm}", &rpm.to_string())
             .replace("{units_word}", self.units.as_word())
             .replace("{wcs_word}", wcs_word)
@@ -296,14 +389,30 @@ impl PostDefinition {
         format!("{}\n", self.comment.format.replace("{text}", &sanitized))
     }
 
+    /// Render one operator message in this post's message format (see
+    /// [`Self::message_format`]), with no trailing newline. The text is
+    /// sanitised as a comment is (ASCII only, one line).
+    fn render_message(&self, message: &str) -> String {
+        let sanitized = sanitize_comment_text(message);
+        self.message_format
+            .as_deref()
+            .unwrap_or(&self.comment.format)
+            .replace("{text}", &sanitized)
+    }
+
+    /// Render one operator message as a whole line, in this post's
+    /// message format: `(MSG,<text>)` on grblHAL, a comment elsewhere.
+    pub fn render_message_line(&self, message: &str) -> String {
+        format!("{}\n", self.render_message(message))
+    }
+
     /// Render a program-pause block. Substitutes `{message_comment}`
-    /// with the message wrapped in this post's comment style (no trailing
+    /// with the message in this post's message format (no trailing
     /// newline — the template provides it). Multi-line messages are
     /// collapsed (see `render_comment`).
     pub fn render_program_pause(&self, message: &str) -> String {
-        let sanitized = sanitize_comment_text(message);
-        let formatted = self.comment.format.replace("{text}", &sanitized);
-        self.program_pause.replace("{message_comment}", &formatted)
+        self.program_pause
+            .replace("{message_comment}", &self.render_message(message))
     }
 
     /// Render a tool-change block from the post's `tool_change`
@@ -315,11 +424,17 @@ impl PostDefinition {
     /// comment.
     pub fn render_tool_change(&self, tool_number: u32, label: &str) -> String {
         let message = format!("TOOL CHANGE: {label} [T{tool_number}]");
-        let sanitized = sanitize_comment_text(&message);
-        let formatted = self.comment.format.replace("{text}", &sanitized);
         self.tool_change
             .replace("{tool_number}", &tool_number.to_string())
-            .replace("{message_comment}", &formatted)
+            .replace("{message_comment}", &self.render_message(&message))
+    }
+
+    /// True when the `tool_change` template commands `M6`: the controller
+    /// runs the change. False for a pause-style template (`M0`).
+    pub fn tool_change_commands_m6(&self) -> bool {
+        self.tool_change
+            .lines()
+            .any(|l| l.split_whitespace().any(|w| w.eq_ignore_ascii_case("M6")))
     }
 }
 
@@ -522,7 +637,9 @@ mod tests {
     #[test]
     fn shipped_post_unsupported_mcodes() {
         assert_eq!(grbl().unsupported_mcodes, vec![6, 7]);
-        assert!(grblhal().unsupported_mcodes.is_empty());
+        // G6: grblHAL refuses M7 without a mist output (gcode.c:1855-1856).
+        // The export option "mist output present" lifts it.
+        assert_eq!(grblhal().unsupported_mcodes, vec![7]);
         assert!(linuxcnc().unsupported_mcodes.is_empty());
         assert!(mach3().unsupported_mcodes.is_empty());
     }
@@ -537,16 +654,18 @@ mod tests {
 
     #[test]
     fn shipped_post_tool_change_templates() {
-        // GRBL family: manual change — spindle off, operator message,
-        // M0 pause. Resume spin-up comes from the SpindleSet that the
+        // Grbl 1.1: manual change. Spindle off, operator message, M0
+        // pause. Resume spin-up comes from the SpindleSet that the
         // program builder emits right after the ToolChange statement.
-        for p in [grbl(), grblhal()] {
-            assert_eq!(
-                p.tool_change, "M5\n{message_comment}\nM0\n",
-                "{}: expected pause-style tool change",
-                p.name
-            );
-        }
+        assert_eq!(grbl().tool_change, "M5\n{message_comment}\nM0\n");
+        assert!(!grbl().tool_change_commands_m6());
+        // grblHAL (G2, operator ruling 2026-10-08): the board runs the
+        // change. M5, the operator message, then M6 T<n>.
+        assert_eq!(
+            grblhal().tool_change,
+            "M5\n{message_comment}\nM6 T{tool_number}\n"
+        );
+        assert!(grblhal().tool_change_commands_m6());
         // LinuxCNC / Mach3: native M6.
         for p in [linuxcnc(), mach3()] {
             assert_eq!(
@@ -554,6 +673,7 @@ mod tests {
                 "{}: expected M6-style tool change",
                 p.name
             );
+            assert!(p.tool_change_commands_m6());
         }
     }
 
@@ -564,6 +684,58 @@ mod tests {
 
         let block = grbl().render_tool_change(2, "Tapered Ball 2mm");
         assert_eq!(block, "M5\n(TOOL CHANGE: Tapered Ball 2mm [T2])\nM0\n");
+
+        // G4: grblHAL writes the message as a MSG comment.
+        let block = grblhal().render_tool_change(2, "Tapered Ball 2mm");
+        assert_eq!(
+            block,
+            "M5\n(MSG,TOOL CHANGE: Tapered Ball 2mm [T2])\nM6 T2\n"
+        );
+    }
+
+    #[test]
+    fn grblhal_program_pause_uses_msg_and_says_why() {
+        // G3 + G4: the setup pause names the setup in a MSG and says
+        // first why a single file is a poor fit on grblHAL.
+        let pause = grblhal().render_program_pause("Setup change: Bottom");
+        assert_eq!(
+            pause,
+            "M5\n(MSG,M0 hold: no jog. To re-zero, export one file per setup.)\n\
+             (MSG,Setup change: Bottom)\nM0\n"
+        );
+        // The GRBL post keeps a plain comment (Grbl 1.1 has no MSG).
+        assert!(
+            grbl()
+                .render_program_pause("Setup change: Bottom")
+                .contains("\n(Setup change: Bottom)\n")
+        );
+    }
+
+    /// G-ASCII (SAFETY): every byte of a rendered comment is ASCII, and
+    /// the printable real-time characters `!`, `~`, `?` are gone. An em
+    /// dash was `E2 80 94`; 0x94 lowers the feed override by 1 %.
+    #[test]
+    fn comment_renderer_is_ascii_only() {
+        let text = "Op 0 \u{2014} pocket \u{00D7}2 at 45\u{00B0}! ok? ~x \u{4E2D}\u{007F}";
+        for post in [grbl(), grblhal(), linuxcnc(), mach3()] {
+            for rendered in [
+                post.render_comment(text),
+                post.render_program_pause(text),
+                post.render_tool_change(1, text),
+            ] {
+                assert!(rendered.is_ascii(), "{}: {rendered:?}", post.name);
+                let body: String = rendered.lines().filter(|l| l.starts_with('(')).collect();
+                assert!(
+                    !body.contains(['!', '~', '?']),
+                    "{}: real-time character left in {body:?}",
+                    post.name
+                );
+            }
+        }
+        assert_eq!(
+            grbl().render_comment(text),
+            "(Op 0 - pocket x2 at 45deg. ok. -x _ )\n"
+        );
     }
 
     #[test]

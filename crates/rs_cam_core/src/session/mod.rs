@@ -55,7 +55,8 @@ pub use compute::{
     execute_job, execute_optimize_toolpath, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
-    CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs, toolpath_cycle_time,
+    CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,
+    controller_spindle_wait_s, spindle_starts, toolpath_cycle_time,
 };
 // SES-03: the diagnostic result types live beside no logic of their own,
 // so they sit in their own module and reach every caller through this

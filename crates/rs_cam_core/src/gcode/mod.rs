@@ -11,7 +11,7 @@ pub mod post;
 pub mod program_builder;
 pub mod wizard_overlay;
 
-pub use ir::{Program, ProgramMetadata, Statement};
+pub use ir::{CannedDrillKind, Program, ProgramMetadata, Statement};
 pub use post::{
     ArcLinearize, CommentStyle, Decimals, Feedrate, LoadError as PostLoadError, PostDefinition,
     PostLimits, Rpm, SafeZ, Units, WcsCode,
@@ -149,6 +149,47 @@ pub struct GcodePhase<'a> {
     /// Controller cutter compensation (G41/G42). When `Some`, a G41/G42
     /// command is emitted before the first cutting move and G40 after the last.
     pub controller_compensation: Option<ControllerCompensation>,
+    /// G7: the drill cycle of a drill phase. `None` for every other
+    /// operation. The builder writes the G82 dwell from it, and the native
+    /// G81/G82/G83 cycles when the export asks for them.
+    pub drill: Option<PhaseDrill>,
+}
+
+/// G7: what the emitter needs to know about a drill phase.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhaseDrill {
+    /// The cycle the operation drills, with its parameters.
+    pub cycle: crate::ops::drill::DrillCycle,
+}
+
+impl PhaseDrill {
+    /// The dwell at the hole bottom, in seconds, when the cycle has one
+    /// (G82). `None` for the other cycles and for a dwell of 0.
+    pub fn dwell_s(&self) -> Option<f64> {
+        match self.cycle {
+            crate::ops::drill::DrillCycle::Dwell(s) if s.is_finite() && s > 0.0 => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// G7: the drill cycle a toolpath config asks for, or `None` for an
+/// operation that is not a drill. The one mapping every export door uses.
+pub fn phase_drill_for(tc: &crate::session::ToolpathConfig) -> Option<PhaseDrill> {
+    use crate::compute::catalog::OperationConfig;
+    match tc.operation {
+        OperationConfig::Drill(ref cfg) => Some(PhaseDrill {
+            cycle: cfg.cycle.to_core(cfg),
+        }),
+        // The pin config clamps the peck to the hole depth it derives at
+        // generation time. The emitter needs the cycle kind and the dwell;
+        // an unclamped peck only matters to a native G83 Q word, where a Q
+        // above the hole depth is one peck.
+        OperationConfig::AlignmentPinDrill(ref cfg) => Some(PhaseDrill {
+            cycle: cfg.drill_cycle(f64::INFINITY),
+        }),
+        _ => None,
+    }
 }
 
 /// Emit G-code from multiple phases, inserting tool changes, spindle speed
@@ -169,9 +210,22 @@ pub(crate) fn emit_gcode_phased_with_overlay(
     post: &PostDefinition,
     overlay: &WizardOverlay,
 ) -> String {
-    let mut program = program_builder::build_phased(phases);
+    let mut program = program_builder::build_phased_with(phases, build_options(post, overlay));
     prepend_t_collision_warnings(&mut program, phases.iter(), post, overlay);
     emitter::emit_program_with_overlay(&program, post, overlay)
+}
+
+/// The builder choices one export takes from its post and overlay.
+///
+/// G7: native drill cycles need the option, a post that runs them, and no
+/// dry run. A native cycle cuts by itself, so the dry-run Z clamp could
+/// not lift it.
+fn build_options(post: &PostDefinition, overlay: &WizardOverlay) -> program_builder::BuildOptions {
+    program_builder::BuildOptions {
+        native_drill_cycles: overlay.native_drill_cycles
+            && post.canned_drill_cycles
+            && overlay.dry_run_safe_z.is_none(),
+    }
 }
 
 /// A7 — distinct tools sharing a display T-number on an M6 post: the
@@ -186,7 +240,9 @@ fn prepend_t_collision_warnings<'a>(
     overlay: &WizardOverlay,
 ) {
     let effective_post = overlay.applied_post(post);
-    if !effective_post.tool_change.contains("M6") {
+    // grblHAL skips an M6 whose T is the loaded tool (gcode.c:2613-2615),
+    // as LinuxCNC and Mach3 do.
+    if !effective_post.tool_change_commands_m6() {
         return;
     }
     // number → distinct tool config ids seen under that number.
@@ -201,6 +257,21 @@ fn prepend_t_collision_warnings<'a>(
         }
     }
     let mut warnings: Vec<Statement> = Vec::new();
+    // G10: `$341=4` makes grblHAL ignore M6 (gcode.c:1838) and set the new
+    // tool at once (gcode.c:4144-4147). The program then cuts on with the
+    // old tool, and nothing stops it.
+    if overlay.controller_ignores_m6
+        && program
+            .statements
+            .iter()
+            .any(|s| matches!(s, Statement::ToolChange { .. }))
+    {
+        warnings.push(Statement::Comment(
+            "WARNING: the controller has $341=4 (ignore M6). The tool changes in this \
+             file do not happen. Set $341=3, or export with tool change = pause"
+                .to_owned(),
+        ));
+    }
     for (number, ids) in &by_number {
         if ids.len() > 1 {
             warnings.push(Statement::Comment(format!(
@@ -334,7 +405,7 @@ pub fn export_gcode_checked(
         })
         .collect();
 
-    let phases: Vec<GcodePhase<'_>> = emitted
+    let mut by_index: Vec<(usize, GcodePhase<'_>)> = emitted
         .iter()
         .filter_map(|(idx, emitted_toolpath)| {
             let tc = project.toolpath_configs().get(*idx)?;
@@ -355,7 +426,7 @@ pub fn export_gcode_checked(
                     number: t.tool_number,
                     label: t.name.as_str(),
                 });
-            Some(GcodePhase {
+            let phase = GcodePhase {
                 toolpath: emitted_toolpath.as_ref(),
                 spindle_rpm: effective_spindle_rpm(
                     &tc.operation,
@@ -371,14 +442,116 @@ pub fn export_gcode_checked(
                 pre_gcode: tc.pre_gcode.as_deref(),
                 post_gcode: tc.post_gcode.as_deref(),
                 controller_compensation: controller_compensation_for(tc),
-            })
+                drill: phase_drill_for(tc),
+            };
+            Some((*idx, phase))
         })
         .collect();
+
+    // G3 (SAFETY, 2026-10-08): a project with more than one setup gets an
+    // M0 pause between the setups. This door used to emit every phase in
+    // one run, so setup 2 cut on the unflipped part with no stop.
+    let arranged = arrange_phases_by_setup(project, |idx| {
+        let pos = by_index.iter().position(|(i, _)| *i == idx)?;
+        Some(by_index.swap_remove(pos).1)
+    });
 
     // The phase-level checked emit enforces `policy` against `report`
     // (C1, 2026-06-11) — the single enforcement chokepoint shared with
     // the viz / MCP / CLI callers.
-    export_gcode_phases_checked(&phases, post, &report, policy)
+    let mut overlay = WizardOverlay::default();
+    project
+        .post_config()
+        .apply_controller_options(project.machine(), &mut overlay);
+    match arranged {
+        ExportPhases::OneSetup(phases) => {
+            export_gcode_phases_with_overlay_checked(&phases, post, &report, policy, &overlay)
+        }
+        ExportPhases::Setups(setups) => export_gcode_multi_setup_with_overlay_checked(
+            &setups,
+            post,
+            project.post_config().safe_z,
+            &report,
+            policy,
+            &overlay,
+        ),
+    }
+}
+
+/// The phases of one export, arranged for the program builder.
+pub enum ExportPhases<'a> {
+    /// At most one setup holds a phase: one phased program, in the order
+    /// the caller gave.
+    OneSetup(Vec<GcodePhase<'a>>),
+    /// Two or more setups hold a phase: one group per setup, in the
+    /// setup's machining order, with an M0 pause between the groups.
+    Setups(Vec<GcodeSetupPhase<'a>>),
+}
+
+impl<'a> ExportPhases<'a> {
+    /// Every phase, in emission order.
+    pub fn phases(&self) -> Vec<&GcodePhase<'a>> {
+        match self {
+            Self::OneSetup(phases) => phases.iter().collect(),
+            Self::Setups(setups) => setups.iter().flat_map(|s| s.phases.iter()).collect(),
+        }
+    }
+}
+
+/// Arrange the phases of a single-file export by setup (G3).
+///
+/// `take_phase(idx)` hands over the phase for toolpath index `idx`, or
+/// `None` when the export emits nothing for it (disabled, not in scope).
+/// Each index is asked for at most once.
+///
+/// When two or more setups hold a phase, the result is one
+/// [`GcodeSetupPhase`] per setup, in `setup.toolpath_indices` order (the
+/// machining order). A toolpath in no setup goes into a last group named
+/// "Unassigned", after its own pause. Otherwise the result is one list in
+/// toolpath index order, which is the order the single-file doors always
+/// used, so a one-setup program keeps its bytes.
+pub fn arrange_phases_by_setup<'a>(
+    session: &'a ProjectSession,
+    mut take_phase: impl FnMut(usize) -> Option<GcodePhase<'a>>,
+) -> ExportPhases<'a> {
+    let count = session.toolpath_configs().len();
+    let mut taken: Vec<Option<GcodePhase<'a>>> = (0..count).map(&mut take_phase).collect();
+    let setups_with_phases = session
+        .list_setups()
+        .iter()
+        .filter(|s| {
+            s.toolpath_indices
+                .iter()
+                .any(|i| taken.get(*i).is_some_and(Option::is_some))
+        })
+        .count();
+    if setups_with_phases <= 1 {
+        return ExportPhases::OneSetup(taken.into_iter().flatten().collect());
+    }
+    let mut groups: Vec<GcodeSetupPhase<'a>> = Vec::new();
+    for setup in session.list_setups() {
+        let phases: Vec<GcodePhase<'a>> = setup
+            .toolpath_indices
+            .iter()
+            .filter_map(|i| taken.get_mut(*i).and_then(Option::take))
+            .collect();
+        if !phases.is_empty() {
+            groups.push(GcodeSetupPhase {
+                setup_label: &setup.name,
+                phases,
+                pause_message: setup.pause_message.as_deref(),
+            });
+        }
+    }
+    let orphans: Vec<GcodePhase<'a>> = taken.into_iter().flatten().collect();
+    if !orphans.is_empty() {
+        groups.push(GcodeSetupPhase {
+            setup_label: "Unassigned",
+            phases: orphans,
+            pause_message: None,
+        });
+    }
+    ExportPhases::Setups(groups)
 }
 
 /// Check whether the cached sim trace's provenance still matches the
@@ -1015,6 +1188,7 @@ pub fn export_gcode_phases_with_overlay_checked(
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     refuse_inch_units(post, overlay)?;
+    refuse_controller_compensation(phases.iter(), post, overlay)?;
     let _note = enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_phased_with_overlay(phases, post, overlay))
 }
@@ -1032,6 +1206,44 @@ fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(
         ));
     }
     Ok(())
+}
+
+/// G1 (SAFETY, 2026-10-08): refuse a phase that asks the controller for
+/// cutter compensation (G41/G42) when the effective post has none.
+///
+/// A Profile with compensation "In Control" follows the part boundary
+/// exactly and leaves the offset to the controller. The emitter drops the
+/// G41/G42 line on a post with `supports_cutter_comp = false` (the GRBL
+/// family). The cut then runs ON the boundary, off by the tool radius.
+/// Before G1 the only sign was a WARNING comment in the file.
+fn refuse_controller_compensation<'a>(
+    phases: impl Iterator<Item = &'a GcodePhase<'a>>,
+    post: &PostDefinition,
+    overlay: &WizardOverlay,
+) -> Result<(), ExportError> {
+    let effective = overlay.applied_post(post);
+    if effective.supports_cutter_comp {
+        return Ok(());
+    }
+    let names: Vec<&str> = phases
+        .filter(|p| p.controller_compensation.is_some())
+        .map(|p| p.label)
+        .collect();
+    if names.is_empty() {
+        return Ok(());
+    }
+    Err(ExportError::new(format!(
+        "{} has no cutter compensation (G41/G42), but {} set compensation to \
+         \"In Control\": {}. The cut would be off by the tool radius. \
+         Set the compensation to \"In Computer\" and regenerate",
+        effective.name,
+        if names.len() == 1 {
+            "this operation has"
+        } else {
+            "these operations have"
+        },
+        names.join(", ")
+    )))
 }
 
 /// The controller-side cutter compensation a toolpath asks for.
@@ -1106,6 +1318,7 @@ pub fn export_gcode_multi_setup_with_overlay_checked(
     overlay: &WizardOverlay,
 ) -> Result<String, ExportError> {
     refuse_inch_units(post, overlay)?;
+    refuse_controller_compensation(setups.iter().flat_map(|s| s.phases.iter()), post, overlay)?;
     let _note = enforce_load_policy(report, &policy)?;
     Ok(emit_gcode_multi_setup_with_overlay(
         setups, post, safe_z, overlay,
@@ -1136,7 +1349,11 @@ pub(crate) fn emit_gcode_multi_setup_with_overlay(
     overlay: &WizardOverlay,
 ) -> String {
     let effective_safe_z = overlay.safe_z_override.unwrap_or(safe_z);
-    let mut program = program_builder::build_multi_setup(setups, effective_safe_z);
+    let mut program = program_builder::build_multi_setup_with(
+        setups,
+        effective_safe_z,
+        build_options(post, overlay),
+    );
     prepend_t_collision_warnings(
         &mut program,
         setups.iter().flat_map(|s| s.phases.iter()),
@@ -1299,6 +1516,50 @@ pub struct PostConfig {
     /// proportionally. See [`crate::feeds::SpindleStrategy`].
     #[serde(default)]
     pub spindle_strategy: crate::feeds::SpindleStrategy,
+    /// G5: the controller waits for the spindle after M3, so the export
+    /// writes no warm-up dwell. `None` reads the machine profile
+    /// (`$394` or `$340` above zero).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_waits_for_spindle: Option<bool>,
+    /// G6: the board has a mist output, so `M7` is written. `None` reads
+    /// the machine profile (`$I` `[OPT:` lists `M`); with no profile fact
+    /// the post's own list decides (grblHAL drops M7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mist_output: Option<bool>,
+    /// G7: write drill operations as native G81/G82/G83 cycles on a post
+    /// that runs them (grblHAL). `None` is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_drill_cycles: Option<bool>,
+}
+
+impl PostConfig {
+    /// Put the controller options of this config, with the machine
+    /// profile's controller facts as the defaults, on `overlay` (G5, G6,
+    /// G7, G10). Every export door calls it, so the GUI, MCP and the CLI
+    /// emit the same bytes for one project.
+    ///
+    /// - The spindle wait: this config's value, else the profile's.
+    /// - Mist: this config's value, else the profile's `$I` fact, else
+    ///   unset (the post's own list decides).
+    /// - Native drill cycles: this config's value, else off.
+    /// - The S range: the profile's `$31`/`$30`, when both are known.
+    /// - `$341=4`: the profile says the board ignores M6.
+    pub fn apply_controller_options(
+        &self,
+        machine: &crate::machine::MachineProfile,
+        overlay: &mut WizardOverlay,
+    ) {
+        let controller = machine.controller.as_ref();
+        overlay.controller_waits_for_spindle = self
+            .controller_waits_for_spindle
+            .unwrap_or_else(|| controller.is_some_and(|c| c.waits_for_spindle()));
+        overlay.mist_output = self
+            .mist_output
+            .or_else(|| controller.and_then(|c| c.mist_output));
+        overlay.native_drill_cycles = self.native_drill_cycles.unwrap_or(false);
+        overlay.rpm_range = controller.and_then(|c| c.rpm_range());
+        overlay.controller_ignores_m6 = controller.is_some_and(|c| c.ignores_m6());
+    }
 }
 
 fn default_spindle_speed() -> u32 {
@@ -1322,6 +1583,9 @@ impl Default for PostConfig {
             high_feedrate_mode: false,
             high_feedrate: default_high_feedrate(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
+            controller_waits_for_spindle: None,
+            mist_output: None,
+            native_drill_cycles: None,
         }
     }
 }
@@ -1489,6 +1753,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1503,6 +1768,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
 
@@ -1544,6 +1810,7 @@ mod tests {
                     }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -1562,6 +1829,7 @@ mod tests {
                     }),
                     coolant: CoolantMode::Flood,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -1718,6 +1986,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1728,6 +1997,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -1762,6 +2032,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1772,6 +2043,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -1818,6 +2090,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1828,6 +2101,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -1872,6 +2146,7 @@ mod tests {
                     tool: None,
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -1886,6 +2161,7 @@ mod tests {
                     tool: None,
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 }],
                 pause_message: None,
             },
@@ -1917,6 +2193,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -1956,6 +2233,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             }],
             pause_message: None,
         }];
@@ -1986,6 +2264,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2021,6 +2300,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2035,6 +2315,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         // LinuxCNC's post implements M6 natively, so its tool_change
@@ -2089,6 +2370,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2103,6 +2385,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -2146,6 +2429,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2160,6 +2444,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::linuxcnc());
@@ -2194,6 +2479,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2208,6 +2494,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
 
@@ -2241,6 +2528,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Mist,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2270,6 +2558,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Flood,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2291,6 +2580,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Both,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2313,6 +2603,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2343,6 +2634,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Flood,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2357,6 +2649,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
+                drill: None,
             },
         ];
         // LinuxCNC: M6-style tool change AND native M7 mist (Grbl's post
@@ -2640,6 +2933,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }];
         let report = exceeds_only_report();
 
@@ -2680,6 +2974,7 @@ mod tests {
                 tool: None,
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             }],
             pause_message: None,
         }];
@@ -2724,6 +3019,7 @@ mod tests {
             tool: None,
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }];
         let overlay = WizardOverlay {
             units_override: Some(Units::Inch),
@@ -2786,6 +3082,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2800,6 +3097,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             },
         ];
 
@@ -2830,5 +3128,58 @@ mod tests {
         }
         let lcnc2 = emit_gcode_phased(&distinct, post::linuxcnc());
         assert!(!lcnc2.contains("WARNING: distinct tools share"));
+    }
+
+    /// G1 (SAFETY): a phase with controller compensation is refused on a
+    /// post without cutter compensation, on both checked doors. A post
+    /// with compensation still emits G41/G42.
+    #[test]
+    fn controller_compensation_is_refused_without_post_support_g1() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 5.0));
+        tp.feed_to(P3::new(0.0, 0.0, -2.0), 300.0);
+        tp.feed_to(P3::new(20.0, 0.0, -2.0), 600.0);
+        let phase = || GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 18_000,
+            label: "Outer profile",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: None,
+            coolant: CoolantMode::Off,
+            controller_compensation: Some(ControllerCompensation::Right),
+            drill: None,
+        };
+        let policy = ToolLoadExportPolicy::default();
+        for post_def in [post::grbl(), post::grblhal()] {
+            let err = export_gcode_phases_checked(&[phase()], post_def, &empty_report(), policy)
+                .expect_err("a post without comp must refuse In Control");
+            let text = err.to_string();
+            assert!(text.contains("Outer profile"), "names the op: {text}");
+            assert!(text.contains("tool radius"), "says why: {text}");
+
+            let setups = [GcodeSetupPhase {
+                setup_label: "Top",
+                phases: vec![phase()],
+                pause_message: None,
+            }];
+            assert!(
+                export_gcode_multi_setup_checked(&setups, post_def, 10.0, &empty_report(), policy)
+                    .is_err(),
+                "{}: the multi-setup door must refuse too",
+                post_def.name
+            );
+        }
+        for post_def in [post::linuxcnc(), post::mach3()] {
+            let gcode = export_gcode_phases_checked(&[phase()], post_def, &empty_report(), policy)
+                .expect("a post with comp emits");
+            assert!(gcode.contains("G42 D1"), "{}: {gcode}", post_def.name);
+        }
+        // A phase without controller compensation is never refused.
+        let mut plain = phase();
+        plain.controller_compensation = None;
+        assert!(
+            export_gcode_phases_checked(&[plain], post::grbl(), &empty_report(), policy).is_ok()
+        );
     }
 }

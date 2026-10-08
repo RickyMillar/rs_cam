@@ -15,7 +15,7 @@
 use super::ir::{Program, Statement};
 use super::modal::ModalState;
 use super::{ControllerCompensation, CoolantMode, GcodePhase, GcodeSetupPhase, PhaseTool};
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// Push a rapid move, splitting diagonals so the machine never
 /// traverses unknown space on a combined `G0 X Y Z`:
@@ -132,8 +132,22 @@ pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
     program
 }
 
+/// Choices the builder takes from the export, not from the phases.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BuildOptions {
+    /// G7: write a drill phase as native G81/G82/G83 cycles. The caller
+    /// sets it only for a post with `canned_drill_cycles`, and never in a
+    /// dry run.
+    pub native_drill_cycles: bool,
+}
+
 /// Build a `Program` for a series of phases.
 pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
+    build_phased_with(phases, BuildOptions::default())
+}
+
+/// [`build_phased`] with export choices.
+pub fn build_phased_with(phases: &[GcodePhase<'_>], options: BuildOptions) -> Program {
     let mut program = Program::new();
     if phases.is_empty() {
         return program;
@@ -192,7 +206,7 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
         }
 
         push_pre_gcode(&mut program, phase.pre_gcode, &mut state);
-        push_phase_moves(&mut program, phase, &mut state);
+        push_phase_moves(&mut program, phase, &mut state, options);
         push_post_gcode(&mut program, phase.post_gcode, &mut state);
     }
 
@@ -206,6 +220,15 @@ pub fn build_phased(phases: &[GcodePhase<'_>]) -> Program {
 
 /// Build a `Program` for multiple setups separated by M0 pauses.
 pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program {
+    build_multi_setup_with(setups, safe_z, BuildOptions::default())
+}
+
+/// [`build_multi_setup`] with export choices.
+pub fn build_multi_setup_with(
+    setups: &[GcodeSetupPhase<'_>],
+    safe_z: f64,
+    options: BuildOptions,
+) -> Program {
     let mut program = Program::new();
     if setups.is_empty() {
         return program;
@@ -307,7 +330,7 @@ pub fn build_multi_setup(setups: &[GcodeSetupPhase<'_>], safe_z: f64) -> Program
             }
 
             push_pre_gcode(&mut program, phase.pre_gcode, &mut state);
-            push_phase_moves(&mut program, phase, &mut state);
+            push_phase_moves(&mut program, phase, &mut state, options);
             push_post_gcode(&mut program, phase.post_gcode, &mut state);
         }
     }
@@ -331,6 +354,12 @@ fn push_tool_change(
     if state.current_coolant.is_active() {
         program.push(Statement::Raw("M9\n".to_owned()));
     }
+    // G2 (2026-10-08): lift to the highest Z the program has used before
+    // the change block. The change used to start wherever the previous
+    // phase ended, which can be at or below the stock top (fixture f12).
+    // grblHAL moves Z to home itself in M6 (tool_change.c:171-182), but a
+    // pause-style change leaves the tool where it is.
+    push_retract_to_program_max_z(program);
     // Post-aware change block (M5 + M6 T{n} for controllers with M6;
     // M5 + operator message + M0 pause for vanilla GRBL). Rendered by
     // the emitter from the post's `tool_change` template.
@@ -370,6 +399,7 @@ fn push_coolant_change(program: &mut Program, state: &mut ModalState, new_coolan
 /// the operator knows which tool the program assumes is already loaded
 /// (the first phase never emits a ToolChange block).
 fn push_initial_tool_comment(program: &mut Program, tool: Option<PhaseTool<'_>>) {
+    program.metadata.first_tool = tool.map(|t| (t.number, t.label.to_owned()));
     if let Some(tool) = tool {
         program.push(Statement::Comment(format!(
             "LOAD: {} [T{}]",
@@ -384,6 +414,13 @@ fn push_initial_tool_comment(program: &mut Program, tool: Option<PhaseTool<'_>>)
 /// which rapided DOWN into positive-Z parts). Skipped when the program
 /// has no motion, or when the last motion already sits at that height.
 fn push_final_retract(program: &mut Program) {
+    push_retract_to_program_max_z(program);
+}
+
+/// Rapid up to the highest Z this program has commanded so far, unless the
+/// last motion is already there or the program has no motion yet. The
+/// final retract (C2) and the tool-change retract (G2) share it.
+fn push_retract_to_program_max_z(program: &mut Program) {
     let z_of = |s: &Statement| match *s {
         Statement::Rapid { z, .. }
         | Statement::Linear { z, .. }
@@ -499,12 +536,29 @@ fn push_post_gcode(program: &mut Program, post_gc: Option<&str>, state: &mut Mod
     }
 }
 
-fn push_phase_moves(program: &mut Program, phase: &GcodePhase<'_>, state: &mut ModalState) {
+fn push_phase_moves(
+    program: &mut Program,
+    phase: &GcodePhase<'_>,
+    state: &mut ModalState,
+    options: BuildOptions,
+) {
+    if options.native_drill_cycles
+        && let Some(drill) = phase.drill
+        && push_native_drill_cycles(program, phase, drill, state)
+    {
+        return;
+    }
+
     let comp = phase.controller_compensation;
     let mut comp_started = false;
     let tool_num_for_comp = phase.tool.map(|t| t.number).unwrap_or(1);
+    // G7: the G82 dwell. The toolpath IR has no dwell, so the expanded
+    // cycle lost it on every post. A hole bottom is a drilling feed whose
+    // next move is a rapid (the retract).
+    let dwell = phase.drill.and_then(|d| d.dwell_s());
 
-    for m in &phase.toolpath.moves {
+    let moves = &phase.toolpath.moves;
+    for (index, m) in moves.iter().enumerate() {
         match m.move_type {
             MoveType::Rapid => {
                 push_rapid(
@@ -532,6 +586,14 @@ fn push_phase_moves(program: &mut Program, phase: &GcodePhase<'_>, state: &mut M
                         y: m.target.y,
                         z: m.target.z,
                     });
+                }
+                if let Some(seconds) = dwell
+                    && m.intent == MoveIntent::Drilling
+                    && moves
+                        .get(index + 1)
+                        .is_none_or(|next| matches!(next.move_type, MoveType::Rapid))
+                {
+                    program.push(Statement::Dwell { seconds });
                 }
             }
             MoveType::ArcCW { i, j, feed_rate } => {
@@ -567,6 +629,159 @@ fn push_phase_moves(program: &mut Program, phase: &GcodePhase<'_>, state: &mut M
     if comp_started {
         program.push(Statement::Raw("G40\n".to_owned()));
     }
+}
+
+/// One hole of a drill toolpath, read back from the moves the drill
+/// generator writes (`ops::drill::drill_toolpath`).
+struct DrillHole {
+    x: f64,
+    y: f64,
+    /// The rapid level above the hole: the safe Z the cycle starts at.
+    start_z: f64,
+    r: f64,
+    bottom: f64,
+    feed: f64,
+}
+
+/// Read the holes of a drill toolpath. `None` when the moves do not have
+/// the exact shape `drill_toolpath` writes, so the caller falls back to
+/// the expanded moves: a dressup or a new generator never reaches the
+/// controller as a wrong canned cycle.
+///
+/// Each hole is: a rapid to (x, y, start), a rapid down to (x, y, R),
+/// then only drilling feeds and rapids at the same XY, at or below R,
+/// ending with a rapid back to R. Every hole has the same start Z (the
+/// G98 return level) and one feed.
+fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<Vec<DrillHole>> {
+    const EPS: f64 = 1e-9;
+    let moves = &phase.toolpath.moves;
+    let mut holes: Vec<DrillHole> = Vec::new();
+    let mut i = 0;
+    while i < moves.len() {
+        let first = moves.get(i)?;
+        let second = moves.get(i + 1)?;
+        if !matches!(first.move_type, MoveType::Rapid)
+            || !matches!(second.move_type, MoveType::Rapid)
+        {
+            return None;
+        }
+        let (x, y, start_z) = (first.target.x, first.target.y, first.target.z);
+        let r = second.target.z;
+        let same_xy = |p: &crate::geo::P3| (p.x - x).abs() < EPS && (p.y - y).abs() < EPS;
+        if !same_xy(&second.target) || r >= start_z {
+            return None;
+        }
+        let mut j = i + 2;
+        let mut bottom = f64::INFINITY;
+        let mut feed: Option<f64> = None;
+        while let Some(m) = moves.get(j) {
+            if !same_xy(&m.target) {
+                break;
+            }
+            match m.move_type {
+                MoveType::Linear { feed_rate } if m.intent == MoveIntent::Drilling => {
+                    if feed.is_some_and(|f| (f - feed_rate).abs() > EPS) {
+                        return None;
+                    }
+                    feed = Some(feed_rate);
+                    bottom = bottom.min(m.target.z);
+                }
+                MoveType::Rapid if m.target.z <= r + EPS => {}
+                _ => return None,
+            }
+            j += 1;
+        }
+        let last = moves.get(j - 1)?;
+        let feed = feed?;
+        if !matches!(last.move_type, MoveType::Rapid)
+            || (last.target.z - r).abs() > EPS
+            || bottom >= r
+        {
+            return None;
+        }
+        if holes.first().is_some_and(|h: &DrillHole| {
+            (h.start_z - start_z).abs() > EPS || (h.feed - feed).abs() > EPS
+        }) {
+            return None;
+        }
+        holes.push(DrillHole {
+            x,
+            y,
+            start_z,
+            r,
+            bottom,
+            feed,
+        });
+        i = j;
+    }
+    if holes.is_empty() { None } else { Some(holes) }
+}
+
+/// G7: write a drill phase as native canned cycles. Returns false (and
+/// writes nothing) when the cycle has no native form here or the moves
+/// do not read back as holes; the caller then writes the expanded moves.
+///
+/// G73 (chip break) stays expanded: grblHAL lifts by its own `$G73`
+/// setting (motion_control.c:602-605), not by the operation's retract
+/// amount. The simulation and the cycle time always use the expanded
+/// moves. grblHAL G83 differs from them: with G98 it retracts to the start
+/// level after each peck (motion_control.c:553-554, 609), then feeds from
+/// R down through the whole earlier depth (motion_control.c:563-583), and
+/// it dwells 0.25 s at each peck (gcode.c:3578, motion_control.c:593-594).
+/// That is why the option is off by default.
+fn push_native_drill_cycles(
+    program: &mut Program,
+    phase: &GcodePhase<'_>,
+    drill: super::PhaseDrill,
+    state: &mut ModalState,
+) -> bool {
+    use super::ir::CannedDrillKind;
+    use crate::ops::drill::DrillCycle;
+    let kind = match drill.cycle {
+        DrillCycle::Simple => CannedDrillKind::Simple,
+        DrillCycle::Dwell(seconds) => match drill.dwell_s() {
+            Some(_) => CannedDrillKind::Dwell { seconds },
+            None => CannedDrillKind::Simple,
+        },
+        DrillCycle::Peck(peck_mm) if peck_mm.is_finite() && peck_mm > 0.0 => {
+            CannedDrillKind::Peck { peck_mm }
+        }
+        DrillCycle::Peck(_) | DrillCycle::ChipBreak(..) => return false,
+    };
+    let Some(holes) = read_drill_holes(phase) else {
+        program.push(Statement::Comment(
+            "native drill cycles not used: the moves are not plain drill holes".to_owned(),
+        ));
+        return false;
+    };
+    let Some(first) = holes.first() else {
+        return false;
+    };
+    // Reach the start level above the first hole: the G98 return level.
+    push_rapid(
+        program,
+        &mut state.prev_pos,
+        first.x,
+        first.y,
+        first.start_z,
+    );
+    for (index, hole) in holes.iter().enumerate() {
+        program.push(Statement::CannedDrill {
+            kind,
+            x: hole.x,
+            y: hole.y,
+            z: hole.bottom,
+            r: hole.r,
+            feed: hole.feed,
+            first: index == 0,
+        });
+    }
+    program.push(Statement::CannedCancel);
+    if let Some(last) = holes.last() {
+        state.prev_pos = Some((last.x, last.y, last.start_z));
+    }
+    state.reset_feed();
+    true
 }
 
 fn push_comp_start_if_needed(
@@ -624,6 +839,7 @@ mod tests {
                     }),
                     coolant: CoolantMode::Mist,
                     controller_compensation: Some(ControllerCompensation::Left),
+                    drill: None,
                 },
                 GcodePhase {
                     toolpath: &tp2,
@@ -638,6 +854,7 @@ mod tests {
                     }),
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
+                    drill: None,
                 },
             ]
         };
@@ -658,6 +875,7 @@ mod tests {
                         }),
                         coolant: CoolantMode::Off,
                         controller_compensation: None,
+                        drill: None,
                     }],
                     pause_message: None,
                 },
@@ -676,6 +894,7 @@ mod tests {
                         }),
                         coolant: CoolantMode::Flood,
                         controller_compensation: None,
+                        drill: None,
                     }],
                     pause_message: None,
                 },
@@ -719,6 +938,7 @@ mod tests {
                 }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             }]
         };
 
@@ -789,6 +1009,7 @@ mod tests {
             }),
             coolant: CoolantMode::Off,
             controller_compensation: None,
+            drill: None,
         }
     }
 
@@ -985,6 +1206,9 @@ mod tests {
                     y: 0.0,
                     z: 5.0
                 },
+                // G2: lift from Z-1 to the program's highest Z before the
+                // change block.
+                Statement::SafeZRetract { z: 5.0 },
                 // post-tool-change: program-start sequencing again
                 Statement::SafeZRetract { z: 5.0 },
                 Statement::Rapid {

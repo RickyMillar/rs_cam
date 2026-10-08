@@ -393,6 +393,7 @@ fn default_wizard_state_does_not_mutate_export() {
                     }),
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
+                drill: None,
             })
         })
         .collect();
@@ -846,5 +847,125 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         bottom_gcode.contains("Z-13.000") && !bottom_gcode.contains("Z-1.000"),
         "flipped setup's StockTop datum zeroes to its presented top (local \
          stock top = 12), so its cut Z-1 shifts to Z-13.000:\n{bottom_gcode}"
+    );
+}
+
+/// `build_session` plus a second setup ("Bottom") with one generated
+/// toolpath, so the project has two setups that hold an enabled op.
+fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
+    use rs_cam_core::compute::transform::FaceUp;
+
+    let (mut session, mut gui, sim) = build_session();
+    let bottom_idx = session
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Bottom".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("the session accepts a second setup")
+        .created
+        .expect("the AddSetup row reports the new setup index");
+    let tp_bottom = ToolpathConfig {
+        id: rs_cam_core::ToolpathId(99),
+        name: "Bottom Op".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        face_selection: None,
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+        planner_origin: None,
+    };
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: bottom_idx,
+            config: Box::new(tp_bottom),
+        }))
+        .expect("add bottom toolpath");
+    let bottom_tp_id = session.list_setups()[bottom_idx]
+        .toolpath_indices
+        .first()
+        .map(|&i| session.toolpath_configs()[i].id)
+        .expect("bottom setup has a toolpath");
+    let mut path = Toolpath::new();
+    path.rapid_to(P3::new(0.0, 0.0, 5.0));
+    path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
+    seed_generated_result(&mut session, &mut gui, bottom_tp_id, path);
+    (session, gui, sim)
+}
+
+/// G3 (SAFETY): the single-file export of a two-setup project stops
+/// between the setups. It used to run setup 2 straight after setup 1.
+#[test]
+fn single_file_export_pauses_between_setups_g3() {
+    let (session, gui, sim) = two_setup_session();
+    let gcode = export_gcode_from_session(&session, &gui, &sim).expect("single-file export");
+    let pause = gcode.find("\nM0\n").expect("an M0 between the setups");
+    let bottom = gcode.find("(Bottom Op)").expect("the bottom op");
+    assert!(
+        pause < bottom,
+        "the pause must come before setup 2:\n{gcode}"
+    );
+    assert!(gcode.contains("(Setup change: Bottom)"), "{gcode}");
+}
+
+/// G3: the GUI per-setup layout and MCP `split_setups` take one door,
+/// so each file carries the same setup / datum / flip header. On
+/// grblHAL the flip reminder is a MSG line, and the layout default is
+/// one file per setup.
+#[test]
+fn per_setup_files_carry_one_header_g3() {
+    let (session, mut gui, sim) = two_setup_session();
+    for format in [PostFormat::Grbl, PostFormat::GrblHal] {
+        gui.post.format = format;
+        let files = rs_cam_viz::io::export::export_per_setup_files(
+            &session,
+            &gui,
+            &sim,
+            gui.tool_load_overrides.as_policy(),
+            gui.stale_export,
+        )
+        .expect("per-setup export");
+        assert_eq!(files.len(), 2, "one file per setup");
+        let first = &files[0].gcode;
+        let second = &files[1].gcode;
+        assert!(first.starts_with("(rs_cam setup 1/2: "), "{first}");
+        assert!(
+            first.contains("(DATUM: X0 Y0 = stock min corner"),
+            "{first}"
+        );
+        assert!(!first.contains("FLIP PART"), "{first}");
+        assert!(
+            second.starts_with("(rs_cam setup 2/2: \"Bottom\")"),
+            "{second}"
+        );
+        let flip = if format == PostFormat::GrblHal {
+            "(MSG,FLIP PART BEFORE RUNNING"
+        } else {
+            "(FLIP PART BEFORE RUNNING"
+        };
+        assert!(second.contains(flip), "{format:?}: {second}");
+        assert!(
+            !second.contains("\nM0\n"),
+            "a per-setup file has no setup pause"
+        );
+    }
+    let setups = rs_cam_viz::io::export::setups_with_enabled_ops(&session);
+    assert_eq!(setups, 2);
+    assert_eq!(
+        gui.wizard
+            .effective_layout(PostFormat::GrblHal.definition(), setups),
+        OutputLayout::PerSetup
     );
 }

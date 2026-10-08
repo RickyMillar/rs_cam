@@ -391,7 +391,6 @@ pub(super) fn draw_grbl_import(
         );
 
         let current_max_feed = state.session.machine().max_feed_mm_min;
-        let default_delta = rs_cam_core::machine::kinematics::default_junction_deviation_mm();
         // The parse is read once and copied out, so the draft's borrow ends
         // before the Apply arm writes the session.
         let preview = state.panels.grbl.parsed().cloned();
@@ -406,11 +405,7 @@ pub(super) fn draw_grbl_import(
             return;
         };
 
-        let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
-            || imp.max_feed_mm_min.is_some()
-            || imp.arc_tolerance_mm.is_some()
-            || imp.max_spindle_rpm.is_some()
-            || (imp.kinematics.junction_deviation_mm - default_delta).abs() > 1e-12;
+        let recognized = imp.is_recognized();
 
         if !recognized {
             ui.label(
@@ -461,6 +456,62 @@ pub(super) fn draw_grbl_import(
                         .weak(),
                 );
             }
+            // G10: the controller facts, and the dialect they select.
+            let c = &imp.controller;
+            if c.firmware == rs_cam_core::machine::ControllerFirmware::GrblHal {
+                ui.label(
+                    egui::RichText::new("\u{2022} Controller: grblHAL (post dialect follows)")
+                        .small(),
+                )
+                .on_hover_text(
+                    "The text names grblHAL (the welcome line or $I). The project \
+                         exports with the grblHAL post.",
+                );
+            }
+            if let Some((lo, hi)) = c.rpm_range() {
+                ui.label(
+                    egui::RichText::new(format!("\u{2022} S range ($31/$30) = {lo:.0}..{hi:.0}"))
+                        .small(),
+                )
+                .on_hover_text("The export clamps every S word into this range, with a warning.");
+            } else if let Some(hi) = c.rpm_max {
+                ui.label(
+                    egui::RichText::new(format!("\u{2022} $30 = {hi:.0} (info only)"))
+                        .small()
+                        .weak(),
+                )
+                .on_hover_text(
+                    "$30/$31 are the PWM spindle range. A spindle plugin (VFD) can \
+                     override them. $I shows a spindle plugin, or no $I was pasted, so the \
+                     export does not clamp S to them.",
+                );
+            }
+            if let Some(mode) = c.tool_change_mode {
+                let row = ui.label(
+                    egui::RichText::new(format!("\u{2022} Tool change ($341) = {mode}")).small(),
+                );
+                if c.ignores_m6() {
+                    row.on_hover_text(
+                        "$341=4: the board ignores M6. A multi-tool file will not stop for \
+                         the change. The export warns.",
+                    );
+                }
+            }
+            if let Some(d) = c.spindle_on_delay_s {
+                ui.label(
+                    egui::RichText::new(format!("\u{2022} Spindle delay ($394) = {d:.1} s"))
+                        .small(),
+                );
+            }
+            if let Some(m) = c.mist_output {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "\u{2022} Mist output: {}",
+                        if m { "yes" } else { "no" }
+                    ))
+                    .small(),
+                );
+            }
             if imp.ignored_count > 0 {
                 ui.label(
                     egui::RichText::new(format!(
@@ -487,7 +538,11 @@ pub(super) fn draw_grbl_import(
                 // The import is its own row: a GRBL dump carries the
                 // travel rate as well as the block, and the row drops
                 // the library link because the numbers are inline now.
-                apply_machine_import(state, kinematics, max_feed);
+                let controller = imp.has_controller_facts().then(|| imp.controller.clone());
+                if let Some(c) = &controller {
+                    draft.controller = Some(c.clone());
+                }
+                apply_machine_import(state, kinematics, max_feed, controller);
                 edit.changed = true;
                 state.panels.grbl.clear();
                 state.panels.grbl.status = "Imported $$ settings".to_owned();

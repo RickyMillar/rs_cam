@@ -43,8 +43,8 @@ use rs_cam_core::{
     compute::tool_config::{ToolConfig, ToolId, ToolType},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
-        CoolantMode, GcodePhase, PhaseTool, ToolLoadExportPolicy, export_gcode_phases_checked,
-        get_post_definition,
+        CoolantMode, GcodePhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
+        export_gcode_phases_with_overlay_checked, get_post_definition,
     },
     geo::BoundingBox3,
     session::{
@@ -103,6 +103,20 @@ pub(crate) struct JobConfig {
     pub diagnostics: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostics_json: Option<PathBuf>,
+    /// G11: the grblHAL export options, the keys MCP `export_gcode` and
+    /// the export dialog write. Omitted: off (a job file has no machine
+    /// profile to default from).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_waits_for_spindle: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mist_output: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_drill_cycles: Option<bool>,
+    /// G3: a job with `[[setup]]` tables writes one file per setup
+    /// (omitted or `true`, the default since setups existed). `false`
+    /// writes one file with an M0 pause between the setups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_file_per_setup: Option<bool>,
 }
 
 fn default_post() -> String {
@@ -350,33 +364,72 @@ pub fn run_job_command(
     });
 
     // Emit G-code with per-operation spindle speed support
-    let post_def = get_post_definition(&job_file.job.post).context(format!(
-        "Unknown post-processor '{}'. Supported: grbl, linuxcnc, mach3",
-        job_file.job.post
-    ))?;
-    if !job_file.setup.is_empty() {
+    let post_def = get_post_definition(&job_file.job.post).with_context(|| {
+        format!(
+            "Unknown post-processor '{}'. Supported: {}",
+            job_file.job.post,
+            rs_cam_core::gcode::PostFormat::ALL
+                .iter()
+                .map(|f| f.to_token())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    })?;
+    // G11: the controller options, resolved by the one core rule. The job
+    // file has no machine profile, so an omitted option is off.
+    let overlay = {
+        let post = rs_cam_core::gcode::PostConfig {
+            controller_waits_for_spindle: job_file.job.controller_waits_for_spindle,
+            mist_output: job_file.job.mist_output,
+            native_drill_cycles: job_file.job.native_drill_cycles,
+            ..rs_cam_core::gcode::PostConfig::default()
+        };
+        let mut overlay = WizardOverlay::default();
+        post.apply_controller_options(
+            &rs_cam_core::machine::MachineProfile::default(),
+            &mut overlay,
+        );
+        overlay
+    };
+    // A job file with setups has always written one file per setup, on
+    // every post; that stays the default.
+    let split = job_file.job.one_file_per_setup.unwrap_or(true);
+    if !job_file.setup.is_empty() && !split {
+        // G3: one file, with an M0 pause between the setups.
+        let groups: Vec<rs_cam_core::gcode::GcodeSetupPhase<'_>> = job_file
+            .setup
+            .iter()
+            .map(|setup_def| rs_cam_core::gcode::GcodeSetupPhase {
+                setup_label: &setup_def.name,
+                phases: job_result
+                    .phases
+                    .iter()
+                    .filter(|phase| phase.setup_name.as_deref() == Some(&setup_def.name))
+                    .map(job_phase)
+                    .collect(),
+                pause_message: None,
+            })
+            .filter(|g| !g.phases.is_empty())
+            .collect();
+        let gcode = rs_cam_core::gcode::export_gcode_multi_setup_with_overlay_checked(
+            &groups,
+            post_def,
+            job_file.job.safe_z,
+            &rs_cam_core::tool_load::ToolLoadReport {
+                per_toolpath: vec![],
+            },
+            ToolLoadExportPolicy::default(),
+            &overlay,
+        )?;
+        std::fs::write(&output, &gcode).context("Failed to write output file")?;
+        info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
+    } else if !job_file.setup.is_empty() {
         for setup_def in &job_file.setup {
             let setup_phases: Vec<GcodePhase<'_>> = job_result
                 .phases
                 .iter()
                 .filter(|phase| phase.setup_name.as_deref() == Some(&setup_def.name))
-                .map(|phase| GcodePhase {
-                    toolpath: &phase.toolpath,
-                    spindle_rpm: phase.spindle_speed,
-                    label: &phase.label,
-                    pre_gcode: None,
-                    post_gcode: None,
-                    tool: phase
-                        .tool_id
-                        .zip(phase.tool_number)
-                        .map(|(id, number)| PhaseTool {
-                            id,
-                            number,
-                            label: &phase.tool_name,
-                        }),
-                    coolant: phase.coolant,
-                    controller_compensation: None,
-                })
+                .map(job_phase)
                 .collect();
             if setup_phases.is_empty() {
                 continue;
@@ -405,13 +458,14 @@ pub fn run_job_command(
             // evaluation context: pass an explicitly empty report
             // ("no load evaluation performed") so the gate is
             // visible at the call site rather than skippable.
-            let gcode = export_gcode_phases_checked(
+            let gcode = export_gcode_phases_with_overlay_checked(
                 &setup_phases,
                 post_def,
                 &rs_cam_core::tool_load::ToolLoadReport {
                     per_toolpath: vec![],
                 },
                 ToolLoadExportPolicy::default(),
+                &overlay,
             )?;
             std::fs::write(&setup_output, &gcode).context("Failed to write setup output file")?;
             info!(
@@ -422,37 +476,18 @@ pub fn run_job_command(
             );
         }
     } else {
-        let phases: Vec<GcodePhase<'_>> = job_result
-            .phases
-            .iter()
-            .map(|phase| GcodePhase {
-                toolpath: &phase.toolpath,
-                spindle_rpm: phase.spindle_speed,
-                label: &phase.label,
-                pre_gcode: None,
-                post_gcode: None,
-                tool: phase
-                    .tool_id
-                    .zip(phase.tool_number)
-                    .map(|(id, number)| PhaseTool {
-                        id,
-                        number,
-                        label: &phase.tool_name,
-                    }),
-                coolant: phase.coolant,
-                controller_compensation: None,
-            })
-            .collect();
+        let phases: Vec<GcodePhase<'_>> = job_result.phases.iter().map(job_phase).collect();
         info!("Emitting G-code ({})...", post_def.name);
         // See the per-setup branch above: the job-file path has no
         // load-evaluation context — explicitly empty report.
-        let gcode = export_gcode_phases_checked(
+        let gcode = export_gcode_phases_with_overlay_checked(
             &phases,
             post_def,
             &rs_cam_core::tool_load::ToolLoadReport {
                 per_toolpath: vec![],
             },
             ToolLoadExportPolicy::default(),
+            &overlay,
         )?;
         std::fs::write(&output, &gcode).context("Failed to write output file")?;
         info!(bytes = gcode.len(), path = %output.display(), "Wrote G-code");
@@ -873,6 +908,8 @@ pub(crate) struct OpResult {
     pub flute_count: u32,
     /// Which setup this operation belongs to (None = default/single setup).
     pub setup_name: Option<String>,
+    /// G7: the drill cycle, for the G82 dwell and native cycles.
+    pub drill: Option<rs_cam_core::gcode::PhaseDrill>,
 }
 
 /// Result of executing a full job: combined toolpath + per-operation results.
@@ -880,6 +917,28 @@ pub struct JobResult {
     pub combined: Toolpath,
     pub phases: Vec<OpResult>,
     pub trace_artifacts: Vec<ToolpathTraceArtifact>,
+}
+
+/// The emitter phase of one job operation.
+fn job_phase(phase: &OpResult) -> GcodePhase<'_> {
+    GcodePhase {
+        toolpath: &phase.toolpath,
+        spindle_rpm: phase.spindle_speed,
+        label: &phase.label,
+        pre_gcode: None,
+        post_gcode: None,
+        tool: phase
+            .tool_id
+            .zip(phase.tool_number)
+            .map(|(id, number)| PhaseTool {
+                id,
+                number,
+                label: &phase.tool_name,
+            }),
+        coolant: phase.coolant,
+        controller_compensation: None,
+        drill: phase.drill,
+    }
 }
 
 pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<JobResult> {
@@ -917,6 +976,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             trace_artifacts.push(artifact);
         }
         let tp = output.toolpath;
+        let drill = output.drill;
 
         info!(
             moves = tp.moves.len(),
@@ -947,6 +1007,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             coolant: op.coolant,
             flute_count,
             setup_name: op.setup.clone(),
+            drill,
         });
     }
 
@@ -971,6 +1032,8 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
 struct SessionOpOutput {
     toolpath: Toolpath,
     trace: Option<ToolpathTraceArtifact>,
+    /// G7: the drill cycle, for the G82 dwell and native cycles.
+    drill: Option<rs_cam_core::gcode::PhaseDrill>,
 }
 
 /// The job-file operation vocabulary. Anything else points the user at
@@ -1252,7 +1315,14 @@ fn execute_op_via_session(
         None
     };
 
-    Ok(SessionOpOutput { toolpath, trace })
+    let drill = session
+        .get_toolpath_config(tp_index)
+        .and_then(rs_cam_core::gcode::phase_drill_for);
+    Ok(SessionOpOutput {
+        toolpath,
+        trace,
+        drill,
+    })
 }
 
 /// Map the flat job-file fields onto registry param names, preserving

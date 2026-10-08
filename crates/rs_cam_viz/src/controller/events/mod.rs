@@ -455,6 +455,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::WizardSetDryRun(_)
             | AppEvent::WizardSetSpindleWarmup(_)
             | AppEvent::WizardSetToolChangeMode(_)
+            | AppEvent::WizardSetControllerOption(..)
             | AppEvent::WizardSetSetupPauseMessage { .. }
             | AppEvent::WizardSetAllowValidatorErrors(_)
             | AppEvent::WizardSave => {}

@@ -203,6 +203,31 @@ pub struct GrblImport {
     /// Count of `$N` settings seen but not consumed — lets the UI note
     /// "imported N of M settings" without pretending it used them all.
     pub ignored_count: usize,
+    /// G10: the controller facts the export reads: the firmware (from the
+    /// welcome line or `$I`), `$30 $31 $32 $340 $341 $342 $394`, and the
+    /// mist output (from `$I`). The apply site stores it on
+    /// `MachineProfile::controller`.
+    pub controller: crate::machine::ControllerSettings,
+}
+
+impl GrblImport {
+    /// True when the dump carried any controller fact (G10).
+    pub fn has_controller_facts(&self) -> bool {
+        self.controller != crate::machine::ControllerSettings::default()
+    }
+
+    /// True when the text was a `$$` / `$I` dump at all: it carried a
+    /// setting the import uses. The GUI panel and MCP
+    /// `import_machine_settings` ask this one question.
+    pub fn is_recognized(&self) -> bool {
+        self.kinematics.acceleration_xyz_mm_s2.is_some()
+            || self.max_feed_mm_min.is_some()
+            || self.arc_tolerance_mm.is_some()
+            || self.max_spindle_rpm.is_some()
+            || (self.kinematics.junction_deviation_mm - default_junction_deviation_mm()).abs()
+                > 1e-12
+            || self.has_controller_facts()
+    }
 }
 
 impl MachineKinematics {
@@ -390,7 +415,9 @@ impl MachineKinematics {
             }
         }
 
-        const KNOWN: [u32; 9] = [11, 12, 30, 110, 111, 112, 120, 121, 122];
+        const KNOWN: [u32; 15] = [
+            11, 12, 30, 31, 32, 110, 111, 112, 120, 121, 122, 340, 341, 342, 394,
+        ];
         let ignored_count = map.keys().filter(|k| !KNOWN.contains(k)).count();
 
         let mut kinematics = MachineKinematics::default();
@@ -428,6 +455,25 @@ impl MachineKinematics {
             _ => None,
         };
 
+        let as_int = |n: u32| {
+            map.get(&n)
+                .copied()
+                .filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0)
+                .map(|v| v as u32)
+        };
+        let controller = crate::machine::ControllerSettings {
+            firmware: detect_firmware(dump),
+            rpm_max: map.get(&30).copied(),
+            rpm_min: map.get(&31).copied(),
+            mode: as_int(32),
+            spindle_at_speed_tolerance_pct: map.get(&340).copied(),
+            tool_change_mode: as_int(341),
+            tool_change_probing_distance_mm: map.get(&342).copied(),
+            spindle_on_delay_s: map.get(&394).copied(),
+            mist_output: detect_mist_output(dump),
+            spindle_drive: detect_spindle_drive(dump),
+        };
+
         GrblImport {
             kinematics,
             max_feed_mm_min,
@@ -436,8 +482,63 @@ impl MachineKinematics {
             arc_tolerance_mm: map.get(&12).copied(),
             max_spindle_rpm: map.get(&30).copied(),
             ignored_count,
+            controller,
         }
     }
+}
+
+/// G10: the firmware a pasted console text names.
+///
+/// grblHAL prints `GrblHAL <version> ['$' or '$HELP' for help]` on reset
+/// (report.c:312) and `[FIRMWARE:grblHAL]` in `$I` (report.c:1111). A build
+/// with `COMPATIBILITY_LEVEL` above 0 prints the Grbl welcome line instead
+/// (report.c:314) and `$I` prints the FIRMWARE line only in the extended
+/// form (report.c:917-919, 1012). So "Grbl 1.1" in the text does not prove
+/// Grbl 1.1, and the answer is then `Unknown`: the import never moves a
+/// project to the Grbl 1.1 dialect on a guess.
+fn detect_firmware(dump: &str) -> crate::machine::ControllerFirmware {
+    let hal = dump.lines().map(str::trim).any(|line| {
+        line.starts_with("GrblHAL ") || line.eq_ignore_ascii_case("[FIRMWARE:grblHAL]")
+    });
+    if hal {
+        crate::machine::ControllerFirmware::GrblHal
+    } else {
+        crate::machine::ControllerFirmware::Unknown
+    }
+}
+
+/// G10/G5: how the board drives the spindle, from the `$I` text. A
+/// `[PLUGIN:<name> v<n>]` line whose name says VFD or spindle is a spindle
+/// plugin. `$I` output with no such line is the PWM spindle. `None` when
+/// the text holds no `$I` output (no `[OPT:` line).
+fn detect_spindle_drive(dump: &str) -> Option<crate::machine::SpindleDrive> {
+    use crate::machine::SpindleDrive;
+    let mut has_build_info = false;
+    for line in dump.lines().map(str::trim) {
+        if line.starts_with("[OPT:") {
+            has_build_info = true;
+        }
+        if let Some(rest) = line.strip_prefix("[PLUGIN:") {
+            let body = rest.trim_end_matches(']');
+            let name = body.rsplit_once(" v").map_or(body, |(n, _)| n).trim();
+            let upper = name.to_ascii_uppercase();
+            if upper.contains("VFD") || upper.contains("SPINDLE") {
+                return Some(SpindleDrive::Plugin(name.to_owned()));
+            }
+        }
+    }
+    has_build_info.then_some(SpindleDrive::Pwm)
+}
+
+/// G10: the mist output, from the `$I` option letters. grblHAL adds `M`
+/// to the `[OPT:` letters when the board has a mist output
+/// (report.c:934-935). `None` when the text holds no `[OPT:` line.
+fn detect_mist_output(dump: &str) -> Option<bool> {
+    dump.lines().map(str::trim).find_map(|line| {
+        let rest = line.strip_prefix("[OPT:")?;
+        let letters = rest.split([',', ']']).next().unwrap_or("");
+        Some(letters.contains('M'))
+    })
 }
 
 /// What limited a single move's peak velocity (P1, 2026-09-07).
@@ -1926,6 +2027,79 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         );
         assert_eq!(preset.max_rate_xyz_mm_min, imp.max_rate_xyz_mm_min);
         assert!((preset.junction_deviation_mm - imp.kinematics.junction_deviation_mm).abs() < 1e-9);
+    }
+
+    /// G10: the REAL controller output (the operator's BTT Scylla with an
+    /// H-100 VFD, 2026-10-08): the welcome line, `$I` and `$$` (129 lines,
+    /// CRLF). Fixture: `tests/fixtures/grblhal_dump_2026-10-08/`.
+    #[test]
+    fn from_grbl_settings_parses_grblhal_dump() {
+        use crate::machine::{ControllerFirmware, SpindleDrive};
+        let dump = [
+            include_str!("../../tests/fixtures/grblhal_dump_2026-10-08/welcome.txt"),
+            include_str!("../../tests/fixtures/grblhal_dump_2026-10-08/dollar_I.txt"),
+            include_str!("../../tests/fixtures/grblhal_dump_2026-10-08/dollar_dollar.txt"),
+        ]
+        .join("\n");
+        let imp = MachineKinematics::from_grbl_settings(&dump);
+        let c = &imp.controller;
+        assert_eq!(c.firmware, ControllerFirmware::GrblHal);
+        assert_eq!(c.rpm_max, Some(1_000.0));
+        assert_eq!(c.rpm_min, Some(0.0));
+        assert_eq!(c.mode, Some(0));
+        assert_eq!(c.spindle_at_speed_tolerance_pct, Some(5.0));
+        assert_eq!(c.tool_change_mode, Some(0), "$341=0: normal mode");
+        assert_eq!(c.tool_change_probing_distance_mm, Some(30.0));
+        assert_eq!(c.spindle_on_delay_s, Some(0.0));
+        assert_eq!(c.mist_output, Some(true), "[OPT:VNMHSL2,...] lists M");
+        assert_eq!(
+            c.spindle_drive,
+            Some(SpindleDrive::Plugin("H-100 VFD".to_owned()))
+        );
+        // A VFD plugin overrides $30 (settings.c:2593): no S range.
+        assert_eq!(c.rpm_range(), None);
+        // $340=5.0: M3 waits for the spindle.
+        assert!(c.waits_for_spindle());
+        assert!(!c.ignores_m6());
+        // Kinematics from the same dump.
+        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
+        assert_eq!(
+            imp.kinematics.acceleration_xyz_mm_s2,
+            Some([500.0, 500.0, 270.0])
+        );
+        assert_eq!(imp.max_rate_xyz_mm_min, Some([10_000.0, 10_000.0, 1_000.0]));
+        assert!(imp.is_recognized());
+
+        // `$341=4`: the board ignores M6.
+        let ignore = MachineKinematics::from_grbl_settings("$341=4\n");
+        assert!(ignore.controller.ignores_m6());
+    }
+
+    /// G5: a PWM spindle (SYNTHETIC `$I`: option letters, no spindle
+    /// plugin) makes `$31`/`$30` the S range. With no `$I` at all the
+    /// range stays unknown.
+    #[test]
+    fn a_pwm_spindle_gives_the_s_range_synthetic() {
+        use crate::machine::SpindleDrive;
+        let pwm = MachineKinematics::from_grbl_settings(
+            "[OPT:VNSL,35,1024,3,0]\n[FIRMWARE:grblHAL]\n$30=24000.000\n$31=6000.000\n",
+        );
+        assert_eq!(pwm.controller.spindle_drive, Some(SpindleDrive::Pwm));
+        assert_eq!(pwm.controller.mist_output, Some(false));
+        assert_eq!(pwm.controller.rpm_range(), Some((6_000.0, 24_000.0)));
+        let bare = MachineKinematics::from_grbl_settings("$30=24000.000\n$31=6000.000\n");
+        assert_eq!(bare.controller.spindle_drive, None);
+        assert_eq!(bare.controller.rpm_range(), None);
+    }
+
+    /// G10: a Grbl welcome line does not prove Grbl 1.1. grblHAL prints it
+    /// too when built with `COMPATIBILITY_LEVEL` above 0 (report.c:314).
+    #[test]
+    fn a_grbl_welcome_line_leaves_the_firmware_unknown() {
+        use crate::machine::ControllerFirmware;
+        let imp = MachineKinematics::from_grbl_settings("Grbl 1.1f ['$' for help]\n$30=1000\n");
+        assert_eq!(imp.controller.firmware, ControllerFirmware::Unknown);
+        assert_eq!(imp.controller.firmware.post_format(), None);
     }
 
     #[test]

@@ -113,7 +113,7 @@ enum Commands {
         #[arg(long)]
         svg: Option<PathBuf>,
 
-        /// Post-processor: grbl, linuxcnc, mach3
+        /// Post-processor: grbl, grblhal, linuxcnc, mach3
         #[arg(long, default_value = "grbl")]
         post: String,
 
@@ -124,6 +124,21 @@ enum Commands {
         /// Spindle speed in RPM
         #[arg(long, default_value = "18000")]
         spindle_speed: u32,
+
+        /// grblHAL: the controller waits for the spindle ($394/$340), so
+        /// no warm-up dwell is written (true/false)
+        #[arg(long)]
+        controller_waits_for_spindle: Option<bool>,
+
+        /// grblHAL: the board has a mist output, so M7 is written
+        /// (true/false)
+        #[arg(long)]
+        mist_output: Option<bool>,
+
+        /// grblHAL: write drill operations as native G81/G82/G83 cycles
+        /// (true/false)
+        #[arg(long)]
+        native_drill_cycles: Option<bool>,
     },
 
     /// Run a parameter sweep on a TOML job file
@@ -445,6 +460,9 @@ fn main() -> Result<()> {
             post,
             safe_z,
             spindle_speed,
+            controller_waits_for_spindle,
+            mist_output,
+            native_drill_cycles,
         } => {
             run::run_generic(&run::RunArgs {
                 op,
@@ -460,6 +478,9 @@ fn main() -> Result<()> {
                 post,
                 safe_z,
                 spindle_speed,
+                controller_waits_for_spindle,
+                mist_output,
+                native_drill_cycles,
             })?;
         }
 

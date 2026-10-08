@@ -84,6 +84,17 @@ pub enum FindingKind {
     /// The program ends with the tool below the clearance plane
     /// (no final retract).
     ProgramEndsBelowClearance,
+
+    // ── G8: controller line and word rules (2026-10-08).
+    /// A line is longer than the controller's line buffer.
+    LineTooLong,
+    /// A byte above 0x7F on a controller that reads it as a real-time
+    /// command.
+    NonAsciiByte,
+    /// `!` or `~` where the controller reads it as a real-time command.
+    RealtimeCharacter,
+    /// A G or M word the controller build refuses.
+    UnsupportedWord,
 }
 
 /// One validator finding tied to a specific line of g-code.
@@ -114,6 +125,29 @@ struct PostInvariants {
     /// Whether a WCS code (G54-G59) must appear before the first
     /// cutting move. All shipped posts: yes.
     requires_wcs: bool,
+    /// G8: how the controller counts a line, and its limit.
+    line_limit: Option<LineLimit>,
+    /// G8: the controller reads a byte above 0x7F as a real-time command.
+    ascii_only: bool,
+    /// G8: the controller acts on `!`, `~`, `?` also inside a comment.
+    realtime_chars_in_comments: bool,
+    /// G8: the grblHAL word set (G90.1, G64, M7 rules).
+    grblhal_words: bool,
+    /// G8: Grbl 1.1 has no canned drill cycles.
+    no_canned_cycles: bool,
+}
+
+/// G8: the longest line a controller takes, and what it counts.
+#[derive(Debug, Clone, Copy)]
+enum LineLimit {
+    /// Grbl 1.1: comments and spaces are dropped before the buffer
+    /// (protocol.c:111-125 in Grbl 1.1), and the buffer holds 79
+    /// characters (`LINE_BUFFER_SIZE` 80, protocol.h:32, protocol.c:141).
+    GrblStripped(usize),
+    /// grblHAL: every character from the first non-space one is stored,
+    /// comments and spaces included (protocol.c:292, 328), up to 256
+    /// (`LINE_BUFFER_SIZE` 257, protocol.h:36).
+    WholeLine(usize),
 }
 
 const fn invariants_for(post: PostFormat) -> PostInvariants {
@@ -123,34 +157,85 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
+            line_limit: Some(LineLimit::GrblStripped(79)),
+            ascii_only: true,
+            realtime_chars_in_comments: true,
+            grblhal_words: false,
+            no_canned_cycles: true,
         },
         PostFormat::LinuxCnc => PostInvariants {
             supports_m6: true,
             requires_g91_1: true,
             requires_percent_brackets: false,
             requires_wcs: true,
+            line_limit: None,
+            ascii_only: false,
+            realtime_chars_in_comments: false,
+            grblhal_words: false,
+            no_canned_cycles: false,
         },
         PostFormat::Mach3 => PostInvariants {
             supports_m6: true,
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
+            line_limit: None,
+            ascii_only: false,
+            realtime_chars_in_comments: false,
+            grblhal_words: false,
+            no_canned_cycles: false,
         },
-        // grblHAL is a strict superset of Grbl 1.1 with full M6 ATC
-        // support. The grblhal post emits an explicit G54 (validator
-        // still requires WCS).
+        // grblHAL accepts the Grbl 1.1 word set and adds M6 (the board
+        // runs the change with `$341`), canned cycles and MSG comments.
+        // The grblhal post emits an explicit G54 (validator still
+        // requires WCS).
         PostFormat::GrblHal => PostInvariants {
             supports_m6: true,
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
+            line_limit: Some(LineLimit::WholeLine(256)),
+            ascii_only: true,
+            realtime_chars_in_comments: false,
+            grblhal_words: true,
+            no_canned_cycles: false,
         },
     }
 }
 
+/// What the controller build allows beyond the post's default word set
+/// (G8). The export resolves it from the same options it emits with, so
+/// the validator and the emitter agree.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ValidatorOptions {
+    /// The board has a mist output: `M7` is legal on grblHAL
+    /// (gcode.c:1855-1856).
+    pub mist_output: bool,
+    /// The grblHAL build has `ENABLE_PATH_BLENDING`, so `G64` is legal
+    /// (gcode.c:1697-1715).
+    pub path_blending: bool,
+}
+
+impl ValidatorOptions {
+    /// The options an export ran with.
+    pub fn from_overlay(overlay: &crate::gcode::WizardOverlay) -> Self {
+        Self {
+            mist_output: overlay.mist_output == Some(true),
+            path_blending: false,
+        }
+    }
+}
+
 /// Validate `gcode` against the invariants of `post`. Returns all
-/// findings (potentially empty if the program is clean).
+/// findings (potentially empty if the program is clean). Same as
+/// [`validate_with`] with no build options.
 pub fn validate(gcode: &str, post: PostFormat) -> Vec<Finding> {
+    validate_with(gcode, post, &ValidatorOptions::default())
+}
+
+/// Validate `gcode` against the invariants of `post` and the controller
+/// build `options` (G8).
+pub fn validate_with(gcode: &str, post: PostFormat, options: &ValidatorOptions) -> Vec<Finding> {
     let inv = invariants_for(post);
     let lines: Vec<&str> = gcode.lines().collect();
     let mut findings = Vec::new();
@@ -162,6 +247,9 @@ pub fn validate(gcode: &str, post: PostFormat) -> Vec<Finding> {
     // post (LinuxCNC's own post emits M2 by convention).
     rule_missing_program_brackets(&inv, &lines, post, &mut findings);
     rule_missing_wcs(&inv, &lines, post, &mut findings);
+    rule_line_length(&inv, &lines, post, &mut findings);
+    rule_ascii_and_realtime_bytes(&inv, &lines, post, &mut findings);
+    rule_word_set(&inv, &lines, post, options, &mut findings);
 
     findings
 }
@@ -386,6 +474,149 @@ fn rule_missing_wcs(
     }
 }
 
+// ── G8: controller line and word rules (2026-10-08) ─────────────────
+
+fn rule_line_length(
+    inv: &PostInvariants,
+    lines: &[&str],
+    post: PostFormat,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(limit) = inv.line_limit else {
+        return;
+    };
+    for (i, line) in lines.iter().enumerate() {
+        let (count, max, what) = match limit {
+            LineLimit::GrblStripped(max) => (
+                strip_comments(line)
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .count(),
+                max,
+                "characters outside comments and spaces",
+            ),
+            LineLimit::WholeLine(max) => (
+                line.trim_start()
+                    .trim_end_matches(['\r', '\n'])
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .count(),
+                max,
+                "characters, comments and spaces included",
+            ),
+        };
+        if count > max {
+            findings.push(Finding {
+                severity: Severity::Error,
+                kind: FindingKind::LineTooLong,
+                line: i + 1,
+                message: format!(
+                    "{} reads at most {max} {what} on one line; this line has {count}. \
+                     The controller reports an overflow error and does not run it.",
+                    post.label()
+                ),
+            });
+        }
+    }
+}
+
+fn rule_ascii_and_realtime_bytes(
+    inv: &PostInvariants,
+    lines: &[&str],
+    post: PostFormat,
+    findings: &mut Vec<Finding>,
+) {
+    if !inv.ascii_only {
+        return;
+    }
+    for (i, line) in lines.iter().enumerate() {
+        if !line.is_ascii() {
+            findings.push(Finding {
+                severity: Severity::Error,
+                kind: FindingKind::NonAsciiByte,
+                line: i + 1,
+                message: format!(
+                    "{} reads a byte above 0x7F as a real-time command, also inside a \
+                     comment (grblHAL protocol.c:833-979, Grbl 1.1 serial.c:156-183). \
+                     A UTF-8 character can change the feed override or stop the job. \
+                     Use ASCII only.",
+                    post.label()
+                ),
+            });
+            continue;
+        }
+        // Grbl 1.1 acts on `!`, `~`, `?` anywhere in the stream (serial.c:
+        // 151-154). grblHAL suspends them inside a `(...)` comment
+        // (protocol.c:304-306) but not outside one.
+        let scanned = if inv.realtime_chars_in_comments {
+            (*line).to_owned()
+        } else {
+            strip_comments(line)
+        };
+        if scanned.contains(['!', '~']) {
+            findings.push(Finding {
+                severity: Severity::Error,
+                kind: FindingKind::RealtimeCharacter,
+                line: i + 1,
+                message: format!(
+                    "{} reads `!` as feed hold and `~` as cycle start in the stream. \
+                     A `~` streamed after an M0 can resume the pause. Remove them.",
+                    post.label()
+                ),
+            });
+        }
+    }
+}
+
+fn rule_word_set(
+    inv: &PostInvariants,
+    lines: &[&str],
+    post: PostFormat,
+    options: &ValidatorOptions,
+    findings: &mut Vec<Finding>,
+) {
+    for (i, line) in lines.iter().enumerate() {
+        let cleaned = strip_comments(line).to_uppercase();
+        let mut flag = |message: String| {
+            findings.push(Finding {
+                severity: Severity::Error,
+                kind: FindingKind::UnsupportedWord,
+                line: i + 1,
+                message,
+            });
+        };
+        if inv.grblhal_words {
+            if cleaned.contains("G90.1") {
+                flag(format!(
+                    "{} has no G90.1 (absolute arc centres); it refuses the line \
+                     (gcode.c:1627-1628). Arc centres are incremental (G91.1).",
+                    post.label()
+                ));
+            }
+            if has_word_int(line, 'G', 64) && !options.path_blending {
+                flag(format!(
+                    "{} accepts G64 only in a build with ENABLE_PATH_BLENDING \
+                     (gcode.c:1697-1715).",
+                    post.label()
+                ));
+            }
+            if has_word_int(line, 'M', 7) && !options.mist_output {
+                flag(format!(
+                    "{} refuses M7 when the board has no mist output (gcode.c:1855-1856). \
+                     Set the export option \"mist output present\" only for a board with one.",
+                    post.label()
+                ));
+            }
+        }
+        if inv.no_canned_cycles && [73, 81, 82, 83].iter().any(|&n| has_word_int(line, 'G', n)) {
+            flag(format!(
+                "{} has no canned drill cycles. Export the drill moves expanded.",
+                post.label()
+            ));
+        }
+    }
+}
+
 // ── Phase 2: machine-safety modal pass ───────────────────────────────
 //
 // These rules need geometric context — the clearance plane, the depth
@@ -432,6 +663,8 @@ enum Motion {
     Rapid,
     Feed,
     Arc,
+    /// G7: a canned drill cycle (G73, G81, G82, G83) until `G80`.
+    Canned,
 }
 
 /// Parse the signed decimal value of word `<letter>` from a
@@ -517,6 +750,9 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
     let mut feed_flagged = false;
     let mut floor_flagged = false;
     let mut last_line_no = 0usize;
+    // G98 (the default, gcode.h:176) returns a canned cycle to its start Z.
+    let mut canned_return_to_r = false;
+    let mut canned_r: Option<f64> = None;
 
     for (idx, raw) in gcode.lines().enumerate() {
         let line_no = idx + 1;
@@ -535,12 +771,21 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
         }
 
         // Motion modal state.
+        if has_word_int(raw, 'G', 98) {
+            canned_return_to_r = false;
+        } else if has_word_int(raw, 'G', 99) {
+            canned_return_to_r = true;
+        }
         if has_word_int(raw, 'G', 0) {
             motion = Some(Motion::Rapid);
         } else if has_word_int(raw, 'G', 1) {
             motion = Some(Motion::Feed);
         } else if has_word_int(raw, 'G', 2) || has_word_int(raw, 'G', 3) {
             motion = Some(Motion::Arc);
+        } else if [73, 81, 82, 83].iter().any(|&n| has_word_int(raw, 'G', n)) {
+            motion = Some(Motion::Canned);
+        } else if has_word_int(raw, 'G', 80) {
+            motion = None;
         }
 
         let nx = word_value(&cleaned, 'X');
@@ -621,6 +866,53 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
                         });
                     }
                 }
+            }
+            Some(Motion::Canned) => {
+                // grblHAL rapids up to R when below it, then moves in XY at
+                // that height (motion_control.c:546-560). So the XY move is
+                // at max(start Z, R). After the hole the tool is at the
+                // start Z (G98) or at R (G99) (motion_control.c:553-554).
+                if let Some(r) = word_value(&cleaned, 'R') {
+                    canned_r = Some(r);
+                }
+                let level = match (pre_z, canned_r) {
+                    (Some(a), Some(r)) => Some(a.max(r)),
+                    (a, r) => a.or(r),
+                };
+                if (dx_changed || dy_changed)
+                    && let Some(lo) = level
+                    && lo < cfg.clearance_z - EPS
+                {
+                    findings.push(Finding {
+                        severity: Severity::Error,
+                        kind: FindingKind::RapidBelowClearance,
+                        line: line_no,
+                        message: format!(
+                            "A drill cycle moves in X/Y at Z{lo:.3}, below the clearance plane \
+                             {:.3}. Start the cycle at the clearance height.",
+                            cfg.clearance_z
+                        ),
+                    });
+                }
+                if !first_cut_checked {
+                    first_cut_checked = true;
+                    if !spindle_on {
+                        findings.push(Finding {
+                            severity: Severity::Error,
+                            kind: FindingKind::SpindleNotRunningAtCut,
+                            line: line_no,
+                            message: "A drill cycle starts with the spindle off.".to_owned(),
+                        });
+                    }
+                }
+                if let Some(v) = nx {
+                    x = Some(v);
+                }
+                if let Some(v) = ny {
+                    y = Some(v);
+                }
+                z = if canned_return_to_r { canned_r } else { level };
+                continue;
             }
             Some(Motion::Feed) | Some(Motion::Arc) => {
                 let first_cut = !first_cut_checked;
@@ -937,5 +1229,140 @@ M30
                     M5\nG0 Z10.000\nM30\n";
         let f = validate_machine_safety(prog, cfg);
         assert!(f.is_empty(), "expected no findings, got: {f:?}");
+    }
+
+    // ── G8: controller line and word rules ─────────────────────────
+
+    #[test]
+    fn line_length_counts_like_each_controller_g8() {
+        // Grbl 1.1 drops comments and spaces: a long comment is fine,
+        // 80 words-characters are not.
+        let long_comment = format!("({})\nG0 X1\n", "c".repeat(200));
+        assert_eq!(
+            count_kind(
+                &validate(&long_comment, PostFormat::Grbl),
+                FindingKind::LineTooLong
+            ),
+            0
+        );
+        let long_code = format!("G1 X{}\n", "1".repeat(77));
+        assert_eq!(
+            count_kind(
+                &validate(&long_code, PostFormat::Grbl),
+                FindingKind::LineTooLong
+            ),
+            1
+        );
+        // grblHAL counts the whole line: 256 is fine, 257 is not.
+        let at = format!("({})\n", "c".repeat(254));
+        let over = format!("({})\n", "c".repeat(255));
+        assert_eq!(
+            count_kind(
+                &validate(&at, PostFormat::GrblHal),
+                FindingKind::LineTooLong
+            ),
+            0
+        );
+        assert_eq!(
+            count_kind(
+                &validate(&over, PostFormat::GrblHal),
+                FindingKind::LineTooLong
+            ),
+            1
+        );
+        // LinuxCNC has no such rule here.
+        assert_eq!(
+            count_kind(
+                &validate(&over, PostFormat::LinuxCnc),
+                FindingKind::LineTooLong
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn non_ascii_and_realtime_characters_are_errors_g8() {
+        let dash = "(Op 0 \u{2014} pocket)\nG0 X1\n";
+        for post in [PostFormat::Grbl, PostFormat::GrblHal] {
+            assert_eq!(
+                count_kind(&validate(dash, post), FindingKind::NonAsciiByte),
+                1
+            );
+        }
+        assert_eq!(
+            count_kind(
+                &validate(dash, PostFormat::LinuxCnc),
+                FindingKind::NonAsciiByte
+            ),
+            0
+        );
+        // `~` in a comment: Grbl 1.1 acts on it, grblHAL does not.
+        let tilde = "(resume ~ now)\n";
+        assert_eq!(
+            count_kind(
+                &validate(tilde, PostFormat::Grbl),
+                FindingKind::RealtimeCharacter
+            ),
+            1
+        );
+        assert_eq!(
+            count_kind(
+                &validate(tilde, PostFormat::GrblHal),
+                FindingKind::RealtimeCharacter
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn grblhal_word_set_g8() {
+        let prog = "G90.1\nG64\nM7\nG98 G81 X1 Y1 Z-1 R1 F100\nG80\n";
+        let plain = validate(prog, PostFormat::GrblHal);
+        assert_eq!(
+            count_kind(&plain, FindingKind::UnsupportedWord),
+            3,
+            "{plain:?}"
+        );
+        let with = validate_with(
+            prog,
+            PostFormat::GrblHal,
+            &ValidatorOptions {
+                mist_output: true,
+                path_blending: true,
+            },
+        );
+        assert_eq!(
+            count_kind(&with, FindingKind::UnsupportedWord),
+            1,
+            "only G90.1 left"
+        );
+        // Grbl 1.1 has no canned cycles.
+        assert_eq!(
+            count_kind(
+                &validate("G98 G81 X1 Y1 Z-1 R1 F100\n", PostFormat::Grbl),
+                FindingKind::UnsupportedWord
+            ),
+            1
+        );
+    }
+
+    /// G7: a native drill cycle that starts at the clearance height is
+    /// clean; the G98 return keeps the next traverse at that height.
+    #[test]
+    fn machine_safety_reads_a_canned_drill_cycle_g7() {
+        let cfg = MachineSafety {
+            clearance_z: 5.0,
+            min_z: None,
+            max_feed_mm_min: None,
+        };
+        let ok = "M3 S12000\nG0 Z5\nG0 X10 Y10 Z5\nG98 G81 X10 Y10 Z-6 R2 F250\n\
+                  G81 X30 Y10 Z-6 R2\nG80\nG0 X0 Y0 Z5\nM5\n";
+        let f = validate_machine_safety(ok, cfg);
+        assert!(f.is_empty(), "{f:?}");
+        // The same cycle started below the clearance plane is flagged.
+        let low = "M3 S12000\nG0 Z5\nG0 X10 Y10 Z5\nG0 Z2\nG99 G81 X10 Y10 Z-6 R1 F250\n\
+                   G81 X30 Y10 Z-6 R1\nG80\nG0 Z5\nM5\n";
+        let f = validate_machine_safety(low, cfg);
+        assert_eq!(count_kind(&f, FindingKind::RapidBelowClearance), 1, "{f:?}");
     }
 }

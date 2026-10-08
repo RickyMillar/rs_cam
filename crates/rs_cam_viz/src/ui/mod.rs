@@ -209,6 +209,9 @@ pub enum AppEvent {
     /// `tool_change` template; `Pause`/`M6` swap the template;
     /// `Suppress` strips tool-change blocks (keeping per-tool RPM).
     WizardSetToolChangeMode(Option<rs_cam_core::gcode::ToolChangeMode>),
+    /// Step 4 (grblHAL): one controller option of the project's post
+    /// block. `None` returns it to "from the machine profile" (G11).
+    WizardSetControllerOption(crate::state::wizard::ControllerOption, Option<bool>),
     /// Step 4.5: per-setup pause-message override. `None` falls back to
     /// the default `Setup change: <name>` text emitted before the
     /// inter-setup `M0`. `Some("...")` replaces it verbatim — used to

@@ -13,7 +13,8 @@
 //!   M30 are both valid RS274 program ends; cleared 16
 //!   WrongProgramEndCode).
 //!
-//! **Current baseline: ZERO findings across all 64 captures.** This test
+//! **Current baseline: ZERO findings across all 70 captures** (G9:
+//! 72 fixture pairs less the 2 refused f16 pairs). This test
 //! is the regression net: any reappearing finding is a real emitter /
 //! post / validator change and must be reviewed in the same commit.
 //!
@@ -24,7 +25,8 @@
 //! ```
 //!
 //! No `#[ignore]` — this is a normal test. It only depends on files
-//! committed at `planning/gcode_current_outputs/`, no external tooling.
+//! committed at `tests/fixtures/gcode_golden/` (the G9 goldens), no
+//! external tooling.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -34,50 +36,16 @@
     clippy::print_stderr
 )]
 
-use rs_cam_core::export::gcode_validator::validate;
-use rs_cam_core::gcode::PostFormat;
-use std::path::PathBuf;
+mod common;
 
-const FIXTURES: &[&str] = &[
-    "f1_basic_lines",
-    "f2_arcs_xy",
-    "f3_helical_ramp",
-    "f4_profile_multipass",
-    "f5_two_tool_changes",
-    "f6_two_setups",
-    "f7_full_circle",
-    "f8_x_only_feed",
-    "f9_ramp_into_arc",
-    "f10_tiny_arcs",
-    "f11_depth_step_boundary",
-    "f12_tool_change_at_z_zero",
-    "f13_climb_vs_conventional",
-    "f14_multi_line_pause_message",
-    "f15_embedded_newline_snippets",
-    "f16_comp_round_trip",
-];
+use common::gcode_fixtures::{DIALECTS, FIXTURES, golden_path};
+use rs_cam_core::export::gcode_validator::{ValidatorOptions, validate_with};
 
-const DIALECTS: &[(&str, PostFormat)] = &[
-    ("grbl", PostFormat::Grbl),
-    ("grblhal", PostFormat::GrblHal),
-    ("linuxcnc", PostFormat::LinuxCnc),
-    ("mach3", PostFormat::Mach3),
-];
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .expect("canonicalize workspace root")
-}
-
-fn read_capture(fixture: &str, dialect: &str) -> String {
-    let path = workspace_root()
-        .join("planning")
-        .join("gcode_current_outputs")
-        .join(format!("{fixture}_{dialect}.nc"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+/// The golden for one pair, or `None` when the export door refuses that
+/// pair (G9: a refused pair has no golden; `gcode_phase0_capture` pins the
+/// refusal).
+fn read_capture(fixture: &str, dialect: &str) -> Option<String> {
+    std::fs::read_to_string(golden_path(fixture, dialect)).ok()
 }
 
 #[test]
@@ -85,11 +53,19 @@ fn baseline_findings_match_expected() {
     let mut failures: Vec<String> = Vec::new();
     let mut captures = 0usize;
 
-    for fixture in FIXTURES {
+    for (fixture, _) in FIXTURES {
         for (dialect, post) in DIALECTS {
+            let Some(gcode) = read_capture(fixture, dialect) else {
+                continue;
+            };
             captures += 1;
-            let gcode = read_capture(fixture, dialect);
-            let findings = validate(&gcode, *post);
+            // G8: f18 emits with the grblHAL mist option on, so M7 is
+            // legal there; validate it with the options it emitted with.
+            let options = ValidatorOptions {
+                mist_output: *fixture == "f18_grblhal_options",
+                ..ValidatorOptions::default()
+            };
+            let findings = validate_with(&gcode, post, &options);
             println!("{fixture:32} {dialect:9} {} finding(s)", findings.len());
             if !findings.is_empty() {
                 let summary: Vec<String> = findings

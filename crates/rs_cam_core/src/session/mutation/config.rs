@@ -584,16 +584,28 @@ impl ProjectSession {
     /// The parse belongs to the caller
     /// (`MachineKinematics::from_grbl_settings`), which also decides
     /// whether the dump was recognised at all.
-    #[instrument(skip(self, kinematics))]
+    ///
+    /// G10: a dump that names its firmware (grblHAL) also sets the post
+    /// dialect, so the machine profile, not a separate project choice,
+    /// selects the dialect. The dialect is read at emit time and drops
+    /// nothing more than the machine change already does.
+    #[instrument(skip(self, kinematics, controller))]
     pub(crate) fn import_machine_settings(
         &mut self,
         kinematics: crate::machine::kinematics::MachineKinematics,
         max_feed_mm_min: Option<f64>,
+        controller: Option<crate::machine::ControllerSettings>,
     ) -> Effects {
         self.with_effects(None, move |session| {
             session.machine.kinematics = Some(kinematics);
             if let Some(max_feed) = max_feed_mm_min {
                 session.machine.max_feed_mm_min = max_feed;
+            }
+            if let Some(controller) = controller {
+                if let Some(format) = controller.firmware.post_format() {
+                    session.post.format = format;
+                }
+                session.machine.controller = Some(controller);
             }
             session.drop_simulation(SimulationDropCause::Machine);
         })

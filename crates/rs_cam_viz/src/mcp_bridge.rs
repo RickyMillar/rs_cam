@@ -590,16 +590,9 @@ pub enum McpRequestKind {
         /// G-OPENGUARD: throw away the open project's unsaved changes.
         discard_unsaved: bool,
     },
-    ExportGcode {
-        path: String,
-        accept_unmodeled_tool_load: bool,
-        accept_exceeded_tool_load: bool,
-        tool_change_mode: Option<String>,
-        split_setups: bool,
-        /// G-STALEXPORT: emit an edited operation's previous geometry
-        /// rather than refusing. See `ExportParam::accept_previous_geometry`.
-        accept_previous_geometry: bool,
-    },
+    /// `export_gcode`, with every wire option (G11: one struct, so a new
+    /// option cannot be dropped between the wire and the handler).
+    ExportGcode(Box<rs_cam_mcp::server::ExportParam>),
     /// F3.1 — add a toolpath through `handle_add_toolpath`, the same
     /// `AppEvent::AddToolpath` the Add menu emits, so the GUI's own
     /// tool/model binding and its add-time refusal path run.

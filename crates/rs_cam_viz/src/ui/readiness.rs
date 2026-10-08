@@ -571,6 +571,11 @@ pub fn project_cycle_time(
             ));
         }
     }
+    // G5: the controller's spindle wait (`$394`) at each spindle start.
+    // The toolpath estimates hold only motion.
+    if total.basis.is_some() {
+        total.seconds += rs_cam_core::session::controller_spindle_wait_s(session);
+    }
     total
 }
 

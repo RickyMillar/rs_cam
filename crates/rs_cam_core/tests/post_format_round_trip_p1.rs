@@ -74,8 +74,10 @@ const RECT_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" he
 </svg>
 "#;
 
-/// The M-code the two dialects disagree about. GRBL denies it, grblHAL
-/// does not.
+/// The probe M-code. Both GRBL dialects deny `M7` by default since G6
+/// (2026-10-08: grblHAL refuses M7 without a mist output, gcode.c:1855-1856),
+/// so the observable is the post NAME in the drop warning, and the mist
+/// option that lets `M7` through on grblHAL only.
 const DIALECT_PROBE_MCODE: &str = "M7";
 
 fn scratch_dir(tag: &str) -> PathBuf {
@@ -93,6 +95,11 @@ fn write_model(dir: &Path) -> PathBuf {
 /// A one-pocket project whose post format is the caller's token and
 /// whose single toolpath carries `M7` as its post-gcode snippet.
 fn build_project(dir: &Path, format: PostFormat) -> PathBuf {
+    build_project_with_mist(dir, format, None)
+}
+
+/// [`build_project`], with the post block's `mist_output` option (G6).
+fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -> PathBuf {
     let model_path = write_model(dir);
 
     let mut builder = ProjectSessionBuilder::new();
@@ -113,6 +120,7 @@ fn build_project(dir: &Path, format: PostFormat) -> PathBuf {
 
     let mut post = session.post_config().clone();
     post.format = format;
+    post.mist_output = mist;
     let _ = session
         .apply(Command::SetPostConfig(SetPostConfigArgs {
             post: Box::new(post),
@@ -259,14 +267,35 @@ fn the_exported_gcode_uses_the_grblhal_definition() {
     let gcode = reload_and_export(&project_path);
 
     assert!(
-        gcode.lines().any(|line| line.trim() == DIALECT_PROBE_MCODE),
-        "grblHAL supports M7, so the toolpath's post-gcode snippet must survive verbatim. \
-         The export used the GRBL definition instead. Emitted:\n{gcode}"
+        gcode.contains("M7 unsupported on grblHAL"),
+        "the grblHAL definition drops M7 without the mist option, under its own name. \
+         Emitted:\n{gcode}"
     );
     assert!(
         !gcode.contains("unsupported on GRBL"),
         "the export fell through to the GRBL definition; emitted:\n{gcode}"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// G6: the mist option round-trips through the project file, and only
+/// grblHAL lets `M7` through with it. GRBL 1.1 has no M7 at all.
+#[test]
+fn the_mist_option_survives_a_reload_and_writes_m7_on_grblhal_g6() {
+    let dir = scratch_dir("export_hal_mist");
+    let project_path = build_project_with_mist(&dir, PostFormat::GrblHal, Some(true));
+    let gcode = reload_and_export(&project_path);
+    assert!(
+        gcode.lines().any(|line| line.trim() == DIALECT_PROBE_MCODE),
+        "grblHAL with a mist output writes the M7 snippet verbatim; emitted:\n{gcode}"
+    );
+    assert!(!gcode.contains("unsupported"), "{gcode}");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let dir = scratch_dir("export_grbl_mist");
+    let project_path = build_project_with_mist(&dir, PostFormat::Grbl, Some(true));
+    let gcode = reload_and_export(&project_path);
+    assert!(gcode.contains("M7 unsupported on GRBL"), "{gcode}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

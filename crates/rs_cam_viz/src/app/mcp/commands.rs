@@ -1282,15 +1282,9 @@ impl RsCamApp {
         p: &rs_cam_mcp::server::ImportMachineSettingsParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        use rs_cam_core::machine::kinematics::{MachineKinematics, default_junction_deviation_mm};
+        use rs_cam_core::machine::kinematics::MachineKinematics;
         let imp = MachineKinematics::from_grbl_settings(&p.dump);
-        let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
-            || imp.max_feed_mm_min.is_some()
-            || imp.arc_tolerance_mm.is_some()
-            || imp.max_spindle_rpm.is_some()
-            || (imp.kinematics.junction_deviation_mm - default_junction_deviation_mm()).abs()
-                > 1e-12;
-        if !recognized {
+        if !imp.is_recognized() {
             return CorePlan::Answered(json_str(serde_json::json!({
                 "ok": false,
                 "error": "No GRBL settings recognised in the dump (expected $N=value lines, \
@@ -1321,11 +1315,27 @@ impl RsCamApp {
             "arc_tolerance_mm": imp.arc_tolerance_mm,
             "max_spindle_rpm": imp.max_spindle_rpm,
             "ignored_settings": imp.ignored_count,
+            // G10: the controller facts and the dialect they select.
+            "controller": imp.has_controller_facts().then(|| serde_json::json!({
+                "firmware": imp.controller.firmware,
+                "rpm_min": imp.controller.rpm_min,
+                "rpm_max": imp.controller.rpm_max,
+                "mode": imp.controller.mode,
+                "spindle_at_speed_tolerance_pct": imp.controller.spindle_at_speed_tolerance_pct,
+                "tool_change_mode": imp.controller.tool_change_mode,
+                "tool_change_probing_distance_mm": imp.controller.tool_change_probing_distance_mm,
+                "spindle_on_delay_s": imp.controller.spindle_on_delay_s,
+                "mist_output": imp.controller.mist_output,
+                "ignores_m6": imp.controller.ignores_m6(),
+            })),
         });
         CorePlan::Apply(
             Command::ImportMachineSettings(rs_cam_core::session::ImportMachineSettingsArgs {
                 kinematics: Box::new(kinematics),
                 max_feed_mm_min: imp.max_feed_mm_min,
+                controller: imp
+                    .has_controller_facts()
+                    .then(|| Box::new(imp.controller.clone())),
             }),
             Box::new(before),
         )
@@ -2460,8 +2470,11 @@ impl RsCamApp {
                 })))
             }
             CommandId::ImportMachineSettings => {
+                // G10: a dump that names grblHAL moves the post dialect.
+                self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
                 let new_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+                let post_format = self.controller.state().session.post_config().format;
                 // Built field by field, in the order the reply always
                 // carried them: `serde_json` runs with `preserve_order`
                 // here, so an object built by patching would move
@@ -2475,6 +2488,8 @@ impl RsCamApp {
                     "arc_tolerance_mm": before.extra("arc_tolerance_mm"),
                     "max_spindle_rpm": before.extra("max_spindle_rpm"),
                     "ignored_settings": before.extra("ignored_settings"),
+                    "controller": before.extra("controller"),
+                    "post_format": post_format.to_token(),
                 });
                 CoreReply::quiet(json_str(serde_json::json!({
                     "ok": true,

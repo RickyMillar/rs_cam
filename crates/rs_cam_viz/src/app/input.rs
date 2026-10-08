@@ -95,7 +95,30 @@ impl RsCamApp {
                 AppEvent::WizardSetOutputLayout(layout) => {
                     let s = self.controller.state_mut();
                     s.gui.wizard.output_layout = layout;
+                    s.gui.wizard.layout_chosen = true;
                     s.gui.mark_edited();
+                }
+                AppEvent::WizardSetControllerOption(option, value) => {
+                    // G11: project data, written through the post row, the
+                    // same row MCP `export_gcode` writes.
+                    let command = {
+                        let s = self.controller.state_mut();
+                        s.gui.mark_edited();
+                        let mut post = s.session.post_config().clone();
+                        option.write(&mut post, value);
+                        rs_cam_core::session::Command::SetPostConfig(
+                            rs_cam_core::session::SetPostConfigArgs {
+                                post: Box::new(post),
+                            },
+                        )
+                    };
+                    let applied = self.controller.state_mut().session.apply(command);
+                    match applied {
+                        Ok(effects) => self.controller.adopt_post_effects(&effects),
+                        Err(error) => {
+                            tracing::warn!("the controller option write was refused: {error}");
+                        }
+                    }
                 }
                 AppEvent::WizardSetFilenameTemplate(template) => {
                     let s = self.controller.state_mut();

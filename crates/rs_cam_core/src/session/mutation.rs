@@ -85,6 +85,11 @@ fn post_change_reaches_motion(
     let mut exempt_before = before.clone();
     exempt_before.format.clone_from(&after.format);
     exempt_before.spindle_strategy = after.spindle_strategy;
+    // G5-G7: the controller options are read at emit time only. The
+    // simulation always runs the expanded drill moves.
+    exempt_before.controller_waits_for_spindle = after.controller_waits_for_spindle;
+    exempt_before.mist_output = after.mist_output;
+    exempt_before.native_drill_cycles = after.native_drill_cycles;
     exempt_before != *after
 }
 

@@ -2,9 +2,9 @@ use rs_cam_core::export::gcode_validator::{
     Finding, MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
 };
 use rs_cam_core::gcode::{
-    GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
-    export_gcode_multi_setup_with_overlay_checked, export_gcode_phases_with_overlay_checked,
-    replace_rapids_with_feed,
+    ExportPhases, GcodePhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
+    arrange_phases_by_setup, export_gcode_multi_setup_with_overlay_checked,
+    export_gcode_phases_with_overlay_checked, replace_rapids_with_feed,
 };
 use rs_cam_core::session::ProjectSession;
 
@@ -154,21 +154,42 @@ use crate::state::simulation::SimulationState;
 /// is set to the effective safe-Z (`wizard.safe_z_override` or
 /// `gui.post.safe_z`). Otherwise it stays `None` and the overlay's
 /// `apply_to_program` no-ops on cutting Z values.
-fn overlay_for(gui: &GuiState) -> WizardOverlay {
+///
+/// The controller options (spindle wait, mist, native drill cycles, the S
+/// range, `$341=4`) come from the session's post block and machine
+/// profile through [`rs_cam_core::gcode::PostConfig::apply_controller_options`],
+/// the one resolution every export door uses (G5-G7, G10, G11).
+pub fn overlay_for(session: &ProjectSession, gui: &GuiState) -> WizardOverlay {
     let w = &gui.wizard;
     let dry_run_safe_z = if w.dry_run {
         Some(w.safe_z_override.unwrap_or(gui.post.safe_z))
     } else {
         None
     };
-    WizardOverlay {
+    let mut overlay = WizardOverlay {
         wcs_override: w.wcs_override,
         units_override: w.units_override,
         safe_z_override: w.safe_z_override,
         spindle_warmup_secs: w.spindle_warmup_secs,
         dry_run_safe_z,
         tool_change_override: w.tool_change_override,
-    }
+        ..WizardOverlay::default()
+    };
+    session
+        .post_config()
+        .apply_controller_options(session.machine(), &mut overlay);
+    overlay
+}
+
+/// The post-format validator, run with the controller options this export
+/// emits with (G8): the mist output, from the same overlay.
+pub fn validate_export(session: &ProjectSession, gui: &GuiState, gcode: &str) -> Vec<Finding> {
+    let overlay = overlay_for(session, gui);
+    rs_cam_core::export::gcode_validator::validate_with(
+        gcode,
+        gui.post.format,
+        &rs_cam_core::export::gcode_validator::ValidatorOptions::from_overlay(&overlay),
+    )
 }
 
 fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
@@ -442,6 +463,7 @@ fn gcode_phase_for_session_toolpath<'a>(
         tool: tool.map(phase_tool_for_export),
         coolant: tc.coolant,
         controller_compensation: rs_cam_core::gcode::controller_compensation_for(tc),
+        drill: rs_cam_core::gcode::phase_drill_for(tc),
     })
 }
 
@@ -508,27 +530,37 @@ pub fn export_gcode_from_session_reporting(
     let post = gui.post.format.definition();
 
     let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len(), stale)?;
-    let phases: Vec<GcodePhase<'_>> = emitted
-        .iter()
-        .filter_map(|(idx, tp)| {
-            let tc = session.toolpath_configs().get(*idx)?;
-            gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
-        })
-        .collect();
+    // G3 (SAFETY, 2026-10-08): two or more setups get an M0 pause between
+    // them, through the core arrangement every single-file door shares.
+    // This door used to emit every phase in one run, so setup 2 cut on the
+    // unflipped part with no stop.
+    let arranged = arrange_phases_by_setup(session, |idx| {
+        let (_, tp) = emitted.iter().find(|(i, _)| *i == idx)?;
+        let tc = session.toolpath_configs().get(idx)?;
+        gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+    });
 
-    if phases.is_empty() {
+    if arranged.phases().is_empty() {
         return Err(crate::error::VizError::Export(
             "No computed toolpaths to export".to_owned(),
         ));
     }
 
-    let mut gcode = export_gcode_phases_with_overlay_checked(
-        &phases,
-        post,
-        &viz_load_report(session, sim),
-        policy,
-        &overlay_for(gui),
-    )
+    let report = viz_load_report(session, sim);
+    let overlay = overlay_for(session, gui);
+    let mut gcode = match arranged {
+        ExportPhases::OneSetup(phases) => {
+            export_gcode_phases_with_overlay_checked(&phases, post, &report, policy, &overlay)
+        }
+        ExportPhases::Setups(setups) => export_gcode_multi_setup_with_overlay_checked(
+            &setups,
+            post,
+            gui.post.safe_z,
+            &report,
+            policy,
+            &overlay,
+        ),
+    }
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
@@ -544,73 +576,151 @@ pub fn export_gcode_from_session_reporting(
 }
 
 /// Export all setups as a single G-code file with M0 pauses (session-based).
+///
+/// G3: the single-file door now puts the M0 pause between setups itself,
+/// so this is the same export. It stays as a name for the keyboard route.
 pub fn export_combined_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
 ) -> Result<String, crate::error::VizError> {
-    let post = gui.post.format.definition();
+    export_gcode_from_session(session, gui, sim)
+}
 
-    // Shifted toolpaths must outlive the borrowed phases, so build the
-    // whole project's set up front and slice it per setup below.
-    let emitted = emitted_toolpaths(
-        session,
-        gui,
-        0..session.toolpath_configs().len(),
-        gui.stale_export,
-    )?;
-    let setup_phases: Vec<GcodeSetupPhase<'_>> = session
+/// How many setups hold an enabled toolpath. A layout default and the MCP
+/// split read it (G3).
+pub fn setups_with_enabled_ops(session: &ProjectSession) -> usize {
+    session
         .list_setups()
         .iter()
-        .filter_map(|setup| {
-            // Driven by `setup.toolpath_indices`, NOT by `emitted`'s own
-            // order: the setup's list is the machining order and it is
-            // not necessarily ascending after an op reorder.
-            let phases: Vec<GcodePhase<'_>> = setup
-                .toolpath_indices
-                .iter()
-                .filter_map(|tp_idx| {
-                    let (_, tp) = emitted.iter().find(|(idx, _)| idx == tp_idx)?;
-                    let tc = session.toolpath_configs().get(*tp_idx)?;
-                    gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
-                })
-                .collect();
-            if phases.is_empty() {
-                None
-            } else {
-                Some(GcodeSetupPhase {
-                    setup_label: &setup.name,
-                    phases,
-                    pause_message: setup.pause_message.as_deref(),
-                })
-            }
+        .filter(|s| {
+            s.toolpath_indices.iter().any(|i| {
+                session
+                    .toolpath_configs()
+                    .get(*i)
+                    .is_some_and(|tc| tc.enabled)
+            })
         })
-        .collect();
+        .count()
+}
 
-    if setup_phases.is_empty() {
-        return Err(crate::error::VizError::Export(
-            "No computed toolpaths to export".to_owned(),
+/// One file of a "one file per setup" export.
+pub struct SetupFile {
+    pub setup_id: usize,
+    pub name: String,
+    /// The header ([`setup_file_header`]) and the program.
+    pub gcode: String,
+    /// What the machine-safety pass found in this file (EDG-06).
+    pub machine_safety: Vec<Finding>,
+}
+
+/// The "one file per setup" export: one [`SetupFile`] per setup that has
+/// an emitted toolpath, in setup order, each with its header.
+///
+/// G3 (2026-10-08): the GUI layout and MCP `split_setups` both take this
+/// door, so the two surfaces write the same files for one project. A setup
+/// with no enabled toolpath is skipped (it has nothing to cut). Any other
+/// refusal names the setup.
+pub fn export_per_setup_files(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    policy: ToolLoadExportPolicy,
+    stale: StaleResultPolicy,
+) -> Result<Vec<SetupFile>, crate::error::VizError> {
+    let mut files: Vec<(usize, String, ExportedGcode)> = Vec::new();
+    for setup in session.list_setups() {
+        let has_enabled = setup.toolpath_indices.iter().any(|i| {
+            session
+                .toolpath_configs()
+                .get(*i)
+                .is_some_and(|tc| tc.enabled)
+        });
+        if !has_enabled {
+            continue;
+        }
+        let exported = export_setup_gcode_from_session_reporting(
+            session,
+            gui,
+            sim,
+            crate::state::job::SetupId(setup.id),
+            policy,
+            stale,
+        )
+        .map_err(|e| crate::error::VizError::Export(format!("setup '{}': {e}", setup.name)))?;
+        files.push((setup.id, setup.name.clone(), exported));
+    }
+    let post = gui.post.format.definition();
+    let total = files.len();
+    Ok(files
+        .into_iter()
+        .enumerate()
+        .map(|(i, (setup_id, name, exported))| SetupFile {
+            gcode: format!(
+                "{}{}",
+                setup_file_header(session, post, setup_id, i, total),
+                exported.gcode
+            ),
+            setup_id,
+            name,
+            machine_safety: exported.machine_safety,
+        })
+        .collect())
+}
+
+/// The header of one per-setup G-code file: the setup, its datum and,
+/// after the first file, the flip reminder.
+///
+/// G3 (2026-10-08): ONE builder for the GUI "one file per setup" layout
+/// and MCP `export_gcode` with `split_setups`. The GUI files had no header
+/// before, so the two surfaces wrote different files for one project.
+///
+/// G-EXPORT-DATUM + Z-datum (2026-09-07): X0 Y0 is the stock's min corner
+/// in EVERY file (the export re-expresses every setup in the
+/// stock-relative frame), so the operator KEEPS the XY zero across the
+/// flip. Z follows the setup's own `datum.z_method` (see
+/// `rs_cam_core::gcode::export_datum_shift_for_toolpath`): the header
+/// states that declared datum, and for the `StockTop` default the
+/// coordinates are already zeroed to the top.
+///
+/// `index` is 0-based; `total` is the number of files written.
+pub fn setup_file_header(
+    session: &ProjectSession,
+    post: &rs_cam_core::gcode::PostDefinition,
+    setup_id: usize,
+    index: usize,
+    total: usize,
+) -> String {
+    let setup = session.list_setups().iter().find(|s| s.id == setup_id);
+    let name = setup.map_or("", |s| s.name.as_str());
+    let z_datum = match setup.map(|s| &s.datum.z_method) {
+        None | Some(rs_cam_core::session::ZDatum::StockTop) => "Z0 = top of stock".to_owned(),
+        Some(rs_cam_core::session::ZDatum::MachineTable) => {
+            "Z0 = machine table / spoilboard -- zero Z there \
+             (NOT applied to coordinates)"
+                .to_owned()
+        }
+        Some(rs_cam_core::session::ZDatum::FixedOffset(z)) => format!(
+            "Z0 = fixed offset {z:.3}mm from machine home \
+             (declared; NOT applied to coordinates)"
+        ),
+        Some(rs_cam_core::session::ZDatum::Manual) => {
+            "Z0 = set manually per setup notes (NOT applied to coordinates)".to_owned()
+        }
+    };
+    let mut header =
+        post.render_comment(&format!("rs_cam setup {}/{total}: \"{name}\"", index + 1));
+    header.push_str(&post.render_comment(&format!(
+        "DATUM: X0 Y0 = stock min corner (SAME in every setup file); {z_datum}"
+    )));
+    if index > 0 {
+        // An operator message: a MSG line on grblHAL, so the sender shows
+        // it before the file starts to cut.
+        header.push_str(&post.render_message_line(
+            "FLIP PART BEFORE RUNNING -- re-zero Z to the datum above; KEEP the same X/Y zero",
         ));
     }
-
-    let mut gcode = export_gcode_multi_setup_with_overlay_checked(
-        &setup_phases,
-        post,
-        gui.post.safe_z,
-        &viz_load_report(session, sim),
-        gui.tool_load_overrides.as_policy(),
-        &overlay_for(gui),
-    )
-    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
-
-    // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
-
-    if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
-    }
-
-    Ok(gcode)
+    header
 }
 
 /// Export a single toolpath (by semantic id) as G-code (session-based).
@@ -662,7 +772,7 @@ pub fn export_single_toolpath_from_session(
         post,
         &viz_load_report(session, sim),
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(gui),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
@@ -749,7 +859,7 @@ pub fn export_setup_gcode_from_session_reporting(
         post,
         &viz_load_report(session, sim),
         policy,
-        &overlay_for(gui),
+        &overlay_for(session, gui),
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 

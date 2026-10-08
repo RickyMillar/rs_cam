@@ -1,7 +1,14 @@
 # GRBL 1.1+ post-processor.
 #
-# Verified by `gcode_emitter_parity` (side-by-side vs old trait) and by
-# the captured-fixtures check under `planning/gcode_current_outputs/`.
+# Byte goldens: `crates/rs_cam_core/tests/fixtures/gcode_golden/*_grbl.nc`,
+# compared by `tests/gcode_phase0_capture.rs` (G9). Grbl 1.1 sources
+# cited below: grbl/grbl v1.1 (the copy the 2026-10-08 review fetched).
+#
+# Grbl 1.1 reads at most 79 characters a line, after it drops comments
+# and spaces (protocol.h:32, protocol.c:111-141), has no MSG comments
+# (gcode.c:387) and reads `!`, `~`, `?` and every byte above 0x7F as a
+# real-time command anywhere in the stream (serial.c:151-183). The
+# emitter keeps every comment ASCII and free of those characters.
 
 name = "GRBL"
 wcs = "G54"

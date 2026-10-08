@@ -387,22 +387,8 @@ impl super::RsCamApp {
                     .push_mcp_outcome(format!("MCP: Loaded '{name}'"), &outcome);
                 let _ = response_tx.send(resp);
             }
-            McpRequestKind::ExportGcode {
-                path,
-                accept_unmodeled_tool_load,
-                accept_exceeded_tool_load,
-                tool_change_mode,
-                split_setups,
-                accept_previous_geometry,
-            } => {
-                let resp = self.mcp_export_gcode(
-                    &path,
-                    accept_unmodeled_tool_load,
-                    accept_exceeded_tool_load,
-                    tool_change_mode.as_deref(),
-                    split_setups,
-                    accept_previous_geometry,
-                );
+            McpRequestKind::ExportGcode(param) => {
+                let resp = self.mcp_export_gcode(&param);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetToolpathDiagnostics { index } => {
@@ -794,33 +780,53 @@ impl super::RsCamApp {
 
     // ── Mutation implementations ─────────────────────────────────────
 
-    fn mcp_export_gcode(
-        &mut self,
-        path: &str,
-        accept_unmodeled_tool_load: bool,
-        accept_exceeded_tool_load: bool,
-        tool_change_mode: Option<&str>,
-        split_setups: bool,
-        accept_previous_geometry: bool,
-    ) -> String {
+    fn mcp_export_gcode(&mut self, param: &rs_cam_mcp::server::ExportParam) -> String {
+        let path = param.path.as_str();
+        let accept_unmodeled_tool_load = param.accept_unmodeled_tool_load;
+        let accept_exceeded_tool_load = param.accept_exceeded_tool_load;
+        let accept_previous_geometry = param.accept_previous_geometry;
         // Apply the requested tool-change handling to the GUI wizard
         // before export so `overlay_for` picks it up — the MCP equivalent
-        // of the export wizard's Tool Change dropdown. Without this, MCP
-        // exports always used the post default (M0 manual pause), which is
-        // wrong for gSender/BitSetter setups that need M6 to trigger the
-        // tool-length probe on every change.
-        if let Some(mode_str) = tool_change_mode {
-            let mode = match mode_str.to_ascii_lowercase().as_str() {
-                "pause" | "m0" | "manual" => rs_cam_core::gcode::ToolChangeMode::Pause,
-                "m6" | "atc" => rs_cam_core::gcode::ToolChangeMode::M6,
-                "suppress" | "none" => rs_cam_core::gcode::ToolChangeMode::Suppress,
-                other => {
-                    return text(format!(
-                        "Export failed: unknown tool_change_mode '{other}' (expected 'pause', 'm6', or 'suppress')"
-                    ));
+        // of the export dialog's Tool change control.
+        if let Some(mode) = param.tool_change_mode {
+            use rs_cam_mcp::server::ToolChangeModeParam;
+            self.controller.state_mut().gui.wizard.tool_change_override = Some(match mode {
+                ToolChangeModeParam::Pause => rs_cam_core::gcode::ToolChangeMode::Pause,
+                ToolChangeModeParam::M6 => rs_cam_core::gcode::ToolChangeMode::M6,
+                ToolChangeModeParam::Suppress => rs_cam_core::gcode::ToolChangeMode::Suppress,
+            });
+        }
+        // G11: the controller options are project data. A value given
+        // here writes the post block through `SetPostConfig`, the row the
+        // export dialog writes, so the GUI, MCP and the CLI read one
+        // value.
+        if param.controller_waits_for_spindle.is_some()
+            || param.mist_output.is_some()
+            || param.native_drill_cycles.is_some()
+        {
+            let mut post = self.controller.state().session.post_config().clone();
+            if param.controller_waits_for_spindle.is_some() {
+                post.controller_waits_for_spindle = param.controller_waits_for_spindle;
+            }
+            if param.mist_output.is_some() {
+                post.mist_output = param.mist_output;
+            }
+            if param.native_drill_cycles.is_some() {
+                post.native_drill_cycles = param.native_drill_cycles;
+            }
+            let command = rs_cam_core::session::Command::SetPostConfig(
+                rs_cam_core::session::SetPostConfigArgs {
+                    post: Box::new(post),
+                },
+            );
+            let applied = self.controller.state_mut().session.apply(command);
+            match applied {
+                Ok(effects) => {
+                    self.controller.adopt_post_effects(&effects);
+                    self.controller.state_mut().gui.mark_edited();
                 }
-            };
-            self.controller.state_mut().gui.wizard.tool_change_override = Some(mode);
+                Err(e) => return text(format!("Export failed: {e}")),
+            }
         }
         // Route through the viz-side exporter so the gate sees the viz cut
         // trace (`state.simulation.results.cut_trace`) — the async sim
@@ -873,14 +879,13 @@ impl super::RsCamApp {
         // M0 because the Z re-zero after a flip is a fresh job, not a
         // mid-program jog. tool_change_mode (set on the wizard above) still
         // applies within each file.
+        // G3: omitted, the post decides (grblHAL: one file per setup).
+        let split_setups = param
+            .split_setups
+            .unwrap_or(state.gui.post.format.definition().prefer_one_file_per_setup);
         if split_setups {
-            let setups: Vec<(usize, String)> = state
-                .session
-                .list_setups()
-                .iter()
-                .map(|s| (s.id, s.name.clone()))
-                .collect();
-            if setups.len() > 1 {
+            let setups_with_ops = crate::io::export::setups_with_enabled_ops(&state.session);
+            if setups_with_ops > 1 {
                 let path_buf = Path::new(path);
                 let stem = path_buf
                     .file_stem()
@@ -891,72 +896,29 @@ impl super::RsCamApp {
                     .and_then(|s| s.to_str())
                     .unwrap_or("nc");
                 let parent = path_buf.parent();
-                let post = state.gui.post.format.definition();
-                let total = setups.len();
+                // G3: the one per-setup door the GUI layout takes, header
+                // included.
+                let files = match crate::io::export::export_per_setup_files(
+                    &state.session,
+                    &state.gui,
+                    &state.simulation,
+                    policy,
+                    stale,
+                ) {
+                    Ok(files) => files,
+                    Err(e) => return text(format!("Export failed: {e}")),
+                };
+                let total = files.len();
                 let mut written: Vec<String> = Vec::new();
                 // EDG-06: one findings list over every per-setup file, so
                 // the reply names an error-severity finding in file 2 as
                 // plainly as one in file 1.
                 let mut machine_safety: Vec<rs_cam_core::export::gcode_validator::Finding> =
                     Vec::new();
-                for (i, (id, name)) in setups.iter().enumerate() {
-                    let exported =
-                        match crate::io::export::export_setup_gcode_from_session_reporting(
-                            &state.session,
-                            &state.gui,
-                            &state.simulation,
-                            crate::state::job::SetupId(*id),
-                            rs_cam_core::gcode::ToolLoadExportPolicy {
-                                accept_unmodeled: accept_unmodeled_tool_load,
-                                accept_exceeded: accept_exceeded_tool_load,
-                            },
-                            stale,
-                        ) {
-                            Ok(e) => e,
-                            Err(e) => return text(format!("Export failed (setup '{name}'): {e}")),
-                        };
-                    let gcode = exported.gcode;
-                    machine_safety.extend(exported.machine_safety);
-                    // G-EXPORT-DATUM + Z-datum (2026-09-07): name the
-                    // datum. X0 Y0 is the stock's min corner in EVERY file
-                    // (the export re-expresses every setup in the
-                    // stock-relative frame), so the operator KEEPS the XY
-                    // zero across the flip. Z now follows the setup's own
-                    // `datum.z_method` (see
-                    // `rs_cam_core::gcode::export_datum_shift_for_toolpath`):
-                    // the header states that declared datum, and for the
-                    // `StockTop` default the coordinates are already zeroed
-                    // to the top.
-                    let setup_ref = state.session.list_setups().iter().find(|s| s.id == *id);
-                    let z_datum = match setup_ref.map(|s| &s.datum.z_method) {
-                        None | Some(rs_cam_core::session::ZDatum::StockTop) => {
-                            "Z0 = top of stock".to_owned()
-                        }
-                        Some(rs_cam_core::session::ZDatum::MachineTable) => {
-                            "Z0 = machine table / spoilboard -- zero Z there \
-                             (NOT applied to coordinates)"
-                                .to_owned()
-                        }
-                        Some(rs_cam_core::session::ZDatum::FixedOffset(z)) => format!(
-                            "Z0 = fixed offset {z:.3}mm from machine home \
-                             (declared; NOT applied to coordinates)"
-                        ),
-                        Some(rs_cam_core::session::ZDatum::Manual) => {
-                            "Z0 = set manually per setup notes (NOT applied to coordinates)"
-                                .to_owned()
-                        }
-                    };
-                    let mut header =
-                        post.render_comment(&format!("rs_cam setup {}/{total}: \"{name}\"", i + 1));
-                    header.push_str(&post.render_comment(&format!(
-                        "DATUM: X0 Y0 = stock min corner (SAME in every setup file); {z_datum}"
-                    )));
-                    if i > 0 {
-                        header.push_str(&post.render_comment(
-                            "FLIP PART BEFORE RUNNING -- re-zero Z to the datum above; KEEP the same X/Y zero",
-                        ));
-                    }
-                    let safe_name: String = name
+                for (i, file) in files.into_iter().enumerate() {
+                    machine_safety.extend(file.machine_safety);
+                    let safe_name: String = file
+                        .name
                         .chars()
                         .map(|c| if c.is_alphanumeric() { c } else { '_' })
                         .collect();
@@ -965,7 +927,7 @@ impl super::RsCamApp {
                         Some(p) => p.join(file_name),
                         None => std::path::PathBuf::from(file_name),
                     };
-                    if let Err(e) = std::fs::write(&out_path, format!("{header}{gcode}")) {
+                    if let Err(e) = std::fs::write(&out_path, &file.gcode) {
                         return text(format!("Export failed writing {}: {e}", out_path.display()));
                     }
                     written.push(out_path.display().to_string());

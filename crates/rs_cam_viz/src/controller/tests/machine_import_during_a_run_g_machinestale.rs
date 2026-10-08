@@ -107,6 +107,7 @@ fn import_machine_settings_as_mcp_does(controller: &mut AppController<ScriptedBa
         .apply(Command::ImportMachineSettings(ImportMachineSettingsArgs {
             kinematics: Box::new(kinematics),
             max_feed_mm_min: Some(4321.0),
+            controller: None,
         }))
         .expect("the import row applies");
     controller.state.gui.mark_edited();

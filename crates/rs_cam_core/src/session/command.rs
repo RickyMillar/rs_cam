@@ -1543,6 +1543,11 @@ pub struct ImportMachineSettingsArgs {
     /// `None` means the dump published none, and the machine keeps the
     /// rate it has.
     pub max_feed_mm_min: Option<f64>,
+    /// G10: the controller facts the dump carried. `None` keeps the
+    /// machine's own. When the firmware is known, the project's post
+    /// dialect follows it in the same command: the profile selects the
+    /// dialect.
+    pub controller: Option<Box<crate::machine::ControllerSettings>>,
 }
 
 /// The arguments of the `set_spindle_strategy` command.
@@ -2388,9 +2393,11 @@ impl ProjectSession {
             Command::SetMachineKinematics(args) => {
                 Ok(self.set_machine_kinematics(*args.kinematics))
             }
-            Command::ImportMachineSettings(args) => {
-                Ok(self.import_machine_settings(*args.kinematics, args.max_feed_mm_min))
-            }
+            Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(
+                *args.kinematics,
+                args.max_feed_mm_min,
+                args.controller.map(|c| *c),
+            )),
             Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
             Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
             Command::SetRestAnalysisConfig(args) => {

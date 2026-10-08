@@ -404,6 +404,54 @@ pub fn toolpath_cycle_time(
     CycleTime::NONE
 }
 
+/// G5: how many times the program starts the spindle: once at the start,
+/// then at each tool change, each change of S, and each setup pause.
+///
+/// The count reads the enabled toolpaths in setup order (index order when
+/// the project has one setup), the order the export writes them.
+pub fn spindle_starts(session: &super::ProjectSession) -> usize {
+    let spindle_default = session.post_config().spindle_speed;
+    let mut starts = 0usize;
+    for setup in session.list_setups() {
+        // A setup pause stops the spindle (M5), so the first op of each
+        // setup starts it again.
+        let mut last: Option<(usize, u32)> = None;
+        for idx in &setup.toolpath_indices {
+            let Some(tc) = session.toolpath_configs().get(*idx) else {
+                continue;
+            };
+            if !tc.enabled {
+                continue;
+            }
+            let rpm =
+                crate::compute::catalog::effective_spindle_rpm(&tc.operation, spindle_default);
+            if last != Some((tc.tool_id, rpm)) {
+                starts += 1;
+                last = Some((tc.tool_id, rpm));
+            }
+        }
+    }
+    starts
+}
+
+/// G5: the seconds the controller spends waiting for the spindle over the
+/// whole program: the profile's spindle on delay (`$394`) for each spindle
+/// start. 0 when the profile has no controller settings.
+///
+/// grblHAL waits `$394` on every M3 that changes the spindle state
+/// (spindle_control.c:828-838, 787-790).
+pub fn controller_spindle_wait_s(session: &super::ProjectSession) -> f64 {
+    let per_start = session
+        .machine()
+        .controller
+        .as_ref()
+        .map_or(0.0, crate::machine::ControllerSettings::spindle_wait_s);
+    if per_start <= 0.0 {
+        return 0.0;
+    }
+    per_start * spindle_starts(session) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

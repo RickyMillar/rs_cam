@@ -467,6 +467,7 @@ mod stage0_solve_tests {
             rigidity: RigidityProfile::default(),
             aggressiveness: crate::machine::DEFAULT_AGGRESSIVENESS,
             kinematics: None,
+            controller: None,
         }
     }
 

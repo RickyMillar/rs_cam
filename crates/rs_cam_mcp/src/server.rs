@@ -206,6 +206,19 @@ pub struct SimulationParam {
     pub resolution: Option<f64>,
 }
 
+/// The tool-change handling of one export (`export_gcode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ToolChangeModeParam {
+    /// M5, the operator message, M0.
+    Pause,
+    /// M5, the operator message, `M6 T<n>`.
+    M6,
+    /// A bare M0 pause at each change.
+    Suppress,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct ExportParam {
     /// Output file path for G-code
@@ -221,29 +234,43 @@ pub struct ExportParam {
     /// `accept_unmodeled_tool_load`.
     #[serde(default)]
     pub accept_exceeded_tool_load: bool,
-    /// Tool-change handling for this export. One of: `"pause"` (manual
-    /// `M5` + operator message + `M0` — the GRBL-family default),
-    /// `"m6"` (native `M5` + `M6 T{n}` — what Fusion emits and what a
-    /// gSender/BitSetter setup needs so each tool is probed), or
-    /// `"suppress"` (replace each change with a bare `M0` pause).
-    /// Omit to keep the project's current setting. This is the MCP
-    /// equivalent of the export wizard's Tool Change dropdown. Note:
-    /// for `"m6"` each tool must have a distinct tool number or the
-    /// controller won't re-trigger the change.
+    /// Tool-change handling for this export: `pause` (M5, operator
+    /// message, M0), `m6` (M5, message, `M6 T<n>`: the controller runs the
+    /// change; grblHAL with `$341=3` probes each tool) or `suppress` (a
+    /// bare M0 at each change). Omit to keep the current setting; the
+    /// post default is `m6` on grblHAL, LinuxCNC and Mach3 and `pause` on
+    /// GRBL. For `m6` each tool needs its own tool number, or the
+    /// controller skips the change.
     #[serde(default)]
-    pub tool_change_mode: Option<String>,
-    /// When true and the project has more than one setup, write one
-    /// G-code file per setup instead of a single combined program. Each
-    /// file is self-contained and carries a header comment naming the
-    /// setup and its datum — `X0 Y0 = stock min corner`, identical in
-    /// every setup file, plus that file's own Z zero relative to the
-    /// up-facing stock surface — with a FLIP reminder on setups after
-    /// the first, so a two-sided job is run as `setup1` → flip & re-zero
-    /// Z (keeping the same XY zero) → `setup2`.
-    /// Output files are named `<stem>_<n>_<setup name>.<ext>` next to
-    /// `path`. Ignored for single-setup projects.
+    pub tool_change_mode: Option<ToolChangeModeParam>,
+    /// One G-code file per setup, for a project with two or more setups
+    /// that hold an enabled toolpath. Each file carries a header that
+    /// names the setup and its datum (`X0 Y0 = stock min corner`, the
+    /// same in every file; that file's own Z zero), with a FLIP reminder
+    /// after the first file. Files are `<stem>_<n>_<setup name>.<ext>`
+    /// next to `path`. Omit to use the post default: `true` on grblHAL,
+    /// where an M0 setup pause cannot jog to re-zero; `false` elsewhere.
+    /// A single file has an M0 pause between setups.
     #[serde(default)]
-    pub split_setups: bool,
+    pub split_setups: Option<bool>,
+    /// grblHAL: the controller waits for the spindle after M3 (`$394`
+    /// spindle delay or `$340` at-speed), so the export writes no warm-up
+    /// dwell. Omit to keep the project setting (default: from the machine
+    /// profile). A value given here is saved in the project's post block.
+    #[serde(default)]
+    pub controller_waits_for_spindle: Option<bool>,
+    /// grblHAL: the board has a mist output, so `M7` is written. Without
+    /// it grblHAL refuses M7 and the export drops it with a warning. Omit
+    /// to keep the project setting (default: from the machine profile's
+    /// `$I`). A value given here is saved in the project's post block.
+    #[serde(default)]
+    pub mist_output: Option<bool>,
+    /// grblHAL: write drill operations as native G81/G82/G83 cycles. The
+    /// simulation still uses the expanded moves, and grblHAL's G83 pecks
+    /// differ from them, so the default is off. Omit to keep the project
+    /// setting. A value given here is saved in the project's post block.
+    #[serde(default)]
+    pub native_drill_cycles: Option<bool>,
     /// Emit the PREVIOUS generation's geometry for any operation that was
     /// edited after it was generated, instead of refusing. Default false.
     ///
@@ -1529,6 +1556,14 @@ pub fn build_info() -> serde_json::Value {
             // rows carry `size_label` and `size_units`; `add_tool` and
             // `set_tool_param` accept `size_units` ("metric" | "imperial").
             "tool_size_units",
+            // grblHAL support (2026-10-08): `export_gcode` takes
+            // `controller_waits_for_spindle`, `mist_output`,
+            // `native_drill_cycles`, a typed `tool_change_mode` and an
+            // optional `split_setups` (post default); the
+            // `import_machine_settings` reply carries `controller` and
+            // `post_format`.
+            "grblhal_export_options",
+            "grblhal_controller_import",
             // GUI capture surface (2026-06-11): screenshot_gui (full-window
             // PNG capture) + set_ui_view (workspace/selection/tab/modal
             // navigation). Probe to confirm agent-driven UI inspection.

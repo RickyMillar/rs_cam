@@ -61,7 +61,7 @@ impl ToolChangeMode {
     fn template(self) -> Option<&'static str> {
         match self {
             Self::Pause => Some("M5\n{message_comment}\nM0\n"),
-            Self::M6 => Some("M5\nM6 T{tool_number}\n"),
+            Self::M6 => Some("M5\n{message_comment}\nM6 T{tool_number}\n"),
             Self::Suppress => None,
         }
     }
@@ -91,6 +91,29 @@ pub struct WizardOverlay {
     /// `Suppress` replaces `ToolChange` statements with bare M0 pauses
     /// (keeping the per-tool `SpindleSet`) — see [`ToolChangeMode`].
     pub tool_change_override: Option<ToolChangeMode>,
+    /// G6: the board has a mist output. `Some(true)` lets `M7` through on
+    /// a post with `mist_option` (grblHAL, whose board refuses M7 only
+    /// without a mist output, gcode.c:1855-1856).
+    /// `Some(false)` drops `M7` with a warning on any post. `None` keeps
+    /// the post's list.
+    pub mist_output: Option<bool>,
+    /// G5: the controller waits for the spindle after M3 (grblHAL `$394`
+    /// spindle on delay, or `$340` at-speed with an encoder,
+    /// spindle_control.c:772-810). When true the export writes no
+    /// `spindle_warmup_secs` dwell: the wait would happen twice.
+    pub controller_waits_for_spindle: bool,
+    /// G7: write drill phases as native canned cycles (G81/G82/G83) on a
+    /// post that has `canned_drill_cycles`. Off by default.
+    pub native_drill_cycles: bool,
+    /// G5: the controller's S range `(min, max)` in RPM (grblHAL `$31`,
+    /// `$30`). The emitter clamps every S word into it, with a warning
+    /// comment at each clamp.
+    pub rpm_range: Option<(f64, f64)>,
+    /// G10: the machine profile says `$341=4`, so grblHAL ignores M6
+    /// (gcode.c:1838) and the program runs on with the old tool. The
+    /// emitter writes a warning at the top of a program that changes tool
+    /// with M6.
+    pub controller_ignores_m6: bool,
 }
 
 impl WizardOverlay {
@@ -104,6 +127,11 @@ impl WizardOverlay {
             && self.spindle_warmup_secs == 0
             && self.dry_run_safe_z.is_none()
             && self.tool_change_override.is_none()
+            && self.mist_output.is_none()
+            && !self.controller_waits_for_spindle
+            && !self.native_drill_cycles
+            && self.rpm_range.is_none()
+            && !self.controller_ignores_m6
     }
 
     /// Apply the post-affecting overrides (`wcs_override`,
@@ -119,10 +147,27 @@ impl WizardOverlay {
         if self.wcs_override.is_none()
             && self.units_override.is_none()
             && tool_change_template.is_none()
+            && self.mist_output.is_none()
+            && self.rpm_range.is_none()
         {
             return Cow::Borrowed(base);
         }
         let mut p = base.clone();
+        match self.mist_output {
+            Some(true) if p.mist_option => p.unsupported_mcodes.retain(|&m| m != 7),
+            Some(true) => {}
+            Some(false) if !p.unsupported_mcodes.contains(&7) => p.unsupported_mcodes.push(7),
+            Some(false) | None => {}
+        }
+        if let Some((lo, hi)) = self.rpm_range {
+            // Round inward so the clamped word stays inside the range.
+            let hi = hi.floor().max(0.0) as u32;
+            let lo = lo.ceil().max(0.0) as u32;
+            let max = p.limits.max_rpm.map_or(hi, |m| m.get().min(hi));
+            p.limits.max_rpm = Some(super::post::Rpm(max));
+            let min = p.limits.min_rpm.map_or(lo, |m| m.get().max(lo));
+            p.limits.min_rpm = Some(super::post::Rpm(min.min(max)));
+        }
         if let Some(w) = self.wcs_override {
             p.wcs = Some(w);
         }
@@ -153,7 +198,8 @@ impl WizardOverlay {
     /// material, so rapids that re-enter previously "cut" pockets would
     /// otherwise drive into solid stock.
     pub fn apply_to_program<'a>(&self, program: &'a Program) -> Cow<'a, Program> {
-        let needs_warmup = self.spindle_warmup_secs > 0;
+        // G5: a controller that waits for the spindle needs no dwell.
+        let needs_warmup = self.spindle_warmup_secs > 0 && !self.controller_waits_for_spindle;
         let needs_dry_run = self.dry_run_safe_z.is_some();
         let needs_tc_suppress = self.tool_change_override == Some(ToolChangeMode::Suppress);
         if !needs_warmup && !needs_dry_run && !needs_tc_suppress {
@@ -161,6 +207,8 @@ impl WizardOverlay {
         }
         let mut p = program.clone();
         if needs_tc_suppress {
+            // No program-start M6 either: the operator changes tools.
+            p.metadata.first_tool = None;
             // A10 — replace the change block with a bare M0 pause so a
             // multi-tool program still stops at every change point; the
             // SpindleSet that the builder emits right after each
@@ -226,6 +274,11 @@ fn clamp_dry_run_z(s: &mut Statement, safe_z: f64) {
         Statement::Rapid { z, .. } | Statement::SafeZRetract { z } => {
             *z = z.max(safe_z);
         }
+        // A native drill cycle cuts by itself. The builder never writes
+        // one in a dry run (`emit_*_with_overlay` turns the option off),
+        // so this arm sees none; it is listed so a new variant must
+        // choose its own arm.
+        Statement::CannedDrill { .. } | Statement::CannedCancel | Statement::Dwell { .. } => {}
         Statement::Preamble { .. }
         | Statement::SpindleSet { .. }
         | Statement::Postamble
@@ -262,6 +315,7 @@ mod tests {
             spindle_warmup_secs: 3,
             dry_run_safe_z: None,
             tool_change_override: None,
+            ..Default::default()
         };
         let base = post::grbl();
         let cow = o.applied_post(base);
@@ -629,7 +683,10 @@ mod tests {
         // (e.g. for a grblHAL ATC build using the GRBL post).
         let cow = o.applied_post(post::grbl());
         assert!(matches!(cow, Cow::Owned(_)));
-        assert_eq!(cow.render_tool_change(3, "Bit"), "M5\nM6 T3\n");
+        assert_eq!(
+            cow.render_tool_change(3, "Bit"),
+            "M5\n(TOOL CHANGE: Bit [T3])\nM6 T3\n"
+        );
     }
 
     #[test]
@@ -727,5 +784,74 @@ mod tests {
         let prog = Program::new();
         let cow = o.apply_to_program(&prog);
         assert!(cow.statements.is_empty());
+    }
+
+    /// G6: the mist option lifts M7 off a post's deny list, or adds it.
+    #[test]
+    fn mist_output_option_edits_the_m7_deny_list_g6() {
+        assert!(post::grblhal().unsupported_mcodes.contains(&7));
+        let on = WizardOverlay {
+            mist_output: Some(true),
+            ..Default::default()
+        };
+        assert!(
+            !on.applied_post(post::grblhal())
+                .unsupported_mcodes
+                .contains(&7)
+        );
+        let off = WizardOverlay {
+            mist_output: Some(false),
+            ..Default::default()
+        };
+        assert!(
+            off.applied_post(post::linuxcnc())
+                .unsupported_mcodes
+                .contains(&7)
+        );
+        assert!(matches!(
+            WizardOverlay::default().applied_post(post::grblhal()),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    /// G5: the controller S range becomes the post's RPM limits, and a
+    /// controller that waits for the spindle gets no warm-up dwell.
+    #[test]
+    fn controller_spindle_options_g5() {
+        let o = WizardOverlay {
+            rpm_range: Some((6_000.0, 18_000.4)),
+            ..Default::default()
+        };
+        let p = o.applied_post(post::grblhal());
+        assert_eq!(p.limits.max_rpm, Some(super::super::post::Rpm(18_000)));
+        assert_eq!(p.limits.min_rpm, Some(super::super::post::Rpm(6_000)));
+
+        let prog = Program {
+            statements: vec![
+                Statement::Preamble {
+                    spindle_rpm: 18_000,
+                },
+                Statement::Postamble,
+            ],
+            ..Default::default()
+        };
+        let waits = WizardOverlay {
+            spindle_warmup_secs: 4,
+            controller_waits_for_spindle: true,
+            ..Default::default()
+        };
+        assert!(
+            !waits
+                .apply_to_program(&prog)
+                .statements
+                .iter()
+                .any(|s| matches!(s, Statement::Raw(t) if t.starts_with("G4"))),
+            "no dwell when the controller waits"
+        );
+        let no_wait = WizardOverlay {
+            controller_waits_for_spindle: false,
+            ..waits
+        };
+        assert_eq!(no_wait.apply_to_program(&prog).statements.len(), 3);
     }
 }

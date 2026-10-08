@@ -3,7 +3,7 @@ G17 G21 G90 G40 G49 G80
 G54
 M3 S18000
 (LOAD: Tool One [T1])
-(Op 0 — pocket with custom prep)
+(Op 0 - pocket with custom prep)
 (custom prep)
 (WARNING: M7 unsupported on GRBL; dropped: M7)
 G4 P0.5

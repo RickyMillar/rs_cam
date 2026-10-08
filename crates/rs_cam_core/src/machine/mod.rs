@@ -228,6 +228,136 @@ pub struct MachineProfile {
     /// identical to pre-F-034.
     #[serde(default)]
     pub kinematics: Option<MachineKinematics>,
+    /// What the controller firmware reports about itself (G10): the
+    /// dialect and the settings the export reads. `None` until a `$$`
+    /// dump is imported. Every built-in preset ships `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<ControllerSettings>,
+}
+
+/// The controller firmware a `$$` / `$I` dump came from (G10).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControllerFirmware {
+    /// The dump did not say. A bare `$$` dump looks the same on Grbl 1.1
+    /// and on grblHAL.
+    #[default]
+    Unknown,
+    /// Grbl 1.1.
+    Grbl,
+    /// grblHAL. The welcome line starts `GrblHAL` (report.c:312), or
+    /// `$I` prints `[FIRMWARE:grblHAL]` (report.c:1111).
+    GrblHal,
+}
+
+impl ControllerFirmware {
+    /// The post dialect this firmware selects, or `None` when unknown.
+    pub fn post_format(self) -> Option<crate::gcode::PostFormat> {
+        match self {
+            Self::Unknown => None,
+            Self::Grbl => Some(crate::gcode::PostFormat::Grbl),
+            Self::GrblHal => Some(crate::gcode::PostFormat::GrblHal),
+        }
+    }
+}
+
+/// The controller settings the export reads, from an imported `$$` dump
+/// (G10). Each field is `None` when the dump did not carry it. The
+/// setting numbers and units are grblHAL's (settings.h:78-80, 212-214,
+/// 269; settings.c:2412-2499).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ControllerSettings {
+    #[serde(default)]
+    pub firmware: ControllerFirmware,
+    /// `$30` maximum spindle speed, RPM.
+    #[serde(default)]
+    pub rpm_max: Option<f64>,
+    /// `$31` minimum spindle speed, RPM.
+    #[serde(default)]
+    pub rpm_min: Option<f64>,
+    /// `$32` mode: 0 normal, 1 laser, 2 lathe (settings.c:2415).
+    #[serde(default)]
+    pub mode: Option<u32>,
+    /// `$340` spindle at-speed tolerance, percent. Above 0, a spindle with
+    /// an encoder makes M3 wait for the speed (spindle_control.c:787-806).
+    #[serde(default)]
+    pub spindle_at_speed_tolerance_pct: Option<f64>,
+    /// `$341` tool change mode: 0 normal, 1 manual touch off, 2 manual
+    /// touch off at G59.3, 3 automatic touch off at G59.3, 4 ignore M6
+    /// (settings.h:856-862, settings.c:2482).
+    #[serde(default)]
+    pub tool_change_mode: Option<u32>,
+    /// `$342` tool change probing distance, mm.
+    #[serde(default)]
+    pub tool_change_probing_distance_mm: Option<f64>,
+    /// `$394` spindle on delay, seconds (stored in ms, settings.c:1498-1499).
+    /// M3 waits this long (spindle_control.c:787-789).
+    #[serde(default)]
+    pub spindle_on_delay_s: Option<f64>,
+    /// The board has a mist output: `$I` lists `M` in `[OPT:` (report.c:934-935).
+    /// `None` when no `$I` output was imported.
+    #[serde(default)]
+    pub mist_output: Option<bool>,
+    /// How the board drives the spindle, from the `$I` plugin lines.
+    /// `None` when no `$I` output was imported.
+    #[serde(default)]
+    pub spindle_drive: Option<SpindleDrive>,
+}
+
+/// How a grblHAL board drives the spindle (G5, G10).
+///
+/// `$30`/`$31` are the PWM spindle's range. A spindle plugin (a VFD over
+/// Modbus) can override them (settings.c:2593-2594, "can be overridden by
+/// spindle plugins"). The operator's board reads `$30=1000` and drives an
+/// H-100 VFD, so a clamp from `$30` would turn S18000 into S1000.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpindleDrive {
+    /// `$I` lists no spindle plugin: the PWM spindle, so `$30`/`$31` are
+    /// the S range.
+    Pwm,
+    /// `$I` lists a spindle plugin (the name, e.g. `H-100 VFD`). `$30`/`$31`
+    /// are information only.
+    Plugin(String),
+}
+
+/// `$341` value 4: grblHAL ignores M6 (gcode.c:1838) and sets the new tool
+/// at once (gcode.c:4144-4147).
+pub const TOOL_CHANGE_MODE_IGNORE: u32 = 4;
+
+impl ControllerSettings {
+    /// True when M3 waits for the spindle on the controller: a spindle on
+    /// delay (`$394`) or an at-speed tolerance (`$340`) above zero.
+    pub fn waits_for_spindle(&self) -> bool {
+        self.spindle_on_delay_s.is_some_and(|s| s > 0.0)
+            || self.spindle_at_speed_tolerance_pct.is_some_and(|p| p > 0.0)
+    }
+
+    /// The seconds one spindle start costs on the controller (`$394`), for
+    /// the cycle-time estimate. 0 when unknown.
+    pub fn spindle_wait_s(&self) -> f64 {
+        self.spindle_on_delay_s.filter(|s| *s > 0.0).unwrap_or(0.0)
+    }
+
+    /// The controller S range `($31, $30)` the export clamps S into. Only
+    /// for a PWM spindle that `$I` confirmed: with a spindle plugin, or
+    /// with no `$I` at all, `$30`/`$31` may not be the spindle's range
+    /// (see [`SpindleDrive`]), so the answer is `None` and S is not
+    /// clamped.
+    pub fn rpm_range(&self) -> Option<(f64, f64)> {
+        if self.spindle_drive != Some(SpindleDrive::Pwm) {
+            return None;
+        }
+        match (self.rpm_min, self.rpm_max) {
+            (Some(lo), Some(hi)) if hi > 0.0 && lo <= hi => Some((lo, hi)),
+            _ => None,
+        }
+    }
+
+    /// True when `$341=4`: the board ignores M6.
+    pub fn ignores_m6(&self) -> bool {
+        self.tool_change_mode == Some(TOOL_CHANGE_MODE_IGNORE)
+    }
 }
 
 impl Default for MachineProfile {
@@ -313,6 +443,7 @@ impl MachineProfile {
             // behavior byte-identical. Callers opt in by setting
             // this field on the active profile.
             kinematics: None,
+            controller: None,
         }
     }
 
@@ -343,6 +474,7 @@ impl MachineProfile {
             // take the default.
             aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
+            controller: None,
         }
     }
 
@@ -369,6 +501,7 @@ impl MachineProfile {
             // take the default.
             aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
+            controller: None,
         }
     }
 

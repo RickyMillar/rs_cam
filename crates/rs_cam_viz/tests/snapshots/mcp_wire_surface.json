@@ -357,22 +357,69 @@
           "description": "Bypass the tool-load gate for criteria that returned `Unmodeled`\n(e.g. no simulation run, no vendor data). Default false.",
           "type": "boolean"
         },
+        "controller_waits_for_spindle": {
+          "default": null,
+          "description": "grblHAL: the controller waits for the spindle after M3 (`$394`\nspindle delay or `$340` at-speed), so the export writes no warm-up\ndwell. Omit to keep the project setting (default: from the machine\nprofile). A value given here is saved in the project's post block.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mist_output": {
+          "default": null,
+          "description": "grblHAL: the board has a mist output, so `M7` is written. Without\nit grblHAL refuses M7 and the export drops it with a warning. Omit\nto keep the project setting (default: from the machine profile's\n`$I`). A value given here is saved in the project's post block.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "native_drill_cycles": {
+          "default": null,
+          "description": "grblHAL: write drill operations as native G81/G82/G83 cycles. The\nsimulation still uses the expanded moves, and grblHAL's G83 pecks\ndiffer from them, so the default is off. Omit to keep the project\nsetting. A value given here is saved in the project's post block.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "path": {
           "description": "Output file path for G-code",
           "type": "string"
         },
         "split_setups": {
-          "default": false,
-          "description": "When true and the project has more than one setup, write one\nG-code file per setup instead of a single combined program. Each\nfile is self-contained and carries a header comment naming the\nsetup and its datum — `X0 Y0 = stock min corner`, identical in\nevery setup file, plus that file's own Z zero relative to the\nup-facing stock surface — with a FLIP reminder on setups after\nthe first, so a two-sided job is run as `setup1` → flip & re-zero\nZ (keeping the same XY zero) → `setup2`.\nOutput files are named `<stem>_<n>_<setup name>.<ext>` next to\n`path`. Ignored for single-setup projects.",
-          "type": "boolean"
-        },
-        "tool_change_mode": {
           "default": null,
-          "description": "Tool-change handling for this export. One of: `\"pause\"` (manual\n`M5` + operator message + `M0` — the GRBL-family default),\n`\"m6\"` (native `M5` + `M6 T{n}` — what Fusion emits and what a\ngSender/BitSetter setup needs so each tool is probed), or\n`\"suppress\"` (replace each change with a bare `M0` pause).\nOmit to keep the project's current setting. This is the MCP\nequivalent of the export wizard's Tool Change dropdown. Note:\nfor `\"m6\"` each tool must have a distinct tool number or the\ncontroller won't re-trigger the change.",
+          "description": "One G-code file per setup, for a project with two or more setups\nthat hold an enabled toolpath. Each file carries a header that\nnames the setup and its datum (`X0 Y0 = stock min corner`, the\nsame in every file; that file's own Z zero), with a FLIP reminder\nafter the first file. Files are `<stem>_<n>_<setup name>.<ext>`\nnext to `path`. Omit to use the post default: `true` on grblHAL,\nwhere an M0 setup pause cannot jog to re-zero; `false` elsewhere.\nA single file has an M0 pause between setups.",
           "type": [
-            "string",
+            "boolean",
             "null"
           ]
+        },
+        "tool_change_mode": {
+          "anyOf": [
+            {
+              "description": "The tool-change handling of one export (`export_gcode`).",
+              "oneOf": [
+                {
+                  "const": "pause",
+                  "description": "M5, the operator message, M0.",
+                  "type": "string"
+                },
+                {
+                  "const": "m6",
+                  "description": "M5, the operator message, `M6 T<n>`.",
+                  "type": "string"
+                },
+                {
+                  "const": "suppress",
+                  "description": "A bare M0 pause at each change.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Tool-change handling for this export: `pause` (M5, operator\nmessage, M0), `m6` (M5, message, `M6 T<n>`: the controller runs the\nchange; grblHAL with `$341=3` probes each tool) or `suppress` (a\nbare M0 at each change). Omit to keep the current setting; the\npost default is `m6` on grblHAL, LinuxCNC and Mach3 and `pause` on\nGRBL. For `m6` each tool needs its own tool number, or the\ncontroller skips the change."
         }
       },
       "required": [

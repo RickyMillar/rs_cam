@@ -4,11 +4,12 @@ G54
 M3 S18000
 G4 P2
 (LOAD: Tool One [T1])
-(Op 0 — surface skim T1)
+(Op 0 - surface skim T1)
 G0 Z5.0000
 G0 X0.0000 Y0.0000 Z5.0000
 G1 X10.0000 Y0.0000 Z0.0000 F300.0
-(Op 1 — finish T2)
+(Op 1 - finish T2)
+G0 Z5.0000
 M5
 M6 T2
 M3 S24000

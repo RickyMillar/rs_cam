@@ -43,6 +43,10 @@ pub struct RunArgs {
     pub post: String,
     pub safe_z: f64,
     pub spindle_speed: u32,
+    /// G11: the grblHAL export options, the keys of MCP `export_gcode`.
+    pub controller_waits_for_spindle: Option<bool>,
+    pub mist_output: Option<bool>,
+    pub native_drill_cycles: Option<bool>,
 }
 
 pub fn run_generic(args: &RunArgs) -> Result<()> {
@@ -172,6 +176,9 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
     post.safe_z = args.safe_z;
     post.spindle_speed = args.spindle_speed;
+    post.controller_waits_for_spindle = args.controller_waits_for_spindle;
+    post.mist_output = args.mist_output;
+    post.native_drill_cycles = args.native_drill_cycles;
     let _ = apply_command(
         &mut session,
         Command::SetPostConfig(SetPostConfigArgs {

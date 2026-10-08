@@ -75,6 +75,36 @@ pub enum Statement {
     /// `decimal_places` (the only Z-only modal-state line that depends
     /// on per-post precision; everything else is post-agnostic Raw).
     SafeZRetract { z: f64 },
+    /// G7: a dwell, `G4 P<seconds>`. The G82 dwell at a hole bottom in an
+    /// expanded drill cycle.
+    Dwell { seconds: f64 },
+    /// G7: one hole of a native canned drill cycle, on a post with
+    /// `canned_drill_cycles` and only when the export asks for it.
+    /// `first` writes `G98` and the F word. Every line carries X Y Z R and
+    /// the P (G82) or Q (G83) word, so a line never depends on a word an
+    /// earlier line set.
+    CannedDrill {
+        kind: CannedDrillKind,
+        x: f64,
+        y: f64,
+        z: f64,
+        r: f64,
+        feed: f64,
+        first: bool,
+    },
+    /// G7: `G80`, the end of a native canned drill cycle.
+    CannedCancel,
+}
+
+/// G7: the native drill cycle a hole is written as.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CannedDrillKind {
+    /// `G81`: feed to depth, rapid out.
+    Simple,
+    /// `G82 P<s>`: feed to depth, dwell, rapid out.
+    Dwell { seconds: f64 },
+    /// `G83 Q<mm>`: peck.
+    Peck { peck_mm: f64 },
 }
 
 /// Optional per-program metadata. Empty placeholder for Phase 2; future
@@ -82,6 +112,11 @@ pub enum Statement {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProgramMetadata {
     pub job_name: Option<String>,
+    /// G2: the tool the program starts with, as `(T number, label)`. A
+    /// preamble with the `{first_tool_change}` token (grblHAL) writes an
+    /// `M6` for it, so the first probe after homing sets the tool length
+    /// reference with the tool the operator zeroes with.
+    pub first_tool: Option<(u32, String)>,
 }
 
 /// A complete g-code program: ordered statements plus metadata.
