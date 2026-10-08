@@ -1168,9 +1168,15 @@ fn render_view_to_pixels(
     // World-space lamp, fixed relative to the panel's azimuth (over the
     // viewer's shoulder). Independent of the screen basis, so the 2026-08-21
     // mirror fix leaves the shading exactly where it was.
+    //
+    // The lamp stays on the viewer's side of the XY plane: a panel that looks
+    // up from below (BOTTOM) puts it below the stock. Render review
+    // 2026-10-09 (F1): with outward normals, a lamp fixed above the stock
+    // lights no face that the BOTTOM panel can see. The inside-out mesh hid
+    // this, because its bottom face pointed up.
     let light_x = basis.sin_az * 0.4 + basis.cos_az * 0.3;
     let light_y = basis.cos_az * 0.4 - basis.sin_az * 0.3;
-    let light_z: f64 = 0.866;
+    let light_z: f64 = if basis.nz < 0.0 { -0.866 } else { 0.866 };
 
     let half_w = vw as f64 * 0.5;
     let half_h = vh as f64 * 0.5;
@@ -1209,7 +1215,7 @@ fn render_view_to_pixels(
     // Z-buffer per pixel in this viewport (f64::MIN = no triangle yet)
     let mut zbuf = vec![f64::MIN; vw * vh];
 
-    for &(tri_depth, t) in &tris {
+    for &(_, t) in &tris {
         let i0 = mesh.indices[t * 3] as usize;
         let i1 = mesh.indices[t * 3 + 1] as usize;
         let i2 = mesh.indices[t * 3 + 2] as usize;
@@ -1252,13 +1258,33 @@ fn render_view_to_pixels(
 
         // Rasterize with per-pixel color interpolation
         rasterize_triangle(
-            pixels, &mut zbuf, buf_w, vx, vy, vw, vh, px0, py0, px1, py1, px2, py2, tri_depth,
-            shade, c0, c1, c2,
+            pixels,
+            &mut zbuf,
+            buf_w,
+            vx,
+            vy,
+            vw,
+            vh,
+            [px0, py0, px1, py1, px2, py2],
+            [depths[i0], depths[i1], depths[i2]],
+            shade,
+            c0,
+            c1,
+            c2,
         );
     }
 }
 
-/// Scanline rasterize a triangle with per-pixel color interpolation and z-test.
+/// Scanline rasterize a triangle with per-pixel color interpolation and a
+/// per-pixel z-test.
+///
+/// `xy` holds the screen positions `[x0, y0, x1, y1, x2, y2]`. `depth` holds
+/// the depth of each vertex (larger is nearer). The z-test interpolates the
+/// depth at each pixel with the barycentric weights. Render review
+/// 2026-10-09, F11: one depth per triangle (the centroid) let a tall wall or
+/// skirt triangle paint over a nearer floor.
+// SAFETY: the arguments are the target buffer, its viewport and the triangle;
+// a struct for them would only rename the same values.
 #[allow(clippy::too_many_arguments)]
 fn rasterize_triangle(
     pixels: &mut [u8],
@@ -1268,18 +1294,15 @@ fn rasterize_triangle(
     vy: usize,
     vw: usize,
     vh: usize,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-    x2: f64,
-    y2: f64,
-    depth: f64,
+    xy: [f64; 6],
+    depth: [f64; 3],
     shade: f64,
     c0: [f64; 3],
     c1: [f64; 3],
     c2: [f64; 3],
 ) {
+    let [x0, y0, x1, y1, x2, y2] = xy;
+    let [d0, d1, d2] = depth;
     if vw == 0 || vh == 0 {
         return;
     }
@@ -1315,7 +1338,11 @@ fn rasterize_triangle(
 
     // Total area (2x) for barycentric normalization
     let area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-    let inv_area = if area.abs() < 1e-10 { 0.0 } else { 1.0 / area };
+    if area.abs() < 1e-10 {
+        // A triangle seen edge-on covers no pixel area.
+        return;
+    }
+    let inv_area = 1.0 / area;
 
     for py in min_y..=max_y {
         for px in min_x..=max_x {
@@ -1337,13 +1364,15 @@ fn rasterize_triangle(
                     if zi >= zbuf.len() {
                         continue;
                     }
-                    if depth > zbuf[zi] {
-                        zbuf[zi] = depth;
-
-                        // Barycentric weights for per-pixel color interpolation
-                        let w0 = ((x1 - fx) * (y2 - fy) - (x2 - fx) * (y1 - fy)) * inv_area;
-                        let w1 = ((x2 - fx) * (y0 - fy) - (x0 - fx) * (y2 - fy)) * inv_area;
-                        let w2 = 1.0 - w0 - w1;
+                    // Barycentric weights for the per-pixel depth and colour.
+                    let w0 = ((x1 - fx) * (y2 - fy) - (x2 - fx) * (y1 - fy)) * inv_area;
+                    let w1 = ((x2 - fx) * (y0 - fy) - (x0 - fx) * (y2 - fy)) * inv_area;
+                    let w2 = 1.0 - w0 - w1;
+                    // The projection is orthographic, so the depth is linear
+                    // in screen space.
+                    let pixel_depth = d0 * w0 + d1 * w1 + d2 * w2;
+                    if pixel_depth > zbuf[zi] {
+                        zbuf[zi] = pixel_depth;
 
                         let r = ((c0[0] * w0 + c1[0] * w1 + c2[0] * w2) * shade * 255.0)
                             .clamp(0.0, 255.0) as u8;

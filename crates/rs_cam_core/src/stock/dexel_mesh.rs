@@ -103,6 +103,9 @@ pub fn dexel_stock_to_entry_surface_mesh(
         }
     }
 
+    // The surface faces the tool: +depth for a high-side entry, -depth for
+    // a low-side entry (render review 2026-10-09, F1).
+    let uv_order = uv_order_faces_plus_depth(grid.axis) == from_high;
     let mut indices = Vec::with_capacity((rows - 1) * (cols - 1) * 6);
     for row in 0..(rows - 1) {
         for col in 0..(cols - 1) {
@@ -114,10 +117,18 @@ pub fn dexel_stock_to_entry_surface_mesh(
             // that touches a hole would draw a false wall to the fallback.
             let solid = |i: u32| !empty[i as usize];
             if solid(tl) && solid(bl) && solid(tr) {
-                indices.extend_from_slice(&[tl, bl, tr]);
+                if uv_order {
+                    indices.extend_from_slice(&[tl, tr, bl]);
+                } else {
+                    indices.extend_from_slice(&[tl, bl, tr]);
+                }
             }
             if solid(tr) && solid(bl) && solid(br) {
-                indices.extend_from_slice(&[tr, bl, br]);
+                if uv_order {
+                    indices.extend_from_slice(&[tr, br, bl]);
+                } else {
+                    indices.extend_from_slice(&[tr, bl, br]);
+                }
             }
         }
     }
@@ -155,6 +166,25 @@ fn axis_depth_bounds(stock: &TriDexelStock, axis: DexelAxis) -> (f32, f32) {
         DexelAxis::X => (stock.stock_bbox.min.x as f32, stock.stock_bbox.max.x as f32),
         DexelAxis::Y => (stock.stock_bbox.min.y as f32, stock.stock_bbox.max.y as f32),
         DexelAxis::Z => (stock.stock_bbox.min.z as f32, stock.stock_bbox.max.z as f32),
+    }
+}
+
+/// Whether a grid triangle in `(+u, then +v)` order, for example
+/// `(tl, tr, bl)`, has its normal along +depth in the world frame.
+///
+/// The three grids map `(u, v, depth)` to the world in different orders
+/// (see [`preview_vertex_from_grid`]). The cross product `u x v` gives:
+///
+/// - Z grid, `u = X`, `v = Y`: `X x Y = +Z`, the +depth direction.
+/// - Y grid, `u = X`, `v = Z`: `X x Z = -Y`, the -depth direction.
+/// - X grid, `u = Y`, `v = Z`: `Y x Z = +X`, the +depth direction.
+///
+/// A sheet builder reads this value to give each triangle an outward
+/// normal (render review 2026-10-09, F1).
+fn uv_order_faces_plus_depth(axis: DexelAxis) -> bool {
+    match axis {
+        DexelAxis::Z | DexelAxis::X => true,
+        DexelAxis::Y => false,
     }
 }
 
@@ -230,9 +260,9 @@ fn append_side_grids(stock: &TriDexelStock, mesh: &mut StockMesh) {
 /// style six-part decomposition (top/bottom faces + perimeter skirt + hole
 /// walls + cavity floors/ceilings + cavity walls) with a single MC pass.
 ///
-/// The MC mesh has consistent CCW winding around outward-facing normals,
-/// matching the renderer's CPU-side normal computation in
-/// `crates/rs_cam_viz/src/render/sim_render.rs::from_heightmap_mesh`.
+/// The MC mesh has consistent CCW winding around outward-facing normals
+/// (each `(b - a) x (c - a)` points out of the solid). The `F1` sentries in
+/// `tests/stock_mesh_faces_outward_f1.rs` hold this.
 pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
     crate::stock::dexel_mesh_mc::z_grid_marching_cubes(grid, stock_top_z, stock_bottom_z)
 }
@@ -286,6 +316,7 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
     let mut vertices = Vec::new();
     let mut colors = Vec::new();
     let mut indices = Vec::new();
+    let uv_order = uv_order_faces_plus_depth(grid.axis);
 
     // For each segment layer, emit the outermost surface (exit).
     // The topmost segment's exit is the most visible from the tool side.
@@ -336,7 +367,13 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
                 let tr = tl + 1;
                 let bl = base + ((row + 1) * cols + col) as u32;
                 let br = bl + 1;
-                indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+                // The sheet sits at the segment `exit`, the high end of the
+                // material, so its normal points along +depth (F1).
+                if uv_order {
+                    indices.extend_from_slice(&[tl, tr, bl, tr, br, bl]);
+                } else {
+                    indices.extend_from_slice(&[tl, bl, tr, tr, bl, br]);
+                }
             }
         }
     }
@@ -424,42 +461,44 @@ pub fn append_drill_cylinders(base: &mut StockMesh, drill_ops: &[&crate::ops::dr
                 cyl.vertices.extend_from_slice(&[px, py, top_z]);
                 cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
             }
-            // Triangles: 2 per quad, inward-facing normals (visible when
-            // viewed from inside the hole). Winding `bot_i, bot_{i+1},
-            // top_i` gives a normal cross product pointing toward the
-            // axis at θ=0 (`+θ × +z = -r`).
+            // Triangles: 2 per quad. The normal points out of the material,
+            // which is toward the hole axis. Winding `bot_i, top_i,
+            // bot_{i+1}` gives `+z x +θ = -r` (render review 2026-10-09,
+            // F1: the old order gave `+θ x +z = +r`, into the material).
             for i in 0..AZIMUTH_SEGMENTS {
                 let next = (i + 1) % AZIMUTH_SEGMENTS;
                 let bi = i as u32;
                 let bn = next as u32;
                 let ti = (AZIMUTH_SEGMENTS + i) as u32;
                 let tn = (AZIMUTH_SEGMENTS + next) as u32;
-                cyl.indices.extend_from_slice(&[bi, bn, ti, ti, bn, tn]);
+                cyl.indices.extend_from_slice(&[bi, ti, bn, ti, tn, bn]);
             }
 
             // ── Bottom cap or cone tip ────────────────────────────────
             if is_flat {
                 // Flat-bottom cap: fan from center (axis, bottom_z) out
-                // to the cylinder_bottom ring. Wound CCW from below so
-                // the visible side is the *top* face inside the hole.
+                // to the cylinder_bottom ring. The hole floor has material
+                // below it, so the normal is +Z: CCW seen from above,
+                // `center, i, i+1` (F1).
                 let center_idx = cyl.vertices.len() / 3;
                 cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
                 cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
                 for i in 0..AZIMUTH_SEGMENTS {
                     let next = (i + 1) % AZIMUTH_SEGMENTS;
                     cyl.indices
-                        .extend_from_slice(&[center_idx as u32, next as u32, i as u32]);
+                        .extend_from_slice(&[center_idx as u32, i as u32, next as u32]);
                 }
             } else {
                 // Conical tip: apex at (axis, bottom_z), base on the
-                // cylinder_bottom ring.
+                // cylinder_bottom ring. The normal points up and toward the
+                // axis, out of the material (F1).
                 let apex_idx = cyl.vertices.len() / 3;
                 cyl.vertices.extend_from_slice(&[cx, cy, bottom_z]);
                 cyl.colors.extend_from_slice(&[CUT_R, CUT_G, CUT_B]);
                 for i in 0..AZIMUTH_SEGMENTS {
                     let next = (i + 1) % AZIMUTH_SEGMENTS;
                     cyl.indices
-                        .extend_from_slice(&[apex_idx as u32, next as u32, i as u32]);
+                        .extend_from_slice(&[apex_idx as u32, i as u32, next as u32]);
                 }
             }
 

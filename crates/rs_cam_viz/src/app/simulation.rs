@@ -39,12 +39,15 @@ impl RsCamApp {
             // Checkpoint mesh is in global stock frame — transform to active
             // setup's local frame so it matches the tool position.
             self.transform_mesh_to_local_frame(&mut mesh, move_idx);
-            let colors = self.compute_sim_colors(&mesh);
+            // A checkpoint mesh is not the final composite: no deviation
+            // colours on it (render review 2026-10-09, F4).
+            let colors = self.compute_sim_colors(&mesh, false);
             {
                 let pb = &mut self.controller.state_mut().simulation.playback;
                 pb.display_mesh = Some(mesh);
                 pb.display_mesh_move = Some(move_idx);
                 pb.display_mesh_preview = false;
+                pb.display_mesh_is_final = false;
                 pb.last_mesh_upload_at = Some(Instant::now());
             }
             if let Some(rs) = frame.wgpu_render_state() {
@@ -128,6 +131,18 @@ impl RsCamApp {
             let pb = &self.controller.state().simulation.playback;
             pb.display_mesh_preview && !pb.playing && !pb.scrub_drag_active
         };
+        // F4 (render review 2026-10-09): the Deviation mode at the end of
+        // the run shows the final composite mesh, and every other state
+        // shows the live stock. A change of mode or of play state swaps the
+        // mesh, also when the playhead does not move.
+        let wants_final_mesh = self.controller.state().simulation.wants_final_mesh();
+        let final_mesh_mismatch = wants_final_mesh
+            != self
+                .controller
+                .state()
+                .simulation
+                .playback
+                .display_mesh_is_final;
         if target_move == live_move
             && self
                 .controller
@@ -137,6 +152,7 @@ impl RsCamApp {
                 .display_mesh_move
                 == Some(target_move)
             && !playback_needs_full_mesh
+            && !final_mesh_mismatch
         {
             return; // nothing changed
         }
@@ -391,7 +407,23 @@ impl RsCamApp {
                         b.direction
                     })
             };
-            let mut mesh = if use_preview_mesh {
+            // F4: the final composite mesh is already in the global frame
+            // and already holds its drill cylinders. It is the one mesh the
+            // per-vertex deviations belong to.
+            let final_mesh = if wants_final_mesh {
+                self.controller
+                    .state()
+                    .simulation
+                    .results
+                    .as_ref()
+                    .map(|r| (*r.mesh).clone())
+            } else {
+                None
+            };
+            let mesh_is_final = final_mesh.is_some();
+            let mut mesh = if let Some(final_mesh) = final_mesh {
+                final_mesh
+            } else if use_preview_mesh {
                 dexel_stock_to_entry_surface_mesh(stock, preview_direction)
             } else {
                 // Degrade 4b: the paused live mesh takes the run's display
@@ -405,7 +437,9 @@ impl RsCamApp {
             // the live-sim mesh drops the cylinder geometry between
             // checkpoints and drill holes render as the dexel-stamped
             // approximation only. See `compute/simulate.rs:504-508`.
-            if let Some(results) = self.controller.state().simulation.results.as_ref() {
+            if !mesh_is_final
+                && let Some(results) = self.controller.state().simulation.results.as_ref()
+            {
                 let mut offset: usize = 0;
                 let completed: Vec<&rs_cam_core::ops::drill_op::DrillOp> = results
                     .playback_data
@@ -437,7 +471,7 @@ impl RsCamApp {
             // frame by the SAME core helper the checkpoint meshes use — which
             // is what makes the two routes agree instead of drifting
             // (G-LATERALSCRUB). A global-frame stock is already there.
-            if active.frame.is_some() {
+            if active.frame.is_some() && !mesh_is_final {
                 let stock_min = self.controller.state().session.stock_bbox().min;
                 mesh = rs_cam_core::compute::simulate::transform_stock_mesh_to_global(
                     &mesh,
@@ -452,13 +486,14 @@ impl RsCamApp {
             let mesh_elapsed = mesh_start.elapsed();
 
             let color_start = Instant::now();
-            let colors = self.compute_sim_colors(&mesh);
+            let colors = self.compute_sim_colors(&mesh, mesh_is_final);
             let color_elapsed = color_start.elapsed();
             {
                 let pb = &mut self.controller.state_mut().simulation.playback;
                 pb.display_mesh = Some(mesh);
                 pb.display_mesh_move = Some(target_move);
-                pb.display_mesh_preview = use_preview_mesh;
+                pb.display_mesh_preview = use_preview_mesh && !mesh_is_final;
+                pb.display_mesh_is_final = mesh_is_final;
                 pb.last_mesh_upload_at = Some(Instant::now());
             }
 

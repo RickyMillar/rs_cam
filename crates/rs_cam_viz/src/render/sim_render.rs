@@ -138,6 +138,25 @@ pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
         .collect()
 }
 
+/// The deviation colours for a shown stock mesh, or `None` when they do not
+/// belong to it.
+///
+/// `deviations` holds one value per vertex of the run's final composite
+/// mesh. The colours apply only when the shown mesh IS that mesh
+/// (`mesh_is_final`) and has one vertex per value. A live, preview or
+/// checkpoint mesh gets `None`, also when its vertex count is the same: its
+/// vertex `i` is a different point. The caller then draws the plain stock
+/// colours (render review 2026-10-09, F4).
+#[must_use]
+pub fn deviation_colors_for_mesh(
+    deviations: Option<&[f32]>,
+    mesh_is_final: bool,
+    vertex_count: usize,
+) -> Option<Vec<[f32; 3]>> {
+    let deviations = deviations?;
+    (mesh_is_final && deviations.len() == vertex_count).then(|| deviation_colors(deviations))
+}
+
 impl SimMeshGpuData {
     /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
     /// Returns `None` if the buffer exceeds GPU device limits.
@@ -389,6 +408,13 @@ impl SimMeshGpuData {
     #[allow(clippy::indexing_slicing)] // stride-3 loops bounded by vertex/index counts
     fn build_vertex_data(hm: &StockMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
         let num_verts = hm.vertices.len() / 3;
+        // One colour per vertex. A shorter list was filled in silently and
+        // hid colours made for another mesh (render review 2026-10-09, F4).
+        debug_assert_eq!(
+            colors.len(),
+            num_verts,
+            "a sim mesh colour list must have one colour per vertex"
+        );
         let mut mesh_verts = Vec::with_capacity(num_verts);
 
         for i in 0..num_verts {
