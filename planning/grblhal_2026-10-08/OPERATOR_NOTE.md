@@ -3,14 +3,12 @@
 The board runs the tool change. rs_cam writes `M6 T<n>` on the grblHAL
 post. Each claim cites grblHAL/core@c3a887e.
 
-## WARNING: the built-in M6 probe uses the DEFAULT probe input (2026-10-08)
+## WARNING: set `$65=8` before `$341=3` (2026-10-08 crash)
 
 On this board (BTT Scylla, `PROBES=3` = probe + toolsetter, report.c:1044)
 the BitSetter is wired to the TOOLSETTER input and the BitZero to the
-default probe input. The `$341=3` routine selects the toolsetter only when
-the driver installs `grbl.on_probe_toolsetter` (config.h:525-530). This
-build does not, so the M6 probe watched the BitZero input and drove the
-tool into the BitSetter on 2026-10-08 (operator e-stop). Measured:
+default probe input. On 2026-10-08 the `$341=3` M6 probed on the default
+input and drove the tool into the BitSetter (operator e-stop). Measured:
 
 - The `Pn:` monitor shows `P` for the BitZero only (it reports the
   selected probe, report.c:1417).
@@ -18,12 +16,19 @@ tool into the BitSetter on 2026-10-08 (operator e-stop). Measured:
   triggered). Released: moved 0.5 mm, ALARM:5. So the BitSetter works on
   the toolsetter input (`P1`, gcode.c:3899-3910).
 
-`$341` is set back to 0. Do NOT set `$341=3` until one of these is done:
+Cause (found 2026-10-09 in the core that the running firmware is built
+from, STM32H7xx core 26d44fe): the firmware DOES install the toolsetter
+handler (grbllib.c:228, :448). The handler selects the toolsetter at
+G59.3 only when `$65` bit 3 "Auto select toolsetter" is set
+(settings.c:1247). The dump has `$65=0`. The core `config.h:525-530`
+comment ("the core installs no handler") is out of date.
 
-1. Swap the plugs: the BitSetter on the default input, the BitZero on the
-   toolsetter input, with a `P100.macro` that probes with `P1`.
-2. A firmware build with expressions (`EXPR`) and a `tc.macro` that
-   probes with `P1`.
+The fix is a setting, with no plug swap and no macro: `$65=8` (keep any
+other bits of `$65` that you set). Side effect: with X and Y homed, any
+G38 within 5 mm of the G59.3 XY also uses the toolsetter
+(motion_control.c:1016-1019).
+
+`$341` is 0 now. Set `$341=3` only after `$65=8` and the tests below.
 
 Before any probe move, prove the input with a no-motion `Pn:` test and a
 0.5 mm upward `G38.2` test. The steps below apply only after that.
