@@ -1329,6 +1329,8 @@ fn synthetic_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationC
                 span_path: Vec::new(),
                 in_transit_span: false,
                 source_intent: None,
+                material_slot: rs_cam_core::stock::material_slot::MaterialSlot::STOCK,
+                cuts_several_materials: false,
             }
         })
         .collect()

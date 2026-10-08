@@ -1,5 +1,6 @@
 use crate::ids::ToolpathId;
 use crate::ops::drill_metrics::{DrillSample, DrillToolpathSummary};
+use crate::stock::material_slot::MaterialSlot;
 use crate::trace::debug_trace::TOOLPATH_DEBUG_SCHEMA_VERSION;
 use crate::trace::semantic_trace::ToolpathSemanticKind;
 use crate::trace::toolpath_spans::SpanId;
@@ -228,6 +229,22 @@ pub struct SimulationCutSample {
     /// emitted a move without tagging it. Do not coerce one to the other.
     #[serde(default)]
     pub source_intent: Option<crate::toolpath::MoveIntent>,
+    /// S1: the material slot this sample removed the most volume of. Slot 0
+    /// is the stock's own material; a slot `k > 0` indexes the stock's
+    /// [`crate::stock::material_slot::MaterialSlotTable`]. A one-material
+    /// stock always gives slot 0, and the wire then omits the key, so its
+    /// trace is the same as before S1.
+    #[serde(default, skip_serializing_if = "is_stock_slot")]
+    pub material_slot: MaterialSlot,
+    /// S1: the sample removed more than one material. `material_slot` then
+    /// names the one with the most removed volume.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cuts_several_materials: bool,
+}
+
+/// Serde: omit `material_slot` for the stock material (S1).
+fn is_stock_slot(slot: &MaterialSlot) -> bool {
+    slot.is_stock()
 }
 
 /// The radial engagement, as a fraction of the tool diameter, under which a
@@ -274,6 +291,8 @@ impl SimulationCutSample {
             span_path: Vec::new(),
             in_transit_span: false,
             source_intent: None,
+            material_slot: MaterialSlot::STOCK,
+            cuts_several_materials: false,
         }
     }
 }

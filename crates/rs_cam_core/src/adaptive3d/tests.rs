@@ -16,7 +16,7 @@ use crate::dexel_stock::StockCutDirection;
 use crate::geo::P3;
 use crate::ids::ToolpathId;
 use crate::mesh::SpatialIndex;
-use crate::stock::dexel::{DexelSegment, ray_subtract_above};
+use crate::stock::dexel::{DexelSegment, MaterialSlot, ray_subtract_above};
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
 use crate::tool::FlatEndmill;
@@ -62,7 +62,7 @@ fn make_stock_with_cells(
             // No material
             rays.push(SmallVec::new());
         } else {
-            let seg = DexelSegment::new(z_min as f32, z as f32);
+            let seg = DexelSegment::new(z_min as f32, z as f32, MaterialSlot::STOCK);
             rays.push(SmallVec::from_buf([seg]));
         }
     }
@@ -81,6 +81,7 @@ fn make_stock_with_cells(
         cell_size,
         axis: crate::stock::dexel::DexelAxis::Z,
         conservative_top,
+        has_added_material: false,
     };
     TriDexelStock {
         z_grid: grid,
@@ -91,6 +92,7 @@ fn make_stock_with_cells(
         last_stamp_dispatch: Default::default(),
         playback_dispatch: Default::default(),
         last_playback_dispatch: Default::default(),
+        materials: Default::default(),
     }
 }
 

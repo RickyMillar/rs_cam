@@ -8,6 +8,7 @@ pub mod collision;
 pub mod dexel;
 pub mod dexel_mesh;
 pub mod dexel_mesh_mc;
+pub mod material_slot;
 pub mod radial_profile;
 pub mod sim_measurability;
 pub mod sim_triage;

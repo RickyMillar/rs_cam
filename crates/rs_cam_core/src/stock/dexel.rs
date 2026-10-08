@@ -7,23 +7,35 @@
 use smallvec::SmallVec;
 
 use crate::geo::BoundingBox3;
+pub use crate::stock::material_slot::MaterialSlot;
 
 // ── Segment ─────────────────────────────────────────────────────────────
 
 /// A single contiguous material interval along a ray.
+///
+/// S1: 12 bytes (two `f32` and a one-byte [`MaterialSlot`], align 4). The
+/// inline array of a one-segment [`DexelRay`] stays under the 16-byte heap
+/// pair of `SmallVec`, so a plain cell costs the same as before S1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DexelSegment {
     /// Start of material (inclusive, toward ray origin).
     pub enter: f32,
     /// End of material (inclusive, toward ray tip).
     pub exit: f32,
+    /// The material of this interval. A trim, a blend, a split and a carry
+    /// keep it; only [`ray_union_interval`] writes a new one.
+    pub material: MaterialSlot,
 }
 
 impl DexelSegment {
     #[inline]
-    pub fn new(enter: f32, exit: f32) -> Self {
+    pub fn new(enter: f32, exit: f32, material: MaterialSlot) -> Self {
         debug_assert!(enter <= exit, "enter {enter} > exit {exit}");
-        Self { enter, exit }
+        Self {
+            enter,
+            exit,
+            material,
+        }
     }
 
     #[inline]
@@ -177,9 +189,10 @@ pub fn ray_subtract_interval(ray: &mut DexelRay, a: f32, b: f32) {
             // Entirely inside interval — remove.
             ray.remove(i);
         } else if seg.enter < a && seg.exit > b {
-            // Interval is strictly inside segment — split.
+            // Interval is strictly inside segment — split. Both parts keep
+            // the material of the segment.
             ray[i].exit = a;
-            ray.insert(i + 1, DexelSegment::new(b, seg.exit));
+            ray.insert(i + 1, DexelSegment::new(b, seg.exit, seg.material));
             i += 2;
         } else if seg.enter < a {
             // Overlaps on the right — trim exit.
@@ -191,6 +204,86 @@ pub fn ray_subtract_interval(ray: &mut DexelRay, a: f32, b: f32) {
             i += 1;
         }
     }
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Add material of `slot` over `[a, b]` (a boolean union).
+///
+/// - Only the EMPTY parts of `[a, b]` get `slot`. Where material already
+///   exists, it keeps its own slot: a union never overwrites.
+/// - The ray stays sorted and without overlap. Two segments that touch
+///   (`exit == enter`) and have the same slot merge into one. Two segments of
+///   different slots never merge.
+///
+/// `a >= b` adds nothing.
+pub fn ray_union_interval(ray: &mut DexelRay, a: f32, b: f32, slot: MaterialSlot) {
+    if a.is_nan() || b.is_nan() || a >= b {
+        return;
+    }
+    // The gaps of [a, b]: walk the segments in order and emit what lies
+    // between them. The ray is sorted, so one pass finds every gap.
+    let mut gaps: SmallVec<[(f32, f32); 2]> = SmallVec::new();
+    let mut cursor = a;
+    for seg in ray.iter() {
+        if seg.exit <= cursor {
+            continue;
+        }
+        if seg.enter >= b {
+            break;
+        }
+        if seg.enter > cursor {
+            gaps.push((cursor, seg.enter));
+        }
+        cursor = cursor.max(seg.exit);
+        if cursor >= b {
+            break;
+        }
+    }
+    if cursor < b {
+        gaps.push((cursor, b));
+    }
+    if gaps.is_empty() {
+        return;
+    }
+    for (lo, hi) in gaps {
+        let at = ray.partition_point(|seg| seg.enter < lo);
+        ray.insert(at, DexelSegment::new(lo, hi, slot));
+    }
+    ray_merge_touching(ray);
+    // A merge back to one segment returns the ray to its inline slot, so a
+    // union of the stock material costs no heap.
+    if ray.spilled() && ray.len() <= ray.inline_size() {
+        ray.shrink_to_fit();
+    }
+}
+
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+/// Merge each pair of neighbour segments that touch (`exit == enter`) and
+/// have the same slot.
+fn ray_merge_touching(ray: &mut DexelRay) {
+    let mut i = 1;
+    while i < ray.len() {
+        let prev = ray[i - 1];
+        let seg = ray[i];
+        if prev.material == seg.material && prev.exit >= seg.enter {
+            ray[i - 1].exit = prev.exit.max(seg.exit);
+            ray.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// The slot of the highest segment, or `None` if the ray is empty.
+#[inline]
+pub fn ray_top_material(ray: &DexelRay) -> Option<MaterialSlot> {
+    ray.last().map(|s| s.material)
+}
+
+/// `true` when some segment of the ray is not the stock material.
+#[inline]
+pub fn ray_has_added_material(ray: &DexelRay) -> bool {
+    ray.iter().any(|s| !s.material.is_stock())
 }
 
 /// Total material length along this ray.
@@ -305,6 +398,12 @@ pub struct DexelGrid {
     /// raise a top, so it needs no mirror; where a mutation cannot be proven
     /// to lower the bound the value is simply left high, which fails safe.
     pub conservative_top: Vec<f32>,
+    /// S1: `true` once a ray of this grid MAY hold a segment that is not
+    /// the stock material ([`Self::union_interval_at`], the carry). The
+    /// metric stamp kernels sum the removed volume per slot only when it is
+    /// set, so a one-material stock pays nothing. It is never cleared: a
+    /// stale `true` costs time, never a wrong number.
+    pub has_added_material: bool,
 }
 
 impl Clone for DexelGrid {
@@ -318,6 +417,7 @@ impl Clone for DexelGrid {
             cell_size: self.cell_size,
             axis: self.axis,
             conservative_top: self.conservative_top.clone(),
+            has_added_material: self.has_added_material,
         }
     }
 }
@@ -381,7 +481,7 @@ impl DexelGrid {
         let cell_size = Self::clamp_cell_size(cell_size, u_max - u_min, v_max - v_min);
         let cols = ((u_max - u_min) / cell_size).ceil() as usize + 1;
         let rows = ((v_max - v_min) / cell_size).ceil() as usize + 1;
-        let seg = DexelSegment::new(depth_min as f32, depth_max as f32);
+        let seg = DexelSegment::new(depth_min as f32, depth_max as f32, MaterialSlot::STOCK);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
         Self {
@@ -393,6 +493,7 @@ impl DexelGrid {
             cell_size,
             axis,
             conservative_top: vec![depth_max as f32; rows * cols],
+            has_added_material: false,
         }
     }
 
@@ -491,6 +592,38 @@ impl DexelGrid {
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    /// The slot of the top segment at cell, or `None` if the ray is empty.
+    /// The display mesh reads it to colour a surface by material (S5).
+    #[inline]
+    pub fn top_material_at(&self, row: usize, col: usize) -> Option<MaterialSlot> {
+        ray_top_material(&self.rays[row * self.cols + col])
+    }
+
+    /// Add material of `slot` over `[a, b]` on the ray at a flat cell index
+    /// ([`ray_union_interval`]).
+    ///
+    /// The union can raise the material top, so it RAISES
+    /// `conservative_top` to the new top when the new top is higher. The
+    /// "lowered only" contract of [`Self::lower_conservative_top`] holds for a
+    /// stamp; an addition is the one other writer. A slot other than the
+    /// stock sets [`Self::has_added_material`]. An index off the grid adds
+    /// nothing.
+    pub fn union_interval_at(&mut self, idx: usize, a: f32, b: f32, slot: MaterialSlot) {
+        let Some(ray) = self.rays.get_mut(idx) else {
+            return;
+        };
+        ray_union_interval(ray, a, b, slot);
+        if let (Some(top), Some(bound)) = (ray_top(ray), self.conservative_top.get_mut(idx))
+            && top > *bound
+        {
+            *bound = top;
+        }
+        if !slot.is_stock() {
+            self.has_added_material = true;
+        }
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Lower the sliver-safe bound at a flat cell index — monotone, so a
     /// caller that stamps the same ground twice cannot walk the bound back
     /// up. `surface` must already be an upper bound of the removal surface
@@ -517,7 +650,128 @@ mod tests {
     use crate::geo::P3;
 
     fn seg(a: f32, b: f32) -> DexelSegment {
-        DexelSegment::new(a, b)
+        DexelSegment::new(a, b, MaterialSlot::STOCK)
+    }
+
+    /// A segment of slot `k`.
+    fn mseg(a: f32, b: f32, k: u8) -> DexelSegment {
+        DexelSegment::new(a, b, MaterialSlot(k))
+    }
+
+    fn mray(segs: &[(f32, f32, u8)]) -> DexelRay {
+        segs.iter().map(|&(a, b, k)| mseg(a, b, k)).collect()
+    }
+
+    // ── S1: material per segment ────────────────────────────────────────
+
+    #[test]
+    fn union_into_a_gap_fills_only_the_gap_with_the_new_slot() {
+        // Stock below 3 and above 7; the union spans 2..8.
+        let mut r = mray(&[(0.0, 3.0, 0), (7.0, 10.0, 0)]);
+        ray_union_interval(&mut r, 2.0, 8.0, MaterialSlot(1));
+        assert_eq!(
+            r.as_slice(),
+            &[mseg(0.0, 3.0, 0), mseg(3.0, 7.0, 1), mseg(7.0, 10.0, 0)]
+        );
+    }
+
+    #[test]
+    fn union_above_the_top_adds_a_segment_and_extends_past_it() {
+        let mut r = mray(&[(0.0, 5.0, 0)]);
+        ray_union_interval(&mut r, 4.0, 6.0, MaterialSlot(2));
+        assert_eq!(r.as_slice(), &[mseg(0.0, 5.0, 0), mseg(5.0, 6.0, 2)]);
+        // An empty ray takes the whole interval.
+        let mut empty = DexelRay::new();
+        ray_union_interval(&mut empty, 1.0, 2.0, MaterialSlot(2));
+        assert_eq!(empty.as_slice(), &[mseg(1.0, 2.0, 2)]);
+    }
+
+    #[test]
+    fn union_over_existing_material_changes_nothing() {
+        let before = mray(&[(0.0, 4.0, 0), (4.0, 9.0, 1)]);
+        let mut r = before.clone();
+        ray_union_interval(&mut r, 1.0, 8.0, MaterialSlot(3));
+        assert_eq!(r, before);
+        ray_union_interval(&mut r, 1.0, 8.0, MaterialSlot::STOCK);
+        assert_eq!(r, before);
+    }
+
+    #[test]
+    fn union_merges_touching_segments_of_the_same_slot_only() {
+        // Slot 1 at 2..3 and 5..6; a slot-1 union over 3..5 joins them.
+        let mut r = mray(&[(0.0, 2.0, 0), (2.0, 3.0, 1), (5.0, 6.0, 1)]);
+        ray_union_interval(&mut r, 3.0, 5.0, MaterialSlot(1));
+        assert_eq!(r.as_slice(), &[mseg(0.0, 2.0, 0), mseg(2.0, 6.0, 1)]);
+        // A slot-2 union that touches the slot-1 segment stays separate.
+        ray_union_interval(&mut r, 6.0, 7.0, MaterialSlot(2));
+        assert_eq!(
+            r.as_slice(),
+            &[mseg(0.0, 2.0, 0), mseg(2.0, 6.0, 1), mseg(6.0, 7.0, 2)]
+        );
+        // A stock union below the stock merges with it.
+        let mut s = mray(&[(1.0, 2.0, 0)]);
+        ray_union_interval(&mut s, 0.0, 1.0, MaterialSlot::STOCK);
+        assert_eq!(s.as_slice(), &[mseg(0.0, 2.0, 0)]);
+    }
+
+    #[test]
+    fn subtract_through_two_materials_keeps_the_slot_of_each_remaining_part() {
+        // Stock 0..5, slot 1 from 5..9.
+        let base = mray(&[(0.0, 5.0, 0), (5.0, 9.0, 1)]);
+
+        let mut r = base.clone();
+        ray_subtract_above(&mut r, 3.0);
+        assert_eq!(r.as_slice(), &[mseg(0.0, 3.0, 0)]);
+
+        let mut r = base.clone();
+        ray_subtract_above(&mut r, 7.0);
+        assert_eq!(r.as_slice(), &[mseg(0.0, 5.0, 0), mseg(5.0, 7.0, 1)]);
+
+        let mut r = base.clone();
+        ray_subtract_below(&mut r, 6.0);
+        assert_eq!(r.as_slice(), &[mseg(6.0, 9.0, 1)]);
+
+        // A split of the slot-1 segment keeps slot 1 on both parts.
+        let mut r = base.clone();
+        ray_subtract_interval(&mut r, 6.0, 7.0);
+        assert_eq!(
+            r.as_slice(),
+            &[mseg(0.0, 5.0, 0), mseg(5.0, 6.0, 1), mseg(7.0, 9.0, 1)]
+        );
+        // The interval crosses the material boundary.
+        let mut r = base.clone();
+        ray_subtract_interval(&mut r, 4.0, 6.0);
+        assert_eq!(r.as_slice(), &[mseg(0.0, 4.0, 0), mseg(6.0, 9.0, 1)]);
+
+        // A blend keeps the slot too.
+        let mut r = base.clone();
+        ray_blend_above(&mut r, 3.0, 0.5);
+        assert_eq!(r.as_slice(), &[mseg(0.0, 4.0, 0), mseg(5.0, 7.0, 1)]);
+        let mut r = base;
+        ray_blend_below(&mut r, 9.0, 0.5);
+        assert_eq!(r.as_slice(), &[mseg(2.5, 5.0, 0), mseg(7.0, 9.0, 1)]);
+    }
+
+    #[test]
+    fn grid_union_raises_the_conservative_top_and_marks_added_material() {
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(2.0, 2.0, 5.0),
+        };
+        let mut g = DexelGrid::z_grid_from_bounds(&bbox, 1.0);
+        assert!(!g.has_added_material);
+        let idx = g.cols + 1;
+        ray_subtract_above(&mut g.rays[idx], 2.0);
+        g.lower_conservative_top(idx, 2.0);
+        g.union_interval_at(idx, 1.0, 6.0, MaterialSlot(1));
+        assert!(g.has_added_material);
+        assert_eq!(g.top_material_at(1, 1), Some(MaterialSlot(1)));
+        assert_eq!(g.top_material_at(0, 0), Some(MaterialSlot::STOCK));
+        assert_eq!(g.conservative_top_at(1, 1), 6.0);
+        assert_eq!(
+            g.ray(1, 1).as_slice(),
+            &[mseg(0.0, 2.0, 0), mseg(2.0, 6.0, 1)]
+        );
     }
 
     fn ray_from(segs: &[(f32, f32)]) -> DexelRay {
