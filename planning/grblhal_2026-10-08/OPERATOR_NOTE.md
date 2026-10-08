@@ -99,3 +99,28 @@ a `(MSG,...)` line.
 
 - The real `$$` and `$I` output of this controller. The import test uses a
   synthetic dump built from the firmware sources.
+
+## Verified on the machine, 2026-10-09
+
+- `$65=8` + `$341=3`: the M6 probes the BitSetter on the toolsetter
+  input. Two contacts 0.002 mm apart; reference set (`TLR`).
+- The firmware is now the same build plus expressions and YModem (`$I`
+  shows `EXPR,YM`). Settings and offsets survived the flash.
+- BitZero corner: `G65 P100 X0 Y0 Z13 E15`. The macros are in `macros/`;
+  upload a change over USB with `macros/ymodem_send.py` (gSender must be
+  disconnected), then read it back with `$F<=/P100.macro`.
+  - The move argument is `E`. A `D` word in a `G65` call gives
+    `error:36` (unused words) on this firmware.
+  - The macro moves to the centre in ABSOLUTE work coordinates and sets Z
+    at the recorded contact. A probe stops past the contact, and the first
+    version, with relative moves, put X0 0.14 mm off.
+  - Use the 1/4 in reference pin, not an end mill. The flutes made the
+    X and Y spans differ by 1 mm; the pin gave a consistent round bore.
+    Pin result: X and Y zero on the contact midpoints within 0.001 mm.
+- Caution: after any G-code error, this firmware refuses ALL later G-code
+  lines with the same error until it gets an empty line or a `$` command
+  (`protocol.c:266`, COMPATIBILITY_LEVEL 0). Send an empty line first.
+
+The order for each setup: home, `M6` with the pin (reference), `P100`,
+then `M6` to the cutting tool (the BitSetter applies the length
+difference), then run the file.

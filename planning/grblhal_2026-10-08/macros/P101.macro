@@ -1,0 +1,47 @@
+(P101.macro: BitZero V2 Z zero only. Sets Z of the active WCS.)
+(Call: G65 P101 Z<t> R<r>)
+(Z = mm from the plate base to the plate top face. Measure it.)
+(R = optional. Maximum Z search in mm. The default is 15.)
+(Carbide 3D does not publish the thickness. See README.md.)
+(Start: the BitZero flat on the stock top, the pin tip above a flat spot)
+(of the top face, not above the bore, less than R mm above it.)
+(Needs: grblHAL with EXPR, and a homed machine.)
+(Probe input: DEFAULT, the BitZero. G38.2 has no P word here.)
+
+o200 if [#26 LE 0]
+  (abort, P101 needs Z more than 0. See README.md)
+o200 endif
+o201 if [#<_homed_state> EQ 0]
+  (abort, P101 needs a homed machine)
+o201 endif
+
+M73
+G21 G91 G94
+G65 P5 Q0
+
+#<seek> = 100
+#<slow> = 25
+#<bnd> = 15
+o202 if [#18 GT 0]
+  #<bnd> = #18
+o202 endif
+
+(Soft limit check. Machine Z is 0 at the home end, negative downward.)
+G65 P1 Q132
+#<zmin> = [0 - #<_value>]
+o203 if [[#<_abs_z> - #<bnd>] LT [#<zmin> + 1]]
+  (abort, P101 Z probe can go past the Z soft limit)
+o203 endif
+
+#<nz> = [0 - #<bnd>]
+G38.2 Z#<nz> F#<seek>
+G0 Z1
+G38.2 Z-2 F#<slow>
+G10 L20 P0 Z#26
+
+(Safe Z: 5 mm up, then G53 Z-5. Home Z is -$27 = -3, machine_limits.c:157-159.)
+G0 Z5
+G90
+G53 G0 Z-5
+(MSG, P101 done: Z zero set on the stock top. Remove the clip.)
+M99

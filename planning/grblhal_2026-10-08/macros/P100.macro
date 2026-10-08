@@ -1,0 +1,117 @@
+(P100.macro: BitZero V2 corner zero. Sets X, Y and Z of the active WCS.)
+(Call: G65 P100 X<x> Y<y> Z<t> E<e> R<r>)
+(X = mm from the bore centre to the X locating face. 0 for the BitZero V2.)
+(Y = mm from the bore centre to the Y locating face. 0 for the BitZero V2.)
+(Z = mm from the plate base to the plate top face. Measure it.)
+(E = mm to move in +X and +Y from the bore centre to the top face. gSender uses 15.)
+(R = optional. Maximum bore search in mm. The default is 10.)
+(Carbide 3D does not publish these dimensions. See README.md.)
+(Start: the BitZero on the lower-left stock corner, the pin tip in the bore,)
+(below the top face and near the bore centre, the clip on the pin.)
+(Needs: grblHAL with EXPR, and X Y Z homed.)
+(Probe input: DEFAULT, the BitZero. G38.2 has no P word here.)
+
+o100 if [[#24 LT 0] OR [#25 LT 0] OR [#26 LE 0] OR [#8 LE 0]]
+  (abort, P100 needs X and Y of 0 or more, and Z and E more than 0. See README.md)
+o100 endif
+o101 if [#<_homed_state> EQ 0]
+  (abort, P100 needs a homed machine)
+o101 endif
+
+M73
+G21 G91 G94
+G65 P5 Q0
+
+#<seek> = 100
+#<slow> = 25
+#<bnd> = 10
+o102 if [#18 GT 0]
+  #<bnd> = #18
+o102 endif
+#<lift> = [#26 + 3]
+#<zbnd> = [#26 + 4]
+
+(Soft limit check. Machine X, Y, Z are 0 at the home end, negative inward.)
+G65 P1 Q130
+#<xmin> = [0 - #<_value>]
+G65 P1 Q131
+#<ymin> = [0 - #<_value>]
+G65 P1 Q132
+#<zmin> = [0 - #<_value>]
+o103 if [[#<_abs_x> - [2 * #<bnd>]] LT [#<xmin> + 1]]
+  (abort, P100 X search can go past the X soft limit)
+o103 endif
+o104 if [[#<_abs_x> + [2 * #<bnd>] + #8] GT [0 - 1]]
+  (abort, P100 X moves can go past X max)
+o104 endif
+o105 if [[#<_abs_y> - [2 * #<bnd>]] LT [#<ymin> + 1]]
+  (abort, P100 Y search can go past the Y soft limit)
+o105 endif
+o106 if [[#<_abs_y> + [2 * #<bnd>] + #8] GT [0 - 1]]
+  (abort, P100 Y moves can go past Y max)
+o106 endif
+o107 if [[#<_abs_z> + #<lift>] GT [0 - 1]]
+  (abort, P100 Z lift can go past Z max. Start lower.)
+o107 endif
+o108 if [[#<_abs_z> + #<lift> - #<zbnd>] LT [#<zmin> + 1]]
+  (abort, P100 Z probe can go past the Z soft limit)
+o108 endif
+
+#<b2> = [2 * #<bnd>]
+
+(X: probe the +X wall, then the -X wall.)
+G38.2 X#<bnd> F#<seek>
+G0 X-1
+G38.2 X2 F#<slow>
+#<x1> = #5061
+G0 X-1
+#<nx> = [0 - #<b2>]
+G38.2 X#<nx> F#<seek>
+G0 X1
+G38.2 X-2 F#<slow>
+#<x2> = #5061
+(Go to the centre in absolute work coordinates: a probe stops past the contact, so a relative move adds that overrun. #5061 is in the active WCS, ngc_params.c:172-180.)
+G0 X1
+G90
+G0 X[[#<x1> + #<x2>] / 2]
+G91
+
+(Y: probe the +Y wall, then the -Y wall, on the X centre line.)
+G38.2 Y#<bnd> F#<seek>
+G0 Y-1
+G38.2 Y2 F#<slow>
+#<y1> = #5062
+G0 Y-1
+#<ny> = [0 - #<b2>]
+G38.2 Y#<ny> F#<seek>
+G0 Y1
+G38.2 Y-2 F#<slow>
+#<y2> = #5062
+G0 Y1
+G90
+G0 Y[[#<y1> + #<y2>] / 2]
+G91
+
+(The pin is on the bore centre. The stock corner is at -X and -Y of it.)
+G10 L20 P0 X#24 Y#25
+
+(Z: lift out of the bore, move onto the top face, probe down.)
+G0 Z#<lift>
+G0 X#8 Y#8
+#<nz> = [0 - #<zbnd>]
+G38.2 Z#<nz> F#<seek>
+G0 Z1
+G38.2 Z-2 F#<slow>
+(Go back to the recorded contact, then set Z there, not at the overrun stop point.)
+#<zc> = #5063
+G90
+G0 Z#<zc>
+G10 L20 P0 Z#26
+G91
+
+(Safe Z: 5 mm up, then G53 Z-5. Home Z is -$27 = -3, machine_limits.c:157-159.)
+G0 Z5
+G90
+G53 G0 Z-5
+(MSG, P100 done: X Y Z zero set on the stock corner. Remove the clip.)
+M99
