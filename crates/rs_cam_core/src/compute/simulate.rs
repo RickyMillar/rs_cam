@@ -550,14 +550,18 @@ impl SimCheckpointMesh {
     #[must_use]
     pub fn build_mesh(&self) -> StockMesh {
         let mut local_mesh = dexel_stock_to_mesh_strided(&self.mesh_stock, self.display_stride);
-        // §6.E append analytic drill cylinders so checkpoint frames show
-        // clean circular hole walls even at low dexel resolution. The
-        // cylinders are in local-frame coordinates; the transform below
-        // re-frames them with the stock.
+        // §6.E append analytic walls for the holes the display grid cannot
+        // resolve, clipped to this stock. The walls are in local-frame
+        // coordinates; the transform below re-frames them with the stock.
         if !self.mesh_drill_ops.is_empty() {
             let refs: Vec<&crate::ops::drill_op::DrillOp> =
                 self.mesh_drill_ops.iter().map(|d| d.as_ref()).collect();
-            crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
+            crate::stock::dexel_mesh::append_drill_cylinders(
+                &mut local_mesh,
+                &self.mesh_stock,
+                self.display_stride,
+                &refs,
+            );
         }
         transform_stock_mesh_to_global(&local_mesh, &self.mesh_frame, self.mesh_stock_min)
     }
@@ -1354,7 +1358,12 @@ fn finish_group<F>(
     if !group_drill_ops.is_empty() {
         let refs: Vec<&crate::ops::drill_op::DrillOp> =
             group_drill_ops.iter().map(|d| d.as_ref()).collect();
-        crate::stock::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
+        crate::stock::dexel_mesh::append_drill_cylinders(
+            &mut group_mesh,
+            group_stock,
+            request.display_stride,
+            &refs,
+        );
     }
     // Same frame contract as the checkpoint meshes: every group lands
     // in the zero-rooted stock-relative frame, identity groups via the

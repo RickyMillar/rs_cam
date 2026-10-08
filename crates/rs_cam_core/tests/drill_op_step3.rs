@@ -146,25 +146,35 @@ fn drill_then_pocket_composes_correctly() {
 
 #[test]
 fn append_drill_cylinders_adds_geometry() {
+    // Cell 0.25 mm at stride 8: the 2 mm display cell cannot resolve the
+    // Ø2 hole (2 < 2 x 2), so the decoration is drawn.
     let stock = stock_5x5x10();
     let mut mesh = dexel_stock_to_mesh(&stock);
     let initial_verts = mesh.vertices.len();
 
     let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
-    append_drill_cylinders(&mut mesh, &[&drill]);
+    append_drill_cylinders(&mut mesh, &stock, 8, &[&drill]);
 
-    assert!(
-        mesh.vertices.len() > initial_verts,
-        "append_drill_cylinders should add geometry; before={initial_verts}, after={}",
-        mesh.vertices.len()
-    );
-    // Each hole contributes: 16 ring verts at cylinder_bottom + 16 at
-    // top + 1 cap vertex = 33 verts × 3 floats = 99 floats.
+    // Each hole in uncut stock contributes 16 wall quads x 4 verts, plus
+    // the floor fan: 16 ring verts + 1 centre = 81 verts.
     let delta = (mesh.vertices.len() - initial_verts) / 3;
     assert_eq!(
-        delta, 33,
-        "expected 33 added vertices per Flat-profile hole (16+16+1), got {delta}"
+        delta, 81,
+        "expected 81 added vertices per Flat-profile hole (64+17), got {delta}"
     );
+}
+
+#[test]
+fn append_drill_cylinders_adds_nothing_for_a_resolved_hole() {
+    // Cell 0.25 mm at stride 1: the Ø2 hole spans 8 cells, and the dexel
+    // mesh already shows it.
+    let mut stock = stock_5x5x10();
+    let drill = flat_drill(2.0, [2.5, 2.5], 10.0, 4.0);
+    stock.apply_drill_op(&drill, StockCutDirection::FromTop);
+    let mut mesh = dexel_stock_to_mesh(&stock);
+    let initial_verts = mesh.vertices.len();
+    append_drill_cylinders(&mut mesh, &stock, 1, &[&drill]);
+    assert_eq!(mesh.vertices.len(), initial_verts);
 }
 
 #[test]
