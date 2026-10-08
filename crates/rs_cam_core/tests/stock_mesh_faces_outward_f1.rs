@@ -289,8 +289,11 @@ fn drill(profile: ToolProfile) -> DrillOp {
 #[test]
 fn the_drill_tube_cap_and_cone_face_out_of_the_material() {
     for profile in [ToolProfile::Flat, ToolProfile::StandardTwist] {
+        // Cell 1 mm at stride 4: the 4 mm display cell cannot resolve the
+        // Ø6 hole (6 < 2 x 4), so the decoration is drawn. The uncut block
+        // holds material on every wall column and below the floor.
         let mut mesh = StockMesh::empty();
-        append_drill_cylinders(&mut mesh, &[&drill(profile)]);
+        append_drill_cylinders(&mut mesh, &block(1.0), 4, &[&drill(profile)]);
         let tris = triangles(&mesh);
         assert!(!tris.is_empty(), "{profile:?}: no drill geometry");
         let (mut wall, mut tip) = (0, 0);
