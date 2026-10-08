@@ -836,6 +836,7 @@ impl<B: ComputeBackend> AppController<B> {
 
                 self.state.simulation.playback.display_deviations = simulation.core.deviations;
                 self.state.simulation.playback.display_mesh = None;
+                self.state.simulation.playback.display_mesh_is_final = false;
                 self.state.simulation.playback.display_mesh_move = None;
                 self.state.simulation.playback.last_mesh_upload_at = None;
                 self.state.simulation.playback.tool_gpu_move = None;

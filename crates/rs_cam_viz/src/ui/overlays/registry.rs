@@ -1846,7 +1846,12 @@ pub fn active_legends(state: &AppState) -> Vec<Legend> {
     {
         out.push(Legend::TierMap(preview.map.tier_count));
     }
-    if on("stock_colour_deviation") && sim_stock_drawn(state) {
+    // F4 (render review 2026-10-09): the deviation colours are drawn only
+    // on the final composite mesh, so the legend reads the same gate.
+    if on("stock_colour_deviation")
+        && sim_stock_drawn(state)
+        && state.simulation.playback.deviations_fit_display()
+    {
         out.push(Legend::Deviation);
     }
     if on("stock_colour_by_height") && sim_stock_drawn(state) {

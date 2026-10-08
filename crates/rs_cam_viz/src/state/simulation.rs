@@ -1029,7 +1029,34 @@ pub struct SimulationPlayback {
     /// drag releases so the UI tracks the pointer immediately.
     pub scrub_drag_active: bool,
     /// Per-vertex deviations from model surface (for deviation coloring).
+    ///
+    /// One value per vertex of the run's FINAL composite mesh
+    /// (`SimulationResults::mesh`), and of no other mesh. The colours go on
+    /// the shown stock only when [`Self::display_mesh_is_final`] is true
+    /// (render review 2026-10-09, F4).
     pub display_deviations: Option<Vec<f32>>,
+    /// True when `display_mesh` is the run's final composite mesh
+    /// (`SimulationResults::mesh`, frame-mapped), the one mesh that
+    /// [`Self::display_deviations`] belongs to.
+    ///
+    /// A live, preview or checkpoint mesh has other vertices, also when its
+    /// vertex count is the same. Render review 2026-10-09, F4: the deviation
+    /// colours were mapped by vertex index onto whatever mesh was shown, so
+    /// the uncut block at move 0 showed the final deviations.
+    pub display_mesh_is_final: bool,
+}
+
+impl SimulationPlayback {
+    /// Whether the deviation colours belong to the shown stock mesh: it is
+    /// the final composite mesh, and it has one vertex per deviation value.
+    #[must_use]
+    pub fn deviations_fit_display(&self) -> bool {
+        self.display_mesh_is_final
+            && match (&self.display_deviations, &self.display_mesh) {
+                (Some(devs), Some(mesh)) => devs.len() == mesh.vertices.len() / 3,
+                _ => false,
+            }
+    }
 }
 
 /// The population one holder-clearance verdict covers (F2.13, G-HOLDERSCOPE).
@@ -1454,6 +1481,7 @@ impl SimulationState {
         playback.display_mesh_move = None;
         playback.display_mesh_preview = false;
         playback.display_deviations = None;
+        playback.display_mesh_is_final = false;
         playback.last_mesh_upload_at = None;
         playback.tool_gpu_move = None;
         self.checks.rapid_collisions = Vec::new();
@@ -1484,6 +1512,7 @@ impl Default for SimulationPlayback {
             display_mesh_preview: false,
             scrub_drag_active: false,
             display_deviations: None,
+            display_mesh_is_final: false,
         }
     }
 }

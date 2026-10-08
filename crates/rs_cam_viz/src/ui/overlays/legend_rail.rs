@@ -313,6 +313,24 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
             tone: StatusTone::Muted,
         });
     }
+    // F4 (render review 2026-10-09): the deviations belong to the final
+    // stock mesh only. Away from it, the stock draws plain; say so.
+    if flag_on(state, "stock_colour_deviation")
+        && registry::sim_stock_drawn(state)
+        && state.simulation.playback.display_deviations.is_some()
+        && !state.simulation.playback.deviations_fit_display()
+    {
+        status.push(StatusLine {
+            name: "Stock deviation".to_owned(),
+            glyph: tokens::GLYPH_UNKNOWN,
+            text: concat!(
+                "shows on the final stock only \u{2014} the stock draws in a plain colour; ",
+                "move the playhead to the end and pause"
+            )
+            .to_owned(),
+            tone: StatusTone::Muted,
+        });
+    }
     if flag_on(state, "move_colour_advance_per_tooth")
         && state.viewport.show_cutting
         && registry::any_toolpath_drawn(state)
