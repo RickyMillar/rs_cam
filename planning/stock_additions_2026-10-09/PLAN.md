@@ -71,7 +71,7 @@ clippy, fmt). The lead reviews each package by path and commits.
 | S3 | **Geometry kernels.** `OutlineFill` and `OutlineExtrude` (the existing outline resolver, transformed to the setup frame; one cell scan, reusing `for_each_covered_cell`), and `Model` (a vertical ray cast with all hits, even-odd intervals, refuse a non-closed mesh by name). `Add` = union with the material; `Remove` = subtract | S1, S2 | Volume tests: a box fill, a fill into a pocket with an overcut, a hole through; the mesh cast on a closed box and on a box with a hole; non-closed refusal |
 | S4 | **Surfaces.** GUI: a "Stock changes" list in the setup panel, beside fixtures (add, edit, reorder, enable; a material picker from the library; the added and removed volume shown). MCP: `add_stock_change`, `remove_stock_change`, `list_setups` and `inspect_stock` show the changes and the volumes. CLI: `project` prints one line per change with its volume. `FEATURE_CATALOG.md` | S2, S3 | viz tests; the MCP wire snapshot; GUI/MCP/CLI give the same volume (number parity) |
 | S5 | **Show the material.** Per-vertex material colour from the segment ids in every stock view (live, playback, paused, `screenshot_simulation`); a legend row per material. Uses the render review P1 fixes (winding, deviation colours on their own mesh) | S1, R1 | A render test: a two-material stock gives two colours at the right cells |
-| S6 | **Metrics and gates per material.** Cut samples carry the material; the chip-load and force gates use that material's force data when the library has it, else they say "not judged: no force data for <material>" | S1 | Gate tests with and without force data |
+| S6 | **"Cut as" per stock change** (operator ruling 2026-10-09: "in theory it is just more stock"). Each Add change has `cut_as: StockMaterial` (DEFAULT) or `OwnMaterial`. Default: the added material is cut exactly like the stock material for the gates, the cut metrics and the feed modulation (a mixed cut is a normal stock cut); only the colour (S5) and the "material present" fact differ. `OwnMaterial`: the gates use that material's force data, else "not judged: no force data for <material>". Toolpath generation and Suggest never read the added material | S1, S2 | Gate tests: default = identical verdicts to an all-stock run; OwnMaterial with and without force data |
 | R1 | **Render review P1** (independent; can run first): fix the mesh winding, keep deviation colours on their own mesh, fix the per-toolpath overlay trim, per-pixel depth in the software renderer | none | REVIEW.md tests |
 
 Order: **S0 and R1 in parallel** (different files), then S1 and S2, then S3,
@@ -99,5 +99,5 @@ verifier runs the gates for each wave.
 
 - Generic, not epoxy-specific (the ruling above).
 - An `Add` may rise above the stock top (the overfill case).
-- A material with no force data is counted and named, not judged.
+- An added material is cut "same as the stock" by default (operator: "in theory it is just more stock"); "own material" is an option per change. With own material and no force data, it is counted and named, not judged.
 - A live re-check of a real two-sided project before the S0 merge.
