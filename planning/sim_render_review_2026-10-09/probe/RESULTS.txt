@@ -1,0 +1,29 @@
+# Machine: Model name: AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M, 24 threads, master 8b6e94df, release build
+    Finished `release` profile [optimized] target(s) in 50.21s
+     Running `target/simrender-review/release/simprobe`
+grid 2501 x 1751 = 4379251 cells
+full MC: build 180 ms, verts 8751744, tris 17503488, CPU 420 MB, GPU vertex 315 MB + index 210 MB
+stride 2: build 54 ms, verts 2192384, tris 4384768, CPU 105 MB, GPU vertex 79 MB + index 53 MB
+preview: build 66 ms, verts 4379251, tris 8750000, CPU 210 MB, GPU vertex 158 MB + index 105 MB
+normals full: 100 ms
+normals preview: 50 ms
+mesh clone: 79 ms
+chunk remap at 256 MiB: 8 chunks, 906 ms
+stock clone: 30 ms
+preview z at through-hole centre: 40 (stock top 40, bottom 0)
+full mesh vertices inside hole r<9: 0
+rim corner vertex z 12.99: smoothed normal [-0.99968517, -0.0016932425, -0.025034988]
+  pocket-edge x 99.3 z 20.90 normal [0.16835256, -0.121500395, -0.97821015]
+  pocket-edge x 99.5 z 20.94 normal [0.16748169, -0.1260645, -0.977782]
+  pocket-edge x 99.7 z 20.97 normal [-0.99871737, -0.0061280606, -0.050260548]
+  pocket-edge x 99.9 z 12.99 normal [-0.99968517, -0.0016932425, -0.025034988]
+  pocket-edge x 100.1 z 5.00 normal [-0.9987491, -0.0005675627, -0.049999237]
+  pocket-edge x 100.3 z 5.00 normal [0.0, 0.0, -1.0]
+perimeter top vertex x -0.10 z 20.00 normal [0.9999503, 6.9746466e-7, -0.009972984]
+perimeter top vertex x -0.10 z 20.00 normal [0.99995023, 5.706373e-7, -0.009972965]
+EXIT 0
+
+# shade.rs
+TOP panel centre mean, shipped winding: 52.3
+TOP panel centre mean, flipped winding: 137.3
+vertex colour of a top vertex x255: 151.3

@@ -1,0 +1,12 @@
+[package]
+name = "simprobe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rs_cam_core = { path = "/home/ricky/personal_repos/rs_cam/crates/rs_cam_core" }
+
+[profile.release]
+debug = false
+
+[workspace]
