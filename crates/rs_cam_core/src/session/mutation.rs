@@ -36,6 +36,8 @@ mod entities;
 mod stock_change;
 mod toolpath;
 
+pub(crate) use stock_change::loaded_model_facts;
+
 impl super::ProjectSession {
     /// S2: the one invalidation rule of a stock change in setup
     /// `from_setup`.

@@ -623,6 +623,21 @@ impl DexelGrid {
         }
     }
 
+    /// Remove `[a, b]` from the ray at a flat cell index, from every
+    /// material ([`ray_subtract_interval`]).
+    ///
+    /// `conservative_top` stays as it is: a removal cannot raise a top, and
+    /// a bound left high fails safe. `a >= b` and an index off the grid
+    /// remove nothing.
+    pub fn subtract_interval_at(&mut self, idx: usize, a: f32, b: f32) {
+        if a.is_nan() || b.is_nan() || a >= b {
+            return;
+        }
+        if let Some(ray) = self.rays.get_mut(idx) {
+            ray_subtract_interval(ray, a, b);
+        }
+    }
+
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Lower the sliver-safe bound at a flat cell index — monotone, so a
     /// caller that stamps the same ground twice cannot walk the bound back

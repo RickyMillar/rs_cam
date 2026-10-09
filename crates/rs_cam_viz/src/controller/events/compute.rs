@@ -2865,5 +2865,6 @@ fn core_simulation_from_lane(
         // empty mesh, so it records no degrade; the view keeps the record.
         display_degrade: None,
         group_starts: core.group_starts.clone(),
+        stock_change_volumes: core.stock_change_volumes.clone(),
     }
 }

@@ -172,6 +172,7 @@ fn simulation_with_prior_stock(for_toolpath: ToolpathId) -> SimulationResult {
         prior_stock_sources: std::collections::HashMap::new(),
         display_degrade: None,
         group_starts: Vec::new(),
+        stock_change_volumes: Vec::new(),
     }
 }
 

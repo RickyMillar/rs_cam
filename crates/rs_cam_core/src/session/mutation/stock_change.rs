@@ -17,24 +17,35 @@ use crate::compute::stock_change::{
 use crate::ids::{ModelId, StockChangeId};
 use crate::session::{Effects, ProjectSession, SessionError};
 
+/// The geometry facts of one loaded model, or `None` when `models` holds no
+/// model with that id. One rule for the command doors and the project
+/// loader: a mesh, and at least one closed 2D outline by the rule the
+/// "Model Outline" boundary uses.
+pub(crate) fn loaded_model_facts(
+    models: &[crate::session::LoadedModel],
+    model_id: ModelId,
+) -> Option<ModelGeometryFacts<'_>> {
+    models
+        .iter()
+        .find(|m| m.id == model_id.0)
+        .map(|m| ModelGeometryFacts {
+            name: &m.name,
+            has_mesh: m.mesh.is_some(),
+            has_closed_outline: m
+                .polygons
+                .as_deref()
+                .is_some_and(|polys| polys.iter().any(is_closed_outline)),
+        })
+}
+
 impl ProjectSession {
     /// Check one stock change against the project models.
     ///
     /// The model facts come from the loaded models: a mesh, and at least
     /// one closed 2D outline by the rule the "Model Outline" boundary uses.
     fn validate_stock_change(&self, change: &StockChange) -> Result<(), SessionError> {
-        validate_stock_change(change, |model_id: ModelId| {
-            self.models
-                .iter()
-                .find(|m| m.id == model_id.0)
-                .map(|m| ModelGeometryFacts {
-                    name: &m.name,
-                    has_mesh: m.mesh.is_some(),
-                    has_closed_outline: m
-                        .polygons
-                        .as_deref()
-                        .is_some_and(|polys| polys.iter().any(is_closed_outline)),
-                })
+        validate_stock_change(change, |model_id| {
+            loaded_model_facts(&self.models, model_id)
         })
         .map_err(SessionError::StockChangeRefused)
     }
