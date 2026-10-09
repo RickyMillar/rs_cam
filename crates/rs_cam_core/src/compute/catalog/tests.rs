@@ -962,3 +962,39 @@ fn coarse_steps_is_gone_from_the_wire() {
         assert!(err.contains("coarse_steps"), "{value}: {err}");
     }
 }
+
+/// Project Curve `projection`: an additive field. A config saved before it
+/// loads as `Cutter`, the constructed default is `Cutter`, and the wire
+/// spelling is `cutter` / `point`, as the schema advertises.
+#[test]
+fn project_curve_projection_defaults_to_cutter_and_reads_point() {
+    use crate::compute::operation_configs::{ProjectCurveConfig, ProjectCurveProjection};
+
+    let legacy: ProjectCurveConfig = serde_json::from_str(
+        r#"{"depth":1.0,"point_spacing":0.5,"feed_rate":800.0,"plunge_rate":400.0}"#,
+    )
+    .expect("a project file written before the field still loads");
+    assert_eq!(legacy.projection, ProjectCurveProjection::Cutter);
+    assert_eq!(
+        ProjectCurveConfig::default().projection,
+        ProjectCurveProjection::Cutter
+    );
+
+    let op: OperationConfig = serde_json::from_value(serde_json::json!({
+        "kind": "project_curve",
+        "params": {
+            "depth": -2.2685, "point_spacing": 0.05, "feed_rate": 1297.0,
+            "plunge_rate": 730.0, "direction": "from_below", "projection": "point"
+        }
+    }))
+    .expect("projection = point loads");
+    let OperationConfig::ProjectCurve(cfg) = &op else {
+        panic!("project_curve kind");
+    };
+    assert_eq!(cfg.projection, ProjectCurveProjection::Point);
+    assert_eq!(
+        op.params_value_including_nulls().get("projection"),
+        Some(&serde_json::json!("point"))
+    );
+    assert_eq!(op.param_type_name("projection"), Some("enum:cutter|point"));
+}

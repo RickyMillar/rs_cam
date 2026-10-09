@@ -13,10 +13,10 @@ pub use configs::{
     ClaimsReference, ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
     DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
     PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
-    ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
-    RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
-    SteepShallowConfig, TraceCompensation, TraceConfig, UnifiedFinishConfig, VCarveConfig,
-    WaterlineConfig, ZigzagConfig,
+    ProjectCurveDirection, ProjectCurveProjection, ProjectCurveSide, RadialFinishConfig,
+    RampFinishConfig, RegionOrdering, RestConfig, ScallopConfig, ScallopDirection, SpiralDirection,
+    SpiralFinishConfig, SteepShallowConfig, TraceCompensation, TraceConfig, UnifiedFinishConfig,
+    VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 pub use entry::{ToolpathEntry, ToolpathEntryInit, ToolpathResult};
 pub use support::{

@@ -39,7 +39,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 | 3D | Spiral Finish | `spiral_finish.rs` | Yes | No | Shipped |
 | 3D | Radial Finish | `radial_finish.rs` | Yes | No | Shipped |
 | 3D | Horizontal Finish | `horizontal_finish.rs` | Yes | No | Shipped |
-| 3D | Project Curve | `project_curve.rs` | Yes | No | Shipped |
+| 3D | Project Curve | `project_curve.rs` | Yes | No | Shipped. The `projection` option (2026-10-09): `cutter` (the default) drops the real cutter, so the tool body does not cut the surface; `point` puts the tip at the surface Z under the curve plus the depth, at every curve vertex and at most `point_spacing` apart between vertices, From Above and From Below. Point gives a static caution: the tool body can cut the far surface. Use it for a cut from the other side, for example a V line through to the front face |
 
 ## Tooling and setup
 

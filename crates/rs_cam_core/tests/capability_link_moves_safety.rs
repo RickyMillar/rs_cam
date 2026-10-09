@@ -1123,6 +1123,7 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
         direction: ProjectDirection::FromAbove,
         tool_radius: 1.0,
         side: ProjectSide::Center,
+        projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
     let raw = project_curve_toolpath(&poly, &mesh, &index, &cutter, &params);

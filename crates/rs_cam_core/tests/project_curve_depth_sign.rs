@@ -83,6 +83,7 @@ fn run(direction: ProjectDirection, depth: f64) -> Option<(f64, f64)> {
         direction,
         tool_radius: 3.0,
         side: ProjectSide::Center,
+        projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
     let tp = project_curve_toolpath(&poly, &mesh, &idx, &cutter, &params);

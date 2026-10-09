@@ -342,6 +342,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
         direction: ProjectDirection::FromAbove,
         tool_radius: 0.0,
         side: rs_cam_core::ops::project_curve::ProjectSide::Center,
+        projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
 

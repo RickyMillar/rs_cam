@@ -197,6 +197,14 @@ pub(crate) fn generate_project_curve(
             crate::ops::project_curve::ProjectSide::Outside
         }
     };
+    let projection = match cfg.projection {
+        crate::compute::operation_configs::ProjectCurveProjection::Cutter => {
+            crate::ops::project_curve::ProjectProjection::Cutter
+        }
+        crate::compute::operation_configs::ProjectCurveProjection::Point => {
+            crate::ops::project_curve::ProjectProjection::Point
+        }
+    };
     let params = crate::ops::project_curve::ProjectCurveParams {
         depth: cfg.depth,
         point_spacing: cfg.point_spacing,
@@ -206,6 +214,7 @@ pub(crate) fn generate_project_curve(
         direction,
         tool_radius: ctx.tool_def.radius(),
         side,
+        projection,
         setup_z_flipped: cfg.setup_z_flipped,
     };
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);

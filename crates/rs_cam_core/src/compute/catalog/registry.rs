@@ -714,6 +714,15 @@ const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
     ParamDef::optional("surface_model_id", "option<usize>"),
     ParamDef::required("direction", "enum:from_above|from_below"),
     ParamDef::required("side", "enum:center|inside|outside"),
+    ParamDef::required("projection", "enum:cutter|point").with_help(
+        "How the tip Z is found at each sample. `cutter` (the default) drops \
+         the real cutter on the surface, so the tool body does not cut the \
+         surface. `point` puts the tip at the surface Z under the sample \
+         plus the depth, at every curve vertex and at most `point_spacing` \
+         apart between vertices. Point projection does not protect the far \
+         surface: the tool body can cut it. Use only when the tool cuts \
+         from the other side or into material that is removed later.",
+    ),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     ParamDef::required_ranged(
         "chain_distance_mm",

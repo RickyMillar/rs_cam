@@ -324,6 +324,7 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
         direction: crate::ops::project_curve::ProjectDirection::FromAbove,
         tool_radius: tool_def.radius(),
         side: crate::ops::project_curve::ProjectSide::Center,
+        projection: crate::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
     let mut raw = Toolpath::new();

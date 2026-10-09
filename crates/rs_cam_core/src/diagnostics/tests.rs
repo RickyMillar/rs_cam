@@ -164,6 +164,10 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             "COMPAT_BALL_NOSE_FLAT_CLEARING",
             ids::COMPAT_BALL_NOSE_FLAT_CLEARING,
         ),
+        (
+            "COMPAT_PROJECT_CURVE_POINT_PROJECTION",
+            ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION,
+        ),
         ("TOOL_NAME_SIZE_MISMATCH", ids::TOOL_NAME_SIZE_MISMATCH),
         (
             "QUALITY_STEPOVER_OVER_80_PCT",
@@ -687,4 +691,51 @@ fn feeds_hint_emits_high_feed_ratio() {
     assert_eq!(d.id.as_str(), ids::FEEDS_FEED_VS_LUT_HIGH);
     assert_eq!(d.severity, Severity::Hint);
     assert_eq!(d.confidence, Confidence::Heuristic);
+}
+
+// ── Project Curve point projection ──────────────────────────────────
+
+/// Point projection is a deliberate operator choice. The static checks give
+/// the caution for Point, with the agreed text, and give nothing for Cutter.
+#[test]
+fn project_curve_point_projection_gives_the_caution() {
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::{
+        PROJECT_CURVE_POINT_CAUTION, ProjectCurveConfig, ProjectCurveProjection,
+    };
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+
+    let find = |projection: ProjectCurveProjection, tool_type: ToolType| {
+        let op = OperationConfig::ProjectCurve(ProjectCurveConfig {
+            projection,
+            ..ProjectCurveConfig::default()
+        });
+        let tool = ToolConfig::new_default(ToolId(0), tool_type);
+        adapters::from_static_checks::diagnostics_from_static_checks(
+            ToolpathId(3),
+            &op,
+            &tool,
+            None,
+        )
+        .into_iter()
+        .filter(|d| d.id.as_str() == ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION)
+        .collect::<Vec<_>>()
+    };
+
+    for tool_type in [ToolType::VBit, ToolType::BallNose, ToolType::EndMill] {
+        let point = find(ProjectCurveProjection::Point, tool_type);
+        assert_eq!(point.len(), 1, "one caution for Point on {tool_type:?}");
+        assert_eq!(point[0].severity, Severity::Caution);
+        assert_eq!(point[0].message, PROJECT_CURVE_POINT_CAUTION);
+        assert_eq!(
+            PROJECT_CURVE_POINT_CAUTION,
+            "Point projection does not protect the far surface: the tool body can cut it. \
+             Use only when the tool cuts from the other side or into material that is \
+             removed later."
+        );
+        assert!(
+            find(ProjectCurveProjection::Cutter, tool_type).is_empty(),
+            "no caution for Cutter on {tool_type:?}"
+        );
+    }
 }
