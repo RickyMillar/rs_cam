@@ -2241,6 +2241,7 @@ fn default_project_curve_params() -> ProjectCurveParams {
         direction: rs_cam_core::ops::project_curve::ProjectDirection::FromAbove,
         tool_radius: 0.0,
         side: rs_cam_core::ops::project_curve::ProjectSide::Center,
+        projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     }
 }

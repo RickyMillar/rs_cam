@@ -17,6 +17,7 @@
 
 use crate::compute::catalog::{OperationConfig, UiProcessRole};
 use crate::compute::config::{HeightContext, HeightsConfig};
+use crate::compute::operation_configs::{PROJECT_CURVE_POINT_CAUTION, ProjectCurveProjection};
 use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
@@ -214,6 +215,29 @@ fn tool_op_compat_checks(
             message:
                 "Scallop, Unified Finish, and Pencil operations require a ball nose tool for correct surface contact."
                     .to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        });
+    }
+
+    // Point projection on Project Curve → a caution for any tool. The
+    // point rule (tip Z = surface Z + depth) is general: the tip is the
+    // lowest point of every tool shape, and the far-surface risk does not
+    // depend on the shape. So no tool is refused; the operator reads this.
+    if let OperationConfig::ProjectCurve(cfg) = op
+        && cfg.projection == ProjectCurveProjection::Point
+    {
+        out.push(Diagnostic {
+            id: DiagnosticId::from(ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION),
+            scope: scope.clone(),
+            category: Category::Geometry,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::StaticValidation,
+            message: PROJECT_CURVE_POINT_CAUTION.to_owned(),
             evidence: None,
             fix: None,
             supersedes: vec![],

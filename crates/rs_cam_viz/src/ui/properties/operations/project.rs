@@ -1,7 +1,10 @@
 use super::super::pills::PillSuggestions;
 
 use crate::state::job::ModelId;
-use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
+use crate::state::toolpath::{
+    ProjectCurveConfig, ProjectCurveDirection, ProjectCurveProjection, ProjectCurveSide,
+};
+use rs_cam_core::compute::operation_configs::PROJECT_CURVE_POINT_CAUTION;
 
 use super::super::{dv, p};
 use crate::ui::components::UiExt as _;
@@ -69,6 +72,29 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                     "From Below",
                 )
                 .on_hover_text("Project from below (Z-up). Engraves the bottom surface.");
+            });
+    });
+
+    // Projection mode. Point is a deliberate choice: the hover text and the
+    // static caution diagnostic carry the same sentence.
+    ui.horizontal(|ui| {
+        ui.label("Projection:");
+        egui::ComboBox::from_id_salt("proj_projection")
+            .selected_text(cfg.projection.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut cfg.projection,
+                    ProjectCurveProjection::Cutter,
+                    "Cutter",
+                )
+                .on_hover_text(
+                    "Drop the real cutter on the surface. The tool body does not cut the surface.",
+                );
+                ui.selectable_value(&mut cfg.projection, ProjectCurveProjection::Point, "Point")
+                    .on_hover_text(format!(
+                        "Tip Z = the surface Z under the curve + the depth. \
+                         {PROJECT_CURVE_POINT_CAUTION}"
+                    ));
             });
     });
 

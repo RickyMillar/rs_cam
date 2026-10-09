@@ -296,6 +296,10 @@ pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial";
 // ── Tool / operation compatibility ───────────────────────────────────
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
 pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing";
+/// A Project Curve set to Point projection. The tool tip follows the
+/// surface Z under the curve and the tool body is not tested against the
+/// surface. A deliberate operator choice, so the finding is a caution.
+pub const COMPAT_PROJECT_CURVE_POINT_PROJECTION: &str = "compat.project_curve_point_projection";
 
 // ── Tool definition ──────────────────────────────────────────────────
 /// A size token in the tool NAME that clearly names the tip ("R1.0mm",
@@ -419,6 +423,7 @@ pub const ALL: &[&str] = &[
     CONFIG_INERT_CLAIMS_DIAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
+    COMPAT_PROJECT_CURVE_POINT_PROJECTION,
     TOOL_NAME_SIZE_MISMATCH,
     QUALITY_STEPOVER_OVER_80_PCT,
     QUALITY_FINISH_STEPOVER_OVER_50_PCT,

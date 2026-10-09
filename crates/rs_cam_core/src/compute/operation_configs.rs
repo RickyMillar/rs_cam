@@ -1931,6 +1931,37 @@ impl ProjectCurveDirection {
     }
 }
 
+/// How Project Curve finds the tool tip Z at each sample of the curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectCurveProjection {
+    /// Drop the real cutter on the surface. The tool body touches the
+    /// surface and the tip stops there, so the surface is protected.
+    #[default]
+    Cutter,
+    /// Put the tip at the surface Z under the sample point, plus the depth.
+    /// The tool body is not tested against the surface: on a wall steeper
+    /// than the tool flank, the body cuts the far surface. Use it when the
+    /// tool cuts from the other side, or into material that a later
+    /// operation removes.
+    Point,
+}
+
+impl ProjectCurveProjection {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Cutter => "Cutter",
+            Self::Point => "Point",
+        }
+    }
+}
+
+/// The caution text for [`ProjectCurveProjection::Point`]. One string for
+/// the static diagnostic, the parameter help and the GUI hover text.
+pub const PROJECT_CURVE_POINT_CAUTION: &str = "Point projection does not protect the far \
+     surface: the tool body can cut it. Use only when the tool cuts from the other side or \
+     into material that is removed later.";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectCurveSide {
@@ -1975,6 +2006,11 @@ pub struct ProjectCurveConfig {
     /// Tool radius compensation side. Closed rings only; open rings ignore it.
     #[serde(default)]
     pub side: ProjectCurveSide,
+    /// How the tip Z is found at each sample. `Cutter` (the default) drops
+    /// the real cutter; `Point` puts the tip at the surface Z plus the
+    /// depth. See [`ProjectCurveProjection`].
+    #[serde(default)]
+    pub projection: ProjectCurveProjection,
     /// Set by the compute pipeline when the mesh has already been Z-inverted
     /// by a bottom-facing setup transform. Not persisted.
     #[serde(skip)]
@@ -2020,6 +2056,7 @@ impl Default for ProjectCurveConfig {
             surface_model_id: None,
             direction: ProjectCurveDirection::FromAbove,
             side: ProjectCurveSide::Center,
+            projection: ProjectCurveProjection::Cutter,
             setup_z_flipped: false,
             spindle_rpm: None,
             chain_distance_mm: default_project_curve_chain_distance_mm(),
