@@ -667,6 +667,8 @@ pub(crate) struct PrefixState {
     /// S0: a Z-axis group has written `composite_mesh` (see
     /// `simulate::finish_group`).
     pub(crate) composite_from_z: bool,
+    /// S3: the volume of every stock change applied so far.
+    pub(crate) stock_change_volumes: Vec<crate::compute::stock_change_apply::StockChangeVolume>,
 }
 
 impl PrefixState {
@@ -967,6 +969,7 @@ mod tests {
             group_drill_ops: Vec::new(),
             carry: None,
             group_starts: Vec::new(),
+            stock_change_volumes: Vec::new(),
             composite_from_z: false,
         };
         let bare = state.estimated_bytes();

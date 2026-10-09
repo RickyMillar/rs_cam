@@ -783,6 +783,7 @@ mod release_for_new_run_m1 {
             prior_stock_sources: HashMap::new(),
             display_degrade: None,
             group_starts: Vec::new(),
+            stock_change_volumes: Vec::new(),
         };
         let epoch = controller.state.session.simulation_epoch();
         let _ = controller

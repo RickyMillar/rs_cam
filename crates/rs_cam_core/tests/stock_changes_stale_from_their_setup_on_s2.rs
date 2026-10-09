@@ -834,3 +834,29 @@ fn a_removed_setup_with_a_stock_change_stales_the_later_rest_ops() {
         assert_eq!(live(&s), expected, "with_change = {with_change}");
     }
 }
+
+/// S3: the loader validates each enabled stock change against the loaded
+/// models. The fixture's outline model has no file on disk, so after a load
+/// it holds no outline, and the loader names the change that reads it.
+#[test]
+fn the_loader_names_a_stock_change_whose_model_holds_no_geometry_s3() {
+    let (mut s, m) = fixture();
+    add(&mut s, 1, fill(1, m.outline, 5.0)).unwrap();
+    let path = temp_path("loader_refusal");
+    s.save(&path).unwrap();
+    let (_, warnings) = ProjectSession::load_with_warnings(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    let refused: Vec<String> = warnings
+        .iter()
+        .filter(|w| {
+            matches!(
+                w,
+                rs_cam_core::session::ProjectLoadWarning::StockChangeRefused { .. }
+            )
+        })
+        .map(rs_cam_core::session::ProjectLoadWarning::message)
+        .collect();
+    assert_eq!(refused.len(), 1, "{warnings:?}");
+    assert!(refused[0].contains("Fill 1"), "{}", refused[0]);
+    assert!(refused[0].contains("outline.dxf"), "{}", refused[0]);
+}

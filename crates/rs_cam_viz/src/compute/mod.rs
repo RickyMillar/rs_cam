@@ -405,6 +405,9 @@ impl From<rs_cam_core::compute::simulate::SimulationError> for ComputeError {
                 need_bytes,
                 limit_bytes,
             },
+            refused @ SimulationError::StockChangeRefused { .. } => {
+                Self::Message(refused.to_string())
+            }
         }
     }
 }

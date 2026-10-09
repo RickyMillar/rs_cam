@@ -91,6 +91,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
                 prior_stock_sources: std::collections::HashMap::new(),
                 display_degrade: None,
                 group_starts: Vec::new(),
+                stock_change_volumes: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

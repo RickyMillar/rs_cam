@@ -123,6 +123,15 @@ pub enum ProjectLoadWarning {
     /// project declares, so the loader rewrote it. `enabled` is the value
     /// the loader wrote.
     RestAnalysisNormalized { toolpath: String, enabled: bool },
+    /// S3: a stock change breaks a validation rule against the loaded
+    /// models (a deleted model, a model with no mesh or no closed outline,
+    /// ...). The loader keeps the change; the simulation refuses it by
+    /// name until the operator fixes or removes it.
+    StockChangeRefused {
+        setup: String,
+        change: String,
+        reason: String,
+    },
 }
 
 impl ProjectLoadWarning {
@@ -152,6 +161,14 @@ impl ProjectLoadWarning {
             ),
             Self::MissingModelReference { toolpath, model_id } => format!(
                 "Toolpath '{toolpath}' references missing model id {model_id} and needs reassignment."
+            ),
+            Self::StockChangeRefused {
+                setup,
+                change,
+                reason,
+            } => format!(
+                "Setup '{setup}' has stock change '{change}' that cannot apply: {reason}. \
+                 The simulation refuses it. Edit the change or remove it."
             ),
             Self::RestAnalysisNormalized { toolpath, enabled } => {
                 let state = if *enabled { "on" } else { "off" };
@@ -1213,6 +1230,25 @@ pub(super) fn build_session_from_project(
                 toolpath: tc.name.clone(),
                 model_id: tc.model_id,
             });
+        }
+    }
+
+    // S3: a stock change whose model is gone, or holds the wrong kind of
+    // geometry, cannot apply. The command doors refuse it; a file can still
+    // hold one, so the loader says so before the simulation refuses it.
+    for setup in &setups {
+        for change in setup.stock_changes.iter().filter(|c| c.enabled) {
+            if let Err(refusal) =
+                crate::compute::stock_change::validate_stock_change(change, |id| {
+                    super::mutation::loaded_model_facts(&models, id)
+                })
+            {
+                warnings.push(ProjectLoadWarning::StockChangeRefused {
+                    setup: setup.name.clone(),
+                    change: change.name.clone(),
+                    reason: refusal.to_string(),
+                });
+            }
         }
     }
 

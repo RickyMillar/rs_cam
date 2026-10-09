@@ -670,39 +670,78 @@ pub(super) fn for_each_covered_cell<T, C, F>(
     F: FnMut(&mut T, CellVisit),
 {
     let cs = scan.cell_size;
-    for row in scan.row_lo..=scan.row_hi {
-        let cell_v = target.origin_v() + row as f64 * cs;
-        for col in scan.col_lo..=scan.col_hi {
-            let cell_u = target.origin_u() + col as f64 * cs;
-            let (coverage, t_center, dist_sq) = coverage_of(cell_u, cell_v);
-            if coverage <= 0.0 {
-                continue;
-            }
-            let idx = target.cell_index(row, col);
-            if scan.air_skip && !cell_can_remove(target.top_at_index(idx), scan.reject_depth) {
-                visit(target, CellVisit::Inert { idx });
-                continue;
-            }
-            let Some(h) = lut_h_with_edge_fallback(scan.lut, dist_sq) else {
-                continue;
-            };
-            visit(
-                target,
-                CellVisit::Covered {
-                    idx,
-                    cell_u,
-                    cell_v,
-                    coverage,
-                    t_center,
-                    h,
-                },
-            );
-            if scan.from_high
-                && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(scan.lut, dist_sq, cs, scan.ub_depth)
-            {
-                target.lower_top(idx, ub as f32);
-            }
+    let (origin_u, origin_v) = (target.origin_u(), target.origin_v());
+    let cells = CellBox {
+        origin_u,
+        origin_v,
+        cell_size: cs,
+        col_lo: scan.col_lo,
+        col_hi: scan.col_hi,
+        row_lo: scan.row_lo,
+        row_hi: scan.row_hi,
+    };
+    walk_cell_box(&cells, |row, col, cell_u, cell_v| {
+        let (coverage, t_center, dist_sq) = coverage_of(cell_u, cell_v);
+        if coverage <= 0.0 {
+            return;
+        }
+        let idx = target.cell_index(row, col);
+        if scan.air_skip && !cell_can_remove(target.top_at_index(idx), scan.reject_depth) {
+            visit(target, CellVisit::Inert { idx });
+            return;
+        }
+        let Some(h) = lut_h_with_edge_fallback(scan.lut, dist_sq) else {
+            return;
+        };
+        visit(
+            target,
+            CellVisit::Covered {
+                idx,
+                cell_u,
+                cell_v,
+                coverage,
+                t_center,
+                h,
+            },
+        );
+        if scan.from_high
+            && coverage >= FULL_COVERAGE
+            && let Some(ub) = cell_upper_bound_surface(scan.lut, dist_sq, cs, scan.ub_depth)
+        {
+            target.lower_top(idx, ub as f32);
+        }
+    });
+}
+
+/// A rectangle of cells on one grid: the nodes `row_lo..=row_hi` by
+/// `col_lo..=col_hi`, already clamped to the grid ([`clamped_cell_bbox`]).
+pub(super) struct CellBox {
+    pub(super) origin_u: f64,
+    pub(super) origin_v: f64,
+    pub(super) cell_size: f64,
+    pub(super) col_lo: usize,
+    pub(super) col_hi: usize,
+    pub(super) row_lo: usize,
+    pub(super) row_hi: usize,
+}
+
+/// The one row-major walk over a cell rectangle. `visit` gets the row, the
+/// column and the cell centre `(u, v)`.
+///
+/// [`for_each_covered_cell`] (the cutter scan, STK-01) and the stock-change
+/// scans (`stock_edit.rs`, S3) both walk cells through this function, so
+/// the cell-centre arithmetic exists once.
+#[inline]
+pub(super) fn walk_cell_box<F>(cells: &CellBox, mut visit: F)
+where
+    F: FnMut(usize, usize, f64, f64),
+{
+    let cs = cells.cell_size;
+    for row in cells.row_lo..=cells.row_hi {
+        let cell_v = cells.origin_v + row as f64 * cs;
+        for col in cells.col_lo..=cells.col_hi {
+            let cell_u = cells.origin_u + col as f64 * cs;
+            visit(row, col, cell_u, cell_v);
         }
     }
 }
