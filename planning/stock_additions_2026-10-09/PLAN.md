@@ -1,6 +1,6 @@
 # Stock changes per setup (add and remove material): plan (2026-10-09)
 
-Owner: the operator. Lead: the local runner session. Status: ACTIVE.
+Owner: the operator. Lead: the local runner session. Status: ACTIVE. Merged: S0 2c7aa43b, R1 a1a66f42, S1 bc860eda, S2 7b6c2e3e, S3 5a2c278d, S4 1640b4f5 (+ drill-hole fix a3bc272c, V-tip point projection 1b91b995). Next: S5, S6, then S7.
 
 ## The operator's ruling
 
@@ -73,6 +73,8 @@ clippy, fmt). The lead reviews each package by path and commits.
 | S5 | **Show the material.** Per-vertex material colour from the segment ids in every stock view (live, playback, paused, `screenshot_simulation`); a legend row per material. Uses the render review P1 fixes (winding, deviation colours on their own mesh) | S1, R1 | A render test: a two-material stock gives two colours at the right cells |
 | S6 | **"Cut as" per stock change** (operator ruling 2026-10-09: "in theory it is just more stock"). Each Add change has `cut_as: StockMaterial` (DEFAULT) or `OwnMaterial`. Default: the added material is cut exactly like the stock material for the gates, the cut metrics and the feed modulation (a mixed cut is a normal stock cut); only the colour (S5) and the "material present" fact differ. `OwnMaterial`: the gates use that material's force data, else "not judged: no force data for <material>". Toolpath generation and Suggest never read the added material | S1, S2 | Gate tests: default = identical verdicts to an all-stock run; OwnMaterial with and without force data |
 | R1 | **Render review P1** (independent; can run first): fix the mesh winding, keep deviation colours on their own mesh, fix the per-toolpath overlay trim, per-pixel depth in the software renderer | none | REVIEW.md tests |
+
+| S7 | **UI tidy-up of the Stock changes section** (operator 2026-10-09: "the UI here isn't fantastic, but it is working, tidy it later"). Also an `epoxy.stl`-style mesh path in derive.py for nz-south (the operator's "model of the epoxy" route uses the `Model` geometry) | S4 | operator look |
 
 Order: **S0 and R1 in parallel** (different files), then S1 and S2, then S3,
 then S4, S5 and S6. One agent edits one area at a time; a sequential
