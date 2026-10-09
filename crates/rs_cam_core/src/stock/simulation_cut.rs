@@ -801,6 +801,12 @@ pub struct SimulationCutTrace {
     #[serde(skip)]
     pub modulation_summaries:
         std::collections::BTreeMap<ToolpathId, crate::tool_load::ModulationSummary>,
+    /// S6: the material and the [`crate::stock::cut_as::CutAs`] of each
+    /// added slot that a stock change wrote. Empty for a run with no `Add`
+    /// change, and the wire then omits the key. The gates read it only
+    /// through [`Self::effective_material_for_sample`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_material_slots: Vec<crate::stock::cut_as::AddedMaterialSlot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

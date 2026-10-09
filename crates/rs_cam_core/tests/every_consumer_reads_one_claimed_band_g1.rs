@@ -550,6 +550,7 @@ fn a_refused_cell_is_not_reported_within_g1() {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     };
     let rows = diagnostics_from_load_verdict(&verdict);
     let chip: Vec<&str> = rows

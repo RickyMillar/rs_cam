@@ -60,6 +60,21 @@
             "null"
           ]
         },
+        "cut_as": {
+          "description": "How the checks cut the added material. Default: `stock_material`.\nA remove ignores it.",
+          "oneOf": [
+            {
+              "const": "stock_material",
+              "description": "Cut the added material exactly as the stock material: the same\nchecks, the same cut metrics and the same modulated feeds. The\ndefault (\"in theory it is just more stock\").",
+              "type": "string"
+            },
+            {
+              "const": "own_material",
+              "description": "Judge the cuts in the added material with its own force data from\nthe library. A material with no force data is \"not judged\": the\ntool-load report counts and names its samples.",
+              "type": "string"
+            }
+          ]
+        },
         "enabled": {
           "default": null,
           "description": "Default: true.",
@@ -481,6 +496,29 @@
             "string",
             "null"
           ]
+        },
+        "cut_as": {
+          "anyOf": [
+            {
+              "description": "S6: how the gates, the cut metrics and the feed modulation cut the\nmaterial of an add, as a wire enum. A mirror of\n`rs_cam_core::compute::stock_change::CutAs`; the tokens are the tokens a\nproject file stores.",
+              "oneOf": [
+                {
+                  "const": "stock_material",
+                  "description": "Cut the added material exactly as the stock material: the same\nchecks, the same cut metrics and the same modulated feeds. The\ndefault (\"in theory it is just more stock\").",
+                  "type": "string"
+                },
+                {
+                  "const": "own_material",
+                  "description": "Judge the cuts in the added material with its own force data from\nthe library. A material with no force data is \"not judged\": the\ntool-load report counts and names its samples.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the checks cut the added material. A remove ignores it."
         },
         "enabled": {
           "default": null,

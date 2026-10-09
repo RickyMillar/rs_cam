@@ -1011,6 +1011,7 @@ mod tests {
             },
             material: crate::material::Material::default(),
             display_colour: None,
+            cut_as: Default::default(),
         };
         let group_with =
             |change: StockChange, polys: &Arc<Vec<crate::polygon::Polygon2>>| SimGroupEntry {

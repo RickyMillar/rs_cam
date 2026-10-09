@@ -12,7 +12,7 @@
 //! volume text as the GUI panel and the CLI.
 
 use rs_cam_core::compute::stock_change::{
-    StockChange, StockChangeOp, StockGeometry, next_stock_change_id,
+    CutAs, StockChange, StockChangeOp, StockGeometry, next_stock_change_id,
 };
 use rs_cam_core::ids::{ModelId, StockChangeId};
 use rs_cam_core::material::Material;
@@ -21,8 +21,8 @@ use rs_cam_core::session::{
     ReplaceStockChangeArgs, StockChangeRow,
 };
 use rs_cam_mcp::server::{
-    AddStockChangeParam, EditStockChangeParam, MoveStockChangeParam, RemoveStockChangeParam,
-    StockChangeOpParam, StockGeometryKindParam, resolve_material,
+    AddStockChangeParam, CutAsParam, EditStockChangeParam, MoveStockChangeParam,
+    RemoveStockChangeParam, StockChangeOpParam, StockGeometryKindParam, resolve_material,
 };
 
 use super::{CoreBefore, CorePlan, CoreReply};
@@ -68,10 +68,21 @@ pub(crate) fn stock_change_json(row: &StockChangeRow) -> serde_json::Value {
         "geometry": serde_json::to_value(&row.change.geometry)
             .unwrap_or(serde_json::Value::Null),
         "material": material,
+        // S6: `stock_material` or `own_material` for an add; null for a
+        // remove, which ignores it. `cut_as_label` is the GUI/CLI text.
+        "cut_as": row.cut_as_label().map(|_| row.change.cut_as.token()),
+        "cut_as_label": row.cut_as_label(),
         "volume": volume,
         "volume_state": state,
         "volume_label": row.volume_label(),
     })
+}
+
+fn cut_as_of(param: CutAsParam) -> CutAs {
+    match param {
+        CutAsParam::StockMaterial => CutAs::StockMaterial,
+        CutAsParam::OwnMaterial => CutAs::OwnMaterial,
+    }
 }
 
 fn op_of(param: StockChangeOpParam) -> StockChangeOp {
@@ -298,6 +309,7 @@ impl RsCamApp {
             geometry,
             material,
             display_colour: None,
+            cut_as: cut_as_of(p.cut_as),
         };
         before.index = Some(p.setup_index);
         before.extra = serde_json::json!({ "change_id": id.0 });
@@ -369,6 +381,9 @@ impl RsCamApp {
             Ok(material) => material,
             Err(refusal) => return refuse(refusal),
         };
+        if let Some(cut_as) = p.cut_as {
+            change.cut_as = cut_as_of(cut_as);
+        }
         before.index = Some(p.setup_index);
         before.extra = serde_json::json!({ "change_id": p.change_id });
         CorePlan::Apply(
@@ -684,5 +699,58 @@ mod tests {
                 row.volume_label()
             );
         }
+    }
+
+    // ── S6 parity: the "cut as" field on the GUI, MCP and CLI ──
+
+    /// GUI/MCP/CLI parity of `cut_as` (S6), the GUI and MCP half. The CLI
+    /// half is `rs_cam_cli/tests/stock_change_cut_as_s6.rs`, on the same
+    /// fixture. All three read `StockChangeRow::cut_as_label`.
+    #[test]
+    fn the_gui_and_the_mcp_reply_name_the_cut_as_s6() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/stock_change_cut_as_s6/project.toml");
+        let session =
+            rs_cam_core::session::ProjectSession::load(&fixture).expect("the fixture loads");
+        let rows = session.stock_change_rows();
+        assert_eq!(rows.len(), 2);
+        let (slab, pour) = (&rows[0], &rows[1]);
+        assert_eq!(pour.change.cut_as, CutAs::OwnMaterial);
+        assert_eq!(pour.cut_as_label(), Some("own material"));
+        assert_eq!(slab.cut_as_label(), None, "a remove ignores cut_as");
+
+        // MCP: the token and the label.
+        let json = stock_change_json(pour);
+        assert_eq!(json["cut_as"], serde_json::json!("own_material"));
+        assert_eq!(json["cut_as_label"], serde_json::json!("own material"));
+        let json = stock_change_json(slab);
+        assert!(json["cut_as"].is_null() && json["cut_as_label"].is_null());
+
+        // MCP write: the wire token reaches the record; absent is the default.
+        let add: AddStockChangeParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 0, "kind": "outline_fill", "model_ids": [0],
+            "level_z": 0.0, "cut_as": "own_material"
+        }))
+        .unwrap();
+        assert_eq!(cut_as_of(add.cut_as), CutAs::OwnMaterial);
+        let add: AddStockChangeParam = serde_json::from_value(serde_json::json!({
+            "setup_index": 0, "kind": "outline_fill", "model_ids": [0], "level_z": 0.0
+        }))
+        .unwrap();
+        assert_eq!(cut_as_of(add.cut_as), CutAs::StockMaterial);
+
+        // GUI: the row paints the same label.
+        let setup_id = pour.setup_id;
+        let summary = crate::ui::properties::stock_changes::row_summary(pour);
+        assert!(summary.ends_with("(own material)"), "{summary}");
+        let mut state = crate::state::AppState::new();
+        state.session = session;
+        state.selection =
+            crate::state::selection::Selection::Setup(crate::state::job::SetupId(setup_id));
+        let texts = painted_setup_panel(&mut state);
+        assert!(
+            texts.contains(&summary),
+            "the GUI row paints `{summary}`: {texts:?}"
+        );
     }
 }

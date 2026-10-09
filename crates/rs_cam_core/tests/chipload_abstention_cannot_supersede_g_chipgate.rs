@@ -104,6 +104,7 @@ fn abstaining_verdict(reason: UnmodeledReason) -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 

@@ -24,6 +24,7 @@ use crate::ids::{ModelId, StockChangeId};
 use crate::material::Material;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
+pub use crate::stock::cut_as::CutAs;
 
 /// What a stock change does with its geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -138,6 +139,12 @@ pub struct StockChange {
     /// change (in application order) with a colour sets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_colour: Option<[u8; 3]>,
+    /// S6: how the gates, the cut metrics and the feed modulation cut the
+    /// material of an `Add`. The default cuts it as the stock material
+    /// (operator ruling 2026-10-09: "in theory it is just more stock"). A
+    /// `Remove` ignores it, as it ignores the material.
+    #[serde(default)]
+    pub cut_as: CutAs,
 }
 
 fn default_true() -> bool {
@@ -148,8 +155,9 @@ impl StockChange {
     /// A digest of every field that decides what the change does to the
     /// stock. The id, the name and the enabled flag are not in it: the
     /// caller keys the id beside the digest, and a disabled change is not
-    /// listed at all. A `Remove` ignores its material, so the material is
-    /// not in a `Remove` digest.
+    /// listed at all. A `Remove` ignores its material and its `cut_as`, so
+    /// neither is in a `Remove` digest. An `Add` digest holds `cut_as`
+    /// (S6): it changes the gate verdicts and the modulated feeds.
     ///
     /// `DefaultHasher` with fixed keys: equal within one build, not across
     /// releases. The material and the geometry hash through their `Debug`
@@ -162,6 +170,7 @@ impl StockChange {
         format!("{:?}", self.geometry).hash(&mut hasher);
         if self.op == StockChangeOp::Add {
             format!("{:?}", self.material).hash(&mut hasher);
+            self.cut_as.hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -451,6 +460,7 @@ mod tests {
                 feed_scale_factor: 1.0,
             },
             display_colour: None,
+            cut_as: CutAs::StockMaterial,
         }
     }
 
@@ -487,6 +497,14 @@ mod tests {
         let mut add_other_material = a.clone();
         add_other_material.material = Material::default();
         assert_ne!(a.effect_digest(), add_other_material.effect_digest());
+
+        // S6: `cut_as` changes an `Add` digest and not a `Remove` digest.
+        let mut add_own = a.clone();
+        add_own.cut_as = CutAs::OwnMaterial;
+        assert_ne!(a.effect_digest(), add_own.effect_digest());
+        let mut remove_own = remove.clone();
+        remove_own.cut_as = CutAs::OwnMaterial;
+        assert_eq!(remove.effect_digest(), remove_own.effect_digest());
     }
 
     #[test]

@@ -13,7 +13,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` (+ `/stride_tests.rs`)
   — mesh extraction (`StockMesh` + S5 vertex slots); colours: `export/`.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
-- `material_slot.rs` — S1: the segment slot, slot table and stamp tally.
+- `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs` and the one helper.
 
 ## Invariants
 
@@ -32,9 +32,9 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 
-- `--test material_per_segment_s1`, `--test measurability_abstention_r8`
+- `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`,
+  `--test measurability_abstention_r8`, `--test narration_denominator_and_hints_d7`
 - `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`
-- `--test narration_denominator_and_hints_d7`
 - `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test
   rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes
   (side, sliver, rim wall, shallow plunge) that the check must keep.

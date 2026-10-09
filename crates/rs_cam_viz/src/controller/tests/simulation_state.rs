@@ -529,6 +529,7 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
         geometry: StockGeometry::Model { model_id },
         material: Default::default(),
         display_colour: None,
+        cut_as: Default::default(),
     };
     for (id, enabled) in [(1, true), (2, false), (3, true)] {
         let _ = controller
@@ -621,6 +622,7 @@ mod stock_material_legend_s5 {
             geometry: StockGeometry::Model { model_id },
             material: resin(),
             display_colour: Some(DISPLAY),
+            cut_as: Default::default(),
         };
         let _ = controller
             .state

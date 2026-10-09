@@ -1197,6 +1197,25 @@ pub enum StockChangeOpParam {
     Remove,
 }
 
+/// S6: how the gates, the cut metrics and the feed modulation cut the
+/// material of an add, as a wire enum. A mirror of
+/// `rs_cam_core::compute::stock_change::CutAs`; the tokens are the tokens a
+/// project file stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum CutAsParam {
+    /// Cut the added material exactly as the stock material: the same
+    /// checks, the same cut metrics and the same modulated feeds. The
+    /// default ("in theory it is just more stock").
+    #[default]
+    StockMaterial,
+    /// Judge the cuts in the added material with its own force data from
+    /// the library. A material with no force data is "not judged": the
+    /// tool-load report counts and names its samples.
+    OwnMaterial,
+}
+
 /// S4: where the volume of a stock change comes from, as a wire enum. A
 /// mirror of the kinds of `rs_cam_core::compute::stock_change::StockGeometry`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
@@ -1252,6 +1271,10 @@ pub struct AddStockChangeParam {
     /// Give `material` or `custom_material`, not both.
     #[serde(default)]
     pub custom_material: Option<String>,
+    /// How the checks cut the added material. Default: `stock_material`.
+    /// A remove ignores it.
+    #[serde(default)]
+    pub cut_as: CutAsParam,
     /// Default: true.
     #[serde(default)]
     pub enabled: Option<bool>,
@@ -1302,6 +1325,9 @@ pub struct EditStockChangeParam {
     /// A custom material name.
     #[serde(default)]
     pub custom_material: Option<String>,
+    /// How the checks cut the added material. A remove ignores it.
+    #[serde(default)]
+    pub cut_as: Option<CutAsParam>,
 }
 
 /// `move_stock_change` (S4): move one stock change to a new position in its
@@ -1794,6 +1820,10 @@ pub fn build_info() -> serde_json::Value {
             // stock changes; `list_setups` and `inspect_stock` list them
             // under `stock_changes` with the simulated volume.
             "stock_changes",
+            // S6 (2026-10-09): a stock change carries `cut_as`
+            // (`stock_material` default, `own_material`); the tool-load
+            // report carries `material_split` and `summary.not_judged`.
+            "stock_change_cut_as",
         ],
     })
 }
@@ -1873,6 +1903,7 @@ mod tests {
             "suggest_rationale_plunge_entry",
             "dressup_helix_radius_rule",
             "stock_changes",
+            "stock_change_cut_as",
         ] {
             assert!(
                 features.contains(&flag),

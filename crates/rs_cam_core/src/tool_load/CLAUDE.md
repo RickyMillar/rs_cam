@@ -19,8 +19,8 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   `locality::is_steady_state_for_gate`. Never write a second copy.
 - The chipload gate quantity is advance per tooth, `effective_feed / (rpm *
   flutes)`. It is not the dexel chip thickness.
-- A gate with no population proved nothing. Check the sample count before you
-  read `Within` as evidence.
+- A gate with no population proved nothing; check the count. S6: a sample's
+  material is `effective_material_for_sample`; split populations ONLY in `evaluate_toolpath`.
 - B6: power and deflection read `Material::force_line()`. Power is `line ×
   grain_factor` (1.0 on every line); no line is `MaterialUnvalidated`.
 - The drill gates model the R-plane-rooted emitted schedule and read cutting

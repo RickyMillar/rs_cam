@@ -191,6 +191,7 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 
@@ -557,6 +558,7 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     };
 
     let drill_kinds = [

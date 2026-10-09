@@ -584,6 +584,9 @@ struct StockChangeSummaryEntry {
     enabled: bool,
     op: &'static str,
     kind: &'static str,
+    /// S6: `stock_material` or `own_material` for an add; `null` for a
+    /// remove, which ignores it.
+    cut_as: Option<&'static str>,
     /// `null` when the change has no measured volume (disabled, or not in
     /// the simulation).
     added_mm3: Option<f64>,
@@ -604,6 +607,7 @@ impl StockChangeSummaryEntry {
             enabled: row.change.enabled,
             op: row.change.op.label(),
             kind: row.change.geometry.kind_label(),
+            cut_as: row.cut_as_label().map(|_| row.change.cut_as.token()),
             added_mm3: volume.map(|v| v.added_mm3),
             removed_mm3: volume.map(|v| v.removed_mm3),
             volume_label: row.volume_label(),

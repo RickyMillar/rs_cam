@@ -842,6 +842,13 @@ fn peak_deflection_for_move(
             } else {
                 sample.chipload_mm_per_tooth
             };
+            // S6: the sample's own material through the one helper; a
+            // not-judged sample gives no colour reading.
+            let rs_cam_core::stock::cut_as::EffectiveMaterial::Judged(material) =
+                trace.effective_material_for_sample(sample, material)
+            else {
+                return None;
+            };
             rs_cam_core::tool_load::deflection::sample_tip_deflection_mm(
                 tool, material, sample, eff_fz,
             )

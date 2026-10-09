@@ -138,6 +138,7 @@ fn milling_verdict(chipload: ChiploadVerdict, depth: DepthVerdict) -> ToolpathLo
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 
@@ -211,6 +212,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 

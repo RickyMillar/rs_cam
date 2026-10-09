@@ -157,6 +157,7 @@ fn within_verdict() -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 
@@ -173,6 +174,7 @@ fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 
@@ -319,6 +321,7 @@ fn select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time() {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         }
     };
     // Faster but parked at LUT max (chipload 0.07 → distance 1.0
@@ -725,6 +728,7 @@ fn band_admitted_verdict() -> ToolpathLoadVerdict {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 
@@ -775,6 +779,7 @@ fn burn_advisory_candidate_lands_marginal_safe() {
         modulation_summary: None,
         feed_explanation: None,
         kinematic_utilization: None,
+        material_split: None,
     };
     let baseline = synthetic_candidate(1500.0, 100.0, within_verdict());
     let advisory_candidate = synthetic_candidate(2100.0, 75.0, verdict);

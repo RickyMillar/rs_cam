@@ -74,6 +74,16 @@ impl StockChangeRow {
         }
     }
 
+    /// S6: the "cut as" text of an `Add`: `cut as stock` or
+    /// `own material`. A `Remove` ignores `cut_as`, so it gives `None`.
+    #[must_use]
+    pub fn cut_as_label(&self) -> Option<&'static str> {
+        match self.change.op {
+            crate::compute::stock_change::StockChangeOp::Add => Some(self.change.cut_as.label()),
+            crate::compute::stock_change::StockChangeOp::Remove => None,
+        }
+    }
+
     /// The model ids the geometry reads, as `3, 4`.
     #[must_use]
     pub fn model_ids_label(&self) -> String {
@@ -100,11 +110,15 @@ impl StockChangeRow {
         }
     }
 
-    /// The one-line summary that the CLI prints.
+    /// The one-line summary that the CLI prints. An `Add` names its
+    /// "cut as" after the material: `material Resin (cut as stock)`.
     #[must_use]
     pub fn line(&self) -> String {
+        let cut_as = self
+            .cut_as_label()
+            .map_or_else(String::new, |label| format!(" ({label})"));
         format!(
-            "setup {} '{}' #{} '{}': {} {} (models {}; {}), material {}: {}",
+            "setup {} '{}' #{} '{}': {} {} (models {}; {}), material {}{}: {}",
             self.setup_index,
             self.setup_name,
             self.change.id.0,
@@ -114,6 +128,7 @@ impl StockChangeRow {
             self.model_ids_label(),
             self.z_label(),
             self.material_label(),
+            cut_as,
             self.volume_label(),
         )
     }

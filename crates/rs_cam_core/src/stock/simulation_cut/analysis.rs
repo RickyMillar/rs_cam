@@ -65,6 +65,7 @@ impl SimulationCutTrace {
             predicted_feeds: crate::machine::kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
+            added_material_slots: Vec::new(),
         }
     }
 
@@ -267,6 +268,7 @@ impl SimulationCutTrace {
             predicted_feeds: crate::machine::kinematics::PredictedFeedMap::new(),
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
+            added_material_slots: Vec::new(),
         }
     }
 

@@ -641,7 +641,102 @@ impl MetricEvaluator for DeflectionGate {
 /// task 2) — `gcode::project_load_report` and the optimizer both call
 /// it, so per-field population (incl. `modulation_summary`, which the
 /// two sites had silently diverged on pre-Phase-6) cannot drift again.
+///
+/// S6 (stock changes, "cut as"): the gates judge each sample as the
+/// material that [`SimulationCutTrace::effective_material_for_sample`]
+/// gives. When that is the stock material for every sample (always so
+/// under the default `CutAs::StockMaterial`), the gates read the trace
+/// itself and the verdict is the one a stock-only run gives. Otherwise
+/// the samples split into populations: the main verdict judges the stock
+/// population, [`ToolpathLoadVerdict::material_split`] holds one verdict
+/// per own material (the same gates, with that material in the context),
+/// and the not-judged samples are counted per material. No gate holds a
+/// material special case.
+///
+/// [`SimulationCutTrace::effective_material_for_sample`]: crate::stock::simulation_cut::SimulationCutTrace::effective_material_for_sample
 pub fn evaluate_toolpath(
+    ctx: &ToolpathLoadContext<'_>,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
+    machine: Option<&crate::machine::MachineProfile>,
+    tolerance: &ToleranceBands,
+) -> ToolpathLoadVerdict {
+    let Some(trace) = sim_trace else {
+        return evaluate_population(ctx, None, machine, tolerance);
+    };
+    let populations = trace.material_populations(ctx.toolpath_id, ctx.material);
+    if populations.is_empty() {
+        return evaluate_population(ctx, Some(trace), machine, tolerance);
+    }
+    // The stock population: every sample judged as the stock material.
+    let stock_view = trace.population_view(ctx.toolpath_id, |s| {
+        trace.judged_as(s, ctx.material, ctx.material)
+    });
+    let mut verdict = evaluate_population(ctx, Some(&stock_view), machine, tolerance);
+    let stock_samples = stock_view
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == ctx.toolpath_id)
+        .count();
+    drop(stock_view);
+    let mut own = Vec::with_capacity(populations.own.len());
+    for (material, samples) in &populations.own {
+        let view = trace.population_view(ctx.toolpath_id, |s| {
+            trace.judged_as(s, ctx.material, material)
+        });
+        let own_ctx = ToolpathLoadContext {
+            material,
+            spans: ctx.spans,
+            drill_op: None,
+            ..*ctx
+        };
+        let v = evaluate_population(&own_ctx, Some(&view), machine, tolerance);
+        own.push(OwnMaterialVerdict {
+            material: material.label(),
+            samples: *samples,
+            chipload: v.chipload,
+            power: v.power,
+            deflection: v.deflection,
+            depth: v.depth,
+        });
+    }
+    verdict.material_split = Some(Box::new(MaterialSplit {
+        stock_samples,
+        own,
+        not_judged: populations.not_judged,
+    }));
+    verdict
+}
+
+/// One verdict per own material of a toolpath (S6, `CutAs::OwnMaterial`):
+/// the four milling gates, run over the samples judged as that material.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OwnMaterialVerdict {
+    /// The material label.
+    pub material: String,
+    /// The number of samples judged as this material.
+    pub samples: usize,
+    pub chipload: ChiploadVerdict,
+    pub power: PowerVerdict,
+    pub deflection: DeflectionVerdict,
+    pub depth: DepthVerdict,
+}
+
+/// The material populations of a toolpath that is not judged as the stock
+/// material alone (S6). The main verdict of the toolpath judges the
+/// `stock_samples`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaterialSplit {
+    /// The number of samples judged as the stock material.
+    pub stock_samples: usize,
+    /// One verdict per own material.
+    pub own: Vec<OwnMaterialVerdict>,
+    /// The samples not judged, per material.
+    pub not_judged: Vec<crate::stock::cut_as::NotJudgedCount>,
+}
+
+/// The gates over one population of samples. The body of
+/// [`evaluate_toolpath`] before S6.
+fn evaluate_population(
     ctx: &ToolpathLoadContext<'_>,
     sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     machine: Option<&crate::machine::MachineProfile>,
@@ -704,6 +799,7 @@ pub fn evaluate_toolpath(
         // through `ToolpathLoadContext`, which has 22 literal sites across
         // the workspace. That is the verifier's call, not a scaffold's.
         kinematic_utilization: None,
+        material_split: None,
     }
 }
 

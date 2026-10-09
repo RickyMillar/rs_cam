@@ -56,6 +56,10 @@ pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported";
 /// machine profile). Its own id, so a reader of ids alone never reads
 /// "within" for a gate that measured nothing (EVIDENCE 5.1-14).
 pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled";
+/// S6 (stock changes, "cut as"): samples of an added material with
+/// `CutAs::OwnMaterial` and no force data. The gates do not judge them;
+/// the finding counts and names them per material.
+pub const LOAD_MATERIAL_NOT_JUDGED: &str = "load.material.not_judged";
 
 // ── Drill gates ──────────────────────────────────────────────────────
 pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding";
@@ -358,6 +362,7 @@ pub const REF_MODEL_MISSING: &str = "ref.model_missing";
 /// and as a registry for downstream consumers that want to iterate
 /// the supported rule set.
 pub const ALL: &[&str] = &[
+    LOAD_MATERIAL_NOT_JUDGED,
     LOAD_CHIPLOAD_HIGH,
     LOAD_CHIPLOAD_LOW,
     LOAD_CHIPLOAD_WITHIN,

@@ -2440,6 +2440,7 @@ fn s2_fill(id: usize, enabled: bool, level_z: f64) -> crate::compute::stock_chan
             feed_scale_factor: 1.0,
         },
         display_colour: None,
+        cut_as: Default::default(),
     }
 }
 

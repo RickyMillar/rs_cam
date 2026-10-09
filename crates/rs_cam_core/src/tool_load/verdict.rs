@@ -295,9 +295,26 @@ pub struct ToolpathLoadVerdict {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kinematic_utilization:
         Option<crate::machine::kinematic_utilization::ToolpathKinematicUtilization>,
+    /// S6 (stock changes, "cut as"): `Some` only when a stock change with
+    /// `CutAs::OwnMaterial` put samples of this toolpath outside the stock
+    /// population. The four gate fields above then judge the stock
+    /// population; this holds one verdict per own material and the
+    /// not-judged counts. `None` (and no wire key) for every other
+    /// toolpath, the default `CutAs::StockMaterial` included.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_split: Option<Box<super::MaterialSplit>>,
 }
 
 impl ToolpathLoadVerdict {
+    /// S6: the not-judged sample counts of this toolpath, per material.
+    /// Empty when every sample was judged.
+    #[must_use]
+    pub fn not_judged(&self) -> &[crate::stock::cut_as::NotJudgedCount] {
+        self.material_split
+            .as_deref()
+            .map_or(&[], |split| split.not_judged.as_slice())
+    }
+
     /// Count criteria with a non-`Unmodeled` verdict (i.e. actually evaluated).
     pub fn modeled_count(&self) -> usize {
         self.criteria()
@@ -368,6 +385,16 @@ impl ToolpathLoadVerdict {
                 d.cycle,
                 d.population,
             ));
+        }
+        // S6: an own-material population joins the criterion tier, so its
+        // `Exceeds` gates an export exactly as a stock-population trip.
+        if let Some(split) = &self.material_split {
+            for own in &split.own {
+                all.push(own.chipload.as_criterion_status());
+                all.push(own.power.as_criterion_status());
+                all.push(own.deflection.as_criterion_status());
+                all.push(own.depth.as_criterion_status());
+            }
         }
         all
     }
@@ -515,6 +542,37 @@ pub struct ToolLoadReportSummary {
     /// One entry per `Exceeds` criterion across the project, in toolpath
     /// order.
     pub exceeds_breakdown: Vec<ExceedsEntry>,
+    /// S6: the samples the gates did not judge, per toolpath and material
+    /// (`CutAs::OwnMaterial` on a material with no force data). Empty, and
+    /// no wire key, when every sample was judged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_judged: Vec<NotJudgedEntry>,
+}
+
+/// S6: one toolpath's not-judged samples of one material.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotJudgedEntry {
+    pub toolpath_id: ToolpathId,
+    /// The toolpath name, as in [`ExceedsEntry::toolpath_name`].
+    #[serde(default)]
+    pub toolpath_name: String,
+    /// The material label.
+    pub material: String,
+    /// The number of samples.
+    pub samples: usize,
+}
+
+impl NotJudgedEntry {
+    /// The text every surface prints, for example
+    /// `'Rough': 412 samples not judged: no force data for Epoxy`.
+    #[must_use]
+    pub fn label(&self) -> String {
+        let count = crate::stock::cut_as::NotJudgedCount {
+            material: self.material.clone(),
+            samples: self.samples,
+        };
+        format!("'{}': {}", self.toolpath_name, count.label())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -577,6 +635,7 @@ impl ToolLoadReport {
         let mut fully_unmodeled = 0usize;
         let mut not_applicable = 0usize;
         let mut exceeds_breakdown: Vec<ExceedsEntry> = Vec::new();
+        let mut not_judged: Vec<NotJudgedEntry> = Vec::new();
         for v in &self.per_toolpath {
             if v.any_exceeded() {
                 exceeds += 1;
@@ -597,6 +656,14 @@ impl ToolLoadReport {
                 within += 1;
             }
             let name = name_for(v.toolpath_id).unwrap_or_default();
+            for count in v.not_judged() {
+                not_judged.push(NotJudgedEntry {
+                    toolpath_id: v.toolpath_id,
+                    toolpath_name: name.clone(),
+                    material: count.material.clone(),
+                    samples: count.samples,
+                });
+            }
             // Derived from `criteria()` via `exceeded_criteria()` (Phase 6
             // task 5) — a gate included in `criteria()` automatically
             // appears in the breakdown; order stays chipload, power,
@@ -617,6 +684,7 @@ impl ToolLoadReport {
             fully_unmodeled,
             not_applicable,
             exceeds_breakdown,
+            not_judged,
         }
     }
 }
@@ -2217,6 +2285,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         // S3: three, not two. The fixture's chipload and deflection rows
         // were modelled before, and the depth row joined them. The count
@@ -2272,6 +2341,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         let v = serde_json::to_value(&r).expect("must round-trip");
@@ -2322,6 +2392,7 @@ mod tests {
                     modulation_summary: None,
                     feed_explanation: None,
                     kinematic_utilization: None,
+                    material_split: None,
                 },
                 ToolpathLoadVerdict {
                     toolpath_id: ToolpathId(1),
@@ -2361,6 +2432,7 @@ mod tests {
                     modulation_summary: None,
                     feed_explanation: None,
                     kinematic_utilization: None,
+                    material_split: None,
                 },
             ],
         };
@@ -2415,6 +2487,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
 
         let healthy = drill_verdict(DrillGateOutcome::Within {
@@ -2497,6 +2570,7 @@ mod tests {
                     modulation_summary: None,
                     feed_explanation: None,
                     kinematic_utilization: None,
+                    material_split: None,
                 },
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
@@ -2519,6 +2593,7 @@ mod tests {
                     modulation_summary: None,
                     feed_explanation: None,
                     kinematic_utilization: None,
+                    material_split: None,
                 },
                 // Mixed: one gate N/A, one needs sim. Operator still
                 // has an action item, so this rolls up as
@@ -2542,6 +2617,7 @@ mod tests {
                     modulation_summary: None,
                     feed_explanation: None,
                     kinematic_utilization: None,
+                    material_split: None,
                 },
             ],
         };
@@ -2602,6 +2678,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         // Resolver hit — name flows into the entry.
@@ -2876,6 +2953,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         let s = serde_json::to_string(&r).expect("serialize");
@@ -2947,6 +3025,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         let exceeded = r.exceeded_criteria();
@@ -3024,6 +3103,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         for status in v.criteria() {
             assert_eq!(
@@ -3070,6 +3150,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         }
     }
 
@@ -3095,6 +3176,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         }
     }
 
@@ -3180,6 +3262,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         let s = r.summary(|id| {
@@ -3237,6 +3320,7 @@ mod tests {
                 modulation_summary: None,
                 feed_explanation: None,
                 kinematic_utilization: None,
+                material_split: None,
             }],
         };
         let s = r.summary(|_| None);

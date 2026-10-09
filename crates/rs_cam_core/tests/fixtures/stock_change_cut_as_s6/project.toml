@@ -1,0 +1,113 @@
+# S6 fixture (2026-10-09): the S4 parity project, with change 1 ("Pour",
+# an outline fill of the custom material Resin) cut as its OWN material.
+# Resin has no force data, so its samples are "not judged". The pockets
+# cut through the Resin layer and into the stock below it, so the run has
+# Resin samples, stock samples and mixed samples. The first pocket steps
+# down 1 mm per pass, so its first pass (to Z -1) cuts the Resin alone.
+format_version = 3
+
+[job]
+name = "Stock change cut as S6"
+
+[job.simulation]
+resolution_mm = 0.5
+
+[job.stock]
+x = 40.0
+y = 40.0
+z = 6.0
+origin_x = 0.0
+origin_y = 0.0
+origin_z = -6.0
+auto_from_model = false
+
+[[tools]]
+id = 0
+name = "6 mm End Mill"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 20.0
+flute_count = 2
+tool_number = 1
+
+[[models]]
+id = 0
+path = "square.svg"
+name = "Square"
+kind = "svg"
+units = { kind = "millimeters" }
+
+[[setups]]
+name = "Setup 1"
+
+[[setups.toolpaths]]
+id = 0
+name = "Pocket"
+enabled = true
+tool_id = 0
+model_id = 0
+stock_source = "fresh"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.0
+depth = 3.0
+depth_per_pass = 1.0
+feed_rate = 1000.0
+plunge_rate = 500.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+
+[[setups.toolpaths]]
+id = 1
+name = "Rest pocket"
+enabled = true
+tool_id = 0
+model_id = 0
+stock_source = "from_remaining_stock"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.5
+depth = 3.5
+depth_per_pass = 3.5
+feed_rate = 1000.0
+plunge_rate = 500.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+
+[[setups.stock_changes]]
+id = 0
+name = "Slab"
+enabled = true
+op = "remove"
+
+[setups.stock_changes.geometry]
+kind = "outline_extrude"
+model_ids = [0]
+z_bottom = -1.0
+z_top = 0.0
+
+[[setups.stock_changes]]
+id = 1
+name = "Pour"
+enabled = true
+op = "add"
+cut_as = "own_material"
+
+[setups.stock_changes.geometry]
+kind = "outline_fill"
+model_ids = [0]
+level_z = -0.5
+
+[setups.stock_changes.material.Custom]
+name = "Resin"
+feed_scale_factor = 1.0

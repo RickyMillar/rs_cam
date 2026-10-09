@@ -12,7 +12,7 @@
 //! refusal comes back into the editor in the core's words.
 
 use rs_cam_core::compute::stock_change::{
-    StockChange, StockChangeOp, StockGeometry, next_stock_change_id,
+    CutAs, StockChange, StockChangeOp, StockGeometry, next_stock_change_id,
 };
 use rs_cam_core::ids::{ModelId, StockChangeId};
 use rs_cam_core::material::Material;
@@ -136,6 +136,14 @@ const FRAME_HOVER: &str = "This value is in this setup's frame: the frame that t
 const MATERIAL_HOVER: &str = "The material that an Add puts into the stock. Pick one from \
      the library, or type a custom name. A Remove ignores the material.";
 
+const CUT_AS_OPTIONS: &[(CutAs, &str)] = &[
+    (CutAs::StockMaterial, "Stock"),
+    (CutAs::OwnMaterial, "Own material"),
+];
+
+/// The hover of the "Cut as" control: the operator ruling of 2026-10-09.
+pub const CUT_AS_HOVER: &str = "How the load checks, the cut metrics and the feed modulation cut this added material.\nStock (the default): cut it exactly as the stock material. An added material is just more stock, so a cut through it gets the same checks and the same feeds as a cut through the stock.\nOwn material: judge the cuts in this material with its own force data from the library. A material with no force data is not judged: the load report counts and names its samples. Toolpaths and Suggest never read the added material.";
+
 const VOLUME_HOVER: &str = "The volume that the last simulation added (+) or removed (-) \
      for this change, in ml. Run the simulation to measure it.";
 
@@ -152,7 +160,11 @@ pub fn row_summary(row: &StockChangeRow) -> String {
         GeometryKind::OutlineExtrude => "extrude",
     };
     match row.change.op {
-        StockChangeOp::Add => format!("{op} · {kind} · {}", row.material_label()),
+        StockChangeOp::Add => format!(
+            "{op} · {kind} · {} ({})",
+            row.material_label(),
+            row.change.cut_as.label()
+        ),
         StockChangeOp::Remove => format!("{op} · {kind}"),
     }
 }
@@ -182,6 +194,7 @@ pub fn new_draft(
             },
             material: stock_material.clone(),
             display_colour: None,
+            cut_as: CutAs::StockMaterial,
         },
         refusal: None,
     }
@@ -462,6 +475,7 @@ fn draw_editor(
 
     if draft.op == StockChangeOp::Add {
         draw_material_pick(ui, &mut draft.material);
+        ui.add(ChoiceRow::new("Cut as", &mut draft.cut_as, CUT_AS_OPTIONS).hover(CUT_AS_HOVER));
     }
 
     if editor.draft != before {
@@ -698,7 +712,20 @@ mod tests {
             feed_scale_factor: 1.0,
         };
         let mut change = new_draft(SetupId(0), &[], (0.0, 10.0), &material).draft;
-        assert_eq!(row_summary(&row(change.clone())), "Add · fill · Resin");
+        assert_eq!(
+            change.cut_as,
+            CutAs::StockMaterial,
+            "a new change cuts as stock"
+        );
+        assert_eq!(
+            row_summary(&row(change.clone())),
+            "Add · fill · Resin (cut as stock)"
+        );
+        change.cut_as = CutAs::OwnMaterial;
+        assert_eq!(
+            row_summary(&row(change.clone())),
+            "Add · fill · Resin (own material)"
+        );
         change.op = StockChangeOp::Remove;
         change.geometry = StockGeometry::Model {
             model_id: ModelId(1),

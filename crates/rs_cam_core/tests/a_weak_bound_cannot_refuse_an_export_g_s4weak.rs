@@ -292,6 +292,7 @@ fn the_shipped_gate_still_refuses_a_deflection_exceedance() {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         }],
     };
     let strict = ToolLoadExportPolicy {

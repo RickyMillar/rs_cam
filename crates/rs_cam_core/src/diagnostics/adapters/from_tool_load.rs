@@ -83,6 +83,52 @@ pub fn diagnostics_from_load_verdict(verdict: &ToolpathLoadVerdict) -> Vec<Diagn
         out.extend(drill_gates_to_diagnostics(drill, &scope));
     }
 
+    if let Some(split) = verdict.material_split.as_deref() {
+        out.extend(material_split_to_diagnostics(verdict.toolpath_id, split));
+    }
+
+    out
+}
+
+/// S6 (stock changes, "cut as"): the own-material verdicts, through the
+/// same per-gate converters with the material named in the message, and
+/// one finding per not-judged material.
+fn material_split_to_diagnostics(
+    tp_id: ToolpathId,
+    split: &crate::tool_load::MaterialSplit,
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for own in &split.own {
+        let rows = [
+            chipload_to_diagnostic(tp_id, &own.chipload, None),
+            power_to_diagnostic(tp_id, &own.power),
+            deflection_to_diagnostic(tp_id, &own.deflection),
+            depth_to_diagnostic(tp_id, &own.depth),
+        ];
+        for mut d in rows.into_iter().flatten() {
+            d.message = format!(
+                "{} ({} samples, own material): {}",
+                own.material, own.samples, d.message
+            );
+            out.push(d);
+        }
+    }
+    for count in &split.not_judged {
+        out.push(Diagnostic {
+            id: DiagnosticId::from(ids::LOAD_MATERIAL_NOT_JUDGED),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::State,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::ToolLoad,
+            message: count.label(),
+            evidence: None,
+            fix: None,
+            supersedes: Vec::new(),
+            suppressed_diagnostics: vec![],
+        });
+    }
     out
 }
 

@@ -307,6 +307,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
 
         let candidates = strategy.candidates(&view, &verdict);
@@ -363,6 +364,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }
@@ -395,6 +397,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert_eq!(strategy.candidates(&view, &verdict).len(), 1);
     }
@@ -428,6 +431,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(strategy.candidates(&view, &verdict).is_empty());
     }

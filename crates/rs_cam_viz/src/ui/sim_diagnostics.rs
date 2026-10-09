@@ -494,6 +494,21 @@ fn draw_project_section(
     // closed. The verdict line above the sections is the page's one always-on
     // answer; this grid, the findings pills and the hotspot list are the
     // dig-deeper.
+    // S6 (stock changes, "cut as"): the samples of an own material with no
+    // force data. The gates did not judge them; name them, one line per
+    // toolpath and material, in the core's words.
+    for entry in &summary.not_judged {
+        ui.label(
+            egui::RichText::new(entry.label())
+                .small()
+                .color(theme::TEXT_MUTED),
+        )
+        .on_hover_text(
+            "A stock change cuts this material as its own material, and the \
+             material has no force data in the library. The load checks did not \
+             judge these samples.",
+        );
+    }
     egui::CollapsingHeader::new(header)
         .id_salt("inspector_project")
         .default_open(false)
@@ -2696,6 +2711,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(
             limit_rows(&verdict).is_empty(),

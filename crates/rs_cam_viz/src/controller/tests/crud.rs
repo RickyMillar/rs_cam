@@ -630,6 +630,7 @@ mod stock_change_panel_s4 {
                 feed_scale_factor: 1.0,
             },
             display_colour: None,
+            cut_as: Default::default(),
         }
     }
 

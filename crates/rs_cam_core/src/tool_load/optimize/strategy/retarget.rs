@@ -376,6 +376,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -405,6 +406,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);
@@ -436,6 +438,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 2);
@@ -468,6 +471,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 3);
@@ -503,6 +507,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(strat.candidates(&view, &verdict).is_empty());
     }
@@ -542,6 +547,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         assert!(strat.candidates(&view, &burn).is_empty());
 
@@ -557,6 +563,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let cps = strat.candidates(&view, &breakage);
         assert_eq!(cps.len(), 1);
@@ -595,6 +602,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let out = strat.candidates_and_refusals(&view, &verdict);
         assert!(
@@ -640,6 +648,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let out = strat.candidates_and_refusals(&view, &verdict);
         assert_eq!(out.candidates.len(), 1);
@@ -676,6 +685,7 @@ mod tests {
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
+            material_split: None,
         };
         let cps = strat.candidates(&view, &verdict);
         assert_eq!(cps.len(), 1);

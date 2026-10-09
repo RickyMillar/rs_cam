@@ -808,6 +808,48 @@ pub fn adaptive_feed_modulate(
     engagements: &[PerMoveEngagement],
     ctx: &ModulationContext<'_>,
 ) -> Result<ModulationOutcome, ModulationError> {
+    adaptive_feed_modulate_with_materials(toolpath, engagements, &[], ctx)
+}
+
+/// S6 (stock changes, "cut as"): the material of one move for the
+/// modulator. The session picks it per move through
+/// `SimulationCutTrace::effective_material_for_sample` (the main slot by
+/// time weight).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum MoveMaterial {
+    /// The toolpath's material: the band and the caps of the
+    /// [`ModulationContext`]. Every move of a project with no own-material
+    /// stock change.
+    #[default]
+    Toolpath,
+    /// An own material: its band and its caps replace the context's.
+    Own(OwnMaterialInputs),
+    /// Not judged (an own material with no force data): no band and no
+    /// force cap, so the move keeps its commanded feed, clamped to the
+    /// machine ceiling and the plunge guard (the bandless arm).
+    NotJudged,
+}
+
+/// The band and the caps of an own material, built the way the session
+/// builds the toolpath's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OwnMaterialInputs {
+    /// The chipload band of the material; `None` = bandless.
+    pub chipload_band: Option<ChiploadBand>,
+    /// The deflection cap of the material.
+    pub deflection_inputs: Option<DeflectionLimitInputs>,
+    /// The power cap of the material.
+    pub power_inputs: Option<PowerLimitInputs>,
+}
+
+/// [`adaptive_feed_modulate`] with a material per move (S6). An empty
+/// `materials` slice, or a move past its end, is [`MoveMaterial::Toolpath`].
+pub fn adaptive_feed_modulate_with_materials(
+    toolpath: &mut Toolpath,
+    engagements: &[PerMoveEngagement],
+    materials: &[MoveMaterial],
+    ctx: &ModulationContext<'_>,
+) -> Result<ModulationOutcome, ModulationError> {
     if engagements.len() != toolpath.moves.len() {
         return Err(ModulationError::EngagementLengthMismatch);
     }
@@ -862,6 +904,31 @@ pub fn adaptive_feed_modulate(
             .copied()
             .unwrap_or(ctx.max_feed_mm_min)
             .max(1e-3);
+
+        // S6: an own-material move reads its own band and caps; a
+        // not-judged move reads none. The default reads the context.
+        let move_ctx_storage;
+        let ctx: &ModulationContext<'_> = match materials.get(i).copied().unwrap_or_default() {
+            MoveMaterial::Toolpath => ctx,
+            MoveMaterial::Own(own) => {
+                move_ctx_storage = ModulationContext {
+                    chipload_band: own.chipload_band,
+                    deflection_inputs: own.deflection_inputs,
+                    power_inputs: own.power_inputs,
+                    ..*ctx
+                };
+                &move_ctx_storage
+            }
+            MoveMaterial::NotJudged => {
+                move_ctx_storage = ModulationContext {
+                    chipload_band: None,
+                    deflection_inputs: None,
+                    power_inputs: None,
+                    ..*ctx
+                };
+                &move_ctx_storage
+            }
+        };
 
         let (mut new_feed, mut binding) = match (ctx.strategy, ctx.chipload_band) {
             // BANDLESS (wanaka200 IMPLEMENTATION_PLAN work item A,
@@ -998,6 +1065,65 @@ mod tests {
             tp.feed_to_with_intent(P3::new(x, y, -2.0), feed_mm_min, MoveIntent::ClearingCut);
         }
         tp
+    }
+
+    /// S6: a move's material picks its band and caps. `Toolpath` (and an
+    /// empty slice) reads the context; `Own` reads its own band; `NotJudged`
+    /// keeps the commanded feed (the bandless arm).
+    #[test]
+    fn a_move_material_picks_its_band_and_caps_s6() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, band());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.plunge_rate_mm_min = f64::INFINITY;
+        let commanded = 1500.0;
+        let engaged = PerMoveEngagement {
+            radial_woc_fraction: 0.5,
+            axial_doc_fraction: 0.1,
+            axial_doc_mm: 2.0,
+        };
+        let run = |materials: &[MoveMaterial]| {
+            let mut tp = straight_toolpath(3, commanded);
+            let engagements = vec![engaged; tp.moves.len()];
+            let out = adaptive_feed_modulate_with_materials(&mut tp, &engagements, materials, &ctx)
+                .unwrap();
+            out.per_move
+        };
+        let plain = {
+            let mut tp = straight_toolpath(3, commanded);
+            let engagements = vec![engaged; tp.moves.len()];
+            adaptive_feed_modulate(&mut tp, &engagements, &ctx)
+                .unwrap()
+                .per_move
+        };
+        let n = plain.len() + 1;
+        assert_eq!(run(&[]), plain, "an empty slice is the context");
+        assert_eq!(run(&vec![MoveMaterial::Toolpath; n]), plain);
+
+        let low = ChiploadBand::new(0.005, 0.01).unwrap();
+        let own = run(&vec![
+            MoveMaterial::Own(OwnMaterialInputs {
+                chipload_band: Some(low),
+                deflection_inputs: None,
+                power_inputs: None,
+            });
+            n
+        ]);
+        let not_judged = run(&vec![MoveMaterial::NotJudged; n]);
+        assert!(!plain.is_empty());
+        for (i, (feed, _)) in &plain {
+            let (own_feed, _) = own[i];
+            assert!(
+                own_feed < *feed,
+                "the own band caps lower: {own_feed} vs {feed}"
+            );
+            let (nj_feed, nj_binding) = not_judged[i];
+            assert!(
+                (nj_feed - commanded).abs() < 1e-9,
+                "not judged keeps F{commanded}"
+            );
+            assert_eq!(nj_binding, BindingConstraint::MachineMaxFeed);
+        }
     }
 
     #[test]

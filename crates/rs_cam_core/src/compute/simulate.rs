@@ -1339,6 +1339,7 @@ fn assemble_cut_trace(
     cut_samples: Vec<crate::stock::simulation_cut::SimulationCutSample>,
     drill_samples: Vec<crate::ops::drill_metrics::DrillSample>,
     drill_summaries: Vec<crate::ops::drill_metrics::DrillToolpathSummary>,
+    stock_change_volumes: &[crate::compute::stock_change_apply::StockChangeVolume],
 ) -> SimulationCutTrace {
     let semantic_traces: Vec<_> = request
         .groups
@@ -1370,6 +1371,7 @@ fn assemble_cut_trace(
     trace.provenance = Some(build_simulation_provenance(request));
     trace.drill_samples = drill_samples;
     trace.drill_summaries = drill_summaries;
+    trace.added_material_slots = added_material_slots(request, stock_change_volumes);
     // F-034: kinematics-aware cycle time override. When the
     // caller supplied a `KinematicsContext`, recompute each
     // toolpath's `total_runtime_s` from its IR using the
@@ -1383,6 +1385,49 @@ fn assemble_cut_trace(
         apply_kinematics_cycle_time(&mut trace, request, ctx);
     }
     trace
+}
+
+/// S6: the material and the `cut_as` of each slot that an applied `Add`
+/// change wrote, from the volume records (each `Add` record names its slot)
+/// and the request's change records.
+///
+/// The S1 slot table gives one slot per material, so two `Add` changes with
+/// one material share a slot. When their `cut_as` differ, `OwnMaterial`
+/// decides: it is the answer that judges the material by its own data, so a
+/// shared slot never hides a "not judged" count.
+fn added_material_slots(
+    request: &SimulationRequest,
+    volumes: &[crate::compute::stock_change_apply::StockChangeVolume],
+) -> Vec<crate::stock::cut_as::AddedMaterialSlot> {
+    use crate::stock::cut_as::{AddedMaterialSlot, CutAs};
+    let mut out: Vec<AddedMaterialSlot> = Vec::new();
+    for volume in volumes {
+        let Some(slot) = volume.material_slot else {
+            continue;
+        };
+        let Some(change) = request
+            .groups
+            .iter()
+            .flat_map(|g| g.stock_changes.iter())
+            .find(|c| c.setup_id == volume.setup_id && c.change.id == volume.change_id)
+            .map(|c| &c.change)
+        else {
+            continue;
+        };
+        match out.iter_mut().find(|s| s.slot == slot) {
+            Some(existing) => {
+                if change.cut_as == CutAs::OwnMaterial {
+                    existing.cut_as = CutAs::OwnMaterial;
+                }
+            }
+            None => out.push(AddedMaterialSlot {
+                slot,
+                material: change.material.clone(),
+                cut_as: change.cut_as,
+            }),
+        }
+    }
+    out
 }
 
 /// CMP-18 seam: the end-of-group work.
@@ -2202,6 +2247,7 @@ where
         cut_samples,
         drill_samples_all,
         drill_summaries_all,
+        &stock_change_volumes,
     )));
 
     set_phase("Build simulation mesh");

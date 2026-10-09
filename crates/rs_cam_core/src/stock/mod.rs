@@ -5,6 +5,7 @@
 //! checks a cutter envelope against simulated material.
 
 pub mod collision;
+pub mod cut_as;
 pub mod dexel;
 pub mod dexel_mesh;
 pub mod dexel_mesh_mc;

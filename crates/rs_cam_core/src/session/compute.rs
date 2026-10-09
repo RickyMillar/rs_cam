@@ -1722,7 +1722,7 @@ fn modulate_annotated_against_trace(
 )> {
     use crate::dressup::feed_modulation::{
         DeflectionLimitInputs, ModulationContext, PerMoveEngagement, PowerLimitInputs,
-        adaptive_feed_modulate,
+        adaptive_feed_modulate_with_materials,
     };
 
     let flute_count = tool_cfg.flute_count.max(1);
@@ -1907,11 +1907,6 @@ fn modulate_annotated_against_trace(
     // machine's rated `power_at_rpm` gives the available power
     // (ruling R4 Q2, 2026-09-24: no fraction).
     let material = context.material;
-    // Materials without a force line disable both the
-    // deflection and power constraints in the constrained-max
-    // solver; the solver falls through to chipload + machine +
-    // kinematics caps. See `Material::force_line`.
-    let line_opt = material.force_line().ok();
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
     // Use the per-toolpath max axial DOC from the cut trace
     // as the deflection / power reference; falls back to
@@ -1927,40 +1922,80 @@ fn modulate_annotated_against_trace(
     let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
     let stickout = tool_def.stickout.max(0.0);
     let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-    // Feed-aware deflection cap: the optimizer solves its feed cap
-    // from the SAME affine force model (Ks/F_edge) and integrated
-    // beam compliance the post-sim deflection gate uses, so the two
-    // agree on a cut. Compliance is δ-per-newton at the toolpath's
-    // peak axial DOC; deflection is linear in force so one scalar
-    // suffices.
-    let deflection_inputs = match line_opt.map(|l| (l.ks_n_per_mm2(), l.f_edge_n_per_mm())) {
-        Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
-            let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
-            if compliance.is_finite() && compliance > 0.0 {
-                Some(DeflectionLimitInputs {
-                    ks_n_per_mm2: ks,
-                    f_edge_n_per_mm: f_edge,
-                    compliance_mm_per_n: compliance,
-                    max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                })
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
-    let power_inputs = match line_opt {
-        Some(line) if available_kw > 0.0 => Some(PowerLimitInputs {
-            // S2-9 (2026-05-31): pass the force line; the solver applies
-            // its grain factor internally so this site doesn't
-            // re-encode the multiplier.
-            line,
-            engagement_diameter_mm: engagement_dia,
-            available_kw,
-        }),
-        _ => None,
+    // The deflection and power caps of one material. Materials without a
+    // force line disable both constraints in the constrained-max solver;
+    // the solver falls through to chipload + machine + kinematics caps.
+    // See `Material::force_line`. S6: the toolpath's material and each own
+    // material read this one builder.
+    let force_inputs = |material: &crate::material::Material| {
+        let line_opt = material.force_line().ok();
+        // Feed-aware deflection cap: the optimizer solves its feed cap
+        // from the SAME affine force model (Ks/F_edge) and integrated
+        // beam compliance the post-sim deflection gate uses, so the two
+        // agree on a cut. Compliance is δ-per-newton at the toolpath's
+        // peak axial DOC; deflection is linear in force so one scalar
+        // suffices.
+        let deflection_inputs = match line_opt.map(|l| (l.ks_n_per_mm2(), l.f_edge_n_per_mm())) {
+            Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
+                let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
+                if compliance.is_finite() && compliance > 0.0 {
+                    Some(DeflectionLimitInputs {
+                        ks_n_per_mm2: ks,
+                        f_edge_n_per_mm: f_edge,
+                        compliance_mm_per_n: compliance,
+                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let power_inputs = match line_opt {
+            Some(line) if available_kw > 0.0 => Some(PowerLimitInputs {
+                // S2-9 (2026-05-31): pass the force line; the solver applies
+                // its grain factor internally so this site doesn't
+                // re-encode the multiplier.
+                line,
+                engagement_diameter_mm: engagement_dia,
+                available_kw,
+            }),
+            _ => None,
+        };
+        (deflection_inputs, power_inputs)
+    };
+    let (deflection_inputs, power_inputs) = force_inputs(material);
+
+    // S6: the material of each move, through the one helper
+    // (`SimulationCutTrace::effective_material_for_slot`) on the move's
+    // main slot by time weight. Empty when no stock change asks for its
+    // own material: every move then reads the context, as before S6.
+    let move_materials = if cut_trace.has_own_material_slots() {
+        move_materials_for(
+            cut_trace,
+            toolpath_id,
+            move_count,
+            material,
+            |own: &crate::material::Material| {
+                let (deflection_inputs, power_inputs) = force_inputs(own);
+                crate::dressup::feed_modulation::OwnMaterialInputs {
+                    chipload_band: crate::tool_load::chip_target_for_toolpath(
+                        own,
+                        tool_cfg,
+                        operation,
+                        toolpath_id,
+                        Some(cut_trace),
+                    )
+                    .and_then(|t| t.modulation_band()),
+                    deflection_inputs,
+                    power_inputs,
+                }
+            },
+        )
+    } else {
+        Vec::new()
     };
 
     let ctx = ModulationContext {
@@ -1982,8 +2017,64 @@ fn modulate_annotated_against_trace(
     };
 
     let mut modulated_toolpath = annotated.toolpath.clone();
-    let outcome = adaptive_feed_modulate(&mut modulated_toolpath, &engagements, &ctx).ok()?;
+    let outcome = adaptive_feed_modulate_with_materials(
+        &mut modulated_toolpath,
+        &engagements,
+        &move_materials,
+        &ctx,
+    )
+    .ok()?;
     Some((modulated_toolpath, outcome))
+}
+
+/// S6: the modulator material of each move of `toolpath_id`. The main slot
+/// of a move is the slot with the most cutting time over its samples; the
+/// one helper (`SimulationCutTrace::effective_material_for_slot`) turns it
+/// into the stock material, an own material (`own_inputs` builds its band
+/// and caps) or "not judged".
+fn move_materials_for(
+    cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
+    toolpath_id: ToolpathId,
+    move_count: usize,
+    stock: &crate::material::Material,
+    own_inputs: impl Fn(
+        &crate::material::Material,
+    ) -> crate::dressup::feed_modulation::OwnMaterialInputs,
+) -> Vec<crate::dressup::feed_modulation::MoveMaterial> {
+    use crate::dressup::feed_modulation::MoveMaterial;
+    use crate::stock::cut_as::EffectiveMaterial;
+    use crate::stock::material_slot::{MATERIAL_SLOT_CAPACITY, MaterialSlot};
+
+    let mut weights = vec![[0.0_f64; MATERIAL_SLOT_CAPACITY]; move_count];
+    for sample in &cut_trace.samples {
+        if sample.toolpath_id != toolpath_id || !sample.is_cutting {
+            continue;
+        }
+        let w = sample.segment_time_s.max(0.0);
+        let slot = sample.material_slot.index().min(MATERIAL_SLOT_CAPACITY - 1);
+        if let Some(per_slot) = weights.get_mut(sample.move_index)
+            && let Some(v) = per_slot.get_mut(slot)
+        {
+            *v += w;
+        }
+    }
+    weights
+        .iter()
+        .map(|per_slot| {
+            let mut main = 0_usize;
+            for (i, &w) in per_slot.iter().enumerate() {
+                if per_slot.get(main).is_some_and(|&m| w > m) {
+                    main = i;
+                }
+            }
+            let slot = MaterialSlot(u8::try_from(main).unwrap_or(0));
+            match cut_trace.effective_material_for_slot(slot, stock) {
+                EffectiveMaterial::Judged(m) if m == stock => MoveMaterial::Toolpath,
+                EffectiveMaterial::Judged(own) => MoveMaterial::Own(own_inputs(own)),
+                EffectiveMaterial::NotJudged(_) => MoveMaterial::NotJudged,
+            }
+        })
+        .collect()
 }
 
 /// The two session records a [`SimulationRequest`] assembly reads.

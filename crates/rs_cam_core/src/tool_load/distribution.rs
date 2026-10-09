@@ -369,7 +369,22 @@ pub fn metric_distribution(
     match metric {
         DistributionMetric::Criterion(kind) => {
             let status = criterion_status(kind, verdict)?;
-            criterion_distribution(kind, &status, ctx, env)
+            // S6: the verdict's gate rows judge the stock population (see
+            // `evaluate_toolpath`), so the histogram bins the same one.
+            // `None` under the default: every sample is in it.
+            let stock_view = env
+                .sim_trace
+                .and_then(|t| t.stock_population_view(ctx.toolpath_id, ctx.material));
+            match &stock_view {
+                Some(view) => {
+                    let view_env = GateEnv {
+                        sim_trace: Some(view),
+                        ..*env
+                    };
+                    criterion_distribution(kind, &status, ctx, &view_env)
+                }
+                None => criterion_distribution(kind, &status, ctx, env),
+            }
         }
         DistributionMetric::Engagement => engagement_distribution(ctx, env),
     }
