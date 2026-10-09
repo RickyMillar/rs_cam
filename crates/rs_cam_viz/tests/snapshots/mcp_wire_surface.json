@@ -700,7 +700,7 @@
         },
         "split_setups": {
           "default": null,
-          "description": "One G-code file per setup, for a project with two or more setups\nthat hold an enabled toolpath. Each file carries a header that\nnames the setup and its datum (`X0 Y0 = stock min corner`, the\nsame in every file; that file's own Z zero), with a FLIP reminder\nafter the first file. Files are `<stem>_<n>_<setup name>.<ext>`\nnext to `path`. Omit to use the post default: `true` on grblHAL,\nwhere an M0 setup pause cannot jog to re-zero; `false` elsewhere.\nA single file has an M0 pause between setups.",
+          "description": "One G-code file per setup, for a project with two or more setups\nthat hold an enabled toolpath. Each file carries a header that\nnames the setup and its datum (`X0 Y0 = stock min corner`, the\nsame in every file; that file's own Z zero). After the first file\nthe header tells the operator to turn the part when the setup's\norientation differs from the file before, and to keep the part and\nthe zero when it is the same. Files are `<stem>_<n>_<setup name>.<ext>`\nnext to `path`. Omit to use the post default: `true` on grblHAL,\nwhere an M0 setup pause cannot jog to re-zero; `false` elsewhere.\nA single file has an M0 pause between setups.",
           "type": [
             "boolean",
             "null"

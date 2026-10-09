@@ -246,8 +246,10 @@ pub struct ExportParam {
     /// One G-code file per setup, for a project with two or more setups
     /// that hold an enabled toolpath. Each file carries a header that
     /// names the setup and its datum (`X0 Y0 = stock min corner`, the
-    /// same in every file; that file's own Z zero), with a FLIP reminder
-    /// after the first file. Files are `<stem>_<n>_<setup name>.<ext>`
+    /// same in every file; that file's own Z zero). After the first file
+    /// the header tells the operator to turn the part when the setup's
+    /// orientation differs from the file before, and to keep the part and
+    /// the zero when it is the same. Files are `<stem>_<n>_<setup name>.<ext>`
     /// next to `path`. Omit to use the post default: `true` on grblHAL,
     /// where an M0 setup pause cannot jog to re-zero; `false` elsewhere.
     /// A single file has an M0 pause between setups.

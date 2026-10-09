@@ -652,13 +652,30 @@ pub fn export_per_setup_files(
     }
     let post = gui.post.format.definition();
     let total = files.len();
+    // The setup of the file before each file: its header compares the two
+    // orientations, so a reminder to turn the part appears only when the
+    // part turns.
+    let previous_ids: Vec<Option<usize>> = (0..total)
+        .map(|i| {
+            i.checked_sub(1)
+                .and_then(|p| files.get(p))
+                .map(|(id, _, _)| *id)
+        })
+        .collect();
     Ok(files
         .into_iter()
         .enumerate()
         .map(|(i, (setup_id, name, exported))| SetupFile {
             gcode: format!(
                 "{}{}",
-                setup_file_header(session, post, setup_id, i, total),
+                setup_file_header(
+                    session,
+                    post,
+                    setup_id,
+                    previous_ids.get(i).copied().flatten(),
+                    i,
+                    total
+                ),
                 exported.gcode
             ),
             setup_id,
@@ -669,7 +686,10 @@ pub fn export_per_setup_files(
 }
 
 /// The header of one per-setup G-code file: the setup, its datum and,
-/// after the first file, the flip reminder.
+/// after the first file, what the operator does to the part. When the
+/// orientation (face up and Z rotation) differs from the setup of the file
+/// before, the header tells the operator to turn the part; when it is the
+/// same, it tells the operator not to move the part or the zero.
 ///
 /// G3 (2026-10-08): ONE builder for the GUI "one file per setup" layout
 /// and MCP `export_gcode` with `split_setups`. The GUI files had no header
@@ -688,10 +708,13 @@ pub fn setup_file_header(
     session: &ProjectSession,
     post: &rs_cam_core::gcode::PostDefinition,
     setup_id: usize,
+    previous_setup_id: Option<usize>,
     index: usize,
     total: usize,
 ) -> String {
     let setup = session.list_setups().iter().find(|s| s.id == setup_id);
+    let previous =
+        previous_setup_id.and_then(|id| session.list_setups().iter().find(|s| s.id == id));
     let name = setup.map_or("", |s| s.name.as_str());
     let z_datum = match setup.map(|s| &s.datum.z_method) {
         None | Some(rs_cam_core::session::ZDatum::StockTop) => "Z0 = top of stock".to_owned(),
@@ -716,9 +739,31 @@ pub fn setup_file_header(
     if index > 0 {
         // An operator message: a MSG line on grblHAL, so the sender shows
         // it before the file starts to cut.
-        header.push_str(&post.render_message_line(
-            "FLIP PART BEFORE RUNNING -- re-zero Z to the datum above; KEEP the same X/Y zero",
-        ));
+        let orientation = |s: &rs_cam_core::session::SetupData| (s.face_up, s.z_rotation);
+        let turned = match (setup, previous) {
+            (Some(s), Some(p)) => orientation(s) != orientation(p),
+            // Unknown setups: keep the reminder, the safe side.
+            _ => true,
+        };
+        let z_note = match setup.map(|s| &s.datum.z_method) {
+            None | Some(rs_cam_core::session::ZDatum::StockTop) => "re-zero Z on the new top",
+            Some(rs_cam_core::session::ZDatum::MachineTable) => {
+                "Z0 stays on the spoilboard, do not re-zero Z"
+            }
+            Some(_) => "set Z to the datum above",
+        };
+        let message = if turned {
+            let from = previous.map_or_else(String::new, |p| {
+                format!("{} {} -> ", p.face_up.label(), p.z_rotation.label())
+            });
+            let to = setup.map_or_else(String::new, |s| {
+                format!("{} {}", s.face_up.label(), s.z_rotation.label())
+            });
+            format!("TURN THE PART BEFORE RUNNING ({from}{to}) -- KEEP the same X/Y zero; {z_note}")
+        } else {
+            "SAME POSITION as the previous file -- do not move the part or the zero".to_owned()
+        };
+        header.push_str(&post.render_message_line(&message));
     }
     header
 }

@@ -951,11 +951,12 @@ fn per_setup_files_carry_one_header_g3() {
             "{second}"
         );
         let flip = if format == PostFormat::GrblHal {
-            "(MSG,FLIP PART BEFORE RUNNING"
+            "(MSG,TURN THE PART BEFORE RUNNING [Top 0 deg -> Bottom 0 deg]"
         } else {
-            "(FLIP PART BEFORE RUNNING"
+            "(TURN THE PART BEFORE RUNNING [Top 0 deg -> Bottom 0 deg]"
         };
         assert!(second.contains(flip), "{format:?}: {second}");
+        assert!(!second.contains("SAME POSITION"), "{format:?}: {second}");
         assert!(
             !second.contains("\nM0\n"),
             "a per-setup file has no setup pause"
@@ -968,4 +969,46 @@ fn per_setup_files_carry_one_header_g3() {
             .effective_layout(PostFormat::GrblHal.definition(), setups),
         OutputLayout::PerSetup
     );
+}
+
+/// A second setup in the same orientation (for example a pass after a pour,
+/// with the part not moved) must not tell the operator to turn the part.
+/// The reminder used to print on every file after the first (2026-10-09).
+#[test]
+fn a_same_orientation_setup_says_same_position_not_turn() {
+    let (mut session, mut gui, sim) = two_setup_session();
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSetupFace(
+            rs_cam_core::session::SetSetupFaceArgs {
+                setup_index: 1,
+                face_up: rs_cam_core::compute::transform::FaceUp::Top,
+            },
+        ))
+        .expect("make setup 2 face up Top");
+    // The face change stales the toolpath; seed it again so the export has
+    // a current result.
+    let tp_id = session.list_setups()[1]
+        .toolpath_indices
+        .first()
+        .map(|&i| session.toolpath_configs()[i].id)
+        .expect("setup 2 has a toolpath");
+    let mut path = Toolpath::new();
+    path.rapid_to(P3::new(0.0, 0.0, 5.0));
+    path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
+    seed_generated_result(&mut session, &mut gui, tp_id, path);
+    gui.post.format = PostFormat::GrblHal;
+    let files = rs_cam_viz::io::export::export_per_setup_files(
+        &session,
+        &gui,
+        &sim,
+        gui.tool_load_overrides.as_policy(),
+        gui.stale_export,
+    )
+    .expect("per-setup export");
+    let second = &files[1].gcode;
+    assert!(
+        second.contains("(MSG,SAME POSITION as the previous file"),
+        "{second}"
+    );
+    assert!(!second.contains("TURN THE PART"), "{second}");
 }
