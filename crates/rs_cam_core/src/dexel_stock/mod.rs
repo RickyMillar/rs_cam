@@ -38,6 +38,7 @@ mod playback;
 mod sample_coalesce;
 mod simulation;
 mod stamping;
+pub mod stock_edit;
 mod swept;
 mod tile_mip;
 mod whole_path;

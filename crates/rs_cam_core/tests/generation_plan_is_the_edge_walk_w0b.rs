@@ -246,6 +246,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                 prior_stock_sources,
                 display_degrade: None,
                 group_starts: Vec::new(),
+                stock_change_volumes: Vec::new(),
             }),
             epoch: session.simulation_epoch(),
         }))

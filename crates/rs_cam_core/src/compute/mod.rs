@@ -20,6 +20,7 @@ pub mod spans;
 pub mod stats;
 pub mod stock_carry;
 pub mod stock_change;
+pub mod stock_change_apply;
 pub mod stock_config;
 pub mod tool_config;
 pub mod toolpath_stats;

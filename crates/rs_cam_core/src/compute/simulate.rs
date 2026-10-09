@@ -770,6 +770,10 @@ pub struct SimulationResult {
     /// stock the group started from (carried, or fresh and why). See
     /// [`crate::compute::stock_carry`].
     pub group_starts: Vec<SimGroupStart>,
+    /// S3: the volume each applied stock change added and removed, in
+    /// group order and, within a group, in list order. Empty for a run with
+    /// no stock change. See [`crate::compute::stock_change_apply`].
+    pub stock_change_volumes: Vec<crate::compute::stock_change_apply::StockChangeVolume>,
 }
 
 impl SimulationResult {
@@ -801,6 +805,19 @@ pub enum SimulationError {
         /// The limit, in bytes.
         limit_bytes: u64,
     },
+    /// S3: a stock change of the request cannot apply (a missing model, a
+    /// mesh that is not closed, a full material slot table, ...). The
+    /// simulation applies no partial result.
+    StockChangeRefused {
+        /// The `SetupData::id` of the setup that owns the change.
+        setup_id: usize,
+        /// The change id.
+        change_id: crate::ids::StockChangeId,
+        /// The change name.
+        change_name: String,
+        /// The rule the change breaks, as a sentence.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for SimulationError {
@@ -815,6 +832,16 @@ impl std::fmt::Display for SimulationError {
                 "Simulation stopped by the memory budget: needs about {}, the limit is {}",
                 crate::budget::format_bytes(*need_bytes),
                 crate::budget::format_bytes(*limit_bytes)
+            ),
+            Self::StockChangeRefused {
+                setup_id,
+                change_id,
+                change_name,
+                reason,
+            } => write!(
+                f,
+                "Stock change '{change_name}' (id {}) of setup id {setup_id} refused: {reason}",
+                change_id.0
             ),
         }
     }
@@ -1297,6 +1324,7 @@ fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) ->
         carry: None,
         group_starts: Vec::new(),
         composite_from_z: false,
+        stock_change_volumes: Vec::new(),
     }
 }
 
@@ -1913,12 +1941,22 @@ where
             // The S5 snapshot holds this group's start record too.
             Some(stock) => (stock, std::mem::take(&mut resumed_group_drill_ops)),
             None => {
-                let (stock, carry) =
+                let (mut stock, carry) =
                     group_start_stock(&run, request, group, local_bbox, lateral, &mut set_phase);
-                // TODO(S3): apply `group.stock_changes` to `stock` here, in
-                // order, before the group's first entry. A resumed group
-                // (the arm above) restores a stock that already holds them.
-                // S2 carries the list to this point and applies nothing.
+                // S3: the group's stock changes, in order, before its first
+                // entry, on the group stock and on the playback stock (not
+                // for a lateral group, G-LATERALSCRUB). A resumed group (the
+                // arm above) restores stocks that already hold them.
+                if !group.stock_changes.is_empty() {
+                    set_phase("Apply stock changes");
+                    let volumes = crate::compute::stock_change_apply::apply_group_stock_changes(
+                        &mut stock,
+                        (!lateral).then_some(&mut run.global_stock),
+                        group,
+                        request.stock_bbox.min,
+                    )?;
+                    run.stock_change_volumes.extend(volumes);
+                }
                 run.group_starts.push(SimGroupStart {
                     group_ordinal,
                     carry,
@@ -2145,6 +2183,7 @@ where
         carry: _,
         group_starts,
         composite_from_z: _,
+        stock_change_volumes,
     } = run;
 
     // `global_drill_ops` is currently accumulated for future use by
@@ -2208,6 +2247,7 @@ where
         prior_stock_sources,
         display_degrade: DisplayMeshDegrade::for_stride(request.display_stride),
         group_starts,
+        stock_change_volumes,
     })
 }
 
