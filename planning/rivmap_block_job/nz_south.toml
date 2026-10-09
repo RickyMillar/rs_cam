@@ -1364,6 +1364,7 @@ coolant = "off"
 kind = "project_curve"
 
 [setups.toolpaths.operation.params]
+projection = "point"
 depth = 1.983067216
 point_spacing = 0.05
 feed_rate = 1297.0
@@ -1432,6 +1433,7 @@ coolant = "off"
 kind = "project_curve"
 
 [setups.toolpaths.operation.params]
+projection = "point"
 depth = -2.268512728
 point_spacing = 0.05
 feed_rate = 1297.0
@@ -1500,6 +1502,7 @@ coolant = "off"
 kind = "project_curve"
 
 [setups.toolpaths.operation.params]
+projection = "point"
 depth = 1.983067216
 point_spacing = 0.05
 feed_rate = 1297.0
@@ -1568,6 +1571,7 @@ coolant = "off"
 kind = "project_curve"
 
 [setups.toolpaths.operation.params]
+projection = "point"
 depth = -2.268512728
 point_spacing = 0.05
 feed_rate = 1297.0

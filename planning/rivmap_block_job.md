@@ -444,3 +444,16 @@ gaps. Formats are exact; units mm; frame = the back-view frame of
 10. **One polygon per pocket.** `BOARD_POCKET_D14.50` and `WIRE_D5.00` hold
     two overlapping polygons each; rs_cam pockets each one, so the overlap is
     cut twice. Write the union.
+
+## Update 2026-10-09
+
+- Open item 1 is FIXED: Project Curve has `projection = "point"` (1b91b995). The four
+  V ops of nz-south use it (`derive.py`, `nz_south.toml`). Acceptance on the emitted
+  grblHAL G-code: river 17,351 and lake 2,265 vertices 100 % within 0.05 mm (was
+  98.44 %), line width 0.7998-0.8002 mm.
+- `testpiece.toml` now holds operator edits made in the GUI on 2026-10-09:
+  - the grblHAL machine import;
+  - a 6 mm twist-drill peck op for the dowels (the helix bore is disabled);
+  - feeds from Suggest (scope both; the finish stepover kept at 0.25).
+  A run of `derive.py` overwrites these edits; carry them into the script before the
+  next run.

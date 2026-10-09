@@ -712,8 +712,11 @@ def derive_nz_south() -> dict:
                 "depth": depth, "point_spacing": mapt["vgroove"]["tip_tol"],
                 "feed_rate": tv["feed_rate"], "plunge_rate": tv["plunge_rate"],
                 "surface_model_id": mids["terrain_s1.stl"], "direction": "from_below",
-                "side": "center", "spindle_rpm": tv["spindle_rpm"], "chain_distance_mm": 0.0},
+                "side": "center", "spindle_rpm": tv["spindle_rpm"], "chain_distance_mm": 0.0,
+                "projection": "point"},
                 why=(f"Project Curve onto the front surface (it faces down in setup 1: From Below).\n"
+                     f"Projection = point: the tip is exactly surface + depth at each sample. The cut is from\n"
+                     f"the far side, so the front surface is not material to protect (Cutter mode drops the cone).\n"
                      f"z = surface + depth; final depth = -(w/2)/tan(a/2) = {-v_offset:.4f} (past the front);\n"
                      f"pre-pass = final + usable cone/2 = {pre:.4f} (half the V below the ceiling).\n"
                      f"point_spacing = map.toml [vgroove].tip_tol. Feeds: rivmap350 'Rivers'."),
