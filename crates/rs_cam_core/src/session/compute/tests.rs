@@ -1170,6 +1170,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 5,
         deviations: None,
@@ -1242,6 +1243,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 10,
         deviations: None,
@@ -2437,6 +2439,7 @@ fn s2_fill(id: usize, enabled: bool, level_z: f64) -> crate::compute::stock_chan
             name: "Filler".to_owned(),
             feed_scale_factor: 1.0,
         },
+        display_colour: None,
     }
 }
 

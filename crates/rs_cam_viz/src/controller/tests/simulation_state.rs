@@ -528,6 +528,7 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
         op: StockChangeOp::Remove,
         geometry: StockGeometry::Model { model_id },
         material: Default::default(),
+        display_colour: None,
     };
     for (id, enabled) in [(1, true), (2, false), (3, true)] {
         let _ = controller
@@ -579,4 +580,172 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
             .collect::<Vec<_>>(),
         "one resolution, two builders"
     );
+}
+
+/// S5 (`planning/stock_additions_2026-10-09/PLAN.md`): the viewport legend
+/// gives a row per material of the simulated stock, with the colour the
+/// stock views draw it in.
+mod stock_material_legend_s5 {
+    use super::*;
+
+    use rs_cam_core::compute::stock_change::{StockChange, StockChangeOp, StockGeometry};
+    use rs_cam_core::compute::stock_change_apply::StockChangeVolume;
+    use rs_cam_core::export::material_colour::{MaterialPalette, colour_from_rgb8};
+    use rs_cam_core::ids::{ModelId, StockChangeId};
+    use rs_cam_core::material::Material;
+    use rs_cam_core::stock::material_slot::MaterialSlot;
+
+    use crate::state::Workspace;
+    use crate::state::simulation::StockVizMode;
+    use crate::ui::overlays::legend_rail::{self, Categories, RailLine};
+
+    const DISPLAY: [u8; 3] = [200, 40, 160];
+
+    fn resin() -> Material {
+        Material::Custom {
+            name: "Resin".to_owned(),
+            feed_scale_factor: 1.0,
+        }
+    }
+
+    /// A controller with one `Add` change on setup 0 and a simulation that
+    /// applied it (slot 1), the Simulation workspace and the stock drawn.
+    fn controller_with_an_added_material(volumes: bool) -> AppController<ScriptedBackend> {
+        let mut controller = sample_controller();
+        let model_id = ModelId(controller.state.session.models()[0].id);
+        let change = StockChange {
+            id: StockChangeId(1),
+            name: "Pour".to_owned(),
+            enabled: true,
+            op: StockChangeOp::Add,
+            geometry: StockGeometry::Model { model_id },
+            material: resin(),
+            display_colour: Some(DISPLAY),
+        };
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AddStockChange(
+                rs_cam_core::session::AddStockChangeArgs {
+                    setup_index: 0,
+                    change: Box::new(change),
+                },
+            ))
+            .expect("the flat mesh is a valid Model geometry");
+        let setup_id = controller.state.session.list_setups()[0].id;
+        let stock_change_volumes = if volumes {
+            vec![StockChangeVolume {
+                setup_id,
+                change_id: StockChangeId(1),
+                name: "Pour".to_owned(),
+                op: StockChangeOp::Add,
+                material_slot: Some(MaterialSlot(1)),
+                added_mm3: 1500.0,
+                removed_mm3: 0.0,
+            }]
+        } else {
+            Vec::new()
+        };
+        // The submit door stamps the epoch; the adopt reads it (D7).
+        controller.state.simulation.submitted_simulation_epoch =
+            Some(controller.state.session.simulation_epoch());
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
+                core: rs_cam_core::compute::simulate::SimulationResult {
+                    mesh: Arc::new(rs_cam_core::stock::stock_mesh::StockMesh::empty()),
+                    total_moves: 0,
+                    deviations: None,
+                    column_deviations: None,
+                    boundaries: Vec::new(),
+                    checkpoints: Vec::new(),
+                    rapid_collisions: Vec::new(),
+                    rapid_collision_move_indices: Vec::new(),
+                    cut_trace: None,
+                    column_grid_cell_mm: 0.5,
+                    resolution_clamped: false,
+                    prior_stocks: std::collections::HashMap::new(),
+                    prior_stock_sources: std::collections::HashMap::new(),
+                    display_degrade: None,
+                    group_starts: Vec::new(),
+                    stock_change_volumes,
+                },
+                playback_data: Vec::new(),
+                cut_trace_path: None,
+            }))));
+        controller.drain_compute_results();
+        controller.state.workspace = Workspace::Simulation;
+        controller.state.viewport.show_sim_stock = true;
+        controller.state.simulation.stock_viz_mode = StockVizMode::Solid;
+        controller
+    }
+
+    fn has_materials_line(controller: &AppController<ScriptedBackend>) -> bool {
+        legend_rail::active_lines(&controller.state)
+            .contains(&RailLine::Categories(Categories::StockMaterials))
+    }
+
+    #[test]
+    fn the_legend_lists_each_material_of_the_simulated_stock_s5() {
+        let controller = controller_with_an_added_material(true);
+        assert!(controller.state.simulation.has_results());
+        let sim = controller.state.session.simulation_result();
+        assert_eq!(
+            sim.map(|s| s.stock_change_volumes.len()),
+            Some(1),
+            "the session holds the simulation and its volume"
+        );
+        assert_eq!(controller.state.session.stock_material_legend().len(), 2);
+        assert!(has_materials_line(&controller), "no Stock materials line");
+
+        let entries = legend_rail::category_entries(&controller.state, Categories::StockMaterials);
+        let stock_label = controller.state.session.stock_config().material.label();
+        let palette = MaterialPalette::default();
+        assert_eq!(
+            entries,
+            vec![
+                (stock_label, Some(palette.colour(MaterialSlot::STOCK))),
+                ("Resin".to_owned(), Some(colour_from_rgb8(DISPLAY))),
+            ]
+        );
+        // The legend colour is the colour the stock views draw.
+        assert_eq!(
+            controller
+                .state
+                .session
+                .stock_material_palette()
+                .colour(MaterialSlot(1)),
+            colour_from_rgb8(DISPLAY)
+        );
+        assert_eq!(
+            legend_rail::line_name(
+                &controller.state,
+                &RailLine::Categories(Categories::StockMaterials)
+            ),
+            "Stock materials \u{00B7} 2"
+        );
+    }
+
+    #[test]
+    fn the_materials_line_shows_only_when_the_plain_stock_colours_are_drawn_s5() {
+        let mut controller = controller_with_an_added_material(true);
+        controller.state.simulation.stock_viz_mode = StockVizMode::ByHeight;
+        assert!(
+            !has_materials_line(&controller),
+            "the height colours hide the materials"
+        );
+        controller.state.simulation.stock_viz_mode = StockVizMode::Solid;
+        controller.state.viewport.show_sim_stock = false;
+        assert!(!has_materials_line(&controller), "no stock is drawn");
+    }
+
+    #[test]
+    fn a_stock_with_no_added_material_has_no_materials_line_s5() {
+        // The change exists, but the simulation added no material with it.
+        let controller = controller_with_an_added_material(false);
+        assert!(controller.state.simulation.has_results());
+        assert!(controller.state.session.stock_material_legend().is_empty());
+        assert!(!has_materials_line(&controller));
+    }
 }

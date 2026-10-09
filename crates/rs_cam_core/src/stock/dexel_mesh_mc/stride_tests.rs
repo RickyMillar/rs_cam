@@ -323,6 +323,7 @@ fn legacy_z_grid_marching_cubes(
         vertices,
         indices,
         colors,
+        material_slots: Vec::new(),
     }
 }
 
@@ -344,25 +345,7 @@ fn legacy_emit_cavity_surfaces(
     let rows = grid.rows;
     let cols = grid.cols;
     // Phase 1: per-cell gap intervals.
-    let cell_gaps: Vec<Vec<[f32; 2]>> = grid
-        .rays
-        .iter()
-        .map(|ray| {
-            if ray.len() < 2 {
-                return Vec::new();
-            }
-            let mut gaps = Vec::with_capacity(ray.len() - 1);
-            for w in ray.windows(2) {
-                let (lo, hi) = (&w[0], &w[1]);
-                let gap_bot = lo.exit;
-                let gap_top = hi.enter;
-                if gap_top - gap_bot > 1e-6 {
-                    gaps.push([gap_bot, gap_top]);
-                }
-            }
-            gaps
-        })
-        .collect();
+    let cell_gaps: Vec<Vec<super::Gap>> = grid.rays.iter().map(super::ray_gaps).collect();
 
     // Phase 2: 2x2 quad floors/ceilings.
     for row in 0..rows.saturating_sub(1) {
@@ -373,15 +356,15 @@ fn legacy_emit_cavity_surfaces(
             let br_gaps = &cell_gaps[(row + 1) * cols + col + 1];
 
             for tl_gap in tl_gaps {
-                let tr_m = find_matching_gap(tr_gaps, tl_gap);
-                let bl_m = find_matching_gap(bl_gaps, tl_gap);
-                let br_m = find_matching_gap(br_gaps, tl_gap);
+                let tr_m = find_matching_gap(tr_gaps, &tl_gap.z);
+                let bl_m = find_matching_gap(bl_gaps, &tl_gap.z);
+                let br_m = find_matching_gap(br_gaps, &tl_gap.z);
                 if let (Some(tr_g), Some(bl_g), Some(br_g)) = (tr_m, bl_m, br_m) {
                     let pts = [
-                        cell_center(grid, row, col, tl_gap[0]),
-                        cell_center(grid, row, col + 1, tr_g[0]),
-                        cell_center(grid, row + 1, col, bl_g[0]),
-                        cell_center(grid, row + 1, col + 1, br_g[0]),
+                        cell_center(grid, row, col, tl_gap.z[0]),
+                        cell_center(grid, row, col + 1, tr_g.z[0]),
+                        cell_center(grid, row + 1, col, bl_g.z[0]),
+                        cell_center(grid, row + 1, col + 1, br_g.z[0]),
                     ];
                     let base = (vertices.len() / 3) as u32;
                     for &p in &pts {
@@ -403,10 +386,10 @@ fn legacy_emit_cavity_surfaces(
                     ]);
 
                     let pts2 = [
-                        cell_center(grid, row, col, tl_gap[1]),
-                        cell_center(grid, row, col + 1, tr_g[1]),
-                        cell_center(grid, row + 1, col, bl_g[1]),
-                        cell_center(grid, row + 1, col + 1, br_g[1]),
+                        cell_center(grid, row, col, tl_gap.z[1]),
+                        cell_center(grid, row, col + 1, tr_g.z[1]),
+                        cell_center(grid, row + 1, col, bl_g.z[1]),
+                        cell_center(grid, row + 1, col + 1, br_g.z[1]),
                     ];
                     let base2 = (vertices.len() / 3) as u32;
                     for &p in &pts2 {
@@ -627,7 +610,7 @@ const MB: u64 = 1_000_000;
 #[test]
 fn display_stride_for_rivmap350_numbers() {
     let per_cell = crate::budget::estimate::mesh_cell_bytes();
-    // The full mesh: 4 849 451 cells x 96 B = about 466 MB.
+    // The full mesh: 4 849 451 cells x 98 B = about 475 MB.
     assert_eq!(
         display_stride_for(500 * MB, RIVMAP350_CELLS, per_cell),
         Some(1)

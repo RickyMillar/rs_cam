@@ -28,12 +28,24 @@
 //! - **Cavity floors / ceilings**: multi-segment ray fallback, per §6.J revision.
 //!   When `max_segments > 1`, per-gap horizontal faces and vertical walls are
 //!   emitted in addition to the top/bottom envelope.
+//!
+//! Material slots (S5, `planning/stock_additions_2026-10-09/PLAN.md`): when
+//! the grid holds an added material (`DexelGrid::has_added_material`), each
+//! vertex records a slot in `StockMesh::material_slots`. A top vertex takes
+//! the top-segment slot of its neighbour cells, a bottom vertex the
+//! bottom-segment slot ([`corner_slots`] gives the vote). A skirt or hole
+//! wall joins a top and a bottom vertex, so its colour goes from the top
+//! slot to the bottom slot. A cavity floor takes the slot of the segment
+//! under the gap, a cavity ceiling the slot of the segment over it. A grid
+//! with no added material writes no slot, so its mesh is the same bit for
+//! bit as before S5.
 
-use crate::stock::dexel::{DexelGrid, ray_bottom, ray_top};
+use crate::stock::dexel::{DexelGrid, DexelRay, ray_bottom, ray_top};
 // Wood colors live in `dexel_mesh`, which is their home for the preview,
 // side-grid and drill paths; this module reads them rather than keeping a
 // second copy in step by hand.
 use crate::stock::dexel_mesh::{CUT_B, CUT_G, CUT_R, UNCUT_B, UNCUT_G, UNCUT_R};
+use crate::stock::material_slot::{MATERIAL_SLOT_CAPACITY, MaterialSlot};
 use crate::stock::stock_mesh::StockMesh;
 
 /// Below this material thickness, a ray is treated as a through-hole.
@@ -65,7 +77,16 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
     let mut cell_bot: Vec<f32> = Vec::with_capacity(cells);
     let mut cell_empty: Vec<bool> = Vec::with_capacity(cells);
     let mut max_segments = 1usize;
+    let with_slots = grid.has_added_material;
+    let mut cell_top_slot: Vec<MaterialSlot> =
+        Vec::with_capacity(if with_slots { cells } else { 0 });
+    let mut cell_bot_slot: Vec<MaterialSlot> =
+        Vec::with_capacity(if with_slots { cells } else { 0 });
     for ray in &grid.rays {
+        if with_slots {
+            cell_top_slot.push(top_slot(ray));
+            cell_bot_slot.push(bottom_slot(ray));
+        }
         let top = ray_top(ray);
         let bot = ray_bottom(ray);
         let effectively_empty = match (top, bot) {
@@ -90,6 +111,12 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         stock_top,
         stock_bot,
     );
+    let corner_slot_pair = with_slots.then(|| {
+        (
+            corner_slots(rows, cols, &cell_empty, &cell_top_slot),
+            corner_slots(rows, cols, &cell_empty, &cell_bot_slot),
+        )
+    });
 
     // Corner world position helper. Cell-corner (ci, cj) sits at
     // `(origin_u + (cj - 0.5) * cs, origin_v + (ci - 0.5) * cs)` — exactly the
@@ -100,7 +127,7 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         (u as f32, v as f32)
     };
 
-    let (mut vertices, mut colors, mut indices) = emit_envelope(
+    let (mut vertices, mut colors, mut indices, mut material_slots) = emit_envelope(
         &EnvelopeGrid {
             rows,
             cols,
@@ -108,6 +135,9 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
             corner_top: &corner_top,
             corner_bot: &corner_bot,
             corner_empty: &corner_empty,
+            corner_slots: corner_slot_pair
+                .as_ref()
+                .map(|(top, bot)| (top.as_slice(), bot.as_slice())),
         },
         corner_xy,
         stock_top,
@@ -118,15 +148,18 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
     // ── 7. Multi-segment cavity fallback (per-gap pass). Only runs when at
     //       least one ray has >1 segment.
     if max_segments > 1 {
-        let cell_gaps: Vec<Vec<[f32; 2]>> = grid.rays.iter().map(ray_gaps).collect();
+        let cell_gaps: Vec<Vec<Gap>> = grid.rays.iter().map(ray_gaps).collect();
         emit_cavity_surfaces(
             rows,
             cols,
             &cell_gaps,
             |row, col, z| cell_center(grid, row, col, z),
-            &mut vertices,
-            &mut indices,
-            &mut colors,
+            &mut MeshBuffers {
+                vertices: &mut vertices,
+                indices: &mut indices,
+                colors: &mut colors,
+                slots: with_slots.then_some(&mut material_slots),
+            },
             stock_top,
             stock_bot,
             z_range,
@@ -137,6 +170,7 @@ pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z:
         vertices,
         indices,
         colors,
+        material_slots,
     }
 }
 
@@ -218,12 +252,20 @@ fn marching_cubes_on_blocks(
     // The fine-cell index that represents each block for the cavity pass.
     let mut representative: Vec<usize> = Vec::with_capacity(blocks);
     let mut max_segments = 1usize;
+    // S5: the top slot is the one of the representative (highest-top) cell,
+    // the bottom slot the one of the lowest-bottom cell.
+    let with_slots = grid.has_added_material;
+    let mut cell_top_slot: Vec<MaterialSlot> =
+        Vec::with_capacity(if with_slots { blocks } else { 0 });
+    let mut cell_bot_slot: Vec<MaterialSlot> =
+        Vec::with_capacity(if with_slots { blocks } else { 0 });
     for bi in 0..block_rows {
         let r_end = ((bi + 1) * k).min(rows);
         for bj in 0..block_cols {
             let c_end = ((bj + 1) * k).min(cols);
             let mut highest: Option<(f32, usize)> = None;
             let mut lowest_bot = f32::INFINITY;
+            let mut lowest_idx: Option<usize> = None;
             for r in (bi * k)..r_end {
                 for c in (bj * k)..c_end {
                     let idx = r * cols + c;
@@ -236,6 +278,9 @@ fn marching_cubes_on_blocks(
                     }
                     if highest.is_none_or(|(best, _)| top > best) {
                         highest = Some((top, idx));
+                    }
+                    if bot < lowest_bot {
+                        lowest_idx = Some(idx);
                     }
                     lowest_bot = lowest_bot.min(bot);
                 }
@@ -254,6 +299,13 @@ fn marching_cubes_on_blocks(
                     representative.push(bi * k * cols + bj * k);
                 }
             }
+            if with_slots {
+                let top_idx = highest.map(|(_, idx)| idx);
+                cell_top_slot
+                    .push(top_idx.map_or(MaterialSlot::STOCK, |i| top_slot(&grid.rays[i])));
+                cell_bot_slot
+                    .push(lowest_idx.map_or(MaterialSlot::STOCK, |i| bottom_slot(&grid.rays[i])));
+            }
             let rep_len = representative.last().map_or(0, |&idx| grid.rays[idx].len());
             max_segments = max_segments.max(rep_len);
         }
@@ -269,6 +321,12 @@ fn marching_cubes_on_blocks(
         stock_top,
         stock_bot,
     );
+    let corner_slot_pair = with_slots.then(|| {
+        (
+            corner_slots(block_rows, block_cols, &cell_empty, &cell_top_slot),
+            corner_slots(block_rows, block_cols, &cell_empty, &cell_bot_slot),
+        )
+    });
 
     // Display corner (ci, cj) sits at fine corner (min(ci·k, rows),
     // min(cj·k, cols)); the fine corner formula is the one of
@@ -282,7 +340,7 @@ fn marching_cubes_on_blocks(
     };
 
     // ── 3 to 7. The same triangulation as the full-resolution build.
-    let (mut vertices, mut colors, mut indices) = emit_envelope(
+    let (mut vertices, mut colors, mut indices, mut material_slots) = emit_envelope(
         &EnvelopeGrid {
             rows: block_rows,
             cols: block_cols,
@@ -290,6 +348,9 @@ fn marching_cubes_on_blocks(
             corner_top: &corner_top,
             corner_bot: &corner_bot,
             corner_empty: &corner_empty,
+            corner_slots: corner_slot_pair
+                .as_ref()
+                .map(|(top, bot)| (top.as_slice(), bot.as_slice())),
         },
         corner_xy,
         stock_top,
@@ -299,7 +360,7 @@ fn marching_cubes_on_blocks(
 
     // ── 7. Cavities, from the representative fine cell of each block.
     if max_segments > 1 {
-        let cell_gaps: Vec<Vec<[f32; 2]>> = representative
+        let cell_gaps: Vec<Vec<Gap>> = representative
             .iter()
             .map(|&idx| ray_gaps(&grid.rays[idx]))
             .collect();
@@ -311,9 +372,12 @@ fn marching_cubes_on_blocks(
                 let idx = representative[bi * block_cols + bj];
                 cell_center(grid, idx / cols, idx % cols, z)
             },
-            &mut vertices,
-            &mut indices,
-            &mut colors,
+            &mut MeshBuffers {
+                vertices: &mut vertices,
+                indices: &mut indices,
+                colors: &mut colors,
+                slots: with_slots.then_some(&mut material_slots),
+            },
             stock_top,
             stock_bot,
             z_range,
@@ -324,6 +388,7 @@ fn marching_cubes_on_blocks(
         vertices,
         indices,
         colors,
+        material_slots,
     }
 }
 
@@ -441,6 +506,65 @@ fn corner_envelope(
     (corner_top, corner_bot, corner_empty)
 }
 
+/// The slot of the top segment of a ray; slot 0 for an empty ray.
+fn top_slot(ray: &DexelRay) -> MaterialSlot {
+    ray.last().map_or(MaterialSlot::STOCK, |s| s.material)
+}
+
+/// The slot of the bottom segment of a ray; slot 0 for an empty ray.
+fn bottom_slot(ray: &DexelRay) -> MaterialSlot {
+    ray.first().map_or(MaterialSlot::STOCK, |s| s.material)
+}
+
+/// The slot of each corner, `(rows + 1) x (cols + 1)`, from the slots of
+/// its up to four non-empty neighbour cells (`cell_slot`, `rows x cols`).
+///
+/// The slot that most neighbour cells hold wins. On a tie, the higher slot
+/// number wins, so an added material keeps the corners on its edge and a
+/// one-cell inlay stays visible. A corner with no non-empty neighbour gets
+/// slot 0; [`corner_envelope`] marks it empty, so no vertex reads it.
+// SAFETY: every index is below (rows + 1) x (cols + 1), rows x cols or
+// MATERIAL_SLOT_CAPACITY by the loop bounds and the slot-table cap.
+#[allow(clippy::indexing_slicing)]
+fn corner_slots(
+    rows: usize,
+    cols: usize,
+    cell_empty: &[bool],
+    cell_slot: &[MaterialSlot],
+) -> Vec<MaterialSlot> {
+    let corner_cols = cols + 1;
+    let mut out = vec![MaterialSlot::STOCK; (rows + 1) * corner_cols];
+    for ci in 0..=rows {
+        for cj in 0..=cols {
+            let mut votes = [0u8; MATERIAL_SLOT_CAPACITY];
+            for di in 0..2usize {
+                if ci + di == 0 || ci + di > rows {
+                    continue;
+                }
+                let r = ci + di - 1;
+                for dj in 0..2usize {
+                    if cj + dj == 0 || cj + dj > cols {
+                        continue;
+                    }
+                    let idx = r * cols + cj + dj - 1;
+                    if !cell_empty[idx] {
+                        let k = cell_slot[idx].index().min(MATERIAL_SLOT_CAPACITY - 1);
+                        votes[k] += 1;
+                    }
+                }
+            }
+            let mut best = 0usize;
+            for (k, &n) in votes.iter().enumerate() {
+                if n > 0 && n >= votes[best] {
+                    best = k;
+                }
+            }
+            out[ci * corner_cols + cj] = MaterialSlot(best as u8);
+        }
+    }
+    out
+}
+
 /// The per-cell and per-corner envelope that [`emit_envelope`] reads.
 ///
 /// `cell_empty` has `rows x cols` entries. The three corner arrays have
@@ -453,6 +577,9 @@ struct EnvelopeGrid<'a> {
     corner_top: &'a [f32],
     corner_bot: &'a [f32],
     corner_empty: &'a [bool],
+    /// S5: the `(top, bottom)` slot of each corner, or `None` when the grid
+    /// holds no added material (the mesh then records no slot).
+    corner_slots: Option<(&'a [MaterialSlot], &'a [MaterialSlot])>,
 }
 
 /// Steps 3 to 7 of the extraction: the shared corner vertices, the top and
@@ -461,7 +588,8 @@ struct EnvelopeGrid<'a> {
 /// The full-resolution build and the strided build (memory programme
 /// 2026-10-01, degrade 4b) both call this function, so the two builds
 /// triangulate in the same way. `corner_xy(ci, cj)` gives the planar world
-/// position of a corner. Returns `(vertices, colors, indices)`.
+/// position of a corner. Returns `(vertices, colors, indices,
+/// material_slots)`; the slots are empty when `env.corner_slots` is `None`.
 ///
 /// # Winding
 ///
@@ -478,7 +606,7 @@ fn emit_envelope(
     stock_top: f32,
     stock_bot: f32,
     z_range: f32,
-) -> (Vec<f32>, Vec<f32>, Vec<u32>) {
+) -> (Vec<f32>, Vec<f32>, Vec<u32>, Vec<MaterialSlot>) {
     let EnvelopeGrid {
         rows,
         cols,
@@ -486,6 +614,7 @@ fn emit_envelope(
         corner_top,
         corner_bot,
         corner_empty,
+        corner_slots,
     } = *env;
     let cells = rows * cols;
     let corner_rows = rows + 1;
@@ -504,6 +633,11 @@ fn emit_envelope(
     let mut vertices: Vec<f32> = Vec::with_capacity(cap);
     let mut colors: Vec<f32> = Vec::with_capacity(cap);
     let mut indices: Vec<u32> = Vec::with_capacity(cells * 12);
+    let mut slots: Vec<MaterialSlot> = Vec::with_capacity(if corner_slots.is_some() {
+        corner_count * 2
+    } else {
+        0
+    });
 
     for ci in 0..corner_rows {
         for cj in 0..corner_cols {
@@ -526,6 +660,10 @@ fn emit_envelope(
             let (cr, cg, cb) = wood_color_at_z(bz, stock_top, stock_bot, z_range);
             colors.extend_from_slice(&[cr, cg, cb]);
             bot_idx[cidx] = bi;
+            if let Some((top_slots, bot_slots)) = corner_slots {
+                slots.push(top_slots[cidx]);
+                slots.push(bot_slots[cidx]);
+            }
         }
     }
 
@@ -678,14 +816,24 @@ fn emit_envelope(
         }
     }
 
-    (vertices, colors, indices)
+    (vertices, colors, indices, slots)
 }
 
-/// The gap intervals `[gap_bottom, gap_top]` between the segments of one
-/// ray. A ray with fewer than two segments has none.
+/// One gap between two segments of a ray.
+#[derive(Clone, Copy)]
+struct Gap {
+    /// `[gap_bottom, gap_top]`.
+    z: [f32; 2],
+    /// The slot of the segment under the gap (its floor) and over it (its
+    /// ceiling).
+    slots: [MaterialSlot; 2],
+}
+
+/// The gaps between the segments of one ray. A ray with fewer than two
+/// segments has none.
 // SAFETY: `windows(2)` gives slices of length two.
 #[allow(clippy::indexing_slicing)]
-fn ray_gaps(ray: &crate::stock::dexel::DexelRay) -> Vec<[f32; 2]> {
+fn ray_gaps(ray: &DexelRay) -> Vec<Gap> {
     if ray.len() < 2 {
         return Vec::new();
     }
@@ -695,10 +843,36 @@ fn ray_gaps(ray: &crate::stock::dexel::DexelRay) -> Vec<[f32; 2]> {
         let gap_bot = lo.exit;
         let gap_top = hi.enter;
         if gap_top - gap_bot > 1e-6 {
-            gaps.push([gap_bot, gap_top]);
+            gaps.push(Gap {
+                z: [gap_bot, gap_top],
+                slots: [lo.material, hi.material],
+            });
         }
     }
     gaps
+}
+
+/// The output buffers of a mesh build. `slots` is `None` when the mesh
+/// records no material slot (a grid with no added material).
+struct MeshBuffers<'a> {
+    vertices: &'a mut Vec<f32>,
+    indices: &'a mut Vec<u32>,
+    colors: &'a mut Vec<f32>,
+    slots: Option<&'a mut Vec<MaterialSlot>>,
+}
+
+impl MeshBuffers<'_> {
+    /// Push one vertex with its wood colour and, when slots are recorded,
+    /// its slot.
+    fn push(&mut self, p: (f32, f32, f32), slot: MaterialSlot, ramp: (f32, f32, f32)) {
+        let (stock_top, stock_bot, z_range) = ramp;
+        self.vertices.extend_from_slice(&[p.0, p.1, p.2]);
+        let (cr, cg, cb) = wood_color_at_z(p.2, stock_top, stock_bot, z_range);
+        self.colors.extend_from_slice(&[cr, cg, cb]);
+        if let Some(slots) = self.slots.as_deref_mut() {
+            slots.push(slot);
+        }
+    }
 }
 
 /// Multi-segment cavity emission. Walks each cell with gaps; per gap
@@ -709,22 +883,23 @@ fn ray_gaps(ray: &crate::stock::dexel::DexelRay) -> Vec<[f32; 2]> {
 /// cavity walls (render review 2026-10-09, F14).
 ///
 /// `cell_gaps` has `rows x cols` entries (see [`ray_gaps`]). `centre(row,
-/// col, z)` gives the world position of a cell at height `z`.
+/// col, z)` gives the world position of a cell at height `z`. A floor
+/// vertex takes the slot of the segment under its gap, a ceiling vertex the
+/// slot of the segment over it.
 // SAFETY: the indices stay inside `cell_gaps` (rows x cols) by the loop
-// bounds; the ten arguments are the mesh buffers and the colour ramp.
+// bounds; the arguments are the grid, the mesh buffers and the colour ramp.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn emit_cavity_surfaces(
     rows: usize,
     cols: usize,
-    cell_gaps: &[Vec<[f32; 2]>],
+    cell_gaps: &[Vec<Gap>],
     centre: impl Fn(usize, usize, f32) -> (f32, f32, f32),
-    vertices: &mut Vec<f32>,
-    indices: &mut Vec<u32>,
-    colors: &mut Vec<f32>,
+    out: &mut MeshBuffers<'_>,
     stock_top: f32,
     stock_bot: f32,
     z_range: f32,
 ) {
+    let ramp = (stock_top, stock_bot, z_range);
     // Phase 2: 2x2 quad floors/ceilings.
     for row in 0..rows.saturating_sub(1) {
         for col in 0..cols.saturating_sub(1) {
@@ -734,27 +909,22 @@ fn emit_cavity_surfaces(
             let br_gaps = &cell_gaps[(row + 1) * cols + col + 1];
 
             for tl_gap in tl_gaps {
-                let tr_m = find_matching_gap(tr_gaps, tl_gap);
-                let bl_m = find_matching_gap(bl_gaps, tl_gap);
-                let br_m = find_matching_gap(br_gaps, tl_gap);
+                let tr_m = find_matching_gap(tr_gaps, &tl_gap.z);
+                let bl_m = find_matching_gap(bl_gaps, &tl_gap.z);
+                let br_m = find_matching_gap(br_gaps, &tl_gap.z);
                 if let (Some(tr_g), Some(bl_g), Some(br_g)) = (tr_m, bl_m, br_m) {
-                    let pts = [
-                        centre(row, col, tl_gap[0]),
-                        centre(row, col + 1, tr_g[0]),
-                        centre(row + 1, col, bl_g[0]),
-                        centre(row + 1, col + 1, br_g[0]),
+                    let cells = [
+                        (row, col, *tl_gap),
+                        (row, col + 1, tr_g),
+                        (row + 1, col, bl_g),
+                        (row + 1, col + 1, br_g),
                     ];
-                    let base = (vertices.len() / 3) as u32;
-                    for &p in &pts {
-                        vertices.push(p.0);
-                        vertices.push(p.1);
-                        vertices.push(p.2);
-                        let (cr, cg, cb) = wood_color_at_z(p.2, stock_top, stock_bot, z_range);
-                        colors.push(cr);
-                        colors.push(cg);
-                        colors.push(cb);
+                    // The floor: side 0 of each gap.
+                    let base = (out.vertices.len() / 3) as u32;
+                    for &(r, c, gap) in &cells {
+                        out.push(centre(r, c, gap.z[0]), gap.slots[0], ramp);
                     }
-                    indices.extend_from_slice(&[
+                    out.indices.extend_from_slice(&[
                         base,
                         base + 1,
                         base + 2,
@@ -763,23 +933,12 @@ fn emit_cavity_surfaces(
                         base + 2,
                     ]);
 
-                    let pts2 = [
-                        centre(row, col, tl_gap[1]),
-                        centre(row, col + 1, tr_g[1]),
-                        centre(row + 1, col, bl_g[1]),
-                        centre(row + 1, col + 1, br_g[1]),
-                    ];
-                    let base2 = (vertices.len() / 3) as u32;
-                    for &p in &pts2 {
-                        vertices.push(p.0);
-                        vertices.push(p.1);
-                        vertices.push(p.2);
-                        let (cr, cg, cb) = wood_color_at_z(p.2, stock_top, stock_bot, z_range);
-                        colors.push(cr);
-                        colors.push(cg);
-                        colors.push(cb);
+                    // The ceiling: side 1 of each gap.
+                    let base2 = (out.vertices.len() / 3) as u32;
+                    for &(r, c, gap) in &cells {
+                        out.push(centre(r, c, gap.z[1]), gap.slots[1], ramp);
                     }
-                    indices.extend_from_slice(&[
+                    out.indices.extend_from_slice(&[
                         base2,
                         base2 + 2,
                         base2 + 1,
@@ -798,12 +957,12 @@ fn cell_center(grid: &DexelGrid, row: usize, col: usize, z: f32) -> (f32, f32, f
     (u as f32, v as f32, z)
 }
 
-fn find_matching_gap(gaps: &[[f32; 2]], reference: &[f32; 2]) -> Option<[f32; 2]> {
+fn find_matching_gap(gaps: &[Gap], reference: &[f32; 2]) -> Option<Gap> {
     let ref_height = reference[1] - reference[0];
     let threshold = ref_height * 0.5;
     for gap in gaps {
-        let overlap_lo = gap[0].max(reference[0]);
-        let overlap_hi = gap[1].min(reference[1]);
+        let overlap_lo = gap.z[0].max(reference[0]);
+        let overlap_hi = gap.z[1].min(reference[1]);
         let overlap = (overlap_hi - overlap_lo).max(0.0);
         if overlap > threshold {
             return Some(*gap);

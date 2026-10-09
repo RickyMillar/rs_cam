@@ -182,6 +182,7 @@ fn change(id: usize, op: StockChangeOp, geometry: StockGeometry) -> StockChange 
         op,
         geometry,
         material: filler(),
+        display_colour: None,
     }
 }
 

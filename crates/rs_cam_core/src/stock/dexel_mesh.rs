@@ -11,6 +11,7 @@
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::stock::dexel::{DexelAxis, DexelGrid, DexelSegment, ray_bottom, ray_top};
 use crate::stock::dexel_mesh_mc::MIN_MATERIAL_THICKNESS;
+use crate::stock::material_slot::MaterialSlot;
 use crate::stock::stock_mesh::StockMesh;
 
 // Wood colors: uncut = light tan, cut = dark walnut. This is their one
@@ -44,6 +45,13 @@ pub(crate) const CUT_B: f32 = 0.10;
 /// stock with tall false walls down to the cut floor around it. The cost of
 /// the gap: the hole edge in the preview is up to one cell wider than the
 /// true edge. The paused mesh draws the true hole walls.
+///
+/// # Material slots (S5)
+///
+/// When the grid holds an added material, each vertex records the slot of
+/// the segment it shows: the top segment for a high-side entry, the bottom
+/// segment for a low-side entry. A grid with no added material records no
+/// slot.
 // SAFETY: every index is below rows x cols by the row and column loops.
 #[allow(clippy::indexing_slicing)]
 pub fn dexel_stock_to_entry_surface_mesh(
@@ -69,8 +77,15 @@ pub fn dexel_stock_to_entry_surface_mesh(
     let mut colors = Vec::with_capacity(cells * 3);
     let mut depths = Vec::with_capacity(cells);
     let mut empty = Vec::with_capacity(cells);
+    let with_slots = grid.has_added_material;
+    let mut material_slots: Vec<MaterialSlot> =
+        Vec::with_capacity(if with_slots { cells } else { 0 });
 
     for ray in &grid.rays {
+        if with_slots {
+            let seg = if from_high { ray.last() } else { ray.first() };
+            material_slots.push(seg.map_or(MaterialSlot::STOCK, |s| s.material));
+        }
         let (top, bottom) = (ray_top(ray), ray_bottom(ray));
         let is_empty = match (top, bottom) {
             (Some(t), Some(b)) => (t - b) < MIN_MATERIAL_THICKNESS,
@@ -137,6 +152,7 @@ pub fn dexel_stock_to_entry_surface_mesh(
         vertices,
         indices,
         colors,
+        material_slots,
     }
 }
 
@@ -274,6 +290,10 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
 /// its `enter`. This correctly represents cuts that leave multiple material
 /// layers visible from the side.
 ///
+/// When the grid holds an added material, each vertex records the slot of
+/// its segment; a cell without the segment records slot 0 (its vertex is
+/// not used by a triangle).
+///
 /// Vertex positions are mapped back to (x, y, z) world coordinates:
 /// - Y-grid (u=X, v=Z, depth=Y): vertex = (u, depth, v)
 /// - X-grid (u=Y, v=Z, depth=X): vertex = (depth, u, v)
@@ -316,6 +336,8 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
     let mut vertices = Vec::new();
     let mut colors = Vec::new();
     let mut indices = Vec::new();
+    let mut material_slots: Vec<MaterialSlot> = Vec::new();
+    let with_slots = grid.has_added_material;
     let uv_order = uv_order_faces_plus_depth(grid.axis);
 
     // For each segment layer, emit the outermost surface (exit).
@@ -349,6 +371,12 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
                 colors.push(UNCUT_R + (CUT_R - UNCUT_R) * depth_t);
                 colors.push(UNCUT_G + (CUT_G - UNCUT_G) * depth_t);
                 colors.push(UNCUT_B + (CUT_B - UNCUT_B) * depth_t);
+                if with_slots {
+                    material_slots.push(
+                        segs.get(seg_idx)
+                            .map_or(MaterialSlot::STOCK, |s| s.material),
+                    );
+                }
             }
         }
 
@@ -382,16 +410,14 @@ fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth:
         vertices,
         indices,
         colors,
+        material_slots,
     }
 }
 
-/// Append `other` mesh onto `base`, offsetting indices.
+/// Append `other` mesh onto `base`, offsetting indices. The material slots
+/// stay one per vertex ([`StockMesh::append`]).
 fn append_mesh(base: &mut StockMesh, other: &StockMesh) {
-    let index_offset = (base.vertices.len() / 3) as u32;
-    base.vertices.extend_from_slice(&other.vertices);
-    base.colors.extend_from_slice(&other.colors);
-    base.indices
-        .extend(other.indices.iter().map(|i| i + index_offset));
+    base.append(other);
 }
 
 /// One wall column of a drill decoration: the wall point (XY) and the
@@ -414,6 +440,9 @@ type WallColumn = ([f32; 2], Option<(f32, f32)>);
 /// wall is never drawn as a pillar outside the stock (drill-pillar defect,
 /// 2026-10-09). The floor is drawn only when every wall column reaches it,
 /// so a through hole has no floating floor.
+///
+/// The walls and the floor are slot 0 (the stock material): a drill
+/// decoration records no slot, so its colour is the wood ramp.
 ///
 /// Frame: `stock` and `drill_ops` are in the same frame, and `base` is the
 /// mesh of `stock` at the same `stride`.

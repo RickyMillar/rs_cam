@@ -156,6 +156,7 @@ fn a_simulation(session: &ProjectSession) -> SimulationResult {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 0,
         deviations: None,

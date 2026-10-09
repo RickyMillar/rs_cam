@@ -680,10 +680,31 @@ pub fn render_stock_composite_in_frame(
     width: u32,
     height: u32,
 ) -> Vec<u8> {
+    render_stock_composite_in_frame_with_palette(
+        stock,
+        frame,
+        &crate::export::material_colour::MaterialPalette::default(),
+        width,
+        height,
+    )
+}
+
+/// [`render_stock_composite_in_frame`] with the colours of the added
+/// materials from `palette` (S5). The stock material keeps the height
+/// gradient; a vertex of an added material takes its material colour
+/// ([`crate::export::material_colour::apply_height_gradient_keeping_materials`]).
+/// A stock with no added material renders the same bit for bit.
+pub fn render_stock_composite_in_frame_with_palette(
+    stock: &crate::dexel_stock::TriDexelStock,
+    frame: &crate::geo::BoundingBox3,
+    palette: &crate::export::material_colour::MaterialPalette,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
     use crate::stock::dexel_mesh::dexel_stock_to_mesh;
 
     let mut mesh = dexel_stock_to_mesh(stock);
-    crate::export::ribbon::apply_height_gradient(&mut mesh);
+    crate::export::material_colour::apply_height_gradient_keeping_materials(&mut mesh, palette);
     render_mesh_composite_in_frame(&mesh, Some(frame), width, height)
 }
 

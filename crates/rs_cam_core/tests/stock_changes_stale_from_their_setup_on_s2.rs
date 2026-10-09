@@ -253,6 +253,7 @@ fn fill(id: usize, model: ModelId, level_z: f64) -> StockChange {
             name: "Filler".to_owned(),
             feed_scale_factor: 1.0,
         },
+        display_colour: None,
     }
 }
 
@@ -273,6 +274,7 @@ fn cut(id: usize, model: ModelId, z_bottom: f64, z_top: f64) -> StockChange {
             name: "Filler".to_owned(),
             feed_scale_factor: 1.0,
         },
+        display_colour: None,
     }
 }
 
@@ -326,6 +328,7 @@ fn the_four_rows_add_edit_move_and_remove() {
             z_top: 14.0,
         },
         material: Material::default(),
+        display_colour: None,
     };
     add(&mut s, 1, extrude).unwrap();
     let cut_free = StockChange {
@@ -335,6 +338,7 @@ fn the_four_rows_add_edit_move_and_remove() {
         op: StockChangeOp::Remove,
         geometry: StockGeometry::Model { model_id: m.mesh },
         material: Material::default(),
+        display_colour: None,
     };
     add(&mut s, 1, cut_free).unwrap();
     assert_eq!(ids(&s, 1), vec![1, 2, 3]);

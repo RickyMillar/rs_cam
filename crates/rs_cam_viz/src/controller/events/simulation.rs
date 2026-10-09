@@ -756,6 +756,7 @@ mod release_for_new_run_m1 {
             vertices: vec![0.0; 9],
             indices: vec![0, 1, 2],
             colors: vec![0.5; 9],
+            material_slots: Vec::new(),
         }
     }
 

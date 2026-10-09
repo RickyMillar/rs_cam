@@ -52,6 +52,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
         vertices: vec![0.0; 9],
         indices: vec![0, 1, 2],
         colors: vec![0.5; 9],
+        material_slots: Vec::new(),
     });
     let trace = SimulationCutTrace {
         toolpath_runtimes: vec![ToolpathKinematicRuntime {

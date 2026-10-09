@@ -224,27 +224,30 @@ impl RsCamApp {
                 .checkpoints
                 .get(cp_idx)
                 .is_some_and(|cp| cp.stock_local_to_global().is_some());
+            // S5: every route draws each added material in its colour.
+            let palette = self.controller.state().session.stock_material_palette();
             let pixels = if let Some(cp) = results
                 .checkpoints
                 .get(cp_idx)
                 .filter(|_| !local_framed_stock)
             {
-                rs_cam_core::export::fingerprint::render_stock_composite_in_frame(
+                rs_cam_core::export::fingerprint::render_stock_composite_in_frame_with_palette(
                     cp.stock(),
                     &world_frame,
+                    &palette,
                     w,
                     h,
                 )
             } else if let Some(cp) = results.checkpoints.get(cp_idx) {
                 rs_cam_core::export::fingerprint::render_mesh_composite_in_frame(
-                    cp.mesh(),
+                    &with_materials(cp.mesh(), &palette),
                     Some(&world_frame),
                     w,
                     h,
                 )
             } else {
                 rs_cam_core::export::fingerprint::render_mesh_composite_in_frame(
-                    &results.mesh,
+                    &with_materials(&results.mesh, &palette),
                     Some(&world_frame),
                     w,
                     h,
@@ -758,6 +761,20 @@ pub(crate) fn build_cut_trace_response(
     resp.insert_capped("span_summaries", span_arr);
 
     Ok(resp.finish())
+}
+
+/// `mesh` with each added material in its colour (S5). A mesh with no
+/// added material is borrowed, not copied.
+fn with_materials<'a>(
+    mesh: &'a rs_cam_core::stock::stock_mesh::StockMesh,
+    palette: &rs_cam_core::export::material_colour::MaterialPalette,
+) -> std::borrow::Cow<'a, rs_cam_core::stock::stock_mesh::StockMesh> {
+    if !mesh.has_added_material() {
+        return std::borrow::Cow::Borrowed(mesh);
+    }
+    let mut owned = mesh.clone();
+    rs_cam_core::export::material_colour::apply_material_colours(&mut owned, palette);
+    std::borrow::Cow::Owned(owned)
 }
 
 /// Translate a `SimulationResult::mesh` from the simulator's ZERO-ROOTED

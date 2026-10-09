@@ -44,8 +44,12 @@ fn per_element_sizes_come_from_the_real_types() {
         (size_of::<DexelRay>() + size_of::<f32>()) as u64
     );
     // Marching cubes reserves, per corner, top + bottom vertices of three
-    // f32 for position and three for colour, and 12 u32 indices per cell.
-    let mesh = 2 * 3 * size_of::<f32>() + 2 * 3 * size_of::<f32>() + 12 * size_of::<u32>();
+    // f32 for position and three for colour, one material slot per vertex
+    // (S5), and 12 u32 indices per cell.
+    let mesh = 2 * 3 * size_of::<f32>()
+        + 2 * 3 * size_of::<f32>()
+        + 2 * size_of::<rs_cam_core::stock::material_slot::MaterialSlot>()
+        + 12 * size_of::<u32>();
     assert_eq!(mesh_cell_bytes(), mesh as u64);
     assert_eq!(move_bytes(), size_of::<Move>() as u64);
     assert_eq!(

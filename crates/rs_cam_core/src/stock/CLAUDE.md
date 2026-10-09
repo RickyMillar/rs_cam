@@ -11,7 +11,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `sim_measurability.rs` — can this run measure the metric you will gate on?
 - `collision.rs` — holder/shank collisions, three-state `HolderCollisionCheck`.
 - `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` (+ `/stride_tests.rs`)
-  — mesh extraction (`StockMesh` container only); ramps: `export/ribbon.rs`.
+  — mesh extraction (`StockMesh` + S5 vertex slots); colours: `export/`.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
 - `material_slot.rs` — S1: the segment slot, slot table and stamp tally.
 

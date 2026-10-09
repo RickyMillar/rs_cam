@@ -390,6 +390,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
         vertices: vec![0.0; 9],
         indices: vec![0, 1, 2],
         colors: vec![0.5; 9],
+        material_slots: Vec::new(),
     });
 
     let total_moves = 10 * num_setups;
@@ -711,6 +712,7 @@ impl ComputeBackend for RestChainBackend {
                         vertices: vec![0.0; 9],
                         indices: vec![0, 1, 2],
                         colors: vec![0.5; 9],
+                        material_slots: Vec::new(),
                     }),
                     total_moves: 0,
                     deviations: None,

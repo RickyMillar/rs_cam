@@ -138,6 +138,7 @@ fn simulate() -> SimulationResult {
 
 fn same_bits(a: &StockMesh, b: &StockMesh) -> bool {
     a.indices == b.indices
+        && a.material_slots == b.material_slots
         && a.vertices.len() == b.vertices.len()
         && a.colors.len() == b.colors.len()
         && a.vertices

@@ -48,6 +48,7 @@ fn lane_artifacts(controller: &AppController<ScriptedBackend>) -> LaneArtifacts 
             vertices: vec![0.0; 9],
             indices: vec![0, 1, 2],
             colors: vec![0.5; 9],
+            material_slots: Vec::new(),
         }),
         checkpoint: Arc::new(SimCheckpointMesh {
             boundary_index: 0,

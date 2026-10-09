@@ -237,6 +237,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves,
         boundaries,

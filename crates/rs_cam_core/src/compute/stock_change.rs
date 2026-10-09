@@ -130,6 +130,14 @@ pub struct StockChange {
     /// library. A `Remove` ignores it.
     #[serde(default)]
     pub material: Material,
+    /// S5: the colour that the stock views draw this change's material in,
+    /// as 8-bit sRGB. `None` takes the default colour of the material's
+    /// slot (`export::material_colour::default_slot_colour`). A display
+    /// value only: it is not in [`Self::effect_digest`], so an edit keeps
+    /// the simulation. When two changes add the same material, the first
+    /// change (in application order) with a colour sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_colour: Option<[u8; 3]>,
 }
 
 fn default_true() -> bool {
@@ -442,6 +450,7 @@ mod tests {
                 name: "Resin".to_owned(),
                 feed_scale_factor: 1.0,
             },
+            display_colour: None,
         }
     }
 

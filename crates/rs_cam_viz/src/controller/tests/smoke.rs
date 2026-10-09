@@ -317,6 +317,7 @@ fn simulation_results_capture_setup_boundaries() {
                         vertices: Vec::new(),
                         indices: Vec::new(),
                         colors: Vec::new(),
+                        material_slots: Vec::new(),
                     }),
                     total_moves: 20,
                     deviations: None,

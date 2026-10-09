@@ -5,6 +5,12 @@
 //! `export/ribbon.rs`. The crate contract in `../../CLAUDE.md` says the core
 //! stays GUI-free; this file holds the mesh container and nothing that
 //! chooses a colour.
+//!
+//! S5 (`planning/stock_additions_2026-10-09/PLAN.md`): the mesh carries the
+//! material slot of each vertex ([`StockMesh::material_slots`]). The
+//! colour for a slot is chosen in `export/material_colour.rs`.
+
+use crate::stock::material_slot::MaterialSlot;
 
 /// Triangle mesh data exported from stock simulation, suitable for 3D rendering.
 #[derive(Clone)]
@@ -15,6 +21,15 @@ pub struct StockMesh {
     pub indices: Vec<u32>,
     /// Vertex colors as flat [r, g, b, ...] in f32.
     pub colors: Vec<f32>,
+    /// S5: the material slot of each vertex, one byte per vertex. EMPTY when
+    /// every vertex is slot 0 (the stock material): a one-material stock
+    /// pays no byte. When it is not empty, it has one entry per vertex.
+    ///
+    /// The mesh builders write the slot of the dexel segment that the vertex
+    /// lies on: the top segment for a top surface, the bottom segment for an
+    /// underside, the segment itself for a side-grid sheet or a cavity face.
+    /// [`Self::slot_at`] reads it.
+    pub material_slots: Vec<MaterialSlot>,
 }
 
 impl StockMesh {
@@ -24,12 +39,30 @@ impl StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }
     }
 
     /// Number of vertices in this mesh.
     pub fn vertex_count(&self) -> usize {
         self.vertices.len() / 3
+    }
+
+    /// The material slot of vertex `i`. Slot 0 when the mesh holds no slot
+    /// (`material_slots` is empty) or `i` is past its end.
+    #[inline]
+    #[must_use]
+    pub fn slot_at(&self, i: usize) -> MaterialSlot {
+        self.material_slots
+            .get(i)
+            .copied()
+            .unwrap_or(MaterialSlot::STOCK)
+    }
+
+    /// `true` when some vertex is not slot 0.
+    #[must_use]
+    pub fn has_added_material(&self) -> bool {
+        self.material_slots.iter().any(|s| !s.is_stock())
     }
 
     /// Transform all vertex positions using a point transform function,
@@ -39,6 +72,7 @@ impl StockMesh {
         F: Fn(f32, f32, f32) -> (f32, f32, f32),
     {
         let base_vertex = self.vertex_count() as u32;
+        let other_vertices = other.vertex_count();
 
         // M6 (memory programme 2026-10-01): reserve the growth once. A push
         // loop into an empty `Vec` doubles its capacity as it grows, so a mesh
@@ -73,6 +107,16 @@ impl StockMesh {
 
         // Append colors unchanged
         self.colors.extend_from_slice(&other.colors);
+
+        // S5: the slots stay one per vertex. A side with no slots is all
+        // slot 0; it gets explicit zeros only when the other side has slots.
+        if !other.material_slots.is_empty() || !self.material_slots.is_empty() {
+            let base = base_vertex as usize;
+            self.material_slots.resize(base, MaterialSlot::STOCK);
+            self.material_slots.extend_from_slice(&other.material_slots);
+            self.material_slots
+                .resize(base + other_vertices, MaterialSlot::STOCK);
+        }
     }
 
     /// Append another mesh (identity transform).

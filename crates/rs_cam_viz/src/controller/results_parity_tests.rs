@@ -379,6 +379,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 3,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
