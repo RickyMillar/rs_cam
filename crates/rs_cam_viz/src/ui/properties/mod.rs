@@ -8,6 +8,7 @@ mod pills;
 pub mod post;
 pub mod setup;
 pub mod stock;
+pub mod stock_changes;
 mod tab_badges;
 pub mod tool;
 mod toolpath_panel;
@@ -1091,7 +1092,53 @@ fn draw_setup_selection(
         if edit.in_flight {
             state.history.setup_draft = Some((setup_id, draft));
         }
+        draw_stock_changes_section(ui, state, events, setup_id, &stored);
     }
+}
+
+/// S4: the setup panel's "Stock changes" section, after the fixtures and
+/// the keep-out zones. The rows come from `ProjectSession::stock_change_rows`,
+/// the read every surface prints.
+fn draw_stock_changes_section(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    setup_id: SetupId,
+    setup: &rs_cam_core::session::SetupData,
+) {
+    let rows: Vec<_> = state
+        .session
+        .stock_change_rows()
+        .into_iter()
+        .filter(|row| row.setup_id == setup_id.0)
+        .collect();
+    let models: Vec<stock_changes::ModelChoice> = state
+        .session
+        .models()
+        .iter()
+        .map(|m| {
+            let id = rs_cam_core::ids::ModelId(m.id);
+            let facts = state.session.stock_change_model_facts(id);
+            stock_changes::ModelChoice {
+                id,
+                name: m.name.clone(),
+                has_mesh: facts.is_some_and(|f| f.has_mesh),
+                has_closed_outline: facts.is_some_and(|f| f.has_closed_outline),
+            }
+        })
+        .collect();
+    let frame =
+        rs_cam_core::session::SetupEvalContext::build_for_setup(&state.session, Some(setup))
+            .heights_stock_bbox;
+    let stock_material = state.session.stock_config().material.clone();
+    let inputs = stock_changes::StockChangesInputs {
+        setup_id,
+        rows: &rows,
+        models: &models,
+        stock_z: (frame.min.z, frame.max.z),
+        stock_material: &stock_material,
+    };
+    stock_changes::draw(ui, &inputs, &mut state.panels.stock_change_editor, events);
 }
 
 /// The `Fixture` arm of [`draw`]'s selection dispatch.

@@ -7,8 +7,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - `mod.rs` — `ProjectSession` and the facade. `command.rs` — the registry and
   the `Effects` door. `dependencies.rs`, `generation_plan.rs` — edges, order.
 - `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/`
-  (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`.
-- `diagnostics_types.rs` — the diagnostic types. Keep the `mod.rs` re-export.
+  (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`;
+  `stock_change_report.rs` (S4 rows); `diagnostics_types.rs` (keep the `mod.rs` re-export).
 - `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`; `rest_stock.rs` — the
   stored resolution; `load_report.rs` — the memo (`--lib session::load_report`).
 

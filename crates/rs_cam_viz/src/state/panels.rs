@@ -82,6 +82,25 @@ pub struct SetupRemovalConfirmation {
     pub setup_name: String,
 }
 
+/// The setup panel's stock-change editor (S4): the draft the operator edits
+/// and the refusal of the last apply.
+///
+/// A new change is not in the session until it passes the validation, so
+/// the draft lives here and not in a selection.
+#[derive(Debug, Clone)]
+pub struct StockChangeEditor {
+    /// The setup the draft belongs to.
+    pub setup_id: SetupId,
+    /// `true` for a new change (Apply adds it), `false` for an edit of a
+    /// change the setup holds (Apply replaces it).
+    pub is_new: bool,
+    /// The record the operator edits.
+    pub draft: rs_cam_core::compute::stock_change::StockChange,
+    /// The refusal of the last apply, in the core's words. `None` before
+    /// an apply, and after the operator edits the draft again.
+    pub refusal: Option<String>,
+}
+
 /// Every panel draft that outlives one frame.
 #[derive(Debug, Default, Clone)]
 pub struct PanelDrafts {
@@ -95,6 +114,8 @@ pub struct PanelDrafts {
     pub tool_catalog_status: String,
     /// The setup deletion confirmation, shared by the inspector and setup rail.
     pub pending_setup_removal: Option<SetupRemovalConfirmation>,
+    /// The setup panel's stock-change editor, when it is open.
+    pub stock_change_editor: Option<StockChangeEditor>,
 }
 
 #[cfg(test)]

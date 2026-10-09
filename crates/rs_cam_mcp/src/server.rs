@@ -1179,6 +1179,152 @@ pub struct RemoveAlignmentPinParam {
     pub index: usize,
 }
 
+/// S4: what a stock change does, as a wire enum. A mirror of
+/// `rs_cam_core::compute::stock_change::StockChangeOp`; the tokens are the
+/// tokens a project file stores.
+/// `inline` keeps the values IN the property (the tool schema carries no
+/// `$defs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum StockChangeOpParam {
+    /// Put the geometry into the stock as the change's material. The
+    /// geometry may rise above the stock top.
+    #[default]
+    Add,
+    /// Take the geometry out of every material. A remove cannot use
+    /// `outline_fill`.
+    Remove,
+}
+
+/// S4: where the volume of a stock change comes from, as a wire enum. A
+/// mirror of the kinds of `rs_cam_core::compute::stock_change::StockGeometry`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum StockGeometryKindParam {
+    /// A closed mesh model, in the setup frame. `model_ids` holds exactly
+    /// one id.
+    Model,
+    /// Fill every space open to the top (the setup's +Z), inside the closed
+    /// 2D outlines of `model_ids`, up to `level_z`. Fills what was cut.
+    #[default]
+    OutlineFill,
+    /// A prism from the closed 2D outlines of `model_ids`, from `z_bottom`
+    /// to `z_top`.
+    OutlineExtrude,
+}
+
+/// `add_stock_change` (S4): add a stock change to the END of a setup's list.
+///
+/// Every Z value is in the SETUP frame: the frame the setup's toolpaths
+/// use, with the setup's +Z up.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddStockChangeParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// A name for the change. Default: "Change <id + 1>".
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Add or remove. Default: add.
+    #[serde(default)]
+    pub op: StockChangeOpParam,
+    /// The geometry kind.
+    pub kind: StockGeometryKindParam,
+    /// The model ids (`inspect_model` ids): one mesh model for `model`, one
+    /// or more 2D models with closed outlines for the outline kinds.
+    pub model_ids: Vec<usize>,
+    /// `outline_fill` only: the fill level, in the setup frame (mm).
+    #[serde(default)]
+    pub level_z: Option<f64>,
+    /// `outline_extrude` only: the prism bottom, in the setup frame (mm).
+    #[serde(default)]
+    pub z_bottom: Option<f64>,
+    /// `outline_extrude` only: the prism top, in the setup frame (mm).
+    #[serde(default)]
+    pub z_top: Option<f64>,
+    /// The material an add puts into the stock, by catalogue name (as
+    /// `set_stock_config` takes it). Default: the stock material. A remove
+    /// ignores it.
+    #[serde(default)]
+    pub material: Option<String>,
+    /// A custom material name, for a material the catalogue does not hold.
+    /// Give `material` or `custom_material`, not both.
+    #[serde(default)]
+    pub custom_material: Option<String>,
+    /// Default: true.
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+/// `edit_stock_change` (S4): change one stock change in place. Each field
+/// that is given replaces that part of the change; the others stay. Use
+/// `enabled` to turn a change on or off.
+///
+/// To change the geometry, give `kind` with every value that kind needs
+/// (`model_ids`, and `level_z` or `z_bottom` and `z_top`).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct EditStockChangeParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// The change id (`list_setups` `stock_changes[].id`).
+    pub change_id: usize,
+    /// A new name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// On (true) or off (false). The simulation applies an enabled change
+    /// only.
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// Add or remove.
+    #[serde(default)]
+    pub op: Option<StockChangeOpParam>,
+    /// The geometry kind. With it, the geometry is built again from
+    /// `model_ids` and the Z values given here.
+    #[serde(default)]
+    pub kind: Option<StockGeometryKindParam>,
+    /// The model ids. Without `kind`, they replace the ids of the current
+    /// geometry kind.
+    #[serde(default)]
+    pub model_ids: Option<Vec<usize>>,
+    /// The fill level, in the setup frame (mm).
+    #[serde(default)]
+    pub level_z: Option<f64>,
+    /// The prism bottom, in the setup frame (mm).
+    #[serde(default)]
+    pub z_bottom: Option<f64>,
+    /// The prism top, in the setup frame (mm).
+    #[serde(default)]
+    pub z_top: Option<f64>,
+    /// The material, by catalogue name.
+    #[serde(default)]
+    pub material: Option<String>,
+    /// A custom material name.
+    #[serde(default)]
+    pub custom_material: Option<String>,
+}
+
+/// `move_stock_change` (S4): move one stock change to a new position in its
+/// setup's list. The setup applies the list in order.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct MoveStockChangeParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// The change id.
+    pub change_id: usize,
+    /// The new position, 0-based. It must be less than the list length.
+    pub to_position: usize,
+}
+
+/// `remove_stock_change` (S4): remove one stock change from a setup.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct RemoveStockChangeParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// The change id.
+    pub change_id: usize,
+}
+
 /// Simulation jump-to-move parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SimJumpToMoveParam {
@@ -1643,6 +1789,11 @@ pub fn build_info() -> serde_json::Value {
             // the rule 0.3 x D, and the engine caps every helix radius at
             // the flat bottom (no core).
             "dressup_helix_radius_rule",
+            // S4 (2026-10-09): `add_stock_change`, `edit_stock_change`,
+            // `move_stock_change` and `remove_stock_change` write a setup's
+            // stock changes; `list_setups` and `inspect_stock` list them
+            // under `stock_changes` with the simulated volume.
+            "stock_changes",
         ],
     })
 }
@@ -1721,6 +1872,7 @@ mod tests {
             "suggest_rationale_basis",
             "suggest_rationale_plunge_entry",
             "dressup_helix_radius_rule",
+            "stock_changes",
         ] {
             assert!(
                 features.contains(&flag),

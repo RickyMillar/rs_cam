@@ -633,50 +633,34 @@ macro_rules! for_each_command {
              }),
             (Command, AddStockChange, "add_stock_change", AddStockChangeArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
-                 ),
-                 mcp: Reach::Skip(
-                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
-                 ),
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
-                     "the batch CLI reads stock changes from the project file only",
+                     "the batch CLI reads stock changes from the project file only; `project` prints them",
                  ),
              }),
-            (Command, ReplaceStockChange, "replace_stock_change", ReplaceStockChangeArgs, Effects,
+            (Command, ReplaceStockChange, "edit_stock_change", ReplaceStockChangeArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
-                 ),
-                 mcp: Reach::Skip(
-                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
-                 ),
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
-                     "the batch CLI reads stock changes from the project file only",
+                     "the batch CLI reads stock changes from the project file only; `project` prints them",
                  ),
              }),
             (Command, MoveStockChange, "move_stock_change", MoveStockChangeArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
-                 ),
-                 mcp: Reach::Skip(
-                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
-                 ),
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
-                     "the batch CLI reads stock changes from the project file only",
+                     "the batch CLI reads stock changes from the project file only; `project` prints them",
                  ),
              }),
             (Command, RemoveStockChange, "remove_stock_change", RemoveStockChangeArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "S4 adds the setup panel stock-change list; no GUI control writes a stock change yet",
-                 ),
-                 mcp: Reach::Skip(
-                     "S4 adds the MCP stock-change tools; the wire has no such mutation yet",
-                 ),
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
-                     "the batch CLI reads stock changes from the project file only",
+                     "the batch CLI reads stock changes from the project file only; `project` prints them",
                  ),
              }),
             (Command, AutoEnableRestAnalysis, "auto_enable_rest_analysis",
@@ -1841,7 +1825,7 @@ pub struct AddStockChangeArgs {
     pub change: Box<crate::compute::stock_change::StockChange>,
 }
 
-/// The arguments of the `replace_stock_change` command (S2).
+/// The arguments of the `edit_stock_change` command (S2; the row is `ReplaceStockChange`).
 ///
 /// The edit door, the enable and disable flip included. The payload is
 /// the whole record; the position in the list does not move.

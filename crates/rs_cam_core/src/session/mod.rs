@@ -26,6 +26,7 @@ pub mod project_file;
 mod reach;
 mod rest_stock;
 mod save;
+mod stock_change_report;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
@@ -75,6 +76,7 @@ pub use multitool::{
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
+pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence};
 
 pub use mutation::polygons_bbox;
 

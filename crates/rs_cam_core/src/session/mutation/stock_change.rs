@@ -39,6 +39,16 @@ pub(crate) fn loaded_model_facts(
 }
 
 impl ProjectSession {
+    /// The geometry facts of one model, by the rule the stock-change doors
+    /// check: a mesh, and at least one closed 2D outline. `None` when the
+    /// project holds no model with that id.
+    ///
+    /// A surface reads it to offer only the models a change can use.
+    #[must_use]
+    pub fn stock_change_model_facts(&self, model_id: ModelId) -> Option<ModelGeometryFacts<'_>> {
+        loaded_model_facts(&self.models, model_id)
+    }
+
     /// Check one stock change against the project models.
     ///
     /// The model facts come from the loaded models: a mesh, and at least

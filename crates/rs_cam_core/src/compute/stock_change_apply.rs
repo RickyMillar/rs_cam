@@ -74,6 +74,22 @@ impl StockChangeVolume {
     pub fn removed_ml(&self) -> f64 {
         self.removed_mm3 / 1000.0
     }
+
+    /// The net volume, in ml: added minus removed.
+    #[must_use]
+    pub fn net_ml(&self) -> f64 {
+        self.added_ml() - self.removed_ml()
+    }
+
+    /// The volume text every surface prints: the net volume with its sign,
+    /// to 0.01 ml, for example `+12.35 ml` or `-3.20 ml`.
+    ///
+    /// The one formatter. The GUI row, the MCP reply and the CLI line read
+    /// it, so the three surfaces print the same text for the same run.
+    #[must_use]
+    pub fn volume_label(&self) -> String {
+        format!("{:+.2} ml", self.net_ml())
+    }
 }
 
 /// The refusal for one change, with the change named.
@@ -265,8 +281,9 @@ fn edits_to_global(
 /// # Errors
 /// [`SimulationError::StockChangeRefused`] for the first change that cannot
 /// apply: a missing model, an outline set with no area, a mesh that is not
-/// closed, an `OutlineFill` with `Remove` (the command doors accept it; the
-/// simulation refuses it), or a full material slot table.
+/// closed, an `OutlineFill` with `Remove` (the command doors refuse it too,
+/// and the loader warns; a request built by hand can still carry one), or a
+/// full material slot table.
 pub(crate) fn apply_group_stock_changes(
     stock: &mut TriDexelStock,
     mut global: Option<&mut TriDexelStock>,

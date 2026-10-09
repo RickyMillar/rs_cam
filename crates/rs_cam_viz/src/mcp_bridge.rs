@@ -774,6 +774,16 @@ declare_core_requests! {
             => AddAlignmentPin, Some(Workspace::Setup);
         RemoveAlignmentPin(rs_cam_mcp::server::RemoveAlignmentPinParam)
             => RemoveAlignmentPin, None;
+        AddStockChange(rs_cam_mcp::server::AddStockChangeParam)
+            => AddStockChange, Some(Workspace::Setup);
+        /// Row `ReplaceStockChange`. The wire name is `edit_stock_change`:
+        /// the tool patches the stored record and installs the whole of it.
+        EditStockChange(rs_cam_mcp::server::EditStockChangeParam)
+            => ReplaceStockChange, Some(Workspace::Setup);
+        MoveStockChange(rs_cam_mcp::server::MoveStockChangeParam)
+            => MoveStockChange, Some(Workspace::Setup);
+        RemoveStockChange(rs_cam_mcp::server::RemoveStockChangeParam)
+            => RemoveStockChange, Some(Workspace::Setup);
         /// Row `AddModel`. The wire name is `import_model`: the surface reads
         /// the file, and core adopts the geometry that import produced.
         ImportModel(rs_cam_mcp::server::ImportModelParam)

@@ -256,6 +256,26 @@ fn fill(id: usize, model: ModelId, level_z: f64) -> StockChange {
     }
 }
 
+/// A `Remove` prism from the outline model, `z_bottom` to `z_top`. A
+/// `Remove` cannot use an outline fill: the command doors refuse it.
+fn cut(id: usize, model: ModelId, z_bottom: f64, z_top: f64) -> StockChange {
+    StockChange {
+        id: StockChangeId(id),
+        name: format!("Cut {id}"),
+        enabled: true,
+        op: StockChangeOp::Remove,
+        geometry: StockGeometry::OutlineExtrude {
+            model_ids: vec![model],
+            z_bottom,
+            z_top,
+        },
+        material: Material::Custom {
+            name: "Filler".to_owned(),
+            feed_scale_factor: 1.0,
+        },
+    }
+}
+
 fn add(
     s: &mut ProjectSession,
     setup_index: usize,
@@ -442,6 +462,14 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
         StockChangeRefusal::ZNotFinite { field: "z_top" }
     );
 
+    // S4: a `Remove` cannot use an outline fill.
+    let mut removal = fill(1, m.outline, 1.0);
+    removal.op = StockChangeOp::Remove;
+    assert_eq!(
+        refused(add(&mut s, 0, removal)),
+        StockChangeRefusal::RemoveCannotUseOutlineFill
+    );
+
     // Nothing above wrote the list or dropped a result.
     assert!(
         s.list_setups()
@@ -502,9 +530,7 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
     ));
 
     // A `Remove` with a material is allowed; the material has no effect.
-    let mut remove = fill(2, m.outline, 1.0);
-    remove.op = StockChangeOp::Remove;
-    add(&mut s, 0, remove).unwrap();
+    add(&mut s, 0, cut(2, m.outline, 0.0, 1.0)).unwrap();
     assert_eq!(ids(&s, 0), vec![1, 2]);
 }
 
@@ -559,9 +585,7 @@ fn a_change_in_the_first_setup_stales_every_rest_op() {
 fn only_an_edit_that_moves_the_effect_drops() {
     let (mut s, m) = fixture();
     add(&mut s, 1, fill(1, m.outline, 5.0)).unwrap();
-    let mut second = fill(2, m.outline, 3.0);
-    second.op = StockChangeOp::Remove;
-    add(&mut s, 1, second).unwrap();
+    add(&mut s, 1, cut(2, m.outline, 2.0, 3.0)).unwrap();
 
     let reset = |s: &mut ProjectSession| {
         for index in [3, 5] {
@@ -610,8 +634,7 @@ fn only_an_edit_that_moves_the_effect_drops() {
     );
 
     reset(&mut s);
-    let mut remove_material = fill(2, m.outline, 3.0);
-    remove_material.op = StockChangeOp::Remove;
+    let mut remove_material = cut(2, m.outline, 2.0, 3.0);
     remove_material.material = Material::default();
     assert!(
         !drops(&mut s, replace_cmd(remove_material)),
@@ -619,15 +642,15 @@ fn only_an_edit_that_moves_the_effect_drops() {
     );
 
     reset(&mut s);
-    let mut off = fill(2, m.outline, 3.0);
-    off.op = StockChangeOp::Remove;
+    let mut off = cut(2, m.outline, 2.0, 3.0);
     off.enabled = false;
     assert!(drops(&mut s, replace_cmd(off.clone())), "a disable drops");
 
     reset(&mut s);
-    off.geometry = StockGeometry::OutlineFill {
+    off.geometry = StockGeometry::OutlineExtrude {
         model_ids: vec![m.outline],
-        level_z: 9.0,
+        z_bottom: 8.0,
+        z_top: 9.0,
     };
     assert!(
         !drops(&mut s, replace_cmd(off)),
@@ -648,8 +671,7 @@ fn only_an_edit_that_moves_the_effect_drops() {
     );
 
     reset(&mut s);
-    let mut on = fill(2, m.outline, 9.0);
-    on.op = StockChangeOp::Remove;
+    let on = cut(2, m.outline, 8.0, 9.0);
     assert!(drops(&mut s, replace_cmd(on)), "an enable drops");
 
     reset(&mut s);

@@ -567,6 +567,62 @@ struct ProjectSummary {
     /// Human-readable form of the same fact, including the strategy and
     /// feed scale that shaped the rewritten feeds.
     modulation_state: String,
+    /// S4: one entry per stock change of every setup, with the volume the
+    /// closing simulation measured. Absent when the project has none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    stock_changes: Vec<StockChangeSummaryEntry>,
+}
+
+/// One stock change in `summary.json` (S4). `volume_label` is the text the
+/// GUI row, the MCP reply and the stderr line print.
+#[derive(Serialize)]
+struct StockChangeSummaryEntry {
+    setup_index: usize,
+    setup_id: usize,
+    id: usize,
+    name: String,
+    enabled: bool,
+    op: &'static str,
+    kind: &'static str,
+    /// `null` when the change has no measured volume (disabled, or not in
+    /// the simulation).
+    added_mm3: Option<f64>,
+    removed_mm3: Option<f64>,
+    volume_label: String,
+    /// The one-line summary that stderr prints.
+    line: String,
+}
+
+impl StockChangeSummaryEntry {
+    fn of(row: &rs_cam_core::session::StockChangeRow) -> Self {
+        let volume = row.volume.as_ref().ok();
+        Self {
+            setup_index: row.setup_index,
+            setup_id: row.setup_id,
+            id: row.change.id.0,
+            name: row.change.name.clone(),
+            enabled: row.change.enabled,
+            op: row.change.op.label(),
+            kind: row.change.geometry.kind_label(),
+            added_mm3: volume.map(|v| v.added_mm3),
+            removed_mm3: volume.map(|v| v.removed_mm3),
+            volume_label: row.volume_label(),
+            line: row.line(),
+        }
+    }
+}
+
+/// S4: print one line per stock change, with its volume. The text is
+/// `StockChangeRow::line`, which the GUI and MCP volume text share.
+fn print_stock_changes(rows: &[rs_cam_core::session::StockChangeRow]) {
+    if rows.is_empty() {
+        return;
+    }
+    eprintln!("Stock changes ({}):", rows.len());
+    for row in rows {
+        eprintln!("  {}", row.line());
+    }
+    eprintln!();
 }
 
 // ── Main entry point ────────────────────────────────────────────────────
@@ -874,6 +930,8 @@ pub fn run_project_command(
     // advisory list that says how much it withheld — rather than a single
     // string plus an unbounded pile of runs.
     print_triage_report(&session.triage(), diag.cut_metrics_not_measured);
+    let stock_change_rows = session.stock_change_rows();
+    print_stock_changes(&stock_change_rows);
 
     // **Checkpoint K (g2), 2026-08-13 — every verdict this command
     // reports names the operating point it was taken at.**
@@ -964,6 +1022,10 @@ pub fn run_project_command(
         verdict: verdict.clone(),
         adaptive_feed_modulation,
         modulation_state: modulation_state.clone(),
+        stock_changes: stock_change_rows
+            .iter()
+            .map(StockChangeSummaryEntry::of)
+            .collect(),
     };
 
     let summary_path = output_dir.join("summary.json");
@@ -1429,8 +1491,33 @@ mod tests {
                     id: rs_cam_core::ToolpathId(3),
                     output: "00000000000000cd".to_owned(),
                 }],
+                stock_changes: Vec::new(),
             }),
         }
+    }
+
+    /// S4: a rest record whose stock holds a stock change lists it under
+    /// `source_stock.stock_changes`, after `after`. The byte pin above has
+    /// no stock change, and an empty list writes no key, so its bytes stay.
+    #[test]
+    fn a_source_record_lists_its_stock_changes_s4() {
+        let mut core = core_diagnostic();
+        if let Some(source) = core.source_stock.as_mut() {
+            source.stock_changes = vec![rs_cam_core::compute::source_stock::StockChangeEntryWire {
+                setup_id: 1,
+                id: rs_cam_core::ids::StockChangeId(2),
+                effect: "00000000000000ef".to_owned(),
+            }];
+        }
+        let record = ToolpathDiagnostic::from_core(&core, None, None, 3, Some(21.5));
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(
+            json.pointer("/source_stock/stock_changes"),
+            Some(&serde_json::json!([
+                { "setup_id": 1, "id": 2, "effect": "00000000000000ef" }
+            ])),
+            "{json}"
+        );
     }
 
     /// C3 byte-stability sentry.

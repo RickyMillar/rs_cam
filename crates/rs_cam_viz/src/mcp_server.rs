@@ -472,7 +472,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "list_setups",
-        description = "List all setups in the loaded project with name, face orientation, and toolpath indices"
+        description = "List all setups in the loaded project with name, face orientation, toolpath indices and stock_changes (each change with its id, op, geometry, material and the volume the last simulation measured)"
     )]
     async fn list_setups(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::ListSetups).await)
@@ -645,7 +645,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "inspect_stock",
-        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins."
+        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins, and the stock changes of every setup with their simulated volumes."
     )]
     async fn inspect_stock(&self) -> String {
         self.cheap_read(McpRequestKind::InspectStock, McpReadKind::InspectStock)
@@ -740,6 +740,62 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::RemoveAlignmentPin(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "add_stock_change",
+        description = "Add a stock change to the end of a setup's list (S4). A stock change adds material to the stock or removes material from it before the setup's first toolpath; the simulation applies the list in order. kind: model (one closed mesh model), outline_fill (fill every space open to the setup's +Z inside the closed 2D outlines, up to level_z; it fills what earlier toolpaths cut) or outline_extrude (a prism from z_bottom to z_top). Every Z is in the SETUP frame (the frame the setup's toolpaths use). A remove cannot use outline_fill. The material is a catalogue name (default: the stock material) or custom_material. Refusals name the rule. Returns the new change id."
+    )]
+    async fn add_stock_change(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddStockChangeParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddStockChange(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "edit_stock_change",
+        description = "Edit one stock change of a setup in place (S4). Each given field replaces that part; the others stay. enabled turns the change on or off. Give kind with its model_ids and Z values to change the geometry; without kind, model_ids and the Z values patch the current geometry. Every Z is in the setup frame. An edit that changes what the change does drops the simulation and the rest results from this setup on; a rename drops nothing."
+    )]
+    async fn edit_stock_change(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::EditStockChangeParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::EditStockChange(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "move_stock_change",
+        description = "Move one stock change of a setup to a new 0-based position in its list (S4). The setup applies its stock changes in list order."
+    )]
+    async fn move_stock_change(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::MoveStockChangeParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::MoveStockChange(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "remove_stock_change",
+        description = "Remove one stock change from a setup by its id (S4)."
+    )]
+    async fn remove_stock_change(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::RemoveStockChangeParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveStockChange(param)))
                 .await,
         )
     }

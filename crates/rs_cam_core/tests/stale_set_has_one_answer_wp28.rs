@@ -257,30 +257,6 @@ const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
         "WP15a row. The registry's own GUI reason reads: the optimizer carries the stamp in restore_toolpath_snapshot since WP8. \
          MEASURED 2026-09-14: no production `Command` literal.",
     ),
-    (
-        "add_stock_change",
-        "S2 row (planning/stock_additions_2026-10-09/PLAN.md). The package lands the model, the \
-         rows and the project file; the project file is the one surface that writes a stock \
-         change now. S4 adds the GUI panel and the MCP tools, and turns two columns to Reached.",
-    ),
-    (
-        "replace_stock_change",
-        "S2 row (planning/stock_additions_2026-10-09/PLAN.md). The package lands the model, the \
-         rows and the project file; the project file is the one surface that writes a stock \
-         change now. S4 adds the GUI panel and the MCP tools, and turns two columns to Reached.",
-    ),
-    (
-        "move_stock_change",
-        "S2 row (planning/stock_additions_2026-10-09/PLAN.md). The package lands the model, the \
-         rows and the project file; the project file is the one surface that writes a stock \
-         change now. S4 adds the GUI panel and the MCP tools, and turns two columns to Reached.",
-    ),
-    (
-        "remove_stock_change",
-        "S2 row (planning/stock_additions_2026-10-09/PLAN.md). The package lands the model, the \
-         rows and the project file; the project file is the one surface that writes a stock \
-         change now. S4 adds the GUI panel and the MCP tools, and turns two columns to Reached.",
-    ),
 ];
 
 /// Every row whose three surfaces all read `Reach::Skip`.

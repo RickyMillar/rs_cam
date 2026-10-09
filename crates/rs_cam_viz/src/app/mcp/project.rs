@@ -220,15 +220,24 @@ impl RsCamApp {
 
     pub(super) fn mcp_list_setups(&self) -> String {
         let session = &self.controller.state().session;
+        // S4: one read for the rows, the one the GUI panel and the CLI
+        // print, so the volumes agree on every surface.
+        let rows = session.stock_change_rows();
         let setups: Vec<serde_json::Value> = session
             .list_setups()
             .iter()
             .map(|s| {
+                let stock_changes: Vec<serde_json::Value> = rows
+                    .iter()
+                    .filter(|row| row.setup_id == s.id)
+                    .map(super::commands::stock_change_json)
+                    .collect();
                 serde_json::json!({
                     "id": s.id,
                     "name": s.name,
                     "face_up": s.face_up.label(),
                     "toolpath_indices": s.toolpath_indices,
+                    "stock_changes": stock_changes,
                 })
             })
             .collect();
@@ -463,6 +472,13 @@ impl RsCamApp {
             "auto_from_model": stock.auto_from_model,
             "alignment_pins": pins,
             "flip_axis": stock.flip_axis.map(|fa| fa.label()),
+            // S4: every setup's stock changes, in setup order and then in
+            // application order, with the simulated volume.
+            "stock_changes": session
+                .stock_change_rows()
+                .iter()
+                .map(super::commands::stock_change_json)
+                .collect::<Vec<_>>(),
         }))
     }
 

@@ -86,7 +86,7 @@ pub fn draw(
     // merges curated WoodSpecies + wood_species_library() (132
     // additional species, FPL Ch.5 + Wood Database).
     ui.add_space(4.0);
-    if draw_hierarchical_material_picker(ui, stock) {
+    if draw_hierarchical_material_picker(ui, &mut stock.material) {
         edit.commit();
     }
 
@@ -644,22 +644,25 @@ fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) ->
 ///
 /// Returns `true` if a selection was made this frame (the caller records
 /// a finished edit).
-fn draw_hierarchical_material_picker(
+///
+/// S4: the stock panel and the setup panel's stock-change editor share it,
+/// so both pick from the one library.
+pub(super) fn draw_hierarchical_material_picker(
     ui: &mut egui::Ui,
-    stock: &mut crate::state::job::StockConfig,
+    material: &mut rs_cam_core::material::Material,
 ) -> bool {
     use rs_cam_core::material::{Material, MaterialCategory};
 
     let mut changed = false;
-    let current_label = stock.material.label();
-    let current_category = stock.material.category();
+    let current_label = material.label();
+    let current_category = material.category();
 
     // Janka indicator on the button — visual consistency between the
     // curated `Material::SolidWood { species }` and parametric
     // `Material::SolidWoodByJanka` variants (the parametric variant
     // gets the lbf annotation uniformly with curated species rather
     // than only showing it in the menu-item line).
-    let janka_suffix = match &stock.material {
+    let janka_suffix = match &*material {
         Material::SolidWood { species } => Some(species.janka_lbf() as i64),
         Material::SolidWoodByJanka { janka_lbf, .. } => Some(*janka_lbf as i64),
         _ => None,
@@ -686,7 +689,7 @@ fn draw_hierarchical_material_picker(
             if !wood_buckets.is_empty() {
                 ui.menu_button("Wood  ▶", |ui| {
                     for (cat, entries) in &wood_buckets {
-                        if draw_wood_subcategory(ui, *cat, entries, stock) {
+                        if draw_wood_subcategory(ui, *cat, entries, material) {
                             changed = true;
                             ui.close();
                         }
@@ -700,9 +703,9 @@ fn draw_hierarchical_material_picker(
                 }
                 ui.menu_button(format!("{}  ▶", cat.label()), |ui| {
                     for (label, mat) in entries {
-                        let selected = stock.material == *mat;
+                        let selected = *material == *mat;
                         if ui.selectable_label(selected, label).clicked() {
-                            stock.material = mat.clone();
+                            *material = mat.clone();
                             changed = true;
                             ui.close();
                         }
@@ -729,7 +732,7 @@ fn draw_wood_subcategory(
     ui: &mut egui::Ui,
     cat: rs_cam_core::material::MaterialCategory,
     entries: &[(String, rs_cam_core::material::Material)],
-    stock: &mut crate::state::job::StockConfig,
+    material: &mut rs_cam_core::material::Material,
 ) -> bool {
     let mut changed = false;
     let label = cat.label();
@@ -763,12 +766,12 @@ fn draw_wood_subcategory(
             .max_height(280.0)
             .show(ui, |ui| {
                 for (entry_label, mat) in &visible {
-                    let selected = stock.material == *mat;
+                    let selected = *material == *mat;
                     if ui
                         .selectable_label(selected, entry_label.as_str())
                         .clicked()
                     {
-                        stock.material = mat.clone();
+                        *material = mat.clone();
                         changed = true;
                     }
                 }

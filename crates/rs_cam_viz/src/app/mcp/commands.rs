@@ -63,6 +63,9 @@ use crate::ui_command::UiCommand;
 
 use super::RestAnalysisDials;
 
+mod stock_changes;
+pub(crate) use stock_changes::stock_change_json;
+
 /// What one command carries from before the mutation into its reply.
 ///
 /// Every field is read BEFORE the mutation runs, because the mutation
@@ -206,6 +209,36 @@ impl RsCamApp {
             CoreRequest::SetStockConfig(_) => {
                 self.mcp_highlight("stock_dimensions".to_owned());
             }
+            CoreRequest::AddStockChange(rs_cam_mcp::server::AddStockChangeParam {
+                setup_index,
+                ..
+            })
+            | CoreRequest::EditStockChange(rs_cam_mcp::server::EditStockChangeParam {
+                setup_index,
+                ..
+            })
+            | CoreRequest::MoveStockChange(rs_cam_mcp::server::MoveStockChangeParam {
+                setup_index,
+                ..
+            })
+            | CoreRequest::RemoveStockChange(rs_cam_mcp::server::RemoveStockChangeParam {
+                setup_index,
+                ..
+            }) => {
+                // The setup panel shows the stock-change list, so the
+                // operator sees the edit land.
+                let setup_id = self
+                    .controller
+                    .state()
+                    .session
+                    .list_setups()
+                    .get(*setup_index)
+                    .map(|s| s.id);
+                if let Some(setup_id) = setup_id {
+                    self.controller.state_mut().selection =
+                        Selection::Setup(crate::state::job::SetupId(setup_id));
+                }
+            }
             CoreRequest::SetToolpathParam(p) => {
                 let tp_id = self
                     .controller
@@ -309,6 +342,10 @@ impl RsCamApp {
                     Box::new(before),
                 )
             }
+            CoreRequest::AddStockChange(p) => self.plan_add_stock_change(&p, before),
+            CoreRequest::EditStockChange(p) => self.plan_edit_stock_change(&p, before),
+            CoreRequest::MoveStockChange(p) => self.plan_move_stock_change(&p, before),
+            CoreRequest::RemoveStockChange(p) => self.plan_remove_stock_change(&p, before),
             CoreRequest::RemoveAlignmentPin(p) => {
                 before.index = Some(p.index);
                 CorePlan::Apply(
@@ -1579,6 +1616,22 @@ impl RsCamApp {
     pub(crate) fn core_toast_for(&self, request: &CoreRequest) -> Option<String> {
         match request {
             CoreRequest::AddSetup(_) => Some("MCP: Adding setup".to_owned()),
+            CoreRequest::AddStockChange(p) => Some(format!(
+                "MCP: Add a stock change to setup {}",
+                p.setup_index
+            )),
+            CoreRequest::EditStockChange(p) => Some(format!(
+                "MCP: Edit stock change {} of setup {}",
+                p.change_id, p.setup_index
+            )),
+            CoreRequest::MoveStockChange(p) => Some(format!(
+                "MCP: Move stock change {} of setup {} to position {}",
+                p.change_id, p.setup_index, p.to_position
+            )),
+            CoreRequest::RemoveStockChange(p) => Some(format!(
+                "MCP: Remove stock change {} of setup {}",
+                p.change_id, p.setup_index
+            )),
             CoreRequest::SetSetupFace(p) => {
                 let setup_index = p.setup_index;
                 let face_up = &p.face_up;
@@ -1855,6 +1908,14 @@ impl RsCamApp {
             Err(error) => return self.core_error_reply(id, &error, before),
         };
         match id {
+            CommandId::AddStockChange => self.describe_stock_change("Added", &effects, before),
+            CommandId::ReplaceStockChange => {
+                self.describe_stock_change("Edited", &effects, before)
+            }
+            CommandId::MoveStockChange => self.describe_stock_change("Moved", &effects, before),
+            CommandId::RemoveStockChange => {
+                self.describe_stock_change("Removed", &effects, before)
+            }
             CommandId::AddAlignmentPin => {
                 let pin_count = self
                     .controller
@@ -2680,10 +2741,6 @@ impl RsCamApp {
             | CommandId::RemoveFixture
             | CommandId::AddKeepOut
             | CommandId::RemoveKeepOut
-            | CommandId::AddStockChange
-            | CommandId::ReplaceStockChange
-            | CommandId::MoveStockChange
-            | CommandId::RemoveStockChange
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation

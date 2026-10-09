@@ -142,6 +142,13 @@ pub enum AppEvent {
     AddKeepOut(SetupId),
     RemoveKeepOut(SetupId, KeepOutId),
 
+    // Stock changes (S4): one intent per action of the setup panel's list.
+    // The controller turns each into one S2 command.
+    EditStockChanges(
+        SetupId,
+        crate::ui::properties::stock_changes::StockChangeIntent,
+    ),
+
     // Toolpaths
     AddToolpath(OperationType),
     DuplicateToolpath(ToolpathId),

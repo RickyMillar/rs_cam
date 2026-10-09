@@ -280,6 +280,24 @@ pub struct SourceStockWire {
     pub stock_digest: Option<String>,
     /// The toolpaths carved before this one, in carve order.
     pub after: Vec<SourceEntryWire>,
+    /// S4: the stock changes the snapshot holds, in the order the
+    /// simulation applied them. Empty when no setup before this one, and
+    /// not this one, changes the stock. An empty list is not written, so a
+    /// project with no stock change keeps its wire bytes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stock_changes: Vec<StockChangeEntryWire>,
+}
+
+/// One applied stock change on the wire.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct StockChangeEntryWire {
+    /// The `SetupData::id` of the setup that owns the change.
+    pub setup_id: usize,
+    /// The change id, unique within the setup.
+    pub id: crate::ids::StockChangeId,
+    /// The effect digest of the change the simulation applied
+    /// (`StockChange::effect_digest`), as 16 hex digits.
+    pub effect: String,
 }
 
 /// One carved toolpath on the wire.
@@ -301,8 +319,6 @@ impl SourceStockWire {
         Self {
             cell_mm: source.cell_mm,
             stock_digest: stamp.map(|s| format!("{:016x}", s.digest)),
-            // S2: the wire lists the carved toolpaths only. S4 adds the
-            // stock changes to the wire with its MCP tools.
             after: source
                 .after
                 .iter()
@@ -312,6 +328,18 @@ impl SourceStockWire {
                         output: format!("{:016x}", carved.output),
                     }),
                     SourceEntry::StockChange(_) => None,
+                })
+                .collect(),
+            stock_changes: source
+                .after
+                .iter()
+                .filter_map(|e| match e {
+                    SourceEntry::StockChange(change) => Some(StockChangeEntryWire {
+                        setup_id: change.setup_id,
+                        id: change.id,
+                        effect: format!("{:016x}", change.effect),
+                    }),
+                    SourceEntry::Carved(_) => None,
                 })
                 .collect(),
         }
@@ -401,6 +429,23 @@ mod tests {
         assert_eq!(
             sources[&ToolpathId(11)].after,
             vec![entry(0, 1), entry(1, 2)]
+        );
+
+        // S4: the wire lists the two changes, in order, with their digests,
+        // and lists no carved toolpath for them.
+        let wire = SourceStockWire::of(&sources[&ToolpathId(11)], None);
+        assert!(wire.after.is_empty());
+        let listed: Vec<(usize, usize, String)> = wire
+            .stock_changes
+            .iter()
+            .map(|c| (c.setup_id, c.id.0, c.effect.clone()))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                (0, 1, format!("{:016x}", resolved(0, 1).effect_digest())),
+                (1, 2, format!("{:016x}", resolved(1, 2).effect_digest())),
+            ]
         );
     }
 }

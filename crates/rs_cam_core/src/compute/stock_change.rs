@@ -37,6 +37,17 @@ pub enum StockChangeOp {
     Remove,
 }
 
+impl StockChangeOp {
+    /// The short word that a surface prints: `add` or `remove`.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Remove => "remove",
+        }
+    }
+}
+
 /// Where the volume of a stock change comes from. Values are in the setup
 /// frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -164,6 +175,16 @@ pub fn stock_change_effects(changes: &[StockChange]) -> Vec<(StockChangeId, u64)
         .collect()
 }
 
+/// The id for a new stock change in a setup: one more than the largest id
+/// the setup holds, or 0 for an empty list.
+///
+/// The one allocator. The GUI and MCP both call it, so the two surfaces
+/// give a new change the same id.
+#[must_use]
+pub fn next_stock_change_id(changes: &[StockChange]) -> StockChangeId {
+    StockChangeId(changes.iter().map(|c| c.id.0 + 1).max().unwrap_or(0))
+}
+
 /// Why a stock change was refused. Each variant names the rule it broke.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StockChangeRefusal {
@@ -200,6 +221,9 @@ pub enum StockChangeRefusal {
         /// The prism top.
         z_top: f64,
     },
+    /// A `Remove` with an `OutlineFill` geometry. A fill describes the empty
+    /// space open to the top, so it holds no material to remove.
+    RemoveCannotUseOutlineFill,
     /// Two changes in one setup carry the same id.
     DuplicateId {
         /// The id.
@@ -239,6 +263,11 @@ impl std::fmt::Display for StockChangeRefusal {
                 f,
                 "an outline extrude needs z_bottom below z_top, and it has \
                  z_bottom {z_bottom} and z_top {z_top}"
+            ),
+            Self::RemoveCannotUseOutlineFill => write!(
+                f,
+                "a remove cannot use an outline fill: a fill describes empty space and \
+                 holds no material to remove; use an outline extrude or a model"
             ),
             Self::DuplicateId { id } => {
                 write!(f, "the setup already holds a stock change with id {}", id.0)
@@ -295,6 +324,9 @@ pub fn validate_stock_change<'a>(
             }
         }
         StockGeometry::OutlineFill { model_ids, level_z } => {
+            if change.op == StockChangeOp::Remove {
+                return Err(StockChangeRefusal::RemoveCannotUseOutlineFill);
+            }
             check_outline_models(model_ids, &facts)?;
             if !level_z.is_finite() {
                 return Err(StockChangeRefusal::ZNotFinite { field: "level_z" });
@@ -446,6 +478,30 @@ mod tests {
         let mut add_other_material = a.clone();
         add_other_material.material = Material::default();
         assert_ne!(a.effect_digest(), add_other_material.effect_digest());
+    }
+
+    #[test]
+    fn a_remove_with_an_outline_fill_is_refused_by_name() {
+        let mut removal = fill(1.0);
+        removal.op = StockChangeOp::Remove;
+        assert_eq!(
+            validate_stock_change(&removal, outline_facts),
+            Err(StockChangeRefusal::RemoveCannotUseOutlineFill)
+        );
+        removal.geometry = StockGeometry::OutlineExtrude {
+            model_ids: vec![ModelId(3)],
+            z_bottom: 0.0,
+            z_top: 1.0,
+        };
+        assert_eq!(validate_stock_change(&removal, outline_facts), Ok(()));
+    }
+
+    #[test]
+    fn the_next_id_is_one_more_than_the_largest() {
+        assert_eq!(next_stock_change_id(&[]), StockChangeId(0));
+        let mut late = fill(1.0);
+        late.id = StockChangeId(4);
+        assert_eq!(next_stock_change_id(&[fill(1.0), late]), StockChangeId(5));
     }
 
     #[test]

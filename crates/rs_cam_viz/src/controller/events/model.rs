@@ -677,6 +677,113 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Run one stock-change action of the setup panel (S4) as one S2
+    /// command: `AddStockChange`, `ReplaceStockChange`, `MoveStockChange`
+    /// or `RemoveStockChange`.
+    ///
+    /// The door mirrors the `Effects` like every other controller door. A
+    /// refusal reaches the operator twice: in the editor, when the action
+    /// came from it, and as a notification.
+    pub(crate) fn handle_stock_change_intent(
+        &mut self,
+        setup_id: SetupId,
+        intent: crate::ui::properties::stock_changes::StockChangeIntent,
+    ) {
+        use crate::ui::properties::stock_changes::StockChangeIntent;
+        use rs_cam_core::session::{
+            AddStockChangeArgs, MoveStockChangeArgs, RemoveStockChangeArgs, ReplaceStockChangeArgs,
+        };
+        let Some((setup_index, setup)) = self.state.session.find_setup_by_id(setup_id.0) else {
+            return;
+        };
+        let (command, from_editor) = match intent {
+            StockChangeIntent::Save { change, is_new } => {
+                let command = if is_new {
+                    Command::AddStockChange(AddStockChangeArgs {
+                        setup_index,
+                        change,
+                    })
+                } else {
+                    Command::ReplaceStockChange(ReplaceStockChangeArgs {
+                        setup_index,
+                        change_id: change.id,
+                        change,
+                    })
+                };
+                (command, true)
+            }
+            StockChangeIntent::SetEnabled { change_id, enabled } => {
+                let Some(stored) = setup.stock_changes.iter().find(|c| c.id == change_id) else {
+                    return;
+                };
+                let mut change = stored.clone();
+                change.enabled = enabled;
+                (
+                    Command::ReplaceStockChange(ReplaceStockChangeArgs {
+                        setup_index,
+                        change_id,
+                        change: Box::new(change),
+                    }),
+                    false,
+                )
+            }
+            StockChangeIntent::Move {
+                change_id,
+                to_position,
+            } => (
+                Command::MoveStockChange(MoveStockChangeArgs {
+                    setup_index,
+                    change_id,
+                    to_position,
+                }),
+                false,
+            ),
+            StockChangeIntent::Remove(change_id) => {
+                if self
+                    .state
+                    .panels
+                    .stock_change_editor
+                    .as_ref()
+                    .is_some_and(|e| e.setup_id == setup_id && !e.is_new && e.draft.id == change_id)
+                {
+                    self.state.panels.stock_change_editor = None;
+                }
+                (
+                    Command::RemoveStockChange(RemoveStockChangeArgs {
+                        setup_index,
+                        change_id,
+                    }),
+                    false,
+                )
+            }
+        };
+        match self.state.session.apply(command) {
+            Ok(effects) => {
+                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+                if effects.simulation_cleared {
+                    self.invalidate_simulation();
+                }
+                if from_editor {
+                    self.state.panels.stock_change_editor = None;
+                }
+                self.state.gui.mark_edited();
+            }
+            Err(error) => {
+                let message = error.to_string();
+                if from_editor
+                    && let Some(editor) = self.state.panels.stock_change_editor.as_mut()
+                    && editor.setup_id == setup_id
+                {
+                    editor.refusal = Some(message.clone());
+                }
+                self.push_notification(
+                    format!("Could not write the stock change: {message}"),
+                    super::super::Severity::Error,
+                );
+            }
+        }
+    }
+
     // ── Model helpers ────────────────────────────────────────────────────
 
     pub(crate) fn handle_remove_model(&mut self, model_id: ModelId) {

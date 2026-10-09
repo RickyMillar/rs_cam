@@ -205,6 +205,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
                 self.handle_remove_keep_out(setup_id, keep_out_id);
             }
+            AppEvent::EditStockChanges(setup_id, intent) => {
+                self.handle_stock_change_intent(setup_id, intent);
+            }
             // --- Toolpath events ---
             AppEvent::AddToolpath(op_type) => {
                 // The handler reports the command's `Effects`. The

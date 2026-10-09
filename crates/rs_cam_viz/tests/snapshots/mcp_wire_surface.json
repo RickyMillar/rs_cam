@@ -50,6 +50,131 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`add_stock_change` (S4): add a stock change to the END of a setup's list.\n\nEvery Z value is in the SETUP frame: the frame the setup's toolpaths\nuse, with the setup's +Z up.",
+      "properties": {
+        "custom_material": {
+          "default": null,
+          "description": "A custom material name, for a material the catalogue does not hold.\nGive `material` or `custom_material`, not both.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "Default: true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The geometry kind.",
+          "oneOf": [
+            {
+              "const": "model",
+              "description": "A closed mesh model, in the setup frame. `model_ids` holds exactly\none id.",
+              "type": "string"
+            },
+            {
+              "const": "outline_fill",
+              "description": "Fill every space open to the top (the setup's +Z), inside the closed\n2D outlines of `model_ids`, up to `level_z`. Fills what was cut.",
+              "type": "string"
+            },
+            {
+              "const": "outline_extrude",
+              "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+              "type": "string"
+            }
+          ]
+        },
+        "level_z": {
+          "default": null,
+          "description": "`outline_fill` only: the fill level, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "material": {
+          "default": null,
+          "description": "The material an add puts into the stock, by catalogue name (as\n`set_stock_config` takes it). Default: the stock material. A remove\nignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "description": "The model ids (`inspect_model` ids): one mesh model for `model`, one\nor more 2D models with closed outlines for the outline kinds.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": null,
+          "description": "A name for the change. Default: \"Change <id + 1>\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "Add or remove. Default: add.",
+          "oneOf": [
+            {
+              "const": "add",
+              "description": "Put the geometry into the stock as the change's material. The\ngeometry may rise above the stock top.",
+              "type": "string"
+            },
+            {
+              "const": "remove",
+              "description": "Take the geometry out of every material. A remove cannot use\n`outline_fill`.",
+              "type": "string"
+            }
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism bottom, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism top, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "kind",
+        "model_ids"
+      ],
+      "title": "AddStockChangeParam",
+      "type": "object"
+    },
+    "name": "add_stock_change"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "corner_radius": {
           "description": "**Required for `bull_nose`** — corner radius in mm. Must be > 0\nand <= diameter / 2 (a corner radius of exactly diameter/2 is a\nball nose). Refused when omitted.",
@@ -337,6 +462,156 @@
       "type": "object"
     },
     "name": "collision_check"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`edit_stock_change` (S4): change one stock change in place. Each field\nthat is given replaces that part of the change; the others stay. Use\n`enabled` to turn a change on or off.\n\nTo change the geometry, give `kind` with every value that kind needs\n(`model_ids`, and `level_z` or `z_bottom` and `z_top`).",
+      "properties": {
+        "change_id": {
+          "description": "The change id (`list_setups` `stock_changes[].id`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "custom_material": {
+          "default": null,
+          "description": "A custom material name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "On (true) or off (false). The simulation applies an enabled change\nonly.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "description": "S4: where the volume of a stock change comes from, as a wire enum. A\nmirror of the kinds of `rs_cam_core::compute::stock_change::StockGeometry`.",
+              "oneOf": [
+                {
+                  "const": "model",
+                  "description": "A closed mesh model, in the setup frame. `model_ids` holds exactly\none id.",
+                  "type": "string"
+                },
+                {
+                  "const": "outline_fill",
+                  "description": "Fill every space open to the top (the setup's +Z), inside the closed\n2D outlines of `model_ids`, up to `level_z`. Fills what was cut.",
+                  "type": "string"
+                },
+                {
+                  "const": "outline_extrude",
+                  "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The geometry kind. With it, the geometry is built again from\n`model_ids` and the Z values given here."
+        },
+        "level_z": {
+          "default": null,
+          "description": "The fill level, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "material": {
+          "default": null,
+          "description": "The material, by catalogue name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "default": null,
+          "description": "The model ids. Without `kind`, they replace the ids of the current\ngeometry kind.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "description": "A new name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "anyOf": [
+            {
+              "description": "S4: what a stock change does, as a wire enum. A mirror of\n`rs_cam_core::compute::stock_change::StockChangeOp`; the tokens are the\ntokens a project file stores.\n`inline` keeps the values IN the property (the tool schema carries no\n`$defs`).",
+              "oneOf": [
+                {
+                  "const": "add",
+                  "description": "Put the geometry into the stock as the change's material. The\ngeometry may rise above the stock top.",
+                  "type": "string"
+                },
+                {
+                  "const": "remove",
+                  "description": "Take the geometry out of every material. A remove cannot use\n`outline_fill`.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Add or remove."
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "The prism bottom, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "The prism top, in the setup frame (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "change_id"
+      ],
+      "title": "EditStockChangeParam",
+      "type": "object"
+    },
+    "name": "edit_stock_change"
   },
   {
     "inputSchema": {
@@ -1034,6 +1309,40 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`move_stock_change` (S4): move one stock change to a new position in its\nsetup's list. The setup applies the list in order.",
+      "properties": {
+        "change_id": {
+          "description": "The change id.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to_position": {
+          "description": "The new position, 0-based. It must be less than the list length.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "change_id",
+        "to_position"
+      ],
+      "title": "MoveStockChangeParam",
+      "type": "object"
+    },
+    "name": "move_stock_change"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "target_setup_index": {
           "description": "Target setup index (0-based)",
@@ -1426,6 +1735,33 @@
       "type": "object"
     },
     "name": "remove_alignment_pin"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`remove_stock_change` (S4): remove one stock change from a setup.",
+      "properties": {
+        "change_id": {
+          "description": "The change id.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "change_id"
+      ],
+      "title": "RemoveStockChangeParam",
+      "type": "object"
+    },
+    "name": "remove_stock_change"
   },
   {
     "inputSchema": {

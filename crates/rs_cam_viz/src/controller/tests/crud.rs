@@ -598,3 +598,190 @@ fn delete_selected_tool_clears_selection() {
         "Selection should be cleared after deleting the selected tool"
     );
 }
+
+// S4 — the setup panel's stock-change actions reach the session through
+// the four S2 commands, and a refusal comes back into the editor.
+//
+// Plan: `planning/stock_additions_2026-10-09/PLAN.md`, package S4.
+//
+// The panel pushes `AppEvent::EditStockChanges`; the controller arm
+// (`handle_stock_change_intent`) applies one command per intent. These
+// tests drive the arm through `handle_internal_event`, the dispatch the
+// frame loop takes, and read the session back.
+mod stock_change_panel_s4 {
+    use super::*;
+    use crate::state::panels::StockChangeEditor;
+    use crate::ui::AppEvent;
+    use crate::ui::properties::stock_changes::StockChangeIntent;
+    use rs_cam_core::compute::stock_change::{StockChange, StockChangeOp, StockGeometry};
+    use rs_cam_core::ids::{ModelId, StockChangeId};
+
+    fn change(id: usize, model_id: ModelId) -> StockChange {
+        StockChange {
+            id: StockChangeId(id),
+            name: format!("Change {}", id + 1),
+            enabled: true,
+            op: StockChangeOp::Add,
+            geometry: StockGeometry::Model { model_id },
+            material: rs_cam_core::material::Material::Custom {
+                name: "Resin".to_owned(),
+                feed_scale_factor: 1.0,
+            },
+        }
+    }
+
+    fn ids(controller: &AppController<ScriptedBackend>) -> Vec<(usize, bool)> {
+        controller.state.session.list_setups()[0]
+            .stock_changes
+            .iter()
+            .map(|c| (c.id.0, c.enabled))
+            .collect()
+    }
+
+    fn save(controller: &mut AppController<ScriptedBackend>, setup: SetupId, c: StockChange) {
+        controller.state.panels.stock_change_editor = Some(StockChangeEditor {
+            setup_id: setup,
+            is_new: true,
+            draft: c.clone(),
+            refusal: None,
+        });
+        controller.handle_internal_event(AppEvent::EditStockChanges(
+            setup,
+            StockChangeIntent::Save {
+                change: Box::new(c),
+                is_new: true,
+            },
+        ));
+    }
+
+    #[test]
+    fn every_panel_action_is_one_s2_command_s4() {
+        let mut controller = sample_controller();
+        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let mesh = ModelId(controller.state.session.models()[0].id);
+
+        // Add, twice. A saved draft closes the editor and dirties the project.
+        save(&mut controller, setup, change(0, mesh));
+        assert!(controller.state.panels.stock_change_editor.is_none());
+        assert!(
+            controller.state.gui.dirty,
+            "an applied change marks the project edited"
+        );
+        save(&mut controller, setup, change(1, mesh));
+        assert_eq!(ids(&controller), vec![(0, true), (1, true)]);
+
+        // The checkbox: ReplaceStockChange with the stored record.
+        controller.handle_internal_event(AppEvent::EditStockChanges(
+            setup,
+            StockChangeIntent::SetEnabled {
+                change_id: StockChangeId(0),
+                enabled: false,
+            },
+        ));
+        assert_eq!(ids(&controller), vec![(0, false), (1, true)]);
+        assert_eq!(
+            controller.state.session.list_setups()[0].stock_changes[0].name,
+            "Change 1",
+            "the flip keeps the rest of the record"
+        );
+
+        // An edit from the editor: ReplaceStockChange with the draft.
+        let mut renamed = change(1, mesh);
+        renamed.name = "Riser".to_owned();
+        controller.handle_internal_event(AppEvent::EditStockChanges(
+            setup,
+            StockChangeIntent::Save {
+                change: Box::new(renamed),
+                is_new: false,
+            },
+        ));
+        assert_eq!(
+            controller.state.session.list_setups()[0].stock_changes[1].name,
+            "Riser"
+        );
+
+        // Move up: MoveStockChange.
+        controller.handle_internal_event(AppEvent::EditStockChanges(
+            setup,
+            StockChangeIntent::Move {
+                change_id: StockChangeId(1),
+                to_position: 0,
+            },
+        ));
+        assert_eq!(ids(&controller), vec![(1, true), (0, false)]);
+
+        // Delete: RemoveStockChange, and an editor open on the change closes.
+        controller.state.panels.stock_change_editor = Some(StockChangeEditor {
+            setup_id: setup,
+            is_new: false,
+            draft: change(1, mesh),
+            refusal: None,
+        });
+        controller.handle_internal_event(AppEvent::EditStockChanges(
+            setup,
+            StockChangeIntent::Remove(StockChangeId(1)),
+        ));
+        assert_eq!(ids(&controller), vec![(0, false)]);
+        assert!(controller.state.panels.stock_change_editor.is_none());
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_editor_in_the_core_words_s4() {
+        let mut controller = sample_controller();
+        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let mesh = ModelId(controller.state.session.models()[0].id);
+
+        // A remove cannot use a fill: the S2 door refuses it by name.
+        let mut removal = change(0, mesh);
+        removal.op = StockChangeOp::Remove;
+        removal.geometry = StockGeometry::OutlineFill {
+            model_ids: vec![mesh],
+            level_z: 0.0,
+        };
+        save(&mut controller, setup, removal);
+
+        assert!(ids(&controller).is_empty(), "a refusal writes nothing");
+        let editor = controller
+            .state
+            .panels
+            .stock_change_editor
+            .as_ref()
+            .expect("the editor stays open on a refusal");
+        let refusal = editor
+            .refusal
+            .as_deref()
+            .expect("the editor holds the refusal");
+        assert!(
+            refusal.contains("a remove cannot use an outline fill"),
+            "{refusal}"
+        );
+        assert!(
+            controller
+                .notifications()
+                .iter()
+                .any(|n| n.message.contains("a remove cannot use an outline fill")),
+            "the refusal also reaches a notification"
+        );
+        assert!(
+            !controller.state.gui.dirty,
+            "a refusal does not dirty the project"
+        );
+
+        // Non-vacuity: the same draft as an Add with an outline the mesh does
+        // not have is refused by its own rule, so the arm passes core's text.
+        let mut no_outline = change(0, mesh);
+        no_outline.geometry = StockGeometry::OutlineFill {
+            model_ids: vec![mesh],
+            level_z: 0.0,
+        };
+        save(&mut controller, setup, no_outline);
+        let refusal = controller
+            .state
+            .panels
+            .stock_change_editor
+            .as_ref()
+            .and_then(|e| e.refusal.clone())
+            .expect("refused");
+        assert!(refusal.contains("no closed outline"), "{refusal}");
+    }
+}
