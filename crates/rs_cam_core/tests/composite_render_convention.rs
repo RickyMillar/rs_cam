@@ -250,6 +250,7 @@ fn silhouette_edges_are_antialiased() {
         vertices: vec![0.0, 0.0, 0.0, 100.0, 12.0, 0.0, 28.0, 90.0, 0.0],
         indices: vec![0, 1, 2],
         colors: vec![0.9, 0.3, 0.1, 0.9, 0.3, 0.1, 0.9, 0.3, 0.1],
+        material_slots: Vec::new(),
     };
     let pixels = render_mesh_composite(&mesh, W, H);
     let panels = composite_panel_layout(W, H);

@@ -53,6 +53,7 @@ fn scene() -> StockMesh {
         vertices,
         indices: vec![0, 1, 2, 0, 2, 3, 4, 5, 6],
         colors,
+        material_slots: Vec::new(),
     }
 }
 

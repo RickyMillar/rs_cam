@@ -181,6 +181,7 @@ pub fn new_draft(
                 level_z: stock_z.1,
             },
             material: stock_material.clone(),
+            display_colour: None,
         },
         refusal: None,
     }

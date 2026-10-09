@@ -76,7 +76,7 @@ pub use multitool::{
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
-pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence};
+pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
 pub use mutation::polygons_bbox;
 
@@ -2760,6 +2760,7 @@ mod tests {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 colors: Vec::new(),
+                material_slots: Vec::new(),
             }),
             total_moves: 0,
             deviations: None,

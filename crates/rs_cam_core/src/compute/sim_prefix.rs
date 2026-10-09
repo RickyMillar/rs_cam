@@ -1010,6 +1010,7 @@ mod tests {
                 level_z: 5.0,
             },
             material: crate::material::Material::default(),
+            display_colour: None,
         };
         let group_with =
             |change: StockChange, polys: &Arc<Vec<crate::polygon::Polygon2>>| SimGroupEntry {

@@ -180,6 +180,8 @@ pub enum Categories {
     Collisions,
     /// The By Area regions of the selected 3D Rough, one colour each.
     AreaRegions,
+    /// S5: the materials of the simulated stock, one colour each.
+    StockMaterials,
 }
 
 impl Categories {
@@ -192,6 +194,7 @@ impl Categories {
             Self::HeightPlanes => "Height planes",
             Self::Collisions => "Collisions",
             Self::AreaRegions => "By Area regions",
+            Self::StockMaterials => "Stock materials",
         }
     }
 }
@@ -370,8 +373,24 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
     if registry::area_regions_drawn(state) {
         out.push(RailLine::Categories(Categories::AreaRegions));
     }
+    if stock_draws_materials(state) && !state.session.stock_material_legend().is_empty() {
+        out.push(RailLine::Categories(Categories::StockMaterials));
+    }
     out.extend(status.into_iter().map(RailLine::Status));
     out
+}
+
+/// S5: the simulated stock is drawn in its plain colours, which show the
+/// material of each vertex (`app::gpu_upload::compute_sim_colors`). The
+/// height colours and the deviation colours hide the materials.
+fn stock_draws_materials(state: &AppState) -> bool {
+    use crate::state::simulation::StockVizMode;
+    registry::sim_stock_drawn(state)
+        && match state.simulation.stock_viz_mode {
+            StockVizMode::Solid => true,
+            StockVizMode::Deviation => !state.simulation.playback.deviations_fit_display(),
+            StockVizMode::ByHeight => false,
+        }
 }
 
 // ── drawing ────────────────────────────────────────────────────────────────
@@ -826,6 +845,11 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
         Categories::Collisions => {
             format!("{} \u{00B7} {}", kind.name(), collision_count(state))
         }
+        Categories::StockMaterials => format!(
+            "{} \u{00B7} {}",
+            kind.name(),
+            state.session.stock_material_legend().len()
+        ),
     }
 }
 
@@ -1371,6 +1395,12 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
                     .collect()
             })
             .unwrap_or_default(),
+        Categories::StockMaterials => state
+            .session
+            .stock_material_legend()
+            .into_iter()
+            .map(|swatch| (swatch.label, Some(swatch.colour)))
+            .collect(),
         Categories::Collisions => vec![
             (
                 "isolated".to_owned(),
@@ -1431,5 +1461,9 @@ fn categories_caveats(state: &AppState, kind: Categories, caveats: &mut Caveats)
             );
         }
         Categories::Collisions => caveats.push("holder and shank strike points", tokens::TEXT_FAINT),
+        Categories::StockMaterials => caveats.push(
+            "the material at the surface \u{00B7} a surface is darker lower down",
+            tokens::TEXT_FAINT,
+        ),
     }
 }

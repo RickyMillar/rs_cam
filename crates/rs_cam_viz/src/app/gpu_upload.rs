@@ -58,8 +58,10 @@ impl RsCamApp {
         mesh_is_final: bool,
     ) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
+        // S5: the plain stock colours show the material of each vertex.
+        let palette = self.controller.state().session.stock_material_palette();
         match self.controller.state().simulation.stock_viz_mode {
-            StockVizMode::Solid => solid_sim_colors(mesh),
+            StockVizMode::Solid => solid_sim_colors(mesh, &palette),
             StockVizMode::Deviation => sim_render::deviation_colors_for_mesh(
                 self.controller
                     .state()
@@ -70,7 +72,7 @@ impl RsCamApp {
                 mesh_is_final,
                 num_verts,
             )
-            .unwrap_or_else(|| solid_sim_colors(mesh)),
+            .unwrap_or_else(|| solid_sim_colors(mesh, &palette)),
             StockVizMode::ByHeight => {
                 rs_cam_core::export::ribbon::height_gradient_colors(&mesh.vertices)
             }
@@ -1545,18 +1547,16 @@ impl RsCamApp {
 /// unchanged.
 /// The plain colours of a sim mesh: the per-vertex colours core baked in,
 /// or one wood tone when the mesh has none.
-fn solid_sim_colors(mesh: &rs_cam_core::stock::stock_mesh::StockMesh) -> Vec<[f32; 3]> {
+/// The plain stock colours: the baked wood shade, and the material colour
+/// on each vertex of an added material (S5,
+/// `rs_cam_core::export::material_colour`).
+fn solid_sim_colors(
+    mesh: &rs_cam_core::stock::stock_mesh::StockMesh,
+    palette: &rs_cam_core::export::material_colour::MaterialPalette,
+) -> Vec<[f32; 3]> {
     let num_verts = mesh.vertices.len() / 3;
-    let baked: Vec<[f32; 3]> = mesh
-        .colors
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .take(num_verts)
-        .copied()
-        .collect();
-    if baked.len() == num_verts {
-        baked
+    if mesh.colors.len() / 3 >= num_verts {
+        rs_cam_core::export::material_colour::material_colors(mesh, palette)
     } else {
         vec![[0.65, 0.45, 0.25]; num_verts]
     }

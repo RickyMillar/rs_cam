@@ -5,9 +5,9 @@ is `export::mod`, which re-exports the four surfaces.
 
 ## Files
 
-- `mod.rs` — the facade.
-- `viz.rs` — the SVG and HTML preview output.
+- `mod.rs` — the facade. `viz.rs` — the SVG and HTML preview output.
 - `ribbon.rs` — the toolpath ribbon mesh and the per-vertex colour ramps.
+- `material_colour.rs` — S5: `MaterialPalette`, the colour of a stock material.
 - `fingerprint.rs` — toolpath fingerprinting and diffing for parameter checks.
 - `gcode_validator.rs` — the G-code invariant validator.
 - `artifact_io.rs` — one home for the JSON artifact dumps core writes to disk.

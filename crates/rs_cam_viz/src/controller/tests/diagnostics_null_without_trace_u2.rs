@@ -24,6 +24,7 @@ fn trace_less_results() -> crate::state::simulation::SimulationResults {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 12,
         boundaries: Vec::new(),

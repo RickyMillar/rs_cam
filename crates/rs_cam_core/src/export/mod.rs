@@ -9,5 +9,6 @@
 pub(crate) mod artifact_io;
 pub mod fingerprint;
 pub mod gcode_validator;
+pub mod material_colour;
 pub mod ribbon;
 pub mod viz;

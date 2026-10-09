@@ -898,6 +898,7 @@ pub fn reach_overlay_stock_mesh(
         vertices,
         indices,
         colors,
+        material_slots: Vec::new(),
     }
 }
 

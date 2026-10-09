@@ -294,6 +294,7 @@ fn queued_simulation_naming(ids: &[ToolpathId]) -> ComputeMessage {
                 vertices: vec![0.0; 9],
                 indices: vec![0, 1, 2],
                 colors: vec![0.5; 9],
+                material_slots: Vec::new(),
             }),
             total_moves: 10 * ids.len(),
             deviations: None,
@@ -503,6 +504,7 @@ fn reset_simulation_cancels_analysis_lane() {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 1,
         boundaries: Vec::new(),
@@ -627,6 +629,7 @@ mod stock_change_panel_s4 {
                 name: "Resin".to_owned(),
                 feed_scale_factor: 1.0,
             },
+            display_colour: None,
         }
     }
 

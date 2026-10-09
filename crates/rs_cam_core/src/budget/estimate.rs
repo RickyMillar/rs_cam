@@ -66,6 +66,11 @@ pub fn dexel_cell_bytes() -> u64 {
 /// the estimate counts one corner per cell, which is exact in the limit of a
 /// large grid.
 ///
+/// S5: a mesh of a stock with an added material also holds one
+/// [`crate::stock::material_slot::MaterialSlot`] per vertex
+/// (`StockMesh::material_slots`). The estimate counts it for every stock,
+/// so it stays an upper bound; a one-material stock holds none.
+///
 /// A held mesh is a copy through `StockMesh::append_transformed`
 /// (`stock/stock_mesh.rs`), which reserves the exact length, not the
 /// capacity of the build. A closed Z-grid solid fills about this
@@ -80,8 +85,9 @@ pub fn mesh_cell_bytes() -> u64 {
     const INDICES_PER_CELL: usize = 12;
     let positions = VERTICES_PER_CORNER * COMPONENTS * size_of::<f32>();
     let colours = VERTICES_PER_CORNER * COMPONENTS * size_of::<f32>();
+    let slots = VERTICES_PER_CORNER * size_of::<crate::stock::material_slot::MaterialSlot>();
     let indices = INDICES_PER_CELL * size_of::<u32>();
-    bytes(positions + colours + indices)
+    bytes(positions + colours + slots + indices)
 }
 
 /// Bytes of one toolpath move ([`Move`], `toolpath.rs`).

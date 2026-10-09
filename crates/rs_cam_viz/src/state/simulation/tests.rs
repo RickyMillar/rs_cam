@@ -134,6 +134,7 @@ fn simulation_for_toolpath() -> SimulationState {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 9,
         boundaries: vec![ToolpathBoundary {
@@ -981,6 +982,7 @@ fn mesh_with_vertices(n: usize) -> StockMesh {
         vertices: vec![0.0; n * 3],
         indices: Vec::new(),
         colors: vec![0.5; n * 3],
+        material_slots: Vec::new(),
     }
 }
 

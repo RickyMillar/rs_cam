@@ -377,6 +377,7 @@ mod tests {
                     z_top: 1.0,
                 },
                 material: crate::material::Material::default(),
+                display_colour: None,
             },
             sources: Vec::new(),
         }

@@ -297,6 +297,7 @@ impl RsCamApp {
             op: op_of(p.op),
             geometry,
             material,
+            display_colour: None,
         };
         before.index = Some(p.setup_index);
         before.extra = serde_json::json!({ "change_id": id.0 });

@@ -144,6 +144,7 @@ pub fn rest_grid_to_heatmap_mesh(grid: &RestGrid) -> Option<StockMesh> {
         vertices,
         indices,
         colors,
+        material_slots: Vec::new(),
     })
 }
 
@@ -337,6 +338,7 @@ pub fn tier_map_to_heatmap_mesh(map: &TierMap, islands: &TierIslands) -> Option<
         vertices,
         indices,
         colors,
+        material_slots: Vec::new(),
     })
 }
 
@@ -474,6 +476,7 @@ pub fn area_regions_to_mesh(map: &crate::adaptive3d::AreaRegionMap) -> Option<St
         vertices,
         indices,
         colors,
+        material_slots: Vec::new(),
     })
 }
 

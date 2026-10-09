@@ -231,6 +231,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
+                    material_slots: Vec::new(),
                 }),
                 total_moves: 0,
                 deviations: None,

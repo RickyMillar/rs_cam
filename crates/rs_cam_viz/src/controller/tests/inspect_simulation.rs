@@ -11,6 +11,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
+            material_slots: Vec::new(),
         }),
         total_moves: 12,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
@@ -104,6 +105,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
+                    material_slots: Vec::new(),
                 }),
                 total_moves: 8,
                 deviations: None,

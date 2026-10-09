@@ -33,6 +33,7 @@ pub fn dimmed(mesh: &StockMesh, factor: f32) -> StockMesh {
         vertices: mesh.vertices.clone(),
         indices: mesh.indices.clone(),
         colors: mesh.colors.iter().map(|c| c * factor).collect(),
+        material_slots: mesh.material_slots.clone(),
     }
 }
 

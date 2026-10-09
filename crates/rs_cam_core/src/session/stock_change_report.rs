@@ -8,8 +8,10 @@
 //! [`StockChangeVolume::volume_label`]. So one project gives the same
 //! numbers on every surface (GUI/MCP/CLI number parity).
 
-use crate::compute::stock_change::{StockChange, StockGeometry};
+use crate::compute::stock_change::{StockChange, StockChangeOp, StockGeometry};
 use crate::compute::stock_change_apply::StockChangeVolume;
+use crate::export::material_colour::{MaterialPalette, colour_from_rgb8};
+use crate::stock::material_slot::MaterialSlot;
 
 use super::ProjectSession;
 
@@ -117,7 +119,98 @@ impl StockChangeRow {
     }
 }
 
+/// One material of the simulated stock, for the stock legend (S5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StockMaterialSwatch {
+    /// The material slot (0 = the stock material).
+    pub slot: MaterialSlot,
+    /// The material name (`Material::label`).
+    pub label: String,
+    /// The colour at the uncut surface, as the stock views draw it.
+    pub colour: [f32; 3],
+}
+
 impl ProjectSession {
+    /// The colour of each material slot of the simulated stock (S5).
+    ///
+    /// Slot `k` comes from the default palette, or from the
+    /// `display_colour` of the first applied `Add` change (in application
+    /// order) that wrote slot `k` and has one. The slot of a change comes
+    /// from the simulation (`StockChangeVolume::material_slot`). With no
+    /// simulation, the palette is the default.
+    #[must_use]
+    pub fn stock_material_palette(&self) -> MaterialPalette {
+        let mut palette = MaterialPalette::default();
+        let mut coloured = [false; crate::stock::material_slot::MATERIAL_SLOT_CAPACITY];
+        for (slot, change) in self.applied_additions() {
+            let Some(rgb) = change.display_colour else {
+                continue;
+            };
+            if let Some(done) = coloured.get_mut(slot.index())
+                && !*done
+            {
+                *done = true;
+                palette = palette.with_colour(slot, colour_from_rgb8(rgb));
+            }
+        }
+        palette
+    }
+
+    /// The materials of the simulated stock, slot 0 first, with the colour
+    /// that the stock views draw them in (S5). Empty when the simulation
+    /// added no material: a one-material stock needs no legend.
+    #[must_use]
+    pub fn stock_material_legend(&self) -> Vec<StockMaterialSwatch> {
+        let palette = self.stock_material_palette();
+        let mut swatches: Vec<StockMaterialSwatch> = Vec::new();
+        for (slot, change) in self.applied_additions() {
+            if swatches.iter().any(|s| s.slot == slot) {
+                continue;
+            }
+            swatches.push(StockMaterialSwatch {
+                slot,
+                label: change.material.label(),
+                colour: palette.colour(slot),
+            });
+        }
+        if swatches.is_empty() {
+            return swatches;
+        }
+        swatches.sort_by_key(|s| s.slot);
+        swatches.insert(
+            0,
+            StockMaterialSwatch {
+                slot: MaterialSlot::STOCK,
+                label: self.stock_config().material.label(),
+                colour: palette.colour(MaterialSlot::STOCK),
+            },
+        );
+        swatches
+    }
+
+    /// Each `Add` change that the simulation applied and that added
+    /// material, with its slot, in application order.
+    fn applied_additions(&self) -> Vec<(MaterialSlot, &StockChange)> {
+        let Some(sim) = self.simulation_result() else {
+            return Vec::new();
+        };
+        let setups = self.list_setups();
+        sim.stock_change_volumes
+            .iter()
+            .filter(|v| v.op == StockChangeOp::Add && v.added_mm3 > 0.0)
+            .filter_map(|v| {
+                let slot = v.material_slot.filter(|s| !s.is_stock())?;
+                let change = setups
+                    .iter()
+                    .find(|s| s.id == v.setup_id)?
+                    .stock_changes
+                    .iter()
+                    .find(|c| c.id == v.change_id)?;
+                Some((slot, change))
+            })
+            .collect()
+    }
+
     /// Every stock change of every setup, in setup order and, within a
     /// setup, in application order, with the volume the session's
     /// simulation measured for it.
