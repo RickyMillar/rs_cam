@@ -5,9 +5,9 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 ## Files
 
 - `../controller.rs` — the type, the apply path, the plan progress accessor
-  and `PlanResolutionConfirm`.
-- `events/` — the handlers by area: compute, model, toolpath, simulation,
-  planner, preferences, undo. `events/compute.rs` holds the plan driver.
+  and `PlanResolutionConfirm`. `events/` — the handlers by area: compute (the
+  plan driver), model, toolpath, simulation, planner, preferences, undo, pins
+  (the one pin-edit door for GUI and MCP, P5).
 - `generate_all.rs` — the plan's state: steps, outcomes, progress, sink. The
   ORDER is core's, at `session::generation_plan::plan`.
 - `io.rs` — project open, save and import at the controller level.
@@ -33,7 +33,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`
+- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`
 - `cargo test -p rs_cam_viz -q --test apply_contract_a3`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`

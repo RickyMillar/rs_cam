@@ -290,6 +290,44 @@ pub fn two_mixed_diameters(
     ])
 }
 
+/// Read the [`MixedPairPattern`] back from a stored set, in any pin order.
+///
+/// The set matches when it has two pins whose diameters differ by more
+/// than the floating-point slop, and each pin is within
+/// [`PIN_MATCH_TOL_MM`] of the flip axis. Otherwise the result is `None`,
+/// and the set is a custom set. The read-back is the inverse of
+/// [`two_mixed_diameters`]: each `along` is the pin's distance along the
+/// axis.
+#[must_use]
+pub fn fit_two_mixed_diameters(
+    pins: &[AlignmentPin],
+    map: &PinSetupMap,
+) -> Option<MixedPairPattern> {
+    let frame = AxisFrame::of(map)?;
+    let [a, b] = pins else {
+        return None;
+    };
+    if (a.diameter - b.diameter).abs() <= PIN_GEOM_EPS_MM {
+        return None;
+    }
+    let (small, large) = if a.diameter < b.diameter {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let small_at = frame.coords(small.x, small.y);
+    let large_at = frame.coords(large.x, large.y);
+    if small_at.1.abs() > PIN_MATCH_TOL_MM || large_at.1.abs() > PIN_MATCH_TOL_MM {
+        return None;
+    }
+    Some(MixedPairPattern {
+        small_along: small_at.0,
+        large_along: large_at.0,
+        small_diameter: small.diameter,
+        large_diameter: large.diameter,
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
@@ -491,6 +529,63 @@ mod tests {
         assert_eq!(snapped[1], pins[1]);
         let top = PinSetupMap::new(FaceUp::Top, ZRotation::Deg0, W, D);
         assert_eq!(snap_to_flip(&pins, &top, PIN_MATCH_TOL_MM), pins);
+    }
+
+    #[test]
+    fn the_mixed_pair_reads_back_in_any_order() {
+        let pattern = MixedPairPattern {
+            small_along: 6.0,
+            large_along: 59.0,
+            small_diameter: 6.0,
+            large_diameter: 8.0,
+        };
+        for turn in [ZRotation::Deg0, ZRotation::Deg180] {
+            let map = bottom(turn);
+            let [small, large] = two_mixed_diameters(&map, pattern).expect("an in-plane flip");
+            for pins in [
+                vec![small.clone(), large.clone()],
+                vec![large.clone(), small.clone()],
+            ] {
+                let fit = fit_two_mixed_diameters(&pins, &map).expect("the preset reads back");
+                assert!(
+                    close(fit.small_along, pattern.small_along),
+                    "{turn:?}: {fit:?}"
+                );
+                assert!(
+                    close(fit.large_along, pattern.large_along),
+                    "{turn:?}: {fit:?}"
+                );
+                assert_eq!(fit.small_diameter, pattern.small_diameter);
+                assert_eq!(fit.large_diameter, pattern.large_diameter);
+            }
+        }
+    }
+
+    #[test]
+    fn a_set_that_is_not_the_mixed_pair_reads_back_as_custom() {
+        let map = bottom(ZRotation::Deg0);
+        // One diameter: not the preset.
+        let same = vec![
+            AlignmentPin::new(6.0, D / 2.0, 6.0),
+            AlignmentPin::new(59.0, D / 2.0, 6.0),
+        ];
+        assert!(fit_two_mixed_diameters(&same, &map).is_none());
+        // Off the axis by more than the match tolerance.
+        let off = vec![
+            AlignmentPin::new(6.0, D / 2.0, 6.0),
+            AlignmentPin::new(59.0, D / 2.0 + 2.0 * PIN_MATCH_TOL_MM, 8.0),
+        ];
+        assert!(fit_two_mixed_diameters(&off, &map).is_none());
+        // Three pins.
+        let three = vec![
+            AlignmentPin::new(6.0, D / 2.0, 6.0),
+            AlignmentPin::new(30.0, D / 2.0, 6.0),
+            AlignmentPin::new(59.0, D / 2.0, 8.0),
+        ];
+        assert!(fit_two_mixed_diameters(&three, &map).is_none());
+        // A top setup has no flip axis.
+        let top = PinSetupMap::new(FaceUp::Top, ZRotation::Deg0, W, D);
+        assert!(fit_two_mixed_diameters(&same, &top).is_none());
     }
 
     #[test]

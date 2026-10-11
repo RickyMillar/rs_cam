@@ -6,7 +6,7 @@
 //! module, and it is the ONE path: the MCP tool calls it today and Phase U's
 //! planner dialog calls the same method, so the two surfaces cannot drift.
 //!
-//! Reconciler precedent: `events::model::sync_alignment_pin_drill`, extended
+//! Reconciler precedent: `events::pins::sync_alignment_pin_drill`, extended
 //! to many ops at once.
 //!
 //! # Phase U — the dialog's four verbs

@@ -592,3 +592,294 @@ fn a_panel_pin_edit_and_its_undo_leave_the_other_results_current() {
     ));
     assert!(crate::ui::properties::stock_edit_command(&old, old.clone()).is_none());
 }
+
+// ── P5 / P8: a pin edit takes one door ────────────────────────────────
+//
+// P5 and P8 (C7, C9): a pin edit takes one door.
+//
+// Before P5 the GUI ran the pin-drill synchronisation after a pin edit
+// and MCP did not. An MCP `add_alignment_pin` then left no "Pin Drill"
+// toolpath, and a GUI add left one. The door is
+// `AppController::finish_pin_edit`. The MCP describe step calls it, and
+// the stock panel reaches the same synchronisation through
+// `pin_drill_sync`.
+//
+// `RsCamApp` needs an `eframe::CreationContext`, so no test drives the
+// MCP dispatch. This module drives the MCP route at its two steps: the
+// dispatch's `session.apply(command)`, then the door that the describe
+// step calls. A source scan pins that the describe step calls that door.
+//
+// The fixture puts a `Bottom` setup at index 0 and a `Top` setup at
+// index 1, so the C7 rule (the first `Top` setup at 0 deg, not index 0) is not
+// vacuous.
+mod pin_edit_one_door_p5 {
+    use super::super::*;
+
+    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+    use rs_cam_core::session::{AddAlignmentPinArgs, SetAlignmentPinsArgs};
+
+    use crate::controller::PinDrillSync;
+    use crate::controller::events::pins::{PIN_DRILL_NEEDS_TOP_SETUP, PinEdit};
+    use crate::state::job::AlignmentPin;
+
+    /// A controller with a Bottom setup at index 0 and a Top setup at index 1.
+    fn flipped_first_controller() -> AppController<ScriptedBackend> {
+        let mut controller = sample_controller();
+        let mut draft = controller.state.session.stock_config().clone();
+        draft.auto_from_model = false;
+        crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
+        let _ = controller
+            .state
+            .session
+            .apply(Command::SetSetupFace(SetSetupFaceArgs {
+                setup_index: 0,
+                face_up: FaceUp::Bottom,
+            }))
+            .expect("setup 0 exists");
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AddSetup(AddSetupArgs {
+                name: Some("Top".to_owned()),
+                face_up: FaceUp::Top,
+            }))
+            .expect("a setup can be added");
+        controller
+    }
+
+    /// What a toolpath list says, by row: the operation, the setup index and
+    /// the pin-drill holes.
+    fn toolpath_list(
+        controller: &AppController<ScriptedBackend>,
+    ) -> Vec<(String, Option<usize>, Vec<[f64; 2]>)> {
+        let session = &controller.state.session;
+        session
+            .toolpath_configs()
+            .iter()
+            .enumerate()
+            .map(|(index, tc)| {
+                let setup = session
+                    .list_setups()
+                    .iter()
+                    .position(|s| s.toolpath_indices.contains(&index));
+                let holes = match &tc.operation {
+                    OperationConfig::AlignmentPinDrill(c) => c.holes.clone(),
+                    _ => Vec::new(),
+                };
+                (format!("{:?}", tc.operation.op_type()), setup, holes)
+            })
+            .collect()
+    }
+
+    /// The GUI route: the stock panel's draft, then the frame loop's discharge.
+    fn gui_add_pin(controller: &mut AppController<ScriptedBackend>, pin: AlignmentPin) {
+        let mut draft = controller.state.session.stock_config().clone();
+        draft.alignment_pins.push(pin);
+        crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
+        controller.discharge_panel_side_effects();
+    }
+
+    /// The MCP route: the dispatch applies the row, the describe step runs the
+    /// door.
+    fn mcp_add_pin(controller: &mut AppController<ScriptedBackend>, pin: &AlignmentPin) -> PinEdit {
+        let effects = controller
+            .state
+            .session
+            .apply(Command::AddAlignmentPin(AddAlignmentPinArgs {
+                x: pin.x,
+                y: pin.y,
+                diameter: pin.diameter,
+            }))
+            .expect("an add is never refused");
+        controller.finish_pin_edit(&effects)
+    }
+
+    #[test]
+    fn an_mcp_add_and_a_gui_add_leave_the_same_toolpath_list_p5() {
+        let pin = AlignmentPin::new(10.0, 20.0, 6.0);
+
+        let mut gui = flipped_first_controller();
+        let mut mcp = flipped_first_controller();
+        let before = toolpath_list(&gui);
+        assert_eq!(before, toolpath_list(&mcp), "the two fixtures start equal");
+
+        gui_add_pin(&mut gui, pin.clone());
+        let edit = mcp_add_pin(&mut mcp, &pin);
+
+        let after = toolpath_list(&gui);
+        assert_eq!(
+            after.len(),
+            before.len() + 1,
+            "non-vacuity: the GUI add created the pin-drill toolpath"
+        );
+        assert_eq!(
+            toolpath_list(&mcp),
+            after,
+            "an MCP add and a GUI add must leave the same toolpath list"
+        );
+        assert!(
+            matches!(edit.pin_drill, PinDrillSync::Created { setup_index: 1, .. }),
+            "the MCP door created the pin drill in setup 1, got {:?}",
+            edit.pin_drill
+        );
+        let (label, setup, holes) = after.last().expect("the pin drill").clone();
+        assert_eq!(label, "AlignmentPinDrill");
+        assert_eq!(
+            setup,
+            Some(1),
+            "C7: the pin drill goes in the first Top setup, not in setup index 0"
+        );
+        assert_eq!(holes, vec![[pin.x, pin.y]]);
+
+        // A second edit moves the holes the same way on both routes.
+        let moved = AlignmentPin::new(30.0, 20.0, 6.0);
+        gui_add_pin(&mut gui, moved.clone());
+        let edit = mcp_add_pin(&mut mcp, &moved);
+        assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
+        let drill_index = toolpath_list(&mcp).len() - 1;
+        assert!(
+            matches!(edit.pin_drill, PinDrillSync::Updated { .. }),
+            "{:?}",
+            edit.pin_drill
+        );
+        assert!(
+            edit.stale.contains(&drill_index),
+            "the reply's stale set names the pin drill: {:?}",
+            edit.stale
+        );
+        assert!(
+            !edit.stale.contains(&0),
+            "the pin edit leaves the other toolpath current: {:?}",
+            edit.stale
+        );
+
+        // Clearing the set removes the pin drill on both routes.
+        let mut draft = gui.state.session.stock_config().clone();
+        draft.alignment_pins.clear();
+        crate::ui::properties::apply_stock_draft(&mut gui.state, draft);
+        gui.discharge_panel_side_effects();
+        let edit = mcp
+            .apply_pin_edit(Command::SetAlignmentPins(SetAlignmentPinsArgs {
+                pins: Vec::new(),
+            }))
+            .expect("a set is never refused");
+        assert!(
+            matches!(edit.pin_drill, PinDrillSync::Removed { .. }),
+            "{:?}",
+            edit.pin_drill
+        );
+        assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
+        assert_eq!(toolpath_list(&mcp), before);
+    }
+
+    #[test]
+    fn with_no_top_setup_the_door_refuses_and_says_why_p8() {
+        let mut controller = sample_controller();
+        let _ = controller
+            .state
+            .session
+            .apply(Command::SetSetupFace(SetSetupFaceArgs {
+                setup_index: 0,
+                face_up: FaceUp::Bottom,
+            }))
+            .expect("setup 0 exists");
+        let count = controller.state.session.toolpath_configs().len();
+        let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
+        assert_eq!(
+            edit.pin_drill,
+            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned())
+        );
+        assert_eq!(
+            controller.state.session.toolpath_configs().len(),
+            count,
+            "a refusal adds no toolpath"
+        );
+    }
+
+    /// The MCP describe step takes the door for every pin row.
+    #[test]
+    fn the_mcp_pin_rows_reply_through_the_door_p5() {
+        const COMMANDS_SRC: &str = include_str!("../../app/mcp/commands.rs");
+        // Non-vacuity: the helper exists and calls the door.
+        let helper_at = COMMANDS_SRC
+            .find("    fn describe_pin_edit(")
+            .expect("the describe helper of a pin edit");
+        let helper = &COMMANDS_SRC[helper_at..];
+        let helper = &helper[..helper[1..]
+            .find("\n    fn ")
+            .map_or(helper.len(), |n| n + 1)];
+        assert!(
+            helper.contains("self.controller.finish_pin_edit(effects)"),
+            "describe_pin_edit must call the pin-edit door"
+        );
+        for row in [
+            "CommandId::AddAlignmentPin => {",
+            "CommandId::RemoveAlignmentPin => {",
+            "CommandId::SetAlignmentPins => {",
+        ] {
+            let at = COMMANDS_SRC
+                .find(row)
+                .unwrap_or_else(|| panic!("the describe step has an arm `{row}`"));
+            let arm = &COMMANDS_SRC[at..];
+            let arm = &arm[..arm[1..]
+                .find("\n            CommandId::")
+                .map_or(arm.len(), |n| n + 1)];
+            assert!(
+                arm.contains("self.describe_pin_edit("),
+                "the arm `{row}` must reply through describe_pin_edit:\n{arm}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_top_setup_turned_180_does_not_take_the_pin_drill() {
+        // The only Top setup is turned 180 deg. The generator does not turn
+        // the pin holes with the setup, so the door refuses (lead ruling
+        // 2026-10-12) and names why.
+        let mut controller = sample_controller();
+        let _ = controller
+            .state
+            .session
+            .apply(Command::SetSetupRotation(SetSetupRotationArgs {
+                setup_index: 0,
+                z_rotation: ZRotation::Deg180,
+            }))
+            .expect("setup 0 exists");
+        assert_eq!(
+            controller.state.session.list_setups()[0].face_up,
+            FaceUp::Top,
+            "non-vacuity: the only setup is a Top setup"
+        );
+        let count = controller.state.session.toolpath_configs().len();
+        let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
+        assert_eq!(
+            edit.pin_drill,
+            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned())
+        );
+        assert!(
+            PIN_DRILL_NEEDS_TOP_SETUP.contains("'Top' at 0 deg"),
+            "the refusal names why: {PIN_DRILL_NEEDS_TOP_SETUP}"
+        );
+        assert_eq!(
+            controller.state.session.toolpath_configs().len(),
+            count,
+            "a refusal adds no toolpath"
+        );
+
+        // Control: a Top setup at 0 deg added after it takes the pin drill.
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AddSetup(AddSetupArgs {
+                name: Some("Top 0".to_owned()),
+                face_up: FaceUp::Top,
+            }))
+            .expect("a setup can be added");
+        let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(30.0, 20.0, 6.0));
+        assert!(
+            matches!(edit.pin_drill, PinDrillSync::Created { setup_index: 1, .. }),
+            "{:?}",
+            edit.pin_drill
+        );
+    }
+}

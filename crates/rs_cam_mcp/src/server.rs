@@ -1181,6 +1181,83 @@ pub struct RemoveAlignmentPinParam {
     pub index: usize,
 }
 
+/// One alignment pin of a pin set, stock-local, in mm.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+pub struct AlignmentPinParam {
+    /// X of the pin centre in mm, from the stock's min corner.
+    pub x: f64,
+    /// Y of the pin centre in mm, from the stock's min corner.
+    pub y: f64,
+    /// Diameter of the pin in mm.
+    pub diameter: f64,
+}
+
+/// `set_alignment_pins` (P5): replace the whole pin set.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+pub struct SetAlignmentPinsParam {
+    /// The new pin set. An empty list removes every pin (and the pin-drill
+    /// toolpath).
+    pub pins: Vec<AlignmentPinParam>,
+}
+
+/// The pin presets of `place_alignment_pattern`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum AlignmentPatternPreset {
+    /// One pin on the flip axis plus a mirror pair off the axis, one
+    /// diameter. Keys unless the three pins are in a line or form an
+    /// equilateral triangle. Takes `axis_along`, `pair_along`,
+    /// `pair_across` and `diameter`.
+    #[default]
+    AxisPlusMirrorPair,
+    /// Two pins of different diameters on the flip axis. Keys with two
+    /// holes, and needs two drills. Takes `small_along`, `large_along`,
+    /// `small_diameter` and `large_diameter`.
+    TwoMixedDiameters,
+}
+
+/// `place_alignment_pattern` (P5): replace the pin set with a preset.
+///
+/// The preset is dimensioned in the frame of the flip axis of the first
+/// setup that turns the part over in plane: `*_along` is the distance in
+/// mm along the axis from its first end, `pair_across` the distance from
+/// the axis. For a `Bottom` setup at 0 deg the axis is y = D/2 from x = 0,
+/// so `along` is the stock-local X. For `Bottom` turned 180 deg the axis
+/// is x = W/2 from y = 0, so `along` is Y.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+pub struct PlaceAlignmentPatternParam {
+    /// The preset.
+    pub preset: AlignmentPatternPreset,
+    /// `axis_plus_mirror_pair`: the axis pin's distance along the axis, mm.
+    pub axis_along: Option<f64>,
+    /// `axis_plus_mirror_pair`: the pair's distance along the axis, mm.
+    pub pair_along: Option<f64>,
+    /// `axis_plus_mirror_pair`: each pair pin's distance from the axis, mm
+    /// (greater than zero).
+    pub pair_across: Option<f64>,
+    /// `axis_plus_mirror_pair`: the diameter of the three pins, mm.
+    pub diameter: Option<f64>,
+    /// `two_mixed_diameters`: the small pin's distance along the axis, mm.
+    pub small_along: Option<f64>,
+    /// `two_mixed_diameters`: the large pin's distance along the axis, mm.
+    pub large_along: Option<f64>,
+    /// `two_mixed_diameters`: the small pin's diameter, mm.
+    pub small_diameter: Option<f64>,
+    /// `two_mixed_diameters`: the large pin's diameter, mm (greater than
+    /// `small_diameter`).
+    pub large_diameter: Option<f64>,
+}
+
+/// `move_alignment_pins` (P5): move every pin by one offset.
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+pub struct MoveAlignmentPinsParam {
+    /// The X offset in mm.
+    pub dx: f64,
+    /// The Y offset in mm.
+    pub dy: f64,
+}
+
 /// S4: what a stock change does, as a wire enum. A mirror of
 /// `rs_cam_core::compute::stock_change::StockChangeOp`; the tokens are the
 /// tokens a project file stores.
@@ -1826,6 +1903,12 @@ pub fn build_info() -> serde_json::Value {
             // (`stock_material` default, `own_material`); the tool-load
             // report carries `material_split` and `summary.not_judged`.
             "stock_change_cut_as",
+            // P5 (2026-10-12): `set_alignment_pins`,
+            // `place_alignment_pattern` and `move_alignment_pins`; every
+            // pin edit reply carries `stale_toolpaths`, `pin_drill` and
+            // `pin_report`, and `inspect_stock` carries `pin_report`.
+            "alignment_pin_set_tools",
+            "alignment_pin_report",
         ],
     })
 }
@@ -1906,6 +1989,8 @@ mod tests {
             "dressup_helix_radius_rule",
             "stock_changes",
             "stock_change_cut_as",
+            "alignment_pin_set_tools",
+            "alignment_pin_report",
         ] {
             assert!(
                 features.contains(&flag),

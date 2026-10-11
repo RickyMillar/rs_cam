@@ -1,5 +1,6 @@
 mod compute;
 mod model;
+pub(crate) mod pins;
 mod planner;
 mod preferences;
 pub(crate) mod simulation;

@@ -1,9 +1,8 @@
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
-    AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
-    KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs,
-    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs,
-    SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
+    AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, Command, Fixture, KeepOutZone,
+    RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs,
+    SetAlignmentPinsArgs, SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -460,7 +459,11 @@ impl<B: ComputeBackend> AppController<B> {
                     let command = Command::SetAlignmentPins(SetAlignmentPinsArgs {
                         pins: pins.to_vec(),
                     });
-                    self.apply_controller_command(command, "the registration pins");
+                    // P5: the one pin-edit door. It also creates the
+                    // pin-drill operation.
+                    if let Err(error) = self.apply_pin_edit(command) {
+                        refusal = Some(format!("Could not write the registration pins: {error}"));
+                    }
                 }
                 Err(message) => refusal = Some(message),
             }
@@ -485,7 +488,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         self.pending_upload = true;
         self.state.gui.mark_edited();
-        self.sync_alignment_pin_drill();
+        let _ = self.sync_alignment_pin_drill();
         self.state.selection = Selection::Stock;
     }
 
@@ -816,176 +819,6 @@ impl<B: ComputeBackend> AppController<B> {
     // `state::stale::stamp_stale`. The three steps that are not a core
     // rule moved to `ui::properties::apply_stock_draft`: the
     // `auto_from_model` re-size, the GPU upload flag and the pin-drill
-    // synchronisation.
-
-    /// Create, update, or remove the auto-generated alignment pin drill toolpath.
-    pub(crate) fn sync_alignment_pin_drill(&mut self) {
-        use crate::state::toolpath::{AlignmentPinDrillConfig, OperationConfig};
-
-        let has_pins = !self.state.session.stock_config().alignment_pins.is_empty();
-
-        // Find existing pin drill toolpath across all setups.
-        let existing: Option<(usize, rs_cam_core::ToolpathId)> = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .enumerate()
-            .find(|(_, tc)| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
-            .map(|(idx, tc)| (idx, tc.id));
-
-        if has_pins && existing.is_none() {
-            // Auto-create in first setup, but only if a tool exists.
-            let first_tool_id = self.state.session.tools().first().map(|t| t.id.0);
-            let first_setup_idx = if self.state.session.list_setups().is_empty() {
-                None
-            } else {
-                Some(0)
-            };
-            if let (Some(setup_idx), Some(tool_id)) = (first_setup_idx, first_tool_id) {
-                let model_id = self
-                    .state
-                    .session
-                    .models()
-                    .first()
-                    .map(|m| m.id)
-                    .unwrap_or(0);
-                let holes: Vec<[f64; 2]> = self
-                    .state
-                    .session
-                    .stock_config()
-                    .alignment_pins
-                    .iter()
-                    .map(|p| [p.x, p.y])
-                    .collect();
-                // F1 (2026-06-10): run the suggest funnel instead of raw
-                // defaults — `..Default::default()` shipped the hardcoded
-                // 300 mm/min feed, which on a Ø6 pin drill is exactly the
-                // SolidWood rubbing floor (50 mm/min per mm Ø). Mirrors
-                // the add-toolpath path in `events/toolpath.rs`. On a
-                // suggest refusal, fall back to defaults rather than
-                // skipping the auto-create.
-                let stock_bbox = self.state.session.stock_bbox();
-                let stock_padding = self.state.session.stock_config().padding;
-                let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
-                    stock_bbox,
-                    stock_padding,
-                );
-                let model_bbox = self.state.session.model_bbox(model_id);
-                let suggested = self
-                    .state
-                    .session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id.0 == tool_id)
-                    .and_then(|tool| {
-                        rs_cam_core::feeds::suggest::suggest_params(
-                            rs_cam_core::feeds::suggest::SuggestParamsInput {
-                                op_type: crate::state::toolpath::OperationType::AlignmentPinDrill,
-                                tool,
-                                machine: self.state.session.machine(),
-                                material: &self.state.session.stock_config().material,
-                                lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                                stock_ctx: &stock_ctx,
-                                spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                                // Q1: the bbox the runtime-sanity
-                                // back-off reads. `model_id` is already
-                                // resolved above. The stock reaches
-                                // Suggest through `stock_ctx`, so
-                                // `SuggestContext::stock` stays empty.
-                                // `upstream_leftover_stock_mm` stays
-                                // `None`: no lookup here gives it.
-                                context: rs_cam_core::feeds::suggest::SuggestContext {
-                                    model_bbox: model_bbox.as_ref(),
-                                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                                },
-                            },
-                        )
-                        .ok()
-                    });
-                let (cfg, feeds_provenance) = match suggested {
-                    Some(s) => match s.operation {
-                        OperationConfig::AlignmentPinDrill(mut c) => {
-                            c.holes = holes;
-                            (c, s.provenance)
-                        }
-                        // suggest_params builds from the requested op_type,
-                        // so this arm is unreachable; defaults keep it total.
-                        _ => (
-                            AlignmentPinDrillConfig {
-                                holes,
-                                ..Default::default()
-                            },
-                            rs_cam_core::feeds::FeedsProvenance::default(),
-                        ),
-                    },
-                    None => {
-                        tracing::warn!(
-                            "pin-drill auto-create: suggest refused; falling back to defaults"
-                        );
-                        (
-                            AlignmentPinDrillConfig {
-                                holes,
-                                ..Default::default()
-                            },
-                            rs_cam_core::feeds::FeedsProvenance::default(),
-                        )
-                    }
-                };
-                let tc = rs_cam_core::session::ToolpathConfig {
-                    id: rs_cam_core::ToolpathId(0), // will be assigned by session
-                    name: "Pin Drill".to_owned(),
-                    enabled: true,
-                    operation: OperationConfig::AlignmentPinDrill(cfg),
-                    dressups: crate::state::toolpath::DressupConfig::default(),
-                    heights: crate::state::toolpath::HeightsConfig::default(),
-                    tool_id,
-                    model_id,
-                    pre_gcode: None,
-                    post_gcode: None,
-                    boundary: crate::state::toolpath::BoundaryConfig::default(),
-                    boundary_inherit: true,
-                    rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
-                    stock_source: crate::state::toolpath::StockSource::Fresh,
-                    coolant: rs_cam_core::gcode::CoolantMode::Off,
-                    face_selection: None,
-                    debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
-                    feeds_provenance,
-                    planner_origin: None,
-                };
-                let command = Command::AddToolpath(AddToolpathArgs {
-                    setup_index: setup_idx,
-                    config: Box::new(tc),
-                });
-                let _ = self.apply_quietly(command);
-            }
-        } else if !has_pins {
-            // Remove pin drill toolpath if pins were all deleted.
-            if let Some((idx, _id)) = existing {
-                let command = Command::RemoveToolpath(RemoveToolpathArgs { index: idx });
-                let _ = self.apply_quietly(command);
-            }
-        } else if let Some((idx, id)) = existing {
-            // Pins exist and toolpath exists — update hole positions and mark stale.
-            let new_holes: Vec<[f64; 2]> = self
-                .state
-                .session
-                .stock_config()
-                .alignment_pins
-                .iter()
-                .map(|p| [p.x, p.y])
-                .collect();
-            let command = Command::SetAlignmentPinDrillHoles(SetAlignmentPinDrillHolesArgs {
-                index: idx,
-                holes: new_holes,
-            });
-            let _ = self.apply_quietly(command);
-            // The row stamps `stale_since` on every index it dropped.
-            // Dropping the cached geometry is a view decision, and no
-            // core answer carries it.
-            if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id) {
-                rt.result = None;
-            }
-        }
-    }
+    // synchronisation. The pin-drill synchronisation is in `pins.rs`, the
+    // one door of a pin edit (P5).
 }

@@ -6,7 +6,7 @@
   `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
   (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
-  `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns), `spans.rs`, `validate.rs`, `generated_empty.rs`.
+  `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources), `spans.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
@@ -37,4 +37,4 @@
 - `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5 --test generated_empty_refusal_g_entryempty`
 - `cargo test -p rs_cam_core -q --test sim_peak_memory_g_simmem` (Linux)
 - `cargo test -p rs_cam_core -q --test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`
-- Pins: `--test` `alignment_pin_keying_intrinsic_p1`, `alignment_pins_judge_the_full_setup_map_p2`, `alignment_pin_keying_g_pinauto`, `a_pin_set_edit_stales_only_the_pin_drill_p4`, `alignment_pin_walls_and_2d_placer_p6`
+- Pins: `--test` `alignment_pin_keying_intrinsic_p1`, `alignment_pins_judge_the_full_setup_map_p2`, `alignment_pin_keying_g_pinauto`, `a_pin_set_edit_stales_only_the_pin_drill_p4`, `alignment_pin_walls_and_2d_placer_p6`, `dowel_holes_have_one_source_p8`

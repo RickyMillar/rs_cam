@@ -353,6 +353,9 @@ impl RsCamApp {
                     Box::new(before),
                 )
             }
+            CoreRequest::SetAlignmentPins(request) => {
+                self.plan_set_alignment_pins(&request, before)
+            }
             CoreRequest::ImportModel(p) => {
                 let file_path = Path::new(&p.path);
                 let ext = file_path
@@ -1710,6 +1713,7 @@ impl RsCamApp {
             // screen the operator never had.
             CoreRequest::AddAlignmentPin(_)
             | CoreRequest::RemoveAlignmentPin(_)
+            | CoreRequest::SetAlignmentPins(_)
             | CoreRequest::SetToolpathHeights(_)
             | CoreRequest::RemoveTool(_)
             | CoreRequest::SetStockConfig(_)
@@ -1928,8 +1932,6 @@ impl RsCamApp {
                 // The setter dedupes, so a duplicate leaves the count
                 // where it was. That is the old `false`.
                 let added = before.count.is_some_and(|was| pin_count > was);
-                self.controller.state_mut().gui.mark_edited();
-                self.controller.set_pending_upload();
                 let x = before.extra_f64("x");
                 let y = before.extra_f64("y");
                 let diameter = before.extra_f64("diameter");
@@ -1938,22 +1940,19 @@ impl RsCamApp {
                 } else {
                     format!("Pin already present at ({x:.1}, {y:.1}); skipped duplicate")
                 };
-                CoreReply::quiet(self.mcp_mutation_result(
+                self.describe_pin_edit(
                     message,
                     serde_json::json!({
                         "added": added,
                         "pin_count": pin_count,
                     }),
-                    Vec::new(),
-                    &before.diagnostics,
-                ))
+                    &effects,
+                    before,
+                )
             }
             CommandId::RemoveAlignmentPin => {
-                // Since P4 the row is a thin form of `set_alignment_pins`
-                // and stales only the pin-drill operations. The reply
-                // still lists no stale set; wave C (P5) adds it.
-                self.controller.state_mut().gui.mark_edited();
-                self.controller.set_pending_upload();
+                // A thin form of `set_alignment_pins`: the same stale set
+                // and the same door (P5).
                 let pin_count = self
                     .controller
                     .state()
@@ -1962,12 +1961,35 @@ impl RsCamApp {
                     .alignment_pins
                     .len();
                 let index = before.index();
-                CoreReply::quiet(self.mcp_mutation_result(
+                self.describe_pin_edit(
                     format!("Removed alignment pin {index}"),
                     serde_json::json!({ "pin_count": pin_count }),
-                    Vec::new(),
-                    &before.diagnostics,
-                ))
+                    &effects,
+                    before,
+                )
+            }
+            CommandId::SetAlignmentPins => {
+                let pin_count = self
+                    .controller
+                    .state()
+                    .session
+                    .stock_config()
+                    .alignment_pins
+                    .len();
+                let tool = before.display_name();
+                let was = before.count.unwrap_or_default();
+                let summary =
+                    format!("{tool}: the stock now has {pin_count} alignment pins (was {was})");
+                self.describe_pin_edit(
+                    summary,
+                    serde_json::json!({
+                        "tool": tool,
+                        "pin_count": pin_count,
+                        "pin_count_was": was,
+                    }),
+                    &effects,
+                    before,
+                )
             }
             CommandId::AddModel => {
                 let (id, name, kind, bbox) = {
@@ -2735,8 +2757,6 @@ impl RsCamApp {
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
             | CommandId::SetAlignmentPinDrillHoles
-            // P4: the GUI writes the pin set; wave C adds the wire tool.
-            | CommandId::SetAlignmentPins
             | CommandId::SetDrillSelectedHoles
             | CommandId::AddFixture
             | CommandId::RemoveFixture
@@ -2805,5 +2825,218 @@ impl RsCamApp {
                 stale.push(source_index);
             }
         }
+    }
+}
+
+impl RsCamApp {
+    /// Turn one of the three pin-set tools into the new pin set (P5).
+    ///
+    /// The conversion reads the stored pins and the setups, and refuses
+    /// what it cannot build. Every form ends in `SetAlignmentPins`.
+    fn plan_set_alignment_pins(
+        &self,
+        request: &crate::mcp_bridge::PinSetRequest,
+        mut before: CoreBefore,
+    ) -> CorePlan {
+        use crate::mcp_bridge::PinSetRequest;
+        use rs_cam_core::compute::alignment_pins::{
+            AlignmentPin, AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, translate,
+            two_mixed_diameters,
+        };
+        use rs_cam_mcp::server::AlignmentPatternPreset;
+
+        let refuse = |message: String, field: &str| {
+            CorePlan::Answered(mutation_error_json(
+                &format!("Error: {message}"),
+                Some(field),
+            ))
+        };
+        let state = self.controller.state();
+        let stock = state.session.stock_config();
+        before.count = Some(stock.alignment_pins.len());
+        before.display_name = Some(request.tool_name().to_owned());
+
+        let pins: Vec<AlignmentPin> = match request {
+            PinSetRequest::Replace(p) => p
+                .pins
+                .iter()
+                .map(|q| AlignmentPin::new(q.x, q.y, q.diameter))
+                .collect(),
+            PinSetRequest::Move(p) => {
+                if stock.alignment_pins.is_empty() {
+                    return refuse("the stock has no alignment pins to move.".to_owned(), "dx");
+                }
+                if !(p.dx.is_finite() && p.dy.is_finite()) {
+                    return refuse("dx and dy must be finite numbers.".to_owned(), "dx");
+                }
+                translate(&stock.alignment_pins, p.dx, p.dy)
+            }
+            PinSetRequest::Pattern(p) => {
+                let setups = state
+                    .session
+                    .list_setups()
+                    .iter()
+                    .map(|s| (s.face_up, s.z_rotation));
+                let Some(map) = stock.pin_flip_map(setups) else {
+                    return refuse(
+                        "no setup turns the part over in plane, so no flip axis exists to \
+                         dimension the preset against. Add a Bottom setup (0 or 180 deg), \
+                         then place the pattern."
+                            .to_owned(),
+                        "preset",
+                    );
+                };
+                let need = |value: Option<f64>, name: &str| {
+                    value
+                        .filter(|v| v.is_finite())
+                        .ok_or_else(|| format!("preset needs a finite '{name}' (mm)."))
+                };
+                let built: Result<Vec<AlignmentPin>, (String, &str)> = match p.preset {
+                    AlignmentPatternPreset::AxisPlusMirrorPair => (|| {
+                        let axis_along =
+                            need(p.axis_along, "axis_along").map_err(|e| (e, "axis_along"))?;
+                        let pair_along =
+                            need(p.pair_along, "pair_along").map_err(|e| (e, "pair_along"))?;
+                        let pair_across =
+                            need(p.pair_across, "pair_across").map_err(|e| (e, "pair_across"))?;
+                        let diameter = need(p.diameter, "diameter").map_err(|e| (e, "diameter"))?;
+                        if pair_across <= 0.0 {
+                            return Err((
+                                "pair_across must be greater than zero: a pair pin on the \
+                                 axis is not a mirror pair."
+                                    .to_owned(),
+                                "pair_across",
+                            ));
+                        }
+                        if diameter <= 0.0 {
+                            return Err((
+                                "diameter must be greater than zero.".to_owned(),
+                                "diameter",
+                            ));
+                        }
+                        Ok(axis_plus_mirror_pair(
+                            &map,
+                            AxisPairPattern {
+                                axis_along,
+                                pair_along,
+                                pair_across,
+                                diameter,
+                            },
+                        )
+                        .map(|set| set.to_vec())
+                        .unwrap_or_default())
+                    })(),
+                    AlignmentPatternPreset::TwoMixedDiameters => (|| {
+                        let small_along =
+                            need(p.small_along, "small_along").map_err(|e| (e, "small_along"))?;
+                        let large_along =
+                            need(p.large_along, "large_along").map_err(|e| (e, "large_along"))?;
+                        let small_diameter = need(p.small_diameter, "small_diameter")
+                            .map_err(|e| (e, "small_diameter"))?;
+                        let large_diameter = need(p.large_diameter, "large_diameter")
+                            .map_err(|e| (e, "large_diameter"))?;
+                        if small_diameter <= 0.0 || large_diameter <= small_diameter {
+                            return Err((
+                                "the diameters must be 0 < small_diameter < large_diameter: \
+                                 two pins of one diameter do not key."
+                                    .to_owned(),
+                                "large_diameter",
+                            ));
+                        }
+                        Ok(two_mixed_diameters(
+                            &map,
+                            MixedPairPattern {
+                                small_along,
+                                large_along,
+                                small_diameter,
+                                large_diameter,
+                            },
+                        )
+                        .map(|set| set.to_vec())
+                        .unwrap_or_default())
+                    })(),
+                };
+                match built {
+                    Ok(pins) => pins,
+                    Err((message, field)) => return refuse(message, field),
+                }
+            }
+        };
+        if let Some(bad) = pins
+            .iter()
+            .position(|p| !(p.x.is_finite() && p.y.is_finite() && p.diameter > 0.0))
+        {
+            return refuse(
+                format!("pin {bad} needs a finite x and y and a diameter greater than zero."),
+                "pins",
+            );
+        }
+        CorePlan::Apply(
+            Command::SetAlignmentPins(rs_cam_core::session::SetAlignmentPinsArgs { pins }),
+            Box::new(before),
+        )
+    }
+
+    /// The reply of a pin edit (P5): the one pin-edit door, then the
+    /// stale set, the pin-drill outcome and the pin report.
+    ///
+    /// The door is `AppController::finish_pin_edit`, the door the GUI pin
+    /// edits take. Thus an MCP pin edit leaves the same toolpath list as a
+    /// GUI pin edit.
+    fn describe_pin_edit(
+        &mut self,
+        summary: String,
+        mut applied: serde_json::Value,
+        effects: &Effects,
+        before: &CoreBefore,
+    ) -> CoreReply {
+        use crate::controller::PinDrillSync;
+
+        let edit = self.controller.finish_pin_edit(effects);
+        let pin_drill = {
+            let session = &self.controller.state().session;
+            let locate = |id: crate::state::toolpath::ToolpathId| {
+                session.toolpath_configs().iter().position(|tc| tc.id == id)
+            };
+            let mut json = serde_json::json!({ "action": edit.pin_drill.action() });
+            let (toolpath_id, setup_index, reason) = match &edit.pin_drill {
+                PinDrillSync::Unchanged => (None, None, None),
+                PinDrillSync::Created {
+                    toolpath_id,
+                    setup_index,
+                } => (Some(*toolpath_id), Some(*setup_index), None),
+                PinDrillSync::Updated { toolpath_id } | PinDrillSync::Removed { toolpath_id } => {
+                    (Some(*toolpath_id), None, None)
+                }
+                PinDrillSync::Refused(reason) => (None, None, Some(reason.clone())),
+            };
+            if let Some(object) = json.as_object_mut() {
+                if let Some(id) = toolpath_id {
+                    object.insert("toolpath_id".to_owned(), id.0.into());
+                    // `null` for a removed toolpath: it has no index now.
+                    object.insert("toolpath_index".to_owned(), locate(id).into());
+                }
+                if let Some(index) = setup_index {
+                    object.insert("setup_index".to_owned(), index.into());
+                }
+                if let Some(reason) = reason {
+                    object.insert("reason".to_owned(), reason.into());
+                }
+            }
+            json
+        };
+        if let Some(object) = applied.as_object_mut() {
+            object.insert("pin_drill".to_owned(), pin_drill);
+            object.insert(
+                "pin_report".to_owned(),
+                super::project::pin_report_json(&self.controller.state().session),
+            );
+        }
+        CoreReply::quiet(self.mcp_mutation_result(
+            summary,
+            applied,
+            edit.stale,
+            &before.diagnostics,
+        ))
     }
 }

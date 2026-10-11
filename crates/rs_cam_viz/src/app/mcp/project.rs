@@ -481,6 +481,8 @@ impl RsCamApp {
                         .map(|sd| (sd.face_up, sd.z_rotation)),
                 )
                 .and_then(|map| map.axis_label()),
+            // P5: the core pin report for the setup the pins register.
+            "pin_report": pin_report_json(session),
             // S4: every setup's stock changes, in setup order and then in
             // application order, with the simulated volume.
             "stock_changes": session
@@ -809,4 +811,105 @@ impl RsCamApp {
             )
         })
     }
+}
+
+/// The pin report of a project, as the MCP replies give it (P5).
+///
+/// `inspect_stock` and every pin edit reply call this one function, so the
+/// two cannot disagree. The numbers come from core:
+///
+/// - the judged setup is the first setup that turns the part over in plane
+///   ([`rs_cam_core::compute::alignment_pins::pin_flip_map`], the selector
+///   that the viewport axis and the stock panel read). With no such setup
+///   `judged_setup` is `null`, and seating is not judged (`seats` is
+///   `null`); keying is a property of the pattern alone, so it is judged;
+/// - seats, keying, the bar and the closest wrong seating come from
+///   [`rs_cam_core::compute::alignment_pins::validate_pins_for_flip`];
+/// - `wall_to_stock_edge_mm` is the smallest distance from a pin edge to a
+///   stock edge, against `wall_need_mm`
+///   ([`rs_cam_core::compute::alignment_pins::PIN_WALL_MM`]). The wall to
+///   the part needs the placer inputs and is not in this report;
+/// - `preset` reads the set back with the `fit_*` functions: the preset
+///   name and its parameters, or `custom`. `null` when no flip axis exists.
+pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) -> serde_json::Value {
+    use rs_cam_core::compute::alignment_pins::{
+        PIN_WALL_MM, PinFlipKind, PinSetupMap, fit_axis_plus_mirror_pair, fit_two_mixed_diameters,
+        validate_pins_for_flip,
+    };
+    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+
+    let stock = session.stock_config();
+    let pins = &stock.alignment_pins;
+    let (w, d) = (stock.x, stock.y);
+    let judged = session.list_setups().iter().enumerate().find(|(_, s)| {
+        PinSetupMap::new(s.face_up, s.z_rotation, w, d).kind() == PinFlipKind::InPlane
+    });
+    let (face_up, z_rotation) = judged.map_or((FaceUp::Top, ZRotation::Deg0), |(_, s)| {
+        (s.face_up, s.z_rotation)
+    });
+    let report = validate_pins_for_flip(pins, face_up, z_rotation, w, d);
+    let map = PinSetupMap::new(face_up, z_rotation, w, d);
+    let kind = match report.kind {
+        PinFlipKind::NotAFlip => "not_a_flip",
+        PinFlipKind::InPlane => "in_plane",
+        PinFlipKind::QuarterTurnNotSquare => "quarter_turn_not_square",
+        PinFlipKind::EdgeUp => "edge_up",
+    };
+    let wall_to_stock_edge_mm = pins
+        .iter()
+        .map(|p| {
+            let r = 0.5 * p.diameter;
+            (p.x - r).min(w - p.x - r).min(p.y - r).min(d - p.y - r)
+        })
+        .reduce(f64::min);
+    let preset = map.axis_segment().map(|_| {
+        if let Some(fit) = fit_axis_plus_mirror_pair(pins, &map) {
+            serde_json::json!({
+                "name": "axis_plus_mirror_pair",
+                "axis_along": fit.axis_along,
+                "pair_along": fit.pair_along,
+                "pair_across": fit.pair_across,
+                "diameter": fit.diameter,
+            })
+        } else if let Some(fit) = fit_two_mixed_diameters(pins, &map) {
+            serde_json::json!({
+                "name": "two_mixed_diameters",
+                "small_along": fit.small_along,
+                "large_along": fit.large_along,
+                "small_diameter": fit.small_diameter,
+                "large_diameter": fit.large_diameter,
+            })
+        } else {
+            serde_json::json!({ "name": "custom" })
+        }
+    });
+    serde_json::json!({
+        "pin_count": report.pin_count,
+        "pins": pins
+            .iter()
+            .map(|p| serde_json::json!({ "x": p.x, "y": p.y, "diameter": p.diameter }))
+            .collect::<Vec<_>>(),
+        "judged_setup": judged.map(|(index, s)| serde_json::json!({
+            "index": index,
+            "name": s.name,
+            "face_up": s.face_up.label(),
+            "z_rotation": s.z_rotation.label(),
+        })),
+        "flip_kind": kind,
+        "flip_axis": map.axis_label(),
+        "seats": report.modelled_flip().then(|| report.seats()),
+        "seat_mismatch_mm": report.seat_mismatch_mm,
+        "keyed": report.keyed(),
+        "keying_margin_mm": report.keying_margin_mm(),
+        "keying_bar_mm": report.keying_bar_mm,
+        "wrong_seating": report.wrong_seating.map(|ws| serde_json::json!({
+            "turn_deg": ws.turn_deg,
+            "miss_mm": ws.miss_mm,
+        })),
+        "out_of_bounds": report.out_of_bounds,
+        "wall_to_stock_edge_mm": wall_to_stock_edge_mm,
+        "wall_need_mm": PIN_WALL_MM,
+        "preset": preset,
+        "findings": report.warnings(),
+    })
 }
