@@ -91,6 +91,14 @@ pub const PROJECT_PIN_HOLES_DRILLED_TWICE: &str = "project.pin_holes_drilled_twi
 /// A drill operation drills holes of a pin diameter that are not at a
 /// stock pin (P8). Same judgement as [`PROJECT_PIN_HOLES_DRILLED_TWICE`].
 pub const PROJECT_DOWEL_HOLES_DISAGREE: &str = "project.dowel_holes_disagree";
+/// A stock pin leaves less than `PIN_WALL_MM` of material to the stock
+/// edge, the part, a keep-out zone or a fixture, or cuts into it (P6). The
+/// judgement lives in [`crate::compute::alignment_pins::pin_wall_findings`].
+pub const PROJECT_PIN_WALL_THIN: &str = "project.pin_wall_thin";
+/// A stock pin differs in diameter from the tool that drills the pin holes
+/// (P6). The judgement lives in
+/// [`crate::compute::alignment_pins::pin_tool_finding`].
+pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch";
 /// A gate declined to produce a verdict because the metric it reads is not
 /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
@@ -395,6 +403,10 @@ pub const ALL: &[&str] = &[
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
     PROJECT_ALIGNMENT_PINS_UNKEYED,
+    PROJECT_PIN_HOLES_DRILLED_TWICE,
+    PROJECT_DOWEL_HOLES_DISAGREE,
+    PROJECT_PIN_WALL_THIN,
+    PROJECT_PIN_TOOL_MISMATCH,
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
     PROJECT_ENTRY_LOAD,

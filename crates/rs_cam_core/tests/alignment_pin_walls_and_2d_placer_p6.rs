@@ -26,12 +26,16 @@
 //! 4. A hand-placed pin in the part and one in a keep-out zone each give a
 //!    wall finding with the pin number and the wall value.
 //! 5. A pin diameter that differs from the drill gives a finding.
+//! 6. The wall and tool findings reach the project diagnostics under
+//!    `project.pin_wall_thin` and `project.pin_tool_mismatch`.
+//! 7. A drawing of the pin holes (every entity a circle of a pin diameter,
+//!    like `dowel_through.dxf`) is not part; a drawing with another entity
+//!    or another circle size is.
 //!
 //! # NOT MEASURED
 //!
-//! The live mini file itself (its models are outside the repository). It
-//! also loads `dowel_through.dxf`, two 6 mm circles on the flip axis, and
-//! the default rule calls that model part; see the P6 report.
+//! The live mini file itself (its models are outside the repository). The
+//! P6 follow-up report gives the live result from a scratch run.
 
 #![allow(
     clippy::unwrap_used,
@@ -52,9 +56,11 @@ use rs_cam_core::compute::operation_configs::DrillConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::diagnostics::ids;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::{KeepOutId, ModelId, ToolpathId};
+use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     AddKeepOutArgs, Command, KeepOutZone, LoadedModel, ProjectSession, ProjectSessionBuilder,
@@ -330,6 +336,13 @@ fn a_pin_in_the_part_or_a_keep_out_is_a_wall_finding() {
         !walls.iter().any(|f| f.text.contains("pin 3")),
         "{findings:?}"
     );
+    // The same findings reach every surface through the diagnostics.
+    let thin = session
+        .diagnose_project()
+        .iter()
+        .filter(|d| d.id.as_str() == ids::PROJECT_PIN_WALL_THIN)
+        .count();
+    assert_eq!(thin, 2, "one diagnostic per thin wall");
 
     // The placer keeps the pins out of the zone too.
     let obstacles = obstacles(&session);
@@ -357,4 +370,95 @@ fn a_pin_that_differs_from_the_drill_is_a_finding() {
                 && f.text.contains("6.00 mm")),
         "{findings:?}"
     );
+    assert!(
+        session
+            .diagnose_project()
+            .iter()
+            .any(|d| d.id.as_str() == ids::PROJECT_PIN_TOOL_MISMATCH),
+        "the mismatch reaches the diagnostics"
+    );
+}
+
+/// A model of circles, each a polygon and a `CircleCenter` target, as the
+/// DXF import gives them.
+fn circles_model(id: usize, name: &str, circles: &[(f64, f64, f64)]) -> LoadedModel {
+    let mut model = rectangle_model(id, name, 0.0, 0.0, 1.0, 1.0);
+    let polygons = circles
+        .iter()
+        .map(|&(cx, cy, d)| {
+            Polygon2::new(
+                (0..32)
+                    .map(|k| {
+                        let a = f64::from(k) / 32.0 * std::f64::consts::TAU;
+                        P2::new(cx + 0.5 * d * a.cos(), cy + 0.5 * d * a.sin())
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    model.polygons = Some(Arc::new(polygons));
+    model.drill_targets = Arc::new(
+        circles
+            .iter()
+            .map(|&(x, y, diameter)| DrillTarget {
+                x,
+                y,
+                layer: "0".to_owned(),
+                kind: DrillTargetKind::CircleCenter { diameter },
+            })
+            .collect(),
+    );
+    model
+}
+
+/// The mini piece's `dowel_through.dxf`: two 6 mm circles at the pins. As
+/// part it blocks the axis band of the rim, so the rule leaves it out. A
+/// drawing with a circle of another size is part.
+#[test]
+fn a_drawing_of_the_pin_holes_is_not_part() {
+    let holes = [(6.0, 32.5, 6.0), (59.0, 32.5, 6.0)];
+    let session = ProjectSessionBuilder::new()
+        .stock(mini_stock(W, D))
+        .model(rectangle_model(
+            CAVITY,
+            "back_cavity.dxf",
+            12.0,
+            12.0,
+            53.0,
+            53.0,
+        ))
+        .model(circles_model(2, "dowel_through.dxf", &holes))
+        .model(circles_model(3, "screw_holes.dxf", &[(6.0, 6.0, 4.0)]))
+        .tool(tool(3, ToolType::VBit, 6.0))
+        .toolpath(drill_op(3, 2))
+        .build();
+    assert_eq!(
+        session.default_pin_part_models(),
+        vec![ModelId(CAVITY), ModelId(3)],
+        "the 6 mm circles are pin holes; the 4 mm circle is part"
+    );
+    let pins = session
+        .stock_config()
+        .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg0, &obstacles(&session), PIN_D)
+        .unwrap_or_else(|e| panic!("the pin-hole drawing must not block the pins; got {e}"));
+    assert_walls(&pins, W, D, &obstacles(&session));
+
+    // A POINT beside the circles: not every entity is a circle, so the
+    // model is part.
+    let mut mixed = circles_model(2, "dowel_through.dxf", &holes);
+    let mut targets = (*mixed.drill_targets).clone();
+    targets.push(DrillTarget {
+        x: 30.0,
+        y: 5.0,
+        layer: "0".to_owned(),
+        kind: DrillTargetKind::Point,
+    });
+    mixed.drill_targets = Arc::new(targets);
+    let session = ProjectSessionBuilder::new()
+        .stock(mini_stock(W, D))
+        .model(mixed)
+        .tool(tool(3, ToolType::VBit, 6.0))
+        .toolpath(drill_op(3, 2))
+        .build();
+    assert_eq!(session.default_pin_part_models(), vec![ModelId(2)]);
 }

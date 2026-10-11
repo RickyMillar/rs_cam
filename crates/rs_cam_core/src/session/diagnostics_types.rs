@@ -137,6 +137,12 @@ pub enum VerdictKind {
     /// A drill operation drills holes of a pin diameter that are not at a
     /// stock pin (P8): the two copies of the dowel holes disagree.
     DowelHolesDisagree,
+    /// A stock pin leaves less than `PIN_WALL_MM` of material to the stock
+    /// edge, the part, a keep-out zone or a fixture, or cuts into it (P6).
+    PinWallThin,
+    /// A stock pin differs in diameter from the tool that drills the pin
+    /// holes (P6): the dowel does not fit the hole.
+    PinToolMismatch,
     /// A gate declined to produce a verdict because the metric it reads is
     /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
     /// [`crate::stock::sim_measurability`]. This is **not** a warning about the
@@ -157,6 +163,8 @@ impl VerdictKind {
             Self::AlignmentPinsUnkeyed => "alignment_pins_unkeyed",
             Self::PinHolesDrilledTwice => "pin_holes_drilled_twice",
             Self::DowelHolesDisagree => "dowel_holes_disagree",
+            Self::PinWallThin => "pin_wall_thin",
+            Self::PinToolMismatch => "pin_tool_mismatch",
             Self::MeasurabilityAbstained => "measurability_abstained",
         }
     }

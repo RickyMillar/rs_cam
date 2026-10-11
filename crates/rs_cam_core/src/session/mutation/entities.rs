@@ -643,9 +643,9 @@ impl ProjectSession {
     /// when a duplicate was skipped. `None` says the call changed nothing.
     #[instrument(skip(self))]
     pub(crate) fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
-        const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
+        use crate::compute::alignment_pins::PIN_CAD_ROUNDING_MM;
         let exists = self.stock.alignment_pins.iter().any(|p| {
-            (p.x - x).abs() < PIN_DEDUP_EPSILON_MM && (p.y - y).abs() < PIN_DEDUP_EPSILON_MM
+            (p.x - x).abs() < PIN_CAD_ROUNDING_MM && (p.y - y).abs() < PIN_CAD_ROUNDING_MM
         });
         if exists {
             return None;

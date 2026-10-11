@@ -29,8 +29,7 @@ mod placement;
 mod walls;
 
 pub use hole_sources::{
-    DOWEL_DIAMETER_TOL_MM, DrilledHole, HoleOp, HoleOpKind, HoleSourceFinding, HoleSourceKind,
-    hole_source_findings,
+    DrilledHole, HoleOp, HoleOpKind, HoleSourceFinding, HoleSourceKind, hole_source_findings,
 };
 pub use keying::{WrongSeating, closest_wrong_seating, keying_bar_mm, pattern_is_keyed};
 pub use pattern::{
@@ -63,6 +62,18 @@ impl AlignmentPin {
 /// stock edge, the part footprint, a keep-out zone or a fixture, and the
 /// other pins (P6).
 pub const PIN_WALL_MM: f64 = 2.0;
+
+/// Two pin values (a position coordinate or a diameter) closer than this
+/// are one value: the rounding of a CAD export.
+///
+/// A CAD export that writes 6 mm as 5.9999 stays one dowel size, and a
+/// 1/4 in dowel (6.35 mm) stays apart from a 6 mm dowel. The users:
+/// `add_alignment_pin` (two positions are one pin), the hole sources (a
+/// hole of a pin diameter), the pin-tool finding (a pin of the drill
+/// diameter) and the pin-hole drawing rule of the default part models.
+/// [`PIN_MATCH_TOL_MM`] is a different meaning: the hole slop a dowel
+/// finds its hole within.
+pub const PIN_CAD_ROUNDING_MM: f64 = 0.01;
 
 /// The pin diameter when no tool drills the pin holes and no pin is
 /// stored: the 6 mm dowel of the live projects (the `diameter = 6.0` pins
@@ -579,7 +590,7 @@ pub fn pin_tool_finding(pins: &[AlignmentPin], tool_diameter: Option<f64>) -> Op
         .iter()
         .map(|p| p.diameter)
         .max_by(|a, b| (a - tool).abs().total_cmp(&(b - tool).abs()))?;
-    ((worst - tool).abs() > PIN_GEOM_EPS_MM).then(|| PinFinding {
+    ((worst - tool).abs() > PIN_CAD_ROUNDING_MM).then(|| PinFinding {
         kind: PinFindingKind::PinToolMismatch,
         text: format!(
             "An alignment pin is {worst:.2} mm, but the tool that drills the pin holes is \

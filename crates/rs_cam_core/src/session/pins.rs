@@ -3,10 +3,12 @@
 //! that drills the pin holes.
 
 use crate::compute::alignment_pins::{
-    PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind, pin_tool_finding,
+    PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind,
+    pin_tool_finding,
 };
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ModelId;
+use crate::io::dxf_input::DrillTargetKind;
 
 use super::ProjectSession;
 
@@ -23,14 +25,19 @@ impl ProjectSession {
     /// `stock_outline.dxf`, `front_3d_boundary.dxf` and
     /// `front_surface_s1.stl`.
     ///
-    /// The rule does not know what a model means. A drawing of the dowel
-    /// holes themselves (`dowel_through.dxf` in the mini piece) is part by
-    /// this rule. The pin editor (wave D) lets the operator choose.
+    /// A pin-hole drawing is not part either: a model with no mesh whose
+    /// every entity is a circle with a pin diameter (see
+    /// [`Self::is_pin_hole_drawing`]). The mini piece loads one,
+    /// `dowel_through.dxf`: two 6 mm circles on the flip axis. As part, it
+    /// blocks the whole axis band of the rim. The pin editor (wave D) lets
+    /// the operator choose.
     #[must_use]
     pub fn default_pin_part_models(&self) -> Vec<ModelId> {
         let stock = self.stock.bbox();
+        let pin_diameters = self.pin_diameters();
         self.models
             .iter()
+            .filter(|m| !Self::is_pin_hole_drawing(m, &pin_diameters))
             .filter_map(|m| Some((m.id, m.bbox()?)))
             .filter(|(_, b)| {
                 let covers = b.min.x <= stock.min.x + PIN_MATCH_TOL_MM
@@ -41,6 +48,41 @@ impl ProjectSession {
             })
             .map(|(id, _)| ModelId(id))
             .collect()
+    }
+
+    /// The pin diameters: each stored pin diameter and the diameter of the
+    /// tool that drills the pin holes.
+    fn pin_diameters(&self) -> Vec<f64> {
+        self.stock
+            .alignment_pins
+            .iter()
+            .map(|p| p.diameter)
+            .chain(self.pin_drill_tool_diameter())
+            .collect()
+    }
+
+    /// `true` when `model` is a drawing of pin holes: it has no mesh, it
+    /// has at least one entity, and every entity is a circle whose
+    /// diameter is one of `pin_diameters` within [`PIN_CAD_ROUNDING_MM`].
+    ///
+    /// The DXF import gives each circle a polygon AND a `CircleCenter`
+    /// drill target, and gives no other entity a `CircleCenter` target. So
+    /// "every entity is a circle" is: every drill target is a circle
+    /// centre, and the polygon count equals the target count. A POINT, a
+    /// line or any other outline breaks the equality, and the model stays
+    /// part.
+    fn is_pin_hole_drawing(model: &super::LoadedModel, pin_diameters: &[f64]) -> bool {
+        let targets = model.drill_targets.as_slice();
+        let polygon_count = model.polygons.as_deref().map_or(0, Vec::len);
+        model.mesh.is_none()
+            && !targets.is_empty()
+            && polygon_count == targets.len()
+            && targets.iter().all(|t| match t.kind {
+                DrillTargetKind::CircleCenter { diameter } => pin_diameters
+                    .iter()
+                    .any(|d| (d - diameter).abs() <= PIN_CAD_ROUNDING_MM),
+                DrillTargetKind::Point => false,
+            })
     }
 
     /// The outlines a pin must keep a wall to, in the WORLD frame:

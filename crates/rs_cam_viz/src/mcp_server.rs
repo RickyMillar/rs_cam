@@ -747,7 +747,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_alignment_pins",
-        description = "Replace the whole alignment pin set in one step (one undo entry, one stale set). pins: [{x, y, diameter}] in stock-local mm (X0 Y0 at the stock's min corner); an empty list removes every pin and the 'Pin Drill' toolpath. Only the pin-drill toolpath and what depends on it go stale. The 'Pin Drill' toolpath follows the pins: it is created in the first Top setup at 0 deg (refused when none exists), its holes move, or it is removed. The reply gives stale_toolpaths, pin_drill (action and reason) and pin_report (seats, seat_mismatch_mm, keyed, keying_margin_mm, keying_bar_mm, wrong_seating, wall_to_stock_edge_mm, preset, the judged setup)."
+        description = "Replace the whole alignment pin set in one step (one undo entry, one stale set). pins: [{x, y, diameter}] in stock-local mm (X0 Y0 at the stock's min corner); an empty list removes every pin and the 'Pin Drill' toolpath. Only the pin-drill toolpath and what depends on it go stale. The 'Pin Drill' toolpath follows the pins: it is created in the first Top setup at 0 deg (refused when none exists), its holes move, or it is removed. The reply gives stale_toolpaths, pin_drill (action and reason) and pin_report (seats, seat_mismatch_mm, keyed, keying_margin_mm, keying_bar_mm, wrong_seating, wall_to_stock_edge_mm, wall_to_part_mm, wall_to_keep_out_mm, walls per pin, part_models, pin_tool_diameter_mm, preset, the judged setup)."
     )]
     async fn set_alignment_pins(
         &self,
