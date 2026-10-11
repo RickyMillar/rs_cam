@@ -816,64 +816,31 @@ impl RsCamApp {
 /// The pin report of a project, as the MCP replies give it (P5).
 ///
 /// `inspect_stock` and every pin edit reply call this one function, so the
-/// two cannot disagree. The numbers come from core:
+/// two cannot disagree. Every number comes from the one core report,
+/// [`rs_cam_core::session::ProjectSession::pin_set_report`], which the
+/// stock panel and the viewport read too (P7):
 ///
-/// - the judged setup is the first setup that turns the part over in plane
-///   ([`rs_cam_core::compute::alignment_pins::pin_flip_map`], the selector
-///   that the viewport axis and the stock panel read). With no such setup
-///   `judged_setup` is `null`, and seating is not judged (`seats` is
-///   `null`); keying is a property of the pattern alone, so it is judged;
-/// - seats, keying, the bar and the closest wrong seating come from
-///   [`rs_cam_core::compute::alignment_pins::validate_pins_for_flip`];
+/// - the judged setup is the first setup that turns the part over in
+///   plane. With no such setup `judged_setup` is `null`, and seating is not
+///   judged (`seats` is `null`); keying is a property of the pattern
+///   alone, so it is judged;
 /// - `wall_to_stock_edge_mm` is the smallest distance from a pin edge to a
 ///   stock edge, against `wall_need_mm`
-///   ([`rs_cam_core::compute::alignment_pins::PIN_WALL_MM`]). The wall to
-///   the part needs the placer inputs and is not in this report;
+///   ([`rs_cam_core::compute::alignment_pins::PIN_WALL_MM`]);
 /// - `preset` reads the set back with the `fit_*` functions: the preset
 ///   name and its parameters, or `custom`. `null` when no flip axis exists.
 pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) -> serde_json::Value {
-    use rs_cam_core::compute::alignment_pins::{
-        PIN_WALL_MM, PinFlipKind, PinObstacleKind, PinSetupMap, fit_axis_plus_mirror_pair,
-        fit_two_mixed_diameters, pin_walls, validate_pins_for_flip,
-    };
-    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+    use rs_cam_core::compute::alignment_pins::{PIN_WALL_MM, PinFlipKind, PinObstacleKind};
+    use rs_cam_core::session::PinPreset;
 
-    let stock = session.stock_config();
-    let pins = &stock.alignment_pins;
-    let (w, d) = (stock.x, stock.y);
-    let judged = session.list_setups().iter().enumerate().find(|(_, s)| {
-        PinSetupMap::new(s.face_up, s.z_rotation, w, d).kind() == PinFlipKind::InPlane
-    });
-    let (face_up, z_rotation) = judged.map_or((FaceUp::Top, ZRotation::Deg0), |(_, s)| {
-        (s.face_up, s.z_rotation)
-    });
-    let report = validate_pins_for_flip(pins, face_up, z_rotation, w, d);
-    let map = PinSetupMap::new(face_up, z_rotation, w, d);
-    let kind = match report.kind {
+    let report = session.pin_set_report();
+    let flip = &report.flip;
+    let kind = match flip.kind {
         PinFlipKind::NotAFlip => "not_a_flip",
         PinFlipKind::InPlane => "in_plane",
         PinFlipKind::QuarterTurnNotSquare => "quarter_turn_not_square",
         PinFlipKind::EdgeUp => "edge_up",
     };
-    // P6: the walls to the stock edge, the default part models, the
-    // keep-out zones and the fixtures. The obstacles are world-frame; the
-    // pins are stock-local.
-    let part_models = session.default_pin_part_models();
-    let local: Vec<_> = session
-        .pin_obstacles(&part_models)
-        .iter()
-        .map(|o| o.translated(-stock.origin_x, -stock.origin_y))
-        .collect();
-    let walls: Vec<_> = pins.iter().map(|p| pin_walls(p, w, d, &local)).collect();
-    let wall_to_stock_edge_mm = walls.iter().map(|w| w.stock_edge_mm).reduce(f64::min);
-    let wall_to_part_mm = walls
-        .iter()
-        .filter_map(|w| w.part.as_ref().map(|n| n.wall_mm))
-        .reduce(f64::min);
-    let wall_to_keep_out_mm = walls
-        .iter()
-        .filter_map(|w| w.keep_out.as_ref().map(|n| n.wall_mm))
-        .reduce(f64::min);
     let named = |n: &rs_cam_core::compute::alignment_pins::NamedWall| {
         let kind = match n.kind {
             PinObstacleKind::Part => "part",
@@ -882,7 +849,8 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
         };
         serde_json::json!({ "kind": kind, "name": n.name, "wall_mm": n.wall_mm })
     };
-    let pin_walls_json: Vec<_> = walls
+    let pin_walls_json: Vec<_> = report
+        .walls
         .iter()
         .enumerate()
         .map(|(i, w)| {
@@ -897,35 +865,38 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
     let part_model_names: Vec<&str> = session
         .models()
         .iter()
-        .filter(|m| part_models.contains(&rs_cam_core::ids::ModelId(m.id)))
+        .filter(|m| {
+            report
+                .part_models
+                .contains(&rs_cam_core::ids::ModelId(m.id))
+        })
         .map(|m| m.name.as_str())
         .collect();
-    let mut findings = report.warnings();
-    findings.extend(session.pin_placement_findings().into_iter().map(|f| f.text));
-    let preset = map.axis_segment().map(|_| {
-        if let Some(fit) = fit_axis_plus_mirror_pair(pins, &map) {
-            serde_json::json!({
-                "name": "axis_plus_mirror_pair",
-                "axis_along": fit.axis_along,
-                "pair_along": fit.pair_along,
-                "pair_across": fit.pair_across,
-                "diameter": fit.diameter,
-            })
-        } else if let Some(fit) = fit_two_mixed_diameters(pins, &map) {
-            serde_json::json!({
-                "name": "two_mixed_diameters",
-                "small_along": fit.small_along,
-                "large_along": fit.large_along,
-                "small_diameter": fit.small_diameter,
-                "large_diameter": fit.large_diameter,
-            })
-        } else {
-            serde_json::json!({ "name": "custom" })
-        }
+    let preset = report.preset.map(|preset| match preset {
+        PinPreset::AxisPlusMirrorPair(fit) => serde_json::json!({
+            "name": "axis_plus_mirror_pair",
+            "axis_along": fit.axis_along,
+            "pair_along": fit.pair_along,
+            "pair_across": fit.pair_across,
+            "diameter": fit.diameter,
+        }),
+        PinPreset::TwoMixedDiameters(fit) => serde_json::json!({
+            "name": "two_mixed_diameters",
+            "small_along": fit.small_along,
+            "large_along": fit.large_along,
+            "small_diameter": fit.small_diameter,
+            "large_diameter": fit.large_diameter,
+        }),
+        PinPreset::Custom => serde_json::json!({ "name": "custom" }),
     });
+    let judged = report
+        .judged_setup
+        .and_then(|index| session.list_setups().get(index).map(|s| (index, s)));
     serde_json::json!({
-        "pin_count": report.pin_count,
-        "pins": pins
+        "pin_count": flip.pin_count,
+        "pins": session
+            .stock_config()
+            .alignment_pins
             .iter()
             .map(|p| serde_json::json!({ "x": p.x, "y": p.y, "diameter": p.diameter }))
             .collect::<Vec<_>>(),
@@ -936,25 +907,25 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
             "z_rotation": s.z_rotation.label(),
         })),
         "flip_kind": kind,
-        "flip_axis": map.axis_label(),
-        "seats": report.modelled_flip().then(|| report.seats()),
-        "seat_mismatch_mm": report.seat_mismatch_mm,
-        "keyed": report.keyed(),
-        "keying_margin_mm": report.keying_margin_mm(),
-        "keying_bar_mm": report.keying_bar_mm,
-        "wrong_seating": report.wrong_seating.map(|ws| serde_json::json!({
+        "flip_axis": report.map.axis_label(),
+        "seats": flip.modelled_flip().then(|| flip.seats()),
+        "seat_mismatch_mm": flip.seat_mismatch_mm,
+        "keyed": flip.keyed(),
+        "keying_margin_mm": flip.keying_margin_mm(),
+        "keying_bar_mm": flip.keying_bar_mm,
+        "wrong_seating": flip.wrong_seating.map(|ws| serde_json::json!({
             "turn_deg": ws.turn_deg,
             "miss_mm": ws.miss_mm,
         })),
-        "out_of_bounds": report.out_of_bounds,
-        "wall_to_stock_edge_mm": wall_to_stock_edge_mm,
-        "wall_to_part_mm": wall_to_part_mm,
-        "wall_to_keep_out_mm": wall_to_keep_out_mm,
+        "out_of_bounds": flip.out_of_bounds,
+        "wall_to_stock_edge_mm": report.wall_to_stock_edge_mm(),
+        "wall_to_part_mm": report.wall_to_part_mm(),
+        "wall_to_keep_out_mm": report.wall_to_keep_out_mm(),
         "walls": pin_walls_json,
         "part_models": part_model_names,
-        "pin_tool_diameter_mm": session.pin_drill_tool_diameter(),
+        "pin_tool_diameter_mm": report.pin_tool_diameter,
         "wall_need_mm": PIN_WALL_MM,
         "preset": preset,
-        "findings": findings,
+        "findings": report.findings,
     })
 }

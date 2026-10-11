@@ -5,6 +5,7 @@ mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
+mod pin_marks;
 /// The `basis` object of the MCP `get_suggest_rationale` tool, as a pure
 /// function of the Suggest profile (G10: a test reads it).
 #[cfg(feature = "mcp")]
@@ -1382,6 +1383,13 @@ pub(crate) struct OverlayUploadKey {
     keep_outs: bool,
     alignment_pins: bool,
     flip_axis: bool,
+    pin_ghost: bool,
+    /// The pin the stock panel marks; the upload rings its circle (P7).
+    selected_pin: Option<usize>,
+    /// The setup whose frame the fixture buffer is drawn in (C8). The rail
+    /// selects a setup without an upload of its own, and the pin numbers,
+    /// which paint every frame, must not move away from their circles.
+    display_setup: Option<crate::state::job::SetupId>,
     datum: bool,
     span_filter: crate::state::viewport::SpanKindFilter,
     toolpath_color_mode: crate::state::viewport::ToolpathColorMode,
@@ -1412,6 +1420,13 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
         keep_outs: state.viewport.show_keep_outs,
         alignment_pins: state.viewport.show_alignment_pins,
         flip_axis: state.viewport.show_flip_axis,
+        pin_ghost: state.viewport.show_pin_ghost,
+        selected_pin: state.panels.selected_pin,
+        display_setup: crate::state::pin_view::active_display_setup(
+            &state.session,
+            &state.selection,
+        )
+        .map(|(_, id)| id),
         datum: state.viewport.show_datum,
         span_filter: state.viewport.span_kind_filter,
         toolpath_color_mode: state.viewport.toolpath_color_mode,

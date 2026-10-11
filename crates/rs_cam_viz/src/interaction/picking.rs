@@ -1,6 +1,7 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
-use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId};
+use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupFrame, SetupId, StockConfig};
+use crate::state::pin_view::pin_display_points;
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
@@ -68,6 +69,13 @@ pub struct PickContext<'a> {
 /// `draw_filter` is the WP27 draw rule. A toolpath the viewport does not draw
 /// cannot be picked, because the pick and the GPU upload read ONE function
 /// (`state::viewport::toolpaths_to_draw`).
+///
+/// `display_frame` is the frame of the setup the viewport displays
+/// (`state::pin_view::active_display_setup`). The pins are picked where
+/// that frame draws them (C8).
+// SAFETY: one flat pick entry; each argument is a distinct input the
+// viewport already holds.
+#[allow(clippy::too_many_arguments)]
 pub fn pick(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -76,6 +84,7 @@ pub fn pick(
     workspace: Workspace,
     draw_filter: ToolpathDrawFilter,
     drill_pick_toolpath: Option<ToolpathId>,
+    display_frame: Option<&SetupFrame>,
 ) -> Option<PickHit> {
     // 1. Screen-space picks (small targets first)
     if workspace == Workspace::Simulation
@@ -94,7 +103,8 @@ pub fn pick(
     }
 
     if matches!(workspace, Workspace::Setup | Workspace::Toolpaths)
-        && let Some(hit) = pick_alignment_pins(ctx, session)
+        && let Some(frame) = display_frame
+        && let Some(hit) = pick_alignment_pins(ctx, session.stock_config(), frame)
     {
         return Some(hit);
     }
@@ -229,17 +239,21 @@ fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Opti
     best_idx.map(|index| PickHit::CollisionMarker { index })
 }
 
-fn pick_alignment_pins(ctx: &PickContext<'_>, session: &ProjectSession) -> Option<PickHit> {
-    let threshold = PICK_THRESHOLD_POINT;
-    let mut best_dist = threshold;
+/// The pin whose drawn centre is nearest the click, within
+/// [`PICK_THRESHOLD_POINT`] pixels.
+///
+/// The centre is `state::pin_view::pin_display_point` in `frame`: the
+/// point the GPU upload draws the circle at, with the stock origin and the
+/// setup transform (C8).
+pub fn pick_alignment_pins(
+    ctx: &PickContext<'_>,
+    stock: &StockConfig,
+    frame: &SetupFrame,
+) -> Option<PickHit> {
+    let mut best_dist = PICK_THRESHOLD_POINT;
     let mut best_hit = None;
-    let stock = session.stock_config();
-    // Pin coords are stock-relative; in the local frame (Top/Deg0) the stock
-    // sits at (0,0,0) so pin positions are (pin.x, pin.y, stock.z).
-    let local_top = stock.z as f32;
-
-    for (pin_idx, pin) in stock.alignment_pins.iter().enumerate() {
-        let world = [pin.x as f32, pin.y as f32, local_top];
+    for (pin_idx, centre) in pin_display_points(frame, stock).iter().enumerate() {
+        let world = [centre.x as f32, centre.y as f32, centre.z as f32];
         if let Some(screen) = ctx
             .camera
             .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
@@ -253,7 +267,6 @@ fn pick_alignment_pins(ctx: &PickContext<'_>, session: &ProjectSession) -> Optio
             }
         }
     }
-
     best_hit
 }
 

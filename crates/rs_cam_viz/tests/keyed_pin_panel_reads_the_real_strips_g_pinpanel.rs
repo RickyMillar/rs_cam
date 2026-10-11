@@ -13,7 +13,7 @@
 //!
 //! # What this test measures
 //!
-//! `ui::properties::stock::keyed_pin_plan` is the one planner both doors
+//! `ui::properties::pins::keyed_pin_plan` is the one planner both doors
 //! call, with `KeyedPinInputs::from_session`. The arms:
 //!
 //! 1. the live 380 / -15 / 0..350 x 0..480 stock places the axis pin at
@@ -54,7 +54,7 @@ use rs_cam_core::compute::alignment_pins::{
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_viz::ui::properties::stock::{KeyedPinInputs, keyed_pin_plan};
+use rs_cam_viz::ui::properties::pins::{KeyedPinInputs, keyed_pin_plan};
 
 const PIN_DIAMETER_MM: f64 = 6.0;
 const STOCK_D_MM: f64 = 510.0;

@@ -8,7 +8,7 @@ use rs_cam_core::session::{
 use crate::compute::ComputeBackend;
 use crate::state::job::{ModelId, SetupId, ToolConfig};
 use crate::state::selection::Selection;
-use crate::ui::properties::stock::{KeyedPinInputs, keyed_pin_plan};
+use crate::ui::properties::pins::{KeyedPinInputs, keyed_pin_plan};
 
 use super::super::AppController;
 

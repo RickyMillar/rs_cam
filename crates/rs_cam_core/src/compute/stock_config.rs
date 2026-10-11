@@ -80,6 +80,13 @@ pub struct StockConfig {
     /// across flips). Stock-LOCAL: X0Y0 at the stock's min corner.
     #[serde(default)]
     pub alignment_pins: Vec<AlignmentPin>,
+    /// The models that count as the part for the pin placer and the pin
+    /// wall check (P7, 2026-10-12), by model id. `None` means the default
+    /// rule, `ProjectSession::default_pin_part_models`. The operator
+    /// chooses in the stock panel; `ProjectSession::pin_part_models` is
+    /// the one reader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin_part_models: Option<Vec<usize>>,
     // P3 (2026-10-12): `flip_axis` is gone. It was a cache of the setups,
     // and a stale cache drew the wrong axis line. Every reader derives the
     // axis from the setups through [`Self::pin_flip_map`]. An old file's key
@@ -102,6 +109,7 @@ impl Default for StockConfig {
             padding: 5.0,
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
+            pin_part_models: None,
         }
     }
 }

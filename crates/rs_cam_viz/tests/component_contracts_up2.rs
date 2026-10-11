@@ -903,9 +903,9 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/properties/stock.rs",
-        4,
-        "padding, the shared pin diameter and the per-pin X/Y all draw in \
-         `ui.horizontal` rows",
+        1,
+        "the padding draws in a `ui.horizontal` row (P7 moved the pin rows \
+         to `ui/properties/pins/`, as `ValueRow` rows)",
     ),
     (
         "ui/properties/operations/surface_3d.rs",

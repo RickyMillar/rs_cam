@@ -22,6 +22,7 @@ pub mod generation_plan;
 mod load_report;
 pub mod multitool;
 mod mutation;
+mod pin_report;
 mod pins;
 pub mod project_file;
 mod reach;
@@ -45,12 +46,13 @@ pub use command::{
     RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
     SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
     SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
-    SetMachineKinematicsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
-    SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
-    SetSetupRotationArgs, SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
-    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
+    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
@@ -76,6 +78,7 @@ pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
+pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 

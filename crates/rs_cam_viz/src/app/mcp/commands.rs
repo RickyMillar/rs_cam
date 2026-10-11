@@ -1819,6 +1819,7 @@ impl RsCamApp {
             | CommandId::AddSetup
             | CommandId::RemoveSetup
             | CommandId::SetAlignmentPins
+            | CommandId::SetPinPartModels
             | CommandId::AddAlignmentPin
             | CommandId::RemoveAlignmentPin
             | CommandId::SetSetupFace
@@ -2757,6 +2758,7 @@ impl RsCamApp {
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
             | CommandId::SetAlignmentPinDrillHoles
+            | CommandId::SetPinPartModels
             | CommandId::SetDrillSelectedHoles
             | CommandId::AddFixture
             | CommandId::RemoveFixture

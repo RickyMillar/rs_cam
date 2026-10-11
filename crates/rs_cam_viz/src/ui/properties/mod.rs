@@ -5,6 +5,7 @@ mod model_sim_panels;
 pub mod operations;
 mod panel_apply;
 mod pills;
+pub mod pins;
 pub mod post;
 pub mod setup;
 pub mod stock;
@@ -19,7 +20,8 @@ pub use operations::{
     profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 pub(crate) use panel_apply::{
-    apply_fixture_draft, apply_stock_draft, commit_tool_draft, stock_edit_command,
+    apply_fixture_draft, apply_stock_draft, commit_tool_draft, part_models_first,
+    stock_edit_command,
 };
 
 // The children of this module. Every name below is a private re-export: it
@@ -924,16 +926,61 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         .models()
         .iter()
         .any(|model| model.mesh.is_some() || model.polygons.is_some());
-    let pin_inputs = stock::KeyedPinInputs::from_session(&state.session);
-    let edit = stock::draw(
+    // P7: the pin section reads the one core report of the DRAFT pins, so
+    // its chips follow a drag before the edit commits.
+    let pin_inputs = pins::KeyedPinInputs::from_session(&state.session);
+    let pin_report = state.session.pin_set_report_for(&draft.alignment_pins);
+    let part_models = state.session.pin_part_models();
+    let default_part_models = state.session.default_pin_part_models();
+    let model_rows: Vec<pins::PartModelRow> = state
+        .session
+        .models()
+        .iter()
+        .map(|m| pins::PartModelRow {
+            id: m.id,
+            name: m.name.clone(),
+            is_part: part_models.contains(&rs_cam_core::ids::ModelId(m.id)),
+            default_part: default_part_models.contains(&rs_cam_core::ids::ModelId(m.id)),
+        })
+        .collect();
+    let drill_diameters = drill_tool_diameters(&state.session);
+    let pin_drill = pins::PinDrillState::of(&state.session);
+    if state
+        .panels
+        .selected_pin
+        .is_some_and(|i| i >= draft.alignment_pins.len())
+    {
+        state.panels.selected_pin = None;
+    }
+    let pin_section = pins::PinSectionInputs {
+        setups: &setup_maps,
+        keyed: &pin_inputs,
+        report: &pin_report,
+        models: &model_rows,
+        drill_diameters: &drill_diameters,
+        pin_drill: &pin_drill,
+        selected_pin: state.panels.selected_pin,
+        preset_refusal: state.panels.pin_preset_refusal.as_deref(),
+    };
+    let out = stock::draw(
         ui,
         &mut draft,
-        &setup_maps,
         has_model,
-        &pin_inputs,
+        &pin_section,
         &mut state.panels.keyed_pin_plan,
         events,
     );
+    if let Some(selected) = out.selected_pin {
+        state.panels.selected_pin = selected;
+        state.panel_side_effects.upload = true;
+    }
+    if out.sync_pin_drill {
+        state.panel_side_effects.pin_drill_sync = true;
+    }
+    if let Some(refusal) = out.preset_refusal {
+        state.panels.pin_preset_refusal = refusal;
+    }
+    let edit = out.edit;
     if edit.committed {
         apply_stock_draft(state, draft.clone());
         // The undo compare runs AFTER the command, so the
@@ -954,6 +1001,29 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
     if edit.in_flight {
         state.history.stock_draft = Some(draft);
     }
+}
+
+/// The diameters of the tools that the drilling operations name, in
+/// ascending order and without repeats. The mixed pin preset takes its
+/// second dowel size from them.
+fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSession) -> Vec<f64> {
+    use crate::state::toolpath::OperationConfig;
+    let mut out: Vec<f64> = session
+        .toolpath_configs()
+        .iter()
+        .filter(|tc| {
+            matches!(
+                tc.operation,
+                OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+            )
+        })
+        .filter_map(|tc| session.tools().iter().find(|t| t.id.0 == tc.tool_id))
+        .map(|t| t.diameter)
+        .filter(|d| *d > 0.0)
+        .collect();
+    out.sort_by(f64::total_cmp);
+    out.dedup();
+    out
 }
 
 /// The `PostProcessor` arm of [`draw`]'s selection dispatch.

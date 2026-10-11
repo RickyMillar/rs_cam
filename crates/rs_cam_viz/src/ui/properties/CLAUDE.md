@@ -11,7 +11,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
   `dv_pill`, `dv_dressup`), `toolpath_panel.rs` (one fn per tab).
 - `operations/` — one editor per op family, plus `registry.rs`,
   `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`.
-- `setup.rs`, `stock_changes.rs` (S4 list + editor), `stock.rs`, `tool.rs`, `post.rs`, `pills.rs`.
+- `setup.rs`, `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7), `tool.rs`, `post.rs`, `pills.rs`.
 
 ## Invariants
 
@@ -37,4 +37,4 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 - `cargo test -p rs_cam_viz -q --test depth_beyond_stock_cautions_g_depthstock`
 - `cargo test -p rs_cam_viz -q --test the_help_key_is_the_param_name_ui04`
 - `cargo test -p rs_cam_viz -q --test operations_registry_ui05`
-- `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom --test keyed_pin_panel_reads_the_real_strips_g_pinpanel`
+- `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom --test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7`

@@ -125,6 +125,13 @@ impl<B: ComputeBackend> AppController<B> {
     /// contract and compares nothing (WP8). The pins move the pin-drill
     /// holes, so a pin undo takes the pin-edit door (`pins.rs`).
     fn apply_stock_snapshot(&mut self, stock: StockConfig) {
+        // P7: a snapshot that differs in the part-model choice and the pins
+        // takes the choice row first, so the pins stay a narrow edit.
+        if let Some(first) =
+            crate::ui::properties::part_models_first(self.state.session.stock_config(), &stock)
+        {
+            let _ = self.apply_quietly(first);
+        }
         let command = crate::ui::properties::stock_edit_command(
             self.state.session.stock_config(),
             stock.clone(),
