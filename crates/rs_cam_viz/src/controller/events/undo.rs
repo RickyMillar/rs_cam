@@ -123,7 +123,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// stock undo is `SetStockConfig` and drops every result, also when
     /// the snapshot equals the stored stock: a restore invalidates by
     /// contract and compares nothing (WP8). The pins move the pin-drill
-    /// holes, so the pin-drill sync runs after a pin undo.
+    /// holes, so a pin undo takes the pin-edit door (`pins.rs`).
     fn apply_stock_snapshot(&mut self, stock: StockConfig) {
         let command = crate::ui::properties::stock_edit_command(
             self.state.session.stock_config(),
@@ -134,12 +134,16 @@ impl<B: ComputeBackend> AppController<B> {
                 stock: Box::new(stock),
             })
         });
-        let pins_only = matches!(command, Command::SetAlignmentPins(_));
-        let _ = self.apply_quietly(command);
-        if pins_only {
-            self.pending_upload = true;
-            self.sync_alignment_pin_drill();
+        if matches!(command, Command::SetAlignmentPins(_)) {
+            // P5: the one pin-edit door, so the undo moves the pin-drill
+            // operation the way the edit did.
+            if let Ok(edit) = self.apply_pin_edit(command)
+                && let super::pins::PinDrillSync::Refused(reason) = edit.pin_drill
+            {
+                self.push_notification(reason, super::super::Severity::Warning);
+            }
         } else {
+            let _ = self.apply_quietly(command);
             self.invalidate_simulation();
         }
     }

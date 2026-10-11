@@ -81,6 +81,10 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::AlignmentPinsUnkeyed => {
             (ids::PROJECT_ALIGNMENT_PINS_UNKEYED, Category::Safety)
         }
+        VerdictKind::PinHolesDrilledTwice => {
+            (ids::PROJECT_PIN_HOLES_DRILLED_TWICE, Category::Safety)
+        }
+        VerdictKind::DowelHolesDisagree => (ids::PROJECT_DOWEL_HOLES_DISAGREE, Category::Safety),
         VerdictKind::MeasurabilityAbstained => {
             (ids::PROJECT_MEASURABILITY_ABSTAINED, Category::State)
         }

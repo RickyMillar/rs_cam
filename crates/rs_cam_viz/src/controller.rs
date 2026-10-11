@@ -1,6 +1,7 @@
 #![deny(clippy::indexing_slicing)]
 
 mod events;
+pub(crate) use events::pins::PinDrillSync;
 pub mod generate_all;
 #[cfg(test)]
 #[allow(
@@ -465,7 +466,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.pending_upload = true;
         }
         if owed.pin_drill_sync {
-            self.sync_alignment_pin_drill();
+            let _ = self.sync_alignment_pin_drill();
         }
         if owed.invalidate_simulation {
             self.invalidate_simulation();

@@ -13,8 +13,8 @@ use rmcp::{Peer, RoleServer, ServerHandler, tool, tool_router};
 
 use crate::compute::{GenerationControl, MemoryControl};
 use crate::mcp_bridge::{
-    CoreRequest, GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, ProgressUpdate,
-    build_cancel_generation_response, build_generation_status_response,
+    CoreRequest, GuiWaker, McpReadCache, McpReadKind, McpRequest, McpRequestKind, PinSetRequest,
+    ProgressUpdate, build_cancel_generation_response, build_generation_status_response,
 };
 use crate::ui_command::{
     GetCutTraceArgs, GetNotificationsArgs, NoArgs, ScreenshotGuiArgs, ScreenshotSimulationArgs,
@@ -28,16 +28,17 @@ use rs_cam_mcp::server::{
     AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CutTraceParam, ExportParam,
     GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam, GetNotificationsParam,
     ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
-    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, OperationSchemaParam,
-    OptimizeToolpathInput, PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam,
-    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
-    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
-    SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
-    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
-    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
-    SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
-    SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam, json_str,
+    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam,
+    OperationSchemaParam, OptimizeToolpathInput, PlaceAlignmentPatternParam,
+    PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
+    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
+    SetDressupFieldParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
+    SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
+    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
+    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathToolParam,
+    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
+    SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -718,7 +719,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_alignment_pin",
-        description = "Add an alignment pin to the stock config at the given position. Used for multi-setup registration."
+        description = "Add one alignment pin to the stock pins, stock-local mm (X0 Y0 at the stock's min corner). A thin form of set_alignment_pins: a pin within 0.01 mm of a stored pin is skipped. The reply gives stale_toolpaths (only the pin-drill toolpath and what depends on it go stale), pin_drill (what happened to the 'Pin Drill' toolpath: created in the first Top setup at 0 deg (refused when none exists), updated, removed, unchanged or refused, with the reason) and pin_report (seats, keyed, margin, bar, the closest wrong seating turn, the setup it judged)."
     )]
     async fn add_alignment_pin(
         &self,
@@ -732,7 +733,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "remove_alignment_pin",
-        description = "Remove an alignment pin by index (0-based) from the stock config."
+        description = "Remove one alignment pin by index (0-based). A thin form of set_alignment_pins, with the same reply: stale_toolpaths, pin_drill and pin_report."
     )]
     async fn remove_alignment_pin(
         &self,
@@ -741,6 +742,54 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::RemoveAlignmentPin(param)))
                 .await,
+        )
+    }
+
+    #[tool(
+        name = "set_alignment_pins",
+        description = "Replace the whole alignment pin set in one step (one undo entry, one stale set). pins: [{x, y, diameter}] in stock-local mm (X0 Y0 at the stock's min corner); an empty list removes every pin and the 'Pin Drill' toolpath. Only the pin-drill toolpath and what depends on it go stale. The 'Pin Drill' toolpath follows the pins: it is created in the first Top setup at 0 deg (refused when none exists), its holes move, or it is removed. The reply gives stale_toolpaths, pin_drill (action and reason) and pin_report (seats, seat_mismatch_mm, keyed, keying_margin_mm, keying_bar_mm, wrong_seating, wall_to_stock_edge_mm, preset, the judged setup)."
+    )]
+    async fn set_alignment_pins(
+        &self,
+        Parameters(param): Parameters<SetAlignmentPinsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetAlignmentPins(
+                PinSetRequest::Replace(param),
+            )))
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "place_alignment_pattern",
+        description = "Replace the alignment pin set with a keyed preset, dimensioned along the flip axis of the first setup that turns the part over in plane (Bottom at 0 or 180 deg, or 90/270 on a square stock). along = distance along the axis from its first end; across = distance from the axis. Bottom at 0 deg: the axis is y = D/2 from x = 0, so along is X. Bottom turned 180 deg: the axis is x = W/2 from y = 0, so along is Y. preset 'axis_plus_mirror_pair' takes axis_along, pair_along, pair_across (> 0) and diameter: one pin on the axis plus a mirror pair. preset 'two_mixed_diameters' takes small_along, large_along, small_diameter and large_diameter (> small): two pins on the axis. Refuses when no setup flips the part in plane, or when a parameter of the preset is missing. Same reply as set_alignment_pins."
+    )]
+    async fn place_alignment_pattern(
+        &self,
+        Parameters(param): Parameters<PlaceAlignmentPatternParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetAlignmentPins(
+                PinSetRequest::Pattern(param),
+            )))
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "move_alignment_pins",
+        description = "Move every alignment pin by (dx, dy) mm as one set; the diameters do not change. Refuses when the stock has no pins. Same reply as set_alignment_pins."
+    )]
+    async fn move_alignment_pins(
+        &self,
+        Parameters(param): Parameters<MoveAlignmentPinsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetAlignmentPins(
+                PinSetRequest::Move(param),
+            )))
+            .await,
         )
     }
 

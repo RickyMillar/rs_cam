@@ -156,9 +156,7 @@ macro_rules! for_each_command {
             (Command, SetAlignmentPins, "set_alignment_pins", SetAlignmentPinsArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "the MCP add and remove tools keep their own rows until wave C adds a set tool",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
                  ),

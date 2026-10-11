@@ -84,6 +84,13 @@ pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
 /// [`crate::compute::alignment_pins::validate_pins_for_flip`]; this is the
 /// id it reaches every surface under.
 pub const PROJECT_ALIGNMENT_PINS_UNKEYED: &str = "project.alignment_pins_unkeyed";
+/// A pin-drill operation drills the dowel holes, and another operation
+/// drills a hole at a stock pin too (P8). The judgement lives in
+/// [`crate::compute::alignment_pins::hole_source_findings`].
+pub const PROJECT_PIN_HOLES_DRILLED_TWICE: &str = "project.pin_holes_drilled_twice";
+/// A drill operation drills holes of a pin diameter that are not at a
+/// stock pin (P8). Same judgement as [`PROJECT_PIN_HOLES_DRILLED_TWICE`].
+pub const PROJECT_DOWEL_HOLES_DISAGREE: &str = "project.dowel_holes_disagree";
 /// A gate declined to produce a verdict because the metric it reads is not
 /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the

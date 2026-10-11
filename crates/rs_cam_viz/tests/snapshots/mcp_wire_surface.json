@@ -1347,6 +1347,31 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`move_alignment_pins` (P5): move every pin by one offset.",
+      "properties": {
+        "dx": {
+          "description": "The X offset in mm.",
+          "format": "double",
+          "type": "number"
+        },
+        "dy": {
+          "description": "The Y offset in mm.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dx",
+        "dy"
+      ],
+      "title": "MoveAlignmentPinsParam",
+      "type": "object"
+    },
+    "name": "move_alignment_pins"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "description": "`move_stock_change` (S4): move one stock change to a new position in its\nsetup's list. The setup applies the list in order.",
       "properties": {
         "change_id": {
@@ -1441,6 +1466,99 @@
       "type": "object"
     },
     "name": "optimize_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`place_alignment_pattern` (P5): replace the pin set with a preset.\n\nThe preset is dimensioned in the frame of the flip axis of the first\nsetup that turns the part over in plane: `*_along` is the distance in\nmm along the axis from its first end, `pair_across` the distance from\nthe axis. For a `Bottom` setup at 0 deg the axis is y = D/2 from x = 0,\nso `along` is the stock-local X. For `Bottom` turned 180 deg the axis\nis x = W/2 from y = 0, so `along` is Y.",
+      "properties": {
+        "axis_along": {
+          "description": "`axis_plus_mirror_pair`: the axis pin's distance along the axis, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "diameter": {
+          "description": "`axis_plus_mirror_pair`: the diameter of the three pins, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "large_along": {
+          "description": "`two_mixed_diameters`: the large pin's distance along the axis, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "large_diameter": {
+          "description": "`two_mixed_diameters`: the large pin's diameter, mm (greater than\n`small_diameter`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pair_across": {
+          "description": "`axis_plus_mirror_pair`: each pair pin's distance from the axis, mm\n(greater than zero).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pair_along": {
+          "description": "`axis_plus_mirror_pair`: the pair's distance along the axis, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "preset": {
+          "description": "The preset.",
+          "oneOf": [
+            {
+              "const": "axis_plus_mirror_pair",
+              "description": "One pin on the flip axis plus a mirror pair off the axis, one\ndiameter. Keys unless the three pins are in a line or form an\nequilateral triangle. Takes `axis_along`, `pair_along`,\n`pair_across` and `diameter`.",
+              "type": "string"
+            },
+            {
+              "const": "two_mixed_diameters",
+              "description": "Two pins of different diameters on the flip axis. Keys with two\nholes, and needs two drills. Takes `small_along`, `large_along`,\n`small_diameter` and `large_diameter`.",
+              "type": "string"
+            }
+          ]
+        },
+        "small_along": {
+          "description": "`two_mixed_diameters`: the small pin's distance along the axis, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "small_diameter": {
+          "description": "`two_mixed_diameters`: the small pin's diameter, mm.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "title": "PlaceAlignmentPatternParam",
+      "type": "object"
+    },
+    "name": "place_alignment_pattern"
   },
   {
     "inputSchema": {
@@ -2020,6 +2138,55 @@
       "type": "object"
     },
     "name": "screenshot_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$defs": {
+        "AlignmentPinParam": {
+          "description": "One alignment pin of a pin set, stock-local, in mm.",
+          "properties": {
+            "diameter": {
+              "description": "Diameter of the pin in mm.",
+              "format": "double",
+              "type": "number"
+            },
+            "x": {
+              "description": "X of the pin centre in mm, from the stock's min corner.",
+              "format": "double",
+              "type": "number"
+            },
+            "y": {
+              "description": "Y of the pin centre in mm, from the stock's min corner.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "diameter"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`set_alignment_pins` (P5): replace the whole pin set.",
+      "properties": {
+        "pins": {
+          "description": "The new pin set. An empty list removes every pin (and the pin-drill\ntoolpath).",
+          "items": {
+            "$ref": "#/$defs/AlignmentPinParam"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pins"
+      ],
+      "title": "SetAlignmentPinsParam",
+      "type": "object"
+    },
+    "name": "set_alignment_pins"
   },
   {
     "inputSchema": {

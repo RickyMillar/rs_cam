@@ -221,6 +221,8 @@ fn the_verdict_enums_write_their_own_string_tags() {
         VerdictKind::AirCut,
         VerdictKind::GeneratedEmpty,
         VerdictKind::AlignmentPinsUnkeyed,
+        VerdictKind::PinHolesDrilledTwice,
+        VerdictKind::DowelHolesDisagree,
         VerdictKind::MeasurabilityAbstained,
     ];
     for kind in kinds {

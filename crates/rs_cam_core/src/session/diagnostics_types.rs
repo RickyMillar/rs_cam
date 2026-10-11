@@ -130,6 +130,13 @@ pub enum VerdictKind {
     /// a toolpath: a pin pair that is invariant under the wrong symmetry
     /// seats in both orientations and both look right.
     AlignmentPinsUnkeyed,
+    /// A pin-drill operation drills the dowel holes, and another operation
+    /// drills a hole at a stock pin too (P8): the machine drills the hole
+    /// twice.
+    PinHolesDrilledTwice,
+    /// A drill operation drills holes of a pin diameter that are not at a
+    /// stock pin (P8): the two copies of the dowel holes disagree.
+    DowelHolesDisagree,
     /// A gate declined to produce a verdict because the metric it reads is
     /// not measurable on this trace. Checkpoint D Q2, 2026-08-04 — see
     /// [`crate::stock::sim_measurability`]. This is **not** a warning about the
@@ -148,6 +155,8 @@ impl VerdictKind {
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
             Self::AlignmentPinsUnkeyed => "alignment_pins_unkeyed",
+            Self::PinHolesDrilledTwice => "pin_holes_drilled_twice",
+            Self::DowelHolesDisagree => "dowel_holes_disagree",
             Self::MeasurabilityAbstained => "measurability_abstained",
         }
     }
