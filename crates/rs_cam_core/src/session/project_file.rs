@@ -1255,18 +1255,13 @@ pub(super) fn build_session_from_project(
     // CMP-27: the pin-keying judgement, on the CORE load path. It ran on
     // the GUI's load path only, so a headless load and MCP `load_project`
     // heard nothing about a pin pair that cannot register the flip it is
-    // for. Deduped by exact message: a `Top` setup contributes only the
-    // bounds line, and a project with several setups would repeat it.
-    {
-        let mut seen = std::collections::HashSet::new();
-        for setup in &setups {
-            for detail in stock.validate_pins_for_flip(setup.face_up).warnings() {
-                if seen.insert(detail.clone()) {
-                    tracing::warn!("{detail}");
-                    warnings.push(ProjectLoadWarning::AlignmentPinsUnkeyed { detail });
-                }
-            }
-        }
+    // for. Each setup is judged by its full map (`face_up` and
+    // `z_rotation`); the findings come deduped by exact message.
+    for finding in stock.pin_findings_for_setups(setups.iter().map(|s| (s.face_up, s.z_rotation))) {
+        tracing::warn!("{}", finding.text);
+        warnings.push(ProjectLoadWarning::AlignmentPinsUnkeyed {
+            detail: finding.text,
+        });
     }
 
     // Compute next IDs by scanning existing maximums

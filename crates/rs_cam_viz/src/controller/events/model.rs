@@ -1,4 +1,4 @@
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
     AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
     KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs,
@@ -423,24 +423,30 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // Key the pins to the flip the project actually programs, not to
-        // an assumption. Only an in-plane flip keeps the XY footprint the
-        // pins are dimensioned in; the edge-up orientations are refused
-        // by the core placer rather than guessed at.
-        let flip_face = self
+        // an assumption: the setup's full map, `face_up` AND `z_rotation`
+        // (P2). Only an in-plane flip keeps the XY footprint the pins are
+        // dimensioned in; the core placer refuses the others rather than
+        // guessing.
+        let (flip_face, flip_turn) = self
             .state
             .session
             .list_setups()
             .iter()
-            .map(|s| s.face_up)
-            .find(|f| *f != FaceUp::Top)
-            .unwrap_or(FaceUp::Bottom);
+            .map(|s| (s.face_up, s.z_rotation))
+            .find(|(f, _)| *f != FaceUp::Top)
+            .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
 
-        // The stock panel's "Auto-place keyed pair" calls the same planner
+        // The stock panel's "Auto-place keyed pins" calls the same planner
         // with the same inputs: the bbox of all models and the pin-drill
         // tool diameter (G-PINPANEL). The two doors cannot disagree.
         let pin_inputs = KeyedPinInputs::from_session(&self.state.session);
-        let plan = keyed_pin_plan(self.state.session.stock_config(), flip_face, &pin_inputs)
-            .map_err(|e| e.to_string());
+        let plan = keyed_pin_plan(
+            self.state.session.stock_config(),
+            flip_face,
+            flip_turn,
+            &pin_inputs,
+        )
+        .map_err(|e| e.to_string());
 
         // One DRAFT of the stock, and one `SetStockConfig`. The pin
         // placement and the `flip_axis` cache write must stay in one
@@ -454,7 +460,7 @@ impl<B: ComputeBackend> AppController<B> {
             match plan {
                 Ok(pins) => stock.alignment_pins.extend(pins),
                 // Refuse rather than emit a placement that hangs off
-                // the blank or seats four ways: the operator would
+                // the blank or seats turned: the operator would
                 // find out at the flip, with the part already cut.
                 Err(message) => refusal = Some(message),
             }
@@ -473,7 +479,7 @@ impl<B: ComputeBackend> AppController<B> {
         stock.flip_axis = if stock.alignment_pins.is_empty() {
             None
         } else {
-            FlipAxis::from_face_up(flip_face)
+            FlipAxis::from_setup(flip_face, flip_turn)
         };
         // **This is a behaviour change.** The hatch wrote the pins and
         // the cached axis and dropped nothing; the row drops every result
@@ -494,7 +500,7 @@ impl<B: ComputeBackend> AppController<B> {
             .state
             .session
             .stock_config()
-            .validate_pins_for_flip(flip_face)
+            .validate_pins_for_flip(flip_face, flip_turn)
             .warnings()
         {
             tracing::warn!("{warning}");

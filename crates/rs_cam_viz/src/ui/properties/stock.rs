@@ -3,7 +3,7 @@ use rs_cam_core::compute::alignment_pins::{PIN_MATCH_TOL_MM, PinPlacementError};
 use rs_cam_core::geo::BoundingBox3;
 
 use super::PanelEdit;
-use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
+use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig, ZRotation};
 use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
@@ -63,13 +63,17 @@ pub fn reconcile_auto_from_model(
 /// the caption under the checkbox, because "refit to the model" is not
 /// an offer the panel can keep without one.
 ///
+/// `setups` holds the in-plane map of each setup (`face_up` and
+/// `z_rotation`), in setup order. The pin section judges the pins against
+/// every one of them.
+///
 /// `pin_inputs` holds the model bbox and the pin-drill tool diameter. The
-/// "Auto-place keyed pair" button plans from them, as the "Two-sided setup"
+/// "Auto-place keyed pins" button plans from them, as the "Two-sided setup"
 /// route does.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
-    has_flipped_setup: bool,
+    setups: &[(FaceUp, ZRotation)],
     has_model: bool,
     pin_inputs: &KeyedPinInputs,
     events: &mut Vec<AppEvent>,
@@ -200,13 +204,7 @@ pub fn draw(
     }
 
     ui.add_space(12.0);
-    edit.merge(draw_alignment_pins(
-        ui,
-        stock,
-        has_flipped_setup,
-        pin_inputs,
-        events,
-    ));
+    edit.merge(draw_alignment_pins(ui, stock, setups, pin_inputs, events));
     edit
 }
 
@@ -214,10 +212,17 @@ pub fn draw(
 fn draw_alignment_pins(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
-    has_flipped_setup: bool,
+    setups: &[(FaceUp, ZRotation)],
     pin_inputs: &KeyedPinInputs,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
+    // The first setup that turns the part away from Top is the flip the
+    // pins register (P2: its full map, `face_up` and `z_rotation`).
+    let flip_setup = setups
+        .iter()
+        .copied()
+        .find(|(face, _)| *face != FaceUp::Top);
+    let has_flipped_setup = flip_setup.is_some();
     let header = egui::RichText::new("Alignment Pins")
         .strong()
         .color(crate::ui::tokens::TEXT_STRONG);
@@ -237,9 +242,11 @@ fn draw_alignment_pins(
                     events.push(AppEvent::SetupTwoSided);
                 }
                 ui.label(
-                    egui::RichText::new("Creates flipped Setup 2, sets flip axis, places 2 pins")
-                        .small()
-                        .color(crate::ui::tokens::TEXT_MUTED),
+                    egui::RichText::new(
+                        "Creates flipped Setup 2, sets flip axis, places 3 keyed pins",
+                    )
+                    .small()
+                    .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 ui.add_space(4.0);
             }
@@ -263,24 +270,25 @@ fn draw_alignment_pins(
             // action; correcting a stale one on load is a migration and
             // belongs in the load path.
             //
-            // `Vertical` is unreachable on purpose: no `FaceUp` performs
-            // an X mirror. The variant survives only so older projects
-            // still load — and when one does, the mismatch is named
-            // rather than papered over.
-            let derived_axis = has_flipped_setup.then_some(FlipAxis::Horizontal);
+            // The axis comes from the full setup map (P2): a Bottom setup
+            // at 0 deg mirrors Y (Horizontal), turned 180 deg it mirrors X
+            // (Vertical). Other setups have no centre-line axis.
+            let derived_axis = flip_setup.and_then(|(face, turn)| FlipAxis::from_setup(face, turn));
             ui.horizontal(|ui| {
                 ui.label("Flip axis:");
                 ui.label(
-                    egui::RichText::new(match derived_axis {
-                        Some(fa) => fa.label(),
-                        None => "None (no flipped setup)",
+                    egui::RichText::new(match (derived_axis, has_flipped_setup) {
+                        (Some(fa), _) => fa.label(),
+                        (None, true) => "None (the flipped setup mirrors about no centre line)",
+                        (None, false) => "None (no flipped setup)",
                     })
                     .strong(),
                 )
                 .on_hover_text(
-                    "Derived from the setups, not set here. The CAM models one flip — Bottom, \
-                     which mirrors Y about the stock centre line — so pins must be invariant \
-                     under that and under nothing else.",
+                    "Derived from the setups, not set here. A Bottom setup at 0 deg mirrors Y \
+                     about the stock centre line; turned 180 deg it mirrors X. Each pin must \
+                     land on a pin after that mirror, and no turn of the part on the dowels \
+                     may seat it too.",
                 );
                 if stock.flip_axis != derived_axis {
                     ui.label(
@@ -299,8 +307,7 @@ fn draw_alignment_pins(
                          whether the pins are correct; it is rewritten next time pins are \
                          placed.",
                         match stock.flip_axis {
-                            Some(FlipAxis::Vertical) =>
-                                "'Vertical', which no flip in this CAM performs",
+                            Some(FlipAxis::Vertical) => "'Vertical'",
                             Some(FlipAxis::Horizontal) => "'Horizontal'",
                             None => "no flip axis",
                         }
@@ -415,25 +422,25 @@ fn draw_alignment_pins(
                 edit.commit();
             }
 
-            // Buttons row. The keyed pair is the whole product here: two
-            // pins on the mirror line whose x-multiset is not
-            // centre-symmetric. Extra pins buy redundancy against
-            // rocking, never keying — a pin at x = W/2 is its own image
-            // under x -> W - x — so "+ Add Pin" is deliberately dumb and
-            // "Auto-place" no longer takes a count.
+            // Buttons row. Two pins of one diameter never key: a half
+            // turn about their midpoint puts each hole on the other dowel.
+            // "Auto-place" therefore places one pin on the flip axis plus
+            // a mirror pair off the axis. "+ Add Pin" adds one free pin.
             ui.add_space(4.0);
-            let plan = keyed_pin_plan(stock, panel_face_up(derived_axis), pin_inputs);
+            let (plan_face, plan_turn) = flip_setup.unwrap_or((FaceUp::Top, ZRotation::Deg0));
+            let plan = keyed_pin_plan(stock, plan_face, plan_turn, pin_inputs);
             ui.horizontal(|ui| {
                 let can_place = plan.is_ok();
                 if ui
                     .add_enabled(
                         can_place,
-                        egui::Button::new("Auto-place keyed pair").small(),
+                        egui::Button::new("Auto-place keyed pins").small(),
                     )
                     .on_hover_text(
-                        "Two pins on the flip's mirror line, offset so the part cannot seat 180 \
-                         deg out. The clear strips are the stock beside the bbox of all models, \
-                         and the pin diameter is the pin-drill tool's diameter.",
+                        "Replaces the pins with three: one on the flip axis and a mirror pair off \
+                         the axis, so the part seats after the flip and in no turned position. \
+                         The clear strips are the stock beside the bbox of all models, and the pin \
+                         diameter is the pin-drill tool's diameter.",
                     )
                     .clicked()
                     && let Ok(pins) = plan.as_ref()
@@ -456,8 +463,10 @@ fn draw_alignment_pins(
                 if ui
                     .add_enabled(centre_free, egui::Button::new("+ Add Pin").small())
                     .on_hover_text(
-                        "Adds one pin at the centre of the mirror line, then drag it. A centre \
-                         pin is self-symmetric, so it adds redundancy but no keying.",
+                        "Adds one pin at the stock centre; drag it into place. Pins of one \
+                         diameter key only as one pin on the flip axis plus mirror pairs off the \
+                         axis (not in a line, not an equilateral triangle). Two pins of different \
+                         diameters also key.",
                     )
                     .clicked()
                 {
@@ -470,17 +479,15 @@ fn draw_alignment_pins(
                 }
             });
 
-            // Standing refusal, not a transient toast: if no keyed pair
+            // Standing refusal, not a transient toast: if no keyed pattern
             // exists for this blank the operator needs to see why every
             // time they look, because the alternative is a placement that
             // hangs off the stock (Ø6 pin in a 5 mm ring) or one that
-            // seats four ways.
+            // seats turned.
             // ...but only once a flip is actually programmed. With no
             // flipped setup there is nothing to key, and "cannot place
             // pins for a Top setup" would be noise.
-            if derived_axis.is_some()
-                && let Err(reason) = plan.as_ref()
-            {
+            if has_flipped_setup && let Err(reason) = plan.as_ref() {
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(reason.to_string())
@@ -495,15 +502,10 @@ fn draw_alignment_pins(
             // passed wanaka's diagonal pins: they were symmetric under a
             // 180 deg ROTATION, which is not a flip, and neither hole
             // would have landed on a dowel.
-            let flip_face = if derived_axis == Some(FlipAxis::Horizontal) {
-                FaceUp::Bottom
-            } else {
-                FaceUp::Top
-            };
-            for warning in stock.validate_pins_for_flip(flip_face).warnings() {
+            for finding in stock.pin_findings_for_setups(setups.iter().copied()) {
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(warning)
+                    egui::RichText::new(finding.text)
                         .small()
                         .color(crate::ui::tokens::CAUTION),
                 );
@@ -543,7 +545,7 @@ pub const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool i
 /// The session values the keyed-pin planner reads.
 ///
 /// ONE constructor for both doors: the stock panel's "Auto-place keyed
-/// pair" and the controller's "Two-sided setup". Before G-PINPANEL the
+/// pins" and the controller's "Two-sided setup". Before G-PINPANEL the
 /// panel took its clear strips from `padding` and a pin diameter from the
 /// stored pins. A hand-sized stock (380 mm wide, origin x -15, model x
 /// 0..350, padding 5) then read a 5 mm strip where the real strip is
@@ -568,7 +570,7 @@ impl KeyedPinInputs {
     }
 }
 
-/// Why no keyed pair is placed.
+/// Why no keyed pin pattern is placed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum KeyedPinRefusal {
     /// No tool resolves, so the pin diameter would be a guess.
@@ -586,18 +588,8 @@ impl std::fmt::Display for KeyedPinRefusal {
     }
 }
 
-/// The flip the panel keys the pins to.
-///
-/// No flipped setup, or a legacy Vertical axis no `FaceUp` performs: there
-/// is no in-plane flip to key, and the placer refuses `Top`.
-fn panel_face_up(derived_axis: Option<FlipAxis>) -> FaceUp {
-    match derived_axis {
-        Some(FlipAxis::Horizontal) => FaceUp::Bottom,
-        _ => FaceUp::Top,
-    }
-}
-
-/// The keyed pair for `stock` under `face_up`.
+/// The keyed pins for `stock` under the flipped setup (`face_up` and
+/// `z_rotation`).
 ///
 /// Both doors call this function with [`KeyedPinInputs::from_session`], so
 /// they cannot disagree about a placement. The clear strips come from the
@@ -606,26 +598,33 @@ fn panel_face_up(derived_axis: Option<FlipAxis>) -> FaceUp {
 pub fn keyed_pin_plan(
     stock: &StockConfig,
     face_up: FaceUp,
+    z_rotation: ZRotation,
     inputs: &KeyedPinInputs,
-) -> Result<[AlignmentPin; 2], KeyedPinRefusal> {
+) -> Result<[AlignmentPin; 3], KeyedPinRefusal> {
     // Sizing the pin from the tool is the point: with no tool there is no
     // honest diameter.
     let pin_diameter = inputs.pin_diameter.ok_or(KeyedPinRefusal::NoPinTool)?;
     stock
-        .plan_keyed_pins(face_up, inputs.model_bbox.as_ref(), pin_diameter)
+        .plan_keyed_pins(
+            face_up,
+            z_rotation,
+            inputs.model_bbox.as_ref(),
+            pin_diameter,
+        )
         .map_err(KeyedPinRefusal::Placement)
 }
 
 /// Create the mirror of a pin about the flip axis.
 ///
-/// `Horizontal` is the map `FaceUp::Bottom` performs: `y -> stock_y - y`,
-/// X untouched. A pin already on `y = stock_y / 2` is its own mirror,
-/// which is why the auto-placed pair needs no partner.
+/// `Horizontal` is the map a `Bottom` setup at 0 deg performs:
+/// `y -> stock_y - y`, X untouched. `Vertical` is the map of a `Bottom`
+/// setup turned 180 deg: `x -> stock_x - x`. A pin on the axis is its own
+/// mirror, which is why the auto-placed axis pin needs no partner.
 fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) -> AlignmentPin {
     match axis {
         // Mirror about the X centre line → Y is reflected, X preserved.
         FlipAxis::Horizontal => AlignmentPin::new(pin.x, stock_y - pin.y, pin.diameter),
-        // Vertical flip: mirror about the Y centerline → X is reflected
+        // Bottom turned 180 deg: mirror about the Y centre line, X reflected.
         FlipAxis::Vertical => AlignmentPin::new(stock_x - pin.x, pin.y, pin.diameter),
     }
 }
@@ -823,7 +822,12 @@ mod tests {
     #[test]
     fn panel_refuses_o6_pin_in_a_5mm_clear_ring() {
         let s = stock(140.0, 150.0);
-        match keyed_pin_plan(&s, FaceUp::Bottom, &inputs(5.0, 135.0, 150.0, 6.0)) {
+        match keyed_pin_plan(
+            &s,
+            FaceUp::Bottom,
+            ZRotation::Deg0,
+            &inputs(5.0, 135.0, 150.0, 6.0),
+        ) {
             Err(KeyedPinRefusal::Placement(PinPlacementError::StripTooNarrow {
                 strip_mm,
                 required_mm,
@@ -836,22 +840,31 @@ mod tests {
         }
     }
 
-    /// With room to work in, the pair sits on the mirror line and is
-    /// keyed: it survives the flip and blocks the other three seatings.
+    /// With room to work in, the panel places one pin on the mirror line
+    /// and a mirror pair off it. The pattern seats after the flip and, by
+    /// the intrinsic check, seats in no turned position (P1).
     #[test]
     fn panel_plan_seats_the_flip_and_keys_it() {
         let s = stock(140.0, 150.0);
-        let pins = keyed_pin_plan(&s, FaceUp::Bottom, &inputs(20.0, 120.0, 150.0, 6.0)).unwrap();
-        for p in &pins {
-            assert!(
-                (p.y - s.y * 0.5).abs() < 1e-9,
-                "pin off the mirror line at y={}",
-                p.y
-            );
-        }
+        let pins = keyed_pin_plan(
+            &s,
+            FaceUp::Bottom,
+            ZRotation::Deg0,
+            &inputs(20.0, 120.0, 150.0, 6.0),
+        )
+        .unwrap();
+        assert!(
+            (pins[0].y - s.y * 0.5).abs() < 1e-9,
+            "the axis pin is off the mirror line at y={}",
+            pins[0].y
+        );
+        assert!(
+            (pins[1].y + pins[2].y - s.y).abs() < 1e-9 && (pins[1].x - pins[2].x).abs() < 1e-9,
+            "pins 2 and 3 are not a mirror pair: {pins:?}"
+        );
         let mut placed = s;
         placed.alignment_pins = pins.to_vec();
-        let report = placed.validate_pins_for_flip(FaceUp::Bottom);
+        let report = placed.validate_pins_for_flip(FaceUp::Bottom, ZRotation::Deg0);
         assert!(report.seats(), "{report:?}");
         assert!(report.keyed(), "{report:?}");
         assert!(report.out_of_bounds.is_empty(), "{report:?}");
@@ -863,7 +876,12 @@ mod tests {
     fn panel_refuses_when_no_flip_is_programmed() {
         let s = stock(140.0, 150.0);
         assert!(matches!(
-            keyed_pin_plan(&s, panel_face_up(None), &inputs(20.0, 120.0, 150.0, 6.0)),
+            keyed_pin_plan(
+                &s,
+                FaceUp::Top,
+                ZRotation::Deg0,
+                &inputs(20.0, 120.0, 150.0, 6.0)
+            ),
             Err(KeyedPinRefusal::Placement(
                 PinPlacementError::UnsupportedFlip { .. }
             ))
@@ -879,7 +897,7 @@ mod tests {
             pin_diameter: None,
             ..inputs(20.0, 120.0, 150.0, 6.0)
         };
-        let refusal = keyed_pin_plan(&s, FaceUp::Bottom, &no_tool).unwrap_err();
+        let refusal = keyed_pin_plan(&s, FaceUp::Bottom, ZRotation::Deg0, &no_tool).unwrap_err();
         assert_eq!(refusal, KeyedPinRefusal::NoPinTool);
         assert_eq!(refusal.to_string(), NO_PIN_TOOL_MESSAGE);
     }

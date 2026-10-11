@@ -1060,33 +1060,26 @@ impl ProjectSession {
         // answer, and it stays current as pins are added and removed
         // rather than being frozen at load time.
         //
-        // Deduped by headline: a `Top` setup contributes only the bounds
-        // line, and a project with several setups repeats it.
+        // `pin_findings_for_setups` judges each setup by its full map
+        // (`face_up` and `z_rotation`) and dedupes by text: a `Top` setup
+        // contributes only the bounds line, and a project with several
+        // setups repeats it. Each finding carries its own fix hint.
+        for finding in self
+            .stock
+            .pin_findings_for_setups(self.setups.iter().map(|s| (s.face_up, s.z_rotation)))
         {
-            let mut seen = std::collections::HashSet::new();
-            for setup in &self.setups {
-                for detail in self.stock.validate_pins_for_flip(setup.face_up).warnings() {
-                    if !seen.insert(detail.clone()) {
-                        continue;
-                    }
-                    verdicts.push(Verdict {
-                        severity: VerdictSeverity::Important,
-                        kind: VerdictKind::AlignmentPinsUnkeyed,
-                        headline: detail,
-                        offender_toolpath_ids: Vec::new(),
-                        fix_hint: "Re-place the pins so the pair is asymmetric under the \
-                                   mirror the flip is NOT, or let the stock panel place \
-                                   them. A pair that seats in both orientations registers \
-                                   neither."
-                            .to_owned(),
-                        evidence: VerdictEvidence {
-                            move_index: None,
-                            z_value: None,
-                            count: None,
-                        },
-                    });
-                }
-            }
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Important,
+                kind: VerdictKind::AlignmentPinsUnkeyed,
+                headline: finding.text,
+                offender_toolpath_ids: Vec::new(),
+                fix_hint: finding.kind.fix_hint().to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
         }
 
         // Critical: a holder/shank check that could not answer. The

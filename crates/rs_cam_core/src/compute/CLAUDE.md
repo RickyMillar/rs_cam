@@ -6,7 +6,7 @@
   `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
   (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3). Also `toolpath_stats.rs`, `stats.rs`,
-  `alignment_pins.rs`, `annotate.rs`, `spans.rs`, `validate.rs`, `generated_empty.rs`.
+  `alignment_pins/` (P1 keying, placer, setup map), `annotate.rs`, `spans.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
@@ -34,7 +34,7 @@
 - `cargo test -p rs_cam_core -q --test sim_prefix_memo_s5`
 - `--test stock_carries_across_setups_s0`, `--test stock_changes_stale_from_their_setup_on_s2`,
   `--test stock_changes_apply_to_the_stock_s3` (each `cargo test -p rs_cam_core -q`)
-- `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5`
-- `cargo test -p rs_cam_core -q --test generated_empty_refusal_g_entryempty`
+- `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5 --test generated_empty_refusal_g_entryempty`
 - `cargo test -p rs_cam_core -q --test sim_peak_memory_g_simmem` (Linux)
 - `cargo test -p rs_cam_core -q --test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`
+- Pins: `--test alignment_pin_keying_intrinsic_p1 --test alignment_pins_judge_the_full_setup_map_p2 --test alignment_pin_keying_g_pinauto`

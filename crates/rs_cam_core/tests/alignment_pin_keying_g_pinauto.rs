@@ -18,15 +18,18 @@
 //!    180° ROTATION, not under a mirror. Neither hole would have landed
 //!    on a dowel; the part could not have re-seated. Nothing warned.
 //!
-//! 3. Keying was achievable and was not being done. A rectangular blank
-//!    re-seats four ways — identity, `My` (`y -> D − y`), `Mx`
-//!    (`x -> W − x`) and `R180 = Mx ∘ My`. The CAM models exactly `My`,
-//!    so the requirement is: invariant under `My`, and under NOTHING
-//!    else. Both pins on the mirror line makes the flip seat; an
-//!    x-multiset that fails `x -> W − x` blocks the other two.
+//! 3. Keying was achievable and was not being done.
 //!
-//! Full geometric argument: planning/airrun_2026-08-19/RUN_LOG.md,
-//! "## G-PINAUTO".
+//! P1 (2026-10-12) replaced the keying model. The 2026-08-22 model
+//! judged four seatings of the stock RECTANGLE (identity, `My`, `Mx`,
+//! `R180`). A part on spoilboard dowels has no edge reference: the holes
+//! locate it. A wrong seating is a turn of the part that puts every hole
+//! on a dowel, so two equal pins never key (a half turn about their
+//! midpoint swaps them). The placer now places one pin on the mirror line
+//! plus a mirror pair off it, and the tests below assert that model. The
+//! intrinsic cases themselves are in
+//! `alignment_pin_keying_intrinsic_p1.rs`. Review:
+//! planning/alignment_pins_review_2026-10-12/REVIEW.md, C1.
 
 #![allow(
     clippy::unwrap_used,
@@ -36,11 +39,11 @@
 )]
 
 use rs_cam_core::compute::alignment_pins::{
-    AlignmentPin, FlipAxis, PIN_KEYING_ASYMMETRY_MM, PinPlacementError, PinPlacementRequest,
-    PinSide, place_keyed_pins, validate_pins_for_flip,
+    AlignmentPin, FlipAxis, PinPlacementError, PinPlacementRequest, PinSide, place_keyed_pins,
+    validate_pins_for_flip,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::{BoundingBox3, P3};
 
 /// The live blank: 140×150, a 100×100 model centred in it, Ø6 dowels.
@@ -54,6 +57,7 @@ fn request(model_x_range: Option<(f64, f64)>, pin_diameter: f64) -> PinPlacement
         stock_d: D,
         model_x_range,
         face_up: FaceUp::Bottom,
+        z_rotation: ZRotation::Deg0,
         pin_diameter,
         wall_mm: 2.0,
     }
@@ -106,17 +110,14 @@ fn margin_comes_from_the_model_bbox_not_padding() {
             p.x
         );
     }
-    // Neither pin is anywhere near the old padding/2 output of 2.5/137.5.
-    assert!(
-        pins[0].x > 5.0,
-        "pin still in the padding ring: {}",
-        pins[0].x
-    );
-    assert!(
-        pins[1].x < W - 5.0,
-        "pin still in the padding ring: {}",
-        pins[1].x
-    );
+    // No pin is anywhere near the old padding/2 output of 2.5/137.5.
+    for p in &pins {
+        assert!(
+            p.x > 5.0 && p.x < W - 5.0,
+            "pin still in the padding ring: {}",
+            p.x
+        );
+    }
 }
 
 /// The old output, judged by the new bounds check: a Ø6 pin whose centre
@@ -127,7 +128,7 @@ fn the_old_padding_placement_reads_as_out_of_bounds() {
         AlignmentPin::new(2.5, D * 0.5, PIN_D),
         AlignmentPin::new(W - 2.5, D * 0.5, PIN_D),
     ];
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert_eq!(report.out_of_bounds, vec![0, 1], "{report:?}");
     assert!(
         report
@@ -151,13 +152,15 @@ fn centre_symmetric_pins_do_not_survive_the_flip() {
         AlignmentPin::new(2.5, 2.5, PIN_D),
         AlignmentPin::new(137.5, 147.5, PIN_D),
     ];
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
 
     assert!(!report.seats(), "{report:?}");
-    assert!(report.seat_mismatch_mm > 100.0, "{report:?}");
-    // And they are perfectly invariant under R180 — the wrong symmetry,
-    // which is why they looked plausible.
-    assert!(report.rot180_mismatch_mm < 1e-9, "{report:?}");
+    assert!(report.seat_mismatch_mm.unwrap() > 100.0, "{report:?}");
+    // And they are perfectly invariant under a half turn — the wrong
+    // symmetry, which is why they looked plausible.
+    let wrong = report.wrong_seating.expect("a half turn seats them");
+    assert!(wrong.miss_mm < 1e-9, "{report:?}");
+    assert!((wrong.turn_deg.abs() - 180.0).abs() < 1e-6, "{report:?}");
     assert!(!report.keyed(), "{report:?}");
     assert!(
         report
@@ -171,18 +174,25 @@ fn centre_symmetric_pins_do_not_survive_the_flip() {
 
 /// Only `Bottom` keeps the part's XY footprint. Standing the blank on an
 /// edge changes which stock dimensions the pins would have to register,
-/// so the placer refuses rather than guessing.
+/// so the placer refuses rather than guessing. The placer also refuses a
+/// turned `Bottom` setup (P2): its flip axis does not cross the X clear
+/// strips, and the 2D placer is a later package (P6).
 #[test]
 fn refuses_every_flip_the_cam_does_not_model_in_plane() {
-    for face in [
-        FaceUp::Top,
-        FaceUp::Front,
-        FaceUp::Back,
-        FaceUp::Left,
-        FaceUp::Right,
-    ] {
+    let cases = [
+        (FaceUp::Top, ZRotation::Deg0),
+        (FaceUp::Front, ZRotation::Deg0),
+        (FaceUp::Back, ZRotation::Deg0),
+        (FaceUp::Left, ZRotation::Deg0),
+        (FaceUp::Right, ZRotation::Deg0),
+        (FaceUp::Bottom, ZRotation::Deg90),
+        (FaceUp::Bottom, ZRotation::Deg180),
+        (FaceUp::Bottom, ZRotation::Deg270),
+    ];
+    for (face, turn) in cases {
         let req = PinPlacementRequest {
             face_up: face,
+            z_rotation: turn,
             ..request(Some((20.0, W - 20.0)), PIN_D)
         };
         assert!(
@@ -190,19 +200,28 @@ fn refuses_every_flip_the_cam_does_not_model_in_plane() {
                 place_keyed_pins(req),
                 Err(PinPlacementError::UnsupportedFlip { .. })
             ),
-            "expected a refusal for {face:?}"
+            "expected a refusal for {face:?} {turn:?}"
         );
     }
 }
 
-/// `FlipAxis` is derived from the setup, never authored. `Vertical` is
-/// unreachable because no `FaceUp` performs an X mirror.
+/// `FlipAxis` is derived from the setup's full map, never authored.
+/// `Bottom` at 0 deg mirrors Y (Horizontal); turned 180 deg it mirrors X
+/// (Vertical, C3). A quarter turn mirrors about a diagonal, and the
+/// other faces do not mirror in plane.
 #[test]
-fn flip_axis_is_derived_from_face_up() {
+fn flip_axis_is_derived_from_the_setup_map() {
     assert_eq!(
-        FlipAxis::from_face_up(FaceUp::Bottom),
+        FlipAxis::from_setup(FaceUp::Bottom, ZRotation::Deg0),
         Some(FlipAxis::Horizontal)
     );
+    assert_eq!(
+        FlipAxis::from_setup(FaceUp::Bottom, ZRotation::Deg180),
+        Some(FlipAxis::Vertical)
+    );
+    for turn in [ZRotation::Deg90, ZRotation::Deg270] {
+        assert_eq!(FlipAxis::from_setup(FaceUp::Bottom, turn), None, "{turn:?}");
+    }
     for face in [
         FaceUp::Top,
         FaceUp::Front,
@@ -210,46 +229,61 @@ fn flip_axis_is_derived_from_face_up() {
         FaceUp::Left,
         FaceUp::Right,
     ] {
-        assert_eq!(FlipAxis::from_face_up(face), None, "{face:?}");
+        assert_eq!(
+            FlipAxis::from_setup(face, ZRotation::Deg0),
+            None,
+            "{face:?}"
+        );
     }
 }
 
 // ── Defect 3: the pair must key the flip ────────────────────────────────
 
 /// What the placer produces has to satisfy both halves at once: every pin
-/// maps to itself under `My`, and the x-multiset misses `x -> W − x` by
-/// at least the keying asymmetry.
+/// maps to a pin under `My` (one pin on the mirror line, a mirror pair off
+/// it), and no turn of the part on the dowels seats it (P1).
 #[test]
-fn placed_pins_seat_under_my_and_block_mx_and_r180() {
+fn placed_pins_seat_under_the_flip_and_key_it() {
     let pins = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
 
-    for p in &pins {
-        assert!(
-            (p.y - D * 0.5).abs() < 1e-9,
-            "pin off the mirror line: {p:?}"
-        );
-    }
+    assert!(
+        (pins[0].y - D * 0.5).abs() < 1e-9,
+        "the axis pin is off the mirror line: {:?}",
+        pins[0]
+    );
+    assert!(
+        (pins[1].x - pins[2].x).abs() < 1e-9 && (pins[1].y + pins[2].y - D).abs() < 1e-9,
+        "pins 2 and 3 are not a mirror pair: {pins:?}"
+    );
+    assert!(
+        pins[1].y < pins[2].y,
+        "the pair is not in Y order: {pins:?}"
+    );
 
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
-    assert!(report.seat_mismatch_mm < 1e-9, "{report:?}");
+    assert!(report.seat_mismatch_mm.unwrap() < 1e-9, "{report:?}");
     assert!(report.keyed(), "{report:?}");
-    assert!(
-        report.mirror_x_mismatch_mm >= PIN_KEYING_ASYMMETRY_MM - 1e-9,
-        "{report:?}"
-    );
-    assert!(
-        report.rot180_mismatch_mm >= PIN_KEYING_ASYMMETRY_MM - 1e-9,
-        "{report:?}"
-    );
-    // Stated as the invariant that actually does the keying.
-    let sum = pins[0].x + pins[1].x;
-    assert!(
-        (sum - W).abs() >= PIN_KEYING_ASYMMETRY_MM - 1e-9,
-        "x-multiset is centre-symmetric: {} + {} vs W {W}",
-        pins[0].x,
-        pins[1].x
-    );
+    if let Some(wrong) = report.wrong_seating {
+        assert!(wrong.miss_mm >= report.keying_bar_mm - 1e-9, "{report:?}");
+    }
+    assert!(report.out_of_bounds.is_empty(), "{report:?}");
+}
+
+/// The 2026-08-22 auto-place output on this blank: two pins on the mirror
+/// line, slid 3 mm off centre symmetry. The rectangle model called it
+/// keyed. It is not: a half turn about the midpoint of the two pins puts
+/// each hole on the other dowel, and the part sits 3 mm off in X.
+#[test]
+fn the_old_offset_pair_does_not_key() {
+    let pins = vec![
+        AlignmentPin::new(11.5, D * 0.5, PIN_D),
+        AlignmentPin::new(W - 8.5, D * 0.5, PIN_D),
+    ];
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
+    assert!(report.seats(), "{report:?}");
+    assert!(!report.keyed(), "{report:?}");
+    assert!(report.keying_margin_mm().unwrap() < 1e-9, "{report:?}");
 }
 
 /// The pre-fix auto output, judged by the new check: both pins on the
@@ -262,23 +296,25 @@ fn symmetric_pair_seats_but_does_not_key() {
         AlignmentPin::new(2.5, D * 0.5, PIN_D),
         AlignmentPin::new(W - 2.5, D * 0.5, PIN_D),
     ];
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
     assert!(!report.keyed(), "{report:?}");
-    assert!(report.keying_margin_mm() < 1e-9, "{report:?}");
+    assert!(report.keying_margin_mm().unwrap() < 1e-9, "{report:?}");
     assert!(
         report
             .warnings()
             .iter()
-            .any(|w| w.contains("do not key the flip")),
+            .any(|w| w.contains("do not key the flip")
+                && w.contains("two pins of one diameter never key")),
         "{:?}",
         report.warnings()
     );
 }
 
-/// An ODD pin count buys nothing by itself: a pin at `x = W/2` is its own
-/// image under `x -> W − x`, so adding one to a centre-symmetric pair
-/// leaves the pattern seating all four ways.
+/// A third pin on the line through a symmetric pair adds no keying: the
+/// three pins are in a line, and a half turn about the middle pin swaps
+/// the outer two. (A third pin OFF that line, with a mirror partner, does
+/// key: see `placed_pins_seat_under_the_flip_and_key_it`.)
 #[test]
 fn a_centre_pin_adds_no_keying() {
     let pins = vec![
@@ -286,53 +322,95 @@ fn a_centre_pin_adds_no_keying() {
         AlignmentPin::new(W - 2.5, D * 0.5, PIN_D),
         AlignmentPin::new(W * 0.5, D * 0.5, PIN_D),
     ];
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
     assert!(!report.keyed(), "a centre pin must not key: {report:?}");
 }
 
-/// ...and conversely, adding a centre pin to a keyed pair does not
-/// UNDO the keying, because a wrong seating needs EVERY pin to find a
-/// hole and two of them still do not. Redundancy against rocking is the
-/// only thing the third pin buys.
+/// ...and a fourth pin on the mirror line, at the stock centre, does not
+/// undo the keying of the placed pattern on this blank: the four pins
+/// still seat after the flip and in no turned position. (This is a
+/// measured instance, not a rule: an added pin can make a new symmetry,
+/// so every edit goes back through the check.)
 #[test]
-fn a_centre_pin_does_not_break_an_already_keyed_pair() {
-    let pair = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
-    let mut pins = pair.to_vec();
+fn a_centre_pin_does_not_break_the_placed_pattern() {
+    let placed = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
+    let mut pins = placed.to_vec();
     pins.push(AlignmentPin::new(W * 0.5, D * 0.5, PIN_D));
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
     assert!(report.keyed(), "{report:?}");
 }
 
-/// Fits, but with no play left to break centre-symmetry: two strips of
-/// exactly `pin + 2 × wall`. Both pins are placeable and the pair would
-/// seat four ways, so this is a refusal too — a different one, with its
-/// own reason.
+/// The stock is too shallow in Y for a mirror pair: two Ø6 pins, a 2 mm
+/// wall between them and a 2 mm wall to each edge need 2 x 6 + 3 x 2 =
+/// 18 mm. A 17 mm deep blank refuses with that number.
 #[test]
-fn refuses_when_there_is_no_room_left_to_key() {
-    // 10 mm strips = 6 mm pin + 2 mm wall each side, zero slack.
-    match place_keyed_pins(request(Some((10.0, W - 10.0)), PIN_D)) {
+fn refuses_when_the_pair_does_not_fit() {
+    let req = PinPlacementRequest {
+        stock_d: 17.0,
+        ..request(Some((20.0, W - 20.0)), PIN_D)
+    };
+    match place_keyed_pins(req) {
+        Err(PinPlacementError::PairDoesNotFit {
+            stock_d,
+            required_mm,
+            pin_diameter_mm,
+        }) => {
+            assert!((stock_d - 17.0).abs() < 1e-9);
+            assert!((required_mm - 18.0).abs() < 1e-9, "required {required_mm}");
+            assert!((pin_diameter_mm - PIN_D).abs() < 1e-9);
+        }
+        other => panic!("expected PairDoesNotFit, got {other:?}"),
+    }
+}
+
+/// Fits, but only as one pattern, and that pattern seats turned. A 12 x 12
+/// blank with no wall and Ø6 pins has 6 mm strips and room for exactly
+/// one pair offset (h = 3). The pins (9, 6), (3, 3), (3, 9) make a
+/// triangle near the equilateral shape: a turn of about 120 deg seats it
+/// within about 0.5 mm, below the 3 mm bar. So the placer refuses, with
+/// its own reason.
+#[test]
+fn refuses_when_no_pattern_that_fits_keys() {
+    let req = PinPlacementRequest {
+        stock_w: 12.0,
+        stock_d: 12.0,
+        model_x_range: None,
+        face_up: FaceUp::Bottom,
+        z_rotation: ZRotation::Deg0,
+        pin_diameter: PIN_D,
+        wall_mm: 0.0,
+    };
+    match place_keyed_pins(req) {
         Err(PinPlacementError::CannotKey {
-            available_mm,
+            best_miss_mm,
             required_mm,
         }) => {
-            assert!(available_mm.abs() < 1e-9, "available {available_mm}");
-            assert!((required_mm - PIN_KEYING_ASYMMETRY_MM).abs() < 1e-9);
+            assert!(
+                best_miss_mm < required_mm,
+                "{best_miss_mm} vs {required_mm}"
+            );
+            assert!(
+                (required_mm - PIN_D * 0.5).abs() < 1e-9,
+                "bar {required_mm}"
+            );
         }
         other => panic!("expected CannotKey, got {other:?}"),
     }
 }
 
-/// Unequal strips key the pair for free — the placer must notice and not
-/// spend clearance it does not need to spend.
+/// Unequal strips: each pin sits at the centre of its strip, and the axis
+/// pin goes in the +X strip on a tie. Both assignments give the same pair
+/// offset here, so the tie rule decides.
 #[test]
-fn unequal_strips_are_already_keyed() {
-    // 40 mm on -X, 20 mm on +X: the centred pair is 10 mm asymmetric.
+fn each_pin_sits_at_the_centre_of_its_strip() {
+    // 40 mm on -X, 20 mm on +X.
     let pins = place_keyed_pins(request(Some((40.0, W - 20.0)), PIN_D)).unwrap();
-    assert!((pins[0].x - 20.0).abs() < 1e-9, "{pins:?}");
-    assert!((pins[1].x - (W - 10.0)).abs() < 1e-9, "{pins:?}");
-    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, W, D);
+    assert!((pins[0].x - (W - 10.0)).abs() < 1e-9, "{pins:?}");
+    assert!((pins[1].x - 20.0).abs() < 1e-9, "{pins:?}");
+    assert!((pins[2].x - 20.0).abs() < 1e-9, "{pins:?}");
+    let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
     assert!(report.keyed(), "{report:?}");
 }
@@ -362,11 +440,15 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
         max: P3::new(100.0, 100.0, 10.0),
     };
     let pins = stock
-        .plan_keyed_pins(FaceUp::Bottom, Some(&bbox), PIN_D)
+        .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg0, Some(&bbox), PIN_D)
         .unwrap();
     let direct = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
-    assert!((pins[0].x - direct[0].x).abs() < 1e-9, "{pins:?}");
-    assert!((pins[1].x - direct[1].x).abs() < 1e-9, "{pins:?}");
+    for (p, q) in pins.iter().zip(&direct) {
+        assert!(
+            (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9,
+            "{pins:?}"
+        );
+    }
 
     // And the same stock read through `padding` — the pre-fix source —
     // refuses, which is the defect stated as a comparison.
@@ -377,20 +459,16 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
 /// The pin diameter is the dowel, and the dowel is whatever tool drills
 /// it. A larger pin needs a wider strip, and the refusal has to move with
 /// it — otherwise the wall check was computed for a pin that does not
-/// exist. (The hardcoded `6.0` this replaces made that impossible.)
+/// exist. A strip holds a pin when it is at least the pin plus a 2 mm wall
+/// each side; the 3-pin pattern needs no extra play in X to key.
 #[test]
 fn the_refusal_tracks_the_pin_diameter() {
     let strip = Some((20.0, W - 20.0));
-    // Ø6 fits a 20 mm strip with room to key.
+    // Ø6 needs 10 mm of the 20 mm strip.
     assert!(place_keyed_pins(request(strip, 6.0)).is_ok());
-    // Ø12 needs 16 mm and leaves 4 mm of play — still keyable.
-    assert!(place_keyed_pins(request(strip, 12.0)).is_ok());
-    // Ø14 needs 18 mm and leaves 2 mm; not enough to key.
-    assert!(matches!(
-        place_keyed_pins(request(strip, 14.0)),
-        Err(PinPlacementError::CannotKey { .. })
-    ));
-    // Ø18 does not fit at all.
+    // Ø16 needs exactly 20 mm: it fits.
+    assert!(place_keyed_pins(request(strip, 16.0)).is_ok());
+    // Ø18 needs 22 mm and does not fit.
     assert!(matches!(
         place_keyed_pins(request(strip, 18.0)),
         Err(PinPlacementError::StripTooNarrow { .. })
@@ -401,7 +479,7 @@ fn the_refusal_tracks_the_pin_diameter() {
 /// set says nothing, and must not manufacture a warning or a pass.
 #[test]
 fn an_empty_pin_set_reports_nothing() {
-    let report = validate_pins_for_flip(&[], FaceUp::Bottom, W, D);
+    let report = validate_pins_for_flip(&[], FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert_eq!(report.pin_count, 0);
     assert!(!report.seats());
     assert!(!report.keyed());
@@ -475,9 +553,10 @@ fn a_loaded_project_warns_about_pins_that_do_not_key_g_pinauto() {
     // The message is the report's own sentence, verbatim. The GUI runs the
     // same check on its own load path and dedupes by exact message, so a
     // re-worded copy here would print the fact twice.
-    let report = session
-        .stock_config()
-        .validate_pins_for_flip(session.list_setups()[0].face_up);
+    let report = session.stock_config().validate_pins_for_flip(
+        session.list_setups()[0].face_up,
+        session.list_setups()[0].z_rotation,
+    );
     for line in report.warnings() {
         assert!(
             messages.contains(&line),
@@ -553,6 +632,7 @@ fn project_diagnostics_publish_the_pin_keying_verdict_g_pinauto() {
 }
 
 /// The control. Pins that DO key the flip raise nothing, on either half.
+/// The placer's 3-pin pattern is the keyed set (P1).
 #[test]
 fn keyed_pins_raise_no_diagnostic_g_pinauto() {
     let pins = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).expect("placement");
