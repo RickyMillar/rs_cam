@@ -506,3 +506,89 @@ fn the_submit_stamp_belongs_to_one_run_g_latesim() {
          re-used by a later one that had no submit of its own"
     );
 }
+
+// ── P4: a pin edit and its undo stale only what reads the pins ───────────
+//
+// The stock panel's pin edits and their undo take
+// `Command::SetAlignmentPins`, which stales only what reads the pins
+// (operator ruling 2026-10-12). Before P4 the panel applied the whole
+// stock through `SetStockConfig`, and every pin edit dropped every result.
+
+/// A controller whose stock is fixed (no `auto_from_model` refit) and
+/// whose toolpaths all carry a result.
+fn generated_with_fixed_stock() -> AppController<ScriptedBackend> {
+    let mut controller = sample_controller();
+    let mut draft = controller.state.session.stock_config().clone();
+    draft.auto_from_model = false;
+    crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
+    generate_all_for_test(&mut controller);
+    let count = controller.state.session.toolpath_configs().len();
+    assert!(count > 0, "non-vacuity: the fixture has toolpaths");
+    for index in 0..count {
+        assert!(
+            controller.state.session.get_result(index).is_some(),
+            "the fixture generated toolpath {index}"
+        );
+    }
+    controller
+}
+
+fn all_results_present(controller: &AppController<ScriptedBackend>) -> bool {
+    (0..controller.state.session.toolpath_configs().len())
+        .all(|index| controller.state.session.get_result(index).is_some())
+}
+
+#[test]
+fn a_panel_pin_edit_and_its_undo_leave_the_other_results_current() {
+    let mut controller = generated_with_fixed_stock();
+    let old = controller.state.session.stock_config().clone();
+
+    // The panel's draft moves the pins and nothing else.
+    let mut draft = old.clone();
+    draft.alignment_pins = vec![
+        crate::state::job::AlignmentPin::new(10.0, 20.0, 6.0),
+        crate::state::job::AlignmentPin::new(30.0, 20.0, 8.0),
+    ];
+    let command = crate::ui::properties::stock_edit_command(&old, draft.clone());
+    assert!(
+        matches!(command, Some(Command::SetAlignmentPins(_))),
+        "a pin-only draft is a SetAlignmentPins, got {command:?}"
+    );
+    crate::ui::properties::apply_stock_draft(&mut controller.state, draft.clone());
+    assert_eq!(
+        controller.state.session.stock_config().alignment_pins,
+        draft.alignment_pins
+    );
+    assert!(
+        all_results_present(&controller),
+        "no pin-drill operation exists, so a pin edit stales nothing"
+    );
+    assert!(controller.state.panel_side_effects.pin_drill_sync);
+
+    // One undo step puts the old set back, through the same rule.
+    controller
+        .state
+        .history
+        .push(crate::state::history::UndoAction::StockChange {
+            old: old.clone(),
+            new: controller.state.session.stock_config().clone(),
+        });
+    controller.undo();
+    assert_eq!(
+        controller.state.session.stock_config().alignment_pins,
+        old.alignment_pins
+    );
+    assert!(
+        all_results_present(&controller),
+        "the undo of a pin edit took the narrow rule too"
+    );
+
+    // Control: any other stock edit is still SetStockConfig.
+    let mut wider = old.clone();
+    wider.x += 10.0;
+    assert!(matches!(
+        crate::ui::properties::stock_edit_command(&old, wider),
+        Some(Command::SetStockConfig(_))
+    ));
+    assert!(crate::ui::properties::stock_edit_command(&old, old.clone()).is_none());
+}

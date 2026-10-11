@@ -26,21 +26,18 @@ const FIXTURE_KINDS: &[FixtureKind] = &[
 /// Draw the setup overview panel (fixtures list, keep-out list, setup name).
 ///
 /// `pin_count` is the number of alignment pins on the stock (pins are now
-/// stock-level, not per-setup). `has_flip_axis` indicates whether a flip axis
-/// is configured on the stock. `all_models` lists every loaded model for the
-/// model-scoping checkboxes.
+/// stock-level, not per-setup). `all_models` lists every loaded model for
+/// the model-scoping checkboxes.
 ///
 /// WP6: `setup_data` is a SCRATCH copy the caller owns, not the session's
 /// own record. The caller compares the draft against the stored setup and
 /// applies one command per field group that moved. The panel therefore
 /// pushes no `FixtureChanged` event of its own.
-#[allow(clippy::too_many_arguments)]
 pub fn draw(
     ui: &mut egui::Ui,
     setup_id: SetupId,
     setup_data: &mut SetupData,
     pin_count: usize,
-    has_flip_axis: bool,
     all_models: &[(ModelId, String)],
     setup_count: usize,
     events: &mut Vec<AppEvent>,
@@ -107,7 +104,7 @@ pub fn draw(
                 .color(crate::ui::tokens::CAUTION),
         );
         // Hint: suggest alignment pins when flipped setup has no pins configured
-        if pin_count == 0 && !has_flip_axis {
+        if pin_count == 0 {
             ui.add_space(4.0);
             if ui
                 .small_button("Add alignment pins for this flip")

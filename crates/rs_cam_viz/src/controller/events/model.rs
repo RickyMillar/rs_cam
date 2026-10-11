@@ -2,12 +2,12 @@ use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
     AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
     KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs,
-    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs,
-    SetSetupNameArgs, SetSetupPauseMessageArgs, SetStockConfigArgs,
+    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs,
+    SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
 };
 
 use crate::compute::ComputeBackend;
-use crate::state::job::{FlipAxis, ModelId, SetupId, ToolConfig};
+use crate::state::job::{ModelId, SetupId, ToolConfig};
 use crate::state::selection::Selection;
 use crate::ui::properties::stock::{KeyedPinInputs, keyed_pin_plan};
 
@@ -423,17 +423,17 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // Key the pins to the flip the project actually programs, not to
-        // an assumption: the setup's full map, `face_up` AND `z_rotation`
-        // (P2). Only an in-plane flip keeps the XY footprint the pins are
-        // dimensioned in; the core placer refuses the others rather than
-        // guessing.
+        // an assumption: the full map, `face_up` AND `z_rotation` (P2), of
+        // the first Bottom setup. The block above makes sure one exists.
+        // The core placer refuses a turn it does not place for, rather
+        // than guessing.
         let (flip_face, flip_turn) = self
             .state
             .session
             .list_setups()
             .iter()
             .map(|s| (s.face_up, s.z_rotation))
-            .find(|(f, _)| *f != FaceUp::Top)
+            .find(|(f, _)| *f == FaceUp::Bottom)
             .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
 
         // The stock panel's "Auto-place keyed pins" calls the same planner
@@ -448,47 +448,23 @@ impl<B: ComputeBackend> AppController<B> {
         )
         .map_err(|e| e.to_string());
 
-        // One DRAFT of the stock, and one `SetStockConfig`. The pin
-        // placement and the `flip_axis` cache write must stay in one
-        // block, because the cache write reads the pin list the refusal
-        // arm leaves alone. `add_alignment_pin` takes one pin at a time
-        // and dedupes, so a split here would reorder the cache write
-        // against the refusal.
+        // Existing pins stay. With no pins, the placed set goes in through
+        // `SetAlignmentPins` (P4), which stales only the pin-drill
+        // operations. A refusal writes nothing: a placement that hangs off
+        // the blank or seats turned is worse than none, because the
+        // operator finds out at the flip with the part already cut.
         let mut refusal: Option<String> = None;
-        let mut stock = self.state.session.stock_config().clone();
-        if stock.alignment_pins.is_empty() {
+        if self.state.session.stock_config().alignment_pins.is_empty() {
             match plan {
-                Ok(pins) => stock.alignment_pins.extend(pins),
-                // Refuse rather than emit a placement that hangs off
-                // the blank or seats turned: the operator would
-                // find out at the flip, with the part already cut.
+                Ok(pins) => {
+                    let command = Command::SetAlignmentPins(SetAlignmentPinsArgs {
+                        pins: pins.to_vec(),
+                    });
+                    self.apply_controller_command(command, "the registration pins");
+                }
                 Err(message) => refusal = Some(message),
             }
         }
-        // `flip_axis` is a CACHE of the setup's face_up, never an
-        // independent control — a stored axis that disagrees with the
-        // setups is exactly how this shipped with a null axis beside a
-        // Bottom setup. Every validation reads `face_up` instead.
-        //
-        // It is cached ONLY once pins exist for it to describe. On a
-        // refusal it stays `None`, and that is load-bearing: the setup
-        // panel suppresses its "Add alignment pins for this flip"
-        // offer when a flip axis is set, so caching it here would
-        // leave a flipped setup with zero pins reading as configured
-        // and no affordance left to fix it.
-        stock.flip_axis = if stock.alignment_pins.is_empty() {
-            None
-        } else {
-            FlipAxis::from_setup(flip_face, flip_turn)
-        };
-        // **This is a behaviour change.** The hatch wrote the pins and
-        // the cached axis and dropped nothing; the row drops every result
-        // (G-FRESHSTATE — a pin is a hole the machine cuts, and an
-        // inherited boundary follows the stock outline).
-        let command = Command::SetStockConfig(SetStockConfigArgs {
-            stock: Box::new(stock),
-        });
-        self.apply_controller_command(command, "the registration pins");
 
         if let Some(message) = refusal {
             self.push_notification(message, super::super::Severity::Error);

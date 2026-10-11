@@ -11,7 +11,7 @@ use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::upload_cache;
 use crate::state::Workspace;
 use crate::state::job::{
-    self, SetupFrame, SetupId, height_context_from_session, session_fixture_bbox,
+    SetupFrame, SetupId, height_context_from_session, session_fixture_bbox,
     session_fixture_clearance_bbox, session_keep_out_bbox, transform_mesh,
 };
 use crate::state::selection::Selection;
@@ -727,25 +727,26 @@ impl RsCamApp {
                     super::push_circle_vertices(&mut pin_vertices, cx, cy, cz, radius, color, 16);
                 }
 
-                // Flip axis dashed centerline
-                if let Some(axis) = stock.flip_axis.filter(|_| state.viewport.show_flip_axis) {
+                // Flip axis dashed centerline, derived from the setups by the
+                // one core selector (P3). The segment is stock-local.
+                let flip_axis = state
+                    .viewport
+                    .show_flip_axis
+                    .then(|| {
+                        stock.pin_flip_map(
+                            state
+                                .session
+                                .list_setups()
+                                .iter()
+                                .map(|sd| (sd.face_up, sd.z_rotation)),
+                        )
+                    })
+                    .flatten()
+                    .and_then(|map| map.axis_segment());
+                if let Some([a, b]) = flip_axis {
                     let stock_top = oz + stock.z;
-                    let (start_g, end_g) = match axis {
-                        job::FlipAxis::Horizontal => {
-                            let y = stock.y / 2.0 + oy;
-                            (
-                                P3::new(ox, y, stock_top),
-                                P3::new(ox + stock.x, y, stock_top),
-                            )
-                        }
-                        job::FlipAxis::Vertical => {
-                            let x = stock.x / 2.0 + ox;
-                            (
-                                P3::new(x, oy, stock_top),
-                                P3::new(x, oy + stock.y, stock_top),
-                            )
-                        }
-                    };
+                    let start_g = P3::new(ox + a.0, oy + a.1, stock_top);
+                    let end_g = P3::new(ox + b.0, oy + b.1, stock_top);
                     let start_l = setup.transform_point(start_g, &stock);
                     let end_l = setup.transform_point(end_g, &stock);
                     let s = [start_l.x as f32, start_l.y as f32, start_l.z as f32];

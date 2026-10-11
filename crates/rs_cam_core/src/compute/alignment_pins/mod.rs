@@ -8,67 +8,30 @@
 //!   part that also puts every hole on a dowel ([`closest_wrong_seating`]).
 //! - `placement.rs` — [`place_keyed_pins`]: one pin on the flip axis plus a
 //!   mirror pair, in the clear strips beside the model.
-//! - this file — the pin type, the setup map ([`PinSetupMap`]) and
+//! - `pattern.rs` — pure set edits: move, diameter, snap to the flip, and
+//!   the presets with their read-back (P4).
+//! - this file — the pin type, the setup map ([`PinSetupMap`]), its flip
+//!   axis ([`PinSetupMap::axis_segment`], [`pin_flip_map`]) and
 //!   [`validate_pins_for_flip`], which judges a stored set.
 //!
 //! `stock_config.rs` holds the stock model and calls in here; it does not
 //! hold this algorithm.
 
 mod keying;
+mod pattern;
 mod placement;
 
 pub use keying::{WrongSeating, closest_wrong_seating, keying_bar_mm, pattern_is_keyed};
+pub use pattern::{
+    AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, fit_axis_plus_mirror_pair,
+    set_diameter, snap_to_flip, translate, two_mixed_diameters,
+};
 pub use placement::{PinPlacementError, PinPlacementRequest, PinSide, place_keyed_pins};
 
 use serde::{Deserialize, Serialize};
 
 use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::geo::P3;
-
-/// Which axis the stock flips about when changing setups.
-///
-/// **Derived, not authored.** The authoritative statement of how a blank
-/// is re-seated is the setup's [`FaceUp`] and [`ZRotation`]; this enum is
-/// a cache of that, kept because the viewport draws the flip centre line
-/// from it and saved projects carry the key. Build it with
-/// [`FlipAxis::from_setup`] rather than asking a human — a value that
-/// disagrees with the setups is how G-PINAUTO shipped a `null` flip axis
-/// alongside a `FaceUp::Bottom` setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum FlipAxis {
-    /// Mirror about the X centre line: `y -> stock_y - y`, X preserved.
-    /// A `Bottom` setup at 0 deg does this.
-    Horizontal,
-    /// Mirror about the Y centre line: `x -> stock_x - x`, Y preserved.
-    /// A `Bottom` setup turned 180 deg does this (C3).
-    Vertical,
-}
-
-impl FlipAxis {
-    pub fn label(&self) -> &'static str {
-        match self {
-            FlipAxis::Horizontal => "Horizontal",
-            FlipAxis::Vertical => "Vertical",
-        }
-    }
-
-    /// The in-plane mirror a setup performs, if it is a mirror about a
-    /// stock centre line.
-    ///
-    /// Only `Bottom` keeps the part's XY footprint and mirrors within it.
-    /// At 0 deg it mirrors Y; turned 180 deg it mirrors X. Turned 90 or
-    /// 270 deg it mirrors about a diagonal, which no centre line
-    /// describes. `Front/Back/Left/Right` stand the blank on an edge and
-    /// change the footprint, so there is nothing honest to return.
-    pub fn from_setup(face_up: FaceUp, z_rotation: ZRotation) -> Option<Self> {
-        match (face_up, z_rotation) {
-            (FaceUp::Bottom, ZRotation::Deg0) => Some(FlipAxis::Horizontal),
-            (FaceUp::Bottom, ZRotation::Deg180) => Some(FlipAxis::Vertical),
-            _ => None,
-        }
-    }
-}
 
 /// A physical alignment pin position for part registration between setups.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -185,6 +148,71 @@ impl PinSetupMap {
     pub fn map_xy(&self, x: f64, y: f64) -> (f64, f64) {
         let p = self.transform.world_to_local(P3::new(x, y, 0.0));
         (p.x, p.y)
+    }
+
+    /// The flip axis of the setup: the stock-local segment that the map
+    /// keeps in place, from one stock edge to the other. `None` unless
+    /// [`Self::kind`] is [`PinFlipKind::InPlane`].
+    ///
+    /// An in-plane flip is a mirror, so the midpoint of a point and its
+    /// image is on the axis. The method takes the midpoints of the four
+    /// stock corners. The map moves the stock onto itself, so the two
+    /// midpoints farthest apart are the ends of the axis inside the stock:
+    ///
+    /// - `Bottom` at 0 deg: `y = D/2`, from `(0, D/2)` to `(W, D/2)`;
+    /// - `Bottom` at 180 deg: `x = W/2`, from `(W/2, 0)` to `(W/2, D)`;
+    /// - `Bottom` at 90 or 270 deg on a square stock: a diagonal.
+    ///
+    /// The ends are in a fixed order: the end with the smaller X first,
+    /// and on a tie the end with the smaller Y first.
+    #[must_use]
+    pub fn axis_segment(&self) -> Option<[(f64, f64); 2]> {
+        if self.kind != PinFlipKind::InPlane {
+            return None;
+        }
+        let (w, d) = (self.transform.stock_x, self.transform.stock_y);
+        let mids: Vec<(f64, f64)> = [(0.0, 0.0), (w, 0.0), (w, d), (0.0, d)]
+            .into_iter()
+            .map(|(x, y)| {
+                let (mx, my) = self.map_xy(x, y);
+                (0.5 * (x + mx), 0.5 * (y + my))
+            })
+            .collect();
+        // (length, first end, second end) of the longest chord.
+        type Chord = (f64, (f64, f64), (f64, f64));
+        let mut best: Option<Chord> = None;
+        for (i, a) in mids.iter().enumerate() {
+            for b in mids.iter().skip(i + 1) {
+                let len = (b.0 - a.0).hypot(b.1 - a.1);
+                if best.is_none_or(|(l, _, _)| len > l) {
+                    best = Some((len, *a, *b));
+                }
+            }
+        }
+        let (len, a, b) = best?;
+        if len <= PIN_MATCH_TOL_MM {
+            return None;
+        }
+        let a_first =
+            a.0 < b.0 - PIN_GEOM_EPS_MM || ((a.0 - b.0).abs() <= PIN_GEOM_EPS_MM && a.1 <= b.1);
+        Some(if a_first { [a, b] } else { [b, a] })
+    }
+
+    /// The flip axis as the operator reads it, for example `y = 32.5 mm`.
+    /// `None` when [`Self::axis_segment`] is `None`.
+    #[must_use]
+    pub fn axis_label(&self) -> Option<String> {
+        let [a, b] = self.axis_segment()?;
+        Some(if (a.1 - b.1).abs() <= PIN_GEOM_EPS_MM {
+            format!("y = {:.1} mm", a.1)
+        } else if (a.0 - b.0).abs() <= PIN_GEOM_EPS_MM {
+            format!("x = {:.1} mm", a.0)
+        } else {
+            format!(
+                "the diagonal from ({:.1}, {:.1}) to ({:.1}, {:.1}) mm",
+                a.0, a.1, b.0, b.1
+            )
+        })
     }
 
     /// The setup as the operator reads it: `'Bottom'` or
@@ -453,6 +481,27 @@ pub fn validate_pins_for_flip(
         keying_bar_mm: keying_bar_mm(pins),
         out_of_bounds,
     }
+}
+
+/// The flip that the pins of a project register: the map of the first
+/// setup whose flip is in plane ([`PinFlipKind::InPlane`]).
+///
+/// This is the one selector. The viewport axis line, the overlay
+/// precondition and the stock panel all read it, so they cannot disagree.
+/// A `Top` setup does not turn the part over, and an edge-up setup or a
+/// quarter turn on a stock that is not square has no flip axis in the pin
+/// plane. For those setups the result is `None`; [`pin_findings_for_setups`]
+/// still states what the check does not model.
+#[must_use]
+pub fn pin_flip_map(
+    setups: impl IntoIterator<Item = (FaceUp, ZRotation)>,
+    stock_w: f64,
+    stock_d: f64,
+) -> Option<PinSetupMap> {
+    setups
+        .into_iter()
+        .map(|(face_up, z_rotation)| PinSetupMap::new(face_up, z_rotation, stock_w, stock_d))
+        .find(|map| map.kind() == PinFlipKind::InPlane)
 }
 
 /// The pin findings for every setup of a project, deduplicated by text and

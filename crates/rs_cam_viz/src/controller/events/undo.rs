@@ -5,7 +5,7 @@ use rs_cam_core::session::{
 
 use crate::compute::ComputeBackend;
 use crate::state::history::UndoAction;
-use crate::state::job::{ToolConfig, ToolId};
+use crate::state::job::{StockConfig, ToolConfig, ToolId};
 
 use super::super::AppController;
 
@@ -14,11 +14,7 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.undo() {
             match action {
                 UndoAction::StockChange { old, .. } => {
-                    let command = Command::SetStockConfig(SetStockConfigArgs {
-                        stock: Box::new(old),
-                    });
-                    let _ = self.apply_quietly(command);
-                    self.invalidate_simulation();
+                    self.apply_stock_snapshot(old);
                 }
                 UndoAction::PostChange { old, .. } => {
                     self.state.gui.post = old;
@@ -76,11 +72,7 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(action) = self.state.history.redo() {
             match action {
                 UndoAction::StockChange { new, .. } => {
-                    let command = Command::SetStockConfig(SetStockConfigArgs {
-                        stock: Box::new(new),
-                    });
-                    let _ = self.apply_quietly(command);
-                    self.invalidate_simulation();
+                    self.apply_stock_snapshot(new);
                 }
                 UndoAction::PostChange { new, .. } => {
                     self.state.gui.post = new;
@@ -120,6 +112,35 @@ impl<B: ComputeBackend> AppController<B> {
             // Redo carries the identical defect and takes the identical fix.
             // It is the same edit, applied in the other direction.
             self.state.gui.mark_edited();
+        }
+    }
+
+    /// Install a stock snapshot the way the stock panel installs an edit.
+    ///
+    /// P4: an undo that moves only the pins is `SetAlignmentPins`
+    /// ([`crate::ui::properties::stock_edit_command`], the panel's own
+    /// split), and it stales only the pin-drill operations. Every other
+    /// stock undo is `SetStockConfig` and drops every result, also when
+    /// the snapshot equals the stored stock: a restore invalidates by
+    /// contract and compares nothing (WP8). The pins move the pin-drill
+    /// holes, so the pin-drill sync runs after a pin undo.
+    fn apply_stock_snapshot(&mut self, stock: StockConfig) {
+        let command = crate::ui::properties::stock_edit_command(
+            self.state.session.stock_config(),
+            stock.clone(),
+        )
+        .unwrap_or_else(|| {
+            Command::SetStockConfig(SetStockConfigArgs {
+                stock: Box::new(stock),
+            })
+        });
+        let pins_only = matches!(command, Command::SetAlignmentPins(_));
+        let _ = self.apply_quietly(command);
+        if pins_only {
+            self.pending_upload = true;
+            self.sync_alignment_pin_drill();
+        } else {
+            self.invalidate_simulation();
         }
     }
 
