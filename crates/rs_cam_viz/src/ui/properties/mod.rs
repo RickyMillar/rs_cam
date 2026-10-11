@@ -18,7 +18,9 @@ pub use operations::{
     collect_diagnostics, depth_beyond_stock, draw_height_diagram, profile_through_cut,
     profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
-pub(crate) use panel_apply::{apply_fixture_draft, apply_stock_draft, commit_tool_draft};
+pub(crate) use panel_apply::{
+    apply_fixture_draft, apply_stock_draft, commit_tool_draft, stock_edit_command,
+};
 
 // The children of this module. Every name below is a private re-export: it
 // keeps the item's path at `ui::properties::<name>`, which is what a
@@ -1045,7 +1047,6 @@ fn draw_setup_selection(
     setup_id: SetupId,
 ) {
     let pin_count = state.session.stock_config().alignment_pins.len();
-    let has_flip_axis = state.session.stock_config().flip_axis.is_some();
     let all_models: Vec<_> = state
         .session
         .models()
@@ -1075,7 +1076,6 @@ fn draw_setup_selection(
             setup_id,
             &mut draft,
             pin_count,
-            has_flip_axis,
             &all_models,
             state.session.list_setups().len(),
             events,

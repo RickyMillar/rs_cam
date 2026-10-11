@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::compute::alignment_pins::{
-    AlignmentPin, FlipAxis, PIN_WALL_MM, PinFinding, PinFlipReport, PinPlacementError,
-    PinPlacementRequest, pin_findings_for_setups, place_keyed_pins, validate_pins_for_flip,
+    AlignmentPin, PIN_WALL_MM, PinFinding, PinFlipReport, PinPlacementError, PinPlacementRequest,
+    PinSetupMap, pin_findings_for_setups, pin_flip_map, place_keyed_pins, validate_pins_for_flip,
 };
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::BoundingBox3;
@@ -79,24 +79,10 @@ pub struct StockConfig {
     /// across flips). Stock-LOCAL: X0Y0 at the stock's min corner.
     #[serde(default)]
     pub alignment_pins: Vec<AlignmentPin>,
-    /// Cached [`FlipAxis`] for the viewport's flip centre line and the
-    /// stock panel's Mirror affordance.
-    ///
-    /// **Derived from the setups, not authored, and not a constraint.**
-    /// Build it with [`FlipAxis::from_setup`]. Pin correctness is
-    /// judged by [`Self::validate_pins_for_flip`] against the setup's
-    /// `face_up` and `z_rotation`, never against this field — a stored axis that
-    /// disagrees with the setups is a lie, and a `null` one beside a
-    /// `Bottom` setup is what G-PINAUTO shipped.
-    ///
-    /// Invariant the GUI maintains: `Some(..)` only while
-    /// `alignment_pins` is non-empty. A flipped setup whose pin
-    /// placement was refused leaves this `None`, which is what keeps
-    /// that state reading as INCOMPLETE rather than configured. Being a
-    /// cache, it may still be stale in a file saved elsewhere; readers
-    /// must treat it as advisory and never as evidence about the pins.
-    #[serde(default)]
-    pub flip_axis: Option<FlipAxis>,
+    // P3 (2026-10-12): `flip_axis` is gone. It was a cache of the setups,
+    // and a stale cache drew the wrong axis line. Every reader derives the
+    // axis from the setups through [`Self::pin_flip_map`]. An old file's key
+    // is ignored on load.
     // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The machine
     // aggressiveness dial is the one load margin. An old file's key is
     // ignored on load (no alias, no `deny_unknown_fields`).
@@ -115,7 +101,6 @@ impl Default for StockConfig {
             padding: 5.0,
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
-            flip_axis: None,
         }
     }
 }
@@ -219,6 +204,18 @@ impl StockConfig {
         setups: impl IntoIterator<Item = (FaceUp, ZRotation)>,
     ) -> Vec<PinFinding> {
         pin_findings_for_setups(&self.alignment_pins, setups, self.x, self.y)
+    }
+
+    /// The flip the pins of this stock register: the map of the first
+    /// setup in `setups` whose flip is in plane (see
+    /// [`pin_flip_map`](crate::compute::alignment_pins::pin_flip_map)).
+    /// Its [`PinSetupMap::axis_segment`] is the flip axis.
+    #[must_use]
+    pub fn pin_flip_map(
+        &self,
+        setups: impl IntoIterator<Item = (FaceUp, ZRotation)>,
+    ) -> Option<PinSetupMap> {
+        pin_flip_map(setups, self.x, self.y)
     }
 }
 

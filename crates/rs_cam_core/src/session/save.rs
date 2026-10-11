@@ -151,7 +151,6 @@ impl ProjectSession {
             auto_from_model: self.stock.auto_from_model,
             material: self.stock.material.clone(),
             alignment_pins: self.stock.alignment_pins.clone(),
-            flip_axis: self.stock.flip_axis,
         };
 
         // Post. UI-07: one type, so this is a clone rather than a

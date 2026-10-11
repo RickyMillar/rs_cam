@@ -39,8 +39,8 @@
 )]
 
 use rs_cam_core::compute::alignment_pins::{
-    AlignmentPin, FlipAxis, PinPlacementError, PinPlacementRequest, PinSide, place_keyed_pins,
-    validate_pins_for_flip,
+    AlignmentPin, PinPlacementError, PinPlacementRequest, PinSetupMap, PinSide, pin_flip_map,
+    place_keyed_pins, validate_pins_for_flip,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
@@ -205,22 +205,25 @@ fn refuses_every_flip_the_cam_does_not_model_in_plane() {
     }
 }
 
-/// `FlipAxis` is derived from the setup's full map, never authored.
-/// `Bottom` at 0 deg mirrors Y (Horizontal); turned 180 deg it mirrors X
-/// (Vertical, C3). A quarter turn mirrors about a diagonal, and the
-/// other faces do not mirror in plane.
+/// The flip axis is derived from the setup's full map, never authored
+/// (P3: the `FlipAxis` cache is gone). `Bottom` at 0 deg mirrors Y about
+/// `y = D/2`; turned 180 deg it mirrors X about `x = W/2` (C3). A quarter
+/// turn mirrors about a diagonal on a square stock and has no axis on a
+/// stock that is not square, and the other faces do not mirror in plane.
 #[test]
 fn flip_axis_is_derived_from_the_setup_map() {
+    let axis = |face, turn| PinSetupMap::new(face, turn, W, D).axis_segment();
     assert_eq!(
-        FlipAxis::from_setup(FaceUp::Bottom, ZRotation::Deg0),
-        Some(FlipAxis::Horizontal)
+        axis(FaceUp::Bottom, ZRotation::Deg0),
+        Some([(0.0, D / 2.0), (W, D / 2.0)])
     );
     assert_eq!(
-        FlipAxis::from_setup(FaceUp::Bottom, ZRotation::Deg180),
-        Some(FlipAxis::Vertical)
+        axis(FaceUp::Bottom, ZRotation::Deg180),
+        Some([(W / 2.0, 0.0), (W / 2.0, D)])
     );
+    assert!((W - D).abs() > 1.0, "the fixture stock must not be square");
     for turn in [ZRotation::Deg90, ZRotation::Deg270] {
-        assert_eq!(FlipAxis::from_setup(FaceUp::Bottom, turn), None, "{turn:?}");
+        assert_eq!(axis(FaceUp::Bottom, turn), None, "{turn:?}");
     }
     for face in [
         FaceUp::Top,
@@ -229,12 +232,26 @@ fn flip_axis_is_derived_from_the_setup_map() {
         FaceUp::Left,
         FaceUp::Right,
     ] {
-        assert_eq!(
-            FlipAxis::from_setup(face, ZRotation::Deg0),
-            None,
-            "{face:?}"
-        );
+        assert_eq!(axis(face, ZRotation::Deg0), None, "{face:?}");
     }
+    // The project selector takes the first in-plane flip, not the first
+    // setup that is not Top: an edge-up setup has no axis in the pin plane.
+    let map = pin_flip_map(
+        [
+            (FaceUp::Top, ZRotation::Deg0),
+            (FaceUp::Front, ZRotation::Deg0),
+            (FaceUp::Bottom, ZRotation::Deg180),
+        ],
+        W,
+        D,
+    )
+    .expect("the Bottom setup is an in-plane flip");
+    assert_eq!(map.z_rotation(), ZRotation::Deg180);
+    assert_eq!(
+        map.axis_label().as_deref(),
+        Some(&*format!("x = {:.1} mm", W / 2.0))
+    );
+    assert!(pin_flip_map([(FaceUp::Top, ZRotation::Deg0)], W, D).is_none());
 }
 
 // ── Defect 3: the pair must key the flip ────────────────────────────────

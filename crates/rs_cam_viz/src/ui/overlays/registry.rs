@@ -671,15 +671,27 @@ pub const ROWS: &[OverlayRow] = &[
         radio: false,
         get: |s| s.viewport.show_flip_axis,
         set: |s, on| s.viewport.show_flip_axis = on,
+        // P3: the axis comes from the setups through the one core
+        // selector, the same call the viewport draws from.
         precondition: |s| {
-            if s.session.stock_config().flip_axis.is_some() {
+            let axis = s
+                .session
+                .stock_config()
+                .pin_flip_map(
+                    s.session
+                        .list_setups()
+                        .iter()
+                        .map(|sd| (sd.face_up, sd.z_rotation)),
+                )
+                .and_then(|map| map.axis_segment());
+            if axis.is_some() {
                 Precondition::Ready
             } else {
-                Precondition::no("no flip axis set on this stock")
+                Precondition::no("no flipped Bottom setup in this project")
             }
         },
         default_for: geometry_default,
-        hover: "The dashed centreline a two-sided job flips about.",
+        hover: "The dashed centreline a two-sided job flips about, from the flipped setup.",
     },
     OverlayRow {
         id: "curves",

@@ -153,10 +153,20 @@ macro_rules! for_each_command {
                      "the CLI generates synchronously and never adopts a completion",
                  ),
              }),
+            (Command, SetAlignmentPins, "set_alignment_pins", SetAlignmentPinsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the MCP add and remove tools keep their own rows until wave C adds a set tool",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, AddAlignmentPin, "add_alignment_pin", AddAlignmentPinArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "no GUI control calls this setter; the pin placer writes the stock",
+                     "the GUI writes the whole pin set through set_alignment_pins",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -166,7 +176,7 @@ macro_rules! for_each_command {
             (Command, RemoveAlignmentPin, "remove_alignment_pin", RemoveAlignmentPinArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "no GUI control calls this setter; the pin placer writes the stock",
+                     "the GUI writes the whole pin set through set_alignment_pins",
                  ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
@@ -1188,11 +1198,28 @@ pub struct Effects {
 // is one enum over every row, so its size is the size of its largest
 // payload, and `large_enum_variant` is a denied lint.
 
+/// The arguments of the `set_alignment_pins` command (P4).
+///
+/// The command replaces the whole pin set in one step: one undo entry and
+/// one stale set. The set editors (move, diameter, snap, the presets in
+/// `compute::alignment_pins`) compute a new set and end in this command.
+/// A set equal to the stored set reports an empty [`Effects`].
+///
+/// The stale set is the operations that read the pins, not every result
+/// (operator ruling 2026-10-12): every `AlignmentPinDrill` operation, and
+/// what depends on it through the dependency edges, plus the simulation.
+#[derive(Debug, Clone)]
+pub struct SetAlignmentPinsArgs {
+    /// The new pin set, stock-local, in millimetres.
+    pub pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
+}
+
 /// The arguments of the `add_alignment_pin` command.
 ///
-/// The setter dedupes against the pins the stock already carries. A
-/// duplicate reports an empty [`Effects`], which says the call changed
-/// nothing.
+/// A thin form of `set_alignment_pins`: the setter appends one pin and
+/// writes the set through the same door. It dedupes against the pins the
+/// stock already carries. A duplicate reports an empty [`Effects`], which
+/// says the call changed nothing.
 #[derive(Debug, Clone)]
 pub struct AddAlignmentPinArgs {
     /// The pin centre X, in millimetres, in the stock-local frame.
@@ -1203,7 +1230,8 @@ pub struct AddAlignmentPinArgs {
     pub diameter: f64,
 }
 
-/// The arguments of the `remove_alignment_pin` command.
+/// The arguments of the `remove_alignment_pin` command. A thin form of
+/// `set_alignment_pins`, with the same stale set.
 #[derive(Debug, Clone)]
 pub struct RemoveAlignmentPinArgs {
     /// The index of the pin to remove, in the stock's own pin order.
@@ -2403,6 +2431,7 @@ impl ProjectSession {
             // reports. No arm derives a stale set of its own: that is
             // the whole point of the move, and N15 measured what two
             // producers cost.
+            Command::SetAlignmentPins(args) => Ok(self.set_alignment_pins(args.pins)),
             Command::AddAlignmentPin(args) => {
                 let added = self.add_alignment_pin(args.x, args.y, args.diameter);
                 // A duplicate pin changes nothing, and "changed

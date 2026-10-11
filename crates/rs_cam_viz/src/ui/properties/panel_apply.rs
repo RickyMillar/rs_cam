@@ -90,7 +90,9 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 ///
 /// G-FRESHSTATE: `Command::SetStockConfig` drops every toolpath result,
 /// because heights reference the stock top, an inherited boundary
-/// follows the stock outline, and the material sets the feeds. The panel
+/// follows the stock outline, and the material sets the feeds. An edit of
+/// the alignment pins alone takes `Command::SetAlignmentPins` instead
+/// ([`stock_edit_command`]). The panel
 /// used to write `stock_mut()` in place and ask for that invalidation
 /// with an `AppEvent`; the event is gone and the command carries the
 /// rule.
@@ -107,7 +109,6 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 /// - the viewport buffers and the pin-drill operation both read what
 ///   moved. The panel raises both flags; the frame loop discharges them.
 pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig) {
-    use rs_cam_core::session::{Command, SetStockConfigArgs};
     let draft = super::stock::reconcile_auto_from_model(
         state.session.stock_config(),
         draft,
@@ -118,12 +119,9 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
     // out of it again, and this row drops every toolpath result — so an
     // ungated apply would drop the project on a click that typed
     // nothing. The event this replaced was gated on `changed()`.
-    if draft == *state.session.stock_config() {
+    let Some(command) = stock_edit_command(state.session.stock_config(), draft) else {
         return;
-    }
-    let command = Command::SetStockConfig(SetStockConfigArgs {
-        stock: Box::new(draft),
-    });
+    };
     match state.session.apply(command) {
         Ok(effects) => {
             crate::state::stale::stamp_stale(state, &effects.stale);
@@ -138,6 +136,38 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
             tracing::warn!("the stock edit was refused: {error}");
         }
     }
+}
+
+/// The one command that writes a stock edit, or `None` when `draft`
+/// equals `stored`.
+///
+/// P4 (operator ruling 2026-10-12): an edit that moves ONLY the alignment
+/// pins is `Command::SetAlignmentPins`, which stales the pin-drill
+/// operations and what depends on them. Any other stock edit is
+/// `Command::SetStockConfig`, which drops every result. The stock panel
+/// and both undo arms call this function, so an undo of a pin edit stales
+/// the same set as the edit.
+pub(crate) fn stock_edit_command(
+    stored: &crate::state::job::StockConfig,
+    draft: crate::state::job::StockConfig,
+) -> Option<rs_cam_core::session::Command> {
+    use rs_cam_core::session::{Command, SetAlignmentPinsArgs, SetStockConfigArgs};
+    if draft == *stored {
+        return None;
+    }
+    let pins_only = crate::state::job::StockConfig {
+        alignment_pins: stored.alignment_pins.clone(),
+        ..draft.clone()
+    } == *stored;
+    Some(if pins_only {
+        Command::SetAlignmentPins(SetAlignmentPinsArgs {
+            pins: draft.alignment_pins,
+        })
+    } else {
+        Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(draft),
+        })
+    })
 }
 
 /// Run one command from a draw site and stamp what it dropped.

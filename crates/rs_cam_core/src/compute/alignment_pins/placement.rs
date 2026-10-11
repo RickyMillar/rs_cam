@@ -3,7 +3,8 @@
 use crate::compute::transform::{FaceUp, ZRotation};
 
 use super::keying::{closest_wrong_seating, pattern_is_keyed};
-use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_MATCH_TOL_MM};
+use super::pattern::{AxisPairPattern, axis_plus_mirror_pair};
+use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_MATCH_TOL_MM, PinSetupMap};
 
 /// Everything [`plan_keyed_pins`](crate::compute::stock_config::StockConfig::plan_keyed_pins)
 /// needs, in **stock-local** millimetres (X0Y0 at the stock's min corner —
@@ -261,15 +262,22 @@ pub fn place_keyed_pins(req: PinPlacementRequest) -> Result<[AlignmentPin; 3], P
         });
     }
 
-    let axis_y = 0.5 * req.stock_d;
     let centre_lo = 0.5 * strip_lo;
     let centre_hi = req.stock_w - 0.5 * strip_hi;
+    // The preset builds the pins in the axis frame of the flip, so the
+    // placer holds no copy of the flip map. For a `Bottom` setup at 0 deg
+    // the frame is `along = x`, `across = y - D/2`.
+    let map = PinSetupMap::new(req.face_up, req.z_rotation, req.stock_w, req.stock_d);
     let pattern = |axis_x: f64, pair_x: f64, h: f64| {
-        [
-            AlignmentPin::new(axis_x, axis_y, req.pin_diameter),
-            AlignmentPin::new(pair_x, axis_y - h, req.pin_diameter),
-            AlignmentPin::new(pair_x, axis_y + h, req.pin_diameter),
-        ]
+        axis_plus_mirror_pair(
+            &map,
+            AxisPairPattern {
+                axis_along: axis_x,
+                pair_along: pair_x,
+                pair_across: h,
+                diameter: req.pin_diameter,
+            },
+        )
     };
 
     // The largest pair offset, from `h_max` down in steps, whose pattern
@@ -280,8 +288,7 @@ pub fn place_keyed_pins(req: PinPlacementRequest) -> Result<[AlignmentPin; 3], P
         let mut best: Option<(f64, [AlignmentPin; 3])> = None;
         for (axis_x, pair_x) in [(centre_hi, centre_lo), (centre_lo, centre_hi)] {
             let mut h = h_max.max(h_min);
-            loop {
-                let pins = pattern(axis_x, pair_x, h);
+            while let Some(pins) = pattern(axis_x, pair_x, h) {
                 if accept(&pins) {
                     if best
                         .as_ref()

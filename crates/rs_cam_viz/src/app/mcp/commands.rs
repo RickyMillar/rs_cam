@@ -1814,6 +1814,7 @@ impl RsCamApp {
             | CommandId::AdoptModelGeometry
             | CommandId::AddSetup
             | CommandId::RemoveSetup
+            | CommandId::SetAlignmentPins
             | CommandId::AddAlignmentPin
             | CommandId::RemoveAlignmentPin
             | CommandId::SetSetupFace
@@ -1948,11 +1949,9 @@ impl RsCamApp {
                 ))
             }
             CommandId::RemoveAlignmentPin => {
-                // A pin edit reaches every toolpath through the stock,
-                // and this row reported no stale set before WP4. It
-                // still reports none: `set_stock_config`'s own row is
-                // the one that answers for the stock, and the two must
-                // move together.
+                // Since P4 the row is a thin form of `set_alignment_pins`
+                // and stales only the pin-drill operations. The reply
+                // still lists no stale set; wave C (P5) adds it.
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
                 let pin_count = self
@@ -2736,6 +2735,8 @@ impl RsCamApp {
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
             | CommandId::SetAlignmentPinDrillHoles
+            // P4: the GUI writes the pin set; wave C adds the wire tool.
+            | CommandId::SetAlignmentPins
             | CommandId::SetDrillSelectedHoles
             | CommandId::AddFixture
             | CommandId::RemoveFixture

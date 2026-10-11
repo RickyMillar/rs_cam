@@ -335,9 +335,11 @@ fn freshness_reorder_keeps_fresh_ops_current() {
     assert_eq!(state_of(&controller, 2), FreshnessState::EditedSince);
 }
 
-/// R0.1 §7 Q1, operator ruling 2026-09-10: ANY stock edit — dimensions,
-/// pins, or the material alone — stales every toolpath, on both routes.
-/// The GUI route used to stale none of them.
+/// R0.1 §7 Q1, operator ruling 2026-09-10: a stock edit — dimensions or
+/// the material alone — stales every toolpath, on both routes. The GUI
+/// route used to stale none of them. A pin edit takes its own, narrower
+/// rule since P4 (operator ruling 2026-10-12): see
+/// `undo::a_panel_pin_edit_and_its_undo_leave_the_other_results_current`.
 ///
 /// WP6 moved the GUI route onto the command door. The panel edits a
 /// scratch copy and calls `ui::properties::apply_stock_draft`, which

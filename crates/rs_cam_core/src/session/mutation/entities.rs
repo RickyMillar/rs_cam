@@ -597,10 +597,50 @@ impl ProjectSession {
         })
     }
 
+    /// Replace the stock's alignment pins with `pins` (P4).
+    ///
+    /// The stale set follows what reads the pins (operator ruling
+    /// 2026-10-12), not the whole project. The pins reach a generation
+    /// only through an `AlignmentPinDrill` operation: the generation pass
+    /// copies the live pins into its holes (`compute/generation.rs`). So
+    /// the setter drops the result of every `AlignmentPinDrill` operation,
+    /// in every setup, through [`Self::drop_results_and_their_dependents`].
+    /// That walk also drops what depends on those results through the
+    /// dependency edges (a later `FromRemainingStock` operation in the same
+    /// setup, a rest consumer) and clears the simulation, which carved the
+    /// old holes.
+    ///
+    /// With no pin-drill operation no result reads the pins, so nothing
+    /// drops and the simulation stays. A set equal to the stored set
+    /// changes nothing and reports an empty [`Effects`].
+    #[instrument(skip(self, pins))]
+    pub(crate) fn set_alignment_pins(
+        &mut self,
+        pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
+    ) -> Effects {
+        self.with_effects(None, move |session| {
+            if session.stock.alignment_pins == pins {
+                return;
+            }
+            session.stock.alignment_pins = pins;
+            let pin_drills: Vec<usize> = session
+                .toolpath_configs
+                .iter()
+                .enumerate()
+                .filter(|(_, tc)| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
+                .map(|(index, _)| index)
+                .collect();
+            if !pin_drills.is_empty() {
+                session.drop_results_and_their_dependents(&pin_drills);
+            }
+        })
+    }
+
     /// Add an alignment pin, deduping against existing pins within 0.01mm.
     ///
-    /// Reports the effects when the pin was added, and `None` when a
-    /// duplicate was skipped. `None` says the call changed nothing.
+    /// A thin form of [`Self::set_alignment_pins`]: one more pin, the same
+    /// stale set. Reports the effects when the pin was added, and `None`
+    /// when a duplicate was skipped. `None` says the call changed nothing.
     #[instrument(skip(self))]
     pub(crate) fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
         const PIN_DEDUP_EPSILON_MM: f64 = 0.01;
@@ -610,34 +650,29 @@ impl ProjectSession {
         if exists {
             return None;
         }
-        Some(self.with_effects(None, move |session| {
-            session
-                .stock
-                .alignment_pins
-                .push(crate::compute::alignment_pins::AlignmentPin::new(
-                    x, y, diameter,
-                ));
-            session.drop_all_results();
-        }))
+        let mut pins = self.stock.alignment_pins.clone();
+        pins.push(crate::compute::alignment_pins::AlignmentPin::new(
+            x, y, diameter,
+        ));
+        Some(self.set_alignment_pins(pins))
     }
 
     /// Remove an alignment pin by index. Returns `Err` if out of bounds.
     ///
-    /// `index` names a PIN, not a toolpath, so [`Effects::revision`] is
-    /// `None`.
+    /// A thin form of [`Self::set_alignment_pins`], with the same stale
+    /// set. `index` names a PIN, not a toolpath, so [`Effects::revision`]
+    /// is `None`.
     #[instrument(skip(self))]
     pub(crate) fn remove_alignment_pin(&mut self, index: usize) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            if index >= session.stock.alignment_pins.len() {
-                return Err(SessionError::InvalidParam(format!(
-                    "alignment pin index {index} out of range ({} pins)",
-                    session.stock.alignment_pins.len()
-                )));
-            }
-            session.stock.alignment_pins.remove(index);
-            session.drop_all_results();
-            Ok(())
-        })
+        if index >= self.stock.alignment_pins.len() {
+            return Err(SessionError::InvalidParam(format!(
+                "alignment pin index {index} out of range ({} pins)",
+                self.stock.alignment_pins.len()
+            )));
+        }
+        let mut pins = self.stock.alignment_pins.clone();
+        pins.remove(index);
+        Ok(self.set_alignment_pins(pins))
     }
 
     /// Set a setup's face-up orientation, dropping every result in that

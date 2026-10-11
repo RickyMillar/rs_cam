@@ -471,7 +471,16 @@ impl RsCamApp {
             "padding": stock.padding,
             "auto_from_model": stock.auto_from_model,
             "alignment_pins": pins,
-            "flip_axis": stock.flip_axis.map(|fa| fa.label()),
+            // P3: derived from the setups, never stored. `null` when no
+            // setup flips the part in plane.
+            "flip_axis": stock
+                .pin_flip_map(
+                    session
+                        .list_setups()
+                        .iter()
+                        .map(|sd| (sd.face_up, sd.z_rotation)),
+                )
+                .and_then(|map| map.axis_label()),
             // S4: every setup's stock changes, in setup order and then in
             // application order, with the simulated volume.
             "stock_changes": session

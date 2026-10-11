@@ -277,8 +277,8 @@ pub struct ProjectStockConfig {
     pub material: crate::material::Material,
     #[serde(default)]
     pub alignment_pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
-    #[serde(default)]
-    pub flip_axis: Option<crate::compute::alignment_pins::FlipAxis>,
+    // P3 (2026-10-12): `flip_axis` is gone. The flip axis is derived from
+    // the setups; an old file's key is ignored on load.
 }
 
 impl Default for ProjectStockConfig {
@@ -294,7 +294,6 @@ impl Default for ProjectStockConfig {
             auto_from_model: true,
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
-            flip_axis: None,
         }
     }
 }
@@ -639,7 +638,6 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
         padding: ps.padding,
         material: ps.material.clone(),
         alignment_pins: ps.alignment_pins.clone(),
-        flip_axis: ps.flip_axis,
     }
 }
 

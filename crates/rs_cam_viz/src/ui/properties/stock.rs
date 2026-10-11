@@ -3,7 +3,7 @@ use rs_cam_core::compute::alignment_pins::{PIN_MATCH_TOL_MM, PinPlacementError};
 use rs_cam_core::geo::BoundingBox3;
 
 use super::PanelEdit;
-use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig, ZRotation};
+use crate::state::job::{AlignmentPin, FaceUp, StockConfig, ZRotation};
 use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
@@ -216,21 +216,19 @@ fn draw_alignment_pins(
     pin_inputs: &KeyedPinInputs,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
-    // The first setup that turns the part away from Top is the flip the
-    // pins register (P2: its full map, `face_up` and `z_rotation`).
-    let flip_setup = setups
-        .iter()
-        .copied()
-        .find(|(face, _)| *face != FaceUp::Top);
-    let has_flipped_setup = flip_setup.is_some();
+    // The flip the pins register: the first setup whose flip is in plane
+    // (a Bottom setup), with its full map, `face_up` and `z_rotation` (P2).
+    // One core selector, so this panel, the viewport axis line and the
+    // overlay precondition read one answer (P3). An edge-up setup is not
+    // a flip here (P9): pins in the XY plane do not register it.
+    let flip_map = stock.pin_flip_map(setups.iter().copied());
+    let has_flipped_setup = flip_map.is_some();
     let header = egui::RichText::new("Alignment Pins")
         .strong()
         .color(crate::ui::tokens::TEXT_STRONG);
 
     // Pins only matter for two-sided work: open by default only when pins
-    // exist or a flip is programmed (density pass 2026-06-11). Keyed off
-    // the setups rather than the cached `flip_axis`, so a project whose
-    // stored cache is stale still opens the section.
+    // exist or a flip is programmed (density pass 2026-06-11).
     egui::CollapsingHeader::new(header)
         .default_open(!stock.alignment_pins.is_empty() || has_flipped_setup)
         .show(ui, |ui| {
@@ -251,72 +249,23 @@ fn draw_alignment_pins(
                 ui.add_space(4.0);
             }
 
-            // Flip axis — DERIVED FOR DISPLAY, and never written here
-            // (G-PINAUTO, 2026-08-22).
-            //
-            // This used to be a free three-way dropdown that nothing in
-            // core read, whose own doc contradicted itself, and which on
-            // the live project sat at `null` beside a `FaceUp::Bottom`
-            // setup. A control that can disagree with the setups is worse
-            // than no control — so it now reports what the setups say,
-            // and every check below keys off the flip, not off the field.
-            //
-            // It does NOT write the corrected value back. Opening a panel
-            // is not an edit: a render-time write marks the project
-            // dirty, pushes an undo entry for something the user did not
-            // do, raises a save prompt after a pure inspection, and
-            // silently proposes to modify a project opened for reference.
-            // The stored cache is written by the explicit two-sided
-            // action; correcting a stale one on load is a migration and
-            // belongs in the load path.
-            //
-            // The axis comes from the full setup map (P2): a Bottom setup
-            // at 0 deg mirrors Y (Horizontal), turned 180 deg it mirrors X
-            // (Vertical). Other setups have no centre-line axis.
-            let derived_axis = flip_setup.and_then(|(face, turn)| FlipAxis::from_setup(face, turn));
+            // The flip axis is derived from the setups and never stored
+            // (P3). The label states the line, for example `y = 32.5 mm`.
             ui.horizontal(|ui| {
                 ui.label("Flip axis:");
+                let axis = flip_map.as_ref().and_then(|map| map.axis_label());
                 ui.label(
-                    egui::RichText::new(match (derived_axis, has_flipped_setup) {
-                        (Some(fa), _) => fa.label(),
-                        (None, true) => "None (the flipped setup mirrors about no centre line)",
-                        (None, false) => "None (no flipped setup)",
-                    })
+                    egui::RichText::new(
+                        axis.unwrap_or_else(|| "None (no flipped Bottom setup)".to_owned()),
+                    )
                     .strong(),
                 )
                 .on_hover_text(
-                    "Derived from the setups, not set here. A Bottom setup at 0 deg mirrors Y \
-                     about the stock centre line; turned 180 deg it mirrors X. Each pin must \
-                     land on a pin after that mirror, and no turn of the part on the dowels \
-                     may seat it too.",
+                    "From the setups. A Bottom setup at 0 deg mirrors Y about the stock centre \
+                     line; turned 180 deg it mirrors X. Each pin must land on a pin after that \
+                     mirror, and no turn of the part on the dowels may seat it too.",
                 );
-                if stock.flip_axis != derived_axis {
-                    ui.label(
-                        egui::RichText::new("(derived)")
-                            .small()
-                            .color(crate::ui::tokens::CAUTION),
-                    );
-                }
             });
-            // Name the stored value rather than displaying the derived
-            // one as though it were what the file says.
-            if stock.flip_axis != derived_axis {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "This project stores {}. The stored value is a cache with no say in \
-                         whether the pins are correct; it is rewritten next time pins are \
-                         placed.",
-                        match stock.flip_axis {
-                            Some(FlipAxis::Vertical) => "'Vertical'",
-                            Some(FlipAxis::Horizontal) => "'Horizontal'",
-                            None => "no flip axis",
-                        }
-                    ))
-                    .small()
-                    .color(crate::ui::tokens::CAUTION),
-                );
-            }
-
             ui.add_space(4.0);
 
             // Shared pin diameter (physical dowels are one size)
@@ -371,7 +320,7 @@ fn draw_alignment_pins(
                     });
                     ui.horizontal(|ui| {
                         ui.add_space(48.0);
-                        if derived_axis.is_some() && ui.small_button("Mirror").clicked() {
+                        if has_flipped_setup && ui.small_button("Mirror").clicked() {
                             mirror_idx = Some(i);
                         }
                         // UP3, §4.5: a control that DELETES something takes
@@ -390,14 +339,17 @@ fn draw_alignment_pins(
             }
 
             // Process deferred actions (borrow after mutable iteration is done)
-            if let Some((idx, axis)) = mirror_idx.zip(derived_axis) {
-                // SAFETY: idx from enumerate over alignment_pins
-                #[allow(clippy::indexing_slicing)]
-                let src = &stock.alignment_pins[idx];
-                let mirrored = mirror_pin(src, axis, stock.x, stock.y);
+            if let (Some(idx), Some(map)) = (mirror_idx, flip_map.as_ref())
+                && let Some(src) = stock.alignment_pins.get(idx).cloned()
+            {
+                // The core setup map, not a copy of it (P9).
+                let (mx, my) = map.map_xy(src.x, src.y);
+                let mirrored = AlignmentPin::new(mx, my, src.diameter);
                 // Check if a pin already exists near the mirrored position
                 let existing = stock.alignment_pins.iter_mut().enumerate().find(|(j, p)| {
-                    *j != idx && (p.x - mirrored.x).abs() < 0.5 && (p.y - mirrored.y).abs() < 0.5
+                    *j != idx
+                        && (p.x - mirrored.x).abs() < PIN_MATCH_TOL_MM
+                        && (p.y - mirrored.y).abs() < PIN_MATCH_TOL_MM
                 });
                 if let Some((_j, existing_pin)) = existing {
                     // Snap the existing pin to exact mirrored position
@@ -411,14 +363,6 @@ fn draw_alignment_pins(
 
             if let Some(idx) = remove_idx {
                 stock.alignment_pins.remove(idx);
-                // Removing a pin IS an edit, so writing the cache here is
-                // legitimate. Keeping the invariant "flip_axis is Some
-                // only while pins exist" is what makes the setup panel
-                // offer "Add alignment pins for this flip" again once the
-                // last one is gone.
-                if stock.alignment_pins.is_empty() {
-                    stock.flip_axis = None;
-                }
                 edit.commit();
             }
 
@@ -427,7 +371,11 @@ fn draw_alignment_pins(
             // "Auto-place" therefore places one pin on the flip axis plus
             // a mirror pair off the axis. "+ Add Pin" adds one free pin.
             ui.add_space(4.0);
-            let (plan_face, plan_turn) = flip_setup.unwrap_or((FaceUp::Top, ZRotation::Deg0));
+            let (plan_face, plan_turn) = flip_map
+                .as_ref()
+                .map_or((FaceUp::Top, ZRotation::Deg0), |map| {
+                    (map.face_up(), map.z_rotation())
+                });
             let plan = keyed_pin_plan(stock, plan_face, plan_turn, pin_inputs);
             ui.horizontal(|ui| {
                 let can_place = plan.is_ok();
@@ -445,11 +393,10 @@ fn draw_alignment_pins(
                     .clicked()
                     && let Ok(pins) = plan.as_ref()
                 {
+                    // The panel applies a pin-only edit as
+                    // `SetAlignmentPins` (`stock_edit_command`).
                     stock.alignment_pins.clear();
                     stock.alignment_pins.extend(pins.iter().cloned());
-                    // Explicit edit, so the cache is written here — and
-                    // now there are pins for it to describe.
-                    stock.flip_axis = derived_axis;
                     edit.commit();
                 }
 
@@ -474,7 +421,6 @@ fn draw_alignment_pins(
                     stock
                         .alignment_pins
                         .push(AlignmentPin::new(centre.0, centre.1, diameter));
-                    stock.flip_axis = derived_axis;
                     edit.commit();
                 }
             });
@@ -612,21 +558,6 @@ pub fn keyed_pin_plan(
             pin_diameter,
         )
         .map_err(KeyedPinRefusal::Placement)
-}
-
-/// Create the mirror of a pin about the flip axis.
-///
-/// `Horizontal` is the map a `Bottom` setup at 0 deg performs:
-/// `y -> stock_y - y`, X untouched. `Vertical` is the map of a `Bottom`
-/// setup turned 180 deg: `x -> stock_x - x`. A pin on the axis is its own
-/// mirror, which is why the auto-placed axis pin needs no partner.
-fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) -> AlignmentPin {
-    match axis {
-        // Mirror about the X centre line → Y is reflected, X preserved.
-        FlipAxis::Horizontal => AlignmentPin::new(pin.x, stock_y - pin.y, pin.diameter),
-        // Bottom turned 180 deg: mirror about the Y centre line, X reflected.
-        FlipAxis::Vertical => AlignmentPin::new(stock_x - pin.x, pin.y, pin.diameter),
-    }
 }
 
 /// Hierarchical material picker: drills `Category ▶ → species`. Wood

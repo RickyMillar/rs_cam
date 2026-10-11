@@ -436,7 +436,7 @@ impl<B: ComputeBackend> AppController<B> {
         // C10: the loader reports what it could not do. This function used
         // to re-derive the same sentences from the loaded session, which
         // is how the GUI and the loader came to word one fact two ways.
-        let mut warning_messages: Vec<String> = load_warnings
+        let warning_messages: Vec<String> = load_warnings
             .iter()
             .map(ProjectLoadWarning::message)
             .collect();
@@ -474,36 +474,9 @@ impl<B: ComputeBackend> AppController<B> {
             gui.toolpath_rt.insert(tc.id, rt);
         }
 
-        // Warn when the alignment pins cannot register the flip they
-        // are for. This is the check that would have caught a real
-        // project whose pins were centre-symmetric rather than
-        // mirror-symmetric: under `FaceUp::Bottom`'s `y -> D-y`
-        // neither hole landed on a dowel, so the part could not have
-        // re-seated — and nothing said so until the operator was at
-        // the machine. Deduped because a `Top` setup contributes only
-        // the bounds line, and a project with several setups would
-        // otherwise repeat it.
-        warning_messages.extend(
-            session
-                .stock_config()
-                .pin_findings_for_setups(
-                    session
-                        .list_setups()
-                        .iter()
-                        .map(|setup| (setup.face_up, setup.z_rotation)),
-                )
-                .into_iter()
-                .map(|finding| finding.text),
-        );
-        // NOT `dedup()` — that only collapses ADJACENT duplicates, and
-        // a two-setup project interleaves them: setup 1 contributes
-        // bounds + flip + keying, setup 2 contributes bounds again, so
-        // the two identical bounds lines are never neighbours. Keep
-        // first occurrence, drop later repeats, preserve order.
-        {
-            let mut seen = std::collections::HashSet::new();
-            warning_messages.retain(|m| seen.insert(m.clone()));
-        }
+        // The pin-keying lines come from the core loader above
+        // (`project_file.rs`, CMP-27), once each. P9 deleted the second
+        // run of the same check here, and the dedupe that hid its copies.
 
         for message in &warning_messages {
             tracing::warn!("{message}");
