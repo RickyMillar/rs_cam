@@ -39,23 +39,32 @@
 )]
 
 use rs_cam_core::compute::alignment_pins::{
-    AlignmentPin, PinPlacementError, PinPlacementRequest, PinSetupMap, PinSide, pin_flip_map,
-    place_keyed_pins, validate_pins_for_flip,
+    AlignmentPin, PinObstacle, PinObstacleKind, PinPlacementError, PinPlacementRequest,
+    PinSetupMap, pin_flip_map, place_keyed_pins, validate_pins_for_flip,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::geo::{BoundingBox3, P3};
 
 /// The live blank: 140×150, a 100×100 model centred in it, Ø6 dowels.
 const W: f64 = 140.0;
 const D: f64 = 150.0;
 const PIN_D: f64 = 6.0;
 
+/// The part is a model of `model_x_range` in X that spans the full stock
+/// depth (P6: the placer reads 2D outlines; a full-depth model leaves only
+/// the two X strips, as the X-only placer read it).
+fn part(model_x_range: Option<(f64, f64)>) -> Vec<PinObstacle> {
+    model_x_range
+        .map(|(lo, hi)| PinObstacle::rectangle(PinObstacleKind::Part, "model", (lo, 0.0), (hi, D)))
+        .into_iter()
+        .collect()
+}
+
 fn request(model_x_range: Option<(f64, f64)>, pin_diameter: f64) -> PinPlacementRequest {
     PinPlacementRequest {
         stock_w: W,
         stock_d: D,
-        model_x_range,
+        obstacles: part(model_x_range),
         face_up: FaceUp::Bottom,
         z_rotation: ZRotation::Deg0,
         pin_diameter,
@@ -71,20 +80,18 @@ fn request(model_x_range: Option<(f64, f64)>, pin_diameter: f64) -> PinPlacement
 #[test]
 fn refuses_a_pin_wider_than_the_clear_strip() {
     let padding_strip = Some((5.0, W - 5.0));
-    match place_keyed_pins(request(padding_strip, PIN_D)) {
-        Err(PinPlacementError::StripTooNarrow {
-            side,
-            strip_mm,
-            required_mm,
+    match place_keyed_pins(&request(padding_strip, PIN_D)) {
+        Err(PinPlacementError::NoRoomOnAxis {
+            axis,
+            need_mm,
             pin_diameter_mm,
         }) => {
-            assert_eq!(side, PinSide::MinusX);
-            assert!((strip_mm - 5.0).abs() < 1e-9, "strip {strip_mm}");
+            assert_eq!(axis, "y = 75.0 mm");
             // 6 mm of pin + 2 mm of wall each side.
-            assert!((required_mm - 10.0).abs() < 1e-9, "required {required_mm}");
+            assert!((need_mm - 10.0).abs() < 1e-9, "need {need_mm}");
             assert!((pin_diameter_mm - PIN_D).abs() < 1e-9);
         }
-        other => panic!("expected StripTooNarrow, got {other:?}"),
+        other => panic!("expected NoRoomOnAxis, got {other:?}"),
     }
 }
 
@@ -95,7 +102,7 @@ fn refuses_a_pin_wider_than_the_clear_strip() {
 #[test]
 fn margin_comes_from_the_model_bbox_not_padding() {
     let model_strip = Some((20.0, W - 20.0));
-    let pins = place_keyed_pins(request(model_strip, PIN_D)).unwrap();
+    let pins = place_keyed_pins(&request(model_strip, PIN_D)).unwrap();
 
     for p in &pins {
         let r = p.diameter * 0.5;
@@ -174,9 +181,10 @@ fn centre_symmetric_pins_do_not_survive_the_flip() {
 
 /// Only `Bottom` keeps the part's XY footprint. Standing the blank on an
 /// edge changes which stock dimensions the pins would have to register,
-/// so the placer refuses rather than guessing. The placer also refuses a
-/// turned `Bottom` setup (P2): its flip axis does not cross the X clear
-/// strips, and the 2D placer is a later package (P6).
+/// so the placer refuses rather than guessing. A quarter turn on this
+/// stock (not square) changes the footprint and has no flip axis. P6: a
+/// `Bottom` setup turned 180 deg is placed (see
+/// `alignment_pin_walls_and_2d_placer_p6.rs`), so it is not in this list.
 #[test]
 fn refuses_every_flip_the_cam_does_not_model_in_plane() {
     let cases = [
@@ -186,7 +194,6 @@ fn refuses_every_flip_the_cam_does_not_model_in_plane() {
         (FaceUp::Left, ZRotation::Deg0),
         (FaceUp::Right, ZRotation::Deg0),
         (FaceUp::Bottom, ZRotation::Deg90),
-        (FaceUp::Bottom, ZRotation::Deg180),
         (FaceUp::Bottom, ZRotation::Deg270),
     ];
     for (face, turn) in cases {
@@ -197,7 +204,7 @@ fn refuses_every_flip_the_cam_does_not_model_in_plane() {
         };
         assert!(
             matches!(
-                place_keyed_pins(req),
+                place_keyed_pins(&req),
                 Err(PinPlacementError::UnsupportedFlip { .. })
             ),
             "expected a refusal for {face:?} {turn:?}"
@@ -261,7 +268,7 @@ fn flip_axis_is_derived_from_the_setup_map() {
 /// it), and no turn of the part on the dowels seats it (P1).
 #[test]
 fn placed_pins_seat_under_the_flip_and_key_it() {
-    let pins = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
+    let pins = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
 
     assert!(
         (pins[0].y - D * 0.5).abs() < 1e-9,
@@ -351,7 +358,7 @@ fn a_centre_pin_adds_no_keying() {
 /// so every edit goes back through the check.)
 #[test]
 fn a_centre_pin_does_not_break_the_placed_pattern() {
-    let placed = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
+    let placed = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
     let mut pins = placed.to_vec();
     pins.push(AlignmentPin::new(W * 0.5, D * 0.5, PIN_D));
     let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
@@ -368,13 +375,13 @@ fn refuses_when_the_pair_does_not_fit() {
         stock_d: 17.0,
         ..request(Some((20.0, W - 20.0)), PIN_D)
     };
-    match place_keyed_pins(req) {
+    match place_keyed_pins(&req) {
         Err(PinPlacementError::PairDoesNotFit {
-            stock_d,
+            across_mm,
             required_mm,
             pin_diameter_mm,
         }) => {
-            assert!((stock_d - 17.0).abs() < 1e-9);
+            assert!((across_mm - 17.0).abs() < 1e-9);
             assert!((required_mm - 18.0).abs() < 1e-9, "required {required_mm}");
             assert!((pin_diameter_mm - PIN_D).abs() < 1e-9);
         }
@@ -393,13 +400,13 @@ fn refuses_when_no_pattern_that_fits_keys() {
     let req = PinPlacementRequest {
         stock_w: 12.0,
         stock_d: 12.0,
-        model_x_range: None,
+        obstacles: Vec::new(),
         face_up: FaceUp::Bottom,
         z_rotation: ZRotation::Deg0,
         pin_diameter: PIN_D,
         wall_mm: 0.0,
     };
-    match place_keyed_pins(req) {
+    match place_keyed_pins(&req) {
         Err(PinPlacementError::CannotKey {
             best_miss_mm,
             required_mm,
@@ -423,7 +430,7 @@ fn refuses_when_no_pattern_that_fits_keys() {
 #[test]
 fn each_pin_sits_at_the_centre_of_its_strip() {
     // 40 mm on -X, 20 mm on +X.
-    let pins = place_keyed_pins(request(Some((40.0, W - 20.0)), PIN_D)).unwrap();
+    let pins = place_keyed_pins(&request(Some((40.0, W - 20.0)), PIN_D)).unwrap();
     assert!((pins[0].x - (W - 10.0)).abs() < 1e-9, "{pins:?}");
     assert!((pins[1].x - 20.0).abs() < 1e-9, "{pins:?}");
     assert!((pins[2].x - 20.0).abs() < 1e-9, "{pins:?}");
@@ -434,7 +441,7 @@ fn each_pin_sits_at_the_centre_of_its_strip() {
 
 // ── Frame: pins are stock-local, model bboxes are world ─────────────────
 
-/// `StockConfig::plan_keyed_pins` takes a WORLD model bbox and produces
+/// `StockConfig::plan_keyed_pins` takes WORLD obstacles and produces
 /// stock-local pins, because that is the frame `alignment_pins` are
 /// dimensioned in (see `pindrill_emission_frame_g_pindrill.rs`). A blank
 /// with a non-zero origin must not shift the answer.
@@ -451,15 +458,18 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
         padding: 5.0,
         ..StockConfig::default()
     };
-    // 100x100 model sitting at world 0..100, i.e. stock-local 20..120.
-    let bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(100.0, 100.0, 10.0),
-    };
+    // A model at world x 0..100, i.e. stock-local 20..120, over the full
+    // stock depth (world y -25..125, stock-local 0..150).
+    let world = [PinObstacle::rectangle(
+        PinObstacleKind::Part,
+        "model",
+        (0.0, -25.0),
+        (100.0, 125.0),
+    )];
     let pins = stock
-        .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg0, Some(&bbox), PIN_D)
+        .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg0, &world, PIN_D)
         .unwrap();
-    let direct = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
+    let direct = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
     for (p, q) in pins.iter().zip(&direct) {
         assert!(
             (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9,
@@ -469,7 +479,7 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
 
     // And the same stock read through `padding` — the pre-fix source —
     // refuses, which is the defect stated as a comparison.
-    let padding_only = place_keyed_pins(request(Some((5.0, W - 5.0)), PIN_D));
+    let padding_only = place_keyed_pins(&request(Some((5.0, W - 5.0)), PIN_D));
     assert!(padding_only.is_err(), "{padding_only:?}");
 }
 
@@ -482,13 +492,13 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
 fn the_refusal_tracks_the_pin_diameter() {
     let strip = Some((20.0, W - 20.0));
     // Ø6 needs 10 mm of the 20 mm strip.
-    assert!(place_keyed_pins(request(strip, 6.0)).is_ok());
+    assert!(place_keyed_pins(&request(strip, 6.0)).is_ok());
     // Ø16 needs exactly 20 mm: it fits.
-    assert!(place_keyed_pins(request(strip, 16.0)).is_ok());
+    assert!(place_keyed_pins(&request(strip, 16.0)).is_ok());
     // Ø18 needs 22 mm and does not fit.
     assert!(matches!(
-        place_keyed_pins(request(strip, 18.0)),
-        Err(PinPlacementError::StripTooNarrow { .. })
+        place_keyed_pins(&request(strip, 18.0)),
+        Err(PinPlacementError::NoRoomOnAxis { .. })
     ));
 }
 
@@ -652,7 +662,7 @@ fn project_diagnostics_publish_the_pin_keying_verdict_g_pinauto() {
 /// The placer's 3-pin pattern is the keyed set (P1).
 #[test]
 fn keyed_pins_raise_no_diagnostic_g_pinauto() {
-    let pins = place_keyed_pins(request(Some((20.0, W - 20.0)), PIN_D)).expect("placement");
+    let pins = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).expect("placement");
     let mut stock = StockConfig {
         x: W,
         y: D,

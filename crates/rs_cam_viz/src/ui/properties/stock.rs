@@ -1,4 +1,6 @@
-use rs_cam_core::compute::alignment_pins::{PIN_MATCH_TOL_MM, PinPlacementError};
+use rs_cam_core::compute::alignment_pins::{
+    NOMINAL_DOWEL_MM, PIN_MATCH_TOL_MM, PinObstacle, PinPlacementError, pin_tool_finding,
+};
 
 use rs_cam_core::geo::BoundingBox3;
 
@@ -67,15 +69,18 @@ pub fn reconcile_auto_from_model(
 /// `z_rotation`), in setup order. The pin section judges the pins against
 /// every one of them.
 ///
-/// `pin_inputs` holds the model bbox and the pin-drill tool diameter. The
-/// "Auto-place keyed pins" button plans from them, as the "Two-sided setup"
-/// route does.
+/// `pin_inputs` holds the pin obstacles (the part models, the keep-outs
+/// and the fixtures) and the diameter of the tool that drills the pin
+/// holes. The "Auto-place keyed pins" button plans from them, as the
+/// "Two-sided setup" route does. `pin_plan_memo` holds the last plan, so
+/// a frame that changes no input does not run the placer again.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     setups: &[(FaceUp, ZRotation)],
     has_model: bool,
     pin_inputs: &KeyedPinInputs,
+    pin_plan_memo: &mut crate::state::panels::KeyedPinPlanMemo,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     ui.heading("Stock Setup");
@@ -204,7 +209,14 @@ pub fn draw(
     }
 
     ui.add_space(12.0);
-    edit.merge(draw_alignment_pins(ui, stock, setups, pin_inputs, events));
+    edit.merge(draw_alignment_pins(
+        ui,
+        stock,
+        setups,
+        pin_inputs,
+        pin_plan_memo,
+        events,
+    ));
     edit
 }
 
@@ -214,6 +226,7 @@ fn draw_alignment_pins(
     stock: &mut StockConfig,
     setups: &[(FaceUp, ZRotation)],
     pin_inputs: &KeyedPinInputs,
+    pin_plan_memo: &mut crate::state::panels::KeyedPinPlanMemo,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     // The flip the pins register: the first setup whose flip is in plane
@@ -376,7 +389,10 @@ fn draw_alignment_pins(
                 .map_or((FaceUp::Top, ZRotation::Deg0), |map| {
                     (map.face_up(), map.z_rotation())
                 });
-            let plan = keyed_pin_plan(stock, plan_face, plan_turn, pin_inputs);
+            let fingerprint = keyed_pin_plan_fingerprint(stock, plan_face, plan_turn, pin_inputs);
+            let plan = pin_plan_memo.get_or_plan(fingerprint, || {
+                keyed_pin_plan(stock, plan_face, plan_turn, pin_inputs)
+            });
             ui.horizontal(|ui| {
                 let can_place = plan.is_ok();
                 if ui
@@ -387,8 +403,10 @@ fn draw_alignment_pins(
                     .on_hover_text(
                         "Replaces the pins with three: one on the flip axis and a mirror pair off \
                          the axis, so the part seats after the flip and in no turned position. \
-                         The clear strips are the stock beside the bbox of all models, and the pin \
-                         diameter is the pin-drill tool's diameter.",
+                         The pins go in the clear material of the stock, with a wall to the \
+                         edge, the part, the keep-outs and the fixtures. The part is every model \
+                         that does not cover the whole stock. The pin diameter is the diameter \
+                         of the drill that makes the pin holes.",
                     )
                     .clicked()
                     && let Ok(pins) = plan.as_ref()
@@ -448,7 +466,17 @@ fn draw_alignment_pins(
             // passed wanaka's diagonal pins: they were symmetric under a
             // 180 deg ROTATION, which is not a flip, and neither hole
             // would have landed on a dowel.
-            for finding in stock.pin_findings_for_setups(setups.iter().copied()) {
+            // The walls (P6) and the pin tool are judged against the same
+            // inputs the placer reads.
+            let findings = stock
+                .pin_findings_for_setups(setups.iter().copied())
+                .into_iter()
+                .chain(stock.pin_wall_findings(&pin_inputs.obstacles))
+                .chain(pin_tool_finding(
+                    &stock.alignment_pins,
+                    pin_inputs.pin_tool_diameter,
+                ));
+            for finding in findings {
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(finding.text)
@@ -466,27 +494,16 @@ fn draw_alignment_pins(
 /// Diameter of a pin that "+ Add Pin" adds.
 ///
 /// The diameter of the first stored pin, so the pins stay one size. With
-/// no pins, the pin-drill tool's diameter. With no tool either, a nominal
-/// dowel.
+/// no pins, the diameter of the tool that drills the pin holes. With no
+/// such tool either, [`NOMINAL_DOWEL_MM`].
 fn panel_pin_diameter(stock: &StockConfig, pin_inputs: &KeyedPinInputs) -> f64 {
-    const NOMINAL_DOWEL_MM: f64 = 6.0;
     stock
         .alignment_pins
         .first()
         .map(|p| p.diameter)
-        .or(pin_inputs.pin_diameter)
+        .or(pin_inputs.pin_tool_diameter)
         .unwrap_or(NOMINAL_DOWEL_MM)
 }
-
-/// Stated reason when the pin diameter cannot be sized from a tool.
-///
-/// The hole has to match the dowel the keying geometry assumed, and the
-/// hole is whatever the pin-drill cutter makes. With no tool in the
-/// project there is no honest diameter — and a guess is exactly what the
-/// old hardcoded `AlignmentPin::new(.., 6.0)` was.
-pub const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool is defined, so \
-     the pin diameter would be a guess. Add the drill you will use for the dowel holes, \
-     then try again.";
 
 /// The session values the keyed-pin planner reads.
 ///
@@ -496,41 +513,37 @@ pub const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool i
 /// stored pins. A hand-sized stock (380 mm wide, origin x -15, model x
 /// 0..350, padding 5) then read a 5 mm strip where the real strip is
 /// 15 mm, and the panel refused a pair that the other door placed.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct KeyedPinInputs {
-    /// The world-frame bbox of all models
-    /// ([`rs_cam_core::session::ProjectSession::models_union_bbox`]).
-    pub model_bbox: Option<BoundingBox3>,
-    /// The pin-drill tool diameter
+    /// The world-frame outlines a pin keeps a wall to: the default part
+    /// models, the keep-out zones and the fixtures
+    /// ([`rs_cam_core::session::ProjectSession::pin_obstacles`] of
+    /// [`rs_cam_core::session::ProjectSession::default_pin_part_models`]).
+    pub obstacles: Vec<PinObstacle>,
+    /// The diameter of the tool that drills the pin holes
     /// ([`rs_cam_core::session::ProjectSession::pin_drill_tool_diameter`]).
-    pub pin_diameter: Option<f64>,
+    /// `None` when no pin-drill or drill operation exists.
+    pub pin_tool_diameter: Option<f64>,
 }
 
 impl KeyedPinInputs {
     #[must_use]
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
-            model_bbox: session.models_union_bbox(),
-            pin_diameter: session.pin_drill_tool_diameter(),
+            obstacles: session.pin_obstacles(&session.default_pin_part_models()),
+            pin_tool_diameter: session.pin_drill_tool_diameter(),
         }
     }
-}
 
-/// Why no keyed pin pattern is placed.
-#[derive(Debug, Clone, PartialEq)]
-pub enum KeyedPinRefusal {
-    /// No tool resolves, so the pin diameter would be a guess.
-    NoPinTool,
-    /// The core placer refused the geometry.
-    Placement(PinPlacementError),
-}
-
-impl std::fmt::Display for KeyedPinRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KeyedPinRefusal::NoPinTool => f.write_str(NO_PIN_TOOL_MESSAGE),
-            KeyedPinRefusal::Placement(e) => e.fmt(f),
-        }
+    /// The diameter the placer gives the pins: the tool that drills the
+    /// holes, else the first stored pin, else [`NOMINAL_DOWEL_MM`]. A
+    /// stored pin that differs from the tool is a finding
+    /// (`pin_tool_finding`), not a silent change.
+    #[must_use]
+    pub fn plan_pin_diameter(&self, stock: &StockConfig) -> f64 {
+        self.pin_tool_diameter
+            .or_else(|| stock.alignment_pins.first().map(|p| p.diameter))
+            .unwrap_or(NOMINAL_DOWEL_MM)
     }
 }
 
@@ -538,26 +551,58 @@ impl std::fmt::Display for KeyedPinRefusal {
 /// `z_rotation`).
 ///
 /// Both doors call this function with [`KeyedPinInputs::from_session`], so
-/// they cannot disagree about a placement. The clear strips come from the
-/// real stock extent and the model bbox through
+/// they cannot disagree about a placement. The clear area comes from the
+/// real stock extent and the obstacles through
 /// [`StockConfig::plan_keyed_pins`], never from `padding`.
 pub fn keyed_pin_plan(
     stock: &StockConfig,
     face_up: FaceUp,
     z_rotation: ZRotation,
     inputs: &KeyedPinInputs,
-) -> Result<[AlignmentPin; 3], KeyedPinRefusal> {
-    // Sizing the pin from the tool is the point: with no tool there is no
-    // honest diameter.
-    let pin_diameter = inputs.pin_diameter.ok_or(KeyedPinRefusal::NoPinTool)?;
+) -> Result<[AlignmentPin; 3], PinPlacementError> {
+    stock.plan_keyed_pins(
+        face_up,
+        z_rotation,
+        &inputs.obstacles,
+        inputs.plan_pin_diameter(stock),
+    )
+}
+
+/// A hash of every input of [`keyed_pin_plan`]: the stock extent and
+/// origin, the first stored pin's diameter, the setup map, the pin tool and
+/// every obstacle point. The stock panel's memo
+/// ([`crate::state::panels::KeyedPinPlanMemo`]) keys on it.
+fn keyed_pin_plan_fingerprint(
+    stock: &StockConfig,
+    face_up: FaceUp,
+    z_rotation: ZRotation,
+    inputs: &KeyedPinInputs,
+) -> u64 {
+    use std::hash::{Hash as _, Hasher as _};
+
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for v in [stock.x, stock.y, stock.origin_x, stock.origin_y] {
+        v.to_bits().hash(&mut h);
+    }
+    // The first stored pin sets the diameter when no tool drills the holes.
     stock
-        .plan_keyed_pins(
-            face_up,
-            z_rotation,
-            inputs.model_bbox.as_ref(),
-            pin_diameter,
-        )
-        .map_err(KeyedPinRefusal::Placement)
+        .alignment_pins
+        .first()
+        .map(|p| p.diameter.to_bits())
+        .hash(&mut h);
+    face_up.hash(&mut h);
+    z_rotation.hash(&mut h);
+    inputs.pin_tool_diameter.map(f64::to_bits).hash(&mut h);
+    for o in &inputs.obstacles {
+        o.kind.hash(&mut h);
+        o.name.hash(&mut h);
+        o.closed.hash(&mut h);
+        for (x, y) in &o.points {
+            x.to_bits().hash(&mut h);
+            y.to_bits().hash(&mut h);
+        }
+    }
+    h.finish()
 }
 
 /// Hierarchical material picker: drills `Category ▶ → species`. Wood
@@ -723,7 +768,7 @@ fn draw_wood_subcategory(
 #[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use rs_cam_core::geo::P3;
+    use rs_cam_core::compute::alignment_pins::PinObstacleKind;
 
     fn stock(x: f64, y: f64) -> StockConfig {
         StockConfig {
@@ -737,11 +782,13 @@ mod tests {
     /// `pin_diameter`.
     fn inputs(x_min: f64, x_max: f64, y: f64, pin_diameter: f64) -> KeyedPinInputs {
         KeyedPinInputs {
-            model_bbox: Some(BoundingBox3 {
-                min: P3::new(x_min, 0.0, 0.0),
-                max: P3::new(x_max, y, 10.0),
-            }),
-            pin_diameter: Some(pin_diameter),
+            obstacles: vec![PinObstacle::rectangle(
+                PinObstacleKind::Part,
+                "model",
+                (x_min, 0.0),
+                (x_max, y),
+            )],
+            pin_tool_diameter: Some(pin_diameter),
         }
     }
 
@@ -759,13 +806,8 @@ mod tests {
             ZRotation::Deg0,
             &inputs(5.0, 135.0, 150.0, 6.0),
         ) {
-            Err(KeyedPinRefusal::Placement(PinPlacementError::StripTooNarrow {
-                strip_mm,
-                required_mm,
-                ..
-            })) => {
-                assert!((strip_mm - 5.0).abs() < 1e-9);
-                assert!((required_mm - 10.0).abs() < 1e-9);
+            Err(PinPlacementError::NoRoomOnAxis { need_mm, .. }) => {
+                assert!((need_mm - 10.0).abs() < 1e-9);
             }
             other => panic!("expected a strip-too-narrow refusal, got {other:?}"),
         }
@@ -813,23 +855,27 @@ mod tests {
                 ZRotation::Deg0,
                 &inputs(20.0, 120.0, 150.0, 6.0)
             ),
-            Err(KeyedPinRefusal::Placement(
-                PinPlacementError::UnsupportedFlip { .. }
-            ))
+            Err(PinPlacementError::UnsupportedFlip { .. })
         ));
     }
 
-    /// No tool means no honest pin diameter. The panel refuses with the
-    /// sentence the "Two-sided setup" route prints.
+    /// No tool drills the holes: the placer keeps the stored pin size, and
+    /// with no stored pin it uses the stated nominal dowel. It does not
+    /// refuse, and it never takes a tool that does not drill the holes.
     #[test]
-    fn panel_refuses_without_a_pin_tool() {
-        let s = stock(140.0, 150.0);
+    fn panel_without_a_pin_tool_keeps_the_stored_pin_size() {
         let no_tool = KeyedPinInputs {
-            pin_diameter: None,
+            pin_tool_diameter: None,
             ..inputs(20.0, 120.0, 150.0, 6.0)
         };
-        let refusal = keyed_pin_plan(&s, FaceUp::Bottom, ZRotation::Deg0, &no_tool).unwrap_err();
-        assert_eq!(refusal, KeyedPinRefusal::NoPinTool);
-        assert_eq!(refusal.to_string(), NO_PIN_TOOL_MESSAGE);
+        let mut s = stock(140.0, 150.0);
+        assert!((no_tool.plan_pin_diameter(&s) - NOMINAL_DOWEL_MM).abs() < 1e-12);
+        s.alignment_pins = vec![AlignmentPin::new(10.0, 75.0, 8.0)];
+        assert!((no_tool.plan_pin_diameter(&s) - 8.0).abs() < 1e-12);
+        let pins = keyed_pin_plan(&s, FaceUp::Bottom, ZRotation::Deg0, &no_tool).unwrap();
+        assert!(
+            pins.iter().all(|p| (p.diameter - 8.0).abs() < 1e-12),
+            "{pins:?}"
+        );
     }
 }

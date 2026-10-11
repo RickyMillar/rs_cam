@@ -7,7 +7,9 @@
 //! - `keying.rs` — the intrinsic keying check: the closest turn of the
 //!   part that also puts every hole on a dowel ([`closest_wrong_seating`]).
 //! - `placement.rs` — [`place_keyed_pins`]: one pin on the flip axis plus a
-//!   mirror pair, in the clear strips beside the model.
+//!   mirror pair, in the clear area of the stock (P6).
+//! - `walls.rs` — [`pin_walls`] and [`pin_wall_findings`]: the wall of each
+//!   pin to the stock edge, the part, the keep-outs and the fixtures (P6).
 //! - `pattern.rs` — pure set edits: move, diameter, snap to the flip, and
 //!   the presets with their read-back (P4).
 //! - this file — the pin type, the setup map ([`PinSetupMap`]), its flip
@@ -20,13 +22,15 @@
 mod keying;
 mod pattern;
 mod placement;
+mod walls;
 
 pub use keying::{WrongSeating, closest_wrong_seating, keying_bar_mm, pattern_is_keyed};
 pub use pattern::{
     AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, fit_axis_plus_mirror_pair,
     set_diameter, snap_to_flip, translate, two_mixed_diameters,
 };
-pub use placement::{PinPlacementError, PinPlacementRequest, PinSide, place_keyed_pins};
+pub use placement::{PinPlacementError, PinPlacementRequest, place_keyed_pins};
+pub use walls::{NamedWall, PinObstacle, PinObstacleKind, PinWalls, pin_wall_findings, pin_walls};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,9 +51,17 @@ impl AlignmentPin {
     }
 }
 
-/// Clearance demanded between a pin's physical edge and any boundary —
-/// the stock edge on one side, the model bbox on the other.
+/// Clearance demanded between a pin's physical edge and any boundary: the
+/// stock edge, the part footprint, a keep-out zone or a fixture, and the
+/// other pins (P6).
 pub const PIN_WALL_MM: f64 = 2.0;
+
+/// The pin diameter when no tool drills the pin holes and no pin is
+/// stored: the 6 mm dowel of the live projects (the `diameter = 6.0` pins
+/// of `planning/rivmap_block_job/testpiece_mini.toml`). It is a stated
+/// default, not a measurement; the pin-tool finding says when the tool
+/// that drills the holes differs from the pins.
+pub const NOMINAL_DOWEL_MM: f64 = 6.0;
 
 /// Two pin positions closer than this are the same physical hole — a
 /// dowel will drop into either.
@@ -241,6 +253,12 @@ pub enum PinFindingKind {
     DoesNotSeat,
     /// The part also seats turned on the dowels.
     NotKeyed,
+    /// A pin leaves less than [`PIN_WALL_MM`] of material to the stock
+    /// edge, the part, a keep-out zone or a fixture, or cuts into it (P6).
+    ThinWall,
+    /// The pin diameter differs from the tool that drills the pin holes
+    /// (P6).
+    PinToolMismatch,
 }
 
 impl PinFindingKind {
@@ -266,6 +284,15 @@ impl PinFindingKind {
                  the axis, or two pins of different diameters. Do not put the three pins in a \
                  line or in an equilateral triangle. The stock panel's \"Auto-place keyed \
                  pins\" places the first pattern."
+            }
+            PinFindingKind::ThinWall => {
+                "Move the pin into clear material: outside the part, the keep-out zones and the \
+                 fixtures, with a wall to each of them and to the stock edge. The stock panel's \
+                 \"Auto-place keyed pins\" searches the clear area."
+            }
+            PinFindingKind::PinToolMismatch => {
+                "Give the pins the diameter of the drill that makes the holes, or choose the \
+                 drill of the dowel size for the pin-drill operation."
             }
         }
     }
@@ -528,4 +555,27 @@ pub fn pin_findings_for_setups(
         }
     }
     out
+}
+
+/// The finding when the pins and the tool that drills their holes do not
+/// agree (P6).
+///
+/// `tool_diameter` is the diameter of the tool that drills the pin holes
+/// (`ProjectSession::pin_drill_tool_diameter`). A hole is the size of its
+/// drill, so a dowel of another size does not fit it. No pins or no tool:
+/// no finding (with no tool there is no hole to compare).
+#[must_use]
+pub fn pin_tool_finding(pins: &[AlignmentPin], tool_diameter: Option<f64>) -> Option<PinFinding> {
+    let tool = tool_diameter?;
+    let worst = pins
+        .iter()
+        .map(|p| p.diameter)
+        .max_by(|a, b| (a - tool).abs().total_cmp(&(b - tool).abs()))?;
+    ((worst - tool).abs() > PIN_GEOM_EPS_MM).then(|| PinFinding {
+        kind: PinFindingKind::PinToolMismatch,
+        text: format!(
+            "An alignment pin is {worst:.2} mm, but the tool that drills the pin holes is \
+             {tool:.2} mm. The dowel does not fit the hole."
+        ),
+    })
 }

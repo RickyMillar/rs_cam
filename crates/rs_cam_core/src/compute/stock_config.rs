@@ -7,8 +7,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::compute::alignment_pins::{
-    AlignmentPin, PIN_WALL_MM, PinFinding, PinFlipReport, PinPlacementError, PinPlacementRequest,
-    PinSetupMap, pin_findings_for_setups, pin_flip_map, place_keyed_pins, validate_pins_for_flip,
+    AlignmentPin, PIN_WALL_MM, PinFinding, PinFlipReport, PinObstacle, PinPlacementError,
+    PinPlacementRequest, PinSetupMap, pin_findings_for_setups, pin_flip_map, pin_wall_findings,
+    place_keyed_pins, validate_pins_for_flip,
 };
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::BoundingBox3;
@@ -158,32 +159,54 @@ impl StockConfig {
     /// Three registration pins (one on the flip axis, a mirror pair off
     /// it) that key the flipped setup, or a stated reason why none exist.
     ///
-    /// `model_bbox` is in WORLD mm (as models carry it); the stock origin
-    /// is subtracted here because `alignment_pins` are stock-local. Pass
-    /// `None` only when no model is loaded — passing `None` to dodge a
-    /// refusal puts pins through the part.
+    /// `obstacles` are in WORLD mm (as models, keep-outs and fixtures
+    /// carry them); the stock origin is subtracted here because
+    /// `alignment_pins` are stock-local. Pass an empty list only when no
+    /// part, keep-out or fixture exists — an empty list to dodge a refusal
+    /// puts pins through the part.
     ///
-    /// `pin_diameter` must come from the tool the pin-drill operation
-    /// will run. A hole planned at 6 mm and drilled with a 3 mm cutter is
-    /// a hole no 6 mm dowel ever sees, and the wall check above was then
-    /// computed against a pin that does not exist.
+    /// `pin_diameter` comes from the tool that drills the pin holes
+    /// (`ProjectSession::pin_drill_tool_diameter`) when one does. A hole
+    /// planned at 6 mm and drilled with a 3 mm cutter is a hole no 6 mm
+    /// dowel ever sees.
     pub fn plan_keyed_pins(
         &self,
         face_up: FaceUp,
         z_rotation: ZRotation,
-        model_bbox: Option<&BoundingBox3>,
+        obstacles: &[PinObstacle],
         pin_diameter: f64,
     ) -> Result<[AlignmentPin; 3], PinPlacementError> {
-        let model_x_range = model_bbox.map(|b| (b.min.x - self.origin_x, b.max.x - self.origin_x));
-        place_keyed_pins(PinPlacementRequest {
+        place_keyed_pins(&PinPlacementRequest {
             stock_w: self.x,
             stock_d: self.y,
-            model_x_range,
+            obstacles: self.obstacles_to_local(obstacles),
             face_up,
             z_rotation,
             pin_diameter,
             wall_mm: PIN_WALL_MM,
         })
+    }
+
+    /// The wall findings of the stored pins (P6): a pin with less than
+    /// [`PIN_WALL_MM`] to the stock edge, the part, a keep-out zone or a
+    /// fixture. `obstacles` are in WORLD mm, as for
+    /// [`Self::plan_keyed_pins`].
+    #[must_use]
+    pub fn pin_wall_findings(&self, obstacles: &[PinObstacle]) -> Vec<PinFinding> {
+        pin_wall_findings(
+            &self.alignment_pins,
+            self.x,
+            self.y,
+            &self.obstacles_to_local(obstacles),
+        )
+    }
+
+    /// World-frame obstacles moved into the stock-local pin frame.
+    fn obstacles_to_local(&self, obstacles: &[PinObstacle]) -> Vec<PinObstacle> {
+        obstacles
+            .iter()
+            .map(|o| o.translated(-self.origin_x, -self.origin_y))
+            .collect()
     }
 
     /// What this stock's stored pins do under one setup (`face_up` and
