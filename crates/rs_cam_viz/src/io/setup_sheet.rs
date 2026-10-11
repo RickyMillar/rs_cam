@@ -226,6 +226,26 @@ tr:nth-child(even) {{ background: #24242e; }}
     let setups = session.list_setups();
     if setups.len() > 1 {
         let _ = std::fmt::Write::write_str(&mut html, "<h2>Setups</h2>\n");
+        // P10: the dowel list, once. Every setup has the same list (the
+        // dowels stay in the spoilboard), from the one core builder that
+        // the per-setup G-code header reads too.
+        if let Some(notes) = setups.first().and_then(|s| session.pin_setup_notes(s.id)) {
+            let (lead, dowels) = notes.pin_lines.split_first().unzip();
+            let _ = std::fmt::Write::write_fmt(
+                &mut html,
+                format_args!(
+                    "<p class=\"dowels\">{}</p>\n<ul>\n",
+                    escape_html(lead.map_or("", String::as_str))
+                ),
+            );
+            for line in dowels.unwrap_or_default() {
+                let _ = std::fmt::Write::write_fmt(
+                    &mut html,
+                    format_args!("<li>{}</li>\n", escape_html(line)),
+                );
+            }
+            let _ = std::fmt::Write::write_str(&mut html, "</ul>\n");
+        }
         let mut prev_face = rs_cam_core::compute::transform::FaceUp::Top;
         for (i, setup) in setups.iter().enumerate() {
             let _ = std::fmt::Write::write_fmt(
@@ -268,6 +288,25 @@ tr:nth-child(even) {{ background: #24242e; }}
                         setup.face_up.flip_instruction(),
                     ),
                 );
+            }
+            // P10: the setup that drills the dowel holes, and the seat
+            // line, the cue and the warning of a flipped setup.
+            if let Some(notes) = session.pin_setup_notes(setup.id) {
+                let mut lines: Vec<String> = Vec::new();
+                if notes.drills_holes {
+                    lines.push(format!(
+                        "This setup drills the dowel holes {}.",
+                        notes.dowel_range
+                    ));
+                }
+                lines.extend(notes.seat.iter().map(|seat| format!("{seat}.")));
+                lines.extend(notes.cue.iter().chain(&notes.warning).cloned());
+                for line in lines {
+                    let _ = std::fmt::Write::write_fmt(
+                        &mut html,
+                        format_args!("<p class=\"dowels\">{}</p>\n", escape_html(&line)),
+                    );
+                }
             }
             prev_face = setup.face_up;
         }

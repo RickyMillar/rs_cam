@@ -703,6 +703,12 @@ pub fn export_per_setup_files(
 /// states that declared datum, and for the `StockTop` default the
 /// coordinates are already zeroed to the top.
 ///
+/// P10 (2026-10-12): when the stock has alignment pins and a setup flips
+/// the part, every file lists the dowels, the file that drills the dowel
+/// holes says so, and a flipped file adds the seat line to its turn
+/// message, one orientation cue and, when the dowels do not key the flip,
+/// one warning line.
+///
 /// `index` is 0-based; `total` is the number of files written.
 pub fn setup_file_header(
     session: &ProjectSession,
@@ -736,6 +742,24 @@ pub fn setup_file_header(
     header.push_str(&post.render_comment(&format!(
         "DATUM: X0 Y0 = stock min corner (SAME in every setup file); {z_datum}"
     )));
+    // P10: the dowels, when the stock has pins and a setup flips the part.
+    // The text comes from core (`ProjectSession::pin_setup_notes`), which
+    // the setup sheet reads too. The budget is 3 + N lines for N dowels.
+    let pin_notes = session.pin_setup_notes(setup_id);
+    if let Some(notes) = &pin_notes {
+        for line in &notes.pin_lines {
+            header.push_str(&post.render_comment(line));
+        }
+        if notes.drills_holes {
+            header.push_str(&post.render_comment(&format!(
+                "This file drills the dowel holes {}.",
+                notes.dowel_range
+            )));
+        }
+        for line in notes.cue.iter().chain(&notes.warning) {
+            header.push_str(&post.render_comment(line));
+        }
+    }
     if index > 0 {
         // An operator message: a MSG line on grblHAL, so the sender shows
         // it before the file starts to cut.
@@ -759,7 +783,13 @@ pub fn setup_file_header(
             let to = setup.map_or_else(String::new, |s| {
                 format!("{} {}", s.face_up.label(), s.z_rotation.label())
             });
-            format!("TURN THE PART BEFORE RUNNING ({from}{to}) -- KEEP the same X/Y zero; {z_note}")
+            let seat = pin_notes
+                .as_ref()
+                .and_then(|n| n.seat.as_deref())
+                .map_or_else(String::new, |seat| format!("{seat}; "));
+            format!(
+                "TURN THE PART BEFORE RUNNING ({from}{to}) -- {seat}KEEP the same X/Y zero; {z_note}"
+            )
         } else {
             "SAME POSITION as the previous file -- do not move the part or the zero".to_owned()
         };
