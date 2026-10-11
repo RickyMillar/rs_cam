@@ -80,6 +80,10 @@ pub struct ViewportState {
     pub show_keep_outs: bool,
     pub show_alignment_pins: bool,
     pub show_flip_axis: bool,
+    /// The wrong-orientation ghost: the holes after the closest wrong
+    /// seating of the pins, as red dashed circles (P7). It draws only when
+    /// the pins do not key.
+    pub show_pin_ghost: bool,
     pub show_polygons: bool,
     /// The camera-axis triad painted in the viewport corner by egui.
     pub show_orientation_gizmo: bool,
@@ -227,6 +231,7 @@ impl ViewportState {
             show_keep_outs: true,
             show_alignment_pins: true,
             show_flip_axis: true,
+            show_pin_ghost: true,
             show_polygons: true,
             show_orientation_gizmo: true,
             show_cutting: true,

@@ -40,6 +40,9 @@ impl RsCamApp {
                 workspace,
                 crate::state::viewport::ToolpathDrawFilter::from_state(state),
                 drill_pick,
+                crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                    .map(|(frame, _)| frame)
+                    .as_ref(),
             )
         };
 
@@ -171,12 +174,21 @@ impl RsCamApp {
             ) => {
                 self.controller.state_mut().selection = Selection::KeepOut(setup_id, keep_out_id);
             }
-            (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { .. }) => {
-                // Pins are stock-level; selecting a pin selects the stock.
-                self.controller.state_mut().selection = Selection::Stock;
+            (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { pin_index }) => {
+                // Pins are stock-level: a pin click opens the stock panel
+                // with that pin's row marked (P7), and the viewport rings
+                // the pin.
+                let state = self.controller.state_mut();
+                state.selection = Selection::Stock;
+                state.panels.selected_pin = Some(pin_index);
+                self.controller.set_pending_upload();
             }
             (_, PickHit::StockFace { .. }) => {
-                self.controller.state_mut().selection = Selection::Stock;
+                let state = self.controller.state_mut();
+                state.selection = Selection::Stock;
+                if state.panels.selected_pin.take().is_some() {
+                    self.controller.set_pending_upload();
+                }
             }
             (Workspace::Simulation, PickHit::CollisionMarker { index }) => {
                 // Jump playback to the collision move. The markers are the
@@ -327,6 +339,9 @@ impl RsCamApp {
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
+                    crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                        .map(|(frame, _)| frame)
+                        .as_ref(),
                 )
             {
                 self.last_hover_face = Some(face_id);
@@ -365,6 +380,9 @@ impl RsCamApp {
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
+                    crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                        .map(|(frame, _)| frame)
+                        .as_ref(),
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
             {
@@ -486,6 +504,7 @@ impl RsCamApp {
                 || state.viewport.show_keep_outs
                 || state.viewport.show_alignment_pins
                 || state.viewport.show_flip_axis
+                || state.viewport.show_pin_ghost
                 || state.viewport.show_datum,
             show_polygons: state.viewport.show_polygons
                 && state.session.models().iter().any(|m| m.polygons.is_some()),
@@ -583,6 +602,9 @@ impl RsCamApp {
 
         if area_regions_drawn {
             self.draw_area_region_labels(ui, rect);
+        }
+        if workspace != Workspace::Simulation {
+            self.draw_pin_numbers(ui, rect);
         }
 
         // Draw orientation gizmo overlay (2D, on top of the 3D viewport)

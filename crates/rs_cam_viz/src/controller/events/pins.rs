@@ -92,6 +92,29 @@ pub(crate) const PIN_DRILL_NEEDS_TOOL: &str = "The pin-drill operation was not c
      operation names the drill for the pin holes. Add a drill operation with the drill of \
      the dowel size, then edit the pins again.";
 
+/// Why the door cannot create the pin-drill operation now, or `None` when
+/// it can: [`PIN_DRILL_NEEDS_TOP_SETUP`] with no `Top` setup at 0 deg, else
+/// [`PIN_DRILL_NEEDS_TOOL`] with no tool that drills the pin holes.
+///
+/// The door and the stock panel's pin-drill chip read this one function,
+/// so the chip states the refusal the door gives.
+pub(crate) fn pin_drill_blocker(
+    session: &rs_cam_core::session::ProjectSession,
+) -> Option<&'static str> {
+    use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+    let has_top = session
+        .list_setups()
+        .iter()
+        .any(|s| s.face_up == FaceUp::Top && s.z_rotation == ZRotation::Deg0);
+    if !has_top {
+        return Some(PIN_DRILL_NEEDS_TOP_SETUP);
+    }
+    if session.pin_drill_tool_id().is_none() {
+        return Some(PIN_DRILL_NEEDS_TOOL);
+    }
+    None
+}
+
 impl<B: ComputeBackend> AppController<B> {
     /// Apply one pin row and run the rest of the door.
     ///
@@ -220,16 +243,20 @@ impl<B: ComputeBackend> AppController<B> {
     fn create_pin_drill(&mut self, holes: Vec<[f64; 2]>) -> PinDrillSync {
         use crate::state::toolpath::{AlignmentPinDrillConfig, OperationConfig};
 
-        // C7: the first Top setup at 0 deg, not setup index 0.
-        let Some(setup_idx) = self.state.session.list_setups().iter().position(|s| {
-            s.face_up == rs_cam_core::compute::transform::FaceUp::Top
-                && s.z_rotation == rs_cam_core::compute::transform::ZRotation::Deg0
-        }) else {
+        // C7: the first Top setup at 0 deg, not setup index 0. P6: the
+        // tool of a drilling operation, never `tools[0]`. One check,
+        // shared with the stock panel's chip.
+        if let Some(reason) = pin_drill_blocker(&self.state.session) {
+            return PinDrillSync::Refused(reason.to_owned());
+        }
+        let (Some(setup_idx), Some(tool_id)) = (
+            self.state.session.list_setups().iter().position(|s| {
+                s.face_up == rs_cam_core::compute::transform::FaceUp::Top
+                    && s.z_rotation == rs_cam_core::compute::transform::ZRotation::Deg0
+            }),
+            self.state.session.pin_drill_tool_id(),
+        ) else {
             return PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned());
-        };
-        // P6: the tool of a drilling operation, never `tools[0]`.
-        let Some(tool_id) = self.state.session.pin_drill_tool_id() else {
-            return PinDrillSync::Refused(PIN_DRILL_NEEDS_TOOL.to_owned());
         };
         let model_id = self
             .state

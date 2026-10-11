@@ -659,7 +659,10 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: always_on_default,
-        hover: "Green circles at the pin centres. Authored in the Stock panel.",
+        hover: "A numbered circle at each pin centre. Green: every check passes. \
+                Amber: a wall is thinner than 2 mm. Red: the pin does not seat \
+                after the flip, or the set does not key. Edit the pins in the \
+                Stock panel; a click on a pin marks its row there.",
     },
     OverlayRow {
         id: "flip_axis",
@@ -692,6 +695,36 @@ pub const ROWS: &[OverlayRow] = &[
         },
         default_for: geometry_default,
         hover: "The dashed centreline a two-sided job flips about, from the flipped setup.",
+    },
+    OverlayRow {
+        id: "pin_ghost",
+        group: OverlayGroup::Geometry,
+        label: "Wrong-orientation ghost",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
+        flag: Some("viewport.show_pin_ghost"),
+        radio: false,
+        get: |s| s.viewport.show_pin_ghost,
+        set: |s, on| s.viewport.show_pin_ghost = on,
+        // P7: the ghost shows why a set does not key. A keyed set has no
+        // seating to show, so the row is refused with that reason; the
+        // flag stays on, and the ghost returns when an edit un-keys the set.
+        precondition: |s| {
+            if s.session.stock_config().alignment_pins.is_empty() {
+                return Precondition::no("no alignment pin on this stock");
+            }
+            if s.session.pin_set_report().flip.keyed() {
+                Precondition::no("the pins key: no turn of the part seats it on the dowels")
+            } else {
+                Precondition::Ready
+            }
+        },
+        default_for: geometry_default,
+        hover: "Red dashed rings where the holes land when the part seats \
+                turned on the dowels. A ring round a real pin means the part \
+                can go on the wrong way round. Each ring sits one hole slop \
+                outside its hole, so it shows round a pin it lands on. It draws only \
+                when the pins do not key.",
     },
     OverlayRow {
         id: "curves",
@@ -1611,6 +1644,7 @@ pub const PREFERENCE_OVERLAYS: &[&str] = &[
     "keep_outs",
     "alignment_pins",
     "flip_axis",
+    "pin_ghost",
     "curves",
     "orientation_gizmo",
     "cutting_moves",

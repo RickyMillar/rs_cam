@@ -184,6 +184,20 @@ fn best_fit(pins: &[AlignmentPin], matches: &[usize]) -> Option<Motion> {
 /// is a 180 deg turn that misses by zero.
 #[must_use]
 pub fn closest_wrong_seating(pins: &[AlignmentPin]) -> Option<WrongSeating> {
+    closest_wrong_seating_images(pins).map(|(seating, _)| seating)
+}
+
+/// [`closest_wrong_seating`] and where each hole of `pins` lands in that
+/// wrong seating, in the stock-local frame and in pin order.
+///
+/// The viewport draws these points as the "wrong-orientation ghost". When
+/// a ghost hole falls on a real dowel, the part seats in that wrong
+/// position. One pin, or pins that all sit on the centroid, turn freely:
+/// the images are then the half turn about the centroid.
+#[must_use]
+pub fn closest_wrong_seating_images(
+    pins: &[AlignmentPin],
+) -> Option<(WrongSeating, Vec<(f64, f64)>)> {
     if pins.is_empty() {
         return None;
     }
@@ -199,15 +213,19 @@ pub fn closest_wrong_seating(pins: &[AlignmentPin]) -> Option<WrongSeating> {
         .max_by(|a, b| radius(a.1).total_cmp(&radius(b.1)))?;
     let far_radius = radius(far);
     if far_radius <= PIN_MATCH_TOL_MM {
-        return Some(WrongSeating {
-            turn_deg: 180.0,
-            miss_mm: 0.0,
-        });
+        let half_turn = Motion::rotation_about(centre, std::f64::consts::PI);
+        return Some((
+            WrongSeating {
+                turn_deg: 180.0,
+                miss_mm: 0.0,
+            },
+            pins.iter().map(|p| half_turn.apply(p.x, p.y)).collect(),
+        ));
     }
     let gate = 2.0 * keying_bar_mm(pins);
     let far_angle = (far.y - centre.1).atan2(far.x - centre.0);
 
-    let mut best: Option<WrongSeating> = None;
+    let mut best: Option<(WrongSeating, Motion)> = None;
     for (k, target) in pins.iter().enumerate() {
         if k == far_index || (radius(target) - far_radius).abs() > gate {
             continue;
@@ -242,11 +260,14 @@ pub fn closest_wrong_seating(pins: &[AlignmentPin]) -> Option<WrongSeating> {
             turn_deg: motion.turn_deg(),
             miss_mm: fit.miss_mm,
         };
-        if best.is_none_or(|b| seating.miss_mm < b.miss_mm) {
-            best = Some(seating);
+        if best.is_none_or(|(b, _)| seating.miss_mm < b.miss_mm) {
+            best = Some((seating, motion));
         }
     }
-    best
+    best.map(|(seating, motion)| {
+        let images = pins.iter().map(|p| motion.apply(p.x, p.y)).collect();
+        (seating, images)
+    })
 }
 
 /// `true` when no wrong seating of `pins` comes within the keying bar.

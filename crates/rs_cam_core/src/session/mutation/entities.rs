@@ -636,6 +636,15 @@ impl ProjectSession {
         })
     }
 
+    /// Store which models count as the part for the pins (P7). `None` is
+    /// the default rule. The choice moves no pin and no toolpath, so the
+    /// stale set is empty.
+    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<usize>>) -> Effects {
+        self.with_effects(None, move |session| {
+            session.stock.pin_part_models = models;
+        })
+    }
+
     /// Add an alignment pin, deduping against existing pins within 0.01mm.
     ///
     /// A thin form of [`Self::set_alignment_pins`]: one more pin, the same

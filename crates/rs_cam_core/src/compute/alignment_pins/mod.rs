@@ -31,7 +31,10 @@ mod walls;
 pub use hole_sources::{
     DrilledHole, HoleOp, HoleOpKind, HoleSourceFinding, HoleSourceKind, hole_source_findings,
 };
-pub use keying::{WrongSeating, closest_wrong_seating, keying_bar_mm, pattern_is_keyed};
+pub use keying::{
+    WrongSeating, closest_wrong_seating, closest_wrong_seating_images, keying_bar_mm,
+    pattern_is_keyed,
+};
 pub use pattern::{
     AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, fit_axis_plus_mirror_pair,
     fit_two_mixed_diameters, set_diameter, snap_to_flip, translate, two_mixed_diameters,
@@ -474,19 +477,30 @@ impl PinFlipReport {
 /// or larger; a bigger dowel does not enter a smaller hole. The dowel's
 /// own hole always fits it, so the result is finite.
 fn reseat_mismatch_mm(pins: &[AlignmentPin], map: impl Fn(&AlignmentPin) -> (f64, f64)) -> f64 {
+    seat_miss_per_pin_mm(pins, map)
+        .into_iter()
+        .filter(|m| m.is_finite())
+        .fold(0.0, f64::max)
+}
+
+/// For each dowel of `pins`, in pin order, the distance to the nearest
+/// hole that it fits after `map` moves the holes. The stock panel and the
+/// viewport colour a pin that finds no hole (P7);
+/// [`PinFlipReport::seat_mismatch_mm`] is the worst of these.
+pub fn seat_miss_per_pin_mm(
+    pins: &[AlignmentPin],
+    map: impl Fn(&AlignmentPin) -> (f64, f64),
+) -> Vec<f64> {
     let holes: Vec<((f64, f64), f64)> = pins.iter().map(|p| (map(p), p.diameter)).collect();
-    let mut worst: f64 = 0.0;
-    for dowel in pins {
-        let nearest = holes
-            .iter()
-            .filter(|(_, hole_d)| dowel.diameter <= hole_d + PIN_GEOM_EPS_MM)
-            .map(|((hx, hy), _)| (hx - dowel.x).hypot(hy - dowel.y))
-            .fold(f64::INFINITY, f64::min);
-        if nearest.is_finite() && nearest > worst {
-            worst = nearest;
-        }
-    }
-    worst
+    pins.iter()
+        .map(|dowel| {
+            holes
+                .iter()
+                .filter(|(_, hole_d)| dowel.diameter <= hole_d + PIN_GEOM_EPS_MM)
+                .map(|((hx, hy), _)| (hx - dowel.x).hypot(hy - dowel.y))
+                .fold(f64::INFINITY, f64::min)
+        })
+        .collect()
 }
 
 /// Judge an existing pin set against one setup.

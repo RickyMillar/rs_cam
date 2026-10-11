@@ -161,6 +161,16 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            (Command, SetPinPartModels, "set_pin_part_models", SetPinPartModelsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the wire reads the choice in pin_report; the stock panel sets it",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, AddAlignmentPin, "add_alignment_pin", AddAlignmentPinArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
@@ -1210,6 +1220,19 @@ pub struct Effects {
 pub struct SetAlignmentPinsArgs {
     /// The new pin set, stock-local, in millimetres.
     pub pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
+}
+
+/// The arguments of the `set_pin_part_models` command (P7).
+///
+/// The command stores which models count as the part for the pin placer
+/// and the pin wall check. `None` returns to the default rule
+/// (`ProjectSession::default_pin_part_models`). The choice moves no pin
+/// and no toolpath, so the command stales nothing. A value equal to the
+/// stored value reports an empty [`Effects`].
+#[derive(Debug, Clone)]
+pub struct SetPinPartModelsArgs {
+    /// The model ids, or `None` for the default rule.
+    pub models: Option<Vec<usize>>,
 }
 
 /// The arguments of the `add_alignment_pin` command.
@@ -2430,6 +2453,7 @@ impl ProjectSession {
             // the whole point of the move, and N15 measured what two
             // producers cost.
             Command::SetAlignmentPins(args) => Ok(self.set_alignment_pins(args.pins)),
+            Command::SetPinPartModels(args) => Ok(self.set_pin_part_models(args.models)),
             Command::AddAlignmentPin(args) => {
                 let added = self.add_alignment_pin(args.x, args.y, args.diameter);
                 // A duplicate pin changes nothing, and "changed

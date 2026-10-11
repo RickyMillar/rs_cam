@@ -2,6 +2,7 @@
 
 mod events;
 pub(crate) use events::pins::PinDrillSync;
+pub(crate) use events::pins::{PIN_DRILL_NEEDS_TOOL, pin_drill_blocker};
 pub mod generate_all;
 #[cfg(test)]
 #[allow(

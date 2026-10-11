@@ -119,6 +119,14 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
     // out of it again, and this row drops every toolpath result — so an
     // ungated apply would drop the project on a click that typed
     // nothing. The event this replaced was gated on `changed()`.
+    // A draft that moves the pins AND the part-model choice in one frame
+    // (a focused pattern field loses focus to a part-model click) takes
+    // two narrow rows, not one `SetStockConfig` that drops every result.
+    if let Some(first) = part_models_first(state.session.stock_config(), &draft)
+        && apply_panel_command(state, first)
+    {
+        state.gui.mark_edited();
+    }
     let Some(command) = stock_edit_command(state.session.stock_config(), draft) else {
         return;
     };
@@ -143,15 +151,18 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
 ///
 /// P4 (operator ruling 2026-10-12): an edit that moves ONLY the alignment
 /// pins is `Command::SetAlignmentPins`, which stales the pin-drill
-/// operations and what depends on them. Any other stock edit is
-/// `Command::SetStockConfig`, which drops every result. The stock panel
-/// and both undo arms call this function, so an undo of a pin edit stales
-/// the same set as the edit.
+/// operations and what depends on them. P7: an edit of ONLY the part-model
+/// choice is `Command::SetPinPartModels`, which stales nothing. Any other
+/// stock edit is `Command::SetStockConfig`, which drops every result. The
+/// stock panel and both undo arms call this function, so an undo of a pin
+/// edit stales the same set as the edit.
 pub(crate) fn stock_edit_command(
     stored: &crate::state::job::StockConfig,
     draft: crate::state::job::StockConfig,
 ) -> Option<rs_cam_core::session::Command> {
-    use rs_cam_core::session::{Command, SetAlignmentPinsArgs, SetStockConfigArgs};
+    use rs_cam_core::session::{
+        Command, SetAlignmentPinsArgs, SetPinPartModelsArgs, SetStockConfigArgs,
+    };
     if draft == *stored {
         return None;
     }
@@ -159,13 +170,45 @@ pub(crate) fn stock_edit_command(
         alignment_pins: stored.alignment_pins.clone(),
         ..draft.clone()
     } == *stored;
+    let part_models_only = crate::state::job::StockConfig {
+        pin_part_models: stored.pin_part_models.clone(),
+        ..draft.clone()
+    } == *stored;
     Some(if pins_only {
         Command::SetAlignmentPins(SetAlignmentPinsArgs {
             pins: draft.alignment_pins,
         })
+    } else if part_models_only {
+        Command::SetPinPartModels(SetPinPartModelsArgs {
+            models: draft.pin_part_models,
+        })
     } else {
         Command::SetStockConfig(SetStockConfigArgs {
             stock: Box::new(draft),
+        })
+    })
+}
+
+/// The `SetPinPartModels` row to apply BEFORE [`stock_edit_command`], when
+/// `draft` differs from `stored` in the part-model choice AND the pins and
+/// in nothing else. After it, the rest of the draft is a pin-only edit,
+/// which [`stock_edit_command`] gives as `SetAlignmentPins`. `None` in
+/// every other case. The stock panel and the undo arm both call it.
+pub(crate) fn part_models_first(
+    stored: &crate::state::job::StockConfig,
+    draft: &crate::state::job::StockConfig,
+) -> Option<rs_cam_core::session::Command> {
+    use rs_cam_core::session::{Command, SetPinPartModelsArgs};
+    let both = draft.pin_part_models != stored.pin_part_models
+        && draft.alignment_pins != stored.alignment_pins;
+    let only_those = crate::state::job::StockConfig {
+        alignment_pins: stored.alignment_pins.clone(),
+        pin_part_models: stored.pin_part_models.clone(),
+        ..draft.clone()
+    } == *stored;
+    (both && only_those).then(|| {
+        Command::SetPinPartModels(SetPinPartModelsArgs {
+            models: draft.pin_part_models.clone(),
         })
     })
 }

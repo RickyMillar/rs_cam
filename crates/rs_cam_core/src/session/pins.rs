@@ -50,6 +50,26 @@ impl ProjectSession {
             .collect()
     }
 
+    /// The models that count as the part for the pin placer and the pin
+    /// wall check: the operator's choice (`StockConfig::pin_part_models`,
+    /// P7) when one is stored, else [`Self::default_pin_part_models`].
+    ///
+    /// A stored id with no loaded model is dropped, so a removed model
+    /// does not stay part. Every reader takes this answer: the stock
+    /// panel, the placer, the project findings and the MCP `pin_report`.
+    #[must_use]
+    pub fn pin_part_models(&self) -> Vec<ModelId> {
+        match &self.stock.pin_part_models {
+            Some(chosen) => self
+                .models
+                .iter()
+                .filter(|m| chosen.contains(&m.id))
+                .map(|m| ModelId(m.id))
+                .collect(),
+            None => self.default_pin_part_models(),
+        }
+    }
+
     /// The pin diameters: each stored pin diameter and the diameter of the
     /// tool that drills the pin holes.
     fn pin_diameters(&self) -> Vec<f64> {
@@ -176,13 +196,13 @@ impl ProjectSession {
     }
 
     /// The pin findings that need the session and not only the stock: a
-    /// wall thinner than `PIN_WALL_MM` to the stock edge, to the default
-    /// part models ([`Self::default_pin_part_models`]), to a keep-out
+    /// wall thinner than `PIN_WALL_MM` to the stock edge, to the part
+    /// models ([`Self::pin_part_models`]), to a keep-out
     /// zone or to a fixture, and a pin diameter that differs from the
     /// tool that drills the holes.
     #[must_use]
     pub fn pin_placement_findings(&self) -> Vec<PinFinding> {
-        let obstacles = self.pin_obstacles(&self.default_pin_part_models());
+        let obstacles = self.pin_obstacles(&self.pin_part_models());
         let mut out = self.stock.pin_wall_findings(&obstacles);
         out.extend(pin_tool_finding(
             &self.stock.alignment_pins,

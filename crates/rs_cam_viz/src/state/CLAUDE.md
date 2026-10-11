@@ -18,7 +18,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
   and the viewport dock and catalogue state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
   undo, the export wizard, the planner and the Rest predecessor rule.
-- `panels.rs`, `app_settings.rs` — panel drafts; `settings.toml` values.
+- `panels.rs`, `app_settings.rs`, `pin_view.rs` — drafts; settings; pin frame (C8).
 
 ## Invariants
 

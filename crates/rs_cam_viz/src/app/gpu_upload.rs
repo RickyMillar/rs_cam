@@ -163,33 +163,11 @@ impl RsCamApp {
         // setup's own fixtures, keep-outs and toolpaths; the frame places
         // them. They are read out together because the session borrow ends
         // with this block.
+        // C8: the one selector, shared with the pin numbers and the pick.
         let (active_setup_ref, active_setup_id): (Option<SetupFrame>, Option<SetupId>) = {
             let state = self.controller.state();
-            let sel = &state.selection;
-            let setup_id = match sel {
-                Selection::Setup(id) => Some(*id),
-                Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
-                Selection::Toolpath(tp_id) => {
-                    // Map toolpath ID → setup via session
-                    state
-                        .session
-                        .setup_of_toolpath_id(*tp_id)
-                        .and_then(|idx| state.session.list_setups().get(idx))
-                        .map(|sd| SetupId(sd.id))
-                }
-                _ => None,
-            };
-            let session_setup = if let Some(sid) = setup_id {
-                state
-                    .session
-                    .list_setups()
-                    .iter()
-                    .find(|s| SetupId(s.id) == sid)
-            } else {
-                state.session.list_setups().first()
-            };
-            match session_setup {
-                Some(sd) => (Some(SetupFrame::of(sd)), Some(SetupId(sd.id))),
+            match crate::state::pin_view::active_display_setup(&state.session, &state.selection) {
+                Some((frame, id)) => (Some(frame), Some(id)),
                 None => (None, None),
             }
         };
@@ -706,61 +684,11 @@ impl RsCamApp {
                 }
             }
 
-            // Render stock-level alignment pins as circles (visible in all setups).
-            // Pin coords are stock-relative — add origin to get global for transform_point.
+            // The alignment pins, the wrong-orientation ghost and the flip
+            // axis (P7), in the frame the pick reads (C8).
             let mut pin_vertices: Vec<crate::render::LineVertex> = Vec::new();
-            let ox = stock.origin_x;
-            let oy = stock.origin_y;
-            let oz = stock.origin_z;
             if let Some(setup) = active_setup_ref.as_ref() {
-                for pin in stock
-                    .alignment_pins
-                    .iter()
-                    .filter(|_| state.viewport.show_alignment_pins)
-                {
-                    let radius = (pin.diameter / 2.0) as f32;
-                    // Slight Z offset above stock top to avoid Z-fighting with stock surface.
-                    let global_pt = P3::new(pin.x + ox, pin.y + oy, oz + stock.z + 0.1);
-                    let local_pt = setup.transform_point(global_pt, &stock);
-                    let (cx, cy, cz) = (local_pt.x as f32, local_pt.y as f32, local_pt.z as f32);
-                    let color = [0.2_f32, 0.9, 0.3];
-                    super::push_circle_vertices(&mut pin_vertices, cx, cy, cz, radius, color, 16);
-                }
-
-                // Flip axis dashed centerline, derived from the setups by the
-                // one core selector (P3). The segment is stock-local.
-                let flip_axis = state
-                    .viewport
-                    .show_flip_axis
-                    .then(|| {
-                        stock.pin_flip_map(
-                            state
-                                .session
-                                .list_setups()
-                                .iter()
-                                .map(|sd| (sd.face_up, sd.z_rotation)),
-                        )
-                    })
-                    .flatten()
-                    .and_then(|map| map.axis_segment());
-                if let Some([a, b]) = flip_axis {
-                    let stock_top = oz + stock.z;
-                    let start_g = P3::new(ox + a.0, oy + a.1, stock_top);
-                    let end_g = P3::new(ox + b.0, oy + b.1, stock_top);
-                    let start_l = setup.transform_point(start_g, &stock);
-                    let end_l = setup.transform_point(end_g, &stock);
-                    let s = [start_l.x as f32, start_l.y as f32, start_l.z as f32];
-                    let e = [end_l.x as f32, end_l.y as f32, end_l.z as f32];
-                    let axis_color = [0.9_f32, 0.7, 0.2];
-                    crate::render::toolpath_render::push_dashed_line(
-                        &mut pin_vertices,
-                        s,
-                        e,
-                        axis_color,
-                        5.0,
-                        3.0,
-                    );
-                }
+                super::pin_marks::push_pin_lines(state, setup, &mut pin_vertices);
             }
 
             // Add datum crosshair markers. Datum is always in local frame

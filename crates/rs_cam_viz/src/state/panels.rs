@@ -118,6 +118,13 @@ pub struct PanelDrafts {
     pub stock_change_editor: Option<StockChangeEditor>,
     /// The stock panel's last keyed-pin plan and the hash of its inputs.
     pub keyed_pin_plan: KeyedPinPlanMemo,
+    /// The pin the operator clicked in the viewport (index into the stock
+    /// pins). The stock panel highlights its row and the viewport draws
+    /// its circle twice. A pin count below the index clears it.
+    pub selected_pin: Option<usize>,
+    /// The refusal of the stock panel's last preset click (P7). It stays
+    /// until the next finished pin edit.
+    pub pin_preset_refusal: Option<String>,
 }
 
 /// The result of the keyed-pin placer.
