@@ -15,6 +15,9 @@
 //! - `hole_sources.rs` — [`hole_source_findings`]: a second operation that
 //!   drills the dowel holes again, or drills them where the pins are not
 //!   (P8).
+//! - `setup_notes.rs` — [`pin_setup_notes`]: the dowel list, the seat line
+//!   and the orientation cue of the export header and the setup sheet
+//!   (P10).
 //! - this file — the pin type, the setup map ([`PinSetupMap`]), its flip
 //!   axis ([`PinSetupMap::axis_segment`], [`pin_flip_map`]) and
 //!   [`validate_pins_for_flip`], which judges a stored set.
@@ -26,6 +29,7 @@ mod hole_sources;
 mod keying;
 mod pattern;
 mod placement;
+mod setup_notes;
 mod walls;
 
 pub use hole_sources::{
@@ -40,6 +44,7 @@ pub use pattern::{
     fit_two_mixed_diameters, set_diameter, snap_to_flip, translate, two_mixed_diameters,
 };
 pub use placement::{PinPlacementError, PinPlacementRequest, place_keyed_pins};
+pub use setup_notes::{NOT_KEYED_WARNING, PinSetupNotes, pin_setup_notes};
 pub use walls::{NamedWall, PinObstacle, PinObstacleKind, PinWalls, pin_wall_findings, pin_walls};
 
 use serde::{Deserialize, Serialize};

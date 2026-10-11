@@ -1,10 +1,11 @@
 //! The session inputs of the alignment-pin placer and of the pin wall
 //! check (P6, 2026-10-12): the part models, the obstacles and the tool
-//! that drills the pin holes.
+//! that drills the pin holes. Also the dowel notes of one setup for the
+//! export header and the setup sheet (P10).
 
 use crate::compute::alignment_pins::{
-    PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind,
-    pin_tool_finding,
+    PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind, PinSetupNotes,
+    pin_setup_notes, pin_tool_finding,
 };
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ModelId;
@@ -209,5 +210,65 @@ impl ProjectSession {
             self.pin_drill_tool_diameter(),
         ));
         out
+    }
+
+    /// The dowel notes of the setup `setup_id` for the per-setup G-code
+    /// header and the setup sheet (P10). See
+    /// [`crate::compute::alignment_pins::pin_setup_notes`].
+    ///
+    /// `None` when the stock has no pins, when no setup flips the part in
+    /// the pin plane ([`crate::compute::StockConfig::pin_flip_map`]), or
+    /// when no setup has the id. The pins register a flip; without one,
+    /// the notes do not help the operator.
+    #[must_use]
+    pub fn pin_setup_notes(&self, setup_id: usize) -> Option<PinSetupNotes> {
+        let pins = &self.stock.alignment_pins;
+        if pins.is_empty() {
+            return None;
+        }
+        self.stock
+            .pin_flip_map(self.setups.iter().map(|s| (s.face_up, s.z_rotation)))?;
+        let setup = self.setups.iter().find(|s| s.id == setup_id)?;
+        pin_setup_notes(
+            pins,
+            setup.face_up,
+            setup.z_rotation,
+            self.stock.x,
+            self.stock.y,
+            self.setup_drills_dowel_holes(setup),
+        )
+    }
+
+    /// `true` when `setup` holds an enabled operation that drills the
+    /// dowel holes: an `AlignmentPinDrill` operation, or a drill or
+    /// pocket operation with a hole within [`PIN_MATCH_TOL_MM`] of a pin
+    /// (a drawing of the dowel holes, as in the mini test piece).
+    fn setup_drills_dowel_holes(&self, setup: &super::SetupData) -> bool {
+        let in_setup = |id: usize| {
+            setup.toolpath_indices.iter().any(|&i| {
+                self.toolpath_configs
+                    .get(i)
+                    .is_some_and(|tc| tc.enabled && tc.id.0 == id)
+            })
+        };
+        let pin_drill = setup.toolpath_indices.iter().any(|&i| {
+            self.toolpath_configs.get(i).is_some_and(|tc| {
+                tc.enabled && matches!(tc.operation, OperationConfig::AlignmentPinDrill(_))
+            })
+        });
+        if pin_drill {
+            return true;
+        }
+        let pins = &self.stock.alignment_pins;
+        let (_, hole_ops) = self.dowel_hole_ops();
+        hole_ops
+            .iter()
+            .filter(|op| in_setup(op.toolpath_id))
+            .any(|op| {
+                op.holes.iter().any(|h| {
+                    pins.iter()
+                        .any(|p| (p.x - h.x).hypot(p.y - h.y) <= PIN_MATCH_TOL_MM)
+                })
+            })
     }
 }

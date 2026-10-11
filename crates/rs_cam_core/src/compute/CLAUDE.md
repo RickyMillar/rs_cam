@@ -6,7 +6,7 @@
   `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
   (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
-  `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources), `spans.rs`, `validate.rs`, `generated_empty.rs`.
+  `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources, P10 setup notes), `spans.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
