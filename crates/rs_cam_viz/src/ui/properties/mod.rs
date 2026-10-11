@@ -925,7 +925,15 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         .iter()
         .any(|model| model.mesh.is_some() || model.polygons.is_some());
     let pin_inputs = stock::KeyedPinInputs::from_session(&state.session);
-    let edit = stock::draw(ui, &mut draft, &setup_maps, has_model, &pin_inputs, events);
+    let edit = stock::draw(
+        ui,
+        &mut draft,
+        &setup_maps,
+        has_model,
+        &pin_inputs,
+        &mut state.panels.keyed_pin_plan,
+        events,
+    );
     if edit.committed {
         apply_stock_draft(state, draft.clone());
         // The undo compare runs AFTER the command, so the

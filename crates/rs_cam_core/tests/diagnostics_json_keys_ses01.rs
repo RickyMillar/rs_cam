@@ -223,6 +223,8 @@ fn the_verdict_enums_write_their_own_string_tags() {
         VerdictKind::AlignmentPinsUnkeyed,
         VerdictKind::PinHolesDrilledTwice,
         VerdictKind::DowelHolesDisagree,
+        VerdictKind::PinWallThin,
+        VerdictKind::PinToolMismatch,
         VerdictKind::MeasurabilityAbstained,
     ];
     for kind in kinds {

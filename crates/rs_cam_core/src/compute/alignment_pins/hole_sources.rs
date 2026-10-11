@@ -13,14 +13,7 @@
 //! gives in the stock-local frame (the frame of the pins). It does not read
 //! an operation name.
 
-use super::{AlignmentPin, PIN_MATCH_TOL_MM};
-
-/// Two diameters closer than this are one dowel size.
-///
-/// It is the distance at which `add_alignment_pin` calls two pin positions
-/// one pin (0.01 mm). A CAD export that writes 6 mm as 5.9999 stays one
-/// size, and a 1/4 in dowel (6.35 mm) stays apart from a 6 mm dowel.
-pub const DOWEL_DIAMETER_TOL_MM: f64 = 0.01;
+use super::{AlignmentPin, PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM};
 
 /// One hole that an operation drills, in the stock-local frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,7 +105,7 @@ fn nearest_pin_mm<'a>(pins: impl IntoIterator<Item = &'a AlignmentPin>, x: f64, 
 ///    hole within [`PIN_MATCH_TOL_MM`] of a stock pin.
 /// 2. "Disagree": a [`HoleOpKind::Drill`] operation drills a hole whose
 ///    stated diameter is a pin diameter (within
-///    [`DOWEL_DIAMETER_TOL_MM`]), and no pin of that diameter is within
+///    [`PIN_CAD_ROUNDING_MM`]), and no pin of that diameter is within
 ///    [`PIN_MATCH_TOL_MM`] of it. A bare point has no diameter, so it is
 ///    not judged a dowel hole.
 ///
@@ -159,7 +152,7 @@ pub fn hole_source_findings(
             };
             let same_size: Vec<&AlignmentPin> = pins
                 .iter()
-                .filter(|p| (p.diameter - diameter).abs() <= DOWEL_DIAMETER_TOL_MM)
+                .filter(|p| (p.diameter - diameter).abs() <= PIN_CAD_ROUNDING_MM)
                 .collect();
             if same_size.is_empty() {
                 continue;

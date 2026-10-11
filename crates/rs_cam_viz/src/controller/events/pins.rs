@@ -84,9 +84,13 @@ pub(crate) const PIN_DRILL_NEEDS_TOP_SETUP: &str = "The pin-drill operation was 
      stock-panel positions, and the holes are not turned with a turned setup. Add a Top setup \
      at 0 deg, then edit the pins again.";
 
-/// The refusal when the project has no tool.
-pub(crate) const PIN_DRILL_NEEDS_TOOL: &str = "The pin-drill operation was not created: the \
-     project has no tool. Add a drill, then edit the pins again.";
+/// The refusal when no operation names the tool that drills the pin holes
+/// (`ProjectSession::pin_drill_tool_id`). The door does not take
+/// `tools[0]`: on the mini test piece that is a 3 mm end mill, and 3 mm
+/// holes do not take 6 mm dowels (P6).
+pub(crate) const PIN_DRILL_NEEDS_TOOL: &str = "The pin-drill operation was not created: no \
+     operation names the drill for the pin holes. Add a drill operation with the drill of \
+     the dowel size, then edit the pins again.";
 
 impl<B: ComputeBackend> AppController<B> {
     /// Apply one pin row and run the rest of the door.
@@ -223,7 +227,8 @@ impl<B: ComputeBackend> AppController<B> {
         }) else {
             return PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned());
         };
-        let Some(tool_id) = self.state.session.tools().first().map(|t| t.id.0) else {
+        // P6: the tool of a drilling operation, never `tools[0]`.
+        let Some(tool_id) = self.state.session.pin_drill_tool_id() else {
             return PinDrillSync::Refused(PIN_DRILL_NEEDS_TOOL.to_owned());
         };
         let model_id = self

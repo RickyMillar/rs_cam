@@ -833,8 +833,8 @@ impl RsCamApp {
 ///   name and its parameters, or `custom`. `null` when no flip axis exists.
 pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) -> serde_json::Value {
     use rs_cam_core::compute::alignment_pins::{
-        PIN_WALL_MM, PinFlipKind, PinSetupMap, fit_axis_plus_mirror_pair, fit_two_mixed_diameters,
-        validate_pins_for_flip,
+        PIN_WALL_MM, PinFlipKind, PinObstacleKind, PinSetupMap, fit_axis_plus_mirror_pair,
+        fit_two_mixed_diameters, pin_walls, validate_pins_for_flip,
     };
     use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 
@@ -855,13 +855,53 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
         PinFlipKind::QuarterTurnNotSquare => "quarter_turn_not_square",
         PinFlipKind::EdgeUp => "edge_up",
     };
-    let wall_to_stock_edge_mm = pins
+    // P6: the walls to the stock edge, the default part models, the
+    // keep-out zones and the fixtures. The obstacles are world-frame; the
+    // pins are stock-local.
+    let part_models = session.default_pin_part_models();
+    let local: Vec<_> = session
+        .pin_obstacles(&part_models)
         .iter()
-        .map(|p| {
-            let r = 0.5 * p.diameter;
-            (p.x - r).min(w - p.x - r).min(p.y - r).min(d - p.y - r)
-        })
+        .map(|o| o.translated(-stock.origin_x, -stock.origin_y))
+        .collect();
+    let walls: Vec<_> = pins.iter().map(|p| pin_walls(p, w, d, &local)).collect();
+    let wall_to_stock_edge_mm = walls.iter().map(|w| w.stock_edge_mm).reduce(f64::min);
+    let wall_to_part_mm = walls
+        .iter()
+        .filter_map(|w| w.part.as_ref().map(|n| n.wall_mm))
         .reduce(f64::min);
+    let wall_to_keep_out_mm = walls
+        .iter()
+        .filter_map(|w| w.keep_out.as_ref().map(|n| n.wall_mm))
+        .reduce(f64::min);
+    let named = |n: &rs_cam_core::compute::alignment_pins::NamedWall| {
+        let kind = match n.kind {
+            PinObstacleKind::Part => "part",
+            PinObstacleKind::KeepOut => "keep_out",
+            PinObstacleKind::Fixture => "fixture",
+        };
+        serde_json::json!({ "kind": kind, "name": n.name, "wall_mm": n.wall_mm })
+    };
+    let pin_walls_json: Vec<_> = walls
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            serde_json::json!({
+                "pin": i + 1,
+                "stock_edge_mm": w.stock_edge_mm,
+                "part": w.part.as_ref().map(named),
+                "keep_out": w.keep_out.as_ref().map(named),
+            })
+        })
+        .collect();
+    let part_model_names: Vec<&str> = session
+        .models()
+        .iter()
+        .filter(|m| part_models.contains(&rs_cam_core::ids::ModelId(m.id)))
+        .map(|m| m.name.as_str())
+        .collect();
+    let mut findings = report.warnings();
+    findings.extend(session.pin_placement_findings().into_iter().map(|f| f.text));
     let preset = map.axis_segment().map(|_| {
         if let Some(fit) = fit_axis_plus_mirror_pair(pins, &map) {
             serde_json::json!({
@@ -908,8 +948,13 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
         })),
         "out_of_bounds": report.out_of_bounds,
         "wall_to_stock_edge_mm": wall_to_stock_edge_mm,
+        "wall_to_part_mm": wall_to_part_mm,
+        "wall_to_keep_out_mm": wall_to_keep_out_mm,
+        "walls": pin_walls_json,
+        "part_models": part_model_names,
+        "pin_tool_diameter_mm": session.pin_drill_tool_diameter(),
         "wall_need_mm": PIN_WALL_MM,
         "preset": preset,
-        "findings": report.warnings(),
+        "findings": findings,
     })
 }

@@ -116,6 +116,47 @@ pub struct PanelDrafts {
     pub pending_setup_removal: Option<SetupRemovalConfirmation>,
     /// The setup panel's stock-change editor, when it is open.
     pub stock_change_editor: Option<StockChangeEditor>,
+    /// The stock panel's last keyed-pin plan and the hash of its inputs.
+    pub keyed_pin_plan: KeyedPinPlanMemo,
+}
+
+/// The result of the keyed-pin placer.
+pub type KeyedPinPlan = Result<
+    [rs_cam_core::compute::alignment_pins::AlignmentPin; 3],
+    rs_cam_core::compute::alignment_pins::PinPlacementError,
+>;
+
+/// The stock panel's last keyed-pin plan (P6).
+///
+/// The panel draws every frame, and the 2D placer reads every edge of every
+/// obstacle on about a thousand lines: some tens of milliseconds on a
+/// 2000-vertex outline in a release build. The plan is cached on a hash of
+/// its inputs, so a frame that changes nothing re-uses it.
+#[derive(Debug, Default, Clone)]
+pub struct KeyedPinPlanMemo {
+    cached: Option<(u64, KeyedPinPlan)>,
+    /// How many times the placer has actually run.
+    pub plans: u64,
+}
+
+impl KeyedPinPlanMemo {
+    /// The plan for the inputs with hash `fingerprint`. `plan` runs only
+    /// when the hash differs from the cached one.
+    pub fn get_or_plan(
+        &mut self,
+        fingerprint: u64,
+        plan: impl FnOnce() -> KeyedPinPlan,
+    ) -> KeyedPinPlan {
+        if let Some((stored, cached)) = &self.cached
+            && *stored == fingerprint
+        {
+            return cached.clone();
+        }
+        let fresh = plan();
+        self.plans += 1;
+        self.cached = Some((fingerprint, fresh.clone()));
+        fresh
+    }
 }
 
 #[cfg(test)]
@@ -124,6 +165,27 @@ mod tests {
     use super::*;
 
     const DUMP: &str = "$11=0.020\n$120=500.000\n$121=500.000\n$122=250.000\n";
+
+    /// P6: the stock panel runs the 2D pin placer once per input change,
+    /// not once per frame.
+    #[test]
+    fn a_frame_that_changes_no_pin_input_does_not_plan_again() {
+        use rs_cam_core::compute::alignment_pins::PinPlacementError;
+
+        let mut memo = KeyedPinPlanMemo::default();
+        let refusal = || {
+            Err(PinPlacementError::NoRoomForPair {
+                need_mm: 10.0,
+                pin_diameter_mm: 6.0,
+            })
+        };
+        for _ in 0..60 {
+            let _ = memo.get_or_plan(7, refusal);
+        }
+        assert_eq!(memo.plans, 1);
+        let _ = memo.get_or_plan(8, refusal);
+        assert_eq!(memo.plans, 2);
+    }
 
     /// The defect UI-09 names: the dump was parsed on every frame the
     /// disclosure was open.

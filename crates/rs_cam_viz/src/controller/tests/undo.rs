@@ -619,8 +619,42 @@ mod pin_edit_one_door_p5 {
     use rs_cam_core::session::{AddAlignmentPinArgs, SetAlignmentPinsArgs};
 
     use crate::controller::PinDrillSync;
-    use crate::controller::events::pins::{PIN_DRILL_NEEDS_TOP_SETUP, PinEdit};
+    use crate::controller::events::pins::{
+        PIN_DRILL_NEEDS_TOOL, PIN_DRILL_NEEDS_TOP_SETUP, PinEdit,
+    };
     use crate::state::job::AlignmentPin;
+
+    /// Add a drill operation to `setup_index`, so the project names the
+    /// tool that drills the pin holes (P6: the door reads
+    /// `pin_drill_tool_id`, never `tools[0]`).
+    fn add_drill_op(controller: &mut AppController<ScriptedBackend>, setup_index: usize) {
+        let session = &controller.state.session;
+        let mut config = session
+            .toolpath_configs()
+            .first()
+            .cloned()
+            .expect("the fixture has a first toolpath");
+        let next = session
+            .toolpath_configs()
+            .iter()
+            .map(|tc| tc.id.0)
+            .max()
+            .map_or(0, |m| m + 1);
+        config.id = ToolpathId(next);
+        config.name = "Dowel holes".to_owned();
+        config.operation =
+            OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig::default());
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AddToolpath(
+                rs_cam_core::session::AddToolpathArgs {
+                    setup_index,
+                    config: Box::new(config),
+                },
+            ))
+            .expect("the setup accepts a toolpath");
+    }
 
     /// A controller with a Bottom setup at index 0 and a Top setup at index 1.
     fn flipped_first_controller() -> AppController<ScriptedBackend> {
@@ -644,6 +678,7 @@ mod pin_edit_one_door_p5 {
                 face_up: FaceUp::Top,
             }))
             .expect("a setup can be added");
+        add_drill_op(&mut controller, 0);
         controller
     }
 
@@ -837,6 +872,7 @@ mod pin_edit_one_door_p5 {
         // the pin holes with the setup, so the door refuses (lead ruling
         // 2026-10-12) and names why.
         let mut controller = sample_controller();
+        add_drill_op(&mut controller, 0);
         let _ = controller
             .state
             .session
@@ -881,5 +917,25 @@ mod pin_edit_one_door_p5 {
             "{:?}",
             edit.pin_drill
         );
+    }
+
+    /// P6: no operation drills holes, so no tool drills the pins. The door
+    /// refuses and does not take `tools[0]` (the fixture's only tool is an
+    /// end mill).
+    #[test]
+    fn no_drilling_operation_refuses_the_pin_drill_p6() {
+        let mut controller = sample_controller();
+        assert_eq!(controller.state.session.pin_drill_tool_id(), None);
+        assert!(
+            !controller.state.session.tools().is_empty(),
+            "non-vacuity: a tool exists that the old door took"
+        );
+        let count = controller.state.session.toolpath_configs().len();
+        let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
+        assert_eq!(
+            edit.pin_drill,
+            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOOL.to_owned())
+        );
+        assert_eq!(controller.state.session.toolpath_configs().len(), count);
     }
 }

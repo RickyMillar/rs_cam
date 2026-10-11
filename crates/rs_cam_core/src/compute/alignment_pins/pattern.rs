@@ -123,15 +123,18 @@ pub fn snap_to_flip(pins: &[AlignmentPin], map: &PinSetupMap, tol: f64) -> Vec<A
 
 /// The axis frame of a flip: an origin on the axis, the unit direction
 /// along it and the unit normal to its left.
+///
+/// The placer (`placement.rs`) searches in this frame too, so one frame
+/// serves the presets and the search.
 #[derive(Debug, Clone, Copy)]
-struct AxisFrame {
+pub(super) struct AxisFrame {
     origin: (f64, f64),
     u: (f64, f64),
     n: (f64, f64),
 }
 
 impl AxisFrame {
-    fn of(map: &PinSetupMap) -> Option<Self> {
+    pub(super) fn of(map: &PinSetupMap) -> Option<Self> {
         let [a, b] = map.axis_segment()?;
         let len = (b.0 - a.0).hypot(b.1 - a.1);
         let u = ((b.0 - a.0) / len, (b.1 - a.1) / len);
@@ -142,14 +145,14 @@ impl AxisFrame {
         })
     }
 
-    fn point(&self, along: f64, across: f64) -> (f64, f64) {
+    pub(super) fn point(&self, along: f64, across: f64) -> (f64, f64) {
         (
             self.origin.0 + along * self.u.0 + across * self.n.0,
             self.origin.1 + along * self.u.1 + across * self.n.1,
         )
     }
 
-    fn coords(&self, x: f64, y: f64) -> (f64, f64) {
+    pub(super) fn coords(&self, x: f64, y: f64) -> (f64, f64) {
         let d = (x - self.origin.0, y - self.origin.1);
         (
             d.0 * self.u.0 + d.1 * self.u.1,

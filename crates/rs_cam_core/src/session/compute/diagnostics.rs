@@ -1114,6 +1114,31 @@ impl ProjectSession {
             });
         }
 
+        // Important: a pin wall thinner than `PIN_WALL_MM` (to the stock
+        // edge, the default part models, a keep-out zone or a fixture), and
+        // a pin that differs from the tool that drills the holes (P6). The
+        // judgement is `pin_placement_findings`; this loop only publishes it.
+        for finding in self.pin_placement_findings() {
+            let kind = match finding.kind {
+                crate::compute::alignment_pins::PinFindingKind::PinToolMismatch => {
+                    VerdictKind::PinToolMismatch
+                }
+                _ => VerdictKind::PinWallThin,
+            };
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Important,
+                kind,
+                headline: finding.text,
+                offender_toolpath_ids: Vec::new(),
+                fix_hint: finding.kind.fix_hint().to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
+        }
+
         // Critical: a holder/shank check that could not answer. The
         // absence is the finding — CMP-14's whole point is that it must
         // not be reported as a clean toolpath.
