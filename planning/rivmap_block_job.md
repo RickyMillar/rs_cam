@@ -457,3 +457,23 @@ gaps. Formats are exact; units mm; frame = the back-view frame of
   - feeds from Suggest (scope both; the finish stepover kept at 0.25).
   A run of `derive.py` overwrites these edits; carry them into the script before the
   next run.
+
+## Update 2026-10-11: the mini test piece
+
+The operator's stock is 25 mm thick and small: "can we make it only one section, and make
+the whole thing smaller of a test". The mini piece has one group (B, not sealed, clear) and
+one row (margin 1.0) on 65 x 65 x 25 stock.
+
+- Block config: `testpiece_mini_block.toml` (a copy of the monorepo `block/testpiece.toml`;
+  its header says what changed and how to run the generator). The monorepo generator writes
+  to `/home/ricky/cnc_jobs/rivmap_block/testpiece_mini_src/`, outside the monorepo. All its
+  checks pass (web 9.70, dowels 3.00 to the cavity and the edge, reach 23 of 30).
+- Method: raw top 25.0, T1 = 24.5, T = 24.0. Channels `BACK_CHANNEL_Z22.00` and `Z23.00`;
+  the channel floor is 1.5 mm over the spoilboard.
+- Project: `derive.py testpiece-mini` writes `testpiece_mini.toml` with the operator's edits
+  (grblHAL controller, the 6 mm drill, the pour as a stock change at T1 + 1.0). Then Suggest
+  (scope both; the finish stepover kept at 0.25) ran in the GUI, and the GUI saved the file.
+- Simulation: 0 collisions, 0 rapid collisions; pour 10.48 ml measured (sheet: 10.0 + 0.4
+  overfill); 3 948 s total. The dowels are symmetric on the flip axis: the rim has no room
+  for the 3 mm keying offset. Mark one edge of the part.
+- G-code: `~/Downloads/testpiece_mini_gcode/` (3 files, the flip-message fix 5b428b53).

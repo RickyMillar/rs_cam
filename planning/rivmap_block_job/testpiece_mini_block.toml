@@ -1,0 +1,158 @@
+# testpiece_mini_block.toml: a one-section test piece for 25 mm stock (rs_cam copy).
+# Source: project_rivmap_mono manufacture/block/testpiece.toml (read only). Changes:
+#   one group (B, clear) and one row (margin 1.0); stock 65 x 65; stock 25 -> T 24;
+#   relief depth 6.5 (the same 0.1 slope as the 120 mm piece); rim 12; dowels at y +-26.5.
+# Run (writes outside the monorepo):
+#   cd <mono>/manufacture/block && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m rivmap_block testpiece \
+#     --config <this file> --out /home/ricky/cnc_jobs/rivmap_block/testpiece_mini_src
+#
+# `just block-testpiece` reads this file and writes build/block/testpiece/.
+# Units: millimetres, unless the key name says otherwise.
+#
+# The shared rules come from the design contract (design/rivmap.toml):
+# [paths].depth_step, [paths].min_width, [cavity].web_min and the back cutter
+# diameter ([cutters].back_d). Do not set them here.
+# The test piece sets its own block, relief and cavity numbers, because it is
+# not a map product. They are the 25 mm oak values of ARCHITECTURE.md section 7.
+#
+# Frame (ARCHITECTURE.md section 4, block frame):
+#   +X east, +Y north, Z = 0 at the block back face, Z = T at the front face.
+#   The test piece has no tile array, so the XY origin is the stock centre.
+#   The flip axis is the north-south line X = 0. Both dowels are on it.
+
+name = "testpiece_mini"
+
+[block]
+stock_x         = 65.0   # east-west
+stock_y         = 65.0   # north-south
+# Measure the stock. The build splits (stock_thickness - thickness) between
+# the back face pass (setup 1) and the front face pass (setup 4).
+stock_thickness = 25.0
+thickness       = 24.0    # T, the finished block
+material        = "oak"
+janka_lbf       = 1290.0  # red oak; white oak is about 1360
+
+[relief]
+# The front surface is a plane. It falls from Z = T at the north edge of the
+# stock to Z = T - depth at the south edge.
+depth = 6.5
+
+[cavity]
+# The back pocket under the LEDs. It covers all the channels. The cut removes
+# the epoxy overfill flush with the cavity ceiling (Z = depth).
+depth    = 9.0
+rim      = 12.0    # wood rim from the stock edge to the cavity
+corner_r = 3.5     # >= the cavity tool radius
+tool     = "flat_6.35"
+
+[paths]
+front_skin_min = 1.0    # wood that stays above the highest channel ceiling before the front cut
+cover_margin   = 2.0    # cavity edge to the nearest channel
+min_wall       = 3.0    # wood between two channels, or a channel and a dowel hole
+group_gap      = 6.0    # wood between the two pour groups
+cutter_clear   = 0.2    # channel width >= back_d + this
+overfill       = 1.0    # epoxy above the back face after the pour
+seal_coat      = 0.1    # seal coat thickness on the channel walls (group A)
+extra          = 0.15   # epoxy to mix in addition to the volume (15 %)
+grid           = 0.2    # sample spacing for the levels and the checks
+
+[dowels]
+diameter    = 6.0
+# Centres on the flip axis (X = 0), north and south rims.
+y           = [26.5, -26.5]
+spoil_depth = 5.0      # bore depth into the spoilboard below the stock
+length      = 17.0     # dowel length; the top must stay below the surface in setup 4
+tool        = "flat_3"
+
+[machine]
+# Shapeoko XXL. Carbide 3D gives a 33 x 33 in (838 mm) work area and about 3 in
+# (76 mm) Z clearance. Measure your machine and correct these values.
+name     = "Shapeoko XXL (1.5 kW spindle, upgraded controller)"
+travel_x = 838.0
+travel_y = 838.0
+z_clear  = 76.0
+rpm_min  = 6000.0
+rpm_max  = 24000.0
+
+# Tools. reach = the deepest cut below the face where the tool starts.
+# The back channel tool takes its diameter from the contract ([cutters].back_d).
+# Role "back": this one tool cuts all of each channel from the back face.
+# The shank is the same as the cutter, so the reach is the stick-out.
+[[tools]]
+id       = "flat_3"
+name     = "3 mm flat end mill, 2 flute, 3 mm shank, 30 mm stick-out"
+kind     = "flat"
+cutter   = "back_d"
+shank    = 3.0
+flutes   = 2
+reach    = 30.0
+role     = "back"
+
+[[tools]]
+id       = "flat_6.35"
+name     = "1/4 in flat end mill, 2 flute, 3/4 in flute"
+kind     = "flat"
+diameter = 6.35
+shank    = 6.35
+flutes   = 2
+reach    = 25.0
+role     = "other"
+
+[[tools]]
+id       = "ball_3.18"
+name     = "1/8 in ball end mill, 2 flute"
+kind     = "ball"
+diameter = 3.175
+shank    = 3.175
+flutes   = 2
+reach    = 15.0
+role     = "front"
+
+[front]
+face_tool   = "flat_6.35"
+rough_tool  = "flat_6.35"
+finish_tool = "ball_3.18"
+rough_stock = 0.5     # material that the rough pass leaves on the surface
+finish_stepover = 0.25
+mesh_step   = 5.0     # STL sample spacing (the surface is a plane)
+
+# The channels. Group A: sealed, tinted white. Group B: not sealed, clear.
+# A slot: a straight channel with round ends, from y0 to y1 (outer ends) at x.
+# A lake: an irregular closed outline in the box [x0, x1] x [y0, y1].
+# The groups are west (A) and east (B) of the flip axis. Each group has one
+# row for each exposure margin. The 1.0 mm row is in the south, where the
+# surface is low.
+[[groups]]
+id     = "B"
+name   = "not sealed, clear"
+sealed = false
+tint   = "clear"
+x0     = -19.7
+
+[[rows]]
+margin = 1.0
+y0     = -10.0
+y1     = 10.0
+
+# Feature positions in a group, from the group x0 (east offsets).
+[[features]]
+kind  = "slot"
+width = 3.2      # [paths].min_width: the narrowest channel
+dx    = 3.0      # centre line
+
+[[features]]
+kind  = "slot"
+width = 4.0
+dx    = 10.0
+
+[[features]]
+kind  = "slot"
+width = 8.0
+dx    = 19.0
+
+[[features]]
+kind  = "lake"
+dx0   = 26.0
+dx1   = 38.0
+seed  = 1
+min_r = 1.6      # smallest outline radius: (back_d + cutter_clear) / 2

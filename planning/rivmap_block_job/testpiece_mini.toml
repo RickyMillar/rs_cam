@@ -1,0 +1,1208 @@
+format_version = 3
+
+[job]
+name = "rivmap epoxy test piece, mini (two-sided)"
+
+[job.stock]
+x = 65.0
+y = 65.0
+z = 24.5
+origin_x = 0.0
+origin_y = 0.0
+origin_z = 0.0
+padding = 0.0
+auto_from_model = false
+flip_axis = "horizontal"
+
+[job.stock.material.SolidWoodByJanka]
+janka_lbf = 1290.0
+label = "Oak (feeds_oak.toml janka_lbf)"
+source_id = "rivmap feeds_oak.toml"
+
+[[job.stock.alignment_pins]]
+x = 59.0
+y = 32.5
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 6.0
+y = 32.5
+diameter = 6.0
+
+[job.post]
+format = "grblhal"
+spindle_speed = 10026
+safe_z = 29.5
+high_feedrate_mode = false
+high_feedrate = 5000.0
+spindle_strategy = "match_chart"
+controller_waits_for_spindle = true
+
+[job.machine]
+name = "Shapeoko XXL (1.5 kW VFD, $$ 2026-05-26)"
+max_feed_mm_min = 10000.0
+max_shank_mm = 7.0
+aggressiveness = 0.85
+
+[job.machine.spindle.Variable]
+min_rpm = 6000.0
+max_rpm = 24000.0
+
+[job.machine.power.VfdConstantTorque]
+rated_power_kw = 1.5
+rated_rpm = 24000.0
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.25
+doc_finishing_factor = 0.1
+woc_roughing_factor = 0.8
+woc_roughing_max_mm = 6.35
+woc_finishing_mm = 0.635
+adaptive_doc_factor = 2.0
+adaptive_woc_factor = 0.25
+
+[job.machine.kinematics]
+acceleration_mm_s2 = 423.333333333
+acceleration_xyz_mm_s2 = [
+    500.0,
+    500.0,
+    270.0,
+]
+max_rate_xyz_mm_min = [
+    10000.0,
+    10000.0,
+    1000.0,
+]
+junction_deviation_mm = 0.02
+
+[job.machine.controller]
+firmware = "grbl_hal"
+rpm_max = 1000.0
+rpm_min = 0.0
+mode = 0
+spindle_at_speed_tolerance_pct = 5.0
+tool_change_mode = 3
+tool_change_probing_distance_mm = 40.0
+spindle_on_delay_s = 0.0
+
+[job.machine.controller.spindle_drive]
+plugin = "H-100 VFD"
+
+[job.simulation]
+resolution_mm = 0.2
+
+[[tools]]
+id = 0
+name = "3 mm flat end mill, 2 flute, 3 mm shank, 30 mm stick-out"
+type = "end_mill"
+diameter = 3.0
+cutting_length = 30.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 3.0
+holder_diameter = 25.0
+shank_diameter = 3.0
+shank_length = 20.0
+stickout = 30.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 1
+name = "1/4 in flat end mill, 2 flute, 3/4 in flute"
+type = "end_mill"
+diameter = 6.35
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 25.0
+flute_count = 2
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 2
+name = "1/8 in ball end mill, 2 flute"
+type = "ball_nose"
+diameter = 3.175
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 3.175
+holder_diameter = 25.0
+shank_diameter = 3.175
+shank_length = 20.0
+stickout = 15.0
+flute_count = 2
+tool_number = 3
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 3
+name = "6 mm twist drill, 118 deg point"
+type = "v_bit"
+diameter = 6.0
+cutting_length = 40.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 118.0
+taper_half_angle = 0.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 4
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 0
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/front_surface_s1.stl"
+name = "front_surface_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 1
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/stock_outline.dxf"
+name = "stock_outline.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 2
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/dowel_through.dxf"
+name = "dowel_through.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 3
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/back_channel_z22.00.dxf"
+name = "back_channel_z22.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 4
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/back_channel_z23.00.dxf"
+name = "back_channel_z23.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 5
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/back_cavity_z9.00.dxf"
+name = "back_cavity_z9.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 6
+path = "/home/ricky/cnc_jobs/rivmap_block/testpiece_mini/front_3d_boundary.dxf"
+name = "front_3d_boundary.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "1 Back channels"
+face_up = "top"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "TESTPIECE setup 1. North to +X. Z0 = spoilboard."
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 0
+name = "Face back to T1"
+type = "face"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 2.048
+depth = 0.5
+depth_per_pass = 0.25
+feed_rate = 1673.0
+plunge_rate = 836.0
+ramp_feed_rate = 1673.0
+stock_offset = 6.35
+direction = "zigzag"
+spindle_rpm = 10026
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 25.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[[setups.toolpaths]]
+id = 1
+name = "Dowel bores, helix, through"
+type = "pocket"
+enabled = false
+tool_id = 0
+model_id = 2
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.4
+depth = 30.0
+depth_per_pass = 0.75
+feed_rate = 541.5
+plunge_rate = 736.0
+ramp_feed_rate = 180.5
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 21221
+
+[setups.toolpaths.dressups]
+entry_style = "helix"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 2
+name = "Channel BACK_CHANNEL_Z22.00"
+type = "pocket"
+enabled = true
+tool_id = 0
+model_id = 3
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 0.838
+depth = 22.0
+depth_per_pass = 0.5945945945945946
+feed_rate = 3877.0
+plunge_rate = 1938.0
+ramp_feed_rate = 3877.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 24.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 3
+name = "Channel BACK_CHANNEL_Z23.00"
+type = "pocket"
+enabled = true
+tool_id = 0
+model_id = 4
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 0.838
+depth = 1.0
+depth_per_pass = 0.5
+feed_rate = 3877.0
+plunge_rate = 1938.0
+ramp_feed_rate = 3877.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 2.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 4
+name = "Dowel holes, 6 mm drill, peck"
+type = "drill"
+enabled = true
+tool_id = 3
+model_id = 2
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drill"
+
+[setups.toolpaths.operation.params]
+depth = 30.8
+cycle = "peck"
+peck_depth = 6.0
+dwell_time = 0.5
+retract_amount = 0.5
+feed_rate = 600.0
+retract_z = 2.0
+spindle_rpm = 6000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups]]
+id = 1
+name = "2 Back cavity"
+face_up = "top"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "TESTPIECE setup 3, after the pour and the cure. Same zero."
+fixtures = []
+keep_out_zones = []
+
+[[setups.stock_changes]]
+id = 0
+name = "epoxe"
+enabled = true
+op = "add"
+cut_as = "stock_material"
+
+[setups.stock_changes.geometry]
+kind = "outline_fill"
+model_ids = [
+    3,
+    4,
+]
+level_z = 25.5
+
+[setups.stock_changes.material.Plastic]
+family = "Petg"
+
+[[setups.toolpaths]]
+id = 5
+name = "Face back overfill"
+type = "face"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 2.048
+depth = 1.0
+depth_per_pass = 0.5
+feed_rate = 1673.0
+plunge_rate = 836.0
+ramp_feed_rate = 1673.0
+stock_offset = 6.35
+direction = "zigzag"
+spindle_rpm = 10026
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 25.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[[setups.toolpaths]]
+id = 6
+name = "Back cavity Z9.00"
+type = "pocket"
+enabled = true
+tool_id = 1
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.048
+depth = 9.0
+depth_per_pass = 1.2857142857142858
+feed_rate = 1673.0
+plunge_rate = 836.0
+ramp_feed_rate = 1673.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 10026
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[[setups]]
+id = 2
+name = "3 Front"
+face_up = "bottom"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "TESTPIECE setup 4: flipped on the dowels. Local Z = block Z."
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 7
+name = "Face front to T"
+type = "face"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 2.048
+depth = 0.5
+depth_per_pass = 0.25
+feed_rate = 1673.0
+plunge_rate = 836.0
+ramp_feed_rate = 1673.0
+stock_offset = 6.35
+direction = "zigzag"
+spindle_rpm = 10026
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[[setups.toolpaths]]
+id = 8
+name = "Front 3D rough"
+type = "adaptive3d"
+enabled = true
+tool_id = 1
+model_id = 0
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.463
+depth_per_pass = 5.854
+stock_to_leave_axial = 0.5
+feed_rate = 1673.098748171067
+plunge_rate = 836.0
+ramp_feed_rate = 1673.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 10026
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-compression-wood-pocket-6350-2f"
+
+[[setups.toolpaths]]
+id = 9
+name = "Front finish parallel N-S"
+type = "drop_cutter"
+enabled = true
+tool_id = 2
+model_id = 0
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drop_cutter"
+
+[setups.toolpaths.operation.params]
+stepover = 0.25
+feed_rate = 725.0
+plunge_rate = 362.0
+min_z = 0.0
+slope_from = 0.0
+slope_to = 90.0
+spindle_rpm = 19000
+hookup_mm = 0.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-parallel-3175-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_ball"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-parallel-3175-2f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "published_rule"
+reference = "g10_plunge_ball"
