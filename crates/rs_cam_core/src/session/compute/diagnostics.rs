@@ -1082,6 +1082,38 @@ impl ProjectSession {
             });
         }
 
+        // Important: the dowel holes have two sources (P8, C6). The stock
+        // pins give the pin-drill holes; a drill or pocket operation on a
+        // drawing of the holes is a second copy. The judgement is
+        // `hole_source_findings`; this loop only publishes it.
+        let (pin_drill_present, hole_ops) = self.dowel_hole_ops();
+        for finding in crate::compute::alignment_pins::hole_source_findings(
+            &self.stock.alignment_pins,
+            pin_drill_present,
+            &hole_ops,
+        ) {
+            let kind = match finding.kind {
+                crate::compute::alignment_pins::HoleSourceKind::DrilledTwice => {
+                    VerdictKind::PinHolesDrilledTwice
+                }
+                crate::compute::alignment_pins::HoleSourceKind::DowelHolesDisagree => {
+                    VerdictKind::DowelHolesDisagree
+                }
+            };
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Important,
+                kind,
+                headline: finding.text,
+                offender_toolpath_ids: vec![ToolpathId(finding.toolpath_id)],
+                fix_hint: finding.kind.fix_hint().to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
+                },
+            });
+        }
+
         // Critical: a holder/shank check that could not answer. The
         // absence is the finding — CMP-14's whole point is that it must
         // not be reported as a clean toolpath.
@@ -1350,4 +1382,107 @@ fn rapid_attribution_by_toolpath(
         }
     }
     out
+}
+
+impl ProjectSession {
+    /// The inputs of the hole-source check (P8): whether an enabled
+    /// pin-drill operation exists, and the holes of every other enabled
+    /// operation that drills holes, in the stock-local frame.
+    ///
+    /// - A `Drill` operation drills its picks, or every target of its
+    ///   model when it has no picks (the rule of `drill_targets_refusal`).
+    ///   A pick takes the diameter of the target it names.
+    /// - A `Pocket` operation clears each drawn circle of its model (each
+    ///   `CircleCenter` target).
+    ///
+    /// A drawing target is in the world frame. On a `Top` or `Bottom`
+    /// setup a drawing maps to the same physical place on the part
+    /// (`SetupTransformInfo::drawing_to_local`), so the stock-local
+    /// position is the target minus the stock origin. A lateral setup
+    /// reads the drawing in its own work plane, which is not the pin
+    /// plane, so its operations are not judged.
+    pub(crate) fn dowel_hole_ops(&self) -> (bool, Vec<crate::compute::alignment_pins::HoleOp>) {
+        use crate::compute::alignment_pins::{DrilledHole, HoleOp, HoleOpKind};
+        use crate::compute::catalog::OperationConfig;
+        use crate::io::dxf_input::DrillTargetKind;
+
+        let (ox, oy) = (self.stock.origin_x, self.stock.origin_y);
+        let mut pin_drill_present = false;
+        let mut ops = Vec::new();
+        for (index, tc) in self.toolpath_configs.iter().enumerate() {
+            if !tc.enabled {
+                continue;
+            }
+            if matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)) {
+                pin_drill_present = true;
+                continue;
+            }
+            let lateral = self
+                .setups
+                .iter()
+                .find(|s| s.toolpath_indices.contains(&index))
+                .is_some_and(|s| s.face_up.is_lateral());
+            if lateral {
+                continue;
+            }
+            let targets = self
+                .models
+                .iter()
+                .find(|m| m.id == tc.model_id)
+                .map(|m| m.drill_targets.as_slice())
+                .unwrap_or_default();
+            let diameter_of = |kind: &DrillTargetKind| match kind {
+                DrillTargetKind::CircleCenter { diameter } => Some(*diameter),
+                DrillTargetKind::Point => None,
+            };
+            let hole = |x: f64, y: f64, diameter: Option<f64>| DrilledHole {
+                x: x - ox,
+                y: y - oy,
+                diameter,
+            };
+            let (kind, holes): (HoleOpKind, Vec<DrilledHole>) = match &tc.operation {
+                OperationConfig::Drill(cfg) => {
+                    if crate::compute::execute::drill_targets_refusal(cfg, targets.len()).is_some()
+                    {
+                        continue;
+                    }
+                    let holes = match &cfg.selected_holes {
+                        Some(picks) => picks
+                            .iter()
+                            .map(|&pick| {
+                                let diameter = targets
+                                    .iter()
+                                    .find(|t| crate::compute::execute::drill_pick_matches(pick, t))
+                                    .and_then(|t| diameter_of(&t.kind));
+                                hole(pick[0], pick[1], diameter)
+                            })
+                            .collect(),
+                        None => targets
+                            .iter()
+                            .map(|t| hole(t.x, t.y, diameter_of(&t.kind)))
+                            .collect(),
+                    };
+                    (HoleOpKind::Drill, holes)
+                }
+                OperationConfig::Pocket(_) => {
+                    let holes: Vec<DrilledHole> = targets
+                        .iter()
+                        .filter_map(|t| diameter_of(&t.kind).map(|d| hole(t.x, t.y, Some(d))))
+                        .collect();
+                    if holes.is_empty() {
+                        continue;
+                    }
+                    (HoleOpKind::Pocket, holes)
+                }
+                _ => continue,
+            };
+            ops.push(HoleOp {
+                toolpath_id: tc.id.0,
+                name: tc.name.clone(),
+                kind,
+                holes,
+            });
+        }
+        (pin_drill_present, ops)
+    }
 }

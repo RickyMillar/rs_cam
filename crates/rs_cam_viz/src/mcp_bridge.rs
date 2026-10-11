@@ -676,6 +676,38 @@ pub enum McpRequestKind {
     UiQuery(UiQuery),
 }
 
+/// The three wire tools that end in the `SetAlignmentPins` row (P5).
+///
+/// One registry row has one `CoreRequest` variant, so the three tools
+/// share this payload. The GUI thread reads the stored pins and the setups
+/// and turns each form into the one new pin set.
+#[derive(Debug, Clone)]
+pub enum PinSetRequest {
+    /// `set_alignment_pins`: the new set as given.
+    Replace(rs_cam_mcp::server::SetAlignmentPinsParam),
+    /// `place_alignment_pattern`: a preset in the flip-axis frame.
+    Pattern(rs_cam_mcp::server::PlaceAlignmentPatternParam),
+    /// `move_alignment_pins`: the stored set moved by one offset.
+    Move(rs_cam_mcp::server::MoveAlignmentPinsParam),
+}
+
+impl Default for PinSetRequest {
+    fn default() -> Self {
+        Self::Replace(rs_cam_mcp::server::SetAlignmentPinsParam::default())
+    }
+}
+
+impl PinSetRequest {
+    /// The wire tool that sent this request.
+    pub fn tool_name(&self) -> &'static str {
+        match self {
+            Self::Replace(_) => "set_alignment_pins",
+            Self::Pattern(_) => "place_alignment_pattern",
+            Self::Move(_) => "move_alignment_pins",
+        }
+    }
+}
+
 /// Declare the MCP mutation surface from one table.
 ///
 /// **SHL-02.** Adding one MCP command used to touch nine hand-written
@@ -774,6 +806,11 @@ declare_core_requests! {
             => AddAlignmentPin, Some(Workspace::Setup);
         RemoveAlignmentPin(rs_cam_mcp::server::RemoveAlignmentPinParam)
             => RemoveAlignmentPin, None;
+        /// Row `SetAlignmentPins`. Three wire tools reach it:
+        /// `set_alignment_pins`, `place_alignment_pattern` and
+        /// `move_alignment_pins` (see [`PinSetRequest`]).
+        SetAlignmentPins(PinSetRequest)
+            => SetAlignmentPins, Some(Workspace::Setup);
         AddStockChange(rs_cam_mcp::server::AddStockChangeParam)
             => AddStockChange, Some(Workspace::Setup);
         /// Row `ReplaceStockChange`. The wire name is `edit_stock_change`:

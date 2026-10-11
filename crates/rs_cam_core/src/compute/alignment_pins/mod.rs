@@ -10,6 +10,9 @@
 //!   mirror pair, in the clear strips beside the model.
 //! - `pattern.rs` — pure set edits: move, diameter, snap to the flip, and
 //!   the presets with their read-back (P4).
+//! - `hole_sources.rs` — [`hole_source_findings`]: a second operation that
+//!   drills the dowel holes again, or drills them where the pins are not
+//!   (P8).
 //! - this file — the pin type, the setup map ([`PinSetupMap`]), its flip
 //!   axis ([`PinSetupMap::axis_segment`], [`pin_flip_map`]) and
 //!   [`validate_pins_for_flip`], which judges a stored set.
@@ -17,14 +20,19 @@
 //! `stock_config.rs` holds the stock model and calls in here; it does not
 //! hold this algorithm.
 
+mod hole_sources;
 mod keying;
 mod pattern;
 mod placement;
 
+pub use hole_sources::{
+    DOWEL_DIAMETER_TOL_MM, DrilledHole, HoleOp, HoleOpKind, HoleSourceFinding, HoleSourceKind,
+    hole_source_findings,
+};
 pub use keying::{WrongSeating, closest_wrong_seating, keying_bar_mm, pattern_is_keyed};
 pub use pattern::{
     AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, fit_axis_plus_mirror_pair,
-    set_diameter, snap_to_flip, translate, two_mixed_diameters,
+    fit_two_mixed_diameters, set_diameter, snap_to_flip, translate, two_mixed_diameters,
 };
 pub use placement::{PinPlacementError, PinPlacementRequest, PinSide, place_keyed_pins};
 
