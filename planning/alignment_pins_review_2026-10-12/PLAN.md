@@ -39,3 +39,19 @@ reviews by path, commits on the branch, merges master in, checks, merges.
    with the 3-pin preset loads with no keying warning, drills each hole
    once, and the operator can move the set as one.
 5. The operator looks at the pin editor and the viewport overlays.
+
+## Status 2026-10-12
+
+All waves merged: A 8fe36b37, B ad834275, C1 cb0e3828, C2 e34c508e, E 51801f1f,
+D 97522f09. Live: the mini test piece now has the 3-pin preset (axis pin
+(59, 32.5), pair (7.511, 9) and (7.511, 56)), keyed with a 6.57 mm margin,
+walls >= 3.0 mm; the DXF drill and the helix bore are deleted, so the Pin
+Drill op (6 mm drill, 6.3 mm into the spoilboard) is the one hole source.
+0 collisions; the G-code headers list the dowels.
+
+Open (lead look on screen):
+- The load-warning modal keeps the load-time keying warning after a pin
+  edit fixes it (stale text until Close).
+- The stock panel's pin section clips on the right at 1600 px (the warning
+  box and the button row run past the panel edge).
+- Operator look at the editor and the viewport marks (acceptance 5).

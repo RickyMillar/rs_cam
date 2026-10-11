@@ -12,7 +12,6 @@ origin_y = 0.0
 origin_z = 0.0
 padding = 0.0
 auto_from_model = false
-flip_axis = "horizontal"
 
 [job.stock.material.SolidWoodByJanka]
 janka_lbf = 1290.0
@@ -25,8 +24,13 @@ y = 32.5
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 6.0
-y = 32.5
+x = 7.511
+y = 9.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 7.511
+y = 56.0
 diameter = 6.0
 
 [job.post]
@@ -357,79 +361,6 @@ source = "vendor_lut"
 reference = "amana-compression-wood-pocket-6350-2f"
 
 [[setups.toolpaths]]
-id = 1
-name = "Dowel bores, helix, through"
-type = "pocket"
-enabled = false
-tool_id = 0
-model_id = 2
-boundary_inherit = true
-stock_source = "fresh"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "pocket"
-
-[setups.toolpaths.operation.params]
-stepover = 2.4
-depth = 30.0
-depth_per_pass = 0.75
-feed_rate = 541.5
-plunge_rate = 736.0
-ramp_feed_rate = 180.5
-climb = true
-pattern = "contour"
-angle = 0.0
-finishing_passes = 0
-spindle_rpm = 21221
-
-[setups.toolpaths.dressups]
-entry_style = "helix"
-ramp_angle = 3.0
-helix_pitch = 1.0
-entry_clearance_mm = 0.5
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_max_distance = 10.0
-link_feed_rate = 500.0
-arc_fitting = false
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-air_bridge_policy = "always"
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = false
-source = "stock"
-containment = "center"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = false
-
-[[setups.toolpaths]]
 id = 2
 name = "Channel BACK_CHANNEL_Z22.00"
 type = "pocket"
@@ -624,25 +555,37 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
 
 [[setups.toolpaths]]
-id = 4
-name = "Dowel holes, 6 mm drill, peck"
-type = "drill"
+id = 10
+name = "Pin Drill"
+type = "alignment_pin_drill"
 enabled = true
 tool_id = 3
-model_id = 2
+model_id = 0
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
 
 [setups.toolpaths.operation]
-kind = "drill"
+kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
-depth = 30.8
+holes = [
+    [
+    59.0,
+    32.5,
+],
+    [
+    7.511,
+    9.0,
+],
+    [
+    7.511,
+    56.0,
+],
+]
+spoilboard_penetration = 6.3
 cycle = "peck"
 peck_depth = 6.0
-dwell_time = 0.5
-retract_amount = 0.5
 feed_rate = 600.0
 retract_z = 2.0
 spindle_rpm = 6000
@@ -656,14 +599,14 @@ dogbone = false
 dogbone_angle = 90.0
 lead_in_out = false
 lead_radius = 2.0
-link_moves = false
+link_moves = true
 link_max_distance = 10.0
 link_feed_rate = 500.0
 arc_fitting = false
 arc_tolerance = 0.05
 segment_merge = false
 segment_merge_tolerance = 0.3
-feed_optimization = false
+feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
@@ -692,6 +635,12 @@ offset = 0.0
 
 [setups.toolpaths.debug_options]
 enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "manual"
 
 [[setups]]
 id = 1
