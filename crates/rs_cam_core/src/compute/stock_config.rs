@@ -1,16 +1,16 @@
 //! The stock model: the blank a setup presents to the cutter.
 //!
 //! `StockConfig` and the two model descriptors. The alignment-pin algorithm
-//! lives in `compute/alignment_pins.rs` and the post-processor configuration
+//! lives in `compute/alignment_pins/` and the post-processor configuration
 //! in `gcode/mod.rs`; this file calls the first and names neither.
 
 use serde::{Deserialize, Serialize};
 
 use crate::compute::alignment_pins::{
-    AlignmentPin, FlipAxis, PIN_WALL_MM, PinFlipReport, PinPlacementError, PinPlacementRequest,
-    place_keyed_pins, validate_pins_for_flip,
+    AlignmentPin, FlipAxis, PIN_WALL_MM, PinFinding, PinFlipReport, PinPlacementError,
+    PinPlacementRequest, pin_findings_for_setups, place_keyed_pins, validate_pins_for_flip,
 };
-use crate::compute::transform::FaceUp;
+use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::BoundingBox3;
 
 /// What kind of geometry was loaded.
@@ -83,9 +83,9 @@ pub struct StockConfig {
     /// stock panel's Mirror affordance.
     ///
     /// **Derived from the setups, not authored, and not a constraint.**
-    /// Build it with [`FlipAxis::from_face_up`]. Pin correctness is
+    /// Build it with [`FlipAxis::from_setup`]. Pin correctness is
     /// judged by [`Self::validate_pins_for_flip`] against the setup's
-    /// `face_up`, never against this field — a stored axis that
+    /// `face_up` and `z_rotation`, never against this field — a stored axis that
     /// disagrees with the setups is a lie, and a `null` one beside a
     /// `Bottom` setup is what G-PINAUTO shipped.
     ///
@@ -170,8 +170,8 @@ impl StockConfig {
         }
     }
 
-    /// Two registration pins that key `face_up`, or a stated reason why
-    /// none exist.
+    /// Three registration pins (one on the flip axis, a mirror pair off
+    /// it) that key the flipped setup, or a stated reason why none exist.
     ///
     /// `model_bbox` is in WORLD mm (as models carry it); the stock origin
     /// is subtracted here because `alignment_pins` are stock-local. Pass
@@ -185,29 +185,40 @@ impl StockConfig {
     pub fn plan_keyed_pins(
         &self,
         face_up: FaceUp,
+        z_rotation: ZRotation,
         model_bbox: Option<&BoundingBox3>,
         pin_diameter: f64,
-    ) -> Result<[AlignmentPin; 2], PinPlacementError> {
+    ) -> Result<[AlignmentPin; 3], PinPlacementError> {
         let model_x_range = model_bbox.map(|b| (b.min.x - self.origin_x, b.max.x - self.origin_x));
         place_keyed_pins(PinPlacementRequest {
             stock_w: self.x,
             stock_d: self.y,
             model_x_range,
             face_up,
+            z_rotation,
             pin_diameter,
             wall_mm: PIN_WALL_MM,
         })
     }
 
-    /// What this stock's stored pins do under `face_up`.
+    /// What this stock's stored pins do under one setup (`face_up` and
+    /// `z_rotation`).
     ///
     /// Reachable from anywhere in core, which is the point: the live
     /// defect was a saved project whose pins were centre-symmetric —
     /// invariant under a 180 deg ROTATION, which is not the flip — and no
-    /// load path looked. Call this on load and publish
-    /// [`PinFlipReport::warnings`].
-    pub fn validate_pins_for_flip(&self, face_up: FaceUp) -> PinFlipReport {
-        validate_pins_for_flip(&self.alignment_pins, face_up, self.x, self.y)
+    /// load path looked.
+    pub fn validate_pins_for_flip(&self, face_up: FaceUp, z_rotation: ZRotation) -> PinFlipReport {
+        validate_pins_for_flip(&self.alignment_pins, face_up, z_rotation, self.x, self.y)
+    }
+
+    /// The pin findings for every setup in `setups`, deduplicated. Call
+    /// this on load and in the diagnostics, and publish the texts.
+    pub fn pin_findings_for_setups(
+        &self,
+        setups: impl IntoIterator<Item = (FaceUp, ZRotation)>,
+    ) -> Vec<PinFinding> {
+        pin_findings_for_setups(&self.alignment_pins, setups, self.x, self.y)
     }
 }
 

@@ -1,4 +1,4 @@
-//! G-PINPANEL: the stock panel's "Auto-place keyed pair" reads the real
+//! G-PINPANEL: the stock panel's "Auto-place keyed pins" reads the real
 //! clear strips, not the stock padding.
 //!
 //! # What the finding was
@@ -9,16 +9,18 @@
 //! stock was 380 mm wide at origin x -15 around a model at x 0..350, with a
 //! padding of 5. The real strips are 15 mm each. The panel said "the clear
 //! strip on -X is 5.0 mm" and greyed the button, while the "Two-sided
-//! setup" route placed the pair.
+//! setup" route placed the pins.
 //!
 //! # What this test measures
 //!
 //! `ui::properties::stock::keyed_pin_plan` is the one planner both doors
 //! call, with `KeyedPinInputs::from_session`. The arms:
 //!
-//! 1. the live 380 / -15 / 0..350 stock places pins at x 9.0 and 374.0 on
-//!    the mirror line y = 255 with a 6 mm pin-drill tool, although the
-//!    padding is 5;
+//! 1. the live 380 / -15 / 0..350 stock places the axis pin at x 372.5 on
+//!    the mirror line y = 255 and a mirror pair at x 7.5 (the centres of
+//!    the two 15 mm strips) with a 6 mm pin-drill tool, although the
+//!    padding is 5 (P1, 2026-10-12: three pins, because two equal pins
+//!    never key);
 //! 2. a 359 mm stock at origin x -5 around the same model has 5 mm and
 //!    4 mm strips, and the planner refuses on the 5.0 mm -X strip;
 //! 3. `KeyedPinInputs::from_session` reads the union bbox of all models
@@ -39,7 +41,7 @@
 use rs_cam_core::compute::alignment_pins::{PinPlacementError, PinSide};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_viz::ui::properties::stock::{KeyedPinInputs, KeyedPinRefusal, keyed_pin_plan};
 
@@ -76,24 +78,44 @@ fn inputs() -> KeyedPinInputs {
 }
 
 #[test]
-fn the_live_stock_places_the_pair_in_its_15mm_strips() {
-    let pins = keyed_pin_plan(&stock(380.0, -15.0), FaceUp::Bottom, &inputs())
-        .unwrap_or_else(|e| panic!("the real strips are 15 mm; got the refusal {e}"));
-    assert!((pins[0].x - 9.0).abs() < 1e-9, "pin 0 at x {}", pins[0].x);
-    assert!((pins[1].x - 374.0).abs() < 1e-9, "pin 1 at x {}", pins[1].x);
+fn the_live_stock_places_the_pins_in_its_15mm_strips() {
+    let pins = keyed_pin_plan(
+        &stock(380.0, -15.0),
+        FaceUp::Bottom,
+        ZRotation::Deg0,
+        &inputs(),
+    )
+    .unwrap_or_else(|e| panic!("the real strips are 15 mm; got the refusal {e}"));
+    assert!(
+        (pins[0].x - 372.5).abs() < 1e-9,
+        "axis pin at x {}",
+        pins[0].x
+    );
+    assert!(
+        (pins[0].y - STOCK_D_MM * 0.5).abs() < 1e-9,
+        "axis pin at y {}",
+        pins[0].y
+    );
+    for pin in &pins[1..] {
+        assert!((pin.x - 7.5).abs() < 1e-9, "pair pin at x {}", pin.x);
+    }
+    assert!(
+        (pins[1].y + pins[2].y - STOCK_D_MM).abs() < 1e-9 && pins[1].y < pins[2].y,
+        "not a mirror pair: {pins:?}"
+    );
     for pin in &pins {
-        assert!(
-            (pin.y - STOCK_D_MM * 0.5).abs() < 1e-9,
-            "pin at y {}",
-            pin.y
-        );
         assert!((pin.diameter - PIN_DIAMETER_MM).abs() < 1e-9);
     }
 }
 
 #[test]
 fn a_5mm_and_4mm_strip_stock_is_refused_on_the_5mm_side() {
-    match keyed_pin_plan(&stock(359.0, -5.0), FaceUp::Bottom, &inputs()) {
+    match keyed_pin_plan(
+        &stock(359.0, -5.0),
+        FaceUp::Bottom,
+        ZRotation::Deg0,
+        &inputs(),
+    ) {
         Err(KeyedPinRefusal::Placement(PinPlacementError::StripTooNarrow {
             side,
             strip_mm,

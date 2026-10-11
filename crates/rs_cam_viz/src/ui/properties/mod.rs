@@ -899,11 +899,12 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
     if state.history.stock_snapshot.is_none() {
         state.history.stock_snapshot = Some(state.session.stock_config().clone());
     }
-    let has_flipped_setup = state
+    let setup_maps: Vec<_> = state
         .session
         .list_setups()
         .iter()
-        .any(|s| s.face_up != crate::state::job::FaceUp::Top);
+        .map(|s| (s.face_up, s.z_rotation))
+        .collect();
     // WP6: the widgets write a DRAFT, not the session. The draft
     // is re-read from the session on any frame no widget of this
     // panel is dragged or focused, so an edit made on another
@@ -922,14 +923,7 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         .iter()
         .any(|model| model.mesh.is_some() || model.polygons.is_some());
     let pin_inputs = stock::KeyedPinInputs::from_session(&state.session);
-    let edit = stock::draw(
-        ui,
-        &mut draft,
-        has_flipped_setup,
-        has_model,
-        &pin_inputs,
-        events,
-    );
+    let edit = stock::draw(ui, &mut draft, &setup_maps, has_model, &pin_inputs, events);
     if edit.committed {
         apply_stock_draft(state, draft.clone());
         // The undo compare runs AFTER the command, so the

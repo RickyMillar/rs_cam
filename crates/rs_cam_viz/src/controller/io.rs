@@ -483,14 +483,18 @@ impl<B: ComputeBackend> AppController<B> {
         // the machine. Deduped because a `Top` setup contributes only
         // the bounds line, and a project with several setups would
         // otherwise repeat it.
-        for setup in session.list_setups() {
-            warning_messages.extend(
-                session
-                    .stock_config()
-                    .validate_pins_for_flip(setup.face_up)
-                    .warnings(),
-            );
-        }
+        warning_messages.extend(
+            session
+                .stock_config()
+                .pin_findings_for_setups(
+                    session
+                        .list_setups()
+                        .iter()
+                        .map(|setup| (setup.face_up, setup.z_rotation)),
+                )
+                .into_iter()
+                .map(|finding| finding.text),
+        );
         // NOT `dedup()` — that only collapses ADJACENT duplicates, and
         // a two-setup project interleaves them: setup 1 contributes
         // bounds + flip + keying, setup 2 contributes bounds again, so
