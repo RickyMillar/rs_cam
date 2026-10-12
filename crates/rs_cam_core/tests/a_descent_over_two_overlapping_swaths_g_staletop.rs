@@ -1,6 +1,6 @@
-//! **Probe: are the Z22 stepover-1.05 rapid collisions real?**
+//! **Probe: are the Z22 stepover-1.05 rapid collisions real? (G-STALETOP)**
 //!
-//! The optimizer rebuild (`tool_load/optimize/search.rs`) read 18 rapid
+//! The optimizer rebuild (deleted 2026-10-13) read 18 rapid
 //! collisions on "Channel BACK_CHANNEL_Z22.00" at depth per pass 1.2222 mm
 //! and stepover 1.05 mm, 8 at 2.75 / 1.05, and 0 at every depth per pass at
 //! stepover 0.838 mm. This `#[ignore]` evidence run prints every collision
@@ -25,7 +25,7 @@
 //! lands in `dexel_stock/stamping.rs`.
 //!
 //! Run it (about 160 s; `Z22_PROBE_CELLS` / `Z22_PROBE_SKIP` select cells):
-//! `cargo test -p rs_cam_core -q --test optimize_z22_collisions_probe -- --ignored --nocapture the_z22`
+//! `cargo test -p rs_cam_core -q --test a_descent_over_two_overlapping_swaths_g_staletop -- --ignored --nocapture the_z22`
 
 #![allow(
     clippy::unwrap_used,
@@ -43,11 +43,10 @@ use rs_cam_core::compute::simulate::locate_global_move;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
-use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs};
+use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs, SimulationOptions};
 use rs_cam_core::stock::collision::RapidClearanceCheck;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use rs_cam_core::tool::MillingCutter;
-use rs_cam_core::tool_load::optimize::candidate_sim_options;
 use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
 
 const SOURCE_PROJECT: &str =
@@ -65,6 +64,21 @@ const CELLS: [(f64, f64); 3] = [
 
 /// The sample step (mm) of the exact disc scan.
 const EXACT_STEP_MM: f64 = 0.025;
+
+/// The simulation options of the probe: the GUI simulation at the
+/// project's stored resolution, with feed modulation on.
+fn probe_sim_options(session: &ProjectSession) -> SimulationOptions {
+    SimulationOptions {
+        resolution: session.simulation_resolution_mm(),
+        skip_ids: Vec::new(),
+        auto_resolution: false,
+        use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation: true,
+        modulation_strategy:
+            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
+        modulation_feed_scale: 1.0,
+    }
+}
 
 /// One rapid collision in both move frames.
 #[derive(Clone, Copy)]
@@ -250,7 +264,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
     session
         .generate_all(&[], &cancel)
         .expect("every enabled toolpath generates");
-    let opts = candidate_sim_options(session);
+    let opts = probe_sim_options(session);
     let _ = session
         .run_simulation(&opts, &cancel)
         .expect("the project simulates");
@@ -716,7 +730,7 @@ fn regen_with_the_simulation_standing(session: &mut ProjectSession, index: usize
             ));
         }
     }
-    let opts = candidate_sim_options(session);
+    let opts = probe_sim_options(session);
     let _ = session
         .run_simulation(&opts, &cancel)
         .expect("the project simulates");

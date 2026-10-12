@@ -237,9 +237,8 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &Pr
     draw_air_cut_caution(ui, sim);
     // Freshness chip — rendered here (not in the overview body) so it covers
     // the focused-card paths too (INS-005).
-    // W4, G-FRESHNESSDISAGREE: this chip and the Optimize window's banner
-    // are the two halves of the ledger row. Both ask the core now, so the
-    // pair cannot read "live" and "stale" about one run again.
+    // W4, G-FRESHNESSDISAGREE: this chip asks the core, so it cannot read
+    // "live" about a run the core calls stale.
     if let Some(reason) = simulation_freshness(session, sim).stale_reason(session) {
         FreshnessGate::banner(ui, &reason);
     } else {
@@ -372,9 +371,6 @@ fn draw_focused_hotspot_card(
                         SimJumpToMoveArgs { move_index: global_start },
                     )));
                 }
-                if ui.small_button("Optimize this op").clicked() {
-                    events.push(AppEvent::OpenOptimizeModal(toolpath_id));
-                }
                 if ui.small_button("Clear").clicked() {
                     sim.debug.focused_hotspot = None;
                 }
@@ -429,11 +425,6 @@ fn draw_focused_issue_card(
                     events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
                         move_index: issue.move_index,
                     })));
-                }
-                if let Some(toolpath_id) = issue.toolpath_id
-                    && ui.small_button("Optimize this op").clicked()
-                {
-                    events.push(AppEvent::OpenOptimizeModal(toolpath_id));
                 }
             });
         });
@@ -558,9 +549,7 @@ fn draw_project_section(
             // denominator the verdict HUD uses, reading the same `summary()` producer
             // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
             // buckets are verdicts (stroked pills); collisions is an observation
-            // (fill-only pill). The exceeding pill is actionable (`… →` button) when
-            // any TP exceeds — it jumps straight to the project-level Optimize,
-            // replacing the separate ⚡ Optimize-all button (FINAL_DESIGN §5.1).
+            // (fill-only pill).
             crate::ui::components::SectionHeader::new("Findings").show(ui);
             ui.horizontal_wrapped(|ui| {
                 ui.add(
@@ -570,16 +559,10 @@ fn draw_project_section(
                         .hover("Toolpaths within modeled load limits (of total modeled)."),
                 );
                 let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
-            .denom(total_tp)
-            .color(crate::ui::tokens::DANGER)
-            .hover("Toolpaths exceeding a modeled load limit. Click to optimize all exceeding.");
-                if bad > 0 {
-                    if ui.add(exceeds_pill.actionable()).clicked() {
-                        events.push(AppEvent::OpenOptimizeProject);
-                    }
-                } else {
-                    ui.add(exceeds_pill.hide_when_zero());
-                }
+                    .denom(total_tp)
+                    .color(crate::ui::tokens::DANGER)
+                    .hover("Toolpaths exceeding a modeled load limit.");
+                ui.add(exceeds_pill.hide_when_zero());
                 // UP4: `unmodeled` is an ABSTENTION, not a caution. The gate
                 // could not model the toolpath, so it returned no verdict at
                 // all — and it wore the same amber as a measurement that came
@@ -601,30 +584,6 @@ fn draw_project_section(
                         .hover("Rapid/holder collisions detected during simulation."),
                 );
             });
-
-            // OPT-006 — discoverable in-context Optimize entry. When any
-            // toolpath exceeds, the actionable exceeding-pill above is the
-            // entry (W3.3). When nothing is over-budget the pill is inert,
-            // yet the optimizer can still cut cycle time on within-gate
-            // toolpaths — so surface a muted always-available entry here so
-            // the obscure Toolpath-menu item is no longer the only path.
-            if bad == 0 {
-                ui.add_space(2.0);
-                if ui
-                    .button(
-                        egui::RichText::new("\u{26A1} Optimize project for cycle time")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    )
-                    .on_hover_text(
-                        "Search every enabled toolpath for a faster, still-safe set of \
-                         feeds & speeds.",
-                    )
-                    .clicked()
-                {
-                    events.push(AppEvent::OpenOptimizeProject);
-                }
-            }
 
             // Checkpoint D Q2 / census §4: the measurability strip, ABOVE
             // everything else, because it qualifies everything else. Read
@@ -948,7 +907,7 @@ fn draw_project_section(
 
 /// Toolpath scope (pass2 inspector §2.3-B) — "what is the op under the
 /// playhead doing?". The header names the playing op (or "—" when idle); the
-/// body carries the tool-load badges + the per-op Optimize / Jump buttons.
+/// body carries the tool-load badges + the per-op Jump button.
 fn draw_toolpath_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -1000,9 +959,6 @@ fn draw_toolpath_section(
                 }
             }
             ui.horizontal(|ui| {
-                if ui.small_button("Optimize this op").clicked() {
-                    events.push(AppEvent::OpenOptimizeModal(boundary_id));
-                }
                 if ui.small_button("Jump to start").clicked() {
                     events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
                         move_index: boundary_start,
@@ -2688,9 +2644,9 @@ mod tests {
         assert!(tooltip.contains("re-run the simulation"), "{tooltip}");
     }
 
-    /// A toolpath whose every criterion says "does not apply" — the optimizer
-    /// path leaves `drill_gates` as `None` on a drill op, so this state is
-    /// reachable. `limit_rows` drops every row, and `draw_limit_rows` must
+    /// A toolpath whose every criterion says "does not apply" — a direct
+    /// `evaluate_toolpath` call leaves `drill_gates` as `None` on a drill op,
+    /// so this state is reachable. `limit_rows` drops every row, and `draw_limit_rows` must
     /// then state the absence: a blank there reads as a clean cut, which is
     /// defect class 3.
     #[test]

@@ -325,7 +325,7 @@ fn tool_constraints_allows_matches_runtime_refusal_semantics() {
 
 /// Phase 1 T4: the drill-family membership behind the canonical
 /// [`OperationType::is_drill_kinematics`] predicate, pinned exactly.
-/// Every gate/optimizer/narrate consumer now routes through the
+/// Every gate/narrate consumer now routes through the
 /// helper, so growing this set is a single deliberate edit — and
 /// this pin makes that edit loud.
 #[test]

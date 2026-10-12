@@ -41,7 +41,7 @@
 //!   8× headroom and still ≈ 1.8e-15 relative — orders of magnitude
 //!   below any physically meaningful difference in any gated quantity.
 //!   A genuine exceedance of even 0.001 % is unaffected.
-//! - It is **not** [`super::ToleranceBands`]. Those are the optimizer's
+//! - It is **not** [`super::ToleranceBands`]. Those are the gate's
 //!   dials, they default to zero, and widening one moves *every* verdict
 //!   — option (b3), rejected at Checkpoint K. The epsilon here moves
 //!   only verdicts that were decided by float noise. Both apply: the

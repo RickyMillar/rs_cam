@@ -311,50 +311,6 @@ pub struct CollisionResult {
     pub positions: Vec<[f32; 3]>,
 }
 
-/// Request to the Optimize worker lane. Its one variant owns a
-/// `ProjectSession` for the duration of the run — the main thread CLONES
-/// its session into the request and keeps the original.
-///
-/// WP14b emptied the other two arms. `Toolpath` became the
-/// `optimize_toolpath` `Job` row and `MultitoolPreview` became the
-/// existing `preview_tier_map` row, so both now ride
-/// [`ComputeLane::Job`](super::ComputeLane::Job) over a handle. The
-/// project rollup has no registry row and gets none now (§28 ruling 6),
-/// so it stays here — over a clone, not over a `mem::replace`.
-pub enum OptimizeRequest {
-    /// Run `optimize_project` over every enabled toolpath. Surfaces in
-    /// the U3 rollup view.
-    Project {
-        /// The main thread's own session, CLONED. The worker mutates it
-        /// freely and it is dropped with the request; nothing comes
-        /// back but the report.
-        session: rs_cam_core::session::ProjectSession,
-        baseline_trace: Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
-    },
-}
-
-/// Result from the Optimize worker.
-///
-/// It carries NO session. Before WP14b the main thread held
-/// `ProjectSession::new_empty()` while the lane ran, so the result had to
-/// carry the real one back and a panic on this lane lost the project.
-/// The request now owns a clone, so there is nothing to give back.
-pub struct OptimizeResult {
-    pub kind: OptimizeResultKind,
-    /// `Some` when the memory budget stopped the run (plan B3). The report
-    /// then holds what the run found before the stop.
-    ///
-    /// Only [`StopReason::OverBudget`] is stored here. An operator cancel
-    /// stays inside the report as a `Cancelled` outcome, as before.
-    pub budget_stop: Option<StopReason>,
-}
-
-pub enum OptimizeResultKind {
-    Project {
-        report: rs_cam_core::tool_load::optimize::ProjectOptimizeReport,
-    },
-}
-
 #[allow(clippy::large_enum_variant)]
 enum AnalysisRequest {
     /// A simulation and its memory estimate for the ledger, in bytes.
@@ -430,7 +386,7 @@ pub struct JobResult {
 /// The memory budget of the heavy lanes, and the probe a job reads its
 /// usage with (plan B1 and B3, `planning/memory_budget_2026-10-01/PLAN.md`).
 ///
-/// Each heavy job (toolpath, simulation and collision, project optimize)
+/// Each heavy job (toolpath, simulation and collision)
 /// builds ONE [`BudgetGuard`] from this over the flag the job already polls,
 /// and runs [`BudgetGuard::watch`] while the job runs. The watch thread
 /// sets that flag when the process goes over the limit, so every existing
@@ -582,7 +538,7 @@ fn over_budget_stop(guard: &BudgetGuard) -> Option<ComputeError> {
 /// The memory ledger of the heavy lanes (plan B4, "Architecture" 3,
 /// `planning/memory_budget_2026-10-01/PLAN.md`).
 ///
-/// The toolpath, analysis and optimize lanes share ONE ledger. Each of their
+/// The toolpath and analysis lanes share ONE ledger. Each of their
 /// jobs takes a [`LedgerTicket`] in [`LaneQueue::dequeue_reserved`] before
 /// it runs, and the ticket gives the reservation back when it drops. The
 /// lane loop holds the ticket in a local, so it drops at the end of the job
@@ -835,7 +791,7 @@ struct RunningJob {
     ///
     /// The analysis lane fills it for a simulation
     /// (`rs_cam_core::budget::estimate::SimulationNeed`). A generation, a
-    /// collision check and a project optimize have no sourced estimate yet,
+    /// collision check have no sourced estimate yet,
     /// so they stay `None`; they still count as running heavy jobs.
     estimate_bytes: Option<u64>,
 }
@@ -877,7 +833,7 @@ struct LaneQueue<Request> {
     inner: Mutex<LaneInner<Request>>,
     wake: Condvar,
     /// The lane flag. An `Arc` so that a job's [`BudgetGuard`] can own it:
-    /// on the analysis and optimize lanes the guard sets THIS flag when the
+    /// on the analysis lane the guard sets THIS flag when the
     /// budget stops the job.
     cancel: Arc<AtomicBool>,
     shutdown: AtomicBool,
@@ -1067,7 +1023,6 @@ impl rs_cam_core::trace::debug_trace::ToolpathPhaseSink for ToolpathPhaseTracker
 pub struct ThreadedComputeBackend {
     toolpath_lane: Arc<LaneQueue<ComputeRequest>>,
     analysis_lane: Arc<LaneQueue<AnalysisRequest>>,
-    optimize_lane: Arc<LaneQueue<OptimizeRequest>>,
     /// P5 — the reach-map overlay's own lane. See [`ComputeLane::Reach`] for
     /// why it is not a third `AnalysisRequest` variant.
     reach_lane: Arc<LaneQueue<ReachRequest>>,
@@ -1076,7 +1031,6 @@ pub struct ThreadedComputeBackend {
     result_rx: mpsc::Receiver<ComputeMessage>,
     toolpath_handle: Option<std::thread::JoinHandle<()>>,
     analysis_handle: Option<std::thread::JoinHandle<()>>,
-    optimize_handle: Option<std::thread::JoinHandle<()>>,
     reach_handle: Option<std::thread::JoinHandle<()>>,
     job_handle: Option<std::thread::JoinHandle<()>>,
     /// S5 — the analysis lane's simulation prefix memo. Shared so the GUI
@@ -1145,7 +1099,6 @@ impl ThreadedComputeBackend {
         };
         let toolpath_lane = LaneQueue::with_ledger(ComputeLane::Toolpath, Arc::clone(&ledger));
         let analysis_lane = LaneQueue::with_ledger(ComputeLane::Analysis, Arc::clone(&ledger));
-        let optimize_lane = LaneQueue::with_ledger(ComputeLane::Optimize, Arc::clone(&ledger));
         let reach_lane = LaneQueue::new(ComputeLane::Reach);
         let job_lane = LaneQueue::new(ComputeLane::Job);
         let (result_tx, result_rx) = mpsc::sync_channel::<ComputeMessage>(64);
@@ -1167,24 +1120,17 @@ impl ThreadedComputeBackend {
             Arc::clone(&sim_prefix_cache),
             budget.clone(),
         );
-        let optimize_handle = spawn_optimize_lane(
-            Arc::clone(&optimize_lane),
-            result_tx.clone(),
-            budget.clone(),
-        );
         let reach_handle = spawn_reach_lane(Arc::clone(&reach_lane), result_tx.clone());
         let job_handle = spawn_job_lane(Arc::clone(&job_lane), result_tx);
 
         Self {
             toolpath_lane,
             analysis_lane,
-            optimize_lane,
             reach_lane,
             job_lane,
             result_rx,
             toolpath_handle: Some(toolpath_handle),
             analysis_handle: Some(analysis_handle),
-            optimize_handle: Some(optimize_handle),
             reach_handle: Some(reach_handle),
             job_handle: Some(job_handle),
             sim_prefix_cache,
@@ -1199,12 +1145,10 @@ impl Drop for ThreadedComputeBackend {
     fn drop(&mut self) {
         self.toolpath_lane.shutdown.store(true, Ordering::SeqCst);
         self.analysis_lane.shutdown.store(true, Ordering::SeqCst);
-        self.optimize_lane.shutdown.store(true, Ordering::SeqCst);
         self.reach_lane.shutdown.store(true, Ordering::SeqCst);
         self.job_lane.shutdown.store(true, Ordering::SeqCst);
         self.toolpath_lane.wake.notify_all();
         self.analysis_lane.wake.notify_all();
-        self.optimize_lane.wake.notify_all();
         self.reach_lane.wake.notify_all();
         self.job_lane.wake.notify_all();
         // A heavy lane that waits for the ledger waits on the ledger.
@@ -1213,9 +1157,6 @@ impl Drop for ThreadedComputeBackend {
             let _ = h.join();
         }
         if let Some(h) = self.analysis_handle.take() {
-            let _ = h.join();
-        }
-        if let Some(h) = self.optimize_handle.take() {
             let _ = h.join();
         }
         if let Some(h) = self.reach_handle.take() {
@@ -1338,31 +1279,8 @@ impl ComputeBackend for ThreadedComputeBackend {
         self.submit_analysis(AnalysisRequest::Collision(request));
     }
 
-    fn submit_optimize(&mut self, request: OptimizeRequest) {
-        let mut inner = self
-            .optimize_lane
-            .inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        // The Optimize lane only ever runs one job at a time — a new
-        // submit replaces any queued job (the modal closes the previous
-        // run before opening a new one) and cancels any in-flight job.
-        inner.queue.clear();
-        inner.queue.push_back(request);
-        if inner.started_at.is_some() {
-            self.optimize_lane.cancel.store(true, Ordering::SeqCst);
-            inner.state = LaneState::Cancelling;
-        } else {
-            inner.state = LaneState::Queued;
-            inner.current_job = inner.queue.front().map(optimize_job_label);
-            inner.current_phase = None;
-        }
-        self.optimize_lane.wake.notify_one();
-    }
-
-    /// Latest selection wins — the same rule the Optimize lane keeps, and for
-    /// the same reason: only one answer is ever on screen, so an older walk
-    /// has nothing left to produce.
+    /// Latest selection wins: only one answer is ever on screen, so an
+    /// older walk has nothing left to produce.
     fn submit_job(&mut self, request: JobRequest) {
         let mut inner = self
             .job_lane
@@ -1428,17 +1346,6 @@ impl ComputeBackend for ThreadedComputeBackend {
                     inner.state = LaneState::Cancelling;
                 }
             }
-            ComputeLane::Optimize => {
-                let mut inner = self
-                    .optimize_lane
-                    .inner
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                if inner.started_at.is_some() {
-                    self.optimize_lane.cancel.store(true, Ordering::SeqCst);
-                    inner.state = LaneState::Cancelling;
-                }
-            }
             ComputeLane::Reach => {
                 let mut inner = self
                     .reach_lane
@@ -1480,7 +1387,6 @@ impl ComputeBackend for ThreadedComputeBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.snapshot(),
             ComputeLane::Analysis => self.analysis_lane.snapshot(),
-            ComputeLane::Optimize => self.optimize_lane.snapshot(),
             ComputeLane::Reach => self.reach_lane.snapshot(),
             ComputeLane::Job => self.job_lane.snapshot(),
         }
@@ -1530,12 +1436,6 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
     }
 }
 
-fn optimize_job_label(request: &OptimizeRequest) -> String {
-    match request {
-        OptimizeRequest::Project { .. } => "Optimize project".to_owned(),
-    }
-}
-
 fn reach_job_label(request: &ReachRequest) -> String {
     format!("Reach map (toolpath #{})", request.toolpath_id.0)
 }
@@ -1553,23 +1453,6 @@ fn job_label(request: &JobRequest) -> String {
         JobHandle::PreviewTierMap(handle) => {
             format!("Tier map preview ({} tools)", handle.tool_count())
         }
-        JobHandle::OptimizeToolpath(handle) => {
-            format!("Optimize toolpath #{}", handle.index)
-        }
-    }
-}
-
-/// Bridge that lets the optimizer's `ProgressReporter` updates land
-/// in the lane's `current_phase` field. The modal reads the phase
-/// through `lane_snapshot()` once per frame.
-struct LaneProgressBridge {
-    lane: Arc<LaneQueue<OptimizeRequest>>,
-}
-
-impl rs_cam_core::tool_load::optimize::ProgressReporter for LaneProgressBridge {
-    fn report(&self, _completed: usize, _total: usize, label: &str) {
-        let mut inner = self.lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-        inner.current_phase = Some(label.to_owned());
     }
 }
 
@@ -1809,80 +1692,6 @@ fn spawn_analysis_lane(
     })
 }
 
-fn spawn_optimize_lane(
-    lane: Arc<LaneQueue<OptimizeRequest>>,
-    result_tx: mpsc::SyncSender<ComputeMessage>,
-    budget: JobBudget,
-) -> std::thread::JoinHandle<()> {
-    use rs_cam_core::tool_load::optimize::{ProjectOptimizeReport, optimize_project};
-
-    std::thread::spawn(move || {
-        loop {
-            // The ticket lives to the end of this iteration. This lane has
-            // no `catch_unwind`; a panic unwinds the thread and drops the
-            // ticket with it, so the ledger does not keep a dead job.
-            let Some((request, _ticket)) =
-                lane.dequeue_reserved(|request| RunningJob::labelled(optimize_job_label(request)))
-            else {
-                return;
-            };
-
-            if lane.shutdown.load(Ordering::SeqCst) {
-                return;
-            }
-
-            // This lane carries NO `catch_unwind`, and WP14b changed why.
-            // Before it, a panic here lost the main thread's only session,
-            // which was worse than killing the worker. The request now
-            // owns a clone, so a panic loses the rollup and the clone and
-            // nothing else — the trade-off is the worker thread, which
-            // does not come back until the app restarts. The `Job` lane
-            // catches instead, because a job has a caller waiting on a
-            // oneshot. Adding one here is a separate decision; do not
-            // make it silently.
-            let progress = LaneProgressBridge {
-                lane: Arc::clone(&lane),
-            };
-            // The guard owns the lane flag, which the optimizer polls.
-            let guard = budget.guard(Arc::clone(&lane.cancel));
-            let watch = guard.watch();
-            let kind = match request {
-                OptimizeRequest::Project {
-                    mut session,
-                    baseline_trace,
-                } => {
-                    let report: ProjectOptimizeReport =
-                        optimize_project(&mut session, &baseline_trace, &progress, guard.flag());
-                    OptimizeResultKind::Project { report }
-                }
-            };
-            drop(watch);
-            let budget_stop = match guard.stop_reason() {
-                Some(reason @ StopReason::OverBudget { .. }) => Some(reason),
-                Some(StopReason::User) | None => None,
-            };
-            let result = OptimizeResult { kind, budget_stop };
-
-            // Reset lane state before sending so a follow-up submit
-            // doesn't see Running.
-            {
-                let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
-                inner.started_at = None;
-                inner.current_phase = None;
-                if inner.queue.is_empty() {
-                    inner.state = LaneState::Idle;
-                    inner.current_job = None;
-                } else {
-                    inner.state = LaneState::Queued;
-                    inner.current_job = inner.queue.front().map(optimize_job_label);
-                }
-            }
-
-            let _ = result_tx.send(ComputeMessage::Optimize(Box::new(result)));
-        }
-    })
-}
-
 /// The `Job` lane's worker thread (WP14a).
 ///
 /// It pops one [`JobRequest`], runs its work step and sends the answer
@@ -1901,7 +1710,7 @@ fn spawn_job_lane(
         loop {
             // `generating` is NOT called: a job runs work FOR a toolpath
             // without generating it. See `RunningJob::active_toolpath_id`.
-            let Some(mut request) = lane.dequeue_running(|request| {
+            let Some(request) = lane.dequeue_running(|request| {
                 RunningJob::labelled(job_label(request)).cancelled_by(Arc::clone(&request.cancel))
             }) else {
                 return;
@@ -1912,8 +1721,7 @@ fn spawn_job_lane(
             }
 
             let id = request.id;
-            let answer = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&mut request)))
-            {
+            let answer = match std::panic::catch_unwind(AssertUnwindSafe(|| run_job(&request))) {
                 Ok(answer) => answer,
                 Err(panic_payload) => {
                     let msg =
@@ -1957,14 +1765,10 @@ fn spawn_job_lane(
 /// and it is not an exception to that rule: it runs on the toolpath lane,
 /// which reports its own result type, so this lane refuses it rather than
 /// producing a second answer for it.
-///
-/// The request is taken by `&mut` for the `optimize_toolpath` arm alone
-/// (§28 ruling 4): that handle owns a cloned session and the optimizer
-/// takes it mutably, so a shared handle would cost a second clone.
-fn run_job(request: &mut JobRequest) -> Result<rs_cam_core::session::JobAnswer, ComputeError> {
+fn run_job(request: &JobRequest) -> Result<rs_cam_core::session::JobAnswer, ComputeError> {
     use rs_cam_core::session::{JobAnswer, JobHandle};
     let cancel = Arc::clone(&request.cancel);
-    match &mut request.handle {
+    match &request.handle {
         JobHandle::GenerateToolpath(_) => Err(ComputeError::Message(
             "generate_toolpath runs on the toolpath lane, which reports its own result".to_owned(),
         )),
@@ -1977,10 +1781,6 @@ fn run_job(request: &mut JobRequest) -> Result<rs_cam_core::session::JobAnswer, 
             rs_cam_core::session::execute_preview_tier_map(handle, &cancel)
                 .map(|answer| JobAnswer::PreviewTierMap(Box::new(answer)))
                 .map_err(|error| ComputeError::Message(error.to_string()))
-        }
-        JobHandle::OptimizeToolpath(handle) => {
-            let outcome = rs_cam_core::session::execute_optimize_toolpath(handle, &cancel);
-            Ok(JobAnswer::OptimizeToolpath(Box::new(outcome)))
         }
     }
 }

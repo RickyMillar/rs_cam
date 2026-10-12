@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 pub use worker::{
     ArtifactPolicy, CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, JobRequest,
-    JobResult, OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult,
-    SetupTransformInfo, SimulationRequest, SimulationResult, ThreadedComputeBackend, VizExtras,
+    JobResult, ReachRequest, ReachResult, SetupTransformInfo, SimulationRequest, SimulationResult,
+    ThreadedComputeBackend, VizExtras,
 };
 
 /// Identifies one [`JobRequest`] submit, so the drain routes its answer
@@ -24,21 +24,13 @@ pub struct JobRequestId(pub u64);
 pub enum ComputeLane {
     Toolpath,
     Analysis,
-    /// Worker for the PROJECT Optimize rollup.
-    ///
-    /// The request owns a CLONE of the `ProjectSession` for the run and
-    /// drops it; the result carries the report alone. The per-toolpath
-    /// search left this lane in WP14b and rides [`Self::Job`] now.
-    Optimize,
     /// Worker for a core `Job` row's work step (WP14a).
     ///
     /// **Its own lane, and it carries no session of the main thread's.**
-    /// Two of the three rows that ride it — `recommend_clearing_strategy`
-    /// and `preview_tier_map` — are READS whose step (ii) is a free
-    /// function over a handle. The third, `optimize_toolpath` (WP14b),
-    /// mutates, but it mutates the CLONE its own handle owns. Either way
-    /// the session stays on the main thread and stays usable while the
-    /// job runs.
+    /// The rows that ride it — `recommend_clearing_strategy` and
+    /// `preview_tier_map` — are READS whose step (ii) is a free function
+    /// over a handle. The session stays on the main thread and stays
+    /// usable while the job runs.
     ///
     /// The queue is FIFO and a submit supersedes nothing. Two previews at
     /// different dial sets are two different questions, and dropping the
@@ -75,7 +67,7 @@ pub struct LaneSnapshot {
     pub current_phase: Option<String>,
     pub started_at: Option<Instant>,
     /// A/M12: stable id of the toolpath the lane is chewing on right now.
-    /// `None` on the analysis / optimize lanes and whenever the lane is idle.
+    /// `None` on the analysis lane and whenever the lane is idle.
     pub active_toolpath_id: Option<usize>,
     /// A/M12: 0-based position of that toolpath in
     /// `ProjectSession::toolpath_configs()` at submit time. Stamped onto the
@@ -476,11 +468,6 @@ pub enum ComputeMessage {
     Toolpath(Box<ComputeResult>),
     Simulation(Result<Box<SimulationResult>, ComputeError>),
     Collision(Result<CollisionResult, ComputeError>),
-    /// Optimize lane completion — the project rollup's report. It
-    /// carries NO session since WP14b: the request owned a clone, so
-    /// there is nothing to swap back. Cancellation still produces a
-    /// `Cancelled` outcome inside the report rather than an `Err`.
-    Optimize(Box<OptimizeResult>),
     /// Reach lane completion (P5). Boxed for the same reason the toolpath
     /// variant is: the payload carries a whole per-vertex colour vector.
     Reach(Box<ReachResult>),
@@ -497,13 +484,6 @@ pub trait ComputeBackend: Send {
     fn submit_toolpath(&mut self, request: ComputeRequest) -> ToolpathSubmitOutcome;
     fn submit_simulation(&mut self, request: SimulationRequest);
     fn submit_collision(&mut self, request: CollisionRequest);
-    /// Submit an Optimize request. The request owns a CLONE of the
-    /// `ProjectSession` and the worker drops it with the request; the
-    /// [`ComputeMessage::Optimize`] reply carries the report alone.
-    /// Before WP14b the main thread MOVED its session in and the reply
-    /// carried it back.
-    fn submit_optimize(&mut self, request: OptimizeRequest);
-
     /// Submit one core `Job` row's work step to the [`ComputeLane::Job`]
     /// lane.
     ///
@@ -598,7 +578,6 @@ pub trait ComputeBackend: Send {
     fn cancel_all(&mut self) {
         self.cancel_lane(ComputeLane::Toolpath);
         self.cancel_lane(ComputeLane::Analysis);
-        self.cancel_lane(ComputeLane::Optimize);
         self.cancel_lane(ComputeLane::Reach);
         self.cancel_lane(ComputeLane::Job);
     }
@@ -609,11 +588,10 @@ pub trait ComputeBackend: Send {
     /// `RsCamApp::needs_pump_tick` and the repaint arm both fold over this
     /// array, so a lane missing from it can run to completion while the
     /// event loop is parked and its result waits for an unrelated wake-up.
-    fn lane_snapshots(&self) -> [LaneSnapshot; 5] {
+    fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
         [
             self.lane_snapshot(ComputeLane::Toolpath),
             self.lane_snapshot(ComputeLane::Analysis),
-            self.lane_snapshot(ComputeLane::Optimize),
             self.lane_snapshot(ComputeLane::Reach),
             self.lane_snapshot(ComputeLane::Job),
         ]

@@ -400,7 +400,7 @@ pub enum Kinematics {
     Milling,
     /// Z-only peck-plunge drilling. The verdict layer suppresses the
     /// rapid:cut-ratio and engagement signals for these, and the chipload,
-    /// power and deflection gates, the optimizer skip and the narrate
+    /// power and deflection gates and the narrate
     /// `is_drill_cycle` flag all read this one class.
     DrillZOnly,
 }

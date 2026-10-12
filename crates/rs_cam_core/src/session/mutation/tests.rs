@@ -1037,99 +1037,6 @@ fn update_stock_from_bbox_invalidates_sim() {
     assert!(s.simulation.is_none());
 }
 
-#[test]
-fn apply_toolpath_param_snapshot_narrow_invalidates() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-    s.results.insert(0, fake_result());
-
-    // Snapshot of "prior" state we want to restore.
-    let snapshot_op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
-    let snapshot_dress = DressupConfig::default();
-    let snapshot_faces = Some(vec![crate::geometry::enriched_mesh::FaceGroupId(7)]);
-
-    let _ = s
-        .apply_toolpath_param_snapshot_narrow(
-            0,
-            snapshot_op,
-            snapshot_dress,
-            snapshot_faces.clone(),
-        )
-        .unwrap();
-
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::AlignmentPinDrill(_) => {}
-        _ => panic!("operation snapshot not applied"),
-    }
-    assert_eq!(s.toolpath_configs()[0].face_selection, snapshot_faces);
-    assert!(!s.results.contains_key(&0));
-    assert!(s.simulation.is_none());
-}
-
-#[test]
-fn apply_toolpath_param_snapshot_narrow_not_found() {
-    let mut s = make_session();
-    let result = s.apply_toolpath_param_snapshot_narrow(
-        99,
-        OperationConfig::Pocket(PocketConfig::default()),
-        DressupConfig::default(),
-        None,
-    );
-    assert!(matches!(result, Err(SessionError::ToolpathNotFound(99))));
-}
-
-/// The optimizer's dependence on the narrowness, pinned.
-///
-/// `tool_load/optimize/candidate.rs` restores a candidate, then
-/// regenerates ONE index, then simulates against the neighbours'
-/// cached results. The narrow path is what leaves those results in
-/// place. `Command::RestoreToolpathSnapshot` drops them, which is
-/// the right answer for an undo and the wrong answer for one point
-/// of a candidate search.
-///
-/// The wide half of this pair lives in
-/// `tests/restore_snapshot_invalidates_like_the_setter_n14.rs`. It
-/// cannot reach this path, because `pub(crate)` keeps the path
-/// inside the crate.
-#[test]
-fn the_narrow_path_leaves_the_neighbour_result_cached() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-    let tool = s.tools()[0].id.0;
-    let _ = s.add_toolpath(0, make_tc(tool, 0)).unwrap();
-    let mut downstream = make_tc(tool, 0);
-    downstream.operation = OperationConfig::Rest(RestConfig::default());
-    downstream.stock_source = crate::session::StockSource::FromRemainingStock;
-    let _ = s.add_toolpath(0, downstream).unwrap();
-    s.results.insert(0, fake_result());
-    s.results.insert(1, fake_result());
-    assert!(
-        s.get_result(0).is_some() && s.get_result(1).is_some(),
-        "both rows need a cached result, or the reading below is vacuous"
-    );
-
-    let _ = s
-        .apply_toolpath_param_snapshot_narrow(
-            0,
-            OperationConfig::Pocket(PocketConfig::default()),
-            DressupConfig::default(),
-            None,
-        )
-        .unwrap();
-
-    assert!(
-        s.get_result(0).is_none(),
-        "the restored row loses its own result on either contract"
-    );
-    assert!(
-        s.get_result(1).is_some(),
-        "and the row that reads its remaining stock keeps its \
-         result. The candidate search regenerates one index and \
-         simulates against this cache."
-    );
-}
-
 /// Deliver a completion the way the compute lane does.
 ///
 /// `insert_result` is no longer a public door. A completion arrives
@@ -1168,12 +1075,15 @@ fn adopt_result_after_apply_snapshot_restores_cache() {
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
     s.results.insert(0, fake_result());
 
-    let snapshot = s.apply_toolpath_param_snapshot_narrow(
-        0,
-        OperationConfig::Pocket(PocketConfig::default()),
-        DressupConfig::default(),
-        None,
-    );
+    let snapshot = s.apply(Command::RestoreToolpathSnapshot(
+        crate::session::RestoreToolpathSnapshotArgs {
+            index: 0,
+            operation: Box::new(OperationConfig::Pocket(PocketConfig::default())),
+            dressups: Box::new(DressupConfig::default()),
+            face_selection: None,
+            feeds_provenance: None,
+        },
+    ));
     assert!(snapshot.is_ok(), "index 0 exists");
     assert!(s.get_result(0).is_none());
 

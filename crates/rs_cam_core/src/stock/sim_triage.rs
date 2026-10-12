@@ -574,10 +574,7 @@ impl BiteReference {
 
 /// The comparison tolerance on the commanded arm, in mm: one dexel cell.
 ///
-/// The optimizer's full-cut rule 3 (`tool_load::optimize::full_cut`)
-/// compares two peaks of this finding with the same one-cell slack, so the
-/// finding and its reader use one tolerance. The cell also covers the
-/// draped levels of the 3D ops that carry a step (`Adaptive3d`). When the
+/// The cell also covers the draped levels of the 3D ops that carry a step (`Adaptive3d`). When the
 /// caller does not know the cell, the floor is the `f32` resolution of a
 /// removed column, [`crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM`]
 /// (EVIDENCE 5.1-6), which the depth gate uses on the same field.
@@ -617,8 +614,7 @@ pub(crate) fn commanded_step_mm(
 }
 
 /// The population and the reference of the standing-material rule for one
-/// toolpath. The ONE definition: [`standing_material_finding`] and
-/// [`standing_material_reading`] both call it.
+/// toolpath. The ONE definition: [`standing_material_finding`] calls it.
 ///
 /// The population is the steady-state cutting samples of the toolpath that
 /// removed material on the lateral axis; see [`standing_material_finding`]
@@ -660,62 +656,6 @@ fn standing_material_population(
     (population, reference)
 }
 
-/// The standing-material reading of one toolpath: the population, its peak
-/// bite and how many samples are over the bar.
-///
-/// The finding ([`standing_material_finding`]) needs at least
-/// [`STANDING_MATERIAL_MIN_SAMPLES`] samples and a fraction of at least
-/// [`STANDING_MATERIAL_SAMPLE_FRACTION`] over the bar. Those floors keep a
-/// handful of samples from becoming an operator finding. The reading has no
-/// floor: it reports the peak whenever the population holds one sample or
-/// more. A reader that must not mistake "the rule abstained" for "measured,
-/// clean" reads this, not the finding. The optimizer's full-cut check
-/// (`tool_load::optimize::full_cut`) is that reader.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct StandingMaterialReading {
-    /// The number of samples in the population. 0 means NOT MEASURED.
-    pub population: usize,
-    /// The largest bite in the population, in mm. `None` when the
-    /// population is empty.
-    pub peak_bite_mm: Option<f64>,
-    /// The number of samples whose bite is more than the bar.
-    pub over_bar: usize,
-    /// The bar, in mm: the commanded step plus one cell, or three times
-    /// the pass's own median bite. `None` when the population is empty.
-    pub bar_mm: Option<f64>,
-}
-
-/// Read the standing-material rule for one toolpath, with no sample floor
-/// and no fraction floor. The population and the bar are those of the
-/// finding; see [`StandingMaterialReading`].
-#[must_use]
-pub fn standing_material_reading(
-    trace: &SimulationCutTrace,
-    toolpath_id: ToolpathId,
-    commanded_step: Option<f64>,
-    cell_mm: Option<f64>,
-) -> StandingMaterialReading {
-    let (population, reference) =
-        standing_material_population(trace, toolpath_id, commanded_step, cell_mm);
-    let bar_mm = reference.map(BiteReference::bar_mm);
-    let peak_bite_mm = population
-        .iter()
-        .map(|s| s.axial_engagement_mm)
-        .max_by(f64::total_cmp);
-    let over_bar = bar_mm.map_or(0, |bar| {
-        population
-            .iter()
-            .filter(|s| s.axial_engagement_mm > bar)
-            .count()
-    });
-    StandingMaterialReading {
-        population: population.len(),
-        peak_bite_mm,
-        over_bar,
-        bar_mm,
-    }
-}
-
 /// Report a pass that cuts through material deeper than it was planned to
 /// cut — material an upstream operation left standing.
 ///
@@ -735,8 +675,7 @@ pub fn standing_material_reading(
 /// peak can differ from the earlier reading on the same trace.
 ///
 /// [`standing_material_population`] holds this population and the
-/// reference below. [`standing_material_reading`] reads the same
-/// population without the sample and fraction floors.
+/// reference below.
 ///
 /// # The reference (G-OVERCUTREF, 2026-10-12)
 ///
@@ -769,7 +708,7 @@ pub fn standing_material_reading(
 /// reports.
 ///
 /// On both arms `observed` is the peak bite in mm and `threshold` is the
-/// bar, so the optimizer's peak comparison reads one quantity.
+/// bar.
 fn standing_material_finding(
     trace: &SimulationCutTrace,
     toolpath_id: ToolpathId,
@@ -1839,7 +1778,7 @@ mod tests {
     #[test]
     fn g_overcutref_a_bite_inside_one_cell_of_the_step_is_not_an_overcut() {
         // 10 % of samples at step + half a cell: the dexel cannot tell this
-        // from the step, and the optimizer's peak rule grants the same cell.
+        // from the step.
         let f = stepped_finding(&stepped_trace(20, STEP_MM + 0.5 * CELL_MM, false));
         assert!(f.is_none(), "a bite inside one cell must not fire: {f:?}");
     }
@@ -1862,39 +1801,6 @@ mod tests {
             }
             other => panic!("expected SampleRange evidence, got {other:?}"),
         }
-    }
-
-    /// R2: under the sample floor the finding abstains, and the reading
-    /// still reports the population, the peak and the samples over the bar.
-    #[test]
-    fn r2_a_reading_reports_the_peak_where_the_finding_abstains() {
-        let samples = (0..10)
-            .map(|i| SimulationCutSample {
-                toolpath_id: ToolpathId(1),
-                move_index: i,
-                sample_index: i,
-                segment_time_s: 0.01,
-                is_cutting: true,
-                axial_engagement_mm: if i == 0 { 3.0 * STEP_MM } else { STEP_MM },
-                engagement: Engagement::with_radial_woc(0.3),
-                removed_volume_est_mm3: 1.0,
-                ..SimulationCutSample::test_fixture()
-            })
-            .collect();
-        let trace = SimulationCutTrace::from_samples(0.5, samples);
-        assert!(
-            stepped_finding(&trace).is_none(),
-            "the finding keeps its floor"
-        );
-        let r = standing_material_reading(&trace, ToolpathId(1), Some(STEP_MM), Some(CELL_MM));
-        assert_eq!(r.population, 10);
-        assert_eq!(r.over_bar, 1);
-        assert_eq!(r.peak_bite_mm, Some(3.0 * STEP_MM));
-        let bar = r.bar_mm.expect("a population has a bar");
-        assert!((bar - (STEP_MM + CELL_MM)).abs() < 1e-12, "bar {bar}");
-
-        let empty = standing_material_reading(&trace, ToolpathId(2), Some(STEP_MM), Some(CELL_MM));
-        assert_eq!(empty, StandingMaterialReading::default());
     }
 
     #[test]

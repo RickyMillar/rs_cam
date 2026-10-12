@@ -750,7 +750,6 @@ pub fn project_load_report(
         // samples and only measure steady-state cutting against the LUT.
         let operation_feed_rate_mm_min = tc.operation.feed_rate();
         // The export uses the strict bands, `ToleranceBands::default()`.
-        // The optimizer judges every candidate with the same bands.
         let strict_tolerance = crate::tool_load::ToleranceBands::default();
         // §6.E / Step 3 PR2: when the toolpath is a drill op, thread the
         // `DrillOp` payload into the context so `evaluate_toolpath` runs
@@ -760,8 +759,8 @@ pub fn project_load_report(
         // signal.
         let drill_op = project.get_result(idx).and_then(|r| r.drill_op());
         // Phase 6 task 2: delegate verdict assembly to
-        // `tool_load::evaluate_toolpath` — the single assembly site
-        // shared with the optimizer — instead of re-assembling the
+        // `tool_load::evaluate_toolpath` — the single assembly site —
+        // instead of re-assembling the
         // struct inline (the inline copy had already diverged on
         // `modulation_summary`).
         let load_ctx = crate::tool_load::ToolpathLoadContext {

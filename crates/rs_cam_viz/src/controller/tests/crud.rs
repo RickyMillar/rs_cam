@@ -187,8 +187,6 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
             .insert(removed_id, tx);
         rx
     };
-    controller.state.pending_reconciliation_for_ids = vec![retained_id, removed_id];
-    controller.state.pending_apply_resim = Some(removed_id.0);
     controller.state.gui.pending_toolpath_tab =
         Some((removed_id, crate::ui::properties::ToolpathTab::Geometry));
     controller.state.simulation.debug.pending_inspect_toolpath = Some(removed_id);
@@ -222,11 +220,6 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
 
     assert!(controller.state.gui.toolpath_rt.contains_key(&retained_id));
     assert!(!controller.state.gui.toolpath_rt.contains_key(&removed_id));
-    assert_eq!(
-        controller.state.pending_reconciliation_for_ids,
-        vec![retained_id]
-    );
-    assert!(controller.state.pending_apply_resim.is_none());
     assert!(controller.state.gui.pending_toolpath_tab.is_none());
     assert!(
         controller

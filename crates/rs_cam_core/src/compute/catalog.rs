@@ -549,7 +549,7 @@ impl OperationType {
     ///
     /// THE canonical drill-family predicate (Phase 1 T4 consolidated the
     /// open-coded `Drill | AlignmentPinDrill` matches in the chipload /
-    /// power / deflection gates, the optimizer skip, and the narrate
+    /// power / deflection gates and the narrate
     /// `is_drill_cycle` flag onto this). The membership set is pinned by
     /// `drill_kinematics_set_is_pinned`; extend it deliberately.
     ///
@@ -931,21 +931,6 @@ pub enum OperationConfig {
     AlignmentPinDrill(AlignmentPinDrillConfig),
 }
 
-/// G16: explicit optimization classification for every `OperationConfig`
-/// variant. The match in [`OperationConfig::optimization_surface`] has no
-/// wildcard arm, so adding a new variant without classifying it is a
-/// compile-time error.
-pub enum OptimizationSurface {
-    /// The optimizer can search this op.
-    Optimizable,
-    /// The op is intentionally not optimizable (e.g., drilling cycles
-    /// where chipload is meaningless and DOC is fixed by hole depth).
-    /// `reason` surfaces in the orchestrator's outcome.
-    NotOptimizable {
-        reason: crate::tool_load::RefuseReason,
-    },
-}
-
 impl OperationConfig {
     /// Whether the entry-move surface probe applies to this operation,
     /// and the leave allowance it must protect (G-RAMPTERRAIN,
@@ -992,50 +977,6 @@ impl OperationConfig {
             OperationConfig::SpiralFinish(c) => Some(c.stock_to_leave),
             OperationConfig::RadialFinish(c) => Some(c.stock_to_leave),
             OperationConfig::HorizontalFinish(c) => Some(c.stock_to_leave),
-        }
-    }
-
-    /// G16 Step 3: classify this op for optimization. Every variant is
-    /// named explicitly — the match has **no wildcard arm**. Adding a
-    /// new `OperationConfig` variant without classifying it here is a
-    /// compile error.
-    ///
-    /// See `planning/STEP3_PREP_OPTIMIZATION_SURFACE.md` for the
-    /// design rationale per variant.
-    pub fn optimization_surface(&self) -> OptimizationSurface {
-        use crate::tool_load::RefuseReason;
-
-        match self {
-            OperationConfig::Face(_)
-            | OperationConfig::Pocket(_)
-            | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
-            | OperationConfig::VCarve(_)
-            | OperationConfig::Rest(_)
-            | OperationConfig::Inlay(_)
-            | OperationConfig::Zigzag(_)
-            | OperationConfig::Trace(_)
-            | OperationConfig::Chamfer(_)
-            | OperationConfig::DropCutter(_)
-            | OperationConfig::Adaptive3d(_)
-            | OperationConfig::Waterline(_)
-            | OperationConfig::Pencil(_)
-            | OperationConfig::Scallop(_)
-            | OperationConfig::UnifiedFinish(_)
-            | OperationConfig::SteepShallow(_)
-            | OperationConfig::RampFinish(_)
-            | OperationConfig::SpiralFinish(_)
-            | OperationConfig::RadialFinish(_)
-            | OperationConfig::HorizontalFinish(_)
-            | OperationConfig::ProjectCurve(_) => OptimizationSurface::Optimizable,
-            OperationConfig::Drill(_) => OptimizationSurface::NotOptimizable {
-                reason: RefuseReason::SteadyStateSamplesNotPresent,
-            },
-            OperationConfig::AlignmentPinDrill(_) => OptimizationSurface::NotOptimizable {
-                reason: RefuseReason::SteadyStateSamplesNotPresent,
-            },
-            // No wildcard arm. Adding a new OperationConfig variant
-            // forces explicit classification at compile time.
         }
     }
 

@@ -438,7 +438,7 @@ as the record of what the engine read before B6.
 ### Feed-aware lateral cutting-force model (deflection)
 
 `crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection
-gate, Suggest predictor, axial-DOC envelope, and optimize preflight consume)
+gate, Suggest predictor and axial-DOC envelope consume)
 replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
 `F_lat = ap · (Ks · fz·sin θ_peak + F_edge)`, `cos ψ = 1 − ae/r`. Sources
 (deep-research verification 2026-06-18, see

@@ -33,11 +33,9 @@ pub enum UndoAction {
     },
     /// One parameter edit on one toolpath.
     ///
-    /// The variant carries the feeds provenance on both sides (WP8). The
-    /// three optimizer apply paths stamp `ProvenanceSource::Optimizer`
-    /// on the dimensions a candidate moved, and without the pair here an
-    /// undo put the pre-optimizer numbers back and left that stamp
-    /// standing on them.
+    /// The variant carries the feeds provenance on both sides (WP8).
+    /// Without the pair here, an undo puts the earlier numbers back and
+    /// leaves the later stamp standing on them.
     ToolpathParamChange {
         tp_id: ToolpathId,
         old_op: OperationConfig,

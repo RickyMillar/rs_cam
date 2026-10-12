@@ -41,7 +41,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     state: &AppState,
     collision_count: usize,
-    lanes: &[LaneSnapshot; 5],
+    lanes: &[LaneSnapshot; 4],
     load_warnings: &[String],
 ) -> bool {
     let mut open_warnings = false;
@@ -215,12 +215,11 @@ fn grouped(count: usize) -> String {
     text::group_thousands(i64::try_from(count).unwrap_or(i64::MAX))
 }
 
-/// The lane's short label. Three characters at most, so five lanes fit.
+/// The lane's short label. Three characters at most, so four lanes fit.
 fn lane_prefix(lane: ComputeLane) -> &'static str {
     match lane {
         ComputeLane::Toolpath => "TP",
         ComputeLane::Analysis => "AN",
-        ComputeLane::Optimize => "OPT",
         ComputeLane::Reach => "RCH",
         ComputeLane::Job => "JOB",
     }
@@ -231,7 +230,6 @@ fn lane_name(lane: ComputeLane) -> &'static str {
     match lane {
         ComputeLane::Toolpath => "Toolpath",
         ComputeLane::Analysis => "Analysis",
-        ComputeLane::Optimize => "Optimize",
         ComputeLane::Reach => "Reach map",
         ComputeLane::Job => "Job",
     }
@@ -241,7 +239,6 @@ fn lane_automation_id(lane: ComputeLane) -> &'static str {
     match lane {
         ComputeLane::Toolpath => "status_lane_toolpath",
         ComputeLane::Analysis => "status_lane_analysis",
-        ComputeLane::Optimize => "status_lane_optimize",
         ComputeLane::Reach => "status_lane_reach",
         ComputeLane::Job => "status_lane_job",
     }

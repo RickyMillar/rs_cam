@@ -129,8 +129,8 @@ pub fn freshness_at(
 /// `AppController::invalidate_simulation`, which wipes `last_run` as well
 /// as the results, so a mirrored GUI edit reads [`Self::NoRun`]. The
 /// `EditedSince` arm is reached where no door mirrors: the MCP surface,
-/// Optimize Apply, a panel edit the frame loop has not discharged yet, and
-/// a late run the core refused.
+/// a panel edit the frame loop has not discharged yet, and a late run the
+/// core refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimFreshness {
     /// No run has landed, or an edit cleared both the core and the view.

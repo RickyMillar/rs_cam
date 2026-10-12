@@ -1,5 +1,8 @@
 # Optimizer clean-up and rebuild plan, 2026-10-12
 
+> **CULLED 2026-10-13 by operator ruling; the review and RESULT stay as the
+> record for a future rebuild.**
+
 Status: Phase 1 DONE (e3210f80). Phase 2 R1 DONE (4a9884f7), R2 DONE
 (79e4100b). Follow-ups from the first Z22 measurement are in §5. The
 result record is `RESULT.md` beside this file. Branch `optimizer-rebuild`,

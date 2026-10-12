@@ -19,14 +19,14 @@
 //! WP14b (§28 ruling 7): the preview submits the `preview_tier_map` `Job`
 //! row on the Job lane. Step (i) captures the ladder and the geometry on
 //! the frame loop, so the walk holds no session and the view keeps its
-//! own. It used to `mem::replace` the session into an Optimize-lane
-//! request and leave an empty placeholder session behind. Cancel is now
+//! own. It used to `mem::replace` the session into a lane request and
+//! leave an empty placeholder session behind. Cancel is now
 //! this submit's own flag rather than the lane's, because the Job lane is
 //! FIFO and shared with the MCP surface.
 //!
-//! WP24: the preview is one of the three runs `AppState::optimize_run`
-//! names, so the workspace bar draws a progress row for it and the row's
-//! Cancel arms this submit's flag. The full-screen placeholder the GUI
+//! WP24: the preview is the run `AppState::job_run` names, so the
+//! workspace bar draws a progress row for it and the row's Cancel arms
+//! this submit's flag. The full-screen placeholder the GUI
 //! used to draw during the walk is deleted.
 
 use rs_cam_core::compute::cutter::build_cutter;
@@ -163,11 +163,11 @@ impl<B: ComputeBackend> AppController<B> {
     /// dialog's own `Failed` status, where it used to arrive through the
     /// lane.
     pub(crate) fn request_multitool_preview(&mut self) {
-        if self.state.is_optimizing() {
-            let busy = self.optimize_run_label();
+        if self.state.is_job_running() {
+            let busy = self.job_run_label();
             tracing::warn!("Ignored PreviewMultitoolPlan — {busy} is already running");
             self.push_notification(
-                format!("{busy} is already running — one Optimize run at a time."),
+                format!("{busy} is already running — one job at a time."),
                 crate::controller::Severity::Warning,
             );
             return;
@@ -203,14 +203,11 @@ impl<B: ComputeBackend> AppController<B> {
                 return;
             }
         };
-        // `submit_gui_job` stamps `AppState::optimize_run` (WP24).
+        // `submit_gui_job` stamps `AppState::job_run` (WP24).
         self.submit_gui_job(
             handle,
             cancel,
             crate::controller::GuiJobTarget::MultitoolPreview,
-            // A tier-map preview runs no candidate ladder, so it has no
-            // rung to report.
-            None,
         );
     }
 
@@ -275,13 +272,13 @@ impl<B: ComputeBackend> AppController<B> {
             .multitool_planner
             .as_ref()
             .is_some_and(MultitoolPlannerState::is_loading);
-        if loading && self.state.is_optimizing() {
+        if loading && self.state.is_job_running() {
             // The walk polls this submit's OWN flag once per grid row.
             // Not the lane's: the Job lane is FIFO and shared, so a lane
             // cancel would also kill an MCP caller's job queued behind
             // this one. The answer still lands, and the drain is where
-            // `AppState::optimize_run` goes back to `None`.
-            self.cancel_gui_optimize_jobs();
+            // `AppState::job_run` goes back to `None`.
+            self.cancel_gui_jobs();
         }
         if let Some(planner) = self.state.multitool_planner.as_mut() {
             planner.open = false;

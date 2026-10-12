@@ -2,10 +2,9 @@
 //!
 //! Component layer (IA cleanup, Wave 1). The audit found the compare row, the
 //! delta tag, the power bar and the MRR row all implemented *private* inside
-//! `feeds_modal.rs`, so the optimizer rollup (which wants the same
-//! current-vs-recommended language) couldn't reuse them. This module is their
-//! shared home: the Feeds Details drawer (W3.1) and the optimizer rollup (W3.5)
-//! both draw from it.
+//! `feeds_modal.rs`, so another surface that wants the same
+//! current-vs-recommended language couldn't reuse them. This module is their
+//! shared home: the Feeds Details drawer (W3.1) draws from it.
 //!
 //! `power_bar` / `mrr_row` take raw numbers rather than a `FeedsExplain`, so
 //! the module stays decoupled from feeds-modal-specific types — any surface

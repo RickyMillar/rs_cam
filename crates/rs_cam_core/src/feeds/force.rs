@@ -1,7 +1,7 @@
 //! Canonical feed-aware lateral cutting-force model — the single source
 //! of the deflection-causing transverse force for every load consumer
-//! (predict, the post-sim deflection gate, the axial-DOC envelope, the
-//! optimize preflight, and — from step 3 — feed modulation).
+//! (predict, the post-sim deflection gate, the axial-DOC envelope, and —
+//! from step 3 — feed modulation).
 //!
 //! ## Why feed-aware
 //!

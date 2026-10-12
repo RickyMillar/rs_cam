@@ -12,8 +12,7 @@
 //! ## Boundaries (plan §3.2)
 //!
 //! - **Owns:** tool/op compatibility ([`FeedsError`] feasibility — NOT
-//!   a new refusal type; `tool_load::RefuseReason` is the post-sim
-//!   taxonomy and must not be shadowed), feeds result + explain
+//!   a new refusal type), feeds result + explain
 //!   payload, pre-sim axial envelope, Suggest warnings.
 //! - **Must not own:** the post-sim `ToolpathLoadVerdict` — simulation
 //!   gate evaluation stays separate.

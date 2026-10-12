@@ -14,6 +14,21 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-13 — the optimizer is culled
+
+Operator ruling (2026-10-13): "maybe just cull the entire optimize code for
+now. I think we better just work on that in the future when everything else
+is set". The optimizer is deleted on every surface: core
+`tool_load/optimize/`, the `optimize_toolpath` `Job` row, the GUI Optimize
+modal, rollup, menu item and buttons, the Optimize worker lane, the MCP
+`optimize_toolpath` tool and the `optimize_full_cut_check` feature token.
+- Kept: G-OVERCUTREF (`stock/sim_triage.rs`), G-SPEEDSAPPLY, the post-sim
+  gates and feed modulation. The G-STALETOP probe moved to
+  `tests/a_descent_over_two_overlapping_swaths_g_staletop.rs` and reads the
+  simulation alone.
+- The 2026-10-12 review, PLAN and RESULT stay as the record for a future
+  rebuild (`planning/optimize_review_2026-10-12/`).
+
 ## Update 2026-10-12 — the optimizer is a post-sim tuner (branch `optimizer-rebuild`)
 
 Operator ruling: delete every optimizer part that duplicates the feeds work,

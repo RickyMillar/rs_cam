@@ -313,14 +313,13 @@ fn raw_input(width: f32, height: f32) -> egui::RawInput {
 
 /// A lane set with one running job, so the dock also draws its compute
 /// activity and the `Cancel all jobs` button: the widest dock.
-fn busy_lanes() -> [LaneSnapshot; 5] {
+fn busy_lanes() -> [LaneSnapshot; 4] {
     let mut toolpath = LaneSnapshot::idle(ComputeLane::Toolpath);
     toolpath.state = LaneState::Running;
     toolpath.current_job = Some("Adaptive 3D".to_owned());
     [
         toolpath,
         LaneSnapshot::idle(ComputeLane::Analysis),
-        LaneSnapshot::idle(ComputeLane::Optimize),
         LaneSnapshot::idle(ComputeLane::Job),
         LaneSnapshot::idle(ComputeLane::Reach),
     ]

@@ -427,9 +427,6 @@ impl<B: ComputeBackend> AppController<B> {
                 ComputeMessage::Toolpath(result) => self.adopt_toolpath_result(*result),
                 ComputeMessage::Simulation(result) => self.adopt_simulation_result(result),
                 ComputeMessage::Collision(result) => self.adopt_collision_result(result),
-                ComputeMessage::Optimize(result) => {
-                    self.handle_optimize_result(*result);
-                }
                 ComputeMessage::Reach(result) => {
                     self.handle_reach_map_result(*result);
                 }
@@ -658,32 +655,6 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
         self.pending_upload = true;
-
-        // U4 reconciliation: clear this toolpath from the
-        // pending list. When the list empties we kick the
-        // reconciliation sim — this fires once, after the
-        // last applied toolpath finishes regenerating.
-        self.state
-            .pending_reconciliation_for_ids
-            .retain(|id| *id != tp_id);
-        if self.state.pending_reconciliation_for_ids.is_empty()
-            && matches!(
-                self.state.optimize_project.as_ref().map(|v| &v.status),
-                Some(crate::state::OptimizeProjectStatus::Reconciling(_))
-            )
-        {
-            let _submitted = self.run_simulation_with_all();
-        }
-
-        // Roadmap F.2 — auto-verify after per-TP Apply. If
-        // this regen is for the just-applied candidate,
-        // clear the pending flag and kick a full project
-        // sim so the user sees the verified live verdict
-        // without having to click Run Simulation by hand.
-        if self.state.pending_apply_resim == Some(tp_id.0) {
-            self.state.pending_apply_resim = None;
-            let _submitted = self.run_simulation_with_all();
-        }
 
         // Resolve whoever is waiting on this toolpath — the MCP
         // waiter, the `generate_all` ladder, or neither.
@@ -1017,12 +988,6 @@ impl<B: ComputeBackend> AppController<B> {
 
                 self.pending_upload = true;
 
-                // U4 reconciliation: if the rollup is in
-                // Reconciling state, populate per-row
-                // reconciled values from the new trace and
-                // transition to Reconciled.
-                self.maybe_finalize_reconciliation();
-
                 // Notify pending MCP simulation request
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_complete();
@@ -1340,43 +1305,27 @@ impl<B: ComputeBackend> AppController<B> {
     /// own: a close arm arms it, and the lane's shared FIFO flag is left
     /// alone so an MCP caller's job behind this one survives.
     ///
-    /// **This is the ONE stamp site for `AppState::optimize_run` on the two
-    /// `Job` rows** (WP24). The `target` parameter already names the kind
-    /// and the id is in scope, so neither caller needs the id back. The
-    /// caller must run `AppState::close_modals_for_exclusivity` BEFORE this
-    /// call: that rule spares a RUNNING Optimize, so a stamp ahead of it
-    /// would spare the previous settled modal instead of closing it.
-    ///
-    /// `progress` is what the candidate search publishes about itself
-    /// (WP29). The Optimize submit builds one `Arc`, attaches it to the
-    /// handle and passes the same `Arc` here, so the row reads what the
-    /// worker writes. The tier-map preview runs no candidate ladder and
-    /// passes `None`.
+    /// **This is the ONE stamp site for `AppState::job_run`** (WP24). The
+    /// `target` parameter already names the kind and the id is in scope,
+    /// so the caller does not need the id back.
     pub(crate) fn submit_gui_job(
         &mut self,
         handle: rs_cam_core::session::JobHandle,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
         target: crate::controller::GuiJobTarget,
-        progress: Option<std::sync::Arc<rs_cam_core::tool_load::optimize::OptimizeProgress>>,
     ) {
         let id = crate::compute::JobRequestId(self.next_job_request_id);
         self.next_job_request_id = self.next_job_request_id.saturating_add(1);
         let kind = match &target {
-            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id } => {
-                crate::state::OptimizeRunKind::Toolpath {
-                    toolpath_id: *toolpath_id,
-                }
-            }
             crate::controller::GuiJobTarget::MultitoolPreview => {
-                crate::state::OptimizeRunKind::MultitoolPreview
+                crate::state::JobRunKind::MultitoolPreview
             }
         };
-        self.state.optimize_run = Some(crate::state::OptimizeRun {
+        self.state.job_run = Some(crate::state::JobRun {
             kind,
-            job_id: Some(id),
+            job_id: id,
             started_at: std::time::Instant::now(),
             cancel_requested: false,
-            progress,
         });
         self.gui_jobs.insert(
             id,
@@ -1391,15 +1340,14 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Deliver one finished `Job` answer to whoever asked for it.
     ///
-    /// There is no adopt step. The two read rows touch nothing, and
-    /// `optimize_toolpath` ran on its handle's own cloned session, so the
-    /// answer goes to the requester and the live session is untouched.
+    /// There is no adopt step. The read rows touch nothing, so the answer
+    /// goes to the requester and the live session is untouched.
     ///
     /// **The GUI map is read FIRST and outside the feature gate.**
     /// `pending_mcp` is `None` in every build launched without `--mcp`,
-    /// so a lookup behind the gate would never clear
-    /// `AppState::optimize_run` and the progress row would stay up for
-    /// good, with every Optimize entry point refused behind it.
+    /// so a lookup behind the gate would never clear `AppState::job_run`
+    /// and the progress row would stay up for good, with every entry point
+    /// of a GUI job refused behind it.
     fn handle_job_result(&mut self, result: crate::compute::JobResult) {
         // Destructured here, above the feature gate: the answer is consumed
         // by value, which is what the gate's `needless_pass_by_value` rule
@@ -1433,11 +1381,10 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Land one GUI-started `Job` answer on the view that asked for it.
     ///
-    /// `AppState::optimize_run` clears HERE for both targets, on every
-    /// outcome — the answer, a cancel and a panic alike. It is the only
-    /// place a GUI-started job can clear it, so an early return above this
-    /// line leaves the progress row up and every Optimize entry point
-    /// refused behind it.
+    /// `AppState::job_run` clears HERE, on every outcome — the answer, a
+    /// cancel and a panic alike. It is the only place a GUI-started job can
+    /// clear it, so an early return above this line leaves the progress row
+    /// up and every entry point of a GUI job refused behind it.
     fn deliver_gui_job(
         &mut self,
         target: &crate::controller::GuiJobTarget,
@@ -1445,21 +1392,8 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         use rs_cam_core::session::JobAnswer;
 
-        self.state.optimize_run = None;
+        self.state.job_run = None;
         match target {
-            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id } => {
-                let status = match answer {
-                    Ok(JobAnswer::OptimizeToolpath(outcome)) => {
-                        crate::state::OptimizeRunStatus::Ready(*outcome)
-                    }
-                    Ok(other) => crate::state::OptimizeRunStatus::Failed(format!(
-                        "the Optimize modal was answered by the {} row",
-                        other.id().wire_name()
-                    )),
-                    Err(error) => crate::state::OptimizeRunStatus::Failed(error.to_string()),
-                };
-                self.land_optimize_outcome(*toolpath_id, status);
-            }
             crate::controller::GuiJobTarget::MultitoolPreview => {
                 let result = match answer {
                     Ok(JobAnswer::PreviewTierMap(preview)) => Ok(preview),
@@ -1472,32 +1406,6 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_multitool_preview_result(result);
             }
         }
-    }
-
-    /// Write one per-toolpath Optimize status into the open modal.
-    ///
-    /// A modal reopened on a different toolpath while the job ran keeps
-    /// its own state: the outcome names an operation the operator is no
-    /// longer looking at.
-    fn land_optimize_outcome(
-        &mut self,
-        toolpath_id: crate::state::toolpath::ToolpathId,
-        status: crate::state::OptimizeRunStatus,
-    ) {
-        let Some(modal) = self.state.optimize_modal.as_mut() else {
-            tracing::debug!(
-                "Optimize result for tp {toolpath_id} arrived after modal was closed — discarded"
-            );
-            return;
-        };
-        if modal.toolpath_id != toolpath_id {
-            tracing::debug!(
-                "Optimize result for tp {toolpath_id} dropped — modal now open on tp {}",
-                modal.toolpath_id
-            );
-            return;
-        }
-        modal.status = status;
     }
 
     /// Land a reach map on the viewport overlay (P5).
@@ -1582,54 +1490,6 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Stash the project rollup's report on `AppState`.
-    ///
-    /// The lane no longer carries a session back: WP14b gives it a CLONE,
-    /// so the main thread never lost its own and there is nothing to
-    /// restore. `AppState::optimize_run` still clears here, because the
-    /// rollup is the one arm left on this lane; the two `Job` rows clear it
-    /// in [`Self::deliver_gui_job`].
-    fn handle_optimize_result(&mut self, result: crate::compute::OptimizeResult) {
-        use crate::compute::OptimizeResultKind;
-
-        self.state.optimize_run = None;
-
-        // B3: the memory budget stopped the rollup. The report keeps what
-        // the run found before the stop; the Warning says why it stopped.
-        if let Some(rs_cam_core::budget::StopReason::OverBudget {
-            need_bytes,
-            limit_bytes,
-        }) = result.budget_stop
-        {
-            let message = ComputeError::over_budget_message("Optimize", need_bytes, limit_bytes);
-            tracing::warn!("{message}");
-            self.push_notification(message, super::super::Severity::Warning);
-        }
-
-        match result.kind {
-            OptimizeResultKind::Project { report } => {
-                // Default-select every row that has a recommended
-                // candidate. The user can flip individual rows before
-                // clicking Apply selected.
-                let row_selected: Vec<bool> = report
-                    .per_toolpath
-                    .iter()
-                    .map(|(_, outcome)| outcome.first_safe().is_some())
-                    .collect();
-                if let Some(view) = self.state.optimize_project.as_mut() {
-                    view.status = crate::state::OptimizeProjectStatus::Ready(report);
-                    view.row_selected = row_selected;
-                } else {
-                    // Worker returned a result for a view that was
-                    // already closed (cancelled) — discard.
-                    tracing::debug!(
-                        "Project optimize result arrived after view was closed — discarded"
-                    );
-                }
-            }
-        }
-    }
-
     /// Land a tier-map preview on the planner dialog.
     ///
     /// A result that arrives after the dialog was vetoed is DISCARDED, not
@@ -1665,83 +1525,6 @@ impl<B: ComputeBackend> AppController<B> {
                 planner.status =
                     crate::state::multitool_planner::MultitoolPreviewStatus::Failed(message);
             }
-        }
-    }
-
-    /// U4: if the rollup is in `Reconciling` state and the latest sim
-    /// result just landed, populate `reconciled_cycle_time_s` /
-    /// `reconciled_verdict` per applied row and transition to
-    /// `Reconciled`. Each row's reconciled values come from running
-    /// the existing project load report against the new trace and
-    /// reading per-toolpath cycle times directly off the trace.
-    pub(crate) fn maybe_finalize_reconciliation(&mut self) {
-        use rs_cam_core::tool_load::optimize::{OutcomeKind, ProjectOptimizeReport};
-
-        let Some(view) = self.state.optimize_project.as_ref() else {
-            return;
-        };
-        let crate::state::OptimizeProjectStatus::Reconciling(report) = &view.status else {
-            return;
-        };
-        let Some(sim_results) = self.state.simulation.results.as_ref() else {
-            return;
-        };
-        let Some(trace) = sim_results.cut_trace.as_ref() else {
-            return;
-        };
-
-        // Compute per-toolpath verdicts off the new trace, through the
-        // session memo that the panels read.
-        let load_report = self.state.session.tool_load_report_for(Some(trace));
-        // Map toolpath_id -> verdict for fast lookup. Index by id
-        // (not toolpath_index) because the report uses ids.
-        let mut verdict_by_id: std::collections::HashMap<
-            rs_cam_core::ToolpathId,
-            &rs_cam_core::tool_load::ToolpathLoadVerdict,
-        > = std::collections::HashMap::new();
-        for v in &load_report.per_toolpath {
-            verdict_by_id.insert(v.toolpath_id, v);
-        }
-
-        // Walk the report and populate the first_safe candidate's
-        // reconciled values for each row that has one.
-        let mut updated_report = report.clone();
-        for (tp_index, outcome) in updated_report.per_toolpath.iter_mut() {
-            let toolpath_id = self
-                .state
-                .session
-                .toolpath_configs()
-                .get(*tp_index)
-                .map(|tc| tc.id);
-            let Some(toolpath_id) = toolpath_id else {
-                continue;
-            };
-            let cycle = trace
-                .toolpath_summaries
-                .iter()
-                .find(|s| s.toolpath_id == toolpath_id)
-                .map(|s| s.total_runtime_s);
-            let verdict = verdict_by_id.get(&toolpath_id).cloned().cloned();
-            if outcome.kind == OutcomeKind::Ranked {
-                // The applied candidate is `first_safe` per the rollup
-                // Apply path. Find its index by re-running the same
-                // selector, then update that candidate. We fall back
-                // to candidate index 1 if the rollup logic disagrees
-                // (e.g. the candidate set changed mid-flight, which
-                // shouldn't happen since the report is immutable).
-                let candidates = &mut outcome.candidates;
-                let idx = ProjectOptimizeReport::first_safe_index(candidates).unwrap_or(0);
-                if idx > 0
-                    && let Some(c) = candidates.get_mut(idx)
-                {
-                    c.reconciled_cycle_time_s = cycle;
-                    c.reconciled_verdict = verdict;
-                }
-            }
-        }
-
-        if let Some(view) = self.state.optimize_project.as_mut() {
-            view.status = crate::state::OptimizeProjectStatus::Reconciled(updated_report);
         }
     }
 
@@ -2817,7 +2600,7 @@ impl<B: ComputeBackend> AppController<B> {
 ///   and `column_grid_cell_mm`.
 /// - Rest generation and `snapshot_is_current`: `prior_stocks` and
 ///   `prior_stock_sources`.
-/// - Export, the tool-load report, diagnose, narration and optimize: the
+/// - Export, the tool-load report, diagnose and narration: the
 ///   cut trace (narration also reads `column_grid_cell_mm`).
 ///
 /// No session reader reads the display mesh, the checkpoints, the

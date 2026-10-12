@@ -160,50 +160,17 @@ pub struct AppState {
     /// `gui.wizard.last_step_visited` when the wizard opens so
     /// the user resumes where they left off.
     pub wizard_active_step: u8,
-    /// Cached state of the per-toolpath Optimize modal. `None` when
-    /// closed. The optimizer is expensive: it runs one project
-    /// simulation for each candidate. So unlike the suggest modal it
-    /// cannot recompute every frame. The outcome is captured here on
-    /// open and rendered every frame from this cache.
-    pub optimize_modal: Option<OptimizeModalState>,
-    /// Cached project-level Optimize rollup (U3). `None` until the
-    /// user clicks the toolbar Optimize-project button. While the
-    /// worker is running, status is `Loading`; once the result lands,
-    /// the rollup view renders the report. Mirrors the per-toolpath
-    /// modal's lifecycle so the UI shapes stay consistent.
-    pub optimize_project: Option<OptimizeProjectState>,
-    /// The Optimize run in flight, or `None` when none is.
+    /// The GUI job in flight, or `None` when none is.
     ///
-    /// It was a bare `is_optimizing: bool` until WP24. The flag once meant
-    /// "the worker thread HOLDS the session", and the main thread then
-    /// rendered a full-screen placeholder. WP14b gave every route a clone
-    /// or a handle, so `state.session` is the real project throughout, and
-    /// WP24 deleted the placeholder on the operator's ruling of
-    /// 2026-09-13 (§30 item 3). What is left is a POLICY (§28 ruling 8):
-    /// one Optimize run at a time, refused with a toast.
+    /// It was a bare `bool` until WP24. The run is a value
+    /// rather than a flag, because the workspace bar's progress row has to
+    /// NAME what is running and offer a cancel for that one submit.
+    /// [`AppState::is_job_running`] answers the policy question: one GUI
+    /// job at a time, refused with a toast.
     ///
-    /// The run is now a value rather than a flag, because the workspace
-    /// bar's progress row has to NAME what is running and offer a cancel
-    /// for that one submit. [`AppState::is_optimizing`] answers the
-    /// policy question the three refusal sites ask.
-    ///
-    /// One writer stamps it — `AppController::submit_gui_job` for the two
-    /// `Job` rows and `AppController::open_optimize_project` for the
-    /// rollup — and two clear it:
-    /// `AppController::deliver_gui_job` for the two `Job` rows, and
-    /// `AppController::handle_optimize_result` for the project rollup.
-    pub optimize_run: Option<OptimizeRun>,
-    /// Set after the user clicks Apply selected on the Optimize-project
-    /// rollup. Holds the toolpath ids that need to finish regenerating
-    /// before we kick the reconciliation sim. Empty otherwise.
-    pub pending_reconciliation_for_ids: Vec<rs_cam_core::ToolpathId>,
-    /// Toolpath id of a per-TP Optimize candidate just applied via
-    /// `apply_optimize_candidate`. When the corresponding regen lands,
-    /// the drain handler auto-triggers a full project sim so the
-    /// freshly-applied params are verified against live simulation
-    /// without the user having to click Run Simulation manually
-    /// (Roadmap F.2). `None` when no per-TP Apply is in flight.
-    pub pending_apply_resim: Option<usize>,
+    /// One writer stamps it — `AppController::submit_gui_job` — and one
+    /// clears it: `AppController::deliver_gui_job`.
+    pub job_run: Option<JobRun>,
     /// Cached state of the redesigned Feeds & Speeds modal. `None`
     /// when closed. Built on open by `explain_for_operation`; the
     /// modal re-derives `FeedsExplain` every frame from session state
@@ -350,262 +317,61 @@ pub enum ProjectFeedsSort {
     Name,
 }
 
-/// Persistent state for the per-toolpath Optimize modal. Carries the
-/// toolpath being optimized plus the cached outcome (or its Loading /
-/// Failed states for the worker-thread integration that lands in U3).
-#[derive(Debug, Clone)]
-pub struct OptimizeModalState {
-    pub toolpath_id: rs_cam_core::ToolpathId,
-    pub status: OptimizeRunStatus,
-}
-
-/// Lifecycle of one Optimize run as the modal sees it. The lane
-/// driver moves `Loading -> Ready` (or `Failed`) as the worker
-/// completes; the modal renders the right view per status.
-#[derive(Debug, Clone)]
-pub enum OptimizeRunStatus {
-    /// Optimizer is running on a worker thread. The modal shows a
-    /// progress strip and a Cancel button.
-    Loading,
-    /// Optimizer finished. The outcome is the source of truth for
-    /// every row in the modal's candidate table.
-    Ready(rs_cam_core::tool_load::optimize::OptimizeOutcome),
-    /// Optimizer errored out. String is the diagnostic for the user.
-    Failed(String),
-}
-
-/// The Optimize run in flight, as the progress row sees it (WP24).
+/// The GUI job in flight, as the progress row sees it (WP24).
 ///
 /// The workspace bar draws one row per run: the label this carries, the
 /// elapsed time, and a Cancel that arms THIS submit. The row replaces the
 /// full-screen placeholder, so it is the only thing that tells the
 /// operator a run is under way.
-///
-/// Since WP29 the `Toolpath` kind also carries the search's own progress,
-/// so the row names the rung of the ladder and the candidate inside it.
-/// The two other kinds run no candidate ladder and carry `None`. This doc
-/// used to read "DEFERRED: no `phase` field … a phase field would have no
-/// writer"; plan §33 gave the search a writer.
 #[derive(Debug, Clone)]
-pub struct OptimizeRun {
-    pub kind: OptimizeRunKind,
-    /// `Some` for the two `Job` rows; `None` for the rollup, which rides
-    /// `ComputeLane::Optimize` and carries no `Job` id.
-    pub job_id: Option<crate::compute::JobRequestId>,
+pub struct JobRun {
+    pub kind: JobRunKind,
+    /// The id of the `Job` submit.
+    pub job_id: crate::compute::JobRequestId,
     pub started_at: std::time::Instant,
     /// Set when a cancel was armed. The row then reads "cancelling".
     ///
-    /// It does NOT clear the run — the drain does. A cancelled Optimize
-    /// still returns a partial outcome, and clearing early would let the
-    /// first submit's drain wipe a second submit's run.
+    /// It does NOT clear the run — the drain does. Clearing early would
+    /// let the first submit's drain wipe a second submit's run.
     pub cancel_requested: bool,
-    /// What the candidate search publishes about itself (WP29).
-    ///
-    /// `Some` on the `Toolpath` kind, whose handle carries the same `Arc`.
-    /// `None` on the rollup and on the tier-map preview, which run no
-    /// candidate ladder — so `None` means THIS RUN WALKS NO LADDER, and
-    /// the row shows the elapsed seconds alone.
-    pub progress: Option<std::sync::Arc<rs_cam_core::tool_load::optimize::OptimizeProgress>>,
 }
 
-/// How one rung of the search ladder stands, for the Optimize window's
-/// list (WP29).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OptimizeStageMark {
-    /// The search passed this rung.
-    Done,
-    /// The search is on this rung now.
-    Current,
-    /// The search has not reached this rung.
-    Pending,
-}
-
-/// One row of the Optimize window's rung list (WP29).
-///
-/// A pure value, so a test reads the window's list without an egui pass.
-/// The draw picks the glyph for the [`OptimizeStageMark`]; this type holds
-/// no colour and no glyph.
-///
-/// Stays `pub`: it is the return element of `pub fn OptimizeRun::stage_rows`,
-/// so a crate-private form raises `private_interfaces` (S29, 2026-09-16).
-#[derive(Debug, Clone)]
-pub struct OptimizeStageRow {
-    /// Where the search stands on this rung.
-    pub mark: OptimizeStageMark,
-    /// The rung's name, with its place on the ladder.
-    pub name: String,
-    /// The rung's candidate count. `None` means NOT ANNOUNCED — a rung's
-    /// total is unknown until that rung starts, so an unannounced rung
-    /// shows no count rather than a zero.
-    pub count: Option<String>,
-}
-
-impl OptimizeRun {
+impl JobRun {
     /// The sentence the progress row shows (WP29).
     ///
-    /// **One builder for the row and for the sentry.** The row used to
-    /// `format!` its own text, so no test could read the sentence the
-    /// operator reads. `ui/workspace_bar.rs` now calls this.
-    ///
-    /// There is NO time-left figure, and this function holds no estimate.
-    /// The whole-run candidate total is not known at the start: a rung
-    /// announces its count only when it starts.
+    /// **One builder for the row and for the sentry.** `ui/workspace_bar.rs`
+    /// calls this. There is NO time-left figure.
     #[must_use]
-    pub fn progress_text(&self, session: &rs_cam_core::session::ProjectSession) -> String {
-        let label = self.kind.label(session);
+    pub fn progress_text(&self) -> String {
+        let label = self.kind.label();
         let seconds = self.started_at.elapsed().as_secs();
-        let stage = self.stage_phrase();
-        match (self.cancel_requested, stage) {
-            (true, Some(stage)) => format!("{label} — cancelling · {stage} · {seconds} s"),
-            // The WP24 sentence, kept byte-for-byte for a run that walks
-            // no ladder.
-            (true, None) => format!("{label} — cancelling ({seconds} s)"),
-            (false, Some(stage)) => format!("{label} — {stage} · {seconds} s"),
-            (false, None) => format!("{label} — {seconds} s"),
+        if self.cancel_requested {
+            format!("{label} — cancelling ({seconds} s)")
+        } else {
+            format!("{label} — {seconds} s")
         }
-    }
-
-    /// The rung list the Optimize window draws (WP29).
-    ///
-    /// Empty for a run that walks no candidate ladder, so the rollup and
-    /// the tier-map preview list nothing rather than pending rungs.
-    #[must_use]
-    pub fn stage_rows(&self) -> Vec<OptimizeStageRow> {
-        use rs_cam_core::tool_load::optimize::SearchPhase;
-
-        let Some(progress) = self.progress.as_ref() else {
-            return Vec::new();
-        };
-        let snapshot = progress.snapshot();
-        // A settled run claims no rung, so the mark falls back to the
-        // high-water index. That keeps a cancelled run's window honest:
-        // the rungs it walked still read done.
-        let announced = snapshot.phase_index.max(snapshot.high_water_index);
-        let rungs = snapshot.phase_count;
-        SearchPhase::ALL
-            .into_iter()
-            .map(|phase| {
-                let index = phase.index_from_one();
-                let mark = if index == snapshot.phase_index {
-                    OptimizeStageMark::Current
-                } else if index <= announced {
-                    OptimizeStageMark::Done
-                } else {
-                    OptimizeStageMark::Pending
-                };
-                let count = if index > announced {
-                    None
-                } else {
-                    let (entered, formed) = progress.rung(phase);
-                    if formed == 0 {
-                        Some("no candidates".to_owned())
-                    } else {
-                        Some(format!("{entered} / {formed}"))
-                    }
-                };
-                OptimizeStageRow {
-                    mark,
-                    name: format!("Stage {index}/{rungs} — {}", phase.label()),
-                    count,
-                }
-            })
-            .collect()
-    }
-
-    /// The row's stage half: `stage 2/2 · candidate 3/8`.
-    ///
-    /// `None` when the run walks no ladder, and `None` again when the
-    /// ladder has settled — a finished run must not leave the row claiming
-    /// a rung.
-    fn stage_phrase(&self) -> Option<String> {
-        let snapshot = self.progress.as_ref()?.snapshot();
-        let _ = snapshot.phase?;
-        let index = snapshot.phase_index;
-        let count = snapshot.phase_count;
-        if snapshot.candidate_total == 0 {
-            return Some(format!("stage {index}/{count} · no candidates"));
-        }
-        let candidate = snapshot.candidate;
-        let total = snapshot.candidate_total;
-        let phrase = format!("stage {index}/{count} · candidate {candidate}/{total}");
-        Some(phrase)
     }
 }
 
-/// Which of the three runs is in flight.
-///
-/// They are three submits on two lanes, and the field covered all three
-/// before WP24 named them.
+/// Which GUI job is in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OptimizeRunKind {
-    /// `AppController::open_optimize_modal` — the `optimize_toolpath`
-    /// `Job` row.
-    Toolpath {
-        toolpath_id: rs_cam_core::ToolpathId,
-    },
-    /// `AppController::open_optimize_project` — the rollup on
-    /// `ComputeLane::Optimize`.
-    Project,
+pub enum JobRunKind {
     /// `AppController::request_multitool_preview` — the
     /// `preview_tier_map` `Job` row.
     MultitoolPreview,
 }
 
-impl OptimizeRunKind {
+impl JobRunKind {
     /// Name the run for the progress row and for a refusal toast.
     ///
     /// One function serves both, so the sentence the operator reads when
     /// a second request is refused names the run the row is showing.
     #[must_use]
-    pub fn label(&self, session: &rs_cam_core::session::ProjectSession) -> String {
+    pub fn label(&self) -> &'static str {
         match self {
-            Self::Toolpath { toolpath_id } => {
-                let config = session
-                    .toolpath_configs()
-                    .iter()
-                    .find(|tc| tc.id == *toolpath_id);
-                match config {
-                    Some(tc) => format!("Optimize {}", tc.name),
-                    None => format!("Optimize toolpath {toolpath_id}"),
-                }
-            }
-            Self::Project => "Optimize project".to_owned(),
-            Self::MultitoolPreview => "Tier-map preview".to_owned(),
+            Self::MultitoolPreview => "Tier-map preview",
         }
     }
-}
-
-/// Persistent state for the project-level Optimize rollup (U3).
-/// Mirrors `OptimizeModalState`'s lifecycle but without a single
-/// toolpath_id — the rollup spans every enabled toolpath.
-#[derive(Debug, Clone)]
-pub struct OptimizeProjectState {
-    pub status: OptimizeProjectStatus,
-    /// Per-row checkbox state for batch Apply. Index aligned with
-    /// `ProjectOptimizeReport::per_toolpath`. Defaults to true on the
-    /// rows whose outcome has a recommended candidate; the user can
-    /// flip individual rows before clicking Apply selected.
-    pub row_selected: Vec<bool>,
-}
-
-#[derive(Debug, Clone)]
-pub enum OptimizeProjectStatus {
-    /// Worker is running. Rollup view shows progress + cancel.
-    Loading,
-    /// Worker finished. Render the rollup with bottleneck callout
-    /// and the per-toolpath rows.
-    Ready(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
-    /// User clicked Apply selected; the project sim is now running
-    /// end-to-end with the applied params. Rollup stays visible with
-    /// the candidate-isolated values dimmed; reconciled column lights
-    /// up when the sim completes.
-    Reconciling(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
-    /// Project sim completed; per-row `reconciled_cycle_time_s` /
-    /// `reconciled_verdict` are populated. Rows whose reconciled
-    /// values disagree with candidate-isolated values are flagged.
-    Reconciled(rs_cam_core::tool_load::optimize::ProjectOptimizeReport),
-    /// Worker failed. String is the diagnostic for the user.
-    Failed(String),
 }
 
 impl AppState {
@@ -624,11 +390,7 @@ impl AppState {
             show_shortcuts: false,
             show_export_wizard: false,
             wizard_active_step: 0,
-            optimize_modal: None,
-            optimize_project: None,
-            optimize_run: None,
-            pending_reconciliation_for_ids: Vec::new(),
-            pending_apply_resim: None,
+            job_run: None,
             feeds_modal: None,
             project_feeds: ProjectFeedsState::default(),
             tool_library_modal: None,
@@ -700,24 +462,22 @@ impl AppState {
         self.simulation_freshness().stale_reason(&self.session)
     }
 
-    /// Is an Optimize run in flight?
+    /// Is a GUI job in flight?
     ///
-    /// The policy question (§28 ruling 8): one Optimize run at a time. The
-    /// three submit sites ask it and refuse with a toast, and the two menu
-    /// entries disable on it. It is NOT a drawing question any more — WP24
-    /// deleted the full-screen placeholder that made it one.
+    /// The policy question (§28 ruling 8): one GUI job at a time. The
+    /// submit site asks it and refuses with a toast. It is NOT a drawing
+    /// question — WP24 deleted the full-screen placeholder that made it
+    /// one.
     #[must_use]
-    pub fn is_optimizing(&self) -> bool {
-        self.optimize_run.is_some()
+    pub fn is_job_running(&self) -> bool {
+        self.job_run.is_some()
     }
 
     /// Modal exclusivity (density pass Batch 2): every modal-open path
     /// calls this first, so opening one modal closes the others — the
-    /// 2026-06-11 capture sweep produced a 3-deep stack (Optimize
-    /// spinner over Tool Library over a feeds modal). A *running*
-    /// Optimize modal survives: it is a progress surface for an
-    /// expensive in-flight search, and closing it here would discard
-    /// the user's run; settled Optimize outcomes close like the rest.
+    /// 2026-06-11 capture sweep produced a 3-deep stack (a spinner over
+    /// Tool Library over a feeds modal). A planner whose preview is in
+    /// flight survives: closing it here would discard the user's run.
     pub fn close_modals_for_exclusivity(&mut self) {
         self.feeds_modal = None;
         self.tool_library_modal = None;
@@ -727,13 +487,10 @@ impl AppState {
         self.show_preflight = false;
         self.show_shortcuts = false;
         self.simulation.open_trace = None;
-        if !self.is_optimizing() {
-            self.optimize_modal = None;
-            self.optimize_project = None;
+        if !self.is_job_running() {
             // Closed, not discarded — see the field doc. A planner whose
-            // preview is in flight is spared for the same reason a running
-            // Optimize is: closing it would throw away a walk the operator
-            // is waiting on.
+            // preview is in flight is spared: closing it would throw away
+            // a walk the operator is waiting on.
             if let Some(planner) = self.multitool_planner.as_mut() {
                 planner.open = false;
             }
@@ -768,7 +525,7 @@ mod tests {
     }
 
     /// Density pass Batch 2 — opening any modal closes the others. The
-    /// 2026-06-11 capture sweep stacked Optimize over Tool Library over
+    /// 2026-06-11 capture sweep stacked a spinner over Tool Library over
     /// a feeds modal; exclusivity makes that state unrepresentable.
     #[test]
     fn close_modals_for_exclusivity_closes_settled_modals() {
@@ -782,10 +539,6 @@ mod tests {
             rs_cam_core::budget::MemoryBudget::UNLIMITED,
             None,
         ));
-        state.optimize_project = Some(OptimizeProjectState {
-            status: OptimizeProjectStatus::Loading,
-            row_selected: Vec::new(),
-        });
 
         state.close_modals_for_exclusivity();
 
@@ -794,32 +547,5 @@ mod tests {
         assert!(!state.show_export_wizard);
         assert!(!state.show_preflight);
         assert!(state.preferences.is_none(), "the Preferences window closes");
-        assert!(state.optimize_project.is_none(), "settled optimize closes");
-    }
-
-    /// A *running* Optimize modal must survive exclusivity — closing it
-    /// would silently discard an expensive in-flight search.
-    #[test]
-    fn close_modals_for_exclusivity_spares_running_optimize() {
-        let mut state = AppState::new();
-        state.optimize_run = Some(OptimizeRun {
-            kind: OptimizeRunKind::Toolpath {
-                toolpath_id: rs_cam_core::ToolpathId(0),
-            },
-            job_id: Some(crate::compute::JobRequestId(0)),
-            started_at: std::time::Instant::now(),
-            cancel_requested: false,
-            progress: None,
-        });
-        state.optimize_modal = Some(OptimizeModalState {
-            toolpath_id: rs_cam_core::ToolpathId(0),
-            status: OptimizeRunStatus::Loading,
-        });
-        state.feeds_modal = Some(feeds_modal_fixture());
-
-        state.close_modals_for_exclusivity();
-
-        assert!(state.optimize_modal.is_some(), "running optimize survives");
-        assert!(state.feeds_modal.is_none(), "others still close");
     }
 }

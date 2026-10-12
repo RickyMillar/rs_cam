@@ -405,7 +405,7 @@ impl ProjectSession {
     /// hand-typed recipe gets no record of a calculation that did not occur.
     /// A speeds-only apply still gets the record: the dial computed an
     /// engagement that the operation does not hold, and the Caution says so.
-    /// An operation that the optimizer or the operator rewrote in every
+    /// An operation that the operator rewrote in every
     /// field gets no record. Also `None` when Suggest refuses the tool and
     /// operation pair.
     pub fn suggest_warnings_for_toolpath(

@@ -674,13 +674,10 @@ pub struct ColumnDeviation {
 ///
 /// The `Clone` exists for two reasons. [`Command`](crate::session::Command)
 /// derives it, and `AdoptSimulation` carries this type. Since WP14b
-/// [`ProjectSession`](crate::session::ProjectSession) derives `Clone` too,
-/// so the `optimize_toolpath` job copies this record into its handle's
-/// private session. A clone copies the two deviation vectors and shares the
-/// display mesh, the checkpoints, the cut trace and the prior stocks, which
-/// are each behind an `Arc`. That copied weight IS the session clone's cost,
-/// and the job sentry records it
-/// (`crates/rs_cam_core/tests/optimize_toolpath_is_a_job_wp14b.rs`).
+/// [`ProjectSession`](crate::session::ProjectSession) derives `Clone` too.
+/// A clone copies the two deviation vectors and shares the display mesh,
+/// the checkpoints, the cut trace and the prior stocks, which are each
+/// behind an `Arc`. That copied weight IS the session clone's cost.
 ///
 /// The type publishes no `Debug`: three of its field types are display
 /// meshes that carry none.

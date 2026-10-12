@@ -666,18 +666,8 @@ pub fn preview_field_apply(
 // [`crate::feeds::validate_tool_for_operation`] refused. There is exactly one
 // write function ([`apply`]), and it always runs `enforce_invariants`.
 //
-// EXCLUDED FROM THIS FUNNEL, DELIBERATELY (Checkpoint I-4):
-//
-// - The optimizer's candidate apply (`AppEvent::ApplyOptimizeCandidate`) and
-//   its project batch. Their candidates are whole `OperationConfig` snapshots
-//   that have been **scored against a simulated cut trace end to end** — they
-//   answer to the gate verdicts, not to the pre-simulation feeds calculator,
-//   and re-clamping a sim-verified operating point against a pre-sim estimator
-//   would substitute the weaker evidence for the stronger one.
-// - NOT excluded: the optimizer's single-axis suggestion accept
-//   (`reoptimize_with_axis_override`). That writes an **un-simulated**
-//   suggested value with no clamp, which is the same defect in a second
-//   neighbourhood, so it routes through [`resolve_operation_invariants`].
+// Checkpoint I-4 excluded the optimizer's candidate apply from this funnel.
+// The optimizer cull (2026-10-13) deleted that apply.
 
 /// A read-only feeds preview. Infallible by construction — buildable for any
 /// input, including a tool × operation pairing the engine refuses, because

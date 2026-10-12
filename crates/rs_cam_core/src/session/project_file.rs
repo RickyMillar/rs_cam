@@ -1299,7 +1299,6 @@ pub(super) fn build_session_from_project(
         simulation_drop_epochs: [0; super::SimulationDropCause::COUNT],
         simulation: None,
         simulation_resolution: project.job.simulation.resolution(),
-        rest_identity_enforced: true,
         load_report_memo: super::load_report::LoadReportMemo::default(),
         next_toolpath_id,
         next_tool_id,

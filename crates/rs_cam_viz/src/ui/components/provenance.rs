@@ -25,7 +25,7 @@ use crate::ui::theme;
 
 /// How a displayed value came to be — the viz display vocabulary.
 ///
-/// Variants 1–8 map 1:1 to core [`ProvenanceSource`]. `Inherited` is
+/// Variants 1–7 map 1:1 to core [`ProvenanceSource`]. `Inherited` is
 /// display-only: it marks a value shown as a mirror / project default
 /// (`〈 value 〉`) rather than one stored on the operation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -34,7 +34,6 @@ pub enum ProvKind {
     Formula,
     EdgeRadiusFloor,
     Manual,
-    Optimizer,
     AutoCorrect,
     /// A published rule (G10): a vendor rule with witnesses, not a printed
     /// cell. The reference is the rule id.
@@ -46,13 +45,6 @@ pub enum ProvKind {
     Inherited,
 }
 
-/// Canonical optimizer blue — distinct from [`theme::INFO`] so a sim-validated
-/// value is always tellable from a raw vendor-LUT one (P7-004).
-///
-/// It is a CATEGORY (which producer stated this value), not a verdict, so it
-/// takes a step of the span scale rather than a hue of its own.
-const OPTIMIZER_BLUE: Color32 = crate::ui::tokens::SPAN_SCALE[2];
-
 impl ProvKind {
     /// The single source of glyphs. One glyph per kind.
     pub fn glyph(self) -> &'static str {
@@ -61,7 +53,6 @@ impl ProvKind {
             Self::Formula => "\u{25B2}",           // ▲
             Self::EdgeRadiusFloor => "\u{230A}",   // ⌊
             Self::Manual => "\u{270E}",            // ✎
-            Self::Optimizer => "\u{25C6}",         // ◆
             Self::AutoCorrect => "\u{27F2}",       // ⟲
             Self::PublishedRule => "\u{25A1}",     // □
             Self::RepoRule => "\u{25B3}",          // △
@@ -79,7 +70,6 @@ impl ProvKind {
             Self::VendorLut | Self::PublishedRule => theme::SUCCESS_BRIGHT,
             Self::Formula | Self::EdgeRadiusFloor | Self::RepoRule => theme::WARNING,
             Self::Manual => theme::TEXT_MUTED,
-            Self::Optimizer => OPTIMIZER_BLUE,
             Self::AutoCorrect => theme::INFO,
             Self::Inherited => theme::TEXT_FAINT,
         }
@@ -93,7 +83,6 @@ impl ProvKind {
             Self::Formula => "formula fallback",
             Self::EdgeRadiusFloor => "edge-radius floor",
             Self::Manual => "manual",
-            Self::Optimizer => "sim-optimized",
             Self::AutoCorrect => "auto-corrected",
             Self::PublishedRule => "published rule",
             Self::RepoRule => "repo rule, no source",
@@ -117,7 +106,6 @@ impl From<ProvenanceSource> for ProvKind {
             ProvenanceSource::Formula => Self::Formula,
             ProvenanceSource::EdgeRadiusFloor => Self::EdgeRadiusFloor,
             ProvenanceSource::Manual => Self::Manual,
-            ProvenanceSource::Optimizer => Self::Optimizer,
             ProvenanceSource::AutoCorrect => Self::AutoCorrect,
             ProvenanceSource::PublishedRule => Self::PublishedRule,
             ProvenanceSource::RepoRule => Self::RepoRule,

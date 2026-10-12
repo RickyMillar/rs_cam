@@ -260,10 +260,10 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
 ///   `FromRemainingStock` operation kept a result generated against
 ///   stock that had moved, read `Current` on every surface, and the
 ///   auto-regen sweep never queued it.
-/// - The undo entry carried no `feeds_provenance`. Three optimizer apply
-///   paths wrote the provenance in a second call right after the
-///   snapshot, so an undo put the pre-optimizer numbers back and left
-///   the `Optimizer` stamp standing on them.
+/// - The undo entry carried no `feeds_provenance`. An apply path that
+///   wrote the provenance in a second call right after the snapshot let
+///   an undo put the earlier numbers back and leave the later stamp
+///   standing on them.
 #[test]
 fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     let (mut controller, tp_id) = controller_ready_for_undo();
@@ -286,7 +286,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
         .feeds_provenance
         .clone();
     let after_provenance = rs_cam_core::feeds::FeedsProvenance {
-        feed_rate: Some(rs_cam_core::feeds::ValueProvenance::optimizer()),
+        feed_rate: Some(rs_cam_core::feeds::ValueProvenance::manual()),
         ..Default::default()
     };
     let mut after_op = before_op.clone();

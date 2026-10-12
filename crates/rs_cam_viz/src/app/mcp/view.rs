@@ -572,8 +572,6 @@ impl RsCamApp {
                 "none" => {
                     let events = self.controller.events_mut();
                     events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
-                    events.push(AppEvent::Ui(UiCommand::CloseOptimizeModal(NoArgs)));
-                    events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseToolLibrary(NoArgs)));
                     // R5a: "none" also closes the load-warning modal and
@@ -590,7 +588,7 @@ impl RsCamApp {
                     );
                     self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
-                "feeds_modal" | "optimize_modal" => {
+                "feeds_modal" => {
                     let Selection::Toolpath(tp_id) = self.controller.state().selection else {
                         return json_str(serde_json::json!({
                             "error": format!(
@@ -599,12 +597,9 @@ impl RsCamApp {
                             )
                         }));
                     };
-                    let event = if m == "feeds_modal" {
-                        AppEvent::OpenFeedsModal(tp_id)
-                    } else {
-                        AppEvent::OpenOptimizeModal(tp_id)
-                    };
-                    self.controller.events_mut().push(event);
+                    self.controller
+                        .events_mut()
+                        .push(AppEvent::OpenFeedsModal(tp_id));
                 }
                 "export_wizard" => {
                     self.controller
@@ -619,7 +614,7 @@ impl RsCamApp {
                 other => {
                     return json_str(serde_json::json!({
                         "error": format!(
-                            "Unknown modal '{other}'. Valid: feeds_modal, optimize_modal, pin_wizard, \
+                            "Unknown modal '{other}'. Valid: feeds_modal, pin_wizard, \
                              export_wizard, tool_library, none"
                         )
                     }));

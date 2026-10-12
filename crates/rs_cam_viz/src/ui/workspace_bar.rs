@@ -51,12 +51,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         // Right-aligned workspace context info. DC3 deleted the hint strip
         // that sat here (Pattern C): it explained the workspace the operator
-        // had already chosen, and nobody reads it twice. The Optimize row
-        // stays, because a run in flight is real state and this bar is the
+        // had already chosen, and nobody reads it twice. The job progress
+        // row stays, because a run in flight is real state and this bar is the
         // one surface that reports it in every workspace.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = tokens::SPACE_3;
-            optimize_progress_row(ui, state, events);
+            job_progress_row(ui, state, events);
         });
     });
 
@@ -67,7 +67,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     }
 }
 
-/// The Optimize progress row (WP24), or nothing when no run is in flight.
+/// The GUI job progress row (WP24), or nothing when no run is in flight.
 ///
 /// This bar is where the row belongs, because `draw` runs for EVERY
 /// workspace: the status bar has three call sites and none of them is the
@@ -75,31 +75,23 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 /// Readiness. With the full-screen placeholder deleted, this row is the one
 /// surface that tells the operator a run is under way in every workspace.
 ///
-/// It reports the run label, the rung of the search ladder, the candidate
-/// inside that rung and the elapsed seconds (WP29, plan §33). The sentence
-/// is built by [`crate::state::OptimizeRun::progress_text`], so the row and
-/// the in-crate sentry read ONE sentence and the draw stays a draw. A run
-/// that walks no candidate ladder — the rollup and the tier-map preview —
-/// keeps the WP24 label-and-seconds text.
-///
-/// It reports NO time left. The whole-run candidate total is not known up
-/// front, and a refine candidate costs more than a grid candidate, so one
-/// mean second per candidate mixes two populations.
-fn optimize_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    let Some(run) = state.optimize_run.as_ref() else {
+/// It reports the run label and the elapsed seconds. The sentence is built
+/// by [`crate::state::JobRun::progress_text`], so the row and a test read
+/// ONE sentence and the draw stays a draw. It reports NO time left.
+fn job_progress_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
+    let Some(run) = state.job_run.as_ref() else {
         return;
     };
-    let text = run.progress_text(&state.session);
+    let text = run.progress_text();
 
-    // The cancel arms THIS submit's flag and closes no window. None of the
-    // three older cancels fits: `CancelCompute` cancels every lane, which
-    // kills an MCP caller's queued job, and both Close arms close a window
-    // the operator may not have open.
+    // The cancel arms THIS submit's flag and closes no window.
+    // `CancelCompute` does not fit: it cancels every lane, which kills an
+    // MCP caller's queued job.
     let cancel =
         ui.add(crate::ui::components::Button::quiet("Cancel").enabled(!run.cancel_requested));
-    automation::record(ui, "workspace_bar_cancel_optimize", &cancel, "Cancel");
+    automation::record(ui, "workspace_bar_cancel_job", &cancel, "Cancel");
     if cancel.clicked() {
-        events.push(AppEvent::Ui(UiCommand::CancelOptimizeRun(NoArgs)));
+        events.push(AppEvent::Ui(UiCommand::CancelJobRun(NoArgs)));
     }
     ui.label(crate::ui::components::text::caption(text).color(tokens::CAUTION));
     ui.spinner();

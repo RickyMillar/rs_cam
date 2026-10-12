@@ -40,13 +40,9 @@
 //! and three optimizer apply sites all ended there. The four GUI sites
 //! now take `Command::RestoreToolpathSnapshot`, which is wide.
 //!
-//! The core optimizer keeps a narrow fifth path,
-//! `apply_toolpath_param_snapshot_narrow`, on purpose: its candidate
-//! search regenerates one index and simulates it against cached
-//! neighbours. This file cannot reach that path — `pub(crate)` keeps it
-//! inside the crate — so the in-crate test
-//! `the_narrow_path_leaves_the_neighbour_result_cached`
-//! (`session/mutation.rs`) pins it instead.
+//! The optimizer kept a narrow fifth path,
+//! `apply_toolpath_param_snapshot_narrow`. The optimizer cull
+//! (2026-10-13) deleted the path with the optimizer.
 //!
 //! WP7 moved ARM 3 there for the same reason. The nine `ProjectSession`
 //! mutation hatches are `pub(crate)`, so this file — an external crate —
@@ -463,9 +459,7 @@ fn arm_setter() -> Observation {
 /// door.
 ///
 /// WP8 retargeted this arm. It called `apply_toolpath_param_snapshot`,
-/// which the optimizer still calls and which stays narrow on purpose. A
-/// `pub(crate)` path does not compile from `tests/`, so the arm could
-/// not be flipped in place; it names the door the GUI takes now.
+/// which was narrow. It names the door the GUI takes now.
 fn arm_snapshot() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
@@ -583,8 +577,6 @@ fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
 /// The GUI undo and redo door drops the set the setter drops. Before WP8
 /// it dropped the edited index alone, so a downstream
 /// `FromRemainingStock` result survived an undo of the stock above it.
-/// The core optimizer keeps a narrow path; the module doc says where it
-/// is pinned.
 #[test]
 fn n14_undo_and_the_setter_invalidate_alike() {
     let snapshot = arm_snapshot();

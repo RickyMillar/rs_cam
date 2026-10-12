@@ -14,7 +14,7 @@
 
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest, LaneSnapshot,
-    OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
+    SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
 
@@ -27,7 +27,6 @@ impl ComputeBackend for IdleBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         Vec::new()

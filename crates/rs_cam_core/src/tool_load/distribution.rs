@@ -36,8 +36,8 @@
 //! The in-band and out-of-band shares use the gate's boundary contract
 //! ([`super::boundary::exceeds_high`], [`super::boundary::below_low`]) at
 //! zero tolerance. The gate verdict stays the authority on the state: a
-//! non-zero `above_s` beside a `Within` verdict is possible when the
-//! optimiser widened the trigger through [`super::ToleranceBands`].
+//! non-zero `above_s` beside a `Within` verdict is possible when a caller
+//! widened the trigger through [`super::ToleranceBands`].
 //!
 //! ## The weight
 //!

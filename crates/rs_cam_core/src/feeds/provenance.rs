@@ -24,8 +24,8 @@ use crate::compute::catalog::OperationConfig;
 ///
 /// `VendorLut` / `Formula` / `EdgeRadiusFloor` mirror the suggest calculator's
 /// derivation (and, for a single suggest pass, can differ *per field* — a row
-/// may publish an RPM while its chipload falls back to the formula). `Manual`,
-/// `Optimizer`, and `AutoCorrect` record the non-suggest producers.
+/// may publish an RPM while its chipload falls back to the formula). `Manual`
+/// and `AutoCorrect` record the non-suggest producers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceSource {
@@ -37,8 +37,6 @@ pub enum ProvenanceSource {
     EdgeRadiusFloor,
     /// Hand-edited by the user (GUI DragValue or MCP/programmatic set-param).
     Manual,
-    /// Set by the tool-load optimizer.
-    Optimizer,
     /// Set by automatic stale-default / defect correction.
     AutoCorrect,
     /// Set by a published rule with evidence (G10): the reference is the
@@ -71,7 +69,7 @@ impl ValueProvenance {
         }
     }
 
-    /// Bare source with no reference (formula / floor / manual / optimizer / auto-correct).
+    /// Bare source with no reference (formula / floor / manual / auto-correct).
     pub fn bare(source: ProvenanceSource) -> Self {
         Self {
             source,
@@ -89,10 +87,6 @@ impl ValueProvenance {
 
     pub fn manual() -> Self {
         Self::bare(ProvenanceSource::Manual)
-    }
-
-    pub fn optimizer() -> Self {
-        Self::bare(ProvenanceSource::Optimizer)
     }
 
     pub fn auto_correct() -> Self {
@@ -225,7 +219,7 @@ impl FeedsProvenance {
     }
 
     /// Stamp a single dimension. Used by per-field GUI/controller apply and by
-    /// manual / optimizer / auto-correct write sites.
+    /// manual / auto-correct write sites.
     pub fn set(&mut self, field: FeedsField, prov: ValueProvenance) {
         *self.slot_mut(field) = Some(prov);
     }
@@ -249,7 +243,7 @@ impl FeedsProvenance {
     ///
     /// The GUI edits a transient `ToolpathEntry` copy each frame; numeric
     /// DragValues mutate the operation directly without touching provenance,
-    /// whereas Suggest/optimizer paths update *both*. So at the single flush
+    /// whereas the Suggest paths update *both*. So at the single flush
     /// choke point we can tell them apart: for each dimension whose value
     /// changed (`old_op` → `new_op`) but whose provenance slot did **not** move
     /// (`self` still equals `old`), the change was a hand-edit. `self` is the
@@ -286,42 +280,6 @@ impl FeedsProvenance {
         }
     }
 
-    /// Stamp [`ProvenanceSource::Optimizer`] on every feeds dimension whose
-    /// value differs between `baseline` and `candidate`; dimensions the
-    /// optimizer left untouched keep their existing provenance. Used when the
-    /// tool-load optimizer's chosen candidate is applied to a toolpath.
-    #[must_use]
-    pub fn stamped_optimizer(
-        mut self,
-        baseline: &OperationConfig,
-        candidate: &OperationConfig,
-    ) -> Self {
-        let b = baseline.as_params();
-        let c = candidate.as_params();
-        if b.feed_rate() != c.feed_rate() {
-            self.feed_rate = Some(ValueProvenance::optimizer());
-        }
-        if b.plunge_rate() != c.plunge_rate() {
-            self.plunge_rate = Some(ValueProvenance::optimizer());
-        }
-        if b.spindle_rpm() != c.spindle_rpm() {
-            self.spindle_rpm = Some(ValueProvenance::optimizer());
-        }
-        if b.stepover() != c.stepover() {
-            self.stepover = Some(ValueProvenance::optimizer());
-        }
-        if b.depth_per_pass() != c.depth_per_pass() {
-            self.depth_per_pass = Some(ValueProvenance::optimizer());
-        }
-        if b.scallop_height() != c.scallop_height() {
-            self.scallop_height = Some(ValueProvenance::optimizer());
-        }
-        if b.ramp_feed_rate() != c.ramp_feed_rate() {
-            self.ramp_feed_rate = Some(ValueProvenance::optimizer());
-        }
-        self
-    }
-
     fn slot_mut(&mut self, field: FeedsField) -> &mut Option<ValueProvenance> {
         match field {
             FeedsField::FeedRate => &mut self.feed_rate,
@@ -339,7 +297,7 @@ impl FeedsProvenance {
 ///
 /// `ScallopHeight` rounds out the set for symmetry with [`FeedsProvenance`]'s
 /// fields; it is currently only reachable via the struct-field write paths
-/// (`detect_manual_edits` / `stamped_optimizer`), not [`FeedsProvenance::set`].
+/// (`detect_manual_edits`), not [`FeedsProvenance::set`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedsField {
     FeedRate,

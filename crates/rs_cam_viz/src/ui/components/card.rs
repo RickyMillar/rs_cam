@@ -153,8 +153,8 @@ impl Card {
 
 /// A full-viewport scrim, painted behind a modal window (§2.3).
 ///
-/// The pattern existed once, at `ui/optimize_project.rs:572-574`. It is the
-/// rule now: a modal that does not dim what it covers reads as a panel that
+/// The pattern existed once, in a rollup window that is now deleted.
+/// It is the rule now: a modal that does not dim what it covers reads as a panel that
 /// happens to float.
 pub fn scrim(ctx: &egui::Context, id: egui::Id, visible: bool) {
     let t = motion::slow(ctx, id, visible);

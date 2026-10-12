@@ -27,8 +27,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `SimulationCutArtifact.trace` is an `Arc` SHARED with the result: pass
   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
 - `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
-  realised step + one cell (`commanded_step_mm`), never its median bite. The
-  optimizer reads `standing_material_reading`; only the finding keeps its floors.
+  realised step + one cell (`commanded_step_mm`), never its median bite.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 

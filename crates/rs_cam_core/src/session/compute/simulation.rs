@@ -248,9 +248,8 @@ impl ProjectSession {
     /// way to pass one. The CLI ran the same fixpoint ladder the memo was
     /// built for and paid the full replay every round.
     ///
-    /// The CACHE IS THE CALLER'S. `ProjectSession` derives `Clone` and the
-    /// `optimize_toolpath` job copies the session, so a session-owned cache
-    /// would be copied per job and the memo's soundness argument — one
+    /// The CACHE IS THE CALLER'S. `ProjectSession` derives `Clone`, so a
+    /// session-owned cache would be copied with every clone and the memo's soundness argument — one
     /// in-process, single-slot cache — would not survive. `SimulationOptions`
     /// stays lifetime-free for the same kind of reason: it has 188 use sites
     /// and is stored by value in several of them.

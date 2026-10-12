@@ -63,8 +63,8 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
     assert!(
-        controller.state.optimize_run.is_some(),
-        "one Optimize run at a time — the walk holds the policy state"
+        controller.state.job_run.is_some(),
+        "one GUI job at a time — the walk holds the policy state"
     );
     assert!(
         controller
@@ -190,7 +190,7 @@ fn a_one_tool_ladder_never_reaches_the_worker() {
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
     assert!(controller.compute.job_requests.is_empty());
-    assert!(controller.state.optimize_run.is_none());
+    assert!(controller.state.job_run.is_none());
 }
 
 /// The tier preview's setup gate (operator-observed 2026-08-27): the map is

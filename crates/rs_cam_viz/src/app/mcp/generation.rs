@@ -1,5 +1,5 @@
-//! The MCP generation surface: add and generate a toolpath, optimize it,
-//! apply feeds, and plan or preview the multi-tool finishing ladder.
+//! The MCP generation surface: add and generate a toolpath, apply feeds,
+//! and plan or preview the multi-tool finishing ladder.
 //!
 //! Split out of `app/mcp.rs` (P4). Every item is a verbatim move; the
 //! handlers stay reachable as `RsCamApp::mcp_*` because an inherent
@@ -331,57 +331,6 @@ impl RsCamApp {
             "load_report": load_value,
             "per_depth_pass": per_depth_pass,
         }))
-    }
-
-    /// Run the optimizer on one toolpath as a `Job` (WP14b).
-    ///
-    /// Step (i) runs here, on the frame loop: it clones the session into
-    /// the handle and takes the baseline cut trace off the session, so a
-    /// refusal still appears at submit time with core's own wording.
-    /// Step (ii) — the candidate search, which is one to two minutes —
-    /// runs on the `Job` lane over that clone, so the GUI stays usable
-    /// and nothing on screen is lent out.
-    ///
-    /// The CLIENT waits exactly as long as it did: the arm stores the
-    /// oneshot and the drain answers it. No `timeout_s` is added, so the
-    /// pinned wire snapshot does not move (§26 ruling 1).
-    ///
-    /// **The trace source changed.** It used to come from the VIEW's
-    /// simulation slot. It now comes from the session, which the GUI
-    /// drain adopts every simulation into. A session mutation clears that
-    /// slot, so an `optimize_toolpath` issued after an edit refuses where
-    /// it used to score against the older trace (§28 ruling 5).
-    pub(super) fn mcp_optimize_toolpath(
-        &mut self,
-        index: usize,
-        response_tx: tokio::sync::oneshot::Sender<McpResponse>,
-    ) {
-        // §22 ruling 3: a FRESH flag per submit. The lane maps "cancel
-        // this job" onto it.
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let started = self.controller.state_mut().session.start(
-            rs_cam_core::session::Job::OptimizeToolpath(
-                rs_cam_core::session::OptimizeToolpathArgs { index },
-            ),
-            &cancel,
-        );
-        let handle = match started {
-            Ok(handle) => handle,
-            Err(e) => {
-                let _ = response_tx.send(McpResponse {
-                    result: Ok(json_str(serde_json::json!({
-                        "error": format!("{e}"),
-                    }))),
-                });
-                return;
-            }
-        };
-        self.controller.submit_mcp_job(
-            handle,
-            cancel,
-            crate::mcp_bridge::McpJobRender::OptimizeOutcome { index },
-            response_tx,
-        );
     }
 
     /// F3.1 — add a toolpath through the GUI's own path (PLAN.md §5).

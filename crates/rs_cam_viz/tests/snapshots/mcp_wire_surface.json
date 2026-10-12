@@ -1083,7 +1083,7 @@
       "required": [
         "index"
       ],
-      "title": "OptimizeToolpathInput",
+      "title": "IndexParam",
       "type": "object"
     },
     "name": "get_toolpath_diagnostics"
@@ -1447,25 +1447,6 @@
       "type": "object"
     },
     "name": "narrate_toolpath"
-  },
-  {
-    "inputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "properties": {
-        "index": {
-          "description": "Toolpath index (0-based)",
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "index"
-      ],
-      "title": "OptimizeToolpathInput",
-      "type": "object"
-    },
-    "name": "optimize_toolpath"
   },
   {
     "inputSchema": {
@@ -2895,7 +2876,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "modal": {
-          "description": "Modal to open: \"feeds_modal\", \"optimize_modal\", \"export_wizard\",\n\"tool_library\", \"pin_wizard\", or \"none\" to close all modals (the\nload-warning modal and the pin wizard too).",
+          "description": "Modal to open: \"feeds_modal\", \"export_wizard\", \"tool_library\",\n\"pin_wizard\", or \"none\" to close all modals (the\nload-warning modal and the pin wizard too).",
           "type": [
             "string",
             "null"

@@ -981,16 +981,13 @@ impl RsCamApp {
         // Draw workspace-specific layout.
         //
         // WP24, operator ruling 2026-09-13 (§30 item 3): the full-screen
-        // Optimize placeholder is DELETED. It was a POLICY and never a
-        // necessity. Before WP14b the lane OWNED the session — a
-        // `mem::replace` pulled it into the worker request — so the panels
-        // would have drawn against an empty one. Every route now runs over
-        // a clone, and the operator keeps the whole GUI during a run.
+        // job placeholder is DELETED. Every route runs over a handle, and
+        // the operator keeps the whole GUI during a run.
         //
         // What tells the operator a run is in flight is the progress row in
         // `ui::workspace_bar`, which also cancels it. One run at a time
-        // stays the policy (§28 ruling 8), and the three submit sites now
-        // refuse with a toast rather than a log line.
+        // stays the policy (§28 ruling 8), and the submit site refuses with
+        // a toast rather than a log line.
         match self.controller.state().workspace {
             Workspace::Setup => self.draw_setup_layout(ui),
             Workspace::Toolpaths => self.draw_toolpath_layout(ui),
@@ -1016,18 +1013,6 @@ impl RsCamApp {
         if self.controller.state().show_export_wizard {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::export_wizard::draw(ctx, state, events);
-        }
-
-        // Optimize modal (per-toolpath)
-        if self.controller.state().optimize_modal.is_some() {
-            let (state, events) = self.controller.state_ref_and_events_mut();
-            crate::ui::optimize_modal::draw(ctx, state, events);
-        }
-
-        // Optimize-project rollup
-        if self.controller.state().optimize_project.is_some() {
-            let (state, events) = self.controller.state_ref_and_events_mut();
-            crate::ui::optimize_project::draw(ctx, state, events);
         }
 
         // Multi-tool finishing planner (Phase U). Takes `&mut AppState`

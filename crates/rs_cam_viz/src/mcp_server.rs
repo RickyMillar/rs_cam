@@ -29,9 +29,9 @@ use rs_cam_mcp::server::{
     GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam, GetNotificationsParam,
     ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
     LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam,
-    OperationSchemaParam, OptimizeToolpathInput, PlaceAlignmentPatternParam,
-    PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
-    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    OperationSchemaParam, PlaceAlignmentPatternParam, PlanMultitoolFinishingParam,
+    PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam,
+    RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
     SetDressupFieldParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
     SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
@@ -980,8 +980,9 @@ impl EmbeddedCamServer {
     )]
     async fn get_toolpath_diagnostics(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(OptimizeToolpathInput { index }): Parameters<OptimizeToolpathInput>,
+        #[allow(clippy::needless_pass_by_value)] Parameters(IndexParam { index }): Parameters<
+            IndexParam,
+        >,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::GetToolpathDiagnostics { index })
@@ -996,21 +997,6 @@ impl EmbeddedCamServer {
     async fn get_project_diagnostics(&self) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::GetProjectDiagnostics)
-                .await,
-        )
-    }
-
-    #[tool(
-        name = "optimize_toolpath",
-        description = "Run the post-simulation tuner on one toolpath. Returns OptimizeOutcome JSON. The search pulls two levers in order: (1) links, the link-moves dressup on the baseline operation; (2) depth and width, depth-per-pass and stepover cells up to the depth bound of the cutter, each with the feed, plunge, ramp and RPM of the feeds calculator. Every candidate is one simulation with the options of the GUI simulation. A candidate is safe when no gate row refuses an export AND its full cut holds: the removed volume is within one floor layer of the baseline, the rapid collisions are not more than the baseline, and the over-cut peak is not more than the baseline peak plus one cell. The depth row reports and never refuses. `kind` is one of: `ranked` (index 0 is the baseline; `recommended_index` names the fastest safe candidate); `no_safe_improvement`; `skipped` (reason). Reply keys: `candidates[].delta` (with `link_moves`), `candidates[].dressups` (what Apply writes beside `params`), `candidates[].full_cut` (`removed_volume_mm3`, `rapid_collisions`, `overcut_peak_mm`, each null when not measured, and `verdict.kind` `holds`, `fails` or `not_measured` with a `reason`), `candidates[].stage` (`baseline` or `measured`), `narrative` (`headline`, `explanation`, `envelope`, `limiting_gates`, `unmodeled`, present only when the stock has no force line so power and deflection are not modelled, and `refused_cells`, present only when the search refused a cell or did not measure it), and `assumptions.operating_point` (the one set of simulation options for the baseline and every candidate). The search runs on the Job lane over a CLONE of the session, so the project stays readable and nothing is applied. Run run_simulation first; the optimizer scores candidates against the session's baseline trace, and a session edit clears that trace — this call then refuses instead of scoring against the older one."
-    )]
-    async fn optimize_toolpath(
-        &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(OptimizeToolpathInput { index }): Parameters<OptimizeToolpathInput>,
-    ) -> String {
-        Self::format_result(
-            self.send_request(McpRequestKind::OptimizeToolpath { index })
                 .await,
         )
     }
@@ -1708,7 +1694,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_ui_view",
-        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'optimize_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, fixtures, keep_outs, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal and optimize_modal need a toolpath — pass toolpath_index in the same call or have one selected; optimize_modal starts a REAL Optimize run (long, ~1-2 min — without a prior simulation it shows a 'simulation required' outcome instead). Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, fixtures, keep_outs, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal needs a toolpath — pass toolpath_index in the same call or have one selected. Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
     )]
     async fn set_ui_view(
         &self,

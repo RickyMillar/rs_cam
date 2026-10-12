@@ -292,7 +292,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     state: &mut AppState,
     projection: ProjectionMode,
-    lanes: &[LaneSnapshot; 5],
+    lanes: &[LaneSnapshot; 4],
     events: &mut Vec<AppEvent>,
     viewport_rect: egui::Rect,
 ) -> DockOutcome {
@@ -362,7 +362,7 @@ struct BarRects {
 fn dock_bar(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    lanes: &[LaneSnapshot; 5],
+    lanes: &[LaneSnapshot; 4],
     events: &mut Vec<AppEvent>,
     layout: DockLayout,
 ) -> BarRects {
@@ -454,7 +454,7 @@ fn catalogue_button(ui: &mut egui::Ui, state: &mut AppState, layout: DockLayout)
 /// The compute activity and its one cancel. Drawn only while a lane works.
 ///
 /// `UiCommand::CancelCompute` cancels EVERY lane, so the label says so.
-fn compute_activity(ui: &mut egui::Ui, lanes: &[LaneSnapshot; 5], events: &mut Vec<AppEvent>) {
+fn compute_activity(ui: &mut egui::Ui, lanes: &[LaneSnapshot; 4], events: &mut Vec<AppEvent>) {
     let active: Vec<String> = lanes
         .iter()
         .filter(|lane| lane.is_active())

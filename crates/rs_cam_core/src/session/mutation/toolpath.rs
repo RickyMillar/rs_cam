@@ -9,9 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::DressupConfig;
 use crate::compute::tool_config::ToolId;
-use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::session::dependencies::EdgeKind;
 use crate::session::{Effects, ProjectSession, SessionError, SimulationDropCause, ToolpathConfig};
 
@@ -634,59 +632,11 @@ impl ProjectSession {
         })
     }
 
-    /// Install an operation, dressup and face-selection triple on the
-    /// toolpath at `index`, and drop THAT INDEX ALONE.
+    /// Overwrite a toolpath's feeds provenance (W2.1). Does not touch the
+    /// result or simulation caches.
     ///
-    /// **The narrowness is the point, and no surface may call this.** The
-    /// tool-load optimizer's candidate search
-    /// (`tool_load/optimize/candidate.rs`) restores a candidate, then
-    /// regenerates that one index, then runs a project simulation against
-    /// the neighbours' cached results. `candidate.rs` says so at the
-    /// simulation call: "Other toolpaths' cached results from baseline
-    /// still apply because `generate_toolpath` only touched index
-    /// `toolpath_index`." A wide invalidation would drop every downstream
-    /// `StockSource::FromRemainingStock` result once PER CANDIDATE, so the
-    /// search would regenerate the whole chain at every point of the
-    /// search instead of once. `optimize/context.rs`'s
-    /// `BaselineRestoreGuard` restores the baseline on drop through the
-    /// same path, and a `Drop` cannot report an error, so a wide restore
-    /// there would silently leave a dead chain behind every
-    /// `optimize_toolpath` call.
-    ///
-    /// Every OTHER caller takes
-    /// [`Command::RestoreToolpathSnapshot`](super::Command), which walks
-    /// the chain (WP8, N14). `the_narrow_path_leaves_the_neighbour_result_cached`
-    /// in this file's test module pins the difference.
-    #[instrument(skip(self, operation, dressups, face_selection))]
-    pub(crate) fn apply_toolpath_param_snapshot_narrow(
-        &mut self,
-        index: usize,
-        operation: OperationConfig,
-        dressups: DressupConfig,
-        face_selection: Option<Vec<FaceGroupId>>,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
-            let tc = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            tc.operation = operation;
-            tc.dressups = dressups;
-            tc.face_selection = face_selection;
-            session.drop_result(index);
-            session.drop_simulation(SimulationDropCause::Operations);
-            Ok(())
-        })
-    }
-
-    /// Overwrite a toolpath's feeds provenance (W2.1), stamping
-    /// [`crate::feeds::ProvenanceSource::Optimizer`] on the dimensions a
-    /// caller changed. Does not touch the result or simulation caches.
-    ///
-    /// **This has no production caller since WP8.** The three optimizer
-    /// apply paths called it right after the snapshot, which is how an
-    /// undo came to restore the earlier values under the later stamp.
-    /// They now carry the provenance in
+    /// **This has no production caller.** A caller that also writes the
+    /// values takes
     /// [`RestoreToolpathSnapshotArgs`](super::RestoreToolpathSnapshotArgs),
     /// so one command writes the values and the stamp together.
     pub(crate) fn set_feeds_provenance(

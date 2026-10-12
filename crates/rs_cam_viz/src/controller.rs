@@ -205,7 +205,7 @@ pub(crate) struct PendingGuiJob {
     /// MCP caller's in-flight `recommend_clearing_strategy`. A close arm —
     /// and WP24's progress row — arms this flag and leaves the entry in the
     /// map: the job still completes, and the drain is the one place that
-    /// clears `AppState::optimize_run`.
+    /// clears `AppState::job_run`.
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -238,12 +238,6 @@ pub struct PlanResolutionConfirm {
 
 /// What a GUI-started `Job` answers.
 pub(crate) enum GuiJobTarget {
-    /// The per-toolpath Optimize modal. The id is the STABLE toolpath id,
-    /// so a reorder between submit and answer cannot deliver the outcome
-    /// to a different operation.
-    OptimizeModal {
-        toolpath_id: crate::state::toolpath::ToolpathId,
-    },
     /// The multi-tool planner dialog's tier-map preview.
     MultitoolPreview,
 }
@@ -296,7 +290,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// ladder needs those frames just as much and has no MCP slot at all.
     ///
     /// WP14b adds the GUI's own in-flight `Job` submits, and for the same
-    /// reason: the Optimize modal and the planner dialog wait on a drain,
+    /// reason: the planner dialog waits on a drain,
     /// and a build without `--mcp` has no MCP slot to count them.
     #[must_use]
     pub fn awaiting_deferred_completions(&self) -> u64 {
@@ -492,7 +486,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.lane_snapshot(lane)
     }
 
-    pub fn lane_snapshots(&self) -> [LaneSnapshot; 5] {
+    pub fn lane_snapshots(&self) -> [LaneSnapshot; 4] {
         self.compute.lane_snapshots()
     }
 

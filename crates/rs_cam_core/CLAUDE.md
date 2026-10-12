@@ -31,7 +31,7 @@ sentries and traps, which this file does not repeat.
 | `trace/` | The records that describe a generated toolpath | `trace/CLAUDE.md` |
 | `gcode/` | G-code emit and the post-processors | `gcode/CLAUDE.md` |
 | `export/` | Output that is not G-code: preview, fingerprints, the G-code validator | `export/CLAUDE.md` |
-| `feeds/`, `tool_load/` | Feeds and speeds, the cutting load model, the optimiser | `feeds/CLAUDE.md`, `tool_load/CLAUDE.md` |
+| `feeds/`, `tool_load/` | Feeds and speeds, the cutting load model and its gates | `feeds/CLAUDE.md`, `tool_load/CLAUDE.md` |
 | `compute/` | Operation dispatch, configuration catalogue, simulation orchestration | `compute/CLAUDE.md` |
 | `session/` | `ProjectSession`, commands and effects | `session/CLAUDE.md` |
 | `diagnostics/` | Diagnostic findings and their adapters | `diagnostics/CLAUDE.md` |

@@ -29,8 +29,8 @@ use std::sync::Arc;
 
 use super::*;
 use crate::compute::{
-    CollisionRequest, ComputeMessage, ComputeRequest, ComputeResult, OptimizeRequest,
-    SimulationRequest, ToolpathSubmitOutcome,
+    CollisionRequest, ComputeMessage, ComputeRequest, ComputeResult, SimulationRequest,
+    ToolpathSubmitOutcome,
 };
 use crate::state::job::{ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationConfig, ToolpathId, ToolpathResult};
@@ -52,7 +52,6 @@ impl ComputeBackend for InertBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         std::mem::take(&mut self.drained)

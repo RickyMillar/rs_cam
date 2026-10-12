@@ -26,11 +26,10 @@
 //!
 //! # Why the tool list is a snapshot
 //!
-//! A preview runs on the Optimize worker lane, which takes ownership of the
-//! `ProjectSession` for the duration (the same move `open_optimize_project`
-//! makes). While it is out, the main thread holds an empty placeholder, so a
-//! dialog that read tool names live would blank mid-run. The rows are
-//! captured on open instead — the same call `ToolLibraryModalState` makes,
+//! A preview used to run on a worker lane that took ownership of the
+//! `ProjectSession` for the duration. While it was out, the main thread
+//! held an empty placeholder, so a dialog that read tool names live would
+//! blank mid-run. The rows are captured on open instead — the same call `ToolLibraryModalState` makes,
 //! for the same reason.
 //!
 //! # Nothing here auto-locks
@@ -84,9 +83,8 @@ pub struct PlannerToolRow {
     pub strategy: rs_cam_core::session::TierStrategy,
 }
 
-/// Lifecycle of one preview run, mirroring
-/// [`crate::state::OptimizeProjectStatus`]'s shape. The two rode one worker
-/// lane until WP14b moved this one to the `Job` lane; the shape stays.
+/// Lifecycle of one preview run. WP14b moved the preview to the `Job`
+/// lane.
 #[derive(Debug, Clone)]
 pub enum MultitoolPreviewStatus {
     /// Nothing computed yet.

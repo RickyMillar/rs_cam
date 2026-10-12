@@ -370,16 +370,6 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.gui.toolpath_rt.remove(id);
             self.superseded_toolpaths.remove(id);
         }
-        self.state
-            .pending_reconciliation_for_ids
-            .retain(|id| !removed_ids.contains(id));
-        if self
-            .state
-            .pending_apply_resim
-            .is_some_and(|id| removed_ids.iter().any(|removed| removed.0 == id))
-        {
-            self.state.pending_apply_resim = None;
-        }
         if self
             .state
             .gui

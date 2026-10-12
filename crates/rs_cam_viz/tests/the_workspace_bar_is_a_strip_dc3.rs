@@ -167,7 +167,7 @@ fn the_bar_paints_one_hairline_at_the_seam() {
 /// badge is the same compact dot and its count arrives on hover.
 ///
 /// The scan is bounded to the badge block, so a label drawn anywhere else in
-/// the file, such as the Optimize progress row, does not fail this arm.
+/// the file, such as the job progress row, does not fail this arm.
 #[test]
 fn every_badge_is_a_dot_with_an_accessible_count() {
     let src = strip_comments(SRC);
@@ -225,8 +225,8 @@ fn the_workspace_hint_strip_is_deleted() {
          the operator had already chosen, and nobody reads it twice."
     );
     assert!(
-        src.contains("optimize_progress_row"),
-        "the Optimize row STAYS. A run in flight is real state, and this \
+        src.contains("job_progress_row"),
+        "the job progress row STAYS. A run in flight is real state, and this \
          bar is the one surface that reports it in every workspace."
     );
 }
@@ -308,8 +308,8 @@ fn the_scans_are_not_vacuous() {
     );
 
     // 2. The slices must NARROW. A `between` that returned the whole file
-    //    would make arm 2's negative scans meaningless, because the Optimize
-    //    row does call `ui.label`.
+    //    would make arm 2's negative scans meaningless, because the job
+    //    progress row does call `ui.label`.
     let block = between(
         &src,
         "if let Some((badge_text, badge_role)) = badge {",
@@ -321,7 +321,7 @@ fn the_scans_are_not_vacuous() {
     );
     assert!(
         src.contains("ui.label("),
-        "non-vacuity: the file DOES call ui.label elsewhere — the Optimize \
+        "non-vacuity: the file DOES call ui.label elsewhere — the job \
          progress row — so arm 2's negative scan is only meaningful because \
          it is bounded to the badge block"
     );
