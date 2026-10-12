@@ -334,7 +334,14 @@ fn the_entry_lines_name_angle_pitch_pip_and_clearance_g10() {
             );
         }
         let texts = painted_text(&mut state);
-        let face: Vec<&String> = texts.iter().filter(|t| !t.contains('\n')).collect();
+        // Round 2 (2026-10-13): each note is a `DataTable` record row with its
+        // rule on the hover, so the face run ends in the detail mark.
+        let mark = format!(" {}", tokens::GLYPH_DETAIL);
+        let face: Vec<&str> = texts
+            .iter()
+            .filter(|t| !t.contains('\n'))
+            .map(|t| t.strip_suffix(mark.as_str()).unwrap_or(t))
+            .collect();
         for note in &notes {
             let line = if note.caution {
                 format!("⚠ {}", note.headline)

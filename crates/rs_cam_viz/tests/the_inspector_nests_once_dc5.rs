@@ -139,6 +139,13 @@ fn no_name_is_both_a_tab_and_a_disclosure_dc5() {
          the wrong reason.",
         labels.len()
     );
+    // The shared derivation disclosure has one label; no tab may carry it.
+    assert!(
+        !labels
+            .iter()
+            .any(|l| l == rs_cam_viz::ui::components::data_table::DETAILS_LABEL),
+        "a tab is named like the `Details` disclosure"
+    );
     for label in &labels {
         let pattern = format!("CollapsingHeader::new(\"{label}\")");
         assert!(
@@ -280,9 +287,11 @@ fn the_scans_have_something_to_scan_dc5() {
          wrong file",
         src.len()
     );
+    // Round 2 (2026-10-13): the derivation disclosure is the shared
+    // `components::Details`, whose one label arm 1 also checks.
     assert!(
-        src.contains("CollapsingHeader::new(\""),
-        "the inspector uses no literal-named disclosure at all, so arm 1's \
+        src.contains("CollapsingHeader::new(") && src.contains("Details::new("),
+        "the inspector opens no disclosure and no `Details`, so arm 1's \
          pattern can never match and the rule it pins is unenforced"
     );
     assert!(

@@ -136,8 +136,16 @@ fn ctx() -> egui::Context {
 }
 
 /// Every text run the inspector paints on the second (steady) frame.
-fn painted_text(mut state: AppState) -> Vec<String> {
+fn painted_text(state: AppState) -> Vec<String> {
+    painted_text_with(state, false)
+}
+
+/// As [`painted_text`]; `open` opens every disclosure (and paints hovers).
+fn painted_text_with(mut state: AppState, open: bool) -> Vec<String> {
     let ctx = ctx();
+    if open {
+        ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
+    }
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -225,16 +233,21 @@ fn the_tool_panel_cautions_when_the_name_disagrees_g_toolsize() {
 
 #[test]
 fn the_feeds_card_header_names_the_tip_g_toolsize() {
-    let texts = painted_text(state_for(tapered_ball(2.0), false));
-    // Non-vacuity: the card's context chip painted.
+    // Round 2 (2026-10-13): the context row is the "Tool" row of the Feeds
+    // card's `Details`, so the arm opens the disclosures.
+    let texts = painted_text_with(state_for(tapered_ball(2.0), false), true);
+    // Non-vacuity: the card's context row painted.
     assert!(
-        texts.iter().any(|t| t == "Tool:"),
-        "the Feeds card painted no context chip; runs were {texts:#?}"
+        texts.iter().any(|t| t == "Tool"),
+        "the Feeds card painted no context row; runs were {texts:#?}"
     );
-    let header: Vec<&String> = texts
+    // An elided cell also paints its own tooltip when every disclosure is
+    // open, so the arm counts distinct runs.
+    let mut header: Vec<&String> = texts
         .iter()
-        .filter(|t| t.contains("flute \u{00B7}"))
+        .filter(|t| !t.contains('\n') && t.contains("flute \u{00B7}"))
         .collect();
+    header.dedup();
     assert_eq!(header.len(), 1, "expected one header run, got {header:?}");
     assert!(
         header[0].starts_with("tip \u{00D8}2.00 mm (R1.00), shank \u{00D8}6.00"),

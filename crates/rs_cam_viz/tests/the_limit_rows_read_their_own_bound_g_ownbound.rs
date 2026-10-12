@@ -287,7 +287,7 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
     for (_, title) in CARD_TITLES {
         let at = painted
             .iter()
-            .position(|t| t == title)
+            .position(|t| is_card_title(t, title))
             .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"));
         assert!(
             at < gantry,
@@ -296,6 +296,15 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
              same rows the same way."
         );
     }
+}
+
+/// True when `run` is the title of the card `title`.
+///
+/// A measured card paints its title as it is. A card core could not measure
+/// is a row of the abstention table (inspector clean-up round 2), and a
+/// table row with a hover paints its name and then the detail mark.
+fn is_card_title(run: &str, title: &str) -> bool {
+    run == title || run == format!("{title} \u{24D8}")
 }
 
 /// The card title each banded kind's row sits under, in `criteria()` order.
@@ -332,7 +341,7 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
     let title_at = |title: &str| {
         painted
             .iter()
-            .position(|t| t == title)
+            .position(|t| is_card_title(t, title))
             .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"))
     };
     let titles: Vec<usize> = expected.iter().map(|(_, t)| title_at(t)).collect();

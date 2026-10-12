@@ -406,7 +406,10 @@ fn the_long_tool_derate_is_a_line_on_the_page_ld1() {
     let texts = painted_text();
     let line = texts
         .iter()
-        .find(|t| t.starts_with('⚠') && t.contains("Long tool"))
+        // Round 2 (2026-10-13): the share is derivation, not a problem. It
+        // is a record row in the card's `Details`, with the repo-rule badge,
+        // so it carries no warning mark.
+        .find(|t| !t.contains('\n') && t.starts_with("Long tool"))
         .unwrap_or_else(|| {
             panic!(
                 "the long-tool de-rate is not painted as its own line. A de-rate that \

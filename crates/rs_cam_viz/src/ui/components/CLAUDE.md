@@ -1,40 +1,40 @@
 # `ui/components/` — the shared component set
 
-One renderer per repeated UI element. `DESIGN_SPEC.md` gives the section
-numbers each file cites.
+One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 
 ## Files
 
-- `mod.rs` — the component facade.
-- `section.rs` — sections, param grids, the `UiExt` trait and `SummaryCard`.
-- `card.rs`, `notice.rs` — `SectionHeader`, `Card`, `EmptyState`, `Banner`
-  and `NoticeStack`.
-- `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `DataTable`, `ValueRow`,
-  `label_cell` (the left-aligned label column) and `row_hover_tint`.
-- `chip.rs`, `pill.rs` — `StatusChip` and `CountPill`.
-- `choice_row.rs` — `ChoiceRow`, the one closed-choice row (G-STARTFROM).
-- `line.rs` — `OneLine`: one row; it truncates, the hover has it all (IC1).
-- `freshness.rs` — `Freshness` and `FreshnessGate`, the single staleness cue.
-- `histogram.rs`, `sparkline.rs` — the painted faces of a cut-metric card.
-- `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge` and
-  `PrecedenceField`, an override over a project default.
-- `suggest.rs`, `compare.rs` — `SuggestButton` and the comparison.
-- `button.rs`, `focus_ring.rs`, `motion.rs`, `text.rs`, `format.rs` — the
-  button, the focus ring, motion, the type rungs and text formatting.
+- `mod.rs` — the facade. `section.rs` — `UiExt`, param grids, `SummaryCard`.
+- `card.rs`, `notice.rs` — `SectionHeader`, `Card`, `EmptyState`, `Banner`,
+  `NoticeStack` and `NotMeasured`.
+- `data_table.rs` — `DataTable`, `DataRow`, `Source` and `Details` (IC2).
+- `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `ValueRow`, `label_cell`,
+  `row_hover_tint`. `chip.rs`, `pill.rs` — `Role`, `StatusChip`, `CountPill`.
+- `choice_row.rs` — `ChoiceRow` (G-STARTFROM). `line.rs` — `OneLine`, a note.
+- `freshness.rs` — the staleness cue. `histogram.rs`, `sparkline.rs` — charts.
+- `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge`,
+  `PrecedenceField`. `suggest.rs`, `compare.rs` — Suggest and the deltas.
+- `button.rs`, `focus_ring.rs`, `motion.rs`, `text.rs`, `format.rs`.
+
+## The rule: tabular data uses DataTable; derivation goes in Details
+
+- Derived data (a recommendation, a reading, a verdict, a count) is rows of
+  `DataTable`: name, value and unit, status (`Role`), source (`ProvKind` or
+  a setting). One line per row; no cell wraps; the row hover explains.
+- A recommendation row shows only when it differs at the printed precision.
+- The default view: the values the operator sets, the differences, and one
+  status row (`DataRow::note`) per problem. Derivation and provenance go in
+  ONE closed `Details` per section. A chart sits above its table.
+- Units: mm 2 decimals (coordinates 3), mm/tooth 4, mm/min and RPM 0, % 0-1.
 
 ## Invariants
 
-- A component is the ONE renderer for its element. A panel that draws its own
-  chip or row breaks the kit.
-- Staleness has one cue, `Freshness`; provenance one vocabulary, `ProvKind`.
-- A component reads a token from `ui/tokens.rs`. It holds no literal colour
-  or spacing.
+- One renderer per element; it reads `ui/tokens.rs`. Staleness has one cue,
+  `Freshness`; provenance one vocabulary, `ProvKind`.
 - A long-job button reports through `Button::progress`; it paints its label once.
 
-## Sentries
+## Sentries (`cargo test -p rs_cam_viz -q --test <name>`)
 
-- `cargo test -p rs_cam_viz -q --test component_contracts_up2`
-- `cargo test -p rs_cam_viz -q --test chrome_reads_the_kit_up3`
-- `cargo test -p rs_cam_viz -q --test panels_read_the_token_module_up1`
-- `cargo test -p rs_cam_viz -q --test the_toolpath_card_is_five_elements_dc1`
-- `cargo test -p rs_cam_viz -q --test cut_metric_cards_read_the_gate_g_cutcards`
+`component_contracts_up2`, `chrome_reads_the_kit_up3`, `panels_read_the_token_module_up1`,
+`tabular_data_reads_one_table_ic2`, `the_toolpath_card_is_five_elements_dc1`,
+`cut_metric_cards_read_the_gate_g_cutcards`.

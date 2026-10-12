@@ -1253,15 +1253,25 @@ fn draw_face_selection(
         .find(|m| m.id == model_id.0)
         .map(|m| m.name.as_str())
         .unwrap_or("Unknown");
-    ui.label(format!("Model: {model_name}"));
-    ui.label(format!("Face: {}", face_id.0));
+    use crate::ui::components::{DataRow, DataTable};
+    let mut table = DataTable::new("face_selection")
+        .row(DataRow::value("Model", model_name))
+        .row(DataRow::value("Face", face_id.0.to_string()));
     if let Some(model) = state.session.models().iter().find(|m| m.id == model_id.0)
         && let Some(enriched) = &model.enriched_mesh
         && let Some(group) = enriched.face_group(face_id)
     {
-        ui.label(format!("Surface type: {:?}", group.surface_type));
-        ui.label(format!("Triangles: {}", group.triangle_range.len()));
+        table = table
+            .row(DataRow::value(
+                "Surface type",
+                format!("{:?}", group.surface_type),
+            ))
+            .row(DataRow::value(
+                "Triangles",
+                group.triangle_range.len().to_string(),
+            ));
     }
+    table.show(ui);
 }
 
 /// The `Faces` arm of [`draw`]'s selection dispatch.
@@ -1280,8 +1290,11 @@ fn draw_faces_selection(
         .find(|m| m.id == model_id.0)
         .map(|m| m.name.as_str())
         .unwrap_or("Unknown");
-    ui.label(format!("Model: {model_name}"));
-    ui.label(format!("{} faces selected", face_ids.len()));
+    use crate::ui::components::{DataRow, DataTable};
+    DataTable::new("faces_selection")
+        .row(DataRow::value("Model", model_name))
+        .row(DataRow::value("Faces", face_ids.len().to_string()))
+        .show(ui);
 }
 
 /// The `Toolpath` arm of [`draw`]'s selection dispatch.

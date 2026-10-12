@@ -1,8 +1,8 @@
 use super::AppEvent;
 use super::components::histogram;
 use super::components::{
-    ChartFace, ChartFlip, CountPill, DistributionChart, FreshnessGate, NotMeasured, Sparkline,
-    TraceOpen, text,
+    ChartFace, ChartFlip, CountPill, DataRow, DataTable, DistributionChart, FreshnessGate,
+    NotMeasured, Role, SectionHeader, Sparkline, TraceOpen, text,
 };
 use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_debug::{
@@ -14,7 +14,6 @@ use crate::state::simulation::{
     CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, SimulationIssueKind, SimulationState,
 };
 use crate::state::toolpath::ToolpathId;
-use crate::ui::components::UiExt as _;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
@@ -339,37 +338,41 @@ fn draw_focused_hotspot_card(
                         .color(theme::TEXT_MUTED),
                 );
             });
-            // Lead line: the canonical hotspot summary (INS-004), identical to
-            // the Top-hotspots and Span-findings rows. Detail lines follow.
-            ui.label(
-                egui::RichText::new(hotspot_summary_line(move_start, wasted, peak_chip))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.label(
-                egui::RichText::new(format!(
-                    "moves {move_start}–{move_end} · {sample_count} samples · peak DOC {peak_doc:.2}"
+            // The facts of the hotspot, one row each (inspector clean-up
+            // round 2). The move, the waste and the peak are the fields of
+            // the canonical summary line (INS-004) that the Top-hotspots and
+            // the Span-findings rows print.
+            DataTable::new(("hotspot_card", tp_id.0, move_start))
+                .row(
+                    DataRow::value("Moves", format!("{move_start}\u{2013}{move_end}"))
+                        .hover(hotspot_summary_line(move_start, wasted, peak_chip)),
+                )
+                .row(DataRow::measured("Waste", format!("{wasted:.2}"), "s"))
+                .row(DataRow::measured(
+                    "Peak commanded a/t",
+                    format!("{peak_chip:.4}"),
+                    "mm/tooth",
                 ))
-                .small()
-                .color(theme::TEXT_MUTED),
-            );
-            ui.label(
-                egui::RichText::new(format!("avg engage {:.0}%", avg_eng * 100.0))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-            )
-            .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
-            ui.label(
-                egui::RichText::new(format!("X{:.1} Y{:.1} Z{:.2}", pos[0], pos[1], pos[2]))
-                    .small()
-                    .monospace()
-                    .color(theme::TEXT_DIM),
-            );
+                .row(DataRow::measured(
+                    "Peak DOC",
+                    format!("{peak_doc:.2}"),
+                    "mm",
+                ))
+                .row(DataRow::value("Samples", sample_count.to_string()))
+                .row(
+                    DataRow::measured("Avg engagement", format!("{:.0}", avg_eng * 100.0), "%")
+                        .hover(ENGAGEMENT_PROVENANCE_HOVER),
+                )
+                .row(DataRow::value(
+                    "Position",
+                    format!("X{:.1} Y{:.1} Z{:.2}", pos[0], pos[1], pos[2]),
+                ))
+                .show(ui);
             ui.horizontal(|ui| {
                 if ui.small_button("Jump").clicked() {
-                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
-                        SimJumpToMoveArgs { move_index: global_start },
-                    )));
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index: global_start,
+                    })));
                 }
                 if ui.small_button("Clear").clicked() {
                     sim.debug.focused_hotspot = None;
@@ -405,7 +408,9 @@ fn draw_focused_issue_card(
                 .strong()
                 .color(theme::WARNING_TEXT),
             );
-            ui.label(format!("Move {}", issue.move_index));
+            DataTable::new("issue_card")
+                .row(DataRow::value("Move", issue.move_index.to_string()))
+                .show(ui);
             ui.horizontal(|ui| {
                 if ui.small_button("◀ Prev").clicked()
                     && let Some(target) = sim.focus_issue_delta(gui, max_feed, -1)
@@ -488,59 +493,38 @@ fn draw_project_section(
     // S6 (stock changes, "cut as"): the samples of an own material with no
     // force data. The gates did not judge them; name them, one line per
     // toolpath and material, in the core's words.
-    for entry in &summary.not_judged {
-        ui.label(
-            egui::RichText::new(entry.label())
-                .small()
-                .color(theme::TEXT_MUTED),
-        )
-        .on_hover_text(
-            "A stock change cuts this material as its own material, and the \
-             material has no force data in the library. The load checks did not \
-             judge these samples.",
-        );
-    }
+    DataTable::new("inspector_not_judged")
+        .rows(summary.not_judged.iter().map(|entry| {
+            DataRow::note(Role::Unknown, entry.label()).hover(
+                "A stock change cuts this material as its own material, and the \
+                 material has no force data in the library. The load checks did not \
+                 judge these samples.",
+            )
+        }))
+        .show(ui);
     egui::CollapsingHeader::new(header)
         .id_salt("inspector_project")
         .default_open(false)
         .show(ui, |ui| {
             // ─── Global stats ─── (cycle now lives in the header line)
-            ui.label(
-                egui::RichText::new("Global")
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            );
-
-            ui.param_grid("cut_overview_grid", |ui| {
-                ui.label(
-                    egui::RichText::new("Moves")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
-                ui.end_row();
-                ui.label(
-                    egui::RichText::new("Operations")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
-                ui.end_row();
-                ui.label(
-                    egui::RichText::new("Cut distance")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
-                ui.end_row();
-                ui.label(
-                    egui::RichText::new("Rapid distance")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
-                ui.end_row();
-            });
+            SectionHeader::new("Global").show(ui);
+            DataTable::new("cut_overview_table")
+                .row(DataRow::value("Moves", sim.total_moves().to_string()))
+                .row(DataRow::value(
+                    "Operations",
+                    sim.boundaries().len().to_string(),
+                ))
+                .row(DataRow::measured(
+                    "Cut distance",
+                    format!("{total_cutting:.0}"),
+                    "mm",
+                ))
+                .row(DataRow::measured(
+                    "Rapid distance",
+                    format!("{total_rapid:.0}"),
+                    "mm",
+                ))
+                .show(ui);
 
             ui.add_space(4.0);
             ui.separator();
@@ -617,22 +601,20 @@ fn draw_project_section(
                         .and_then(|e| e.measurability.reason())
                         .map(|r| r.describe())
                         .unwrap_or_default();
-                    ui.add_space(2.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "NOT MEASURED: {} for {} operation(s)",
-                            metrics.into_iter().collect::<Vec<_>>().join(", "),
-                            toolpaths.len()
-                        ))
-                        .small()
-                        .strong()
-                        .color(theme::TEXT_MUTED),
-                    )
-                    .on_hover_text(format!(
-                        "{reason}\n\nCollision detection, material removal and axial \
-                         DOC are unaffected and remain valid. Gates reading the \
-                         withheld metrics abstain rather than judge it."
-                    ));
+                    DataTable::new("cut_overview_not_measured_strip")
+                        .row(
+                            DataRow::value(
+                                "Not measured",
+                                metrics.into_iter().collect::<Vec<_>>().join(", "),
+                            )
+                            .status(Role::Unknown, format!("{} op(s)", toolpaths.len()))
+                            .hover(format!(
+                                "{reason}\n\nCollision detection, material removal and \
+                                 axial DOC are unaffected and remain valid. Gates reading \
+                                 the withheld metrics abstain rather than judge it."
+                            )),
+                        )
+                        .show(ui);
                 }
             }
 
@@ -672,24 +654,15 @@ fn draw_project_section(
                 informational.push((kind, count));
             }
             if !must_address.is_empty() {
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new("Must address")
-                        .small()
-                        .strong()
-                        .color(theme::ERROR),
-                );
-                ui.param_grid("cut_overview_must_address", |ui| {
-                    for (kind, count) in &must_address {
-                        ui.label(
-                            egui::RichText::new(issue_kind_label(*kind))
-                                .small()
-                                .color(theme::ERROR),
-                        );
-                        ui.label(egui::RichText::new(format!("{count}")).small());
-                        ui.end_row();
-                    }
-                });
+                // The severity is the status chip of each row, so the header
+                // carries no colour of its own.
+                SectionHeader::new("Must address").show(ui);
+                DataTable::new("cut_overview_must_address")
+                    .rows(must_address.iter().map(|(kind, count)| {
+                        DataRow::value(issue_kind_label(*kind), count.to_string())
+                            .status(Role::Danger, "act")
+                    }))
+                    .show(ui);
             }
             // Density pass V5 — informational rows report % of runtime from
             // the trace summary's time-weighted tallies, not raw per-sample
@@ -737,95 +710,73 @@ fn draw_project_section(
                     )
                 });
             if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new("Informational")
-                        .small()
-                        .color(theme::TEXT_MUTED),
+                SectionHeader::new("Informational").show(ui);
+                let count_for = |kind: SimulationIssueKind| {
+                    informational
+                        .iter()
+                        .find(|(k, _)| *k == kind)
+                        .map(|(_, c)| *c)
+                        .unwrap_or(0)
+                };
+                let air_denominator_note = format!(
+                    "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
+                         the banner and the per-operation thresholds use. Over CUTTING \
+                         time alone the same seconds read {air_pct_of_cutting:.0}%, \
+                         which is what the MCP narration reports."
                 );
-                ui.param_grid("cut_overview_informational", |ui| {
-                    let count_for = |kind: SimulationIssueKind| {
-                        informational
-                            .iter()
-                            .find(|(k, _)| *k == kind)
-                            .map(|(_, c)| *c)
-                            .unwrap_or(0)
-                    };
-                    let air_denominator_note = format!(
-                        "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
-                             the banner and the per-operation thresholds use. Over CUTTING \
-                             time alone the same seconds read {air_pct_of_cutting:.0}%, \
-                             which is what the MCP narration reports."
-                    );
-                    let rows = [
-                        (
-                            SimulationIssueKind::AirCut,
-                            air_pct,
-                            "Time the tool spends moving at cutting feed without \
-                                 removing material.",
-                            air_denominator_note.as_str(),
-                        ),
-                        (
-                            SimulationIssueKind::LowEngagement,
-                            low_eng_pct,
-                            // R-3 (census §3.5 D2): this said "< 2% of
-                            // diameter", which is the AIR-CUT trigger,
-                            // not this one. Low engagement is the band
-                            // ABOVE it — `0.02 <= radial_woc < 0.10`
-                            // (`simulation_cut.rs`). As written, the two
-                            // informational rows described the same
-                            // threshold and neither described this row.
-                            "Time spent cutting at light radial engagement \
-                                 (2-10% of diameter). Below 2% counts as air cut, \
-                                 on the row above.",
-                            "",
-                        ),
-                    ];
-                    for (kind, pct, what, denominator_note) in rows {
-                        ui.label(
-                            egui::RichText::new(issue_kind_label(kind))
-                                .small()
-                                .color(theme::TEXT_MUTED),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
+                let rows = [
+                    (
+                        SimulationIssueKind::AirCut,
+                        air_pct,
+                        "Time the tool spends moving at cutting feed without \
+                             removing material.",
+                        air_denominator_note.as_str(),
+                    ),
+                    (
+                        SimulationIssueKind::LowEngagement,
+                        low_eng_pct,
+                        // R-3 (census §3.5 D2): this said "< 2% of diameter",
+                        // which is the AIR-CUT trigger, not this one. Low
+                        // engagement is the band ABOVE it — `0.02 <=
+                        // radial_woc < 0.10` (`simulation_cut.rs`).
+                        "Time spent cutting at light radial engagement \
+                             (2-10% of diameter). Below 2% counts as air cut, \
+                             on the row above.",
+                        "",
+                    ),
+                ];
+                DataTable::new("cut_overview_informational")
+                    .rows(rows.into_iter().map(|(kind, pct, what, denominator_note)| {
+                        DataRow::value(
+                            issue_kind_label(kind),
+                            format!("{pct:.0}% of total runtime"),
                         )
-                        .on_hover_text(format!(
+                        .hover(format!(
                             "{what}\n{} flagged SAMPLES — a per-sample emission \
                                  tally, not a defect count, and not the same \
                                  population as the coalesced issue RUNS the MCP and \
                                  CLI report (on the census fixture the two differed \
                                  by 43x).{denominator_note}",
                             count_for(kind)
-                        ));
-                        ui.end_row();
-                    }
-                });
+                        ))
+                    }))
+                    .show(ui);
             } else if sim.results.is_some() {
                 // U2: a run with no cut trace measured no air cut and no
-                // engagement. The rows stay, with the abstention mark, so
-                // an absent figure cannot read as a clean 0 %.
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new("Informational")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
+                // engagement. The rows stay, with the abstention mark, so an
+                // absent figure cannot read as a clean 0 %.
+                SectionHeader::new("Informational").show(ui);
                 let reason = MissingInput::NoCutTrace.remedy();
-                ui.param_grid("cut_overview_informational_not_measured", |ui| {
-                    for kind in [
-                        SimulationIssueKind::AirCut,
-                        SimulationIssueKind::LowEngagement,
-                    ] {
-                        ui.label(
-                            egui::RichText::new(issue_kind_label(kind))
-                                .small()
-                                .color(theme::TEXT_MUTED),
-                        );
-                        ui.add(NotMeasured::new().reason(reason));
-                        ui.end_row();
-                    }
-                });
+                DataTable::new("cut_overview_informational_not_measured")
+                    .rows(
+                        [
+                            SimulationIssueKind::AirCut,
+                            SimulationIssueKind::LowEngagement,
+                        ]
+                        .into_iter()
+                        .map(|kind| DataRow::not_measured(issue_kind_label(kind)).hover(reason)),
+                    )
+                    .show(ui);
             }
             // Roadmap C.4 — project-wide hotspot triage list. Source:
             // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
@@ -865,40 +816,34 @@ fn draw_project_section(
                     .default_open(false)
                     .show(ui, |ui| {
                         const TOP_N: usize = 10;
-                        for (h_idx, tp_id_raw, move_start, wasted, peak) in
-                            hotspot_snapshot.iter().take(TOP_N)
-                        {
-                            let tp_id = *tp_id_raw;
-                            let global_start = sim
-                                .global_move_for_local(tp_id, *move_start)
-                                .unwrap_or(*move_start);
-                            let label = hotspot_summary_line(*move_start, *wasted, *peak);
-                            let resp = ui
-                                .selectable_label(
-                                    false,
-                                    egui::RichText::new(label)
-                                        .small()
-                                        .color(crate::ui::tokens::CAUTION),
-                                )
-                                .on_hover_text("Click to focus and jump to this hotspot.");
-                            if resp.clicked() {
-                                sim.debug.focused_hotspot = Some((tp_id, *h_idx));
-                                events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
-                                    SimJumpToMoveArgs {
-                                        move_index: global_start,
-                                    },
-                                )));
-                            }
-                        }
-                        if hotspot_snapshot.len() > TOP_N {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "… +{} more (open Selected for span-scoped list)",
-                                    hotspot_snapshot.len() - TOP_N
+                        let shown: Vec<_> = hotspot_snapshot.iter().take(TOP_N).collect();
+                        let more = hotspot_snapshot.len().saturating_sub(TOP_N);
+                        let clicked = DataTable::new("cut_overview_top_hotspots")
+                            .rows(shown.iter().map(|(_, _, move_start, wasted, peak)| {
+                                DataRow::record(hotspot_summary_line(*move_start, *wasted, *peak))
+                                    .tone(crate::ui::tokens::CAUTION)
+                                    .hover("Click to focus and jump to this hotspot.")
+                                    .clickable()
+                            }))
+                            .row_opt((more > 0).then(|| {
+                                DataRow::record(format!(
+                                    "\u{2026} +{more} more (open Selected for span-scoped list)"
                                 ))
-                                .small()
-                                .color(theme::TEXT_DIM),
-                            );
+                            }))
+                            .show(ui)
+                            .clicked;
+                        if let Some(&&(h_idx, tp_id, move_start, _, _)) =
+                            clicked.and_then(|index| shown.get(index))
+                        {
+                            let global_start = sim
+                                .global_move_for_local(tp_id, move_start)
+                                .unwrap_or(move_start);
+                            sim.debug.focused_hotspot = Some((tp_id, h_idx));
+                            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
+                                SimJumpToMoveArgs {
+                                    move_index: global_start,
+                                },
+                            )));
                         }
                     });
             }
@@ -1096,9 +1041,9 @@ pub(crate) fn draw_limit_rows(ui: &mut egui::Ui, rows: &[LimitRow<'_>]) {
         );
         return;
     }
-    for row in rows {
-        verdict_badge(ui, row);
-    }
+    DataTable::new("limit_rows")
+        .rows(rows.iter().map(limit_data_row))
+        .show(ui);
 }
 
 /// The vendor band floor a burn reading sits below, when the band publishes
@@ -1213,19 +1158,48 @@ fn verdict_face(row: &LimitRow<'_>) -> (egui::Color32, String) {
     (color, format!("{label} {status_text}"))
 }
 
-/// Paint one limit row: the face, then the caption under it.
-fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
+/// One limit row of a `DataTable`: the face in the name column, the
+/// caption in the value column, the verdict as the status chip and the
+/// tooltip on the row.
+///
+/// The face and the caption stay two runs, in that order, so a reader of
+/// the painted text finds the caption directly after the face (G-OWNBOUND).
+/// The colour of the verdict moves from the face to the status chip.
+fn limit_data_row(row: &LimitRow<'_>) -> DataRow {
     let hover = verdict_tooltip(row);
-    let (color, face) = verdict_face(row);
-    ui.label(egui::RichText::new(face).small().color(color))
-        .on_hover_text(hover.clone());
+    let (_, face) = verdict_face(row);
+    let (role, word) = limit_status(row);
     let caption = row_caption(row);
-    if !caption.is_empty() {
-        ui.horizontal(|ui| {
-            ui.add_space(tokens::SPACE_2);
-            ui.label(egui::RichText::new(caption).small().color(theme::TEXT_DIM))
-                .on_hover_text(hover);
-        });
+    let data = if caption.is_empty() {
+        DataRow::record(face)
+    } else {
+        DataRow::value(face, caption).tone(tokens::TEXT_MUTED)
+    };
+    data.status(role, word).hover(hover)
+}
+
+/// The status chip of a limit row: the role and the word of the gate's
+/// verdict. A bound that does not stop an export reads as a caution.
+fn limit_status(row: &LimitRow<'_>) -> (Role, &'static str) {
+    let status = &row.status;
+    if status.is_vacuous() {
+        return (Role::Unknown, "no samples");
+    }
+    match status.state {
+        LoadState::Within => (Role::Ok, "within"),
+        LoadState::Exceeds if row.burn_risk => (Role::Danger, "burn"),
+        LoadState::Exceeds => {
+            let advisory = status
+                .bound_source
+                .as_ref()
+                .is_some_and(|source| !source.gates_export());
+            if advisory {
+                (Role::Caution, "exceeds")
+            } else {
+                (Role::Danger, "exceeds")
+            }
+        }
+        LoadState::Unmodeled => (Role::Unknown, "not modelled"),
     }
 }
 
@@ -1558,13 +1532,14 @@ impl CutMetricsSummary {
         summary
     }
 
-    fn title(&self) -> String {
+    /// The word at the right end of the section header.
+    fn word(&self) -> String {
         if self.exceeded > 0 {
-            format!("Cut metrics \u{00b7} {} outside limit", self.exceeded)
+            format!("{} outside limit", self.exceeded)
         } else if self.not_measured > 0 {
-            format!("Cut metrics \u{00b7} {} not measured", self.not_measured)
+            format!("{} not measured", self.not_measured)
         } else {
-            "Cut metrics \u{00b7} within limits".to_owned()
+            "within limits".to_owned()
         }
     }
 }
@@ -1622,8 +1597,10 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 
 /// The "Cut metrics" section of the focused toolpath.
 ///
-/// DC6: the header is the summary, and the body opens by default only when
-/// a criterion exceeds.
+/// The header states the summary. The charts are always open: they are the
+/// part of the page the operator reads (inspector clean-up round 2). The
+/// metrics core could not measure, and the metrics the cell size withheld,
+/// are one table after the charts.
 ///
 /// Each measured card has a flip button beside its chart (operator request
 /// 2026-10-02). It swaps the histogram for the line of the same metric over
@@ -1677,24 +1654,24 @@ fn draw_cut_metrics_section(
         .filter(|row| !has_cut_metric_card(row.status.kind))
         .collect();
 
+    // Inspector clean-up round 2: the charts are the default view. The
+    // section used to start closed unless a metric exceeded its limit, and
+    // its open state was one id for every toolpath, so an operation within
+    // its limits showed one header line and no chart.
     let summary = CutMetricsSummary::of(set);
-    let id = ui.make_persistent_id("inspector_cut_metrics");
-    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-        ui.ctx(),
-        id,
-        summary.exceeded > 0,
-    );
-    let header = ui.horizontal(|ui| {
-        state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
-        let title = ui.add(
-            egui::Label::new(summary.title())
-                .sense(egui::Sense::click())
-                .truncate(),
-        );
-        if title.clicked() {
-            state.toggle(ui);
-        }
-    });
+    SectionHeader::new("Cut metrics")
+        .trailing(summary.word())
+        .show(ui);
+    let operation = session
+        .find_toolpath_config_by_id(toolpath_id)
+        .map_or_else(|| "\u{2014}".to_owned(), |(_, tc)| tc.name.clone());
+    DataTable::new("cut_metrics_operation")
+        .row(DataRow::value("Operation", operation).hover(
+            "The cards show the operation under the playhead. Click an operation \
+             in the list at the left to move the playhead to it.",
+        ))
+        .show(ui);
+    let measurability = measurability_rows(sim, session, toolpath_id);
 
     let mut actions: Vec<CutMetricAction> = Vec::new();
     // The playhead, as a move of this toolpath, for the line face.
@@ -1711,38 +1688,53 @@ fn draw_cut_metrics_section(
         .find_toolpath_config_by_id(toolpath_id)
         .filter(|(index, _)| session.get_result(*index).is_none())
         .map(|(_, tc)| tc.name.clone());
-    state.show_body_indented(&header.response, ui, |ui| {
-        for (index, card) in cards.into_iter().enumerate() {
-            let row = match card.metric {
-                DistributionMetric::Criterion(kind) => {
-                    rows.iter().find(|row| row.status.kind == kind)
-                }
-                DistributionMetric::Engagement => None,
-            };
-            if index > 0 {
-                draw_hairline(ui);
-            }
-            let face = if sim.shows_over_time(card.metric) {
-                ChartFace::OverTime
-            } else {
-                ChartFace::Distribution
-            };
-            let view = CardView {
-                regenerate_first: regenerate_first.as_deref(),
-                face,
-                playhead,
-                move_offset,
-            };
-            draw_cut_metric_card(ui, card, row, &view, &mut actions);
+    // A metric core could not measure is one row of the abstention table
+    // after the charts, not a card of its own.
+    let mut abstentions: Vec<DataRow> = Vec::new();
+    let mut charts = 0_usize;
+    for card in cards {
+        let row = match card.metric {
+            DistributionMetric::Criterion(kind) => rows.iter().find(|row| row.status.kind == kind),
+            DistributionMetric::Engagement => None,
+        };
+        if let DistributionOutcome::NotMeasured(reason) = &card.outcome {
+            abstentions.push(abstention_row(
+                card,
+                reason,
+                row,
+                regenerate_first.as_deref(),
+            ));
+            continue;
         }
+        if charts > 0 {
+            draw_hairline(ui);
+        }
+        charts += 1;
+        let face = if sim.shows_over_time(card.metric) {
+            ChartFace::OverTime
+        } else {
+            ChartFace::Distribution
+        };
+        let view = CardView {
+            face,
+            playhead,
+            move_offset,
+        };
+        draw_cut_metric_card(ui, card, row, &view, &mut actions);
+    }
+    abstentions.extend(measurability);
+    if !abstentions.is_empty() {
         ui.add_space(tokens::SPACE_2);
-        if !other_rows.is_empty() {
-            crate::ui::components::SectionHeader::new("Other limits").show(ui);
-            for row in other_rows {
-                verdict_badge(ui, row);
-            }
-        }
-    });
+        DataTable::new("cut_metrics_abstentions")
+            .rows(abstentions)
+            .show(ui);
+    }
+    if !other_rows.is_empty() {
+        SectionHeader::new("Other limits").show(ui);
+        DataTable::new("cut_metrics_other_limits")
+            .rows(other_rows.into_iter().map(limit_data_row))
+            .show(ui);
+    }
 
     for action in actions {
         match action {
@@ -1791,9 +1783,7 @@ fn draw_cut_metrics_empty(ui: &mut egui::Ui, reason: &str) {
 }
 
 /// How one card draws, beside the card's own data.
-struct CardView<'a> {
-    /// The name of the operation when it has no core result.
-    regenerate_first: Option<&'a str>,
+struct CardView {
     /// The face the card shows.
     face: ChartFace,
     /// The playhead as a move of this toolpath, when it is in it.
@@ -1818,7 +1808,7 @@ fn draw_cut_metric_card(
     ui: &mut egui::Ui,
     card: &CutMetricCard,
     row: Option<&LimitRow<'_>>,
-    view: &CardView<'_>,
+    view: &CardView,
     actions: &mut Vec<CutMetricAction>,
 ) {
     let spec = CutMetricSpec::of(card.metric);
@@ -1882,18 +1872,98 @@ fn draw_cut_metric_card(
                 ui.add(egui::Label::new(text::caption(caption)).wrap());
             }
         }
-        DistributionOutcome::NotMeasured(reason) => {
-            let reason = match (reason, view.regenerate_first) {
-                (NotMeasuredReason::Unmodeled(UnmodeledReason::StaleSimulation), Some(name)) => {
-                    format!("Unmodeled: '{name}' is not generated — regenerate it first")
-                }
-                _ => not_measured_text(reason),
-            };
-            ui.horizontal(|ui| {
-                ui.add(NotMeasured::new().reason(hover));
-                ui.add(egui::Label::new(text::caption(reason)).truncate());
-            });
+        // The section draws a metric core could not measure as one row of
+        // its abstention table (`abstention_row`).
+        DistributionOutcome::NotMeasured(_) => {}
+    }
+}
+
+/// One row of the abstention table: the metric, the abstention mark, and
+/// the status hover with core's reason after it.
+///
+/// The hover opens with the criterion's limit row, the way a measured
+/// card's status hover does (G-OWNBOUND), so every row of `criteria()` is
+/// still painted once.
+fn abstention_row(
+    card: &CutMetricCard,
+    reason: &NotMeasuredReason,
+    row: Option<&LimitRow<'_>>,
+    regenerate_first: Option<&str>,
+) -> DataRow {
+    let spec = CutMetricSpec::of(card.metric);
+    let reason = match (reason, regenerate_first) {
+        (NotMeasuredReason::Unmodeled(UnmodeledReason::StaleSimulation), Some(name)) => {
+            format!("Unmodeled: '{name}' is not generated — regenerate it first")
         }
+        _ => not_measured_text(reason),
+    };
+    let hover = cut_metric_status_hover(card, row, &spec);
+    DataRow::not_measured(spec.title)
+        .status(Role::Unknown, "not measured")
+        .hover(format!("{hover}\n{reason}"))
+}
+
+/// The rows that say the cell size withheld a metric of `toolpath_id`.
+///
+/// The cards do not read the measurability report: a gate abstains on its
+/// own reason. The report names the metrics that the dexel grid cannot
+/// resolve at this cell, so a chart the operator expects is either absent
+/// or degraded for a reason a card does not state. One row per metric that
+/// is `NotMeasurable` or `Degraded`.
+///
+/// No button sets a finer cell. Core does not publish a per-tool cell for
+/// this case (the closed form needs the tip radius, which the trace does
+/// not carry), and a number typed here would be invented.
+fn measurability_rows(
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+) -> Vec<DataRow> {
+    use rs_cam_core::stock::sim_measurability::{Measurability, MeasurabilityReason, SimMetric};
+    let report = &sim.cached_simulation_triage(session).measurability;
+    [
+        SimMetric::RadialEngagement,
+        SimMetric::ChipEngagement,
+        SimMetric::AirCut,
+    ]
+    .into_iter()
+    .filter_map(|metric| {
+        let (role, word, reason) = match report.for_metric(toolpath_id, metric) {
+            Measurability::Measurable => return None,
+            Measurability::Degraded(reason) => (Role::Caution, "degraded", reason),
+            Measurability::NotMeasurable(reason) => (Role::Unknown, "not measurable", reason),
+        };
+        let word = match reason {
+            MeasurabilityReason::CellTooCoarseForTipContact {
+                cell_mm: Some(cell),
+                ..
+            } => format!("{word} at {cell:.2} mm cell"),
+            _ => word.to_owned(),
+        };
+        let fix = match reason {
+            MeasurabilityReason::CellTooCoarseForTipContact { .. } => {
+                "\nA finer cell can fix this: Setup & run \u{25B8} Resolution, in the \
+                 list at the left."
+            }
+            MeasurabilityReason::BelowFreshMaterialFloor { .. }
+            | MeasurabilityReason::KinematicsNotModelled => "",
+        };
+        Some(
+            DataRow::not_measured(capitalised(metric.label()))
+                .status(role, word)
+                .hover(format!("{}{fix}", reason.describe())),
+        )
+    })
+    .collect()
+}
+
+/// `text` with its first letter in upper case: core's metric labels are
+/// lower case, and a row name starts with a capital.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -2259,89 +2329,80 @@ fn draw_span_body(
         return;
     };
 
-    // Span-level facts: kind label, move range, payload extras.
-    ui.label(
-        egui::RichText::new(format!(
+    // Span-level facts and the sample aggregates, one table. The aggregates
+    // come from the per-trace cache, which builds on the first frame of a
+    // new sim run and is reused on every frame after. `agg` is `None` when
+    // no cutting samples landed in this span.
+    let span_row = DataRow::value(
+        "Span",
+        format!(
             "{} · moves {}–{}",
             span.kind.label(),
             span.start_move,
             span.end_move
-        ))
-        .small()
-        .color(theme::TEXT_MUTED),
+        ),
     );
-
-    // Sample aggregates for this span — pulled from the per-trace cache,
-    // which builds on the first frame of a new sim run and is reused on
-    // every frame after. `agg` is `None` when no cutting samples landed
-    // in this span.
     let agg = sim.debug.span_aggregates.get(tp_id, sid).copied();
     match agg {
         Some(agg) if agg.n_cutting > 0 => {
-            ui.add_space(2.0);
-            ui.param_grid(("selected_metrics_grid", sid), |ui| {
-                let row = |ui: &mut egui::Ui, label: &str, value: String| -> egui::Response {
-                    ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
-                    ui.label(egui::RichText::new(value).small().monospace())
-                };
-                row(
-                    ui,
+            DataTable::new(("selected_metrics_table", sid))
+                .row(span_row)
+                .row(DataRow::value(
                     "Samples",
                     format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
-                );
-                ui.end_row();
+                ))
                 // Engagement as percent everywhere (INS-004) + provenance
                 // hover (INS-006): comparative signal, not an absolute bar.
-                row(
-                    ui,
-                    "Engagement",
-                    format!(
-                        "avg {:.0}% · peak {:.0}%",
-                        agg.avg_engagement() * 100.0,
-                        agg.peak_eng * 100.0
-                    ),
+                .row(
+                    DataRow::value(
+                        "Engagement",
+                        format!(
+                            "avg {:.0}% · peak {:.0}%",
+                            agg.avg_engagement() * 100.0,
+                            agg.peak_eng * 100.0
+                        ),
+                    )
+                    .hover(ENGAGEMENT_PROVENANCE_HOVER),
                 )
-                .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
-                ui.end_row();
-                row(
-                    ui,
-                    rs_cam_core::feeds::ACHIEVED_ADVANCE_PER_TOOTH,
-                    format!(
-                        "avg {:.4} · peak {:.4} mm/tooth",
-                        agg.avg_advance_per_tooth(),
-                        agg.peak_advance
-                    ),
+                .row(
+                    DataRow::value(
+                        rs_cam_core::feeds::ACHIEVED_ADVANCE_PER_TOOTH,
+                        format!(
+                            "avg {:.4} · peak {:.4}",
+                            agg.avg_advance_per_tooth(),
+                            agg.peak_advance
+                        ),
+                    )
+                    .unit("mm/tooth")
+                    .hover(ACHIEVED_ADVANCE_HOVER),
                 )
-                .on_hover_text(ACHIEVED_ADVANCE_HOVER);
-                ui.end_row();
-                row(
-                    ui,
-                    rs_cam_core::feeds::ARC_MEAN_CHIP_THICKNESS,
-                    format!(
-                        "avg {:.4} · peak {:.4} mm",
-                        agg.avg_chip_thickness(),
-                        agg.peak_chip
-                    ),
+                .row(
+                    DataRow::value(
+                        rs_cam_core::feeds::ARC_MEAN_CHIP_THICKNESS,
+                        format!(
+                            "avg {:.4} · peak {:.4}",
+                            agg.avg_chip_thickness(),
+                            agg.peak_chip
+                        ),
+                    )
+                    .unit("mm")
+                    .hover(ARC_MEAN_CHIP_HOVER),
                 )
-                .on_hover_text(ARC_MEAN_CHIP_HOVER);
-                ui.end_row();
-                row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
-                ui.end_row();
-                row(
-                    ui,
-                    "MRR",
-                    format!("avg {:.0} · peak {:.0} mm³/s", agg.avg_mrr(), agg.peak_mrr),
-                );
-                ui.end_row();
-            });
+                .row(DataRow::value("Axial DOC", format!("peak {:.2}", agg.peak_doc)).unit("mm"))
+                .row(
+                    DataRow::value(
+                        "MRR",
+                        format!("avg {:.0} · peak {:.0}", agg.avg_mrr(), agg.peak_mrr),
+                    )
+                    .unit("mm³/s"),
+                )
+                .show(ui);
         }
         _ => {
-            ui.label(
-                egui::RichText::new("No cutting samples in this span.")
-                    .small()
-                    .italics()
-                    .color(theme::TEXT_DIM),
-            );
+            DataTable::new(("selected_metrics_table", sid))
+                .row(span_row)
+                .row(DataRow::not_measured("Samples").hover("No cutting samples in this span."))
+                .show(ui);
         }
     }
 
@@ -2386,73 +2447,61 @@ fn draw_span_body(
     crate::ui::components::SectionHeader::new("Findings in this span").show(ui);
 
     const MAX_ROWS: usize = 8;
-    for (h_idx, h) in in_scope_hotspots.iter().take(MAX_ROWS) {
+    let hotspots: Vec<_> = in_scope_hotspots.iter().take(MAX_ROWS).collect();
+    let more_hotspots = in_scope_hotspots.len().saturating_sub(MAX_ROWS);
+    let clicked = DataTable::new(("span_hotspots", sid))
+        .rows(hotspots.iter().map(|(_, h)| {
+            DataRow::record(format!(
+                "Hotspot · {}",
+                hotspot_summary_line(
+                    h.move_start,
+                    h.wasted_runtime_s,
+                    h.peak_chipload_mm_per_tooth
+                )
+            ))
+            .tone(crate::ui::tokens::CAUTION)
+            .hover("Click to focus and jump to start move.")
+            .clickable()
+        }))
+        .row_opt(
+            (more_hotspots > 0)
+                .then(|| DataRow::record(format!("\u{2026} +{more_hotspots} more hotspots"))),
+        )
+        .show(ui)
+        .clicked;
+    if let Some((h_idx, h)) = clicked.and_then(|index| hotspots.get(index)) {
         let global_start = sim
             .global_move_for_local(tp_id, h.move_start)
             .unwrap_or(h.move_start);
-        let resp = ui
-            .selectable_label(
-                false,
-                egui::RichText::new(format!(
-                    "Hotspot · {}",
-                    hotspot_summary_line(
-                        h.move_start,
-                        h.wasted_runtime_s,
-                        h.peak_chipload_mm_per_tooth
-                    )
-                ))
-                .small()
-                .color(crate::ui::tokens::CAUTION),
-            )
-            .on_hover_text("Click to focus and jump to start move.");
-        if resp.clicked() {
-            sim.debug.focused_hotspot = Some((tp_id, *h_idx));
-            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                move_index: global_start,
-            })));
-        }
+        sim.debug.focused_hotspot = Some((tp_id, *h_idx));
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: global_start,
+        })));
     }
-    if in_scope_hotspots.len() > MAX_ROWS {
-        ui.label(
-            egui::RichText::new(format!(
-                "… +{} more hotspots",
-                in_scope_hotspots.len() - MAX_ROWS
+    let shown_issues: Vec<_> = in_scope_issues.iter().take(MAX_ROWS).collect();
+    let more_issues = in_scope_issues.len().saturating_sub(MAX_ROWS);
+    let clicked = DataTable::new(("span_issues", sid))
+        .rows(shown_issues.iter().map(|iss| {
+            DataRow::record(format!(
+                "{} · m{} · {}",
+                issue_kind_label(iss.kind),
+                iss.move_index,
+                iss.label
             ))
-            .small()
-            .color(theme::TEXT_DIM),
-        );
-    }
-    for iss in in_scope_issues.iter().take(MAX_ROWS) {
-        let move_idx = iss.move_index;
-        let label = format!(
-            "{} · m{} · {}",
-            issue_kind_label(iss.kind),
-            move_idx,
-            iss.label
-        );
-        let resp = ui
-            .selectable_label(
-                false,
-                egui::RichText::new(label)
-                    .small()
-                    .color(theme::WARNING_TEXT),
-            )
-            .on_hover_text("Click to jump to issue.");
-        if resp.clicked() {
-            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                move_index: move_idx,
-            })));
-        }
-    }
-    if in_scope_issues.len() > MAX_ROWS {
-        ui.label(
-            egui::RichText::new(format!(
-                "… +{} more issues",
-                in_scope_issues.len() - MAX_ROWS
-            ))
-            .small()
-            .color(theme::TEXT_DIM),
-        );
+            .tone(theme::WARNING_TEXT)
+            .hover("Click to jump to issue.")
+            .clickable()
+        }))
+        .row_opt(
+            (more_issues > 0)
+                .then(|| DataRow::record(format!("\u{2026} +{more_issues} more issues"))),
+        )
+        .show(ui)
+        .clicked;
+    if let Some(iss) = clicked.and_then(|index| shown_issues.get(index)) {
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: iss.move_index,
+        })));
     }
 }
 
@@ -2483,33 +2532,41 @@ fn draw_generator_item_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState, 
                         );
                     }
                 });
-                ui.label(
-                    egui::RichText::new(semantic_kind_label(&active.item.kind))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                if let Some(bounds) = active.item.xy_bbox {
-                    ui.label(format!(
-                        "XY: {:.2}, {:.2} → {:.2}, {:.2}",
-                        bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
-                    ));
-                }
-                if let (Some(z_min), Some(z_max)) = (active.item.z_min, active.item.z_max) {
-                    ui.label(format!("Z: {:.3} → {:.3}", z_min, z_max));
-                }
-                if !active.item.params.values.is_empty() {
-                    ui.add_space(4.0);
-                    ui.param_grid("sim_selection_details_grid", |ui| {
-                        for (idx, (key, value)) in active.item.params.values.iter().enumerate() {
-                            if idx >= 6 {
-                                break;
-                            }
-                            ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
-                            ui.label(egui::RichText::new(format_json_value(value)).small());
-                            ui.end_row();
-                        }
-                    });
-                }
+                DataTable::new("sim_selection_details_table")
+                    .row(DataRow::value(
+                        "Kind",
+                        semantic_kind_label(&active.item.kind),
+                    ))
+                    .row_opt(active.item.xy_bbox.map(|bounds| {
+                        DataRow::value(
+                            "XY",
+                            format!(
+                                "{:.2}, {:.2} → {:.2}, {:.2}",
+                                bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+                            ),
+                        )
+                    }))
+                    .row_opt(
+                        active
+                            .item
+                            .z_min
+                            .zip(active.item.z_max)
+                            .map(|(z_min, z_max)| {
+                                DataRow::value("Z", format!("{z_min:.3} → {z_max:.3}"))
+                            }),
+                    )
+                    .rows(
+                        active
+                            .item
+                            .params
+                            .values
+                            .iter()
+                            .take(6)
+                            .map(|(key, value)| {
+                                DataRow::value(key.clone(), format_json_value(value))
+                            }),
+                    )
+                    .show(ui);
             } else {
                 ui.label(
                     egui::RichText::new("No semantic item at the current move")
@@ -2537,69 +2594,66 @@ fn draw_generation_trace_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState
             let debug_trace = rt.and_then(|r| r.debug_trace.as_ref());
             let semantic_trace = rt.and_then(|r| r.semantic_trace.as_ref());
 
-            if let Some(trace) = debug_trace {
-                ui.label(format!(
-                    "Total: {:.1} ms",
-                    trace.summary.total_elapsed_us as f64 / 1000.0
-                ));
-                if let Some(label) = &trace.summary.dominant_span_label {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Dominant: {} ({:.1} ms)",
-                            label,
-                            trace.summary.dominant_span_elapsed_us.unwrap_or_default() as f64
-                                / 1000.0
+            let linked = linked_span
+                .as_ref()
+                .filter(|(toolpath_id, _)| Some(*toolpath_id) == current_boundary_id)
+                .map(|(_, span)| span);
+            let mut table = DataTable::new("inspector_generation_trace_table");
+            match debug_trace {
+                Some(trace) => {
+                    table = table
+                        .row(DataRow::measured(
+                            "Total",
+                            format!("{:.1}", trace.summary.total_elapsed_us as f64 / 1000.0),
+                            "ms",
                         ))
-                        .small()
-                        .color(theme::INFO),
-                    );
-                }
-                ui.label(format!("Hotspots: {}", trace.hotspots.len()));
-                if let Some((toolpath_id, span)) = linked_span.as_ref()
-                    && Some(*toolpath_id) == current_boundary_id
-                {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Linked span: {} ({:.1} ms)",
-                            span.label,
-                            span.elapsed_us as f64 / 1000.0
-                        ))
-                        .small()
-                        .color(theme::INFO),
-                    );
-                    if let Some(summary) = debug_span_math_summary(&span.kind) {
-                        ui.label(
-                            egui::RichText::new(summary)
-                                .small()
-                                .color(theme::TEXT_MUTED),
+                        .row_opt(trace.summary.dominant_span_label.as_ref().map(|label| {
+                            DataRow::value(
+                                "Dominant",
+                                format!(
+                                    "{label} ({:.1} ms)",
+                                    trace.summary.dominant_span_elapsed_us.unwrap_or_default()
+                                        as f64
+                                        / 1000.0
+                                ),
+                            )
+                        }))
+                        .row(DataRow::value("Hotspots", trace.hotspots.len().to_string()))
+                        .row_opt(linked.map(|span| {
+                            DataRow::value(
+                                "Linked span",
+                                format!(
+                                    "{} ({:.1} ms)",
+                                    span.label,
+                                    span.elapsed_us as f64 / 1000.0
+                                ),
+                            )
+                            .hover_opt(debug_span_math_summary(&span.kind))
+                        }))
+                        .row_opt(
+                            annotation
+                                .as_ref()
+                                .map(|label| DataRow::value("Annotation", label.clone())),
                         );
-                    }
                 }
-                if let Some(label) = &annotation {
-                    ui.label(
-                        egui::RichText::new(format!("Annotation: {label}"))
-                            .small()
-                            .color(theme::WARNING_TEXT),
+                None => {
+                    table = table.row(
+                        DataRow::not_measured("Performance trace")
+                            .hover("No performance trace available."),
                     );
                 }
-            } else {
-                ui.label(
-                    egui::RichText::new("No performance trace available")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
             }
-            if let Some(semantic) = semantic_trace {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Semantic items: {} (move-linked {})",
-                        semantic.summary.item_count, semantic.summary.move_linked_item_count
-                    ))
-                    .small()
-                    .color(theme::TEXT_MUTED),
-                );
-            }
+            table
+                .row_opt(semantic_trace.map(|semantic| {
+                    DataRow::value(
+                        "Semantic items",
+                        format!(
+                            "{} (move-linked {})",
+                            semantic.summary.item_count, semantic.summary.move_linked_item_count
+                        ),
+                    )
+                }))
+                .show(ui);
         });
 }
 

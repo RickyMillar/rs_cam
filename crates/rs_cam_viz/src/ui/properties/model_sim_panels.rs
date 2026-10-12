@@ -3,7 +3,6 @@
 
 use crate::state::AppState;
 use crate::ui::AppEvent;
-use crate::ui::components::UiExt as _;
 
 pub(super) fn draw_model_properties(
     ui: &mut egui::Ui,
@@ -85,58 +84,46 @@ pub(super) fn draw_model_properties(
 
         ui.add_space(8.0);
         crate::ui::components::SectionHeader::new("Dimensions (after scaling)").show(ui);
-        ui.param_grid("mesh_dims", |ui| {
-            ui.label("X:");
-            ui.label(format!(
-                "{:.3} mm  ({:.3} to {:.3})",
-                dx, bb.min.x, bb.max.x
-            ));
-            ui.end_row();
-            ui.label("Y:");
-            ui.label(format!(
-                "{:.3} mm  ({:.3} to {:.3})",
-                dy, bb.min.y, bb.max.y
-            ));
-            ui.end_row();
-            ui.label("Z:");
-            ui.label(format!(
-                "{:.3} mm  ({:.3} to {:.3})",
-                dz, bb.min.z, bb.max.z
-            ));
-            ui.end_row();
-        });
+        // Round 2: the extents are rows of one table; the range of each axis
+        // is its hover. A size or normal caution is one status row.
+        use crate::ui::components::{DataRow, DataTable, Role};
+        let axis = |name: &str, size: f64, lo: f64, hi: f64| {
+            DataRow::measured(name, format!("{size:.2}"), "mm")
+                .hover(format!("From {lo:.3} mm to {hi:.3} mm."))
+        };
+        let mut table = DataTable::new("mesh_dims")
+            .row(axis("X", dx, bb.min.x, bb.max.x))
+            .row(axis("Y", dy, bb.min.y, bb.max.y))
+            .row(axis("Z", dz, bb.min.z, bb.max.z));
 
         // Size hint
         let max_dim = dx.max(dy).max(dz);
         let min_dim = dx.min(dy).min(dz);
         if max_dim < 1.0 {
-            ui.add_space(4.0);
-            ui.add(
-                crate::ui::components::OneLine::new("\u{26A0} Very small: metres?")
-                    .color(crate::ui::tokens::CAUTION)
-                    .detail("The model is under 1 mm. It is probably in metres; scale it x1000."),
+            table = table.row(
+                DataRow::note(Role::Caution, "\u{26A0} Very small: metres?")
+                    .hover("The model is under 1 mm. It is probably in metres; scale it x1000."),
             );
         } else if min_dim > 5000.0 {
-            ui.add_space(4.0);
-            ui.add(
-                crate::ui::components::OneLine::new("\u{26A0} Very large: check the units")
-                    .color(crate::ui::tokens::CAUTION),
-            );
+            table = table.row(DataRow::note(
+                Role::Caution,
+                "\u{26A0} Very large: check the units",
+            ));
         }
 
         // Normal flip warning (D1): check winding consistency
         if let Some(report) = &model.winding_report
             && *report > 1.0
         {
-            ui.add_space(4.0);
-            ui.add(
-                crate::ui::components::OneLine::new(format!(
-                    "\u{26A0} {report:.1}% inconsistent normals"
-                ))
-                .color(crate::ui::tokens::CAUTION)
-                .detail("The loader fixed the normals when it read the model."),
+            table = table.row(
+                DataRow::note(
+                    Role::Caution,
+                    format!("\u{26A0} {report:.1}% inconsistent normals"),
+                )
+                .hover("The loader fixed the normals when it read the model."),
             );
         }
+        table.show(ui);
 
         // Units / scale selector (all formats including STEP)
         {
@@ -192,79 +179,71 @@ pub(super) fn draw_model_properties(
     // grouped under one default-closed disclosure (density pass 2026-06-11).
     // Dimensions, warnings, and units/scale stay top-level above.
     if model.mesh.is_some() || model.polygons.is_some() {
+        use crate::ui::components::{DataRow, DataTable, Details};
         ui.add_space(8.0);
-        egui::CollapsingHeader::new("Details")
-            .id_salt("model_details")
-            .default_open(false)
-            .show(ui, |ui| {
-                if let Some(mesh) = &model.mesh {
-                    crate::ui::components::SectionHeader::new("Mesh Info").show(ui);
-                    ui.param_grid("mesh_info", |ui| {
-                        ui.label("Vertices:");
-                        ui.label(format!("{}", mesh.vertices.len()));
-                        ui.end_row();
-                        ui.label("Triangles:");
-                        ui.label(format!("{}", mesh.triangles.len()));
-                        ui.end_row();
-                    });
+        // Round 2: the one `Details` disclosure, and one table of counts.
+        let mut table = DataTable::new("model_details_table");
+        if let Some(mesh) = &model.mesh {
+            table = table
+                .row(DataRow::value("Vertices", mesh.vertices.len().to_string()))
+                .row(DataRow::value(
+                    "Triangles",
+                    mesh.triangles.len().to_string(),
+                ));
+        }
+        // BREP face metadata (STEP only)
+        if let Some(enriched) = &model.enriched_mesh {
+            use rs_cam_core::geometry::enriched_mesh::SurfaceType;
+            let mut planes = 0;
+            let mut cylinders = 0;
+            let mut other = 0;
+            for group in &enriched.face_groups {
+                match group.surface_type {
+                    SurfaceType::Plane => planes += 1,
+                    SurfaceType::Cylinder => cylinders += 1,
+                    _ => other += 1,
                 }
-
-                // BREP face metadata (STEP only)
-                if let Some(enriched) = &model.enriched_mesh {
-                    ui.add_space(8.0);
-                    crate::ui::components::SectionHeader::new("BREP Topology").show(ui);
-                    ui.param_grid("brep_info", |ui| {
-                        ui.label("Faces:");
-                        ui.label(format!("{}", enriched.face_count()));
-                        ui.end_row();
-                        ui.label("Adjacency pairs:");
-                        ui.label(format!("{}", enriched.adjacency.len()));
-                        ui.end_row();
-
-                        // Surface type histogram
-                        use rs_cam_core::geometry::enriched_mesh::SurfaceType;
-                        let mut planes = 0;
-                        let mut cylinders = 0;
-                        let mut other = 0;
-                        for group in &enriched.face_groups {
-                            match group.surface_type {
-                                SurfaceType::Plane => planes += 1,
-                                SurfaceType::Cylinder => cylinders += 1,
-                                _ => other += 1,
-                            }
-                        }
-                        ui.label("Surface types:");
-                        let mut parts = Vec::new();
-                        if planes > 0 {
-                            parts.push(format!("{planes} plane"));
-                        }
-                        if cylinders > 0 {
-                            parts.push(format!("{cylinders} cyl"));
-                        }
-                        if other > 0 {
-                            parts.push(format!("{other} other"));
-                        }
-                        ui.label(parts.join(", "));
-                        ui.end_row();
-                    });
-                }
-
-                if let Some(polys) = &model.polygons {
-                    ui.add_space(8.0);
-                    ui.label(format!("Polygons: {}", polys.len()));
-                    for (i, p) in polys.iter().enumerate().take(5) {
-                        ui.label(format!(
-                            "  #{}: {} pts, {} holes",
-                            i + 1,
-                            p.exterior.len(),
-                            p.holes.len()
-                        ));
-                    }
-                    if polys.len() > 5 {
-                        ui.label(format!("  ... and {} more", polys.len() - 5));
-                    }
-                }
-            });
+            }
+            let mut parts = Vec::new();
+            if planes > 0 {
+                parts.push(format!("{planes} plane"));
+            }
+            if cylinders > 0 {
+                parts.push(format!("{cylinders} cyl"));
+            }
+            if other > 0 {
+                parts.push(format!("{other} other"));
+            }
+            table = table
+                .row(DataRow::value(
+                    "BREP faces",
+                    enriched.face_count().to_string(),
+                ))
+                .row(DataRow::value(
+                    "Adjacency pairs",
+                    enriched.adjacency.len().to_string(),
+                ))
+                .row(DataRow::value("Surface types", parts.join(", ")));
+        }
+        if let Some(polys) = &model.polygons {
+            table = table.row(DataRow::value("Polygons", polys.len().to_string()));
+            for (i, p) in polys.iter().enumerate().take(5) {
+                table = table.row(DataRow::value(
+                    format!("  #{}", i + 1),
+                    format!("{} pts, {} holes", p.exterior.len(), p.holes.len()),
+                ));
+            }
+            if polys.len() > 5 {
+                table = table.row(DataRow::value(
+                    "  more",
+                    format!("{} polygons", polys.len() - 5),
+                ));
+            }
+        }
+        let count = table.len();
+        Details::new("model_details").count(count).show(ui, |ui| {
+            table.show(ui);
+        });
     }
 }
 
@@ -372,17 +351,12 @@ pub(super) fn draw_simulation_panel(
     // Tool position readout
     if let Some(pos) = state.simulation.playback.tool_position {
         crate::ui::components::SectionHeader::new("Tool Position").show(ui);
-        ui.param_grid("sim_tool_pos", |ui| {
-            ui.label("X:");
-            ui.label(format!("{:.3} mm", pos[0]));
-            ui.end_row();
-            ui.label("Y:");
-            ui.label(format!("{:.3} mm", pos[1]));
-            ui.end_row();
-            ui.label("Z:");
-            ui.label(format!("{:.3} mm", pos[2]));
-            ui.end_row();
-        });
+        use crate::ui::components::{DataRow, DataTable};
+        DataTable::new("sim_tool_pos")
+            .row(DataRow::measured("X", format!("{:.3}", pos[0]), "mm"))
+            .row(DataRow::measured("Y", format!("{:.3}", pos[1]), "mm"))
+            .row(DataRow::measured("Z", format!("{:.3}", pos[2]), "mm"))
+            .show(ui);
     }
 
     ui.add_space(8.0);
@@ -391,7 +365,11 @@ pub(super) fn draw_simulation_panel(
     if let Some(boundary) = state.simulation.current_boundary() {
         let (within, total) = state.simulation.current_toolpath_progress();
         crate::ui::components::SectionHeader::new("Current Operation").show(ui);
-        ui.label(format!("{} ({})", boundary.name, boundary.tool_name));
-        ui.label(format!("Move {}/{}", within, total));
+        use crate::ui::components::{DataRow, DataTable};
+        DataTable::new("sim_current_operation")
+            .row(DataRow::value("Operation", boundary.name.clone()))
+            .row(DataRow::value("Tool", boundary.tool_name.clone()))
+            .row(DataRow::value("Move", format!("{within} / {total}")))
+            .show(ui);
     }
 }
