@@ -28,10 +28,19 @@ use super::shared::{
 use super::why;
 use crate::state::AppState;
 use crate::ui::components::compare;
-use crate::ui::components::{ProvKind, ProvenanceBadge};
+use crate::ui::components::{OneLine, ProvKind, ProvenanceBadge};
 use crate::ui::{AppEvent, theme};
 
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
+
+/// The face of the full apply. A-3: the face says what the write changes.
+const APPLY_ALL_FACE: &str = "⚡ Apply all — changes the cut";
+
+/// The face of the speeds-only apply. It says what the write changes AND
+/// what it holds, so the two buttons read as one pair. IC1 shortened it
+/// from "Match vendor chipload — changes the speeds, not the cut", which
+/// wrapped to two rows in the rail.
+const APPLY_SPEEDS_FACE: &str = "⚡ Speeds only — holds the cut";
 
 fn advance_per_tooth_mm(feed_mm_min: f64, rpm: f64, flutes: u32) -> Option<f64> {
     (rpm > 0.0 && flutes > 0).then_some(feed_mm_min / (rpm * f64::from(flutes)))
@@ -211,72 +220,36 @@ pub(crate) fn draw_inspector_comparison(
 }
 
 /// Tool, material and recommendation-source context belongs with the
-/// canonical comparison, not in the Explore window. `horizontal_wrapped`
-/// keeps this compact line within the narrow inspector (UR1/UR4).
+/// canonical comparison, not in the Explore window.
 ///
-/// The size reads `ToolConfig::size_label`, so a tapered ball says
-/// "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm" beside an "R1.0"
-/// vendor name.
+/// IC1: one row. The source badge and the approximation token come first,
+/// because they are short; the tool and material line truncates after them
+/// and its hover names both in full. The size reads `ToolConfig::size_label`,
+/// so a tapered ball says "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm".
 ///
-/// Below the chip, the row's basis: the G1 size claim and the A4 material
-/// label, as visible lines (extrapolation P1 step 4).
+/// Below the row, the row's basis: the G1 size claim and the A4 material
+/// label, one line each (extrapolation P1 step 4).
 fn draw_context_chip(
     ui: &mut egui::Ui,
     explain: &FeedsExplain,
     tool: &crate::state::job::ToolConfig,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.add(
-            egui::Label::new(egui::RichText::new("Tool:").small().color(theme::TEXT_DIM)).wrap(),
-        );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!(
-                    "{} · {} flute · {}",
-                    tool.size_label(),
-                    explain.flute_count,
-                    tool_family_label(explain.query.tool_family),
-                ))
-                .small()
-                .color(theme::TEXT_STRONG),
-            )
-            .wrap(),
-        );
-        ui.separator();
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("Material:")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
-        );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!(
-                    "{} ({})",
-                    material_family_label(explain.query.material_family),
-                    hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
-                ))
-                .small()
-                .color(theme::TEXT_STRONG),
-            )
-            .wrap(),
-        );
-        ui.separator();
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("Source:")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
-        );
+    let tool_text = format!(
+        "{} \u{00B7} {} flute \u{00B7} {}",
+        tool.size_label(),
+        explain.flute_count,
+        tool_family_label(explain.query.tool_family),
+    );
+    let material_text = format!(
+        "{} ({})",
+        material_family_label(explain.query.material_family),
+        hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
+    );
+    ui.horizontal(|ui| {
         match &explain.matched_row {
             Some(row) => {
-                // Compact in the chip: the observation id is one unbreakable
-                // token wider than the rail; the hover keeps the full
-                // reference. UR1's rule: nothing widens the inspector.
+                // Compact: the observation id is one unbreakable token wider
+                // than the rail; the hover keeps the full reference.
                 ui.add(
                     ProvenanceBadge::new(ProvKind::VendorLut)
                         .reference(&row.observation_id)
@@ -293,18 +266,26 @@ fn draw_context_chip(
                 {
                     ui.add(
                         egui::Label::new(
-                            egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))
-                                .small()
-                                .color(theme::WARNING_MILD),
+                            egui::RichText::new(format!(
+                                "approx \u{00D7}{:.2}",
+                                combined_scale(row)
+                            ))
+                            .small()
+                            .color(theme::WARNING_MILD),
                         )
-                        .wrap(),
+                        .truncate(),
                     );
                 }
             }
             None => {
-                ui.add(ProvenanceBadge::new(ProvKind::Formula));
+                ui.add(ProvenanceBadge::new(ProvKind::Formula).compact());
             }
         }
+        ui.add(
+            OneLine::new(format!("{tool_text} \u{00B7} {material_text}"))
+                .color(theme::TEXT_STRONG)
+                .detail(format!("Tool: {tool_text}\nMaterial: {material_text}")),
+        );
     });
     why::draw_row_basis_lines(ui, explain);
 }
@@ -343,30 +324,23 @@ fn draw_comparison_card(
     let doc = applied.value(FeedsField::DepthPerPass, r.axial_depth_mm);
     let woc = applied.value(FeedsField::Stepover, r.radial_width_mm);
     let advance = advance_per_tooth_mm(feed, rpm, current.flute_count);
-    ui.label(
-        egui::RichText::new("Recommendation")
-            .strong()
-            .color(theme::TEXT_STRONG),
+    // IC1: the legend line ("current → recommended · Δ vs current") moved to
+    // the heading's hover. The arrow in each row says the same thing.
+    let heading = ui.add(
+        egui::Label::new(
+            egui::RichText::new("Recommendation")
+                .strong()
+                .color(theme::TEXT_STRONG),
+        )
+        .sense(egui::Sense::hover()),
+    );
+    heading.on_hover_text(
+        "Each row: the current value \u{2192} the value \u{26A1} Apply all writes, \
+         and the ratio of the two. Hover a row name for its reasons.",
     );
     ui.add_space(4.0);
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
-        // UR4 moved this card from a 380-point modal column into the
-        // 240-point inspector rail. The old five-column Grid answered with
-        // its natural width and painted past the panel's left edge — the
-        // exact defect class UR1 banned. Every row is now a wrapped
-        // `current → recommended` line the rail can always hold.
-        ui.horizontal_wrapped(|ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new("current → recommended · Δ vs current")
-                        .small()
-                        .color(theme::TEXT_DIM),
-                )
-                .wrap(),
-            );
-        });
-
         rail_row(
             ui,
             "RPM",
@@ -441,8 +415,58 @@ fn draw_comparison_card(
     });
 }
 
-/// One `label current → recommended Δ` line, wrapped so the inspector rail
-/// can never be widened (or overflowed) by its content.
+/// The widths of the five cells of a comparison row, from the row width.
+///
+/// IC1: a row is ONE line. The cells have fixed shares of the rail, so the
+/// columns line up and a long value truncates in its own cell (the hover
+/// gives it in full) instead of wrapping the row.
+struct RailColumns {
+    label: f32,
+    value: f32,
+    arrow: f32,
+}
+
+impl RailColumns {
+    fn of(ui: &egui::Ui) -> Self {
+        let width = ui.available_width();
+        Self {
+            label: (width * 0.25).floor(),
+            value: (width * 0.28).floor(),
+            arrow: crate::ui::tokens::SPACE_4,
+        }
+    }
+}
+
+/// One cell of a comparison row: a label of a fixed width that truncates.
+///
+/// `hover` is the cell's own explanation. When it is given, it replaces the
+/// built-in tooltip of a truncated label, so a long cell shows one tooltip,
+/// not two.
+fn rail_cell(
+    ui: &mut egui::Ui,
+    width: f32,
+    text: egui::RichText,
+    hover: Option<&str>,
+) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, crate::ui::tokens::ROW_DENSE),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_width(width);
+            let label = egui::Label::new(text).truncate();
+            match hover {
+                Some(hover) => ui
+                    .add(label.show_tooltip_when_elided(false))
+                    .on_hover_text(hover),
+                None => ui.add(label),
+            }
+        },
+    )
+    .inner
+}
+
+/// One `label current → recommended Δ` line in fixed cells, so the inspector
+/// rail can never be widened (or overflowed) by its content.
 ///
 /// `explanation` is the row's own answer to "why is this number what it is",
 /// and it is not optional. W2 deleted the `Why is the recommendation here?`
@@ -457,44 +481,64 @@ fn rail_row(
     precision: f64,
     explanation: &str,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            )
-            .wrap(),
-        )
-        .on_hover_text(explanation.to_owned());
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(compare::format_optional(current, unit, precision))
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
+    let current_text = compare::format_optional(current, unit, precision);
+    let recommended_text = compare::format_optional(recommended, unit, precision);
+    let recommended_text = egui::RichText::new(recommended_text)
+        .small()
+        .color(theme::TEXT_STRONG);
+    rail_line(
+        ui,
+        label,
+        explanation,
+        &current_text,
+        recommended_text,
+        current,
+        recommended,
+    );
+}
+
+/// The five cells of one comparison row. `rail_row` and the scallop-driven
+/// WOC row share it, so both rows keep the same columns.
+fn rail_line(
+    ui: &mut egui::Ui,
+    label: &str,
+    explanation: &str,
+    current_text: &str,
+    recommended_text: egui::RichText,
+    current: Option<f64>,
+    recommended: Option<f64>,
+) {
+    let columns = RailColumns::of(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
+        rail_cell(
+            ui,
+            columns.label,
+            egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
+                .small()
+                .strong()
+                .color(theme::TEXT_HEADING),
+            Some(explanation),
         );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("\u{2192}")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
+        rail_cell(
+            ui,
+            columns.value,
+            egui::RichText::new(current_text)
+                .small()
+                .color(theme::TEXT_DIM),
+            None,
         );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(compare::format_optional(recommended, unit, precision))
-                    .small()
-                    .color(theme::TEXT_STRONG),
-            )
-            .wrap(),
+        rail_cell(
+            ui,
+            columns.arrow,
+            egui::RichText::new("\u{2192}")
+                .small()
+                .color(theme::TEXT_DIM),
+            None,
         );
-        ui.add(egui::Label::new(compare::delta_tag(current, recommended)).wrap());
+        rail_cell(ui, columns.value, recommended_text, None);
+        ui.add(egui::Label::new(compare::delta_tag(current, recommended)).truncate());
     });
-    ui.add_space(2.0);
 }
 
 /// The label of a verdict row: the row's name, its detail mark, and its
@@ -519,7 +563,7 @@ fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
                 .strong()
                 .color(theme::TEXT_HEADING),
         )
-        .wrap(),
+        .truncate(),
     )
     .on_hover_text(hover.to_owned());
 }
@@ -580,21 +624,33 @@ fn rail_efficiency_row(
         hover.push_str("\n\n");
         hover.push_str(note);
     }
-    // `horizontal_wrapped` so the verdict phrase wraps to its own line inside
-    // the Simulation workspace's 240-point rail rather than widening it.
-    ui.horizontal_wrapped(|ui| {
-        verdict_row_label(ui, "Chip", &hover);
+    // IC1: one line in the comparison's columns. The verdict phrase takes
+    // what the rail leaves and truncates; the hover has the workings.
+    let columns = RailColumns::of(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
+        ui.allocate_ui_with_layout(
+            egui::vec2(columns.label, crate::ui::tokens::ROW_DENSE),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_width(columns.label);
+                verdict_row_label(ui, "Chip", &hover);
+            },
+        );
+        rail_cell(
+            ui,
+            columns.value,
+            egui::RichText::new(compare::format_optional(advance_mm, " mm/tooth", 0.0001))
+                .small()
+                .color(theme::TEXT_STRONG),
+            Some(&hover),
+        );
         ui.add(
-            egui::Label::new(
-                egui::RichText::new(compare::format_optional(advance_mm, " mm/tooth", 0.0001))
-                    .small()
-                    .color(theme::TEXT_STRONG),
-            )
-            .wrap(),
+            egui::Label::new(egui::RichText::new(verdict).small().color(color))
+                .truncate()
+                .show_tooltip_when_elided(false),
         )
-        .on_hover_text(hover.clone());
-        ui.add(egui::Label::new(egui::RichText::new(verdict).small().color(color)).wrap())
-            .on_hover_text(hover);
+        .on_hover_text(hover);
     });
 }
 
@@ -952,8 +1008,17 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
         // a panic because a GUI row is not the place to assert an invariant.
         (Ok(_), None) => power_unmodelled_hover(PowerUnmodeled::NoAvailablePower),
     };
-    ui.horizontal_wrapped(|ui| {
-        verdict_row_label(ui, "Power", &hover);
+    let columns = RailColumns::of(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
+        ui.allocate_ui_with_layout(
+            egui::vec2(columns.label, crate::ui::tokens::ROW_DENSE),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_width(columns.label);
+                verdict_row_label(ui, "Power", &hover);
+            },
+        );
         match (&power.figure, &power.source) {
             (Ok(figure), Some(source)) => {
                 // The door promises a finite, positive `available_kw`, so the
@@ -974,7 +1039,8 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
                             .small()
                             .color(theme::TEXT_DIM),
                     )
-                    .wrap(),
+                    .truncate()
+                    .show_tooltip_when_elided(false),
                 )
                 .on_hover_text(hover.clone());
             }
@@ -992,7 +1058,8 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
                         .small()
                         .color(theme::TEXT_DIM),
                     )
-                    .wrap(),
+                    .truncate()
+                    .show_tooltip_when_elided(false),
                 )
                 .on_hover_text(hover.clone());
             }
@@ -1009,21 +1076,20 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
 /// The hover of each line is the line's detail, or the refusal detail.
 fn rail_force_line_rows(ui: &mut egui::Ui, power: &PowerReading) {
     let (face, hover) = rs_cam_core::material::force_line::card_lines(&power.force_line);
-    dim_wrapped_line(ui, &face, &hover);
+    dim_line(ui, &face, &hover);
     if power.force_line.is_ok()
         && let Some(extrapolation) = power
             .force_point
             .as_ref()
             .and_then(ForceAtPoint::extrapolation_text)
     {
-        dim_wrapped_line(ui, &extrapolation, &hover);
+        dim_line(ui, &extrapolation, &hover);
     }
 }
 
-/// One dim, wrapped line with a hover.
-fn dim_wrapped_line(ui: &mut egui::Ui, text: &str, hover: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(text).small().color(theme::TEXT_DIM)).wrap())
-        .on_hover_text(hover.to_owned());
+/// One dim line with a hover. A long line truncates on the face.
+fn dim_line(ui: &mut egui::Ui, text: &str, hover: &str) {
+    ui.add(OneLine::new(text).color(theme::TEXT_DIM).detail(hover));
 }
 
 /// The face: the percent of the limit, formatted from the two figures it
@@ -1074,15 +1140,17 @@ fn power_unmodelled_hover(reason: PowerUnmodeled) -> String {
     )
 }
 
-/// The rail's MRR readout, wrapped like its neighbours.
+/// The rail's MRR readout, one line.
 fn rail_mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {
-    ui.horizontal_wrapped(|ui| {
-        ui.add(egui::Label::new(egui::RichText::new("MRR:").small().color(theme::TEXT_DIM)).wrap());
+    ui.horizontal(|ui| {
+        ui.add(egui::Label::new(
+            egui::RichText::new("MRR:").small().color(theme::TEXT_DIM),
+        ));
         ui.add(
             egui::Label::new(
                 egui::RichText::new(format!("{mrr_mm3_min:.0} mm\u{00B3}/min")).small(),
             )
-            .wrap(),
+            .truncate(),
         );
     });
 }
@@ -1117,11 +1185,13 @@ fn draw_apply_column(
              line below gives the reason for the refusal. Change the tool, \
              the operation or the material to enable Apply.",
         );
+        // The one block on this card that may wrap: a refusal that blocks
+        // the write (IC1).
         ui.add(
             egui::Label::new(
                 egui::RichText::new(err.to_string())
                     .small()
-                    .color(theme::WARNING),
+                    .color(theme::ERROR),
             )
             .wrap(),
         );
@@ -1130,10 +1200,9 @@ fn draw_apply_column(
     ui.horizontal_wrapped(|ui| {
         // A-3's contract: the 'changes the cut' attribution sits on the
         // button's FACE, not its hover — the operator must see it before
-        // clicking. In the 240-point rail that means the button wraps:
-        // `ui.button` would paint the full phrase past the panel edge.
-        let apply =
-            egui::Button::new("⚡ Apply all — changes the cut").wrap_mode(egui::TextWrapMode::Wrap);
+        // clicking. The face is short enough for the 240-point rail; the
+        // truncation only guards a narrower one.
+        let apply = egui::Button::new(APPLY_ALL_FACE).wrap_mode(egui::TextWrapMode::Truncate);
         if ui
             .add(apply)
             .on_hover_text(
@@ -1157,9 +1226,7 @@ fn draw_apply_column(
     // as one pair. This is not a per-field apply — it is the same funnel with
     // `ApplyScope::Speeds`, which the funnel was built to serve.
     ui.horizontal_wrapped(|ui| {
-        let speeds =
-            egui::Button::new("⚡ Match vendor chipload — changes the speeds, not the cut")
-                .wrap_mode(egui::TextWrapMode::Wrap);
+        let speeds = egui::Button::new(APPLY_SPEEDS_FACE).wrap_mode(egui::TextWrapMode::Truncate);
         if ui
             .add(speeds)
             .on_hover_text(
@@ -1234,37 +1301,42 @@ fn woc_row(
     // `clamp_stepover_to_diameter` and the runtime back-off along with
     // everything else. The derived value is on the hover; the face shows the
     // clamped form of it that `⚡ Apply all` writes (G-RECOMAPPLIED).
-    ui.horizontal_wrapped(|ui| {
-        ui.add(
-            egui::Label::new(egui::RichText::new("WOC ⓢ").small().color(theme::TEXT_DIM)).wrap(),
-        )
-        .on_hover_text(&math);
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(compare::format_optional(current.stepover, " mm", 0.01))
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
+    let columns = RailColumns::of(ui);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
+        rail_cell(
+            ui,
+            columns.label,
+            egui::RichText::new("WOC \u{24E2}")
+                .small()
+                .color(theme::TEXT_DIM),
+            Some(&math),
         );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new("\u{2192}")
-                    .small()
-                    .color(theme::TEXT_DIM),
-            )
-            .wrap(),
+        rail_cell(
+            ui,
+            columns.value,
+            egui::RichText::new(compare::format_optional(current.stepover, " mm", 0.01))
+                .small()
+                .color(theme::TEXT_DIM),
+            None,
         );
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{woc:.2} mm (auto)"))
-                    .small()
-                    .color(theme::SUCCESS),
-            )
-            .wrap(),
-        )
-        .on_hover_text(&math);
-        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(woc))).wrap());
+        rail_cell(
+            ui,
+            columns.arrow,
+            egui::RichText::new("\u{2192}")
+                .small()
+                .color(theme::TEXT_DIM),
+            None,
+        );
+        rail_cell(
+            ui,
+            columns.value,
+            egui::RichText::new(format!("{woc:.2} mm (auto)"))
+                .small()
+                .color(theme::SUCCESS),
+            Some(&math),
+        );
+        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(woc))).truncate());
     });
     ui.add_space(2.0);
 }
@@ -1318,18 +1390,15 @@ fn draw_scallop_control(
                     .small()
                     .color(theme::SUCCESS),
                 )
-                .wrap(),
+                .truncate(),
             );
         }
     });
     if current.scallop_height.is_some() && tip_r.is_none() {
-        ui.label(
-            egui::RichText::new(
-                "⚠ This tool has no spherical tip — scallop height is ignored; \
-                 the formula stepover is used.",
-            )
-            .small()
-            .color(theme::WARNING_MILD),
+        ui.add(
+            OneLine::new("⚠ No spherical tip: scallop height ignored")
+                .color(theme::WARNING_MILD)
+                .detail("This tool has no ball tip, so the formula stepover is used."),
         );
     }
 }

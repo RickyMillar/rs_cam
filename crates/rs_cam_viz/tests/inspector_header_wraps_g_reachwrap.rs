@@ -17,6 +17,19 @@
 //! thing: `grid_note` and `over_statement_note` ARE the missing-guarantee
 //! sentences (the cell, the floor, the bar; and that the grid over-states).
 //!
+//! # IC1 (2026-10-13): one line, the full text on hover
+//!
+//! The operator, 2026-10-13: "the inspector panel is obscene. there is so
+//! much text." The inspector clean-up gives every finding and every reading
+//! ONE line. A long message truncates with an ellipsis, and its hover gives
+//! the whole message. The defect this file guards is unchanged — a sentence
+//! must never run off the panel and clip without a sign — but the remedy
+//! changed from "wrap" to "one truncated line with the full text on hover".
+//! A caveat that removes a guarantee (the reach grid over-states) stays a
+//! face line of its own in the caution colour, so it is never only on a
+//! hover. The arms that read the reach block and the diagnostic row check
+//! that contract. The validator's errors block Generate, so they still wrap.
+//!
 //! # What this file proves, and what it does not
 //!
 //! **Proved.** The reach readings used to live inside `ui.horizontal(…)` as
@@ -216,29 +229,45 @@ fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
     }
 }
 
-/// And they are drawn through the wrapped helper, not a bare `ui.label`.
+/// IC1: each reading is ONE line through `OneLine`, not a bare `ui.label`.
+/// The grid line is the hover detail of the reading; the over-statement is a
+/// caution line of its own.
 #[test]
-fn the_reach_readings_are_constructed_wrapped() {
+fn the_reach_readings_are_one_line_each() {
     let src = properties_src();
     let block = reach_block(&src);
     for reading in [
         "unreachable {unreachable_pct:.1} %",
-        "grid_line.clone()",
         "over_statement_note.clone()",
         "reach: {message}",
     ] {
         let at = block
             .find(reading)
             .unwrap_or_else(|| panic!("{reading:?} is gone from the reach block"));
-        // The helper call opens at most a few lines above the text it
-        // carries; anything else means the line was moved back onto a bare
+        // The component call opens at most a few lines above the text it
+        // carries; anything else means the line moved back onto a bare
         // `ui.label`.
-        let before = &block[at.saturating_sub(300)..at];
+        let before = &block[at.saturating_sub(120)..at];
         assert!(
-            before.contains("wrapped_small_label("),
-            "{reading:?} must be drawn through wrapped_small_label:\n{before}"
+            before.contains("OneLine::new("),
+            "{reading:?} must be drawn through OneLine:\n{before}"
         );
     }
+    let grid = block
+        .find("grid_line.clone()")
+        .expect("the grid line is gone from the reach block");
+    let before = &block[grid.saturating_sub(120)..grid];
+    assert!(
+        before.contains(".detail("),
+        "the grid line must be the reading's hover detail:\n{before}"
+    );
+    let caution = block
+        .find("if *tolerance_below_floor {")
+        .expect("the over-statement caution is gone");
+    assert!(
+        block[caution..].contains("crate::ui::tokens::CAUTION"),
+        "the over-statement must stay a caution-coloured face line"
+    );
 }
 
 /// The two SHORT status words may stay beside the checkbox: they carry no
@@ -278,23 +307,27 @@ fn the_wrapped_helper_only_wraps() {
 }
 
 /// The tool-load caution — the sentence the review caught at "The whole
-/// derat" — is wrapped explicitly rather than by inheritance from
-/// `horizontal_wrapped`. Pre-fix this row was a bare `ui.label`.
+/// derat". IC1: the row is one truncated line, and its hover holds the whole
+/// message, so the caveat is one hover away and the ellipsis says so.
 #[test]
-fn the_diagnostic_message_is_constructed_wrapped() {
+fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
     let src = properties_src();
     let body = function_body(&src, "render_diagnostic_row");
+    // The LAST occurrence is the drawn line; the first one builds the hover.
     let at = body
-        .find("format!(\"{prefix}{}\", d.message)")
+        .rfind("format!(\"{prefix}{}\", d.message)")
         .expect("the diagnostic message line moved");
-    let around = &body[at.saturating_sub(200)..(at + 200).min(body.len())];
+    let around = &body[at..(at + 400).min(body.len())];
     assert!(
-        around.contains("egui::Label::new("),
-        "the diagnostic message must be an explicit Label:\n{around}"
+        around.contains(".truncate()") && around.contains(".on_hover_text(hover)"),
+        "the diagnostic message must be one truncated line with its hover:\n{around}"
     );
+    let hover_at = body
+        .find("let mut hover = format!(\"{prefix}{}\", d.message);")
+        .expect("the hover no longer starts with the whole message");
     assert!(
-        around.contains(".wrap()"),
-        "the diagnostic message must wrap explicitly, not inherit it:\n{around}"
+        hover_at < at,
+        "the hover must be built before the line is drawn"
     );
 }
 

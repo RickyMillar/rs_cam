@@ -5,7 +5,7 @@ use crate::state::toolpath::{
     SpiralFinishConfig,
 };
 
-use super::super::{dv, dv_pill, p};
+use super::super::{advanced, dv, dv_pill, p};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -43,6 +43,7 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
         );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("rf_dir")
+            .truncate()
             .selected_text(match cfg.direction {
                 CutDirection::Climb => "Climb",
                 CutDirection::Conventional => "Conventional",
@@ -58,17 +59,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
                 ui.selectable_value(&mut cfg.direction, CutDirection::BothWays, "Both Ways");
             });
         ui.end_row();
-        ui.label("Bottom Up:");
-        ui.checkbox(&mut cfg.order_bottom_up, "");
-        ui.end_row();
-        dv(
-            ui,
-            p(OperationType::RampFinish, "sampling", "Sampling:"),
-            &mut cfg.sampling,
-            " mm",
-            0.1,
-            0.1..=5.0,
-        );
         dv(
             ui,
             p(
@@ -80,6 +70,19 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             " mm",
             0.05,
             0.0..=10.0,
+        );
+    });
+    advanced(ui, "rf_adv", |ui| {
+        ui.label("Bottom Up:");
+        ui.checkbox(&mut cfg.order_bottom_up, "");
+        ui.end_row();
+        dv(
+            ui,
+            p(OperationType::RampFinish, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
         );
         dv(
             ui,
@@ -110,6 +113,7 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
         );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("spiral_dir")
+            .truncate()
             .selected_text(match cfg.direction {
                 SpiralDirection::InsideOut => "Inside Out",
                 SpiralDirection::OutsideIn => "Outside In",

@@ -2,8 +2,8 @@ use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
-use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
+use crate::ui::components::{OneLine, SectionHeader, UiExt as _};
 use crate::ui_command::UiCommand;
 use rs_cam_core::session::{Corner, Fixture, FixtureKind, KeepOutZone, SetupData, XYDatum, ZDatum};
 
@@ -21,6 +21,14 @@ const FIXTURE_KINDS: &[FixtureKind] = &[
     FixtureKind::Vise,
     FixtureKind::VacuumPod,
     FixtureKind::Custom,
+];
+
+/// The four stock rotations, in degrees, for the Z Rotation row.
+const Z_ROTATIONS: &[(ZRotation, &str)] = &[
+    (ZRotation::Deg0, "0\u{00B0}"),
+    (ZRotation::Deg90, "90\u{00B0}"),
+    (ZRotation::Deg180, "180\u{00B0}"),
+    (ZRotation::Deg270, "270\u{00B0}"),
 ];
 
 /// Draw the setup overview panel (fixtures list, keep-out list, setup name).
@@ -63,14 +71,11 @@ pub fn draw(
         events.push(AppEvent::RequestRemoveSetup(setup_id));
     }
 
-    ui.label(
-        egui::RichText::new("Orientation")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    SectionHeader::new("Orientation").show(ui);
     ui.horizontal(|ui| {
         ui.label("Face Up:");
         egui::ComboBox::from_id_salt("face_up")
+            .truncate()
             .selected_text(setup_data.face_up.label())
             .show_ui(ui, |ui| {
                 for &face in FaceUp::ALL {
@@ -85,23 +90,25 @@ pub fn draw(
                 }
             });
     });
-    ui.horizontal(|ui| {
-        ui.label("Z Rotation:");
-        for &rot in ZRotation::ALL {
-            if ui
-                .selectable_label(setup_data.z_rotation == rot, rot.label())
-                .clicked()
-            {
-                setup_data.z_rotation = rot;
-                edit.commit();
-            }
-        }
-    });
+    // IC1: the shared closed-choice row. The four buttons with "deg" words
+    // painted past the 280-point panel.
+    if ui
+        .add(
+            crate::ui::components::ChoiceRow::new(
+                "Z Rotation",
+                &mut setup_data.z_rotation,
+                Z_ROTATIONS,
+            )
+            .hover("The rotation of the stock about the vertical axis for this setup."),
+        )
+        .changed()
+    {
+        edit.commit();
+    }
     if setup_data.face_up != FaceUp::Top {
-        ui.label(
-            egui::RichText::new(setup_data.face_up.flip_instruction())
-                .italics()
-                .color(crate::ui::tokens::CAUTION),
+        // IC1: one line; the full instruction is on the hover.
+        ui.add(
+            OneLine::new(setup_data.face_up.flip_instruction()).color(crate::ui::tokens::CAUTION),
         );
         // Hint: suggest alignment pins when flipped setup has no pins configured
         if pin_count == 0 {
@@ -117,11 +124,7 @@ pub fn draw(
 
     ui.add_space(8.0);
 
-    ui.label(
-        egui::RichText::new("Datum / Alignment")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    SectionHeader::new("Datum / Alignment").show(ui);
 
     let xy_label = match &setup_data.datum.xy_method {
         XYDatum::CornerProbe(corner) => format!("Corner Probe ({})", corner.label()),
@@ -132,6 +135,7 @@ pub fn draw(
     ui.horizontal(|ui| {
         ui.label("XY Method:");
         egui::ComboBox::from_id_salt("xy_datum")
+            .truncate()
             .selected_text(&xy_label)
             .show_ui(ui, |ui| {
                 for &corner in Corner::ALL {
@@ -181,6 +185,7 @@ pub fn draw(
     ui.horizontal(|ui| {
         ui.label("Z Method:");
         egui::ComboBox::from_id_salt("z_datum")
+            .truncate()
             .selected_text(&z_label)
             .show_ui(ui, |ui| {
                 if ui
@@ -244,20 +249,16 @@ pub fn draw(
                 .color(crate::ui::tokens::OK),
         );
     } else if setup_data.datum.xy_method == XYDatum::AlignmentPins {
-        ui.label(
-            egui::RichText::new("No pins defined — add them in Stock properties")
-                .small()
-                .color(crate::ui::tokens::CAUTION),
+        ui.add(
+            OneLine::new("\u{26A0} No alignment pins")
+                .color(crate::ui::tokens::CAUTION)
+                .detail("The XY method reads alignment pins. Add them on the Stock panel."),
         );
     }
 
     // ── Models ──────────────────────────────────────────────────────
     ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Models")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    SectionHeader::new("Models").show(ui);
     if all_models.is_empty() {
         ui.label(
             egui::RichText::new("No models loaded")
@@ -310,19 +311,8 @@ pub fn draw(
 
     // ── Fixtures ──────────────────────────────────────────────────
     ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Fixtures")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    SectionHeader::new("Fixtures").show(ui);
 
-    if setup_data.fixtures.is_empty() {
-        ui.label(
-            egui::RichText::new("No fixtures")
-                .italics()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
-    }
     for fixture in &setup_data.fixtures {
         let label = format!("{} [{}]", fixture.name, fixture_kind_label(fixture.kind));
         let resp = ui.selectable_label(false, &label);
@@ -344,19 +334,8 @@ pub fn draw(
 
     ui.add_space(8.0);
 
-    ui.label(
-        egui::RichText::new("Keep-Out Zones")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    SectionHeader::new("Keep-Out Zones").show(ui);
 
-    if setup_data.keep_out_zones.is_empty() {
-        ui.label(
-            egui::RichText::new("No keep-out zones")
-                .italics()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
-    }
     for zone in &setup_data.keep_out_zones {
         let resp = ui.selectable_label(false, &zone.name);
         if resp.clicked() {
@@ -400,6 +379,7 @@ pub fn draw_fixture_properties(
     ui.horizontal(|ui| {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("fixture_kind")
+            .truncate()
             .selected_text(fixture_kind_label(fixture.kind))
             .show_ui(ui, |ui| {
                 for &kind in FIXTURE_KINDS {

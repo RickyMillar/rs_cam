@@ -798,3 +798,13 @@ pub const AXIS_Z: Color32 = Color32::from_rgb(0x5B, 0x8D, 0xE0);
 /// Radius:" and "Fine Stepdown:" — at `SIZE_BODY` in Inter, and it is on the
 /// 4-point grid.
 pub const LABEL_COL_WIDTH: f32 = 116.0;
+
+/// The width an inspector finding row keeps free at its right edge for its
+/// `✓ Fix (0.000)` button (IC1). The message truncates in the rest of the
+/// row, so the button never moves to a second line.
+pub const FIX_BUTTON_WIDTH: f32 = 100.0;
+
+/// The minimum width of a combo in the inspector's value column (IC1). With
+/// `LABEL_COL_WIDTH` and the grid gap it fits the 240-point Simulation rail;
+/// a longer choice truncates and shows in full in the open menu.
+pub const INSPECTOR_COMBO_WIDTH: f32 = 72.0;

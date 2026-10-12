@@ -143,9 +143,16 @@ fn draw_height_row(
         )
         .changed();
 
+    // IC1: the combo names the reference only. The sign of the value says
+    // above or below; the hover says it in words.
+    // The combo takes what the state column leaves, so the row fits the
+    // 240-point rail; the reference truncates there and shows on hover.
+    let combo_width = (ui.available_width() - HEIGHT_STATE_COL_WIDTH)
+        .clamp(HEIGHT_REF_COMBO_MIN, HEIGHT_REF_COMBO_WIDTH);
     let combo = egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
-        .width(105.0)
-        .selected_text(ref_label(display.reference, display.offset))
+        .truncate()
+        .width(combo_width)
+        .selected_text(display.reference.label())
         .show_ui(ui, |ui| {
             let mut picked = false;
             for &href in HeightReference::ALL {
@@ -158,52 +165,59 @@ fn draw_height_row(
             }
             picked
         });
+    let combo_hover = ref_label(display.reference, display.offset);
+    combo
+        .response
+        .on_hover_text(format!("{:.1} mm {combo_hover}", display.offset.abs()));
     edited |= combo.inner.unwrap_or(false);
 
     commit_height_row(mode, display, edited);
 
-    // Resolved absolute Z as a dim hint. "(auto)" marks a row that is still
-    // deferring to the resolver. "(pinned)" marks a row that carries a
-    // stored value, whether the operator typed it, picked a reference, or
-    // dragged the diagram. After the commit, `mode.is_auto()` is exactly
-    // "was Auto before this frame and no widget moved this frame".
+    // The state of the row. "auto" marks a row that is still deferring to
+    // the resolver. A pinned row (the operator typed it, picked a reference,
+    // or dragged the diagram) shows the `Auto` button, which releases it.
     //
     // R5 (2026-09-18): the row showed no sign that a height was pinned, so
     // a diagram drag that pinned Top at −1.37 read like an Auto row
     // (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2). The
     // Auto button is the one-click release; the panel's snapshot diff
     // stamps the edit stale, as it does for every heights write.
+    //
+    // IC1 (2026-10-13): the absolute Z moved to the hover. The diagram above
+    // the rows prints every absolute Z, and the fourth column painted past
+    // the 280-point panel.
     let resolved = display.reference.resolve_z(ctx) + display.offset;
     if mode.is_auto() {
         ui.label(
-            egui::RichText::new(format!("= {resolved:.1} (auto)"))
+            egui::RichText::new("auto")
                 .small()
                 .color(crate::ui::tokens::DIAGRAM_DIM),
-        );
-    } else {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!("= {resolved:.1} (pinned)"))
-                    .small()
-                    .color(crate::ui::tokens::TEXT_MUTED),
-            )
-            .on_hover_text(PINNED_HINT);
-            if ui
-                .small_button("Auto")
-                .on_hover_text("Release the pin. The resolver sets this height again.")
-                .clicked()
-            {
-                *mode = HeightMode::Auto;
-            }
-        });
+        )
+        .on_hover_text(format!(
+            "= {resolved:.1} (auto). The resolver sets this height."
+        ));
+    } else if ui
+        .small_button("Auto")
+        .on_hover_text(format!("= {resolved:.1} (pinned). {PINNED_HINT}"))
+        .clicked()
+    {
+        *mode = HeightMode::Auto;
     }
 
     ui.end_row();
 }
 
+/// The widest and the narrowest reference combo on a height row (IC1).
+/// Between them the combo takes what the row leaves.
+const HEIGHT_REF_COMBO_WIDTH: f32 = 72.0;
+const HEIGHT_REF_COMBO_MIN: f32 = 40.0;
+
+/// The width a height row keeps for its state: "auto", or the Auto button.
+const HEIGHT_STATE_COL_WIDTH: f32 = 44.0;
+
 /// The hover on a pinned height row's hint.
 const PINNED_HINT: &str = concat!(
-    "This height is pinned. The resolver does not move it when the stock, ",
+    "The resolver does not move this height when the stock, ",
     "the model or the operation changes. Click Auto to release it."
 );
 
@@ -317,10 +331,12 @@ pub(super) fn draw_heights_params(
         None => BOTTOM_Z_TOOLTIP.to_owned(),
     };
 
-    // UI-02: 4 columns, so `param_grid` does not fit.
+    // UI-02: 4 columns, so `param_grid` does not fit. IC1: the narrow column
+    // gap keeps the four columns inside the 280-point panel.
     egui::Grid::new("heights_p")
         .num_columns(4)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
+        .min_col_width(crate::ui::tokens::SPACE_4)
+        .spacing([crate::ui::tokens::SPACE_2, crate::ui::tokens::SPACE_2])
             .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
             draw_height_row(
@@ -380,12 +396,9 @@ pub(super) fn draw_heights_params(
     // and set it back to auto.
     if let Some(note) = pin_note {
         ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new(format!("Bottom: {note}"))
-                .small()
-                .italics()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
+        ui.add(crate::ui::components::OneLine::new(format!(
+            "Bottom: {note}"
+        )));
     }
 }
 

@@ -140,17 +140,26 @@ pub(in crate::ui::properties) fn draw_editor_and_diagram(
     cx: &mut OpDrawCtx<'_>,
 ) {
     let entry = row(op.op_type());
-    (entry.draw)(ui, op, cx);
-    ui.add_space(6.0);
-    match &entry.diagram {
-        OpDiagram::Stepover => {
-            if let Some(pattern) = StepoverPattern::from_operation(op) {
+    // IC1: the diagram summarises the operation's shape, so it comes first
+    // and the parameter rows follow it.
+    let drew = match &entry.diagram {
+        OpDiagram::Stepover => match StepoverPattern::from_operation(op) {
+            Some(pattern) => {
                 draw_stepover_diagram(ui, &pattern);
+                true
             }
+            None => false,
+        },
+        OpDiagram::Draw(f) => {
+            f(op, ui);
+            true
         }
-        OpDiagram::Draw(f) => f(op, ui),
-        OpDiagram::None(_) => {}
+        OpDiagram::None(_) => false,
+    };
+    if drew {
+        ui.add_space(6.0);
     }
+    (entry.draw)(ui, op, cx);
 }
 
 /// The per-operation errors both validation entry points collect.

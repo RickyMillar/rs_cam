@@ -11,6 +11,7 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
     ui.param_grid("post_params", |ui| {
         ui.label("Format:");
         egui::ComboBox::from_id_salt("post_format")
+            .truncate()
             .selected_text(post.format.label())
             .show_ui(ui, |ui| {
                 for &fmt in PostFormat::ALL {
@@ -45,16 +46,16 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
     let effective = effective_safe_z(post.safe_z, stock_top_z);
     if effective > post.safe_z + 1e-6 {
         ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new(format!(
-                "\u{26A0} Safe Z raised to {:.2} mm to clear stock (top {:.2} + {:.0} mm)",
-                effective, stock_top_z, SAFE_Z_CLEARANCE_MM
+        ui.add(
+            crate::ui::components::OneLine::new(format!(
+                "\u{26A0} Safe Z raised to {effective:.2} mm"
             ))
-            .small()
-            .color(theme::WARNING),
-        )
-        .on_hover_text(
-            "Compute clamps Safe Z so rapids clear the uncut stock. Increase the value above the stock top to silence this warning.",
+            .color(theme::WARNING)
+            .detail(format!(
+                "Compute clamps Safe Z so rapids clear the uncut stock: the stock top \
+                 {stock_top_z:.2} mm + {SAFE_Z_CLEARANCE_MM:.0} mm. Set a value above \
+                 that to remove this warning."
+            )),
         );
     } else {
         ui.add_space(4.0);

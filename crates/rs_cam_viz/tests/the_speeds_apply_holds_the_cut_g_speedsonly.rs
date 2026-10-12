@@ -351,10 +351,14 @@ fn the_speeds_apply_refuses_a_refused_pairing() {
 /// the cut` says on its FACE what it changes; this button must say on its face
 /// that it changes the speeds and holds the cut. A hover is not enough: the
 /// operator has to read it before clicking, not after hesitating.
+///
+/// IC1 (2026-10-13) shortened the face from "⚡ Match vendor chipload —
+/// changes the speeds, not the cut", which wrapped to two rows in the rail.
+/// The new face still says what the write changes and what it holds.
 #[test]
 fn the_speeds_apply_states_its_scope_on_the_button_face() {
     assert!(
-        COMPARE_SRC.contains("⚡ Match vendor chipload — changes the speeds, not the cut"),
+        COMPARE_SRC.contains("⚡ Speeds only — holds the cut"),
         "the speeds-only apply lost its face attribution; it must say what it \
          writes AND what it holds before the operator clicks"
     );

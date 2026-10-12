@@ -592,29 +592,19 @@ pub fn draw_height_diagram(
     // abstains with the `NotMeasured` treatment and names the reason.
     match profile {
         ModelProfile::Solid => {}
-        ModelProfile::Flat => {
-            ui.add_space(tokens::SPACE_1);
-            ui.add(
-                egui::Label::new(crate::ui::components::text::caption(
-                    "Model: the drawing is flat. A 2D model has no Z extent, \
-                     so its profile is one plane.",
-                ))
-                .wrap_mode(egui::TextWrapMode::Wrap),
-            );
-        }
+        // IC1: the legend already says "Model (flat)"; a caption under the
+        // canvas said it a second time.
+        ModelProfile::Flat => {}
         ModelProfile::Absent => {
             ui.add_space(tokens::SPACE_1);
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
                 ui.add(crate::ui::components::NotMeasured::new().reason(
                     "No model geometry reached this operation, so the diagram \
                      has no model profile to draw.",
                 ));
-                ui.add(
-                    egui::Label::new(crate::ui::components::text::caption(
-                        "Model profile: not measured.",
-                    ))
-                    .wrap_mode(egui::TextWrapMode::Wrap),
-                );
+                ui.add(crate::ui::components::OneLine::new(
+                    "Model profile: not measured",
+                ));
             });
         }
     };

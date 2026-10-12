@@ -10,7 +10,7 @@ use super::operations::{draw_height_diagram, draw_heights_params, validate_toolp
 use super::pills::PillSuggestions;
 use super::tab_badges::{
     RowTier, compute_tab_badges, draw_geometry_wiring, draw_toolpath_tabs,
-    merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_caption,
+    merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_line,
     wrapped_small_label,
 };
 use super::{
@@ -22,7 +22,7 @@ use crate::state::toolpath::{
     OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
-use crate::ui::components::UiExt as _;
+use crate::ui::components::{OneLine, UiExt as _};
 
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -73,8 +73,12 @@ pub(super) fn draw_toolpath_panel(
 
     // Name — single editable home for the toolpath name; the duplicate
     // read-only heading was dropped (density pass 2026-06-11).
+    // IC1: the operation's description is the hover of the name row. It used
+    // to be an italic line at the top of the Geometry tab.
+    let spec = entry.operation.op_type().spec();
     ui.horizontal(|ui| {
-        ui.label("Name:");
+        ui.label("Name:")
+            .on_hover_text(format!("{}: {}", spec.label, spec.description));
         ui.text_edit_singleline(&mut entry.name);
     });
 
@@ -133,7 +137,8 @@ pub(super) fn draw_toolpath_panel(
                         egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
                             .color(crate::ui::tokens::CAUTION),
                     )
-                    .wrap(),
+                    .truncate()
+                    .show_tooltip_when_elided(false),
                 )
                 .on_hover_text(
                     "This operation generated successfully, then one of its inputs changed. \
@@ -200,8 +205,9 @@ pub(super) fn draw_toolpath_panel(
         for err in &validation_errors {
             // A sentence, so it wraps explicitly rather than inheriting a
             // wrap mode from whatever layout encloses this panel
-            // (G-REACHWRAP).
-            wrapped_small_label(ui, err.clone(), crate::ui::tokens::CAUTION);
+            // (G-REACHWRAP). It blocks Generate, so it is the danger colour
+            // and it is the one header line that may wrap (IC1).
+            wrapped_small_label(ui, err.clone(), crate::ui::tokens::DANGER);
         }
     }
 
@@ -349,14 +355,13 @@ pub(super) fn draw_toolpath_panel(
 
         // G-REACHWRAP (UX-R09-001, 2026-09-10): the readings used to sit on
         // the checkbox's row as bare `ui.label`s, which under that row's
-        // `Extend` mode ran past the panel and clipped — the review's
-        // 1400×900 capture shows the summary cut off mid-number with
-        // the grid note never drawn at all
-        // (`results/W02/evidence/01_finish_defaults.png`). `grid_line` and
-        // `over_statement_note` are the MISSING-GUARANTEE sentences — the
-        // cell, the floor and the bar, and the statement that the grid
-        // over-states — so a clipped one reads as an unqualified result.
-        // They now get the panel's full width, one wrapped line each.
+        // `Extend` mode ran past the panel and clipped. They now get the
+        // panel's full width.
+        //
+        // IC1 (2026-10-13): the reading is ONE line. The grid line (the cell,
+        // the floor and the bar) is its hover. When the tolerance is below
+        // the grid floor, the over-statement is its own caution line, so the
+        // missing guarantee is never only on a hover.
         match reach {
             ReachPanelSummary::Measured {
                 unreachable_pct,
@@ -372,35 +377,25 @@ pub(super) fn draw_toolpath_panel(
                 // surface area, rim-eroded 3.0 mm" - two surfaces, one
                 // quantity, two descriptions, and that is the drift the
                 // shared notes exist to prevent.
-                wrapped_small_label(
-                    ui,
-                    format!(
-                        "unreachable {unreachable_pct:.1} % {area_basis_note} · \
-                         max gap {max_gap_mm:.2} mm"
-                    ),
-                    crate::ui::tokens::TEXT_STRONG,
-                );
-                wrapped_small_label(
-                    ui,
-                    grid_line.clone(),
-                    if *tolerance_below_floor {
-                        crate::ui::tokens::CAUTION
-                    } else {
-                        crate::ui::tokens::TEXT_MUTED
-                    },
+                ui.add(
+                    OneLine::new(format!(
+                        "unreachable {unreachable_pct:.1} % \u{00B7} max gap {max_gap_mm:.2} mm {}",
+                        crate::ui::tokens::GLYPH_DETAIL
+                    ))
+                    .color(crate::ui::tokens::TEXT_STRONG)
+                    .detail(format!("{area_basis_note}\n{}", grid_line.clone())),
                 );
                 if *tolerance_below_floor {
                     // The shared sentence, quoted - not a fourth
                     // hand-written paraphrase of the same bias.
-                    wrapped_small_label(
-                        ui,
-                        over_statement_note.clone(),
-                        crate::ui::tokens::CAUTION,
+                    ui.add(
+                        OneLine::new(format!("\u{26A0} {}", over_statement_note.clone()))
+                            .color(crate::ui::tokens::CAUTION),
                     );
                 }
             }
             ReachPanelSummary::Failed(message) => {
-                wrapped_small_label(ui, format!("reach: {message}"), crate::ui::tokens::CAUTION);
+                ui.add(OneLine::new(format!("reach: {message}")).color(crate::ui::tokens::CAUTION));
             }
             ReachPanelSummary::Computing
             | ReachPanelSummary::NotMeasured
@@ -471,7 +466,6 @@ fn draw_geometry_tab(
     let model_has_enriched = inputs.model_has_enriched;
     let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
     let height_ctx = inputs.height_ctx.as_ref();
-    let stale_default_defects = inputs.stale_default_defects.as_slice();
     let drill_layers = inputs.drill_layers.as_slice();
     let drill_targets = inputs.drill_targets.as_slice();
 
@@ -492,48 +486,9 @@ fn draw_geometry_tab(
     ui.separator();
     ui.add_space(4.0);
 
-    // Validator-driven Fix banner (PR-2C Phase 1). One row per
-    // detected stale-default rule for this TP, with a one-click
-    // Fix that mutates the operation directly. Defects are
-    // recomputed by the caller each frame, so the banner
-    // disappears as soon as the fix takes effect.
-    for defect in stale_default_defects {
-        egui::Frame::group(ui.style())
-            .fill(crate::ui::tokens::TINT_CAUTION)
-            .stroke(egui::Stroke::new(1.0_f32, crate::ui::tokens::CAUTION))
-            .inner_margin(egui::Margin::same(6))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("\u{26A0}")
-                            .color(crate::ui::tokens::CAUTION)
-                            .strong(),
-                    );
-                    ui.label(egui::RichText::new(&defect.title).strong());
-                });
-                ui.label(
-                    egui::RichText::new(&defect.detail)
-                        .small()
-                        .color(crate::ui::tokens::TEXT_STRONG),
-                );
-                if ui
-                    .small_button(format!("\u{2713} Fix (set to {:.3})", defect.new_value))
-                    .on_hover_text(
-                        "Apply the validator's auto-fix to this toolpath. \
-                         Mark stale and regenerate to apply.",
-                    )
-                    .clicked()
-                {
-                    rs_cam_core::compute::validate::apply_stale_default_to_op(
-                        &mut entry.operation,
-                        &mut entry.feeds_provenance,
-                        defect,
-                    );
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            });
-        ui.add_space(2.0);
-    }
+    // IC1: the validator's stale-default finding has ONE owner, the
+    // footer diagnostic row with its Fix button. A banner here printed the
+    // same finding a second time, with a three-row paragraph.
 
     // Compute + cache the LUT feeds result so the Geometry-row ⚡
     // pills (stepover / depth-per-pass) can render. Feed advice and
@@ -570,14 +525,6 @@ fn draw_geometry_tab(
         _ => None,
     };
 
-    // Operation description from spec (consistent across all operations)
-    let spec = entry.operation.op_type().spec();
-    ui.label(
-        egui::RichText::new(spec.description)
-            .italics()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
-    ui.add_space(2.0);
     // PR-2D Phase 2 — pass the per-field pill suggestions to every
     // per-op draw so each numeric field can render an inline ⚡
     // Suggest pill. Built above from the cached `entry.feeds_result`
@@ -653,15 +600,16 @@ fn draw_geometry_tab(
         // controls that drive it. The controller assigns the model
         // silhouette on add for 3D ops on a mesh; that provenance is
         // not stored, so the line never claims "(auto)".
-        ui.label(
-            egui::RichText::new(boundary_summary_line(&entry.boundary, false, models))
-                .small()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
+        ui.add(OneLine::new(boundary_summary_line(
+            &entry.boundary,
+            false,
+            models,
+        )));
         // Source selector
         ui.horizontal(|ui| {
             ui.label("Source:");
             egui::ComboBox::from_id_salt("boundary_source")
+                .truncate()
                 .selected_text(entry.boundary.source.label())
                 .show_ui(ui, |ui| {
                     if ui
@@ -778,6 +726,7 @@ fn draw_geometry_tab(
                     .map(|(_, name)| name.clone())
                     .unwrap_or_else(|| format!("(model id {model_id} not found)"));
                 egui::ComboBox::from_id_salt("boundary_outline_model")
+                    .truncate()
                     .selected_text(current_label)
                     .show_ui(ui, |ui| {
                         for (candidate_id, name) in outline_models {
@@ -830,6 +779,7 @@ fn draw_geometry_tab(
                 let mut sorted = boundary_source_candidates.to_vec();
                 sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
                 egui::ComboBox::from_id_salt("boundary_rest_source")
+                    .truncate()
                     .selected_text(current_label)
                     .show_ui(ui, |ui| {
                         for (candidate_id, name, ready, _, _) in &sorted {
@@ -880,11 +830,7 @@ fn draw_geometry_tab(
                     source_footprint_area,
                 )
             {
-                ui.label(
-                    egui::RichText::new(rest_region_pathology_caption(pathology))
-                        .small()
-                        .color(crate::ui::tokens::CAUTION),
-                );
+                ui.add(rest_region_pathology_line(pathology));
             }
         }
 
@@ -892,6 +838,7 @@ fn draw_geometry_tab(
         ui.horizontal(|ui| {
             ui.label("Containment:");
             egui::ComboBox::from_id_salt("boundary_contain")
+                .truncate()
                 .selected_text(match entry.boundary.containment {
                     BoundaryContainment::Center => "Center",
                     BoundaryContainment::Inside => "Inside",
@@ -965,12 +912,10 @@ fn draw_geometry_tab(
                 // The rest-depth detector attaches the same grid and the
                 // same regions from the pencil dials one grid above, so
                 // this operation has no second set to show.
-                ui.label(
-                    egui::RichText::new(
-                        "The Rest depth detector above produces the grid and the regions.",
-                    )
-                    .small()
-                    .color(crate::ui::tokens::TEXT_MUTED),
+                ui.add(
+                    OneLine::new("Grid and regions: from the Rest depth detector").detail(
+                        "The pencil's Rest depth detector produces the grid and the regions.",
+                    ),
                 );
                 return;
             }
@@ -987,6 +932,7 @@ fn draw_geometry_tab(
                         .map(|(_, name, _)| name.as_str())
                         .unwrap_or("Self / machined stock");
                     egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                        .truncate()
                         .selected_text(ref_label)
                         .show_ui(ui, |ui| {
                             if ui
@@ -1077,11 +1023,7 @@ fn draw_geometry_tab(
             rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
         )
     {
-        ui.label(
-            egui::RichText::new(rest_region_pathology_caption(pathology))
-                .small()
-                .color(crate::ui::tokens::CAUTION),
-        );
+        ui.add(rest_region_pathology_line(pathology));
     }
 }
 
@@ -1154,9 +1096,11 @@ fn draw_heights_tab(
     // F-6 / R33: the diagram takes the same operation, so its Bottom
     // line agrees with the sentence the panel prints beside the row.
     let op_type = entry.operation.op_type();
-    draw_heights_params(ui, &mut entry.heights, ctx, op_type);
-    ui.add_space(6.0);
+    // IC1: the diagram summarises the five planes, so it comes first. The
+    // rows below it set them.
     draw_height_diagram(ui, &mut entry.heights, ctx, op_type);
+    ui.add_space(6.0);
+    draw_heights_params(ui, &mut entry.heights, ctx, op_type);
 }
 
 /// The Dressup tab: edge work and path quality.

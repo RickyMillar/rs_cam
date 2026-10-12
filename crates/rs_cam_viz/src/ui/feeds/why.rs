@@ -53,6 +53,7 @@ use super::shared::{
     AppliedRecipe, CurrentValues, engaged_diameter_context, material_family_label, vendor_band,
     vendor_single_value,
 };
+use crate::ui::components::OneLine;
 use crate::ui::{theme, tokens};
 
 /// A factor within this of 1.0 changed nothing.
@@ -89,16 +90,19 @@ impl RecipeRow {
     }
 }
 
-/// One wrapped line, marked and hoverable, carrying its explanation.
+/// One line, marked and hoverable, carrying its explanation.
+///
+/// IC1: the line never wraps. A long record truncates on the face; the hover
+/// gives the full record and then the explanation.
 fn detail_line(ui: &mut egui::Ui, text: impl AsRef<str>, color: egui::Color32, hover: &str) {
     let marked = format!("{} {}", text.as_ref(), tokens::GLYPH_DETAIL);
-    ui.add(egui::Label::new(egui::RichText::new(marked).small().color(color)).wrap())
-        .on_hover_text(hover.to_owned());
+    ui.add(OneLine::new(marked).color(color).detail(hover));
 }
 
-/// One wrapped line with nothing further to say.
+/// One line with nothing further to say. A long record truncates on the
+/// face, and the hover gives the full record.
 fn plain_line(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) {
-    ui.add(egui::Label::new(egui::RichText::new(text.into()).small().color(color)).wrap());
+    ui.add(OneLine::new(text).color(color));
 }
 
 // ── The per-row explanations ─────────────────────────────────────────

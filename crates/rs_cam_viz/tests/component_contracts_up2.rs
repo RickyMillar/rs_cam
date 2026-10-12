@@ -913,8 +913,9 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/properties/operations/boundary_2d.rs",
-        3,
-        "integer fields: tab count and two finishing-pass counts",
+        2,
+        "integer fields: tab count and the one finishing-pass row that \
+         Pocket and Profile share (IC1)",
     ),
     (
         "ui/properties/setup.rs",

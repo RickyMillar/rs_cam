@@ -19,6 +19,7 @@ pub(in crate::ui::properties) fn draw_trace_params(
     ui.param_grid("trace_p", |ui| {
         ui.label("Compensation:");
         egui::ComboBox::from_id_salt("trace_comp")
+            .truncate()
             .selected_text(match cfg.compensation {
                 TraceCompensation::None => "None",
                 TraceCompensation::Left => "Left",

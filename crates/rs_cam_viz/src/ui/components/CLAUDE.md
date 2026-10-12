@@ -9,16 +9,16 @@ numbers each file cites.
 - `section.rs` — sections, param grids, the `UiExt` trait and `SummaryCard`.
 - `card.rs`, `notice.rs` — `SectionHeader`, `Card`, `EmptyState`, `Banner`
   and `NoticeStack`.
-- `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `DataTable`, `ValueRow` and
-  `row_hover_tint`.
+- `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `DataTable`, `ValueRow`,
+  `label_cell` (the left-aligned label column) and `row_hover_tint`.
 - `chip.rs`, `pill.rs` — `StatusChip` and `CountPill`.
 - `choice_row.rs` — `ChoiceRow`, the one closed-choice row (G-STARTFROM).
+- `line.rs` — `OneLine`: one row; it truncates, the hover has it all (IC1).
 - `freshness.rs` — `Freshness` and `FreshnessGate`, the single staleness cue.
 - `histogram.rs`, `sparkline.rs` — the painted faces of a cut-metric card.
 - `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge` and
   `PrecedenceField`, an override over a project default.
-- `suggest.rs`, `compare.rs` — `SuggestButton` and the current-versus-
-  recommended comparison.
+- `suggest.rs`, `compare.rs` — `SuggestButton` and the comparison.
 - `button.rs`, `focus_ring.rs`, `motion.rs`, `text.rs`, `format.rs` — the
   button, the focus ring, motion, the type rungs and text formatting.
 

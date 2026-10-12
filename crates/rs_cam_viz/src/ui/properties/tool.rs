@@ -151,6 +151,7 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.horizontal(|ui| {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("tool_type")
+            .truncate()
             .selected_text(tool.tool_type.label())
             .show_ui(ui, |ui| {
                 for &tt in ToolType::ALL {
@@ -246,6 +247,7 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         // Tool material
         ui.label("Material:");
         egui::ComboBox::from_id_salt("tool_material")
+            .truncate()
             .selected_text(tool.tool_material.label())
             .show_ui(ui, |ui| {
                 for &tm in ToolMaterial::ALL {
@@ -257,6 +259,7 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         // Cut direction
         ui.label("Cut Dir:");
         egui::ComboBox::from_id_salt("cut_direction")
+            .truncate()
             .selected_text(tool.cut_direction.label())
             .show_ui(ui, |ui| {
                 for &cd in BitCutDirection::ALL {

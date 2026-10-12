@@ -8,7 +8,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
   builders, `apply_auto_enable`; beside it `panel_apply.rs`,
   `model_sim_panels.rs`, `machine_panel.rs`, `feeds_speeds.rs`,
   `tab_badges.rs`, `tests.rs`, `linking_dressup.rs` (`Param`, `dv`,
-  `dv_pill`, `dv_dressup`), `toolpath_panel.rs` (one fn per tab).
+  `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (one fn per tab).
 - `operations/` — one editor per op family, plus `registry.rs`,
   `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`.
 - `setup.rs`, `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`.
@@ -17,9 +17,8 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 
 - Every edit writes through the core command path. Helix r: None = rule.
 - The inspector nests ONCE. A tab does not open a second scroll area.
-- The toolpath panel takes `ToolpathPanelSnapshot` and
-  `ToolpathPanelInputs`. Add a field there, not a parameter. The inspector
-  width does not depend on the selected tab.
+- The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`.
+  Add a field there, not a parameter. The width does not depend on the tab.
 - A panel door marks the project edited on success; `app.rs` guards on it.
   A pinned Bottom Z note names the ops `honors_pinned_bottom_z()` lists.
 - A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the
@@ -27,14 +26,15 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 - A tooltip keys on the registry parameter NAME, never the label.
 - One `OpUiRow` per operation carries the editor, the diagram decision
   and the validation arm. A blank diagram states its reason.
+- IC1: a field is one row; its explanation is the hover. A sentence is one
+  `OneLine` (truncates, full text on hover); only a blocking error wraps, in
+  `DANGER`. A finding has one owner, the footer row. Rare dials go in the
+  tab's ONE `advanced` section. A diagram comes before the rows it shows.
 
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`
-- `cargo test -p rs_cam_viz -q --test boundary_controls_always_visible_g_boundaryinherit`
-- `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5`
-- `cargo test -p rs_cam_viz -q --test inspector_width_is_tab_independent_up4`
-- `cargo test -p rs_cam_viz -q --test depth_beyond_stock_cautions_g_depthstock`
-- `cargo test -p rs_cam_viz -q --test the_help_key_is_the_param_name_ui04`
-- `cargo test -p rs_cam_viz -q --test operations_registry_ui05`
+- `cargo test -p rs_cam_viz -q --test boundary_controls_always_visible_g_boundaryinherit --test depth_beyond_stock_cautions_g_depthstock`
+- `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1`
+- `cargo test -p rs_cam_viz -q --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05`
 - `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom --test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7`

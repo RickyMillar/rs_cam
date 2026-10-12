@@ -5,7 +5,6 @@ use super::pins::PinSummary;
 use crate::state::job::StockConfig;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
-use crate::ui::components::text;
 
 /// Reconcile a finished stock draft with the `auto_from_model` rule.
 ///
@@ -113,13 +112,23 @@ pub fn draw(
             // 2018 MDF line, or a named refusal (ruling B6).
             let force_line = stock.material.force_line();
             let (_, force_hover) = rs_cam_core::material::force_line::card_lines(&force_line);
+            // IC1: the two coefficients without their units, so the cell
+            // fits the panel. The units are on the hover.
             let force_text = match &force_line {
                 Ok(line) => format!(
-                    "Ks {:.1} N/mm\u{00B2}, F_edge {:.2} N/mm",
+                    "Ks {:.1} \u{00B7} F_edge {:.2}",
                     line.ks_n_per_mm2(),
                     line.f_edge_n_per_mm()
                 ),
                 Err(_) => "\u{2014}".to_owned(),
+            };
+            let force_hover = match &force_line {
+                Ok(line) => format!(
+                    "Ks {:.1} N/mm\u{00B2}, F_edge {:.2} N/mm\n{force_hover}",
+                    line.ks_n_per_mm2(),
+                    line.f_edge_n_per_mm()
+                ),
+                Err(_) => force_hover,
             };
             ui.label(
                 egui::RichText::new(force_text)
@@ -175,12 +184,17 @@ pub fn draw(
     }
 
     ui.add_space(8.0);
-    edit.click(&ui.checkbox(&mut stock.auto_from_model, "Auto from model"));
-    if !stock.auto_from_model && has_model {
-        ui.label(text::caption(
-            "Stock is manual. Tick to refit to the model.",
-        ));
-    }
+    // IC1: the manual-stock hint is the checkbox's hover, not a caption.
+    let auto_hover = if has_model {
+        "Fit the stock to the model. An edit to a size or an origin above \
+         clears this, and the stock stays manual until you tick it again."
+    } else {
+        "Fit the stock to the model."
+    };
+    edit.click(
+        &ui.checkbox(&mut stock.auto_from_model, "Auto from model")
+            .on_hover_text(auto_hover),
+    );
     if stock.auto_from_model {
         ui.horizontal(|ui| {
             ui.label("Padding:");

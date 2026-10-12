@@ -5,7 +5,7 @@ use crate::state::toolpath::{
     PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
 };
 
-use super::super::{depth_caution_row, dv, dv_pill, p, through_cut_row};
+use super::super::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
@@ -21,6 +21,7 @@ pub(in crate::ui::properties) fn draw_face_params(
     ui.param_grid("face_p", |ui| {
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("face_dir")
+            .truncate()
             .selected_text(match cfg.direction {
                 FaceDirection::OneWay => "One Way",
                 FaceDirection::Zigzag => "Zigzag",
@@ -79,6 +80,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     ui.param_grid("pocket_p", |ui| {
         ui.label("Pattern:");
         egui::ComboBox::from_id_salt("pocket_pat")
+            .truncate()
             .selected_text(match cfg.pattern {
                 PocketPattern::Contour => "Contour",
                 PocketPattern::Zigzag => "Zigzag",
@@ -128,19 +130,27 @@ pub(in crate::ui::properties) fn draw_pocket_params(
                 0.0..=360.0,
             );
         }
-        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
-        // temporary f64 would change what a partial edit commits.
-        ui.label("Finishing Passes:");
-        let mut fp = cfg.finishing_passes as i32;
-        if ui
-            .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
-            .on_hover_text("Spring passes at final depth for dimensional accuracy")
-            .changed()
-        {
-            cfg.finishing_passes = fp.max(0) as usize;
-        }
-        ui.end_row();
     });
+    advanced(ui, "pocket_adv", |ui| {
+        finishing_passes_row(ui, &mut cfg.finishing_passes);
+    });
+}
+
+/// The "Finishing Passes" row of Pocket and Profile.
+///
+/// UI-10: an integer field. `ValueRow` edits an `f64`, and a temporary f64
+/// would change what a partial edit commits.
+fn finishing_passes_row(ui: &mut egui::Ui, passes: &mut usize) {
+    ui.label("Finishing Passes:");
+    let mut fp = *passes as i32;
+    if ui
+        .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
+        .on_hover_text("Spring passes at final depth for dimensional accuracy")
+        .changed()
+    {
+        *passes = fp.max(0) as usize;
+    }
+    ui.end_row();
 }
 
 /// `through_cut` is the G-THROUGHCUT (UX-R03-006) reading for this Profile:
@@ -161,6 +171,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     ui.param_grid("profile_p", |ui| {
         ui.label("Side:");
         egui::ComboBox::from_id_salt("prof_side")
+            .truncate()
             .selected_text(match cfg.side {
                 ProfileSide::Outside => "Outside",
                 ProfileSide::Inside => "Inside",
@@ -192,8 +203,19 @@ pub(in crate::ui::properties) fn draw_profile_params(
         ui.label("Climb:");
         ui.checkbox(&mut cfg.climb, "");
         ui.end_row();
+    });
+    ui.add_space(8.0);
+    // G-THROUGHCUT: a through cut with no tabs opens the Tabs disclosure by
+    // default. `default_open` only reads on the header's first frame, so the
+    // open is also forced on the frame the condition BECOMES true (depth
+    // dragged up to the board, tabs set back to zero). Every other frame
+    // passes `None`, which leaves the stored state — and the operator's
+    // collapse — alone. Same id as the old `ui.collapsing("Tabs", ..)`.
+    draw_profile_tabs(ui, cfg, through_cut);
+    advanced(ui, "profile_adv", |ui| {
         ui.label("Compensation:");
         egui::ComboBox::from_id_salt("prof_comp")
+            .truncate()
             .selected_text(match cfg.compensation {
                 CompensationType::InComputer => "In Computer",
                 CompensationType::InControl => "In Control",
@@ -211,14 +233,12 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 );
             });
         ui.end_row();
+        finishing_passes_row(ui, &mut cfg.finishing_passes);
     });
-    ui.add_space(8.0);
-    // G-THROUGHCUT: a through cut with no tabs opens the Tabs disclosure by
-    // default. `default_open` only reads on the header's first frame, so the
-    // open is also forced on the frame the condition BECOMES true (depth
-    // dragged up to the board, tabs set back to zero). Every other frame
-    // passes `None`, which leaves the stored state — and the operator's
-    // collapse — alone. Same id as the old `ui.collapsing("Tabs", ..)`.
+}
+
+/// The Tabs disclosure of Profile, with its diagram.
+fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Option<&ThroughCut>) {
     let tabs_default_open = through_cut.is_some() && cfg.tab_count == 0;
     let tabs_seen_id = ui.id().with("prof_tabs_through_cut_seen");
     let tabs_seen_open: Option<bool> = ui.data(|d| d.get_temp(tabs_seen_id));
@@ -264,20 +284,6 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 draw_tab_diagram(ui, cfg.tab_count, cfg.tab_width, cfg.tab_height);
             }
         });
-    ui.param_grid("prof_finish", |ui| {
-        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
-        // temporary f64 would change what a partial edit commits.
-        ui.label("Finishing Passes:");
-        let mut fp = cfg.finishing_passes as i32;
-        if ui
-            .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
-            .on_hover_text("Spring passes at final depth for dimensional accuracy")
-            .changed()
-        {
-            cfg.finishing_passes = fp.max(0) as usize;
-        }
-        ui.end_row();
-    });
 }
 
 pub(in crate::ui::properties) fn draw_adaptive_params(
@@ -316,6 +322,8 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             0.1..=50.0,
             dpp_sugg,
         );
+    });
+    advanced(ui, "adapt_adv", |ui| {
         dv(
             ui,
             p(OperationType::Adaptive, "tolerance", "Tolerance:"),
@@ -347,6 +355,7 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
         );
         ui.label("Cleanup:");
         egui::ComboBox::from_id_salt("adaptive_cleanup_strategy")
+            .truncate()
             .selected_text(format!("{:?}", cfg.cleanup_strategy))
             .show_ui(ui, |ui| {
                 use rs_cam_core::adaptive::CleanupStrategy;
@@ -401,6 +410,8 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
             0.01..=10.0,
             stepover_sugg,
         );
+    });
+    advanced(ui, "vcarve_adv", |ui| {
         dv(
             ui,
             p(OperationType::VCarve, "tolerance", "Tolerance:"),
@@ -429,6 +440,7 @@ pub(in crate::ui::properties) fn draw_rest_params(
             .map(|(_, s, _)| s.as_str())
             .unwrap_or("(select)");
         egui::ComboBox::from_id_salt("rest_prev_tool")
+            .truncate()
             .selected_text(prev_label)
             .show_ui(ui, |ui| {
                 for (id, name, _) in tools {
@@ -530,6 +542,8 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             0.05..=50.0,
             stepover_sugg,
         );
+    });
+    advanced(ui, "inlay_adv", |ui| {
         dv(
             ui,
             p(

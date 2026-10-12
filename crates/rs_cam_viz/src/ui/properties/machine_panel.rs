@@ -16,6 +16,9 @@ use crate::ui_command::{NoArgs, UiCommand};
 use rs_cam_core::feeds::rationale::AGGRESSIVENESS_ABOVE_BASE_TEXT;
 use rs_cam_core::machine::{AGGRESSIVENESS_MAX, AGGRESSIVENESS_MIN};
 
+/// The width the Save button keeps at the end of the "Save as" row (IC1).
+const SAVE_BUTTON_WIDTH: f32 = 56.0;
+
 /// Machine-library UX (SNAPSHOT model, like the tool library): import a
 /// machine *out of* the library (copied into the project's inline machine,
 /// no live link) or save the current machine into the library as a
@@ -30,8 +33,16 @@ pub(super) fn draw_machine_library_row(
 
     ui.horizontal(|ui| {
         ui.label("Library:");
+        // IC1: a short face; the hover says what the combo does, and that the
+        // library is empty when it is.
+        let import_hover = if machines.is_empty() {
+            "Import a machine from the library. The library is empty."
+        } else {
+            "Import a machine from the library. The project keeps a copy."
+        };
         egui::ComboBox::from_id_salt("machine_library_import")
-            .selected_text("Import a machine…")
+            .truncate()
+            .selected_text("Import…")
             .show_ui(ui, |ui| {
                 for name in &machines {
                     if ui.selectable_label(false, name).clicked() {
@@ -49,10 +60,9 @@ pub(super) fn draw_machine_library_row(
                         }
                     }
                 }
-            });
-        if machines.is_empty() {
-            ui.label(egui::RichText::new("(library empty)").small().weak());
-        }
+            })
+            .response
+            .on_hover_text(import_hover);
         if ui.button("Manage…").clicked() {
             events.push(AppEvent::Ui(UiCommand::OpenMachineLibrary(NoArgs)));
         }
@@ -65,14 +75,18 @@ pub(super) fn draw_machine_library_row(
     let mut trimmed = String::new();
     ui.horizontal(|ui| {
         ui.label("Save as:");
+        // IC1: the field takes what the button leaves, so the row fits the
+        // panel. The button's hover names the library.
+        let field_width = (ui.available_width() - SAVE_BUTTON_WIDTH).max(60.0);
         ui.add(
             egui::TextEdit::singleline(&mut state.panels.machine_library_name)
-                .desired_width(140.0)
+                .desired_width(field_width)
                 .hint_text("machine name"),
         );
         trimmed = state.panels.machine_library_name.trim().to_owned();
         save_clicked = ui
-            .add_enabled(!trimmed.is_empty(), egui::Button::new("Save to library"))
+            .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
+            .on_hover_text("Save this machine to the machine library.")
             .clicked();
     });
     if save_clicked {
@@ -89,11 +103,9 @@ pub(super) fn draw_machine_library_row(
     }
 
     if !state.panels.machine_library_status.is_empty() {
-        ui.label(
-            egui::RichText::new(&state.panels.machine_library_status)
-                .small()
-                .weak(),
-        );
+        ui.add(crate::ui::components::OneLine::new(
+            state.panels.machine_library_status.clone(),
+        ));
     }
 }
 
@@ -116,6 +128,7 @@ pub(super) fn draw_machine_panel(
     ui.horizontal(|ui| {
         ui.label("Preset:");
         egui::ComboBox::from_id_salt("machine_preset")
+            .truncate()
             .selected_text(selected_idx.map_or("Custom", |i| presets[i].0))
             .show_ui(ui, |ui| {
                 for (i, (label, _)) in presets.iter().enumerate() {
@@ -245,20 +258,16 @@ pub(super) fn draw_machine_kinematics(
     draft: &mut rs_cam_core::machine::MachineProfile,
     edit: &mut PanelEdit,
 ) {
-    ui.label(
-        egui::RichText::new("Kinematics (cycle-time model)")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    crate::ui::components::SectionHeader::new("Kinematics (cycle-time model)").show(ui);
 
     if state.session.machine().kinematics.is_none() {
-        ui.label(
-            egui::RichText::new(
-                "Not set — showing defaults. Editing a value or importing $$ enables the \
-                 acceleration-aware cycle-time model for this machine.",
-            )
-            .small()
-            .color(crate::ui::tokens::CAUTION),
+        ui.add(
+            crate::ui::components::OneLine::new("Not set: these are defaults")
+                .color(crate::ui::tokens::CAUTION)
+                .detail(
+                    "Edit a value or import $$ to use the acceleration-aware \
+                     cycle-time model for this machine.",
+                ),
         );
     }
 

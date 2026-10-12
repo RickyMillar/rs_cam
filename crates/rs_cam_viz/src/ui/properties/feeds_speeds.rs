@@ -92,7 +92,7 @@ pub(super) fn draw_speed_controls(
         entry.operation,
         OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
     );
-    ui.named_section("Speed \u{2014} what this operation runs", |ui| {
+    ui.named_section("Speed", |ui| {
         ui.param_grid("feeds_speed_controls", |ui| {
             let mut feed = entry.operation.feed_rate();
             if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50_000.0)
@@ -137,9 +137,8 @@ pub(super) fn draw_speed_controls(
                 .speed(100.0)
                 .range(1_000..=60_000)
                 .tooltip(
-                    "Override the project default spindle speed for this \
-                         operation. Leave it unchecked to follow the post-config \
-                         spindle speed.",
+                    "Tick to override the project default spindle speed for this \
+                     operation. Untick to follow the post-config spindle speed.",
                 )
                 .show(ui)
             {
@@ -300,7 +299,7 @@ pub(super) fn prov_from_chipload(
 fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict) {
     use rs_cam_core::tool_load::ModulationStrategyTag;
     let summary = verdict.modulation_summary.as_ref();
-    ui.named_section("OPERATING POINT \u{2014} measured", |ui| {
+    ui.named_section("Operating point (measured)", |ui| {
         // Checkpoint H2/H4.4 — the four-line card. Before it existed, this
         // section showed a feed RATIO and never printed an advance per
         // tooth at all, so commanded and achieved were nowhere on screen
