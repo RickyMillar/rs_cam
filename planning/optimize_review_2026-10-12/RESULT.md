@@ -58,5 +58,13 @@ no de-rate below 1 x D). The volume tolerance is one floor layer,
   FPL White Oak line gave 0.26 mm of tip deflection at 3.0 mm and 0.18 mm at 2.0 mm
   against the gate bound 0.200 mm: with an FPL row the bound would sit near 2 mm and
   the deflection gate would judge the cell. The outcome states this.
-- Rows 8 and 9 (stepover 1.05) carry real-looking rapid collisions; the probe
-  `optimize_z22_collisions_probe` (see the lead report) classifies them.
+- Rows 8 and 9 (stepover 1.05): the 18 and 8 rapid collisions are FALSE
+  POSITIVES of the dexel upper bound (G-STALETOP, probe
+  `tests/optimize_z22_collisions_probe.rs`, commit ff4af15a). Every hit is
+  the vertical descent of a ring entry over a column the level already cut;
+  an exact disc-against-swept-segments check finds 0 rapids in material. At
+  stepover 1.05 two ring-2 passes sit 2.9 mm apart, their 0.1 mm overlap is
+  narrower than one 0.2 mm cell, and `conservative_top` lowers only on one
+  full cover (`dexel_stock/stamping.rs::for_each_covered_cell`). The veto
+  stands (the reading is an upper bound); the fix is a sub-cell coverage
+  mask in the stamp. With that fix row 8 (317 s, -75.9 %) is the candidate.

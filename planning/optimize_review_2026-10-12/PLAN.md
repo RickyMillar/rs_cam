@@ -170,11 +170,15 @@ The headline run (`tests/optimize_z22_headline.rs`, 96 s) gave `Ranked`
   pass); keep the finding on a real thick bite into standing material.
 - Rapid collisions at stepover 1.05 (18 at dpp 1.22, 8 at dpp 2.75;
   none at 0.838). Lead ruling: read the records; real collisions keep
-  the veto; a defect goes to its owner.
+  the veto; a defect goes to its owner. RESULT: false positives of the
+  dexel `conservative_top` stamp (G-STALETOP, ff4af15a); owner
+  `dexel_stock/stamping.rs`; the veto stands as an upper bound.
 - `feeds::suggest::apply_speeds_to_op` re-derived the feed for the
   clamped depth (3877 against the calculator's 2423 at 2.5 x D). Lead
   ruling: a speeds-only apply ships the feed for the depth the operation
-  keeps; a feeds-side package with a test.
+  keeps; a feeds-side package with a test. DONE d5d1daaa (G-SPEEDSAPPLY);
+  the per-field pill still reads the `Both` dry run (handed off).
+- The over-cut reference: DONE 98e3de6f (G-OVERCUTREF).
 - Handed off, not in scope: the GUI readiness check and the export
   pre-flight read `ToolLoadReport::any_exceeded`, which counts the
   depth rule-of-thumb row as a Fail (`ui/readiness.rs`, `ui/preflight.rs`);
