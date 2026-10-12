@@ -42,21 +42,20 @@
 //!
 //! Fixture G of the WP14b suite: a 40 mm square pocket in a
 //! 44 x 44 x 6 mm board, one depth pass, one Ø6 mm end mill, generated
-//! and simulated once at a 1 mm cell. It REACHES `BaselineRestoreGuard`.
+//! and simulated once at a 1 mm cell, links off. It REACHES `BaselineRestoreGuard`.
 //! `optimize_toolpath_is_a_job_wp14b.rs`'s arm
 //! `the_job_leaves_the_live_session_alone` proves that on this same
 //! fixture, by measuring the residue the guard's drop leaves. That arm is
 //! the non-vacuity proof for this one, and the verifier runs both.
 //!
-//! # Phase 1 (2026-10-12)
+//! # Phase 2 (2026-10-12)
 //!
-//! `planning/optimize_review_2026-10-12/PLAN.md` §1 removed every search
-//! stage. The search has no levers, so it announces each rung with a
-//! total of zero and ticks none. The arm now pins that shape: every rung
-//! is named (the high-water mark reaches the last rung), every pair is
-//! `(0, 0)`, and a settled run claims no rung. Phase 2 renames the rungs
-//! and gives them real totals; the "entered every candidate it
-//! announced" half returns then.
+//! `planning/optimize_review_2026-10-12/PLAN.md` §2 gives the search two
+//! rungs: `Links` and `DepthWidth`. The fixture turns the links off, so
+//! the link rung forms one candidate. The arm pins: every rung is named
+//! (the high-water mark reaches the last rung), each rung entered every
+//! candidate it formed, and a settled run claims no rung. The fixture
+//! simulates with the project cell of 1 mm.
 //!
 //! # NOT MEASURED
 //!
@@ -91,12 +90,11 @@ use common::session::{
 };
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
 use rs_cam_core::session::{
-    Job, JobHandle, OptimizeToolpathArgs, OptimizeToolpathHandle, ProjectSession,
-    SimulationOptions, execute_optimize_toolpath,
+    Command, Job, JobHandle, OptimizeToolpathArgs, OptimizeToolpathHandle, ProjectSession,
+    SetSimulationResolutionArgs, SimulationResolution, execute_optimize_toolpath,
 };
-use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase};
+use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase, candidate_sim_options};
 
 // ── constants ────────────────────────────────────────────────────────
 
@@ -107,8 +105,8 @@ const HALF_MM: f64 = 20.0;
 /// operation cuts in.
 const STOCK_Z_MM: f64 = 6.0;
 
-/// The dexel cell the fixture simulates at, in mm. Coarse on purpose:
-/// the arm measures what the search announced, not a cut.
+/// The project's stored dexel cell, in mm. Coarse on purpose: the arm
+/// measures what the search announced, not a cut.
 const SIM_CELL_MM: f64 = 1.0;
 
 // ── fixture ──────────────────────────────────────────────────────────
@@ -123,20 +121,11 @@ fn pocket_op() -> OperationConfig {
     })
 }
 
-/// The baseline simulation's options, at the coarse cell.
-fn sim_options() -> SimulationOptions {
-    SimulationOptions {
-        resolution: SIM_CELL_MM,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy: ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    }
-}
-
 /// Fixture G — a generated and simulated pocket the optimizer searches.
+///
+/// The links are off, so the link rung forms one candidate. The depth per
+/// pass is the whole depth, so the depth and width rung forms one cell for
+/// each stepover.
 fn guard_session() -> ProjectSession {
     let mut session = single_op_session_with(
         stock_under(HALF_MM, STOCK_Z_MM),
@@ -144,12 +133,20 @@ fn guard_session() -> ProjectSession {
         polygon_model(vec![square_polygon(HALF_MM)], "square"),
         "Pocket",
         pocket_op(),
-        |_| {},
+        |tc| tc.dressups.link_moves = None,
     );
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(SIM_CELL_MM),
+            },
+        ))
+        .expect("the resolution row refuses nothing");
     generate(&mut session, 0);
     let cancel = AtomicBool::new(false);
+    let opts = candidate_sim_options(&session);
     let _ = session
-        .run_simulation(&sim_options(), &cancel)
+        .run_simulation(&opts, &cancel)
         .expect("the fixture pocket simulates");
     session
 }
@@ -170,8 +167,8 @@ fn start_job(session: &mut ProjectSession, cancel: &AtomicBool) -> Box<OptimizeT
 
 // ── the arm ──────────────────────────────────────────────────────────
 
-/// The search announces every rung, and with no levers it forms and
-/// enters no candidate.
+/// The search announces every rung, forms its candidates per rung, and
+/// enters every candidate it formed.
 ///
 /// **Why a high-water mark.** This arm runs the search to completion on
 /// one thread, so it cannot watch a rung go by. The mark is what makes
@@ -188,33 +185,35 @@ fn the_search_publishes_its_rungs_and_its_candidate_counts() {
     let outcome = execute_optimize_toolpath(&mut handle, &cancel);
     drop(handle);
 
-    // 0 — the run reached the guard and returned the Phase 1 outcome,
-    // so the rung announcements below are not from an early skip.
-    assert_eq!(
-        outcome.narrative.headline, "No candidate was searched.",
-        "the fixture must pass every skip path and reach the rung \
-         announcements; it returned {outcome:?}"
+    // 0 — the run reached the levers, so the rung announcements below
+    // are not from an early skip.
+    assert!(
+        outcome.candidates.len() >= 2,
+        "the fixture must pass every skip path and simulate a candidate; \
+         it returned {outcome:?}"
     );
 
     // 1 — the run named every rung, up to the last.
     assert_eq!(
         progress.high_water_phase(),
-        Some(SearchPhase::Refine),
-        "the search announces each rung of the fixed three-rung ladder, \
-         so the high-water mark must name the refine rung"
+        Some(SearchPhase::DepthWidth),
+        "the search announces each rung of the two-rung ladder, so the \
+         high-water mark must name the depth and width rung"
     );
 
-    // 2 — no rung formed or entered a candidate.
-    for phase in SearchPhase::ALL {
-        let rung = progress.rung(phase);
-        assert_eq!(
-            rung,
-            (0, 0),
-            "Phase 1 has no levers, so the {} rung announces a total of \
-             zero and ticks none; it reports {rung:?}",
-            phase.label()
-        );
-    }
+    // 2 — the link rung formed one candidate and entered it; the depth
+    // and width rung entered every cell it formed.
+    assert_eq!(
+        progress.rung(SearchPhase::Links),
+        (1, 1),
+        "the links are off, so the link rung forms and enters one candidate"
+    );
+    let (entered, formed) = progress.rung(SearchPhase::DepthWidth);
+    assert!(
+        formed >= 1 && entered == formed,
+        "the depth and width rung must enter every cell it formed; it \
+         reports ({entered}, {formed})"
+    );
 
     // 3 — a settled run claims no rung.
     let snapshot = progress.snapshot();

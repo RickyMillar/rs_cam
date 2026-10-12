@@ -4,16 +4,17 @@
 //! outcome builder, the narrative, the skip paths). This file runs the
 //! real entry points against a generated and simulated toolpath.
 //!
-//! **Phase 1 contract** (`planning/optimize_review_2026-10-12/PLAN.md`
-//! §1): the search has no levers. A run scores the baseline from the
-//! trace, evaluates no candidate, and returns `NoSafeImprovement` with
-//! candidate 0 = the baseline and the "no search" explanation. The
-//! guard restores the parameters. Phase 2 replaces these assertions.
+//! **The post-sim tuner** (`planning/optimize_review_2026-10-12/PLAN.md`
+//! §2): a run scores the baseline from the trace, pulls the depth and
+//! width lever (the fixture already links, so the link lever has no
+//! candidate), simulates every cell with the one set of options, and
+//! judges each cell's full cut against the baseline. The guard restores
+//! the parameters.
 //!
 //! The fixture is the checked-in `fixtures/demo_pocket.svg`: a small
 //! rectangle with a circular island. It parses fast and gives a
-//! deterministic pocket toolpath. With no candidate to simulate, each
-//! test costs one generation and one simulation at a 1 mm cell.
+//! deterministic pocket toolpath. The project cell is 1 mm, so each
+//! candidate costs one generation and one coarse simulation.
 
 #![allow(
     clippy::unwrap_used,
@@ -37,16 +38,17 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
-    SetStockConfigArgs, SimulationOptions, ToolpathConfig,
+    SetSimulationResolutionArgs, SetStockConfigArgs, SimulationResolution, ToolpathConfig,
 };
 use rs_cam_core::tool_load::optimize::{
-    NoProgress, OutcomeKind, SearchStage, optimize_project, optimize_toolpath,
+    FullCutVerdict, NoProgress, OutcomeKind, SearchStage, candidate_sim_options, optimize_project,
+    optimize_toolpath,
 };
-
-/// The Phase 1 explanation. The GUI matches the same text.
-const NO_SEARCH_EXPLANATION: &str =
-    "The search has no levers yet; the post-sim tuner is being rebuilt.";
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
+
+/// The project's stored simulation cell, in mm. Coarse, so the smoke
+/// test is fast.
+const CELL_MM: f64 = 1.0;
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
 /// pocket op. Returns the session and the toolpath index. Returns
@@ -80,6 +82,13 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
             stock: Box::new(stock),
         }))
         .expect("the stock row refuses nothing");
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("the resolution row refuses nothing");
 
     // Add a 6mm end mill (matches the optimize gate's typical wood
     // router setup). add_tool returns the vec index; we want the
@@ -168,16 +177,8 @@ fn optimize_toolpath_full_pipeline() {
         .expect("baseline generate");
 
     // Baseline sim — produces the trace the optimizer scores against.
-    let opts = SimulationOptions {
-        resolution: 1.0, // faster than 0.5; the optimizer rescales internally
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    // The on-screen baseline runs with the one set of options.
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -211,13 +212,13 @@ fn optimize_toolpath_full_pipeline() {
         "BaselineRestoreGuard must restore the operation parameters"
     );
 
-    // Phase 1: one candidate, the baseline, and the "no search" text.
-    assert_eq!(
-        outcome.kind,
-        OutcomeKind::NoSafeImprovement,
-        "Phase 1 searches nothing, so the outcome is NoSafeImprovement: {outcome:?}"
+    // The search simulated cells; index 0 is the baseline.
+    assert_ne!(outcome.kind, OutcomeKind::Skipped, "{outcome:?}");
+    assert!(
+        outcome.candidates.len() >= 2,
+        "the depth and width lever simulates at least one cell: {:?}",
+        outcome.narrative
     );
-    assert_eq!(outcome.candidates.len(), 1, "only the baseline candidate");
     let baseline = &outcome.candidates[0];
     assert_eq!(baseline.stage, SearchStage::Baseline);
     assert!(
@@ -228,8 +229,31 @@ fn optimize_toolpath_full_pipeline() {
         baseline.cycle_time_s > 0.0,
         "the baseline cycle time comes from the trace"
     );
-    assert_eq!(outcome.narrative.explanation, NO_SEARCH_EXPLANATION);
-    assert_eq!(outcome.recommended_index, None);
+    assert_eq!(baseline.full_cut.verdict, FullCutVerdict::Holds);
+    assert!(
+        baseline.full_cut.removed_volume_mm3.is_some()
+            && baseline.full_cut.rapid_collisions.is_some()
+            && baseline.full_cut.overcut_peak_mm.is_some(),
+        "the session holds the baseline simulation, so every reading is measured: {:?}",
+        baseline.full_cut
+    );
+    for c in &outcome.candidates[1..] {
+        assert_eq!(c.stage, SearchStage::Measured);
+        assert!(c.cycle_time_s.is_finite() && c.cycle_time_s > 0.0);
+        assert!(
+            !matches!(c.full_cut.verdict, FullCutVerdict::NotMeasured { .. }),
+            "a simulated candidate has every reading: {:?}",
+            c.full_cut
+        );
+    }
+    match outcome.kind {
+        OutcomeKind::Ranked => {
+            let best = outcome.first_safe().expect("a ranked outcome recommends");
+            assert!(best.cycle_time_s < baseline.cycle_time_s);
+            assert!(best.full_cut.verdict.holds());
+        }
+        _ => assert_eq!(outcome.recommended_index, None),
+    }
     assert!(outcome.machine_snapshot.is_some());
     assert!(outcome.assumptions.is_some());
 }
@@ -247,16 +271,7 @@ fn optimize_project_full_pipeline() {
             .generate_toolpath(idx, &cancel)
             .expect("baseline generate");
     }
-    let opts = SimulationOptions {
-        resolution: 1.0,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -283,15 +298,16 @@ fn optimize_project_full_pipeline() {
     );
     // One toolpath carries all of the runtime, so it is the bottleneck.
     assert_eq!(report.bottleneck_index, Some(report.per_toolpath[0].0));
-    // Phase 1: the row is the "no search" outcome, and the walk saves
-    // nothing.
+    // The row searched, and the saving is the recommended candidate's.
     let outcome = &report.per_toolpath[0].1;
-    assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
-    assert_eq!(outcome.narrative.explanation, NO_SEARCH_EXPLANATION);
-    assert!(
-        (report.optimized_cycle_time_s(&[true]) - report.baseline_cycle_time_s).abs() < 1e-12,
-        "no candidate means no saving"
-    );
+    assert_ne!(outcome.kind, OutcomeKind::Skipped, "{outcome:?}");
+    let saving = report.baseline_cycle_time_s - report.optimized_cycle_time_s(&[true]);
+    match outcome.first_safe() {
+        Some(best) => assert!(
+            (saving - (outcome.candidates[0].cycle_time_s - best.cycle_time_s)).abs() < 1e-9
+        ),
+        None => assert!(saving.abs() < 1e-12, "no recommendation means no saving"),
+    }
 }
 
 #[test]
@@ -309,16 +325,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
     session
         .generate_toolpath(toolpath_index, &cancel_off)
         .expect("baseline generate");
-    let opts = SimulationOptions {
-        resolution: 1.0,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel_off)

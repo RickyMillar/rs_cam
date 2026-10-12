@@ -1,4 +1,4 @@
-//! Outcome types and the outcome builder (`build_outcome`).
+//! Outcome types and the outcome builder (`rank_candidates`).
 //!
 //! - [`OptimizeOutcome`] — what `optimize_toolpath` returns: one struct
 //!   with an [`OutcomeKind`] tag and the fields `candidates`,
@@ -6,15 +6,17 @@
 //!   agents and the GUI modal read the same shape for every kind.
 //! - [`ProjectOptimizeReport`] — the project rollup over every enabled
 //!   toolpath.
-//! - [`build_outcome`] — sorts the safe candidates by cycle time and
+//! - [`rank_candidates`] — sorts the safe candidates by cycle time and
 //!   selects the [`OutcomeKind`]. A candidate is safe when no criterion
-//!   row of its verdict refuses an export ([`candidate_is_safe`]).
+//!   row of its verdict refuses an export AND its full-cut check holds
+//!   ([`candidate_is_safe`]).
 
 use serde::{Deserialize, Serialize};
 
 use crate::tool_load::RefuseReason;
 
 use super::candidate::OptimizeCandidate;
+use super::full_cut::FullCutVerdict;
 use super::narrative::{
     OutcomeNarrative, build_no_safe_narrative, build_no_search_narrative, build_ranked_narrative,
 };
@@ -102,9 +104,7 @@ pub struct OptimizeOutcome {
     /// [`crate::compute::toolpath_stats::ToolpathStats::zero_removal`]'s weaker
     /// contract where `None` conflates "not measured" with "nothing to
     /// report". Here the two are distinguishable and the inner
-    /// `Option`s keep them distinguished — see
-    /// [`BaselineTraceAssumptions`], where the honest answer to two of
-    /// three questions is "the trace does not record it".
+    /// `Option`s keep them distinguished.
     ///
     /// Report-only: no gate consumes it, no candidate is ranked on it,
     /// and no verdict changes on it.
@@ -143,38 +143,25 @@ impl MachineSnapshot {
 ///
 /// # The defect this exists for
 ///
-/// The operator's 2026-08-07 feeds/speeds review, `[medium] The optimizer
-/// initially evaluates a different feed world than production simulation`:
-/// candidate scoring pins `use_predicted_feed_in_gates` and
-/// `adaptive_feed_modulation` to `false` while normal simulation can
-/// enable either, so *"safe/faster candidate" means safe/faster in the
-/// unmodulated commanded-feed candidate model until reconciliation, not
-/// necessarily in the live emitted-feed model.* The review's repair was
-/// explicitly **not** to unify the two models — it was to stop the
-/// isolation being invisible. This type is that disclosure.
+/// The operator's 2026-08-07 feeds/speeds review found that candidate
+/// scoring pinned `adaptive_feed_modulation` to `false` while the normal
+/// simulation ran it, so a "safe and faster" candidate was safe and
+/// faster in a different feed world. A-8 made the gap visible.
 ///
-/// Since the review was written the gap got **wider**, not narrower:
-/// Checkpoint J (2026-08-13) flipped `SimulationOptions::default()
-/// .adaptive_feed_modulation` to `true` and Checkpoint K (g1) flipped the
-/// CLI flag to match, while
-/// [`super::candidate::candidate_sim_options`] still pins `false`.
+/// # One operating point (operator ruling 2026-10-12)
 ///
-/// # What it is not
-///
-/// It is **not** a claim that every number in the outcome shares one
-/// operating point. It records the opposite where that is true: the
-/// candidates and the baseline are two different sets, and
-/// [`Self::baseline`] is mostly the honest answer *"the trace does not
-/// record it"*.
+/// PLAN.md §2 step 4 of `planning/optimize_review_2026-10-12/PLAN.md`
+/// closed the gap: the baseline and every candidate simulate with the
+/// options the GUI's simulation submit builds
+/// ([`super::candidate::candidate_sim_options`]). The stamp therefore
+/// carries ONE [`OperatingPointStamp`] for the baseline and the
+/// candidates alike.
 ///
 /// Report-only. No gate consumes it and no verdict changes on it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SimAssumptionStamp {
-    /// Options every **non-baseline** candidate's scoring sim ran under.
-    pub candidates: CandidateSimAssumptions,
-    /// What is knowable about the caller-supplied `baseline_trace` that
-    /// candidate 0 was scored against. Deliberately mostly unknown.
-    pub baseline: BaselineTraceAssumptions,
+    /// The simulation options of the baseline and of every candidate.
+    pub operating_point: OperatingPointStamp,
     /// Where the machine's kinematics model came from.
     pub kinematics: KinematicsSource,
     /// The vendor-LUT query the chipload band was negotiated through
@@ -196,121 +183,42 @@ pub struct SimAssumptionStamp {
     pub boundary_epsilon_rel: f64,
 }
 
-/// The candidate-scoring sim's operating point. Read straight off
-/// [`super::candidate::candidate_sim_options`] so it cannot drift from
-/// what the sim ran (§0 rule 5).
+/// The simulation options the baseline and every candidate ran with.
+/// Read straight off [`super::candidate::candidate_sim_options`], so it
+/// cannot drift from what the simulation ran (§0 rule 5).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CandidateSimAssumptions {
-    /// Dexel cell for a screening simulation. Phase 1 has one cell, so
-    /// this equals [`Self::refined_resolution_mm`]. Phase 2
-    /// (`planning/optimize_review_2026-10-12/PLAN.md` §2) states the
-    /// final shape.
-    pub coarse_resolution_mm: f64,
-    /// Dexel cell of every **reported** candidate verdict and cycle
-    /// time.
-    pub refined_resolution_mm: f64,
-    /// `auto_resolution` is pinned off, so the session's own
-    /// resolution choice — including whatever the on-screen baseline sim
-    /// used — does not reach any candidate.
-    pub auto_resolution: bool,
-    /// The F-036b pin. `false` today while
-    /// `SimulationOptions::default()` ships `true`.
+pub struct OperatingPointStamp {
+    /// The dexel cell, in mm: the one stored project resolution
+    /// (`ProjectSession::simulation_resolution_mm`, G-RESTRES).
+    pub resolution_mm: f64,
+    /// The F-036b post-pass. `true`, as the GUI runs it.
     pub adaptive_feed_modulation: bool,
-    /// Stable tag for the modulation strategy the candidate sim carries.
-    /// Inert while [`Self::adaptive_feed_modulation`] is `false`, and
-    /// recorded anyway so a future flip is legible against this record.
+    /// Stable tag for the modulation strategy.
     pub modulation_strategy: crate::tool_load::ModulationStrategyTag,
-    /// The feed scale the candidate sim carries. Inert on the same
-    /// condition as [`Self::modulation_strategy`].
+    /// The modulator's feed scale.
     pub modulation_feed_scale: f64,
-    /// The F-035 pin. `false`, matching `SimulationOptions::default()`.
-    /// While this is off, [`SimAssumptionStamp::kinematics`] cannot
-    /// influence a candidate verdict.
+    /// The F-035 flag. `false`, as the GUI runs it. While this is off,
+    /// [`SimAssumptionStamp::kinematics`] cannot influence a verdict.
     pub use_predicted_feed_in_gates: bool,
 }
 
-impl CandidateSimAssumptions {
-    /// Read the assumptions off the real options builder. The cell is
-    /// the library default (`SimulationOptions::default().resolution`);
-    /// Phase 1 evaluates no candidate, so no other cell is in use.
-    fn observed() -> Self {
-        let opts = super::candidate::candidate_sim_options(
-            crate::session::SimulationOptions::default().resolution,
-        );
+impl OperatingPointStamp {
+    /// Read the operating point off the one options builder.
+    #[must_use]
+    pub fn of(session: &crate::session::ProjectSession) -> Self {
+        let opts = super::candidate::candidate_sim_options(session);
+        Self::from_options(&opts)
+    }
+
+    /// Read the operating point off a set of simulation options.
+    #[must_use]
+    pub fn from_options(opts: &crate::session::SimulationOptions) -> Self {
         Self {
-            coarse_resolution_mm: opts.resolution,
-            refined_resolution_mm: opts.resolution,
-            auto_resolution: opts.auto_resolution,
+            resolution_mm: opts.resolution,
             adaptive_feed_modulation: opts.adaptive_feed_modulation,
             modulation_strategy: opts.modulation_strategy.tag(),
             modulation_feed_scale: opts.modulation_feed_scale,
             use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
-        }
-    }
-
-    /// True when the candidate sims and `SimulationOptions::default()`
-    /// disagree about feed modulation — i.e. when an optimizer verdict
-    /// and a default-path verdict for the same project are taken at
-    /// different operating points.
-    ///
-    /// Report-only helper for renderers; nothing branches on it.
-    #[must_use]
-    pub fn diverges_from_library_default_modulation(&self) -> bool {
-        self.adaptive_feed_modulation
-            != crate::session::SimulationOptions::default().adaptive_feed_modulation
-    }
-}
-
-/// What the caller's `baseline_trace` will admit about how it was made.
-///
-/// Candidate 0 is scored against that trace directly — no re-sim — so it
-/// does **not** share [`CandidateSimAssumptions`]. Two of the three
-/// questions below currently have no answer on the wire, and this type
-/// says so rather than filling them in.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BaselineTraceAssumptions {
-    /// Dexel cell the baseline trace was simulated at.
-    ///
-    /// **Always `None` today.** `SimulationCutTrace` records
-    /// `sample_step_mm` (the along-path sampling step) and a
-    /// `SimulationProvenance` of geometry hashes; it records no dexel
-    /// cell. The cell survives only on `SimulationCutArtifact`, which
-    /// the optimizer is not handed. `None` is therefore **not
-    /// measured**, and must not be rendered as "same as the
-    /// candidates" — the two are known to differ whenever the user's
-    /// on-screen sim did not happen to run at
-    /// [`CandidateSimAssumptions::refined_resolution_mm`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolution_mm: Option<f64>,
-    /// Whether the modulator ran on the baseline trace.
-    ///
-    /// `Some(true)` is a **positive observation**: the trace carries
-    /// per-toolpath `modulation_summaries`, which only
-    /// `apply_adaptive_feed_modulation` writes. `None` is **not
-    /// measured** and is deliberately never `Some(false)` — an empty
-    /// map has two causes that cannot be told apart here (modulation
-    /// was off, or the trace was round-tripped through serde, where the
-    /// map is `#[serde(skip)]`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub adaptive_feed_modulation: Option<bool>,
-    /// Along-path sampling step the trace does record. Not the dexel
-    /// cell; kept because it is the only sampling scale the baseline
-    /// publishes, and it bounds how finely the baseline cycle time
-    /// resolves.
-    pub sample_step_mm: f64,
-}
-
-impl BaselineTraceAssumptions {
-    fn observed(trace: &crate::stock::simulation_cut::SimulationCutTrace) -> Self {
-        Self {
-            // Not recorded on the trace — see the field doc.
-            resolution_mm: None,
-            adaptive_feed_modulation: if trace.modulation_summaries.is_empty() {
-                None
-            } else {
-                Some(true)
-            },
-            sample_step_mm: trace.sample_step_mm,
         }
     }
 }
@@ -407,11 +315,7 @@ impl SimAssumptionStamp {
     /// [`MachineSnapshot::of`], so a `Skipped` outcome that never ran a
     /// sim still names the operating point its refusal was decided at.
     #[must_use]
-    pub fn of(
-        session: &crate::session::ProjectSession,
-        toolpath_index: usize,
-        baseline_trace: &crate::stock::simulation_cut::SimulationCutTrace,
-    ) -> Self {
+    pub fn of(session: &crate::session::ProjectSession, toolpath_index: usize) -> Self {
         let lut_query = super::context::EvaluationContext::from_session(session, toolpath_index)
             .map(|ctx| {
                 let tool_family = ctx.tool.to_geometry_hint().cutter_kind().lut_family();
@@ -435,8 +339,7 @@ impl SimAssumptionStamp {
                 }
             });
         Self {
-            candidates: CandidateSimAssumptions::observed(),
-            baseline: BaselineTraceAssumptions::observed(baseline_trace),
+            operating_point: OperatingPointStamp::of(session),
             kinematics: KinematicsSource::of(session.machine()),
             lut_query,
             boundary_epsilon_rel: crate::tool_load::boundary::BOUNDARY_EPSILON_REL,
@@ -579,33 +482,76 @@ impl ProjectOptimizeReport {
 }
 
 /// True when no criterion row of the candidate's verdict refuses a
-/// g-code export.
+/// g-code export AND the candidate's full-cut check holds (PLAN.md §3).
 ///
-/// This is the export gate's predicate
+/// The first half is the export gate's predicate
 /// ([`crate::gcode::refusing_exceedances`] over
 /// [`crate::tool_load::verdict::ToolpathLoadVerdict::criteria`]), so the
 /// drill rows and the own-material rows count too. A row that exceeds a
 /// bound that may not gate an export (for example the depth row, S3)
 /// does not make a candidate unsafe; the narrative still names it.
-pub(crate) fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
+#[must_use]
+pub fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
     let criteria = candidate.verdict.criteria();
     crate::gcode::refusing_exceedances(&criteria).is_empty()
+        && matches!(candidate.full_cut.verdict, FullCutVerdict::Holds)
 }
 
-/// Build an `OptimizeOutcome` from the baseline candidate and the
-/// evaluated candidates.
+/// What the search knows about itself, beside the candidates, for the
+/// outcome narrative.
+#[derive(Debug, Clone, Default)]
+pub struct SearchNotes {
+    /// True when the operation has a lever: links not yet on, or a depth
+    /// per pass with a total depth. False gives the "no search" text.
+    pub has_lever: bool,
+    /// See [`OutcomeNarrative::unmodeled`].
+    pub unmodeled: Option<String>,
+    /// See [`OutcomeNarrative::refused_cells`].
+    pub refused_cells: Vec<String>,
+    /// True when the cancel flag stopped the search before its end.
+    pub cancelled: bool,
+}
+
+/// Rank the evaluated candidates and build the outcome.
 ///
-/// - No candidates → `NoSafeImprovement` with the "no candidate was
-///   searched" narrative.
-/// - The safe candidates sort by ascending `cycle_time_s`. When the
-///   fastest safe candidate is faster than the baseline → `Ranked`.
+/// - No lever ([`SearchNotes::has_lever`] false) and no candidate →
+///   `NoSafeImprovement` with the "no search" narrative.
+/// - The safe candidates ([`candidate_is_safe`]) sort by ascending
+///   `cycle_time_s`. When the fastest safe candidate is faster than the
+///   baseline → `Ranked`.
 /// - Otherwise → `NoSafeImprovement`. The narrative names the limiting
-///   rows of the fastest candidate.
-pub(crate) fn build_outcome(
+///   rows and the full-cut failure of the fastest candidate.
+///
+/// `unmodeled` and `refused_cells` go onto the narrative of both kinds.
+#[must_use]
+pub fn rank_candidates(
     baseline: OptimizeCandidate,
     candidates: Vec<OptimizeCandidate>,
+    notes: SearchNotes,
 ) -> OptimizeOutcome {
-    if candidates.is_empty() {
+    let attempted = candidates.len();
+    let mut outcome = rank_inner(baseline, candidates, notes.has_lever, attempted);
+    let narrative = &mut outcome.narrative;
+    narrative.unmodeled = notes.unmodeled;
+    narrative.refused_cells = notes.refused_cells;
+    if notes.cancelled {
+        let note = format!("The run was cancelled after {attempted} candidates.");
+        narrative.explanation = if narrative.explanation.is_empty() {
+            note
+        } else {
+            format!("{} {note}", narrative.explanation)
+        };
+    }
+    outcome
+}
+
+fn rank_inner(
+    baseline: OptimizeCandidate,
+    candidates: Vec<OptimizeCandidate>,
+    has_lever: bool,
+    attempted: usize,
+) -> OptimizeOutcome {
+    if candidates.is_empty() && !has_lever {
         let narrative = build_no_search_narrative(&baseline);
         return OptimizeOutcome::no_safe_improvement(
             vec![baseline],
@@ -631,7 +577,7 @@ pub(crate) fn build_outcome(
 
     if any_faster_safe {
         let recommended_index = ProjectOptimizeReport::first_safe_index(&ordered);
-        let narrative = build_ranked_narrative(&ordered);
+        let narrative = build_ranked_narrative(&ordered, attempted);
         return OptimizeOutcome::ranked(ordered, recommended_index, narrative);
     }
 
@@ -689,7 +635,7 @@ mod tests {
         assert_eq!(report.optimized_cycle_time_s(&[]), 80.0);
     }
 
-    // ── build_outcome: one safety predicate, rank by cycle time ──────
+    // ── rank_candidates: one safety predicate, rank by cycle time ────
 
     use super::super::{ParamDelta, SearchStage};
     use crate::compute::catalog::OperationConfig;
@@ -781,12 +727,18 @@ mod tests {
         }
     }
 
+    fn holds() -> super::super::FullCutCheck {
+        super::super::FullCutCheck::reference(super::super::FullCutReadings::default())
+    }
+
     fn cand(cycle_s: f64, verdict: ToolpathLoadVerdict, stage: SearchStage) -> OptimizeCandidate {
         OptimizeCandidate {
             params: OperationConfig::Pocket(PocketConfig::default()),
+            dressups: Box::default(),
             delta: ParamDelta::default(),
             cycle_time_s: cycle_s,
             verdict,
+            full_cut: holds(),
             stage,
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
@@ -794,22 +746,71 @@ mod tests {
         }
     }
 
-    /// Phase 1: no candidate gives the exact "no search" narrative.
+    fn notes() -> SearchNotes {
+        SearchNotes {
+            has_lever: true,
+            ..SearchNotes::default()
+        }
+    }
+
+    /// An operation with no lever gives the exact "no search" narrative.
     #[test]
-    fn no_candidates_give_the_no_search_narrative() {
-        let outcome = build_outcome(
+    fn no_lever_gives_the_no_search_narrative() {
+        let outcome = rank_candidates(
             cand(100.0, clean_verdict(), SearchStage::Baseline),
             Vec::new(),
+            SearchNotes::default(),
         );
         assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
         assert_eq!(outcome.reason, Some(RefuseReason::NoImprovementFound));
         assert_eq!(outcome.candidates.len(), 1);
-        assert_eq!(outcome.narrative.headline, "No candidate was searched.");
+        assert_eq!(outcome.narrative.headline, super::super::NO_SEARCH_HEADLINE);
         assert_eq!(
             outcome.narrative.explanation,
-            "The search has no levers yet; the post-sim tuner is being rebuilt."
+            super::super::NO_SEARCH_EXPLANATION
         );
         assert!(outcome.narrative.limiting_gates.is_empty());
+    }
+
+    /// A search whose every cell was refused does not claim "no search".
+    #[test]
+    fn a_search_with_no_measured_cell_names_the_refused_cells() {
+        let outcome = rank_candidates(
+            cand(100.0, clean_verdict(), SearchStage::Baseline),
+            Vec::new(),
+            SearchNotes {
+                has_lever: true,
+                refused_cells: vec!["cell refused: test".to_owned()],
+                ..SearchNotes::default()
+            },
+        );
+        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
+        assert_ne!(outcome.narrative.headline, super::super::NO_SEARCH_HEADLINE);
+        assert_eq!(outcome.narrative.refused_cells.len(), 1);
+    }
+
+    /// A faster candidate whose full cut fails is not ranked, and the
+    /// explanation names the failure.
+    #[test]
+    fn a_failed_full_cut_is_not_ranked() {
+        let mut thin = cand(50.0, clean_verdict(), SearchStage::Measured);
+        thin.full_cut.verdict = FullCutVerdict::Fails {
+            reason: "the removed volume is short".to_owned(),
+        };
+        let outcome = rank_candidates(
+            cand(100.0, clean_verdict(), SearchStage::Baseline),
+            vec![thin],
+            notes(),
+        );
+        assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
+        assert!(
+            outcome
+                .narrative
+                .explanation
+                .contains("the removed volume is short"),
+            "{}",
+            outcome.narrative.explanation
+        );
     }
 
     /// A depth row over its rule-of-thumb cap does not veto a candidate
@@ -832,13 +833,14 @@ mod tests {
     /// sorted after the safe ones.
     #[test]
     fn the_fastest_safe_candidate_is_ranked_first() {
-        let outcome = build_outcome(
+        let outcome = rank_candidates(
             cand(100.0, clean_verdict(), SearchStage::Baseline),
             vec![
                 cand(90.0, clean_verdict(), SearchStage::Measured),
                 cand(40.0, chipload_breach(), SearchStage::Measured),
                 cand(70.0, depth_breach(), SearchStage::Measured),
             ],
+            notes(),
         );
         assert_eq!(outcome.kind, OutcomeKind::Ranked);
         let cycles: Vec<f64> = outcome.candidates.iter().map(|c| c.cycle_time_s).collect();
@@ -851,12 +853,13 @@ mod tests {
     /// narrative names the rows of the fastest candidate.
     #[test]
     fn no_faster_safe_candidate_names_the_fastest_rows() {
-        let outcome = build_outcome(
+        let outcome = rank_candidates(
             cand(100.0, clean_verdict(), SearchStage::Baseline),
             vec![
                 cand(120.0, clean_verdict(), SearchStage::Measured),
                 cand(60.0, chipload_breach(), SearchStage::Measured),
             ],
+            notes(),
         );
         assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
         assert_eq!(outcome.recommended_index, None);

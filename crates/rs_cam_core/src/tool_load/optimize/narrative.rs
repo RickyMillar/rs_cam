@@ -9,7 +9,7 @@
 //! to the wire.
 //!
 //! The builders here are pure functions over the attempted candidate
-//! set; `build_outcome` calls them.
+//! set; `rank_candidates` calls them.
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +29,9 @@ use super::OptimizeCandidate;
 /// - **NoSafeImprovement**: `headline`, `explanation`, `envelope`,
 ///   `limiting_gates` (the exceeded rows of the fastest candidate).
 /// - **Skipped**: empty (the search evaluated no candidate).
+///
+/// `unmodeled` and `refused_cells` can fill on `Ranked` and on
+/// `NoSafeImprovement`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OutcomeNarrative {
     /// One-line headline for the modal, in operator language.
@@ -46,6 +49,17 @@ pub struct OutcomeNarrative {
     /// `NoSafeImprovement` fills it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub limiting_gates: Vec<LimitingGate>,
+    /// The statement when the stock has no force line: "Power and
+    /// deflection are not modelled: <reason>; stock source
+    /// `<source_id>`". The search then ran on the bounds that remain.
+    /// `None` when a force line exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmodeled: Option<String>,
+    /// One line for each cell the search did not simulate: the
+    /// calculator refused it or moved its depth, or its evaluation
+    /// failed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refused_cells: Vec<String>,
 }
 
 /// One exceeded criterion row of a candidate.
@@ -112,55 +126,67 @@ pub struct AxisExtent {
     pub max: f64,
 }
 
-/// The narrative of an outcome whose search evaluated no candidate
-/// (Phase 1 of `planning/optimize_review_2026-10-12/PLAN.md`).
+/// The narrative of an outcome whose operation has no lever: no depth
+/// per pass to change and links already on.
 pub(crate) fn build_no_search_narrative(baseline: &OptimizeCandidate) -> OutcomeNarrative {
     OutcomeNarrative {
         headline: super::NO_SEARCH_HEADLINE.to_owned(),
         explanation: super::NO_SEARCH_EXPLANATION.to_owned(),
         envelope: envelope_across(baseline, &[]),
-        limiting_gates: Vec::new(),
+        ..OutcomeNarrative::default()
     }
 }
 
-/// The narrative of a `Ranked` outcome: the headline and the envelope.
-/// Each candidate carries its own parameter diff.
-pub(crate) fn build_ranked_narrative(candidates: &[OptimizeCandidate]) -> OutcomeNarrative {
-    let envelope = candidates
-        .split_first()
-        .map(|(baseline, rest)| envelope_across(baseline, rest))
-        .unwrap_or_default();
-    let non_baseline = candidates.len().saturating_sub(1);
-    // UX dial-in finding C3: the headline quotes the cycle-time change,
-    // so it is complete without the table.
-    let cycle_delta_tail = candidates
-        .split_first()
-        .and_then(|(baseline, rest)| {
-            let baseline_s = baseline.cycle_time_s;
-            if baseline_s <= 0.0 {
-                return None;
-            }
-            let best_s = rest
+/// The narrative of a `Ranked` outcome: the headline, the envelope, and a
+/// note when the recommended candidate's depth row exceeds its rule of
+/// thumb.
+/// `ordered[0]` is the baseline and `ordered[1]` the recommended
+/// candidate. `attempted` is the count of simulated candidates.
+pub(crate) fn build_ranked_narrative(
+    ordered: &[OptimizeCandidate],
+    attempted: usize,
+) -> OutcomeNarrative {
+    let Some((baseline, rest)) = ordered.split_first() else {
+        return OutcomeNarrative::default();
+    };
+    let envelope = envelope_across(baseline, rest);
+    let headline = match rest.first() {
+        Some(best) if baseline.cycle_time_s > 0.0 => {
+            let delta_pct =
+                (best.cycle_time_s - baseline.cycle_time_s) / baseline.cycle_time_s * 100.0;
+            format!(
+                "Tried {attempted} {}. The fastest safe full cut takes {:.0} s against {:.0} s \
+                 ({delta_pct:+.1} %).",
+                candidates_word(attempted),
+                best.cycle_time_s,
+                baseline.cycle_time_s,
+            )
+        }
+        _ => format!("Tried {attempted} {}.", candidates_word(attempted)),
+    };
+    // The recommended candidate can carry a row over a bound that does
+    // not refuse an export (the depth row, S3). Say so, with the reading,
+    // so the operator does not read a red badge with no text (F1).
+    let explanation = rest
+        .first()
+        .map(|best| {
+            limiting_gates_for_verdict(&best.verdict)
                 .iter()
-                .map(|c| c.cycle_time_s)
-                .filter(|s| *s > 0.0)
-                .fold(f64::INFINITY, f64::min);
-            if !best_s.is_finite() {
-                return None;
-            }
-            let delta_pct = (best_s - baseline_s) / baseline_s * 100.0;
-            Some(format!(
-                " Best: {delta_pct:+.1}% cycle time at {best_s:.1}s vs {baseline_s:.1}s baseline."
-            ))
+                .filter(|g| g.gate == GateKind::Depth)
+                .map(|g| {
+                    format!(
+                        "The recommended candidate's depth of cut {:.2} mm is over the {:.2} mm \
+                         rule of thumb (reported, not a limit).",
+                        g.observed, g.bound
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         })
         .unwrap_or_default();
-    let headline = match non_baseline {
-        0 => String::new(),
-        1 => format!("Found 1 candidate that improves on the baseline.{cycle_delta_tail}"),
-        n => format!("Found {n} candidates that improve on the baseline.{cycle_delta_tail}"),
-    };
     OutcomeNarrative {
         headline,
+        explanation,
         envelope,
         ..OutcomeNarrative::default()
     }
@@ -168,7 +194,9 @@ pub(crate) fn build_ranked_narrative(candidates: &[OptimizeCandidate]) -> Outcom
 
 /// The narrative of a `NoSafeImprovement` outcome after a search.
 /// `attempted[0]` is the baseline. `limiting_gates` are the exceeded
-/// rows of the fastest non-baseline candidate.
+/// rows of the fastest non-baseline candidate, and the explanation names
+/// why that candidate is not recommended: a row that refuses an export,
+/// its full-cut verdict, or a cycle time that is not shorter.
 pub(crate) fn build_no_safe_narrative(attempted: &[OptimizeCandidate]) -> OutcomeNarrative {
     let Some((baseline, rest)) = attempted.split_first() else {
         return OutcomeNarrative::default();
@@ -181,13 +209,71 @@ pub(crate) fn build_no_safe_narrative(attempted: &[OptimizeCandidate]) -> Outcom
         .map(|c| limiting_gates_for_verdict(&c.verdict))
         .unwrap_or_default();
     let headline = headline_no_safe(rest.len(), &limiting_gates);
+    let base = NO_SAFE_BASE;
+    let explanation = match fastest {
+        None => format!("{base}. No cell reached a simulation; the refused cells name the cause."),
+        Some(c) => {
+            let mut why: Vec<String> = Vec::new();
+            let criteria = c.verdict.criteria();
+            let refusing: Vec<&str> = crate::gcode::refusing_exceedances(&criteria)
+                .iter()
+                .map(|row| row.kind.label())
+                .collect();
+            if !refusing.is_empty() {
+                why.push(format!(
+                    "its {} row refuses an export",
+                    refusing.join(" and ")
+                ));
+            }
+            if let Some(reason) = c.full_cut.verdict.reason() {
+                let lead = if c.full_cut.verdict.holds() {
+                    ""
+                } else if matches!(
+                    c.full_cut.verdict,
+                    super::full_cut::FullCutVerdict::NotMeasured { .. }
+                ) {
+                    "the full cut is not proved, "
+                } else {
+                    "the full-cut check fails: "
+                };
+                why.push(format!("{lead}{reason}"));
+            }
+            if c.cycle_time_s >= baseline.cycle_time_s {
+                why.push(format!(
+                    "it takes {:.0} s against {:.0} s on the baseline",
+                    c.cycle_time_s, baseline.cycle_time_s
+                ));
+            }
+            if why.is_empty() {
+                format!("{base}.")
+            } else {
+                format!(
+                    "{base}. The fastest candidate ({:.0} s): {}.",
+                    c.cycle_time_s,
+                    why.join("; ")
+                )
+            }
+        }
+    };
     OutcomeNarrative {
         headline,
-        explanation: crate::tool_load::RefuseReason::NoImprovementFound
-            .explanation_for_optimize()
-            .to_owned(),
+        explanation,
         envelope,
         limiting_gates,
+        ..OutcomeNarrative::default()
+    }
+}
+
+/// The first sentence of a `NoSafeImprovement` explanation after a
+/// search. It names the three conditions of a recommendation.
+const NO_SAFE_BASE: &str = "No candidate was faster than the baseline, free of a criterion row \
+     that refuses an export, and a full cut";
+
+fn candidates_word(count: usize) -> &'static str {
+    if count == 1 {
+        "candidate"
+    } else {
+        "candidates"
     }
 }
 
@@ -371,23 +457,25 @@ fn signed_overshoot(observed: f64, bound: f64) -> f64 {
 }
 
 fn headline_no_safe(non_baseline_count: usize, limiting: &[LimitingGate]) -> String {
+    let lead = format!(
+        "Tried {non_baseline_count} {}; none was a safe full cut faster than the baseline.",
+        candidates_word(non_baseline_count)
+    );
     if limiting.is_empty() {
-        return format!(
-            "Tried {non_baseline_count} candidates; none was safe and faster than the baseline."
-        );
+        return lead;
     }
     let pieces: Vec<String> = limiting
         .iter()
         .map(|g| match g.gate {
             GateKind::Chipload => match g.side {
                 Some(ChipSide::High) => format!(
-                    "chipload {:.4} mm/tooth ({:+.0}% over LUT max {:.4})",
+                    "chipload {:.4} mm/tooth ({:+.0} % over the LUT max {:.4})",
                     g.observed,
                     g.overshoot_fraction * 100.0,
                     g.bound,
                 ),
                 Some(ChipSide::Low) => format!(
-                    "chipload {:.4} mm/tooth ({:+.0}% below LUT min {:.4})",
+                    "chipload {:.4} mm/tooth ({:+.0} % below the LUT min {:.4})",
                     g.observed,
                     g.overshoot_fraction * 100.0,
                     g.bound,
@@ -395,29 +483,26 @@ fn headline_no_safe(non_baseline_count: usize, limiting: &[LimitingGate]) -> Str
                 None => format!("chipload {:.4} mm/tooth", g.observed),
             },
             GateKind::Power => format!(
-                "power {:.2} kW ({:+.0}% over available {:.2})",
+                "power {:.2} kW ({:+.0} % over the available {:.2})",
                 g.observed,
                 g.overshoot_fraction * 100.0,
                 g.bound,
             ),
             GateKind::Deflection => format!(
-                "deflection {:.0} µm ({:+.0}% over the {:.0} µm threshold)",
+                "deflection {:.0} µm ({:+.0} % over the {:.0} µm bound)",
                 g.observed * 1000.0,
                 g.overshoot_fraction * 100.0,
                 g.bound * 1000.0,
             ),
             GateKind::Depth => format!(
-                "depth of cut {:.2} mm ({:+.0}% over the {:.2} mm rule-of-thumb cap; reported, not a limit)",
+                "depth of cut {:.2} mm ({:+.0} % over the {:.2} mm rule of thumb; reported, not a limit)",
                 g.observed,
                 g.overshoot_fraction * 100.0,
                 g.bound,
             ),
         })
         .collect();
-    format!(
-        "Tried {non_baseline_count} candidates; the fastest one hit: {}.",
-        pieces.join("; "),
-    )
+    format!("{lead} The fastest one exceeds: {}.", pieces.join("; "))
 }
 
 #[cfg(test)]
@@ -448,8 +533,10 @@ mod tests {
                 feed_mm_min: Some(feed),
                 ..Default::default()
             },
+            dressups: Box::default(),
             cycle_time_s: cycle,
             verdict,
+            full_cut: crate::tool_load::optimize::FullCutCheck::default(),
             stage: SearchStage::Measured,
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,

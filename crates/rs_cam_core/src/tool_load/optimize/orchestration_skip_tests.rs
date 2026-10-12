@@ -1,7 +1,7 @@
 //! Tests for the paths of `optimize_toolpath` that run no simulation:
-//! the skip reasons, the cancel check and the Phase 1 outcome. The
-//! end-to-end tests with a real simulation are in
-//! `tests/optimize_smoke.rs`.
+//! the skip reasons, the cancel check, the "no lever" outcome, and a
+//! search whose cells cannot be measured. The end-to-end tests with a
+//! real simulation are in `tests/optimize_smoke.rs`.
 
 #![allow(
     clippy::unwrap_used,
@@ -35,7 +35,11 @@ fn make_tc(operation: OperationConfig, tool_id: usize) -> ToolpathConfig {
         name: "test".to_owned(),
         enabled: true,
         operation,
-        dressups: DressupConfig::default(),
+        // No links, so the link lever has a candidate.
+        dressups: DressupConfig {
+            link_moves: None,
+            ..DressupConfig::default()
+        },
         heights: crate::compute::config::HeightsConfig::default(),
         tool_id,
         model_id: 0,
@@ -197,12 +201,13 @@ fn cancel_before_run_yields_no_safe_improvement() {
     );
 }
 
-/// Phase 1 of `planning/optimize_review_2026-10-12/PLAN.md`: the search
-/// has no levers. The run scores the baseline from the trace, evaluates
-/// no candidate, and returns the exact "no search" narrative that the
-/// GUI matches.
+/// A pocket with no model: the levers exist, but no candidate can
+/// generate. The run names every cell it could not measure, ranks
+/// nothing, and the guard restores the parameters. The session holds no
+/// simulation, so the baseline's collision and over-cut readings are
+/// NOT MEASURED.
 #[test]
-fn a_run_with_no_levers_returns_the_baseline_and_the_no_search_text() {
+fn a_run_whose_cells_cannot_be_measured_names_them() {
     let trace = trace_with_summary();
     let mut session = session_with_op(OperationConfig::Pocket(PocketConfig::default()));
     let feed_before = session.toolpath_configs()[0].operation.feed_rate();
@@ -217,20 +222,48 @@ fn a_run_with_no_levers_returns_the_baseline_and_the_no_search_text() {
     assert_eq!(baseline.stage, SearchStage::Baseline);
     assert!(!baseline.delta.has_changes());
     assert!((baseline.cycle_time_s - 60.0).abs() < 1e-12);
-    assert_eq!(outcome.narrative.headline, "No candidate was searched.");
-    assert_eq!(
-        outcome.narrative.explanation,
-        "The search has no levers yet; the post-sim tuner is being rebuilt."
+    assert_eq!(baseline.full_cut.removed_volume_mm3, Some(100.0));
+    assert_eq!(baseline.full_cut.rapid_collisions, None);
+    assert_eq!(baseline.full_cut.overcut_peak_mm, None);
+    assert_ne!(outcome.narrative.headline, NO_SEARCH_HEADLINE);
+    assert!(
+        !outcome.narrative.refused_cells.is_empty(),
+        "the link candidate and the cells name why they were not measured"
     );
     assert_eq!(outcome.recommended_index, None);
 
-    // Every rung announced a total of zero and ticked none.
-    assert_eq!(progress.high_water_phase(), Some(SearchPhase::Refine));
-    for phase in SearchPhase::ALL {
-        assert_eq!(progress.rung(phase), (0, 0), "{phase:?}");
-    }
+    // The link rung formed one candidate and entered it.
+    assert_eq!(progress.rung(SearchPhase::Links), (1, 1));
     assert!(progress.snapshot().phase.is_none());
 
     // The guard restored the parameters.
     assert!((session.toolpath_configs()[0].operation.feed_rate() - feed_before).abs() < 1e-12);
+}
+
+/// An operation with no depth per pass and with no link lever has no
+/// lever: the run returns the exact "no search" text the GUI matches.
+#[test]
+fn an_operation_with_no_lever_returns_the_no_search_text() {
+    use crate::compute::operation_configs::DropCutterConfig;
+    let trace = trace_with_summary();
+    // The DropCutter registry row strips the links, and the operation
+    // holds no depth per pass.
+    let mut session = session_with_op(OperationConfig::DropCutter(DropCutterConfig::default()));
+    assert!(
+        session.toolpath_configs()[0]
+            .operation
+            .depth_per_pass()
+            .is_none()
+    );
+
+    let cancel = AtomicBool::new(false);
+    let progress = std::sync::Arc::new(OptimizeProgress::default());
+    let outcome = optimize_toolpath_observed(&mut session, &trace, 0, &cancel, &progress);
+    assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement, "{outcome:?}");
+    assert_eq!(outcome.narrative.headline, NO_SEARCH_HEADLINE);
+    assert_eq!(outcome.narrative.explanation, NO_SEARCH_EXPLANATION);
+    assert_eq!(outcome.candidates.len(), 1);
+    for phase in SearchPhase::ALL {
+        assert_eq!(progress.rung(phase), (0, 0), "{phase:?}");
+    }
 }

@@ -2,11 +2,11 @@
 //! evaluation driver.
 //!
 //! - [`OptimizeCandidate`] — the record of one evaluation; the
-//!   orchestrator gives the list to `build_outcome`.
+//!   orchestrator gives the list to `rank_candidates`.
 //! - [`ParamDelta`] and [`delta_against_baseline`] — which parameters a
 //!   candidate moves away from the baseline.
 //! - [`evaluate_candidate`] — the one per-candidate driver: apply,
-//!   regenerate, simulate, gate, and record.
+//!   regenerate, simulate, gate, read the full cut, and record.
 //! - [`candidate_sim_options`] — the one construction site for the
 //!   candidate simulation options.
 
@@ -15,6 +15,7 @@ use std::sync::atomic::AtomicBool;
 use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::OperationConfig;
+use crate::compute::config::DressupConfig;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
 use crate::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
@@ -25,6 +26,7 @@ use super::context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
     cycle_time_from_trace,
 };
+use super::full_cut::{FullCutCheck, read_full_cut};
 
 /// One candidate's full evaluation record. A simulation of the
 /// candidate measures each field. For the baseline candidate at index 0
@@ -35,12 +37,21 @@ pub struct OptimizeCandidate {
     /// unchanged fields too, so Apply just needs to write this into
     /// `session.toolpath_configs[idx].operation`.
     pub params: OperationConfig,
+    /// The dressups this candidate ran with. The link lever changes
+    /// them, so Apply must write them beside [`Self::params`].
+    #[serde(default)]
+    pub dressups: Box<DressupConfig>,
     /// Diff from the baseline params, for display at Apply time.
     pub delta: ParamDelta,
     /// Measured cycle time from this candidate's sim (seconds).
     pub cycle_time_s: f64,
     /// Verdict from the gate over this candidate's sim.
     pub verdict: ToolpathLoadVerdict,
+    /// The full-cut readings of this candidate and their verdict against
+    /// the baseline (PLAN.md §3). The baseline carries its own readings
+    /// with the verdict `Holds`.
+    #[serde(default)]
+    pub full_cut: FullCutCheck,
     /// Which source produced this candidate.
     pub stage: SearchStage,
     /// Project-level reconciliation result (U4). After the user Applies
@@ -82,6 +93,11 @@ pub struct ParamDelta {
     /// `(scallop_height, ball_radius)`. G2 (2026-05-08).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scallop_height_mm: Option<f64>,
+    /// The new state of the link-moves dressup. `Some(true)` when the
+    /// candidate turns the links on. `None` if the candidate keeps the
+    /// baseline state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_moves: Option<bool>,
 }
 
 impl ParamDelta {
@@ -93,6 +109,7 @@ impl ParamDelta {
             || self.stepover_mm.is_some()
             || self.depth_per_pass_mm.is_some()
             || self.scallop_height_mm.is_some()
+            || self.link_moves.is_some()
     }
 }
 
@@ -105,15 +122,14 @@ impl ParamDelta {
 /// `delta_display_tolerance_mm_min`, source "GUI/display precision").
 const FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN: f64 = 0.5;
 
-/// Compute a [`ParamDelta`] from two `OperationConfig`s. A feed change
-/// smaller than [`FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN`] is not shown.
-// SAFETY: Phase 2 (planning/optimize_review_2026-10-12/PLAN.md §2) calls
-// this for each candidate; Phase 1 evaluates no candidate, so no
-// production caller exists yet.
-#[allow(dead_code)]
+/// Compute a [`ParamDelta`] from the baseline and the candidate. A feed
+/// change smaller than [`FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN`] is not
+/// shown.
 pub(crate) fn delta_against_baseline(
     baseline: &OperationConfig,
+    baseline_dressups: &DressupConfig,
     candidate: &OperationConfig,
+    candidate_dressups: &DressupConfig,
 ) -> ParamDelta {
     let mut delta = ParamDelta::default();
     if (baseline.feed_rate() - candidate.feed_rate()).abs() > FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN {
@@ -137,107 +153,83 @@ pub(crate) fn delta_against_baseline(
     {
         delta.scallop_height_mm = Some(s);
     }
+    let links_before = baseline_dressups.link_moves.is_some();
+    let links_after = candidate_dressups.link_moves.is_some();
+    if links_before != links_after {
+        delta.link_moves = Some(links_after);
+    }
     delta
 }
 
-/// The **one** construction site for the optimizer's candidate-scoring
-/// [`SimulationOptions`].
+/// The **one** construction site for the simulation options of an
+/// optimizer candidate.
 ///
-/// A-8 (2026-08-13) hoisted this out of `evaluate_candidate_inner` so
-/// that [`super::outcome::CandidateSimAssumptions`] — the stamp the
-/// optimizer publishes on every outcome — reads the *same* value the sim
-/// ran, rather than a second literal that can drift from it. §0 rule 5:
-/// a stamp built from a copy of the options is a docstring waiting to
-/// become a lie. Nothing here changed behaviour; the literal moved.
+/// The options are the ones the GUI's simulation submit builds
+/// (operator ruling 2026-10-12, PLAN.md §2 step 4, "one measure"):
 ///
-/// # The two pinned flags, and the state of their justifications
+/// - `resolution`: [`ProjectSession::simulation_resolution_mm`], the one
+///   stored project resolution (G-RESTRES). The GUI submit reads the same
+///   value (`rs_cam_viz/src/controller/events/simulation.rs`,
+///   `submit_simulation_for_groups`).
+/// - `auto_resolution: false`: the stored value already holds the `Auto`
+///   rule.
+/// - `adaptive_feed_modulation: true`, `ModulationStrategy::ConstrainedMax`,
+///   `modulation_feed_scale: 1.0`: the GUI post-pass
+///   (`rs_cam_viz/src/controller/events/compute.rs`, F-039).
+/// - `use_predicted_feed_in_gates: false`: the GUI `KinematicsContext`
+///   value.
+/// - no `skip_ids`.
 ///
-/// * `use_predicted_feed_in_gates: false` (F-035) — the optimizer ranks
-///   candidates against commanded-feed gates. This **still agrees** with
-///   `SimulationOptions::default()` (`session/mod.rs`), so the original
-///   "same as the production simulator" justification holds. Consequence
-///   worth stating: with this off, the machine's kinematics model cannot
-///   reach any candidate verdict, which is why the stamp records the
-///   kinematics *source* rather than claiming a kinematics-aware score.
-///
-/// * `adaptive_feed_modulation: false` (F-036b) — the optimizer scores
-///   the commanded feed in the IR, deliberately keeping the optimizer
-///   and the feed modulator from conflating two corrections over the
-///   same engagement summary. **Its stated premise is now stale.**
-///   Checkpoint J (2026-08-13) flipped the library default to `true` and
-///   Checkpoint K (g1) flipped the CLI flag to match, so this pin no
-///   longer tracks "what the production simulator does" — it is now the
-///   only shipped non-fixture site that pins `false` (`cli smoke` is the
-///   other, and that is a fingerprint harness by design). An optimizer
-///   verdict is therefore taken at a **different operating point** than
-///   the GUI/CLI verdict for the same project.
-///
-///   A-8 did **not** flip it: that is number-moving on every optimizer
-///   outcome and belongs to an operator ruling, not to the wave that
-///   discovered it. What A-8 shipped instead is the disclosure — the
-///   pin is now *visible* on the outcome instead of being an invisible
-///   literal three call levels down.
-///
-/// # Baseline asymmetry (not fixed here)
-///
-/// Candidate 0 — the baseline — is **not** simulated by this function.
-/// It is scored against the caller's `baseline_trace`, whose options are
-/// whatever the caller ran. See [`super::outcome::BaselineTraceAssumptions`].
-pub(crate) fn candidate_sim_options(sim_resolution_mm: f64) -> SimulationOptions {
+/// The baseline trace on screen and every candidate are therefore one
+/// measure. `one_measure_for_baseline_and_candidate_g_opt6` is the proof.
+#[must_use]
+pub fn candidate_sim_options(session: &ProjectSession) -> SimulationOptions {
     SimulationOptions {
-        resolution: sim_resolution_mm,
+        resolution: session.simulation_resolution_mm(),
         skip_ids: Vec::new(),
         auto_resolution: false,
         use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
+        adaptive_feed_modulation: true,
         modulation_strategy: crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_feed_scale: 1.0,
     }
 }
 
-// ── Candidate evaluation: apply → regen → sim → gate ──────────────────
+// ── Candidate evaluation: apply → regen → sim → gate → full cut ───────
 //
 // The one per-candidate driver. It applies the candidate's parameters
 // through the restore guard, regenerates the toolpath, runs a project
-// simulation at the requested resolution, and records the measured
-// cycle time and gate verdict. Every candidate goes through this
-// function; there is no second simulation and no second gate.
+// simulation with the one set of options, and records the measured
+// cycle time, the gate verdict and the full-cut check. Every candidate
+// goes through this function; there is no second simulation and no
+// second gate.
 
 /// Evaluate one candidate end-to-end:
-///   1. Apply candidate params via the restore guard.
-///   2. Regenerate the toolpath at the new params.
-///   3. Run a fresh project sim at `sim_resolution_mm` dexel.
+///   1. Apply the candidate's operation and dressups through the guard.
+///   2. Regenerate the toolpath.
+///   3. Run a project sim with [`candidate_sim_options`].
 ///   4. Score via the gate (`tool_load::evaluate_toolpath`).
-///   5. Read per-toolpath cycle time from the trace.
-///   6. Build the `OptimizeCandidate`.
+///   5. Read the cycle time and the full-cut readings, and judge them
+///      against `baseline_full_cut`.
 ///
-/// Errors propagate as `SessionError` — the orchestrator decides
-/// whether to surface a `Skipped` outcome or skip just this candidate.
-/// Cancellation (`cancel.load(Ordering::SeqCst) == true`) is honoured
-/// by the underlying generate/sim functions and surfaces here as
-/// `SessionError::Simulation(SimulationError::Cancelled)`.
+/// Errors propagate as `SessionError`. The orchestrator records the
+/// cell and goes on with the next one. Cancellation is honoured by the
+/// generator and the simulator and surfaces here as an `Err`.
 ///
 /// **Panic isolation (R1, tech-debt review 2026-06-10).** A candidate
 /// can regenerate a toolpath at parameters that no operator tried. A
-/// panic in the geometry stack (for example `cavalier_contours`'
-/// `parallel_offset` asserts on a degenerate input) must cost one
-/// candidate, not the whole run. The inner evaluation therefore runs
-/// under `catch_unwind`, and a panic becomes
-/// `SessionError::OperationFailed`. State safety: the next candidate's
+/// panic in the geometry stack must cost one candidate, not the whole
+/// run. The inner evaluation therefore runs under `catch_unwind`, and a
+/// panic becomes `SessionError::OperationFailed`. The next candidate's
 /// apply (or the guard's `Drop`) writes over the parameters the
 /// panicking candidate applied, and `generate_toolpath` /
 /// `run_simulation` publish results only on success.
-// SAFETY: Phase 2 (planning/optimize_review_2026-10-12/PLAN.md §2) calls
-// this for each lever cell; Phase 1 evaluates no candidate, so no
-// production caller exists yet.
-#[allow(dead_code)]
 pub(crate) fn evaluate_candidate(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     candidate_op: OperationConfig,
-    delta: ParamDelta,
-    stage: SearchStage,
-    sim_resolution_mm: f64,
+    candidate_dressups: DressupConfig,
+    baseline_full_cut: &FullCutCheck,
     cancel: &AtomicBool,
 ) -> Result<OptimizeCandidate, SessionError> {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -245,9 +237,8 @@ pub(crate) fn evaluate_candidate(
             guard,
             ctx,
             candidate_op,
-            delta,
-            stage,
-            sim_resolution_mm,
+            candidate_dressups,
+            baseline_full_cut,
             cancel,
         )
     }));
@@ -270,15 +261,17 @@ fn evaluate_candidate_inner(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
     candidate_op: OperationConfig,
-    delta: ParamDelta,
-    stage: SearchStage,
-    sim_resolution_mm: f64,
+    candidate_dressups: DressupConfig,
+    baseline_full_cut: &FullCutCheck,
     cancel: &AtomicBool,
 ) -> Result<OptimizeCandidate, SessionError> {
-    // Clone the unchanged-by-optimize fields from the captured
-    // baseline so the apply mutation is one transactional write.
     let baseline = guard.baseline();
-    let dressups = baseline.dressups.clone();
+    let delta = delta_against_baseline(
+        &baseline.operation,
+        &baseline.dressups,
+        &candidate_op,
+        &candidate_dressups,
+    );
     let face_selection = baseline.face_selection.clone();
     let toolpath_index = ctx.toolpath_index;
 
@@ -289,7 +282,7 @@ fn evaluate_candidate_inner(
     let _ = guard.session_mut().apply_toolpath_param_snapshot_narrow(
         toolpath_index,
         candidate_op.clone(),
-        dressups,
+        candidate_dressups.clone(),
         face_selection,
     )?;
 
@@ -298,30 +291,28 @@ fn evaluate_candidate_inner(
         .session_mut()
         .generate_toolpath(toolpath_index, cancel)?;
 
-    // Sim — full project sim at the requested resolution. Other
-    // toolpaths' cached results from baseline still apply because
-    // generate_toolpath only touched index `toolpath_index`.
-    let sim_opts = candidate_sim_options(sim_resolution_mm);
+    // Sim — a full project sim with the one set of options. Other
+    // toolpaths' cached results still apply because
+    // `generate_toolpath` only touched index `toolpath_index`.
+    let sim_opts = candidate_sim_options(guard.session_mut());
+    let total_depth_mm = candidate_op.total_depth();
     guard.session_mut().run_simulation(&sim_opts, cancel)?;
 
-    // Pull the trace out (Arc<SimulationCutTrace>) and score via the
-    // gate. The sim result lives on `session.simulation` after
-    // `run_simulation` succeeds.
     let session_ref: &ProjectSession = &*guard.session_mut();
     let sim_result = session_ref
         .simulation_result()
         .ok_or(SessionError::Simulation(
             crate::compute::simulate::SimulationError::Cancelled,
         ))?;
-    let trace = sim_result.cut_trace.as_deref();
+    let Some(trace) = sim_result.cut_trace.as_deref() else {
+        return Err(SessionError::SimulationRequired(
+            "the candidate simulation kept no cut trace".to_owned(),
+        ));
+    };
 
-    // Span lookup for D6/D7: each candidate just regenerated the
-    // toolpath at index `toolpath_index`, so the cached compute result's
-    // `annotated.spans` are fresh. None when generation hasn't produced
-    // a result yet (callers downstream degrade to engagement-only
-    // locality labels). F2.2: also None when a transform invalidated
-    // the spans (TSP split) — corrupted ancestry must not stamp gate
-    // verdicts.
+    // Span lookup for D6/D7: the toolpath was just regenerated, so the
+    // cached `annotated.spans` are fresh. F2.2: `None` when a transform
+    // invalidated the spans (TSP split).
     let spans: Option<&[crate::trace::toolpath_spans::Span]> = session_ref
         .get_result(toolpath_index)
         .filter(|r| r.annotated().spans_valid)
@@ -344,23 +335,30 @@ fn evaluate_candidate_inner(
     // candidate by the same measure as the card.
     let verdict = evaluate_toolpath(
         &load_ctx,
-        trace,
+        Some(trace),
         Some(session_ref.machine()),
         &ToleranceBands::default(),
     );
-    let cycle_time_s = trace
-        .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
-        .unwrap_or(f64::INFINITY);
+    let cycle_time_s = cycle_time_from_trace(trace, ctx.toolpath_id).unwrap_or(f64::INFINITY);
     // Roadmap F.12 — surface air-cut alongside cycle_time, denominator named.
     let air_cut_fraction_of_total_runtime =
-        trace.and_then(|t| air_cut_fraction_of_total_runtime_from_trace(t, ctx.toolpath_id));
+        air_cut_fraction_of_total_runtime_from_trace(trace, ctx.toolpath_id);
+    let readings = read_full_cut(session_ref, trace, ctx.toolpath_id);
+    let full_cut = FullCutCheck::judge(
+        baseline_full_cut,
+        readings,
+        sim_opts.resolution,
+        total_depth_mm,
+    );
 
     Ok(OptimizeCandidate {
         params: candidate_op,
+        dressups: Box::new(candidate_dressups),
         delta,
         cycle_time_s,
         verdict,
-        stage,
+        full_cut,
+        stage: SearchStage::Measured,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
         air_cut_fraction_of_total_runtime,
@@ -415,6 +413,7 @@ mod tests {
 
     use super::{ParamDelta, delta_against_baseline};
     use crate::compute::catalog::OperationConfig;
+    use crate::compute::config::DressupConfig;
     use crate::compute::operation_configs::PocketConfig;
 
     #[test]
@@ -451,10 +450,21 @@ mod tests {
             ..PocketConfig::default()
         });
         let baseline = OperationConfig::Pocket(base);
-        assert!(!delta_against_baseline(&baseline, &same_feed).has_changes());
+        let dressups = DressupConfig {
+            link_moves: None,
+            ..DressupConfig::default()
+        };
+        assert!(!delta_against_baseline(&baseline, &dressups, &same_feed, &dressups).has_changes());
 
-        let delta = delta_against_baseline(&baseline, &deeper);
+        let delta = delta_against_baseline(&baseline, &dressups, &deeper, &dressups);
         assert_eq!(delta.depth_per_pass_mm, Some(deeper_dpp));
         assert_eq!(delta.feed_mm_min, None);
+        assert_eq!(delta.link_moves, None);
+
+        let linked = DressupConfig::default();
+        assert!(linked.link_moves.is_some());
+        let delta = delta_against_baseline(&baseline, &dressups, &baseline, &linked);
+        assert_eq!(delta.link_moves, Some(true));
+        assert!(delta.has_changes());
     }
 }
