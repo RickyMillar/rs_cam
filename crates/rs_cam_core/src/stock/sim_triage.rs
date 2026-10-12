@@ -281,6 +281,15 @@ pub struct TriageInputs<'a> {
     pub holder_collisions: &'a [(ToolpathId, HolderCollisionCheck)],
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
+    /// G-OVERCUTREF — the commanded depth per pass of each toolpath that
+    /// steps down, in mm: the step its levels really cut. The session
+    /// builder writes the realised step of a 2.5D op
+    /// (`ops::depth::realised_step_down` of its total depth and its depth
+    /// per pass) and the raw `depth_per_pass()` of a 3D op that has no
+    /// total depth. A toolpath absent from the map has no commanded step,
+    /// and the standing-material rule reads it against its own median
+    /// bite.
+    pub commanded_depth_per_pass_mm: &'a BTreeMap<ToolpathId, f64>,
     /// Phase 4 — the per-toolpath kinematic reading, keyed by toolpath id.
     /// Built by [`crate::session::ProjectSession::kinematic_utilizations`], or
     /// borrowed from the load report's rows.
@@ -416,7 +425,15 @@ impl SimulationTriage {
             if tp.metrics_not_applicable {
                 continue;
             }
-            if let Some(f) = standing_material_finding(inputs.trace, tp.toolpath_id) {
+            if let Some(f) = standing_material_finding(
+                inputs.trace,
+                tp.toolpath_id,
+                inputs
+                    .commanded_depth_per_pass_mm
+                    .get(&tp.toolpath_id)
+                    .copied(),
+                inputs.measurability.cell_mm,
+            ) {
                 actions.push(f);
             }
             if rest_driven.contains(&tp.toolpath_id)
@@ -510,70 +527,212 @@ impl SimulationTriage {
     }
 }
 
-/// Fraction of a pass's cutting samples that must sit far above its own
-/// typical bite before the pass is reported as crossing standing material.
+/// Fraction of a pass's cutting samples that must sit over the reference
+/// bite before the pass is reported as crossing standing material.
 ///
 /// The census fixture measured 4.7% of samples over 10x the commanded
 /// offset against 94.1% at or below 1.5x — a clear bimodal signature, not a
 /// tail. 2% is well under the measured case and well over the handful of
-/// samples any pass produces at a step or a corner.
+/// samples any pass produces at a step or a corner. On the commanded arm
+/// (G-OVERCUTREF) the same floor keeps a few stray samples from becoming a
+/// finding; it is a population floor there, not a statistical one.
 pub(crate) const STANDING_MATERIAL_SAMPLE_FRACTION: f64 = 0.02;
 
-/// How many times its own median bite a sample must remove to count.
+/// How many times its own median bite a sample must remove to count. Used
+/// only on the own-median arm (an op with no commanded depth per pass).
 pub(crate) const STANDING_MATERIAL_MULTIPLE: f64 = 3.0;
 
-/// Report a finishing/surface-following pass that is cutting through material
-/// an upstream operation deliberately left standing.
+/// Steady-state cutting samples required before the rule reads a pass.
 ///
-/// **The reference is the pass's OWN median removed height, not a commanded
-/// depth.** That is the whole point of the finding. Census §6.4 traced a
-/// `project_curve` op reported as "20.4x commanded" — a ratio formed by
-/// dividing a removed HEIGHT by a surface OFFSET, two different quantities,
-/// on an op that has no axial step to divide by at all. Every competing
-/// explanation (lift bridging, entry transients, arc-fit artifacts) was
-/// refuted by four independent structural tags; the surviving one was
+/// On the own-median arm, fewer bites give no meaningful median. On the
+/// commanded arm, the 2% fraction of fewer than 50 samples is less than one
+/// sample, so the fraction floor would not hold.
+pub(crate) const STANDING_MATERIAL_MIN_SAMPLES: usize = 50;
+
+/// The bite one sample is measured against.
+#[derive(Debug, Clone, Copy)]
+enum BiteReference {
+    /// G-OVERCUTREF. The op steps down by a commanded depth per pass. A
+    /// sample over-cuts when its bite exceeds `step_mm + tolerance_mm`.
+    Commanded { step_mm: f64, tolerance_mm: f64 },
+    /// The op has no commanded step. A sample over-cuts when its bite
+    /// exceeds `STANDING_MATERIAL_MULTIPLE` times the pass's own median.
+    OwnMedian { median_mm: f64 },
+}
+
+impl BiteReference {
+    fn bar_mm(self) -> f64 {
+        match self {
+            Self::Commanded {
+                step_mm,
+                tolerance_mm,
+            } => step_mm + tolerance_mm,
+            Self::OwnMedian { median_mm } => median_mm * STANDING_MATERIAL_MULTIPLE,
+        }
+    }
+}
+
+/// The comparison tolerance on the commanded arm, in mm: one dexel cell.
+///
+/// The optimizer's full-cut rule 3 (`tool_load::optimize::full_cut`)
+/// compares two peaks of this finding with the same one-cell slack, so the
+/// finding and its reader use one tolerance. The cell also covers the
+/// draped levels of the 3D ops that carry a step (`Adaptive3d`). When the
+/// caller does not know the cell, the floor is the `f32` resolution of a
+/// removed column, [`crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM`]
+/// (EVIDENCE 5.1-6), which the depth gate uses on the same field.
+fn commanded_tolerance_mm(cell_mm: Option<f64>) -> f64 {
+    let floor = crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM;
+    cell_mm
+        .filter(|c| c.is_finite() && *c > 0.0)
+        .map_or(floor, |c| c.max(floor))
+}
+
+/// The step one level of `operation` really cuts, in mm, or `None` when the
+/// operation has no commanded depth per pass (G-OVERCUTREF).
+///
+/// - A 2.5D op with a total depth: the realised step,
+///   [`crate::ops::depth::realised_step_down`] of the total depth and the
+///   depth per pass. Generation cuts `total / ceil(total / dpp)`, which is
+///   never above the requested value, so this is the depth the machine
+///   cuts and not the number the operator typed.
+/// - A 3D op with a step and no total depth (`Adaptive3d`, `Waterline`
+///   `z_step`, `RampFinish` `max_stepdown`): the raw step.
+/// - A total depth that describes no stepped cut (a `Face` at depth 0 cuts
+///   one level at the top): `None`.
+///
+/// Every surface reads the triage through the session builder, which calls
+/// this function, so the GUI, MCP and CLI see one reference.
+#[must_use]
+pub(crate) fn commanded_step_mm(
+    operation: &crate::compute::catalog::OperationConfig,
+) -> Option<f64> {
+    let dpp = operation
+        .depth_per_pass()
+        .filter(|d| d.is_finite() && *d > 0.0)?;
+    match operation.total_depth() {
+        Some(total) => crate::ops::depth::realised_step_down(total.abs(), dpp),
+        None => Some(dpp),
+    }
+}
+
+/// Report a pass that cuts through material deeper than it was planned to
+/// cut — material an upstream operation left standing.
+///
+/// # The population
+///
+/// The steady-state cutting samples of the toolpath that removed material
+/// on the lateral axis (`axial_engagement_mm > 0`). Transit samples go
+/// through the one predicate,
+/// [`crate::tool_load::locality::is_steady_state_for_gate`]: a link-bridge
+/// sample reads `stock_top - cutter_z` over NEIGHBOURING stock, and that
+/// inflated reading is not a bite. The triage has no span lookup, so the
+/// predicate drops every `in_transit_span` sample.
+///
+/// # The reference (G-OVERCUTREF, 2026-10-12)
+///
+/// **An op with a commanded depth per pass** (`commanded_step` is
+/// `Some`): the reference is that step, plus one dexel cell
+/// ([`commanded_tolerance_mm`]). On the stock it really meets, a level
+/// cuts at most one step: the earlier levels of the same pass removed the
+/// material above it. So a bite over the step is material that stood
+/// deeper than the plan, by construction. A fresh-stock pass at its own
+/// step never fires. The median rule is NOT used for these ops. It was
+/// measured wrong on a pocket: the ring overlap and the entry ramps take
+/// less than a full level, so the median bite is far below the step, and
+/// a pass that cut its OWN commanded depth read as "standing material".
+/// The verdict also changed with the stepover, because the stepover moves
+/// the median (`Channel BACK_CHANNEL_Z22.00`, dpp 0.8148: fired at
+/// stepover 0.838, silent at 1.05).
+///
+/// **An op with no commanded step** (surface-following finishes,
+/// `project_curve`, drop cutter): the reference is the pass's OWN median
+/// removed height, times [`STANDING_MATERIAL_MULTIPLE`]. On these ops the
+/// body bite IS the layer the upstream op left (its stock-to-leave and its
+/// scallop), and it is even over the pass; so three times the median is a
+/// step in the upstream stock, not a fraction of the pass's own level.
+/// Census §6.4 traced a `project_curve` op reported as "20.4x commanded" —
+/// a ratio formed by dividing a removed HEIGHT by a surface OFFSET, on an
+/// op that has no axial step to divide by. The surviving explanation was
 /// confirmed by a direct upstream-stock reading of 5.20 mm standing above
-/// the cutter.
+/// the cutter. That bimodal signature — a surface-following majority plus
+/// a distinct population ploughing through a step — is what this arm
+/// reports.
 ///
-/// The simulator was right. What was missing was anyone saying what its
-/// reading MEANT. Measuring against the pass's own median gives a
-/// denominator that exists for every op, and it is what makes the bimodal
-/// signature — a surface-following majority plus a distinct population
-/// ploughing through a step — visible as one sentence.
+/// On both arms `observed` is the peak bite in mm and `threshold` is the
+/// bar, so the optimizer's peak comparison reads one quantity.
 fn standing_material_finding(
     trace: &SimulationCutTrace,
     toolpath_id: ToolpathId,
+    commanded_step: Option<f64>,
+    cell_mm: Option<f64>,
 ) -> Option<Finding> {
-    let mut heights: Vec<f64> = trace
+    let population: Vec<&crate::stock::simulation_cut::SimulationCutSample> = trace
         .samples
         .iter()
-        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting && s.axial_engagement_mm > 0.0)
-        .map(|s| s.axial_engagement_mm)
+        .filter(|s| {
+            s.toolpath_id == toolpath_id
+                && s.is_cutting
+                && s.axial_engagement_mm > 0.0
+                && crate::tool_load::locality::is_steady_state_for_gate(s, None)
+        })
         .collect();
-    if heights.len() < 50 {
-        // Too few bites to have a meaningful median; saying nothing is
-        // better than reporting noise as a structural fact.
-        return None;
-    }
-    heights.sort_by(f64::total_cmp);
-    let median = *heights.get(heights.len() / 2)?;
-    if median <= 0.0 {
+    if population.len() < STANDING_MATERIAL_MIN_SAMPLES {
+        // Too few bites to read; saying nothing is better than reporting
+        // noise as a structural fact.
         return None;
     }
 
-    let bar = median * STANDING_MATERIAL_MULTIPLE;
-    let over: Vec<f64> = heights.iter().copied().filter(|h| *h > bar).collect();
-    let fraction = over.len() as f64 / heights.len() as f64;
+    let reference = match commanded_step.filter(|s| s.is_finite() && *s > 0.0) {
+        Some(step_mm) => BiteReference::Commanded {
+            step_mm,
+            tolerance_mm: commanded_tolerance_mm(cell_mm),
+        },
+        None => {
+            let mut bites: Vec<f64> = population.iter().map(|s| s.axial_engagement_mm).collect();
+            bites.sort_by(f64::total_cmp);
+            let median_mm = *bites.get(bites.len() / 2)?;
+            if median_mm <= 0.0 {
+                return None;
+            }
+            BiteReference::OwnMedian { median_mm }
+        }
+    };
+
+    let bar = reference.bar_mm();
+    let over = population
+        .iter()
+        .filter(|s| s.axial_engagement_mm > bar)
+        .count();
+    let fraction = over as f64 / population.len() as f64;
     if fraction < STANDING_MATERIAL_SAMPLE_FRACTION {
         return None;
     }
-    let peak = over.last().copied().unwrap_or(bar);
-
-    let worst_sample = trace
-        .samples
+    let worst_sample = population
         .iter()
-        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+        .copied()
         .max_by(|a, b| a.axial_engagement_mm.total_cmp(&b.axial_engagement_mm))?;
+    let peak = worst_sample.axial_engagement_mm;
+
+    let message = match reference {
+        BiteReference::Commanded {
+            step_mm,
+            tolerance_mm,
+        } => format!(
+            "crosses standing material deeper than this pass was planned to cut: {:.1}% of cutting samples remove more than the commanded {:.2} mm depth per pass by over {:.3} mm, peaking at {:.2} mm",
+            fraction * 100.0,
+            step_mm,
+            tolerance_mm,
+            peak
+        ),
+        BiteReference::OwnMedian { median_mm } => format!(
+            "crosses material an upstream op left standing: {:.1}% of cutting samples remove more than {:.2} mm (3x this pass's own {:.2} mm median bite), peaking at {:.2} mm",
+            fraction * 100.0,
+            bar,
+            median_mm,
+            peak
+        ),
+    };
 
     Some(Finding {
         dedup_key: DedupKey {
@@ -591,13 +750,7 @@ fn standing_material_finding(
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
-            message: format!(
-                "crosses material an upstream op left standing: {:.1}% of cutting samples remove more than {:.2} mm (3x this pass's own {:.2} mm median bite), peaking at {:.2} mm",
-                fraction * 100.0,
-                bar,
-                median,
-                peak
-            ),
+            message,
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id,
                 sample_start: worst_sample.sample_index,
@@ -611,14 +764,14 @@ fn standing_material_finding(
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        occurrences: over.len(),
+        occurrences: over,
         worst: WorstEvidence {
             position: worst_sample.position,
             move_index: worst_sample.move_index,
             duration_s: 0.0,
             wasted_runtime_s: 0.0,
             min_radial_engagement: worst_sample.engagement.radial_woc_fraction,
-            sample_count: over.len(),
+            sample_count: over,
         },
     })
 }
@@ -767,8 +920,8 @@ fn is_entry_intent(s: &crate::stock::simulation_cut::SimulationCutSample) -> boo
 /// Measure one toolpath's entry motion against its own body.
 ///
 /// The reference is the pass's OWN median body bite, for the same reason
-/// `standing_material_finding` uses its own median: no commanded axial step
-/// exists on a surface-following op to divide by. Entries are excluded from
+/// `standing_material_finding` uses its own median on its no-step arm: no
+/// commanded axial step exists on a surface-following op to divide by. Entries are excluded from
 /// that denominator — grading a population against a median it is itself part
 /// of is how a pass made mostly of bad entries exonerates itself.
 pub fn entry_load_observation(
@@ -1225,6 +1378,9 @@ mod tests {
     /// No toolpath names: the collision lines print the id alone.
     static NO_NAMES: BTreeMap<ToolpathId, String> = BTreeMap::new();
 
+    /// No commanded steps: every toolpath is read on the own-median arm.
+    static NO_STEPS: BTreeMap<ToolpathId, f64> = BTreeMap::new();
+
     /// A rapid collision that no boundary holds, at run move `move_index`.
     fn unattributed(rc: RapidCollision) -> AttributedRapidCollision {
         AttributedRapidCollision {
@@ -1251,6 +1407,7 @@ mod tests {
             toolpath_names: &NO_NAMES,
             holder_collisions: holders,
             tool_diameters_mm: diameters,
+            commanded_depth_per_pass_mm: &NO_STEPS,
             kinematic_utilization: kinematics,
             region_of: None,
         }
@@ -1543,6 +1700,128 @@ mod tests {
         );
     }
 
+    // ── G-OVERCUTREF ───────────────────────────────────────────────────
+    //
+    // A stepped op is read against its commanded step plus one cell. The
+    // sentry `tests/a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref.rs`
+    // holds the fresh-stock and the thick-bite cases; these pin the
+    // tolerance, the population and the session's step.
+
+    /// The realised step of the measured pocket: 22 mm at a requested
+    /// 0.8148 mm is `22 / ceil(22 / 0.8148)` = 22 / 27.
+    const STEP_MM: f64 = 22.0 / 27.0;
+    /// The dexel cell of these hand-built traces, in mm.
+    const CELL_MM: f64 = 0.25;
+
+    /// 200 cutting samples on toolpath 1 at `step`, with the first
+    /// `n_odd` at `odd` and flagged `in_transit_span` when `transit`.
+    fn stepped_trace(n_odd: usize, odd: f64, transit: bool) -> SimulationCutTrace {
+        let samples = (0..200)
+            .map(|i| SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: if i < n_odd { odd } else { STEP_MM },
+                in_transit_span: transit && i < n_odd,
+                engagement: Engagement::with_radial_woc(0.3),
+                removed_volume_est_mm3: 1.0,
+                ..SimulationCutSample::test_fixture()
+            })
+            .collect();
+        SimulationCutTrace::from_samples(0.5, samples)
+    }
+
+    fn stepped_finding(trace: &SimulationCutTrace) -> Option<Finding> {
+        let m = MeasurabilityReport {
+            cell_mm: Some(CELL_MM),
+            ..MeasurabilityReport::default()
+        };
+        let d = BTreeMap::new();
+        let steps: BTreeMap<ToolpathId, f64> = [(ToolpathId(1), STEP_MM)].into_iter().collect();
+        let k = BTreeMap::new();
+        let t = SimulationTriage::build(&TriageInputs {
+            commanded_depth_per_pass_mm: &steps,
+            ..inputs(trace, &m, &[], &[], &[], &d, &k)
+        });
+        t.actions
+            .into_iter()
+            .find(|f| f.diagnostic.id.as_str() == ids::PROJECT_CROSSES_STANDING_MATERIAL)
+    }
+
+    #[test]
+    fn g_overcutref_a_bite_inside_one_cell_of_the_step_is_not_an_overcut() {
+        // 10 % of samples at step + half a cell: the dexel cannot tell this
+        // from the step, and the optimizer's peak rule grants the same cell.
+        let f = stepped_finding(&stepped_trace(20, STEP_MM + 0.5 * CELL_MM, false));
+        assert!(f.is_none(), "a bite inside one cell must not fire: {f:?}");
+    }
+
+    #[test]
+    fn g_overcutref_a_bite_two_cells_over_the_step_is_an_overcut() {
+        let deep = STEP_MM + 2.0 * CELL_MM;
+        let f = stepped_finding(&stepped_trace(20, deep, false))
+            .expect("a bite two cells over the step must fire");
+        assert_eq!(f.occurrences, 20);
+        match f.diagnostic.evidence {
+            Some(DiagnosticEvidence::SampleRange {
+                observed,
+                threshold,
+                ..
+            }) => {
+                assert!((observed - deep).abs() < 1e-9, "observed {observed}");
+                let bar = threshold.expect("the bar is published");
+                assert!((bar - (STEP_MM + CELL_MM)).abs() < 1e-9, "bar {bar}");
+            }
+            other => panic!("expected SampleRange evidence, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn g_overcutref_the_tolerance_is_one_cell_and_the_f32_floor_without_one() {
+        let floor = crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM;
+        assert!((commanded_tolerance_mm(Some(CELL_MM)) - CELL_MM).abs() < 1e-15);
+        assert!((commanded_tolerance_mm(None) - floor).abs() < 1e-15);
+        assert!((commanded_tolerance_mm(Some(0.0)) - floor).abs() < 1e-15);
+        assert!((commanded_tolerance_mm(Some(f64::NAN)) - floor).abs() < 1e-15);
+    }
+
+    #[test]
+    fn g_overcutref_a_transit_sample_is_not_a_bite() {
+        // A link-bridge sample reads `stock_top - cutter_z` over the
+        // neighbouring stock. The one steady-state predicate drops it.
+        let f = stepped_finding(&stepped_trace(20, 3.0 * STEP_MM, true));
+        assert!(f.is_none(), "phantom transit readings must not fire: {f:?}");
+    }
+
+    #[test]
+    fn g_overcutref_the_session_step_is_the_realised_step() {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::{FaceConfig, PocketConfig, ScallopConfig};
+
+        // 22 mm at 0.9 mm asks for 24.4 levels, so the pocket cuts 25
+        // levels of 0.88 mm.
+        let pocket = OperationConfig::Pocket(PocketConfig {
+            depth: 22.0,
+            depth_per_pass: 0.9,
+            ..PocketConfig::default()
+        });
+        let step = commanded_step_mm(&pocket).expect("a pocket steps down");
+        assert!((step - 22.0 / 25.0).abs() < 1e-12, "step {step}");
+
+        // A face at depth 0 cuts one level at the top: no commanded step.
+        let face = OperationConfig::Face(FaceConfig {
+            depth: 0.0,
+            ..FaceConfig::default()
+        });
+        assert!(commanded_step_mm(&face).is_none());
+
+        // A surface-following finish has no step at all.
+        let scallop = OperationConfig::Scallop(ScallopConfig::default());
+        assert!(commanded_step_mm(&scallop).is_none());
+    }
+
     #[test]
     fn an_abstention_is_not_an_action() {
         // Checkpoint D Q2: the abstention describes the SIMULATION, not the
@@ -1632,7 +1911,7 @@ mod tests {
         // Control: the axial-only rule stays silent on exactly this trace —
         // which is why the entry needed its own.
         assert!(
-            standing_material_finding(&trace, ToolpathId(1)).is_none(),
+            standing_material_finding(&trace, ToolpathId(1), None, None).is_none(),
             "the crosses-standing rule reads the axial axis; if it fires here \
              this sentry is no longer testing the blind spot it was written for"
         );
