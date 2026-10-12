@@ -307,9 +307,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetToolpathTool, "set_toolpath_tool", SetToolpathToolArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI inspector replaces the whole config through replace_toolpath_config",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
