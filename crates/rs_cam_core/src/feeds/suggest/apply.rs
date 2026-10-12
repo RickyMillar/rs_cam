@@ -13,7 +13,7 @@ use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
-use super::invariants::enforce_invariants;
+use super::invariants::{enforce_invariants, enforce_invariants_at_fixed_geometry};
 use super::{
     CalculatorOperatingPoint, StockContext, SuggestContext, SuggestWarning,
     feeds_input_for_operation, round_suggestion_value, round_suggestion_value_down,
@@ -39,10 +39,14 @@ use super::{
 /// The surviving per-field affordance — the inline ⚡ pill — does not get a
 /// scope either. Since G-PILLCLAMP (2026-09-10) it reads its value from
 /// [`preview_field_applies`], a dry run of `Both` on a scratch clone, so it
-/// offers and writes the funnel's number for that one field.
+/// offers and writes the funnel's number for that one field. Since
+/// G-SPEEDSAPPLY (2026-10-12) a speed pill's value can differ from what
+/// `Speeds` writes; see [`preview_field_applies`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyScope {
-    /// feed / plunge / RPM — "how fast". Never touches the cut geometry.
+    /// feed / plunge / RPM — "how fast". Never touches the cut geometry, and
+    /// resolves the speeds for the geometry the operation keeps
+    /// (G-SPEEDSAPPLY; see `apply_feeds_subset`).
     Speeds,
     /// stepover / DOC — "changes the cut". Never touches the speeds.
     CutGeometry,
@@ -53,12 +57,39 @@ pub enum ApplyScope {
 /// Apply the calculator's recommendation to `operation`, writing back only the
 /// requested [`ApplyScope`].
 ///
-/// The recommended *full* operating point is run through `enforce_invariants`
-/// on a scratch clone — so the feed ↔ chipload ↔ DPP coupling is resolved
-/// against the complete recommended state — and then only the requested fields
-/// are copied into the real operation. This keeps a speed-only or geometry-only
-/// apply byte-identical to the combined apply for the fields it does write,
-/// while leaving the others (and their provenance) untouched.
+/// Under `ApplyScope::Both` and `ApplyScope::CutGeometry` the recommended
+/// *full* operating point is run through `enforce_invariants` on a scratch
+/// clone — so the feed ↔ chipload ↔ DPP coupling is resolved against the
+/// complete recommended state — and then only the requested fields are copied
+/// into the real operation. A geometry-only apply is byte-identical to the
+/// combined apply for the fields it writes.
+///
+/// **The speeds-only rule (G-SPEEDSAPPLY, 2026-10-12).** Under
+/// `ApplyScope::Speeds` the apply does not write the depth per pass or the
+/// stepover, so the speeds it writes must be the speeds for the geometry the
+/// operation keeps. The geometry passes of the invariant chain (pass 0 the
+/// axial envelope, 2 and 3 the stepover clamps, 4 the rigidity clamp, 5 the
+/// cutting-length clamp, 6 the deflection back-off, 6b the dial) do not run:
+/// they must not move what this scope does not write. The operation's own
+/// geometry is the fixed input. The feed-side passes (1 plunge ≤ feed, 9 the
+/// feed rescale at the final geometry, 10 the power ceiling) and the
+/// warn-only passes read that geometry. Pass 9 compares the kept geometry
+/// with the calculator's geometry, so the feed that ships is the
+/// calculator's feed for the depth and stepover the operation carries:
+///
+/// - When the result was sized at the kept geometry, the feed is the
+///   result's feed rounded down to 1 mm/min.
+/// - When the operation already carries the geometry that `Both` writes,
+///   the speeds are bit-identical to the speeds of `Both`.
+///
+/// Before this rule the funnel ran the full chain on the scratch and copied
+/// the speeds back. A 3 mm flat at 2.5 x D in oak (`depth_per_pass` 7.5 mm)
+/// then shipped 3877.8 mm/min, the feed for the 0.75 mm rigidity cap, where
+/// the calculator at 7.5 mm gives 2423 mm/min. Sentry:
+/// `tests/a_speeds_only_apply_ships_the_feed_for_the_depth_it_keeps_g_speedsapply.rs`.
+///
+/// The fields this call does not write, and their provenance, stay untouched
+/// under every scope.
 // SAFETY: the canonical suggest funnel needs the operation, the provenance
 // out-param, the result, tool/machine/material, pass_role, context, the apply
 // subset and the speeds-explored flag together.
@@ -173,8 +204,34 @@ fn apply_feeds_subset(
         }),
         ..context
     };
-    let mut warnings =
-        enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched);
+    // G-SPEEDSAPPLY (2026-10-12): a speeds-only apply resolves the speeds
+    // for the geometry the operation keeps. The scratch gets the operation's
+    // own depth per pass and stepover back, the passes that move geometry do
+    // not run, and pass 9 re-derives the feed from the calculator's geometry
+    // (the values written above) to the kept geometry. See the doc of
+    // `apply_feeds_subset`. `Both` and `CutGeometry` take the full chain.
+    let mut warnings = if matches!(subset, ApplyScope::Speeds) {
+        let calculator_stepover = scratch.stepover();
+        let calculator_dpp = scratch.depth_per_pass();
+        if let Some(kept) = operation.stepover() {
+            scratch.set_stepover(kept);
+        }
+        if let Some(kept) = operation.depth_per_pass() {
+            scratch.set_depth_per_pass(kept);
+        }
+        enforce_invariants_at_fixed_geometry(
+            &mut scratch,
+            tool,
+            machine,
+            material,
+            pass_role,
+            enriched,
+            calculator_stepover,
+            calculator_dpp,
+        )
+    } else {
+        enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched)
+    };
 
     let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
     let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
@@ -225,16 +282,10 @@ fn apply_feeds_subset(
             }
         }
     }
-    // Ruling R4 (2026-09-24): pass 6b ran on the scratch copy. When this
-    // apply does not write the cut geometry, its record must not claim the
-    // operation carries the engagement it computed.
-    if !write_geometry {
-        for w in &mut warnings {
-            if let SuggestWarning::EngagementReducedForAggressiveness { applied, .. } = w {
-                *applied = false;
-            }
-        }
-    }
+    // Ruling R4 (2026-09-24) marked the pass 6b record `applied: false` here
+    // when this apply did not write the cut geometry. Since G-SPEEDSAPPLY
+    // (2026-10-12) the only scope that does not write the geometry,
+    // `Speeds`, does not run pass 6b, so no such record reaches this point.
     if write_speeds {
         operation.set_feed_rate(scratch.feed_rate());
         operation.set_plunge_rate(scratch.plunge_rate());
@@ -526,6 +577,13 @@ impl FieldApplyPreviews {
 /// stamp off the scratch. There is still no `ApplyScope::Field` arm (Checkpoint
 /// I-1): the whole operating point is resolved, and a single field is copied
 /// out of it — which is exactly what a per-field pill must offer.
+///
+/// G-SPEEDSAPPLY (2026-10-12) did not change this dry run. Its speeds are
+/// the speeds of `Both`, sized for the geometry `Both` writes. The Feeds
+/// card's recommended column (G-RECOMAPPLIED) needs exactly that. A speed
+/// pill keeps the operation's geometry, so on an operation whose geometry is
+/// not the geometry of `Both`, its value is not what `apply_speeds_to_op`
+/// writes. That gap is open for the pill builder in `rs_cam_viz`.
 pub fn preview_field_applies(
     operation: &OperationConfig,
     result: &FeedsResult,

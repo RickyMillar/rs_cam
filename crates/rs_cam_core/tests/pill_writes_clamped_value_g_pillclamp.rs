@@ -570,6 +570,14 @@ fn a_field_preview_write_moves_only_its_own_field() {
 /// cut-geometry pill previews what `apply_cut_geometry_to_op` writes — the
 /// single dry run serves both scopes because both copy out of one resolved
 /// operating point.
+///
+/// Adapted by G-SPEEDSAPPLY (2026-10-12). `apply_speeds_to_op` now resolves
+/// the speeds for the geometry the operation keeps. The dry run of `Both`
+/// resolves them for the geometry `Both` writes. The two agree when the
+/// operation already carries that geometry, so the speeds arm applies the
+/// speeds to the operation after `apply_cut_geometry_to_op`. On the demo
+/// pocket's own geometry the two do not agree; that gap is open for the
+/// pill builder (see the doc of `preview_field_applies`).
 #[test]
 fn previews_agree_with_both_scoped_applies() {
     let (session, tool, op) = demo_pocket();
@@ -578,11 +586,11 @@ fn previews_agree_with_both_scoped_applies() {
     let material = &session.stock_config().material;
     let pass_role = op.feeds_style().1;
 
-    let mut speeds = op.clone();
-    let mut sp = FeedsProvenance::default();
-    apply_speeds_to_op(
-        &mut speeds,
-        &mut sp,
+    let mut cut = op;
+    let mut cp = FeedsProvenance::default();
+    apply_cut_geometry_to_op(
+        &mut cut,
+        &mut cp,
         &result,
         &tool,
         session.machine(),
@@ -590,11 +598,11 @@ fn previews_agree_with_both_scoped_applies() {
         pass_role,
         SuggestContext::default(),
     );
-    let mut cut = op;
-    let mut cp = FeedsProvenance::default();
-    apply_cut_geometry_to_op(
-        &mut cut,
-        &mut cp,
+    let mut speeds = cut.clone();
+    let mut sp = FeedsProvenance::default();
+    apply_speeds_to_op(
+        &mut speeds,
+        &mut sp,
         &result,
         &tool,
         session.machine(),

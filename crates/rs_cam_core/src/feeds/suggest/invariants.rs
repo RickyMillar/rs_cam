@@ -106,6 +106,37 @@ pub(super) const STEPOVER_BACKOFF_MAX_ITERATIONS: u8 = 5;
 // retired pass 8 feed-up verify measured against. Its only consumer went with
 // the pass; the v1.1 DPP back-off uses the bare 200 µm target.
 
+/// Which passes of the invariant chain may move the cut geometry.
+///
+/// G-SPEEDSAPPLY (2026-10-12). A speeds-only apply (`ApplyScope::Speeds`)
+/// does not write the depth per pass or the stepover. Before this enum the
+/// funnel ran every pass on its scratch copy, so the rigidity clamp, the
+/// dial and the other geometry passes moved the scratch geometry, and pass 9
+/// re-derived the feed for that moved geometry. The operation then got a
+/// feed for a depth it does not cut: a 3 mm flat at 2.5 x D in oak shipped
+/// 3877.8 mm/min, and the calculator at 7.5 mm gives 2423 mm/min.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum GeometryPasses {
+    /// Every pass runs. Pass 9 compares the final geometry against the
+    /// geometry the operation carries when the chain starts.
+    Run,
+    /// The operation's own geometry is a fixed input. The passes that move
+    /// the depth or the stepover (0, 2, 3, 4, 5, 6 and 6b) do not run. The
+    /// feed-side passes (1, 9 and 10) and the warn-only passes run, and
+    /// they read the operation's geometry. Pass 9 compares that geometry
+    /// against the geometry the calculator's result gives (rounded and
+    /// snapped as the funnel writes it), so the feed that ships is the
+    /// calculator's feed for the geometry the operation keeps.
+    Fixed {
+        /// The stepover the funnel writes from the result, `None` when the
+        /// operation carries no stepover.
+        calculator_stepover: Option<f64>,
+        /// The depth per pass the funnel writes from the result, `None`
+        /// when the operation carries no depth per pass.
+        calculator_dpp: Option<f64>,
+    },
+}
+
 pub(super) fn enforce_invariants(
     operation: &mut OperationConfig,
     tool: &ToolConfig,
@@ -113,6 +144,56 @@ pub(super) fn enforce_invariants(
     material: &Material,
     pass_role: PassRole,
     context: SuggestContext<'_>,
+) -> Vec<SuggestWarning> {
+    run_invariants(
+        operation,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        GeometryPasses::Run,
+    )
+}
+
+/// The invariant chain for a speeds-only apply: the operation's geometry is
+/// fixed, and the speeds are resolved for it. See [`GeometryPasses::Fixed`].
+// SAFETY: the chain needs the operation, tool/machine/material, pass_role
+// and context of `enforce_invariants`, plus the two calculator geometry
+// values that pass 9 compares against.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enforce_invariants_at_fixed_geometry(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+    calculator_stepover: Option<f64>,
+    calculator_dpp: Option<f64>,
+) -> Vec<SuggestWarning> {
+    run_invariants(
+        operation,
+        tool,
+        machine,
+        material,
+        pass_role,
+        context,
+        GeometryPasses::Fixed {
+            calculator_stepover,
+            calculator_dpp,
+        },
+    )
+}
+
+fn run_invariants(
+    operation: &mut OperationConfig,
+    tool: &ToolConfig,
+    machine: &MachineProfile,
+    material: &Material,
+    pass_role: PassRole,
+    context: SuggestContext<'_>,
+    geometry: GeometryPasses,
 ) -> Vec<SuggestWarning> {
     // NOTE: order matters. The stepover runtime back-off runs before the
     // DPP block. The plunge-entry stability warning runs after the
@@ -136,39 +217,70 @@ pub(super) fn enforce_invariants(
     // rather than reconstructed from the calculator's result because that
     // result is unrounded and these are not; comparing like with like is what
     // keeps an untouched operation's feed byte-identical.
-    let entry_stepover = operation.stepover();
-    let entry_dpp = operation.depth_per_pass();
+    //
+    // Under `GeometryPasses::Fixed` the baseline is the calculator's geometry
+    // instead, because the operation's geometry was never replaced by it.
+    let (entry_stepover, entry_dpp) = match geometry {
+        GeometryPasses::Run => (operation.stepover(), operation.depth_per_pass()),
+        GeometryPasses::Fixed {
+            calculator_stepover,
+            calculator_dpp,
+        } => (calculator_stepover, calculator_dpp),
+    };
     let mut working_context = context;
-    let (axial_envelope_warnings, dpp_mutated) =
-        pick_axial_envelope(operation, tool, material, working_context);
     let mut warnings = Vec::new();
-    warnings.extend(axial_envelope_warnings);
-    if dpp_mutated && let Some(new_dpp) = operation.depth_per_pass() {
-        let fresh_bounds = recompute_chipload_bounds_for_dpp(
-            working_context.matched_lut_row,
-            working_context.effective_diameter_mm,
-            operation,
-            new_dpp,
-        );
-        working_context.chipload_bounds = fresh_bounds;
+    match geometry {
+        GeometryPasses::Run => {
+            let (axial_envelope_warnings, dpp_mutated) =
+                pick_axial_envelope(operation, tool, material, working_context);
+            warnings.extend(axial_envelope_warnings);
+            if dpp_mutated && let Some(new_dpp) = operation.depth_per_pass() {
+                let fresh_bounds = recompute_chipload_bounds_for_dpp(
+                    working_context.matched_lut_row,
+                    working_context.effective_diameter_mm,
+                    operation,
+                    new_dpp,
+                );
+                working_context.chipload_bounds = fresh_bounds;
+            }
+        }
+        GeometryPasses::Fixed { .. } => {
+            // Pass 0 does not run: it moves the depth. When the depth the
+            // operation keeps is not the calculator's depth, the band that
+            // the pass 9 floor reads is re-derated at the kept depth. This is
+            // the same re-derivation that pass 0 makes after its own move.
+            if let (Some(kept_dpp), Some(calculator_dpp)) = (operation.depth_per_pass(), entry_dpp)
+                && kept_dpp.to_bits() != calculator_dpp.to_bits()
+            {
+                working_context.chipload_bounds = recompute_chipload_bounds_for_dpp(
+                    working_context.matched_lut_row,
+                    working_context.effective_diameter_mm,
+                    operation,
+                    kept_dpp,
+                );
+            }
+        }
     }
     let context = working_context;
     warnings.extend(clamp_plunge_to_feed(operation));
-    warnings.extend(clamp_stepover_to_diameter(operation, tool));
-    warnings.extend(backoff_stepover_for_runtime(operation, tool, context));
-    warnings.extend(clamp_dpp_to_rigidity(operation, tool, machine, pass_role));
-    warnings.extend(clamp_dpp_to_cutting_length(operation, tool));
-    warnings.extend(backoff_dpp_for_deflection(
-        operation, tool, material, machine, pass_role,
-    ));
-    // Pass 6b (ruling R4, 2026-09-24): the machine aggressiveness dial. It
-    // reads the base engagement that passes 0 to 6 left, and scales the depth
-    // per pass and the stepover by one common factor to hold the load at the
-    // dial's fraction. Pass 9 and pass 10 below must see its result.
-    let dial_warnings = super::aggressiveness::apply_aggressiveness(
-        operation, tool, material, machine, pass_role, context, &warnings,
-    );
-    warnings.extend(dial_warnings);
+    if matches!(geometry, GeometryPasses::Run) {
+        warnings.extend(clamp_stepover_to_diameter(operation, tool));
+        warnings.extend(backoff_stepover_for_runtime(operation, tool, context));
+        warnings.extend(clamp_dpp_to_rigidity(operation, tool, machine, pass_role));
+        warnings.extend(clamp_dpp_to_cutting_length(operation, tool));
+        warnings.extend(backoff_dpp_for_deflection(
+            operation, tool, material, machine, pass_role,
+        ));
+        // Pass 6b (ruling R4, 2026-09-24): the machine aggressiveness dial.
+        // It reads the base engagement that passes 0 to 6 left, and scales
+        // the depth per pass and the stepover by one common factor to hold
+        // the load at the dial's fraction. Pass 9 and pass 10 below must see
+        // its result.
+        let dial_warnings = super::aggressiveness::apply_aggressiveness(
+            operation, tool, material, machine, pass_role, context, &warnings,
+        );
+        warnings.extend(dial_warnings);
+    }
     // Ruling Q11 (G10, 2026-09-25): no entry-style rewrite. The entry
     // style is the operator's. The stability warning below names a deep
     // plunge entry.
