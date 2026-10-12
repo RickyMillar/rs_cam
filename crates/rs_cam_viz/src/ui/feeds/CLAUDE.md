@@ -12,11 +12,11 @@
 - The Feeds tab NEVER auto-locks a numeric field; Suggest is an explicit button.
 - The apply writes through the core command path; the write stales the result.
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
-- Every stage that moves a number is ONE line on the card, with its source
-  status (ruling R4): a `OneLine` that truncates, full record on hover (IC1).
-  `why::draw_suggest_lines` paints the Suggest stages and the G10 entry notes;
-  `why::draw_row_basis_lines` the G10 plunge basis, G1, G2 and A4 lines.
-  A comparison row is five fixed cells in one line (`compare::rail_line`).
+- The card is `DataTable` rows (IC2). A change row shows on the face only when
+  it differs; level rows, the stages and the basis go in the card's `Details`.
+- Every stage that moves a number is ONE row with its source (ruling R4, now
+  in `Details`): `why::suggest_rows`, `why::row_basis_rows`. A problem is one
+  status row on the face (`why::Placement`).
 - A nomogram readout outside the band abstains; the window fits the screen.
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.

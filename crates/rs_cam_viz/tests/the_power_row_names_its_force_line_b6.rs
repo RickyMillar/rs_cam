@@ -202,8 +202,17 @@ fn painted_text(fixture: &Fixture) -> Vec<String> {
 }
 
 /// The face runs: a hover run always holds a newline.
-fn face_runs(texts: &[String]) -> Vec<&String> {
-    texts.iter().filter(|t| !t.contains('\n')).collect()
+///
+/// Round 2 (2026-10-13): the force line is a `DataTable` record row, and a
+/// row with a hover ends in the detail mark. The face run here is the run
+/// without that mark, so the arms compare the core text exactly.
+fn face_runs(texts: &[String]) -> Vec<&str> {
+    let mark = format!(" {}", tokens::GLYPH_DETAIL);
+    texts
+        .iter()
+        .filter(|t| !t.contains('\n'))
+        .map(|t| t.strip_suffix(mark.as_str()).unwrap_or(t))
+        .collect()
 }
 
 /// The force point of the cut `⚡ Apply all` writes, through the door the

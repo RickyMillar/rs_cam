@@ -339,11 +339,12 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // The caps: the after-state of IC1 (2026-10-13) plus 3 lines. The tabs
     // in order: Geometry, Feeds & Speeds, Linking, Heights, Dressup. Before
     // IC1 the Feeds & Speeds tab painted 52 to 60 lines with 14 to 16
-    // paragraphs.
+    // paragraphs. Round 2 (IC2, same day) moved the derivation into the
+    // closed `Details`: Feeds & Speeds went from 32-36 to 22-25 lines.
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [23, 35, 22, 21, 13]),
-        ("3D Rough", [23, 36, 22, 20, 13]),
-        ("3D Finish", [21, 39, 22, 23, 15]),
+        ("Pocket", [23, 25, 22, 21, 13]),
+        ("3D Rough", [23, 25, 22, 20, 13]),
+        ("3D Finish", [21, 28, 22, 23, 15]),
     ];
     for (name, tab_caps) in caps {
         let id = configs

@@ -170,3 +170,190 @@ Tests changed on purpose:
 - New: `the_inspector_text_is_bounded_ic1` (caps from this table plus 3).
 
 Open for the operator: see the report of 2026-10-13.
+
+## Round 2 (2026-10-13): one table, Details, the graphs
+
+Operator, after round 1: "if there is no recommendation, can we just not
+recommend or show that line? … Operating point (measured) reads like a
+block of text … there is very little consistency in how we display data
+like this … simulation.. I see no graphs?"
+
+### The component
+
+`ui/components/data_table.rs` holds the one renderer for tabular data. It
+replaces the old `DataTable` of `kv_row.rs`, a header wrapper over
+`egui::Grid` that no panel used.
+
+- `DataTable` is a list of rows in fixed columns: name, value and unit,
+  status, source. The name column has one width for the whole table.
+  Every row is one line of `ROW_DENSE` height. No cell wraps; a long cell
+  truncates and the row hover gives the full text.
+- `DataRow` has four kinds. A value row (`value`, `measured`,
+  `not_measured`). A change row: current → recommended and the ratio
+  (`change`). A bar from 0 to a limit (`bar`). A full-width record for a
+  sentence that core writes (`record`), or a status line (`note`).
+- A row with a hover shows the detail mark after its name.
+- The status slot uses the `Role` set (glyph, word, role tint), in
+  lower-case caption text.
+- The source slot is a `ProvKind` badge or the name of a setting.
+- `Details` is the one disclosure for derivation. It is closed by default,
+  and its label is "Details · N" in every section.
+
+The rule is in `ui/components/CLAUDE.md`: tabular data uses DataTable;
+derivation goes in Details.
+
+### Sections converted
+
+- **Feeds & Speeds, Recommendation** (`feeds/compare.rs`, `feeds/why.rs`).
+  The default view shows a change row only when the recommended value
+  prints differently from the current value. Below the changes it shows one
+  status row for each problem, then the Apply buttons; it draws the buttons
+  only when a row differs. When nothing differs, it shows one row:
+  "✓ at the recommendation". `Details` holds these rows:
+  - the rows at the recommendation;
+  - the chip verdict and the power bar, unless one is a problem (a thin or
+    heavy chip, or power over 70 % of the limit);
+  - MRR;
+  - the context (tool, material, vendor row with its source badge);
+  - the force line;
+  - the row basis (plunge rule with a published-rule or repo-rule badge,
+    G1/G2/G3/B5 claims, V-bit key, row material);
+  - the engaged diameter, unless flagged;
+  - the long-tool share, now with a repo-rule badge in place of "repo rule,
+    unsourced";
+  - the RPM-lowered record and the no-vendor-data records;
+  - the Suggest stages: the aggressiveness record, the feed re-derive, the
+    ramp feed with its source badge, and the entry notes with their rules
+    on hover.
+
+  A dial record whose target is above the base or not met stays on the face
+  as a problem. The deleted renderers are `rail_row`, `rail_line`,
+  `rail_cell`, `RailColumns`, `rail_efficiency_row`, `rail_power_row`,
+  `rail_force_line_rows`, `rail_mrr_row`, `verdict_row_label`,
+  `draw_context_chip`, `detail_line`, `plain_line`, `draw_warnings`,
+  `draw_suggest_lines`, `draw_row_basis_lines`, `draw_engaged_diameter_row`
+  and `draw_chipload_min_warning`.
+- **Operating point (measured)** (`properties/feeds_speeds.rs`). The face
+  is one row: the achieved advance per tooth, with the chipload gate
+  verdict as its status. `Details` holds the commanded advance, the vendor
+  band (with its badge), "Limited by", feed against commanded, modulated
+  cuts, the strategy, and one row for each binding constraint. This
+  replaces the "Constraint breakdown" disclosure. The deleted renderers are
+  `draw_advance_per_tooth_card`, `wrapped_cell` and
+  `advance_gate_verdict_text`.
+- **Toolpath footer reach readings** (`properties/toolpath_panel.rs`):
+  Unreachable and Max gap rows, the grid line on the hover, and the
+  over-statement as a caution row.
+- **Unified Finish rest reference** (`operations/surface_3d.rs`): the
+  reference row has an ok or check status. Territory Clip and fresh stock
+  are caution rows.
+- **Model panel**: the X, Y and Z extents (range on hover) and the size and
+  normal cautions are one table. The mesh, BREP and polygon counts are in
+  the shared `Details`.
+- **Face selection**, and the **Simulation panel** tool position and
+  current operation.
+- **Simulation workspace inspector** (`sim_diagnostics.rs`):
+  - The limit rows (`verdict_badge` became `limit_data_row`) are table rows.
+  - The Project section grids are tables: Global, Must address,
+    Informational, not measured, and the top hotspots as clickable rows.
+  - The focused hotspot and issue cards are tables.
+  - The span facts, metrics and findings are tables.
+  - The generator item and generation trace drill-downs are tables.
+
+Not converted: the vendor LUT viewer (a 7-column table, behind its own
+disclosure), the machine RPM and power rows (they share a grid with
+editable rows), and the parameter editors of Geometry, Linking, Heights,
+Dressup, Stock, Setup and Tool. Those editors are fields, not derived data.
+
+### The graphs: root cause and fix
+
+The code shows three causes. A probe on the live project was not run,
+because the lead's GUI holds it.
+
+1. **The cut-metric charts were behind a closed disclosure.**
+   `draw_cut_metrics_section` opened the section by default only when a
+   metric exceeded its limit (`load_with_default_open(…, summary.exceeded > 0)`).
+   The open state had one id (`inspector_cut_metrics`) for every operation.
+   An operation inside its limits showed one header line,
+   "Cut metrics · within limits", and no chart. **Fix:** the section has no
+   disclosure now. The measured charts always draw, above the table.
+2. **The cards follow the playhead, not the selection**
+   (`focused_toolpath()` = `current_boundary()`). After a run from MCP, the
+   playhead stands at the end of the run, so the cards show the last
+   operation (on the mini test piece, the front 3D finish). Selecting a
+   toolpath in another workspace does not move them. **Fix:** an
+   "Operation" row under the header names the operation the charts
+   describe. The focus rule is unchanged; that change is for the lead to
+   decide.
+3. **A metric core did not measure painted a text line in place of its
+   chart.** **Fix:** the abstentions are one table after the charts, one
+   row each with the abstention mark and a "not measured" status. Core's
+   reason is on the hover.
+
+The cards do not abstain by operation family; only drill kinematics drops a
+card. They do not read the cell-size measurability report
+(`MeasurabilityReport`). Round 2 adds that report: when radial engagement,
+chip engagement or air cut is `NotMeasurable` or `Degraded` for the focused
+operation, the table gets a row such as "not measurable at 0.20 mm cell".
+The hover gives core's `describe()` and names the Resolution control (Setup
+& run). The table has no "use a finer cell" button. Core's per-tool cell
+rule (`auto_tool_rule_for_radius`) is `pub(crate)`, and a cell size typed
+in the GUI would be an invented number.
+
+### Before and after (visible lines at 280 points, `ic1` fixture)
+
+| Surface | Round 1 | Round 2 |
+|---|---|---|
+| Pocket / Feeds & Speeds | 32 | 22 |
+| 3D Rough / Feeds & Speeds | 33 | 22 |
+| 3D Finish / Feeds & Speeds | 36 | 25 |
+| Every other surface | as round 1 | unchanged |
+
+The `ic1` fixture is not generated or simulated. On a simulated operation,
+Operating point goes from 4 grid rows, 1 headline, 3 rows and 1 disclosure
+to 1 row and `Details`. The `ic1` Feeds caps are now 25 / 25 / 28 (the
+after-state plus 3).
+
+### Tension with earlier rulings
+
+- **Ruling R4 (2026-09-24), "every stage that moves a number is one line
+  on the card".** It is now one row in the card's `Details`. The row is
+  closed by default (lead ruling 2, 2026-10-13). `g_visible` still finds
+  every record as one run when the disclosures are open.
+- **Lead ruling 6, fields not text.** The Suggest records, the entry notes,
+  the plunge basis and the force line come from core as text
+  (`card_text()`, `EntryNote::headline`). They stay one record row each,
+  with the full text and the rule on the hover. The "no wood or router
+  source" clause in the entry notes is core text, so it stays a sentence.
+  The plunge basis and the ramp record get a source badge from their enum
+  variant. A field-by-field table for the aggressiveness record would need
+  a rewrite of `g_visible`, which joins its numbers by run; that is a
+  follow-up.
+
+### Tests
+
+New: `tabular_data_reads_one_table_ic2`, with three arms:
+
+- After the apply, a level DOC or WOC row is not drawn by default, and is
+  drawn once in `Details`.
+- The derivation runs paint only when `Details` is open.
+- A source scan: each derived-data file builds `DataTable` rows, and the 15
+  deleted renderers stay deleted.
+
+Changed on purpose (a parser follows the new shape):
+
+- `the_power_row_names_its_force_line_b6`, `the_card_names_every_entry_rule_g10`:
+  a record row with a hover ends in the detail mark.
+- `the_recommendation_explains_each_row_g_whyrow` (ld1): the long-tool row
+  is derivation, so it carries no warning mark.
+- `inspector_header_wraps_g_reachwrap`: the readings are `DataRow`s.
+- `a_tool_size_reads_diameter_and_radius_g_toolsize`: the context row is in
+  `Details`.
+- `the_inspector_nests_once_dc5`: the non-vacuity anchor also accepts
+  `Details::new(`, and no tab may carry the Details label.
+- `component_contracts_up2`: the new `DataTable` call; `compare.rs` holds
+  1 hand-rolled chain (was 3); the `sim_diagnostics.rs` row is gone (0).
+- `cut_metric_cards_read_the_gate_g_cutcards`,
+  `the_limit_rows_read_their_own_bound_g_ownbound`: the abstention and the
+  limit rows are table rows.
+- `the_inspector_text_is_bounded_ic1`: the Feeds caps are tighter.

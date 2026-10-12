@@ -548,11 +548,9 @@ fn the_component_set_is_complete_up2() {
             &[(0, "Stock"), (1, "Model")],
         ));
         let _ = ui.add(KeyValueRow::measured("Feed", "2400", "mm/min"));
-        DataTable::new("t", vec!["Current".into(), "Recommended".into()]).show(ui, |ui| {
-            ui.label("a");
-            ui.label("b");
-            ui.end_row();
-        });
+        let _ = DataTable::new("t")
+            .row(components::DataRow::measured("Feed", "2400", "mm/min"))
+            .show(ui);
         let _ = EmptyState::new("Nothing yet").show(ui);
         let _ = Banner::new(Role::Caution, "Results are stale")
             .action("Regenerate")
@@ -708,8 +706,9 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/feeds/compare.rs",
-        3,
-        "the feeds surfaces are the power session's; UI-03 does not edit them",
+        1,
+        "the refusal headline of the Apply column, a sentence in the danger \
+         colour rather than a title; round 2 moved the rows into DataTable",
     ),
     (
         "ui/sim_timeline.rs",
@@ -726,13 +725,6 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
         2,
         "one grid column-header loop and one inline lead-in inside a \
          horizontal row",
-    ),
-    (
-        "ui/sim_diagnostics.rs",
-        2,
-        "\"Must address\" carries theme::ERROR, and the severity colour is \
-         meaning rather than styling; SectionHeader has no colour slot. The \
-         other is a sentence, not a title.",
     ),
     (
         "ui/properties/machine_panel.rs",

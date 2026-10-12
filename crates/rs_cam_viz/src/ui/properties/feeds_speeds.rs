@@ -6,9 +6,11 @@ use crate::state::toolpath::{
     DressupConfig, DressupEntryStyle, HeightContext, HeightsConfig, OperationConfig, ToolpathEntry,
 };
 use crate::ui::AppEvent;
-use crate::ui::components::{PrecedenceField, ProvKind, UiExt, ValueRow};
+use crate::ui::components::{
+    DataRow, DataTable, Details, PrecedenceField, ProvKind, Role, SectionHeader, Source, UiExt,
+    ValueRow,
+};
 use crate::ui::feeds::shared::{material_family_label, tool_family_label};
-use crate::ui::theme;
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
 /// Run the LUT calculator (read-only), cache the result on the entry,
@@ -235,12 +237,18 @@ fn draw_feeds_card(
     let applied =
         crate::ui::feeds::shared::AppliedRecipe::new(previews, suggest_warnings.as_deref());
 
+    // W2 deleted the `Why is the recommendation here?` disclosure: every row
+    // of the card explains its own number on hover. Round 2 (2026-10-13):
+    // the card draws a problem as one status line and puts the warnings
+    // that record a stage, the Suggest stages and the row basis in its
+    // `Details` (`why::Placement`).
     crate::ui::feeds::compare::draw_inspector_comparison(
         ui,
         &current,
         &preview,
         &applied,
         rationale.as_ref(),
+        suggest_warnings.as_deref().unwrap_or_default(),
         &entry.operation,
         tool,
         material,
@@ -248,18 +256,6 @@ fn draw_feeds_card(
         entry.id,
         events,
     );
-
-    // W2 deleted the `Why is the recommendation here?` disclosure. Every row
-    // of the card above now explains its own number on hover, which is the
-    // question an operator actually asks. What stays HERE stays because a
-    // hover is the wrong home for it: a warning behind a hover is a warning
-    // that was deleted.
-    let explain = preview.explain();
-    crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
-    crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
-    crate::ui::feeds::why::draw_warnings(ui, explain);
-    let suggest_warnings = suggest_warnings.as_deref().unwrap_or_default();
-    crate::ui::feeds::why::draw_suggest_lines(ui, suggest_warnings);
 
     // This is accepted simulation evidence, not a recommendation. Keep it
     // outside and below the recommendation disclosure so planned and measured
@@ -296,214 +292,189 @@ pub(super) fn prov_from_chipload(
 /// is the per-toolpath modulation summary captured during simulation
 /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6). Display-only — it is
 /// the optimizer's result, not a field to edit.
+///
+/// Round 2 (2026-10-13): one table. The default view is one status row: the
+/// achieved advance per tooth with the chipload gate verdict. The commanded
+/// advance, the vendor band, the binding constraint and the modulation rows
+/// are derivation, in `Details`.
 fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict) {
-    use rs_cam_core::tool_load::ModulationStrategyTag;
-    let summary = verdict.modulation_summary.as_ref();
-    ui.named_section("Operating point (measured)", |ui| {
-        // Checkpoint H2/H4.4 — the four-line card. Before it existed, this
-        // section showed a feed RATIO and never printed an advance per
-        // tooth at all, so commanded and achieved were nowhere on screen
-        // together (A-1 census row P2, classified a gap rather than a
-        // mislabel). Every number below is read off the gate's own
-        // `FeedExplanation` stages — nothing is recomputed here, so the
-        // card cannot drift from the verdict it sits beside.
-        draw_advance_per_tooth_card(ui, verdict);
-
-        // Hero line: the one constraint that bound feed on the most cuts —
-        // the "why" behind these feeds.
-        let Some(summary) = summary else {
-            return;
-        };
-        if let Some((binding, frac)) = summary
-            .binding_constraint_distribution
-            .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-        {
-            ui.label(
-                egui::RichText::new(format!(
-                    "Limited by {} ({:.0}% of cuts)",
-                    binding.label(),
-                    frac * 100.0
-                ))
-                .strong(),
-            );
-        }
-        ui.param_grid("feeds_card_operating_point", |ui| {
-            ui.label("Feed vs commanded:");
-            let d = summary.median_feed_delta_pct;
-            let sign = if d >= 0.0 { "+" } else { "" };
-            ui.label(format!("{sign}{d:.0}% median"));
-            ui.end_row();
-
-            ui.label("Modulated:");
-            ui.label(format!(
-                "{} / {} cuts",
-                summary.moves_touched, summary.moves_total
-            ));
-            ui.end_row();
-
-            ui.label("Strategy:");
-            let strat = match summary.strategy {
-                ModulationStrategyTag::ConstrainedMax => "constrained-max",
-                ModulationStrategyTag::BandMid => "band-mid",
-            };
-            ui.label(format!(
-                "{strat} \u{00b7} feed scale {:.1}",
-                summary.feed_scale
-            ));
-            ui.end_row();
-        });
-        // Full per-constraint breakdown, collapsed by default — only when more
-        // than one constraint actually bound somewhere on the path.
-        if summary.binding_constraint_distribution.len() > 1 {
-            egui::CollapsingHeader::new("Constraint breakdown")
-                .default_open(false)
-                .show(ui, |ui| {
-                    for (binding, frac) in &summary.binding_constraint_distribution {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{}: {:.0}%",
-                                binding.label(),
-                                frac * 100.0
-                            ))
-                            .small(),
-                        );
-                    }
-                });
-        }
-    });
+    SectionHeader::new("Operating point (measured)").show(ui);
+    let mut face = DataTable::new("feeds_operating_point");
+    let mut details = DataTable::new("feeds_operating_point_details");
+    if let Some(explain) = verdict.feed_explanation.as_deref() {
+        let (role, word) = advance_gate_verdict(&verdict.chipload);
+        let (achieved, rest) = advance_per_tooth_rows(explain);
+        // The status truncates in the rail, so the hover ends with it.
+        face = face.row(achieved.status(role, word.clone()).hover_suffix(&word));
+        details = details.rows(rest);
+    }
+    if let Some(summary) = verdict.modulation_summary.as_ref() {
+        details = details.rows(modulation_rows(summary));
+    }
+    if face.is_empty() {
+        face = face.row(DataRow::not_measured("Chipload gate").hover(
+            "The simulation recorded no feed explanation for this toolpath, so the \
+             chipload gate has no advance per tooth to judge.",
+        ));
+    }
+    face.show(ui);
+    let count = details.len();
+    if count > 0 {
+        Details::new("feeds_operating_point_details")
+            .count(count)
+            .show(ui, |ui| {
+                details.show(ui);
+            });
+    }
 }
 
-/// One value cell of a feeds grid that WRAPS instead of extending the `Ui`.
-///
-/// F-3, and `AUDIT.md` D-16 before it. A grid cell's default wrap mode is
-/// `Extend`, which sets an INFINITE max width. One long value — "0.1313
-/// mm/tooth (clamped)", or "BELOW BAND (burn/rubbing)"
-/// beside its label — then grows the inspector past its 280 point panel. The
-/// panel clamps to its own maximum and draws the over-wide content
-/// right-aligned, which puts the left end outside the clip rect and slides
-/// the whole tab off its own left edge.
-///
-/// Do NOT fix this with a global `style.wrap_mode`: UP1 tried that and it
-/// wrapped short labels mid-word ("Spoilb / oard:"). `tokens::apply_to_style`
-/// leaves `wrap_mode` as `None` on purpose, so each long cell opts in here.
-fn wrapped_cell(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
-    ui.add(egui::Label::new(text).wrap_mode(egui::TextWrapMode::Wrap))
-}
-
-/// Checkpoint H4.4 — the operating-point card: **Commanded advance/tooth
-/// / Achieved advance/tooth / Vendor band / Gate verdict**, four lines,
-/// read-only.
+/// Checkpoint H4.4 — the advance-per-tooth rows: **Commanded / Achieved /
+/// Vendor band**, read-only.
 ///
 /// The point of putting them adjacent is that the interesting number is
 /// the *gap*: commanded is what the operator typed, achieved is what the
 /// machine reaches after the F-035 kinematics substitution, and the band
 /// is the only one of the three published by a vendor. A recommendation
 /// accepted against the commanded figure alone can be well outside the
-/// band by the time the cutter is in the wood.
+/// band by the time the cutter is in the wood. Every number below is read
+/// off the gate's own `FeedExplanation` stages — nothing is recomputed
+/// here, so the rows cannot drift from the verdict they sit beside.
 ///
 /// Display-only. This is the Feeds tab, and the standing rule is that it
-/// never auto-locks a numeric field — there is no input affordance here,
-/// only labels.
-fn draw_advance_per_tooth_card(
-    ui: &mut egui::Ui,
-    verdict: &rs_cam_core::tool_load::ToolpathLoadVerdict,
-) {
+/// never auto-locks a numeric field — there is no input affordance here.
+///
+/// Returns the achieved row, which carries the gate verdict on the face, and
+/// the commanded and band rows for `Details`.
+fn advance_per_tooth_rows(
+    explain: &rs_cam_core::feeds::FeedExplanation,
+) -> (DataRow, Vec<DataRow>) {
     use rs_cam_core::feeds::{ACHIEVED_ADVANCE_PER_TOOTH, COMMANDED_ADVANCE_PER_TOOTH};
-    let Some(explain) = verdict.feed_explanation.as_deref() else {
-        return;
+    let commanded_hover = format!(
+        "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes)",
+        explain.commanded.feed_rate_mm_min,
+        explain.commanded.spindle_rpm,
+        explain.commanded.flute_count,
+    );
+    let ratio_note = match explain.achieved_feed.median_ratio {
+        Some(r) => format!(
+            "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
+             {}. The machine reaches {:.0}% of the commanded feed \
+             (median) on this path.",
+            explain.gate.sample_count,
+            explain.gate.statistic.label(),
+            r * 100.0,
+        ),
+        // No predicted-feed map: `effective_feed_for_sample` returns the
+        // commanded feed, so this row IS the commanded value and must say so
+        // rather than implying a measurement.
+        None => format!(
+            "No kinematics prediction on this trace, so the effective \
+             feed falls back to the commanded feed \u{2014} this row is \
+             not independent evidence. Over the {} {}.",
+            explain.gate.sample_count,
+            explain.gate.statistic.label(),
+        ),
     };
-    ui.param_grid("feeds_card_advance_per_tooth", |ui| {
-        ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
-        let commanded_text = egui::RichText::new(format!(
-            "{:.4} mm/tooth",
-            explain.commanded.feed_per_tooth_mm
-        ));
-        let commanded_hover = format!(
-            "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes)",
-            explain.commanded.feed_rate_mm_min,
-            explain.commanded.spindle_rpm,
-            explain.commanded.flute_count,
-        );
-        wrapped_cell(ui, commanded_text).on_hover_text(commanded_hover);
-        ui.end_row();
-
-        ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
-        let achieved = egui::RichText::new(format!("{:.4} mm/tooth", explain.gate.value_mm));
-        let ratio_note = match explain.achieved_feed.median_ratio {
-            Some(r) => format!(
-                "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
-                     {}. The machine reaches {:.0}% of the commanded feed \
-                     (median) on this path.",
-                explain.gate.sample_count,
-                explain.gate.statistic.label(),
-                r * 100.0,
-            ),
-            // No predicted-feed map: `effective_feed_for_sample` returns
-            // the commanded feed, so this row IS the commanded value and
-            // must say so rather than implying a measurement.
-            None => format!(
-                "No kinematics prediction on this trace, so the effective \
-                     feed falls back to the commanded feed \u{2014} this row is \
-                     not independent evidence. Over the {} {}.",
-                explain.gate.sample_count,
-                explain.gate.statistic.label(),
-            ),
-        };
-        wrapped_cell(ui, achieved).on_hover_text(ratio_note);
-        ui.end_row();
-
-        ui.label("Vendor band:");
-        let band = match explain.band.min_mm_per_tooth {
-            Some(lo) => format!(
-                "{lo:.4}\u{2013}{:.4} mm/tooth",
-                explain.band.max_mm_per_tooth
-            ),
-            None => format!("\u{2264} {:.4} mm/tooth", explain.band.max_mm_per_tooth),
-        };
-        let band_hover = format!(
-            "Vendor chipload column from row {} (calibrated d={:.3} mm), \
-                 after DOC derate. Published as a linear advance per tooth \
-                 \u{2014} the same quantity as the two rows above.",
-            explain.band.observation_id, explain.band.row_diameter_mm,
-        );
-        wrapped_cell(ui, band).on_hover_text(band_hover);
-        ui.end_row();
-
-        ui.label("Gate verdict:");
-        let (text, color) = advance_gate_verdict_text(&verdict.chipload);
-        // The worst row on this tab: "EXCEEDS — below band
-        // (burn/rubbing)" beside "Gate verdict:" is wider than the panel.
-        wrapped_cell(ui, egui::RichText::new(text).color(color));
-        ui.end_row();
-    });
-    ui.add_space(4.0);
+    let band = match explain.band.min_mm_per_tooth {
+        Some(lo) => format!("{lo:.4}\u{2013}{:.4}", explain.band.max_mm_per_tooth),
+        None => format!("\u{2264} {:.4}", explain.band.max_mm_per_tooth),
+    };
+    let band_hover = format!(
+        "Vendor chipload column from row {} (calibrated d={:.3} mm), \
+         after DOC derate. Published as a linear advance per tooth \
+         \u{2014} the same quantity as the two rows above.",
+        explain.band.observation_id, explain.band.row_diameter_mm,
+    );
+    let achieved = DataRow::measured(
+        ACHIEVED_ADVANCE_PER_TOOTH,
+        format!("{:.4}", explain.gate.value_mm),
+        "mm/tooth",
+    )
+    .hover(ratio_note);
+    let rest = vec![
+        DataRow::measured(
+            COMMANDED_ADVANCE_PER_TOOTH,
+            format!("{:.4}", explain.commanded.feed_per_tooth_mm),
+            "mm/tooth",
+        )
+        .hover(commanded_hover),
+        DataRow::measured("Vendor band", band, "mm/tooth")
+            .source(Source::Prov(
+                ProvKind::VendorLut,
+                Some(explain.band.observation_id.clone()),
+            ))
+            .hover(band_hover),
+    ];
+    (achieved, rest)
 }
 
-/// One-line rendering of the chipload gate's verdict for the card above.
-fn advance_gate_verdict_text(
-    chipload: &rs_cam_core::tool_load::ChiploadVerdict,
-) -> (String, egui::Color32) {
+/// The modulation rows: the constraint that bound the feed on the most
+/// cuts, the feed against the commanded feed, the share of cuts the
+/// modulator touched, the strategy, and one row for each constraint when
+/// more than one bound somewhere on the path.
+fn modulation_rows(summary: &rs_cam_core::tool_load::ModulationSummary) -> Vec<DataRow> {
+    use rs_cam_core::tool_load::ModulationStrategyTag;
+    let mut rows = Vec::new();
+    if let Some((binding, frac)) = summary
+        .binding_constraint_distribution
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        rows.push(DataRow::value(
+            "Limited by",
+            format!("{} ({:.0} % of cuts)", binding.label(), frac * 100.0),
+        ));
+    }
+    let d = summary.median_feed_delta_pct;
+    let sign = if d >= 0.0 { "+" } else { "" };
+    rows.push(DataRow::value(
+        "Feed vs commanded",
+        format!("{sign}{d:.0} % median"),
+    ));
+    rows.push(DataRow::value(
+        "Modulated",
+        format!("{} / {} cuts", summary.moves_touched, summary.moves_total),
+    ));
+    let strategy = match summary.strategy {
+        ModulationStrategyTag::ConstrainedMax => "constrained-max",
+        ModulationStrategyTag::BandMid => "band-mid",
+    };
+    rows.push(DataRow::value(
+        "Strategy",
+        format!("{strategy} \u{00b7} feed scale {:.1}", summary.feed_scale),
+    ));
+    // The per-constraint breakdown, only when more than one constraint
+    // bound somewhere on the path.
+    if summary.binding_constraint_distribution.len() > 1 {
+        for (binding, frac) in &summary.binding_constraint_distribution {
+            rows.push(DataRow::value(
+                format!("  {}", binding.label()),
+                format!("{:.0} % of cuts", frac * 100.0),
+            ));
+        }
+    }
+    rows
+}
+
+/// The chipload gate's verdict as a role and a lower-case phrase.
+fn advance_gate_verdict(chipload: &rs_cam_core::tool_load::ChiploadVerdict) -> (Role, String) {
     use rs_cam_core::tool_load::ChiploadVerdict;
     use rs_cam_core::tool_load::verdict::ChipSide;
     match chipload {
         ChiploadVerdict::Within { burn_advisory, .. } => match burn_advisory {
-            Some(_) => (
-                "Within band (burn advisory)".to_owned(),
-                theme::WARNING_MILD,
-            ),
-            None => ("Within band".to_owned(), theme::SUCCESS),
+            Some(_) => (Role::Caution, "within band (burn advisory)".to_owned()),
+            None => (Role::Ok, "within band".to_owned()),
         },
         ChiploadVerdict::Exceeds { side, .. } => (
+            Role::Danger,
             match side {
-                ChipSide::Low => "BELOW BAND (burn/rubbing)".to_owned(),
-                ChipSide::High => "ABOVE BAND (breakage)".to_owned(),
+                ChipSide::Low => "below band (burn/rubbing)".to_owned(),
+                ChipSide::High => "above band (breakage)".to_owned(),
             },
-            theme::ERROR,
         ),
         // A gate that could not evaluate must not render as a pass.
         ChiploadVerdict::Unmodeled { reason } => {
-            (format!("not modelled ({reason:?})"), theme::TEXT_DIM)
+            (Role::Unknown, format!("not modelled ({reason:?})"))
         }
     }
 }

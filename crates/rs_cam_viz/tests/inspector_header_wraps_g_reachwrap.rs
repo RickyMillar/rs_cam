@@ -216,7 +216,7 @@ fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
     let row = &block[horizontal..after_horizontal];
 
     for reading in [
-        "unreachable {unreachable_pct:.1} %",
+        "{unreachable_pct:.1} %",
         "grid_line.clone()",
         "over_statement_note.clone()",
     ] {
@@ -229,44 +229,45 @@ fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
     }
 }
 
-/// IC1: each reading is ONE line through `OneLine`, not a bare `ui.label`.
-/// The grid line is the hover detail of the reading; the over-statement is a
-/// caution line of its own.
+/// IC1: each reading is ONE line, not a bare `ui.label`. Round 2
+/// (2026-10-13): each line is a row of the one table component
+/// (`DataRow`). The grid line is the hover of the reading rows; the
+/// over-statement is a caution row of its own.
 #[test]
 fn the_reach_readings_are_one_line_each() {
     let src = properties_src();
     let block = reach_block(&src);
     for reading in [
-        "unreachable {unreachable_pct:.1} %",
+        "{unreachable_pct:.1} %",
         "over_statement_note.clone()",
         "reach: {message}",
     ] {
         let at = block
             .find(reading)
             .unwrap_or_else(|| panic!("{reading:?} is gone from the reach block"));
-        // The component call opens at most a few lines above the text it
+        // The row constructor opens at most a few lines above the text it
         // carries; anything else means the line moved back onto a bare
         // `ui.label`.
         let before = &block[at.saturating_sub(120)..at];
         assert!(
-            before.contains("OneLine::new("),
-            "{reading:?} must be drawn through OneLine:\n{before}"
+            before.contains("DataRow::"),
+            "{reading:?} must be drawn as a DataTable row:\n{before}"
         );
     }
     let grid = block
         .find("grid_line.clone()")
         .expect("the grid line is gone from the reach block");
-    let before = &block[grid.saturating_sub(120)..grid];
+    let after = &block[grid..(grid + 400).min(block.len())];
     assert!(
-        before.contains(".detail("),
-        "the grid line must be the reading's hover detail:\n{before}"
+        after.contains(".hover("),
+        "the grid line must be the reading's hover:\n{after}"
     );
     let caution = block
         .find("if *tolerance_below_floor {")
         .expect("the over-statement caution is gone");
     assert!(
-        block[caution..].contains("crate::ui::tokens::CAUTION"),
-        "the over-statement must stay a caution-coloured face line"
+        block[caution..].contains("Role::Caution"),
+        "the over-statement must stay a caution row on the face"
     );
 }
 

@@ -22,7 +22,7 @@ use crate::state::toolpath::{
     OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
-use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
 
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -361,7 +361,9 @@ pub(super) fn draw_toolpath_panel(
         // IC1 (2026-10-13): the reading is ONE line. The grid line (the cell,
         // the floor and the bar) is its hover. When the tolerance is below
         // the grid floor, the over-statement is its own caution line, so the
-        // missing guarantee is never only on a hover.
+        // missing guarantee is never only on a hover. Round 2: the readings
+        // are rows of one `DataTable`.
+        let mut table = DataTable::new("toolpath_reach_readings");
         match reach {
             ReachPanelSummary::Measured {
                 unreachable_pct,
@@ -377,30 +379,32 @@ pub(super) fn draw_toolpath_panel(
                 // surface area, rim-eroded 3.0 mm" - two surfaces, one
                 // quantity, two descriptions, and that is the drift the
                 // shared notes exist to prevent.
-                ui.add(
-                    OneLine::new(format!(
-                        "unreachable {unreachable_pct:.1} % \u{00B7} max gap {max_gap_mm:.2} mm {}",
-                        crate::ui::tokens::GLYPH_DETAIL
-                    ))
-                    .color(crate::ui::tokens::TEXT_STRONG)
-                    .detail(format!("{area_basis_note}\n{}", grid_line.clone())),
-                );
+                let hover = format!("{area_basis_note}\n{}", grid_line.clone());
+                table = table
+                    .row(
+                        DataRow::value("Unreachable", format!("{unreachable_pct:.1} %"))
+                            .hover(hover.clone()),
+                    )
+                    .row(
+                        DataRow::measured("Max gap", format!("{max_gap_mm:.2}"), "mm").hover(hover),
+                    );
                 if *tolerance_below_floor {
                     // The shared sentence, quoted - not a fourth
                     // hand-written paraphrase of the same bias.
-                    ui.add(
-                        OneLine::new(format!("\u{26A0} {}", over_statement_note.clone()))
-                            .color(crate::ui::tokens::CAUTION),
-                    );
+                    table = table.row(DataRow::note(
+                        Role::Caution,
+                        format!("\u{26A0} {}", over_statement_note.clone()),
+                    ));
                 }
             }
             ReachPanelSummary::Failed(message) => {
-                ui.add(OneLine::new(format!("reach: {message}")).color(crate::ui::tokens::CAUTION));
+                table = table.row(DataRow::note(Role::Caution, format!("reach: {message}")));
             }
             ReachPanelSummary::Computing
             | ReachPanelSummary::NotMeasured
             | ReachPanelSummary::Idle => {}
         }
+        table.show(ui);
     }
 
     for d in &actionable {

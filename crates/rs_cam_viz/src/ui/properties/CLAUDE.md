@@ -26,15 +26,15 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 - A tooltip keys on the registry parameter NAME, never the label.
 - One `OpUiRow` per operation carries the editor, the diagram decision
   and the validation arm. A blank diagram states its reason.
-- IC1: a field is one row; its explanation is the hover. A sentence is one
-  `OneLine` (truncates, full text on hover); only a blocking error wraps, in
-  `DANGER`. A finding has one owner, the footer row. Rare dials go in the
-  tab's ONE `advanced` section. A diagram comes before the rows it shows.
+- IC1/IC2: a field is one row; its explanation is the hover. Derived data is
+  `DataTable` rows, derivation in ONE closed `Details`; only a blocking error
+  wraps, in `DANGER`. A finding has one owner, the footer row. Rare dials go
+  in the tab's ONE `advanced` section. A diagram comes before its rows.
 
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`
 - `cargo test -p rs_cam_viz -q --test boundary_controls_always_visible_g_boundaryinherit --test depth_beyond_stock_cautions_g_depthstock`
-- `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1`
+- `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2`
 - `cargo test -p rs_cam_viz -q --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05`
 - `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom --test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7`

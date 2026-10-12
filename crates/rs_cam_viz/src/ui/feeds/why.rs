@@ -18,19 +18,23 @@
 //! of the comparison card, and `compare.rs` hangs each one on the row it
 //! explains. See `planning/feeds_rework_2026-09-15/PLAN.md` W2.
 //!
-//! Four things deliberately stay on the page rather than moving to a hover:
+//! Four things deliberately stay rows of their own rather than moving to a
+//! hover. Round 2 (2026-10-13) gives each one a [`Placement`]: a problem is
+//! one status line on the face, and derivation is a row in the card's
+//! `Details`, which is closed by default.
 //!
-//! - **Warnings.** A warning behind a hover is a warning that was deleted.
+//! - **Warnings** ([`warning_rows`]). A warning behind a hover is a warning
+//!   that was deleted, so a problem stays on the face.
 //! - **The ramp record and the entry notes** (G6 ramp and G10,
-//!   2026-09-25): one face line from the funnel's `SuggestWarning::RampFeed`.
+//!   2026-09-25): one row from the funnel's `SuggestWarning::RampFeed`.
 //!   The card has no ramp row, so the line names the ramp feed, the arm
 //!   that set it (the G6 chip, the plunge slope, or no entry feed) and θ.
-//!   Under it, one face line per entry note: the ramp angle or the helix,
-//!   the core or the pip, the clearance and the straight-plunge caution
-//!   ([`draw_suggest_lines`]).
-//! - **The engaged-diameter row**, for tapered and V tools, where the
-//!   published tip size understates what is actually cutting.
-//! - **The row basis** ([`draw_row_basis_lines`]): the G10 plunge basis
+//!   Under it, one row per entry note: the ramp angle or the helix, the
+//!   core or the pip, the clearance and the straight-plunge caution
+//!   ([`suggest_rows`]).
+//! - **The engaged-diameter row** ([`engaged_diameter_row`]), for tapered
+//!   and V tools, where the published tip size understates what cuts.
+//! - **The row basis** ([`row_basis_rows`]): the G10 plunge basis
 //!   (the claim or the named repo rule), the V-bit lookup key (ruling B4),
 //!   the G1 size claim of an off-size row, the G2 soft/hard cap of a capped
 //!   hardness transfer, and the printed material label of a derived row.
@@ -46,14 +50,14 @@ use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap,
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::ObservationKind;
 use rs_cam_core::feeds::{
-    FeedsExplain, FeedsField, PlungeBasis, SpindleScaleReason, ToolGeometryHint,
+    FeedsExplain, FeedsField, PlungeBasis, RampFeed, SpindleScaleReason, ToolGeometryHint,
 };
 
 use super::shared::{
     AppliedRecipe, CurrentValues, engaged_diameter_context, material_family_label, vendor_band,
     vendor_single_value,
 };
-use crate::ui::components::OneLine;
+use crate::ui::components::{DataRow, ProvKind, Role, Source};
 use crate::ui::{theme, tokens};
 
 /// A factor within this of 1.0 changed nothing.
@@ -90,19 +94,18 @@ impl RecipeRow {
     }
 }
 
-/// One line, marked and hoverable, carrying its explanation.
+/// One derivation record: one full-width row, with its explanation on the
+/// row hover.
 ///
-/// IC1: the line never wraps. A long record truncates on the face; the hover
-/// gives the full record and then the explanation.
-fn detail_line(ui: &mut egui::Ui, text: impl AsRef<str>, color: egui::Color32, hover: &str) {
-    let marked = format!("{} {}", text.as_ref(), tokens::GLYPH_DETAIL);
-    ui.add(OneLine::new(marked).color(color).detail(hover));
+/// IC1 and round 2: the row never wraps. A long record truncates on the
+/// face; the hover gives the full record and then the explanation.
+fn record(text: impl Into<String>, color: egui::Color32, hover: &str) -> DataRow {
+    DataRow::record(text).tone(color).hover(hover)
 }
 
-/// One line with nothing further to say. A long record truncates on the
-/// face, and the hover gives the full record.
-fn plain_line(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) {
-    ui.add(OneLine::new(text).color(color));
+/// One caution: a status line for a problem, in the caution colour.
+fn caution(text: impl Into<String>) -> DataRow {
+    DataRow::note(Role::Caution, text)
 }
 
 // ── The per-row explanations ─────────────────────────────────────────
@@ -492,34 +495,35 @@ const APPLIED_NOTE: &str = "The row shows what `⚡ Apply all` writes: the calcu
 
 // ── What stays on the page ───────────────────────────────────────────
 
-/// S2 — engaged-diameter-at-DOC annotation row. Renders just below the
-/// context chip for tapered-ball / V-bit tools, where the published tip
-/// size badly understates what's actually cutting at depth.
-pub(crate) fn draw_engaged_diameter_row(
-    ui: &mut egui::Ui,
+/// Where a row of the Feeds card goes: the default view or `Details`.
+pub(crate) enum Placement {
+    /// A problem: one status line in the default view.
+    Problem(DataRow),
+    /// Derivation or provenance: a row inside `Details`.
+    Detail(DataRow),
+}
+
+/// S2 — the engaged diameter at the DOC, for tapered-ball and V-bit tools,
+/// where the published tip size understates what cuts at depth.
+///
+/// A flagged diameter is a problem; else the row is derivation.
+pub(crate) fn engaged_diameter_row(
     current: &CurrentValues,
     explain: &FeedsExplain,
-) {
-    let Some((doc, engaged, tip_dia, kind)) = engaged_diameter_context(current, explain) else {
-        return;
-    };
+) -> Option<Placement> {
+    let (doc, engaged, tip_dia, kind) = engaged_diameter_context(current, explain)?;
     // Flag when the engaged diameter has hit the shank, or differs from
     // the published tip by more than 50 % — i.e. the cone shoulder is
     // doing most of the work and the tip spec is misleading.
     let flag = engaged >= explain.shank_diameter_mm - 1e-6
         || (tip_dia > 1e-6 && (engaged - tip_dia).abs() / tip_dia > 0.5);
-    let icon = if flag { "⚠ " } else { "" };
-    let color = if flag {
-        theme::WARNING_MILD
+    let hover = engaged_diameter_hover(explain.tool_geometry, kind, tip_dia);
+    let face = format!("Engaged Ø {engaged:.2} mm at DOC {doc:.2} mm");
+    Some(if flag {
+        Placement::Problem(caution(format!("⚠ {face}")).hover(hover))
     } else {
-        theme::TEXT_STRONG
-    };
-    detail_line(
-        ui,
-        format!("{icon}Engaged Ø {engaged:.2} mm at DOC {doc:.2} mm"),
-        color,
-        &engaged_diameter_hover(explain.tool_geometry, kind, tip_dia),
-    );
+        Placement::Detail(record(face, theme::TEXT_STRONG, &hover))
+    })
 }
 
 /// The hover of the engaged-diameter row. Ruling A1 (2026-09-24) keys a
@@ -548,8 +552,9 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
     }
 }
 
-/// The basis of the matched row, on the page (extrapolation P1 step 4,
-/// P2 step 4).
+/// The basis of the matched row, as rows of the Feeds card's `Details`
+/// (extrapolation P1 step 4, P2 step 4; round 2 moved them from the face
+/// into `Details`, where "a visible line" below means a row).
 ///
 /// Operator rule: no invisible calculation. The G10 plunge basis
 /// (`FeedsResult::plunge`) is the first line: the claim headline in the
@@ -575,27 +580,28 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// When the cell is a `ProjectCurve` on a V-bit (operator ruling
 /// 2026-09-25), the row is a printed Trace row reached by a route, not the
 /// operation's own declared family — that route is a visible line too.
-pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
+pub(crate) fn row_basis_rows(explain: &FeedsExplain) -> Vec<DataRow> {
+    let mut rows = Vec::new();
     // G10 (2026-09-25): the plunge states its claim or its named repo rule.
     // It reads the plunge basis, not the matched row: the named rule serves
     // a tool with no row too. A drill cycle has no plunge rule (the plunge is
-    // the drill feed), so it paints no line.
+    // the drill feed), so it paints no line. Round 2: the basis variant
+    // gives the source badge; a repo rule reads as "no source".
     let plunge = &explain.recommended.plunge;
     let plunge_tone = match plunge {
-        PlungeBasis::Claimed { .. } => Some(theme::WARNING_MILD),
-        PlungeBasis::MaterialBase { .. } => Some(theme::TEXT_DIM),
+        PlungeBasis::Claimed { .. } => Some((theme::WARNING_MILD, ProvKind::PublishedRule)),
+        PlungeBasis::MaterialBase { .. } => Some((theme::TEXT_DIM, ProvKind::RepoRule)),
         PlungeBasis::DrillCycle => None,
     };
-    if let Some(tone) = plunge_tone {
+    if let Some((tone, kind)) = plunge_tone {
         let (headline, detail) = plunge.card_text();
-        detail_line(ui, headline, tone, &detail);
+        rows.push(record(headline, tone, &detail).source(Source::Prov(kind, None)));
     }
     let Some(row) = explain.matched_row.as_ref() else {
-        return;
+        return rows;
     };
     if explain.project_curve_vbit_routed_to_trace {
-        detail_line(
-            ui,
+        rows.push(record(
             "ProjectCurve on a V-bit reads the V-bit trace rows",
             theme::TEXT_DIM,
             &format!(
@@ -604,11 +610,10 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
                  printed V-bit Trace rows instead of a made-up ProjectCurve family.\nRow: {}.",
                 row.observation_id
             ),
-        );
+        ));
     }
     if let Some(key_text) = vbit_key_text(explain.query.tool_family, row) {
-        detail_line(
-            ui,
+        rows.push(record(
             key_text,
             theme::TEXT_DIM,
             &format!(
@@ -617,49 +622,44 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
                  diameter.\nRow: {}.",
                 row.observation_id
             ),
-        );
+        ));
     }
     if let Some(family) = row.family_basis.claim() {
         let (headline, detail) = family.card_text();
-        detail_line(
-            ui,
+        rows.push(record(
             headline,
             theme::WARNING_MILD,
             &format!("{detail}.\nRow: {}.", row.observation_id),
-        );
+        ));
     }
     // B5 (G6): a flat end mill plunge reads the side row's chip / Z. The
-    // claim moves the chip, so its headline is a visible line; the rule,
-    // the RPM cap and the peck rule are on its hover.
+    // claim moves the chip, so its headline is a row; the rule, the RPM cap
+    // and the peck rule are on its hover.
     if let Some(drill) = row.drill_basis.claim() {
         let (headline, detail) = drill.card_text();
-        detail_line(
-            ui,
+        rows.push(record(
             headline,
             theme::WARNING_MILD,
             &format!("{detail}.\nRow: {}.", row.observation_id),
-        );
+        ));
     }
     if let Some(claim) = row.size_basis.claim() {
         let (headline, detail) = claim.card_text();
-        detail_line(
-            ui,
+        rows.push(record(
             headline,
             theme::WARNING_MILD,
             &claim_hover(claim, &detail, &row.hardness_basis),
-        );
+        ));
     }
     if let Some((headline, detail)) = row.hardness_basis.card_text() {
-        detail_line(
-            ui,
+        rows.push(record(
             headline,
             theme::WARNING_MILD,
             &format!("{detail}.\nRow: {}.", row.observation_id),
-        );
+        ));
     }
     if row.row_kind == ObservationKind::Derived && !row.material_label.is_empty() {
-        detail_line(
-            ui,
+        rows.push(record(
             format!("Row material: {}", row.material_label),
             theme::TEXT_DIM,
             &format!(
@@ -668,8 +668,9 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
                 material_family_label(explain.query.material_family),
                 row.observation_id
             ),
-        );
+        ));
     }
+    rows
 }
 
 /// The hover of the claim line: the claim's detail, its source rows, and
@@ -704,32 +705,25 @@ fn claim_hover(claim: &Claim, detail: &str, hardness: &HardnessBasis) -> String 
 /// The warning needs a PUBLISHED minimum. A max-only row or a one-point row
 /// has none, so this function draws nothing for it. Until 2026-09-23 it
 /// compared against an invented `0.7 × max` floor (G-CHARTLINES).
-pub(crate) fn draw_chipload_min_warning(
-    ui: &mut egui::Ui,
-    current: &CurrentValues,
-    explain: &FeedsExplain,
-) {
+pub(crate) fn chipload_min_row(current: &CurrentValues, explain: &FeedsExplain) -> Option<DataRow> {
     if current.pass_role != rs_cam_core::feeds::PassRole::Finish {
-        return;
+        return None;
     }
     let cl = current.chipload_mm();
     if cl <= 0.0 {
-        return;
+        return None;
     }
-    let Some((lo, _hi)) = vendor_band(explain) else {
-        return;
-    };
+    let (lo, _hi) = vendor_band(explain)?;
     if cl >= lo {
-        return;
+        return None;
     }
-    detail_line(
-        ui,
-        "⚠ Advance/tooth is below the vendor band minimum",
-        theme::WARNING_MILD,
-        "The tool rubs instead of cutting, which burns the work and the \
-         cutting edge. The feed is too slow, the RPM is too high, or both. \
-         Raise the feed or drop the RPM.",
-    );
+    Some(
+        caution("⚠ Advance/tooth is below the vendor band minimum").hover(
+            "The tool rubs instead of cutting, which burns the work and the \
+             cutting edge. The feed is too slow, the RPM is too high, or both. \
+             Raise the feed or drop the RPM.",
+        ),
+    )
 }
 
 /// One warning as a headline and, where it has one, the detail behind it.
@@ -845,8 +839,9 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         ),
         // Ruling R4 WP1 (2026-09-23): the long-tool de-rate is a repo rule
         // with no source. It fires on most default tools (stickout 45 mm), so
-        // it is one short line with the numbers, on the face. Since ruling R4
-        // Q7 (2026-09-24) it scales the load target, not the feed.
+        // it is one short row with the numbers. Since ruling R4 Q7
+        // (2026-09-24) it scales the load target, not the feed. Round 2: the
+        // row carries the repo-rule badge, so the text does not say it.
         FeedsWarning::LongToolDerate {
             stickout_mm,
             diameter_mm,
@@ -855,9 +850,14 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         } => (
             format!(
                 "Long tool: load target ×{factor:.2} (stickout {stickout_mm:.0} mm is \
-                 {ratio:.1} × Ø{diameter_mm} mm; repo rule, unsourced)"
+                 {ratio:.1} × Ø{diameter_mm} mm)"
             ),
-            None,
+            Some(
+                "A repo rule with no source (ruling R4 WP1): a stickout above 6 x D \
+                 lowers the aggressiveness load target. The depth and the stepover \
+                 carry it; the feed does not change."
+                    .to_owned(),
+            ),
         ),
         // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling down
         // to hold the chip. Core owns the one text.
@@ -930,52 +930,61 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
     }
 }
 
-/// The recommendation's warnings, one line each.
+/// The recommendation's warnings, one row each.
 ///
-/// These stay on the page. A warning behind a hover is a warning that was
-/// deleted, and this surface exists to stop an operator burning a cutter.
-pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
-    for warning in &explain.recommended.warnings {
-        let (headline, detail) = warning_lines(warning);
-        match detail {
-            Some(detail) => {
-                detail_line(ui, format!("⚠ {headline}"), theme::WARNING_MILD, &detail);
+/// A problem stays on the page: a warning behind a hover is a warning that
+/// was deleted, and this surface exists to stop an operator burning a
+/// cutter. Round 2: a warning that records a stage or a source is not a
+/// problem, and its row goes in `Details`. These are the long-tool share
+/// (a repo rule), the RPM that follows the feed ceiling down, and the two
+/// "no vendor data" records (the context row's formula badge states them).
+pub(crate) fn warning_rows(explain: &FeedsExplain) -> Vec<Placement> {
+    use rs_cam_core::feeds::FeedsWarning;
+    explain
+        .recommended
+        .warnings
+        .iter()
+        .map(|warning| {
+            let (headline, detail) = warning_lines(warning);
+            match warning {
+                FeedsWarning::LongToolDerate { .. } => Placement::Detail(
+                    DataRow::record(headline)
+                        .hover_opt(detail)
+                        .source(Source::Prov(ProvKind::RepoRule, None)),
+                ),
+                FeedsWarning::RpmLoweredForFeedCeiling { .. }
+                | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                | FeedsWarning::VendorRowPublishesNoChipload { .. } => {
+                    Placement::Detail(DataRow::record(headline).hover_opt(detail))
+                }
+                FeedsWarning::FeedRateClamped { .. }
+                | FeedsWarning::PowerLimited { .. }
+                | FeedsWarning::PowerLadderReducedCut { .. }
+                | FeedsWarning::DocExceedsFlute { .. }
+                | FeedsWarning::SlottingDetected { .. }
+                | FeedsWarning::ScallopInvalid { .. }
+                | FeedsWarning::ShankTooLarge { .. }
+                | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+                | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {
+                    Placement::Problem(caution(format!("⚠ {headline}")).hover_opt(detail))
+                }
             }
-            None => plain_line(ui, format!("⚠ {headline}"), theme::WARNING_MILD),
-        }
-    }
+        })
+        .collect()
 }
 
 // ── The Suggest stages that move a number ────────────────────────────
 
-/// The face lines of one Suggest record, each with whether it is a
-/// Caution.
+/// The record line of one Suggest record, and whether it is a Caution.
 ///
 /// The operator's standing rule (ruling R4, 2026-09-24): every stage that
-/// moves a number is one line on the card, with its source status. The
-/// match is exhaustive, so a new record must choose here. A record that
-/// gives no line either moves no number, or its row hover carries it (the
-/// declutter ruling of 2026-09-15); the sentry
+/// moves a number is one line on the card, with its source status. Round 2
+/// puts the line in the card's `Details` ([`suggest_rows`]). The match is
+/// exhaustive, so a new record must choose here. A record that gives no
+/// line either moves no number, or its row hover carries it (the declutter
+/// ruling of 2026-09-15); the sentry
 /// `every_stage_that_moves_a_number_is_on_the_card_g_visible` holds the
-/// list. Only the ramp record gives more than one line: the record, then
-/// one line per entry note (G10).
-fn suggest_lines(warning: &SuggestWarning) -> Vec<(String, bool)> {
-    suggest_line(warning).map_or_else(Vec::new, |line| {
-        let mut lines = vec![line];
-        if let SuggestWarning::RampFeed { notes, .. } = warning {
-            lines.extend(
-                notes
-                    .as_slice()
-                    .iter()
-                    .map(|note| (note.headline.clone(), note.caution)),
-            );
-        }
-        lines
-    })
-}
-
-/// The first face line of one Suggest record, and whether it is a Caution
-/// (see [`suggest_lines`]).
+/// list.
 fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
     match warning {
         SuggestWarning::EngagementReducedForAggressiveness {
@@ -1093,7 +1102,7 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         // face line. It names the arm and θ, and the value the operation
         // holds now. The three arms (the G6 chip, the G10 plunge slope, no
         // entry feed) share the line. The entry notes follow it as their own
-        // lines (`suggest_lines`).
+        // rows (`suggest_rows`).
         SuggestWarning::RampFeed {
             from_mm_min,
             record,
@@ -1141,18 +1150,62 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
     }
 }
 
-/// The Suggest stages that move a number, one line each, on the face.
+/// The Suggest stages that move a number, one row each.
 ///
 /// Ruling R4 (2026-09-24): the aggressiveness dial and the feed re-derive
-/// at the final depth change the recipe. A hover is not enough for them.
-/// A line that states a Caution (a target above the base, or a target not
-/// met) carries the warning mark and the Caution tone.
-pub(crate) fn draw_suggest_lines(ui: &mut egui::Ui, warnings: &[SuggestWarning]) {
-    for (line, caution) in warnings.iter().flat_map(suggest_lines) {
-        if caution {
-            plain_line(ui, format!("⚠ {line}"), theme::WARNING_MILD);
+/// at the final depth change the recipe, so each has a row. Round 2: the
+/// rows are derivation and go in `Details`. Only a dial line that states a
+/// problem (a target above the base, or a target not met) stays on the
+/// face, as one status line. Any other Caution keeps the warning mark and
+/// the Caution tone inside `Details`. The ramp record gives one row, then
+/// one row per entry note (G10); each note's rule is on its hover.
+pub(crate) fn suggest_rows(warnings: &[SuggestWarning]) -> Vec<Placement> {
+    let mut out = Vec::new();
+    for warning in warnings {
+        let Some((line, is_caution)) = suggest_line(warning) else {
+            continue;
+        };
+        let problem = is_caution
+            && matches!(
+                warning,
+                SuggestWarning::EngagementReducedForAggressiveness { .. }
+            );
+        if problem {
+            out.push(Placement::Problem(caution(format!("⚠ {line}"))));
         } else {
-            plain_line(ui, line, tokens::TEXT_MUTED);
+            let mut row = stage_record(line, is_caution);
+            if let SuggestWarning::RampFeed { record, .. } = warning {
+                let (_, detail) = record.card_text();
+                row = row.hover(detail);
+                match record {
+                    RampFeed::Sourced(_) => {
+                        row = row.source(Source::Prov(ProvKind::PublishedRule, None));
+                    }
+                    RampFeed::PlungeSlope(_) => {
+                        row = row.source(Source::Prov(ProvKind::RepoRule, None));
+                    }
+                    RampFeed::NoEntryFeed { .. } => {}
+                }
+            }
+            out.push(Placement::Detail(row));
         }
+        if let SuggestWarning::RampFeed { notes, .. } = warning {
+            for note in notes.as_slice() {
+                out.push(Placement::Detail(
+                    stage_record(note.headline.clone(), note.caution).hover(note.detail.clone()),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// One stage record: the warning mark and the Caution tone for a Caution,
+/// else the muted record tone.
+fn stage_record(line: String, is_caution: bool) -> DataRow {
+    if is_caution {
+        DataRow::record(format!("⚠ {line}")).tone(theme::WARNING_MILD)
+    } else {
+        DataRow::record(line).tone(tokens::TEXT_MUTED)
     }
 }

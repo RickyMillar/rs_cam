@@ -20,6 +20,7 @@ use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 use rs_cam_core::tool_load::verdict::BoundSource;
 
 use rs_cam_core::feeds::rationale::SuggestRationale;
+use rs_cam_core::feeds::suggest::SuggestWarning;
 
 use super::shared::{
     AppliedRecipe, CurrentValues, ball_tip_radius, combined_scale, hardness_label,
@@ -28,7 +29,7 @@ use super::shared::{
 use super::why;
 use crate::state::AppState;
 use crate::ui::components::compare;
-use crate::ui::components::{OneLine, ProvKind, ProvenanceBadge};
+use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, SectionHeader, Source};
 use crate::ui::{AppEvent, theme};
 
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
@@ -148,11 +149,11 @@ pub(crate) fn compute_preview(
     ))
 }
 
-// The card reads the operation, the tool, the material and the machine on
-// top of the recommendation, because the chipload verdict is a statement
-// about the cut, not about the recipe. `draw_feeds_card` carries the same
-// allow for the same reason: bundling what the session already holds into
-// a struct would build a second data model of it.
+// SAFETY: the card reads the operation, the tool, the material and the
+// machine on top of the recommendation, because the chipload verdict is a
+// statement about the cut, not about the recipe. `draw_feeds_card` carries
+// the same allow for the same reason: bundling what the session already
+// holds into a struct would build a second data model of it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_inspector_comparison(
     ui: &mut egui::Ui,
@@ -160,6 +161,7 @@ pub(crate) fn draw_inspector_comparison(
     preview: &FeedsPreview,
     applied: &AppliedRecipe,
     rationale: Option<&SuggestRationale>,
+    suggest_warnings: &[SuggestWarning],
     operation: &crate::state::toolpath::OperationConfig,
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
@@ -172,11 +174,11 @@ pub(crate) fn draw_inspector_comparison(
     // do not recompute a narrower answer in the UI.
     //
     // G-RECOMAPPLIED: the verdict and the power row describe the cut that
-    // `⚡ Apply all` writes, the same cut the rail rows print. Until
-    // 2026-09-24 the verdict read the calculator's feed, RPM, depth and width
-    // (and the operation's current values for the force headroom), and the
-    // power row read the operation's current values. The calculator's cut is
-    // evaluated too, so each hover can quote it.
+    // `⚡ Apply all` writes, the same cut the rows print. Until 2026-09-24
+    // the verdict read the calculator's feed, RPM, depth and width (and the
+    // operation's current values for the force headroom), and the power row
+    // read the operation's current values. The calculator's cut is evaluated
+    // too, so each hover can quote it.
     let (applied_op, applied_point) = applied.applied_cut(operation, &explain.recommended);
     let calculator_op = applied.calculator_cut(operation, &explain.recommended);
     let efficiency = cut_efficiency(&applied_op, tool, material, machine, &applied_point);
@@ -202,113 +204,7 @@ pub(crate) fn draw_inspector_comparison(
         &explain.recommended,
     );
     power.calculator_note = power_note(&power, &calculator_power, &applied.cut_cause());
-    draw_context_chip(ui, explain, tool);
-    ui.add_space(crate::ui::tokens::SPACE_2);
-    draw_comparison_card(
-        ui,
-        current,
-        explain,
-        applied,
-        preview.refusal(),
-        rationale,
-        efficiency.as_ref(),
-        efficiency_note.as_deref(),
-        &power,
-        toolpath_id,
-        events,
-    );
-}
 
-/// Tool, material and recommendation-source context belongs with the
-/// canonical comparison, not in the Explore window.
-///
-/// IC1: one row. The source badge and the approximation token come first,
-/// because they are short; the tool and material line truncates after them
-/// and its hover names both in full. The size reads `ToolConfig::size_label`,
-/// so a tapered ball says "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm".
-///
-/// Below the row, the row's basis: the G1 size claim and the A4 material
-/// label, one line each (extrapolation P1 step 4).
-fn draw_context_chip(
-    ui: &mut egui::Ui,
-    explain: &FeedsExplain,
-    tool: &crate::state::job::ToolConfig,
-) {
-    let tool_text = format!(
-        "{} \u{00B7} {} flute \u{00B7} {}",
-        tool.size_label(),
-        explain.flute_count,
-        tool_family_label(explain.query.tool_family),
-    );
-    let material_text = format!(
-        "{} ({})",
-        material_family_label(explain.query.material_family),
-        hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
-    );
-    ui.horizontal(|ui| {
-        match &explain.matched_row {
-            Some(row) => {
-                // Compact: the observation id is one unbreakable token wider
-                // than the rail; the hover keeps the full reference.
-                ui.add(
-                    ProvenanceBadge::new(ProvKind::VendorLut)
-                        .reference(&row.observation_id)
-                        .compact(),
-                );
-                // A G1 size claim and a G2 soft/hard cap state their own
-                // scale on the lines below (`why::draw_row_basis_lines`). A
-                // row that is far from the query but has neither (a V-bit,
-                // or a hardness transfer under the cap) keeps the combined
-                // scale here.
-                if row.is_extrapolated
-                    && row.size_basis.claim().is_none()
-                    && row.hardness_basis.cap().is_none()
-                {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(format!(
-                                "approx \u{00D7}{:.2}",
-                                combined_scale(row)
-                            ))
-                            .small()
-                            .color(theme::WARNING_MILD),
-                        )
-                        .truncate(),
-                    );
-                }
-            }
-            None => {
-                ui.add(ProvenanceBadge::new(ProvKind::Formula).compact());
-            }
-        }
-        ui.add(
-            OneLine::new(format!("{tool_text} \u{00B7} {material_text}"))
-                .color(theme::TEXT_STRONG)
-                .detail(format!("Tool: {tool_text}\nMaterial: {material_text}")),
-        );
-    });
-    why::draw_row_basis_lines(ui, explain);
-}
-
-// SAFETY: the card carries one more borrowed payload than the argument
-// threshold allows, for the reason `draw_inspector_comparison` carries its
-// own allow: the two verdict rows are statements about the CUT, and bundling
-// the session's own values into a struct to shorten this list would build a
-// second data model of them.
-#[allow(clippy::too_many_arguments)]
-fn draw_comparison_card(
-    ui: &mut egui::Ui,
-    current: &CurrentValues,
-    explain: &FeedsExplain,
-    applied: &AppliedRecipe,
-    refusal: Option<&rs_cam_core::feeds::FeedsError>,
-    rationale: Option<&SuggestRationale>,
-    efficiency: Option<&CutEfficiency>,
-    efficiency_note: Option<&str>,
-    power: &PowerReading,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
     // W2: every row explains ITS OWN number. The `Why is the recommendation
     // here?` disclosure that used to sit under this card explained the recipe
     // as a whole, which is not the question an operator asks while reading a
@@ -324,252 +220,221 @@ fn draw_comparison_card(
     let doc = applied.value(FeedsField::DepthPerPass, r.axial_depth_mm);
     let woc = applied.value(FeedsField::Stepover, r.radial_width_mm);
     let advance = advance_per_tooth_mm(feed, rpm, current.flute_count);
-    // IC1: the legend line ("current → recommended · Δ vs current") moved to
-    // the heading's hover. The arrow in each row says the same thing.
-    let heading = ui.add(
-        egui::Label::new(
-            egui::RichText::new("Recommendation")
-                .strong()
-                .color(theme::TEXT_STRONG),
-        )
-        .sense(egui::Sense::hover()),
-    );
-    heading.on_hover_text(
-        "Each row: the current value \u{2192} the value \u{26A1} Apply all writes, \
-         and the ratio of the two. Hover a row name for its reasons.",
-    );
-    ui.add_space(4.0);
-
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        rail_row(
-            ui,
+    // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
+    // recommended DOC / WOC are the values `⚡ Apply all` writes, after
+    // `enforce_invariants` and the aggressiveness dial. Until 2026-09-24 the
+    // column printed the raw calculator values. On a Ø6 hardwood pocket it
+    // recommended 4.20 mm of DOC where the apply wrote 0.81 mm. Each row's
+    // hover keeps the calculator value. The advance row prints
+    // feed ÷ (RPM × flutes) in both columns.
+    let recipe = [
+        change_row(
             "RPM",
             current.spindle_rpm.map(f64::from),
             Some(rpm),
             "",
             1.0,
-            &why(why::RecipeRow::Rpm),
-        );
-        rail_row(
-            ui,
+            why(why::RecipeRow::Rpm),
+        ),
+        change_row(
             "Feed",
             Some(current.feed_rate_mm_min),
             Some(feed),
             " mm/min",
             1.0,
-            &why(why::RecipeRow::Feed),
-        );
-        rail_row(
-            ui,
+            why(why::RecipeRow::Feed),
+        ),
+        change_row(
             "Plunge",
             Some(current.plunge_rate_mm_min),
             Some(plunge),
             " mm/min",
             1.0,
-            &why(why::RecipeRow::Plunge),
-        );
-        // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
-        // recommended DOC / WOC are the values `⚡ Apply all` writes, after
-        // `enforce_invariants` and the aggressiveness dial. Until 2026-09-24
-        // this column printed the raw calculator values. On a Ø6 hardwood
-        // pocket it recommended 4.20 mm of DOC where the apply wrote 0.81 mm.
-        // Each row's hover keeps the calculator value. The advance row prints
-        // feed ÷ (RPM × flutes) in both columns.
-        rail_row(
-            ui,
+            why(why::RecipeRow::Plunge),
+        ),
+        change_row(
             "DOC",
             current.depth_per_pass,
             Some(doc),
             " mm",
             0.01,
-            &why(why::RecipeRow::Doc),
-        );
-        woc_row(ui, current, explain, woc, &why(why::RecipeRow::Woc));
-        rail_row(
-            ui,
+            why(why::RecipeRow::Doc),
+        ),
+        woc_row(current, explain, woc, why(why::RecipeRow::Woc)),
+        change_row(
             ADVANCE_ROW_LABEL,
             Some(current.chipload_mm()),
             advance,
             " mm/tooth",
             0.0001,
-            &why(why::RecipeRow::Advance),
-        );
+            why(why::RecipeRow::Advance),
+        ),
+    ];
 
-        // S1 — scallop-driven stepover control (DropCutter only).
-        if current.supports_scallop_override {
-            draw_scallop_control(ui, current, explain, toolpath_id, events);
+    // Round 2 (2026-10-13). The default view shows a recommendation only
+    // where it differs from the operation, and one status line for each
+    // problem. Everything else is derivation and goes in `Details`: the
+    // rows at the recommendation, the verdicts that are not a problem, the
+    // context, the row basis, the force line and the Suggest stages.
+    let mut face = DataTable::new("feeds_recommendation").name_share(CHANGE_NAME_SHARE);
+    let mut level = DataTable::new("feeds_recommendation_level").name_share(CHANGE_NAME_SHARE);
+    let mut details = DataTable::new("feeds_derivation");
+    let mut any_change = false;
+    for (row, differs) in recipe {
+        if differs {
+            any_change = true;
+            face = face.row(row);
+        } else {
+            level = level.row(row);
         }
+    }
+    let (chip, chip_problem) = chip_row(efficiency.as_ref(), efficiency_note.as_deref(), advance);
+    let (power_row, power_problem) = power_row(&power);
+    if chip_problem {
+        face = face.row(chip);
+    } else {
+        details = details.row(chip);
+    }
+    if power_problem {
+        face = face.row(power_row);
+    } else {
+        details = details.row(power_row);
+    }
+    // MRR = DOC × WOC × feed, the calculator's own product (Step 5), on the
+    // values Apply writes.
+    details = details.row(DataRow::measured(
+        "MRR",
+        format!("{:.0}", doc * woc * feed),
+        "mm\u{00B3}/min",
+    ));
+    details = details.rows(context_rows(explain, tool));
+    details = details.rows(force_line_rows(&power));
+    details = details.rows(why::row_basis_rows(explain));
+    for placement in why::engaged_diameter_row(current, explain)
+        .into_iter()
+        .chain(why::warning_rows(explain))
+        .chain(why::suggest_rows(suggest_warnings))
+    {
+        match placement {
+            why::Placement::Problem(row) => face = face.row(row),
+            why::Placement::Detail(row) => details = details.row(row),
+        }
+    }
+    face = face.row_opt(why::chipload_min_row(current, explain));
+    if face.is_empty() {
+        face = face.row(DataRow::note(
+            Role::Ok,
+            format!("{} at the recommendation", crate::ui::tokens::GLYPH_OK),
+        ));
+    }
 
-        ui.add_space(4.0);
-        rail_efficiency_row(ui, efficiency, efficiency_note, advance);
-        ui.add_space(2.0);
-        rail_power_row(ui, power);
-        rail_force_line_rows(ui, power);
-        ui.add_space(2.0);
-        // MRR = DOC × WOC × feed, the calculator's own product (Step 5),
-        // on the values Apply writes.
-        rail_mrr_row(ui, doc * woc * feed);
-
-        ui.add_space(6.0);
-        draw_apply_column(ui, refusal, toolpath_id, events);
+    SectionHeader::new("Recommendation").show(ui);
+    face.show(ui);
+    // S1 — scallop-driven stepover control (DropCutter only). It sets a
+    // value, so it stays in the default view.
+    if current.supports_scallop_override {
+        draw_scallop_control(ui, current, explain, toolpath_id, events);
+    }
+    ui.add_space(crate::ui::tokens::SPACE_2);
+    draw_apply_column(ui, preview.refusal(), any_change, toolpath_id, events);
+    let count = level.len() + details.len();
+    Details::new("feeds_details").count(count).show(ui, |ui| {
+        level.show(ui);
+        details.show(ui);
     });
 }
 
-/// The widths of the five cells of a comparison row, from the row width.
-///
-/// IC1: a row is ONE line. The cells have fixed shares of the rail, so the
-/// columns line up and a long value truncates in its own cell (the hover
-/// gives it in full) instead of wrapping the row.
-struct RailColumns {
-    label: f32,
-    value: f32,
-    arrow: f32,
-}
+/// The name-column share of a table of change rows: the two values and the
+/// ratio take the rest.
+const CHANGE_NAME_SHARE: f32 = 0.25;
 
-impl RailColumns {
-    fn of(ui: &egui::Ui) -> Self {
-        let width = ui.available_width();
-        Self {
-            label: (width * 0.25).floor(),
-            value: (width * 0.28).floor(),
-            arrow: crate::ui::tokens::SPACE_4,
-        }
-    }
-}
-
-/// One cell of a comparison row: a label of a fixed width that truncates.
+/// Tool, material and recommendation-source context: three rows of the
+/// card's `Details`.
 ///
-/// `hover` is the cell's own explanation. When it is given, it replaces the
-/// built-in tooltip of a truncated label, so a long cell shows one tooltip,
-/// not two.
-fn rail_cell(
-    ui: &mut egui::Ui,
-    width: f32,
-    text: egui::RichText,
-    hover: Option<&str>,
-) -> egui::Response {
-    ui.allocate_ui_with_layout(
-        egui::vec2(width, crate::ui::tokens::ROW_DENSE),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.set_width(width);
-            let label = egui::Label::new(text).truncate();
-            match hover {
-                Some(hover) => ui
-                    .add(label.show_tooltip_when_elided(false))
-                    .on_hover_text(hover),
-                None => ui.add(label),
+/// The size reads `ToolConfig::size_label`, so a tapered ball says
+/// "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm". The source is a
+/// badge. A row that is far from the query but has no G1 size claim and no
+/// G2 cap (a V-bit, or a hardness transfer under the cap) keeps its combined
+/// scale as a caution status; a claim states its own scale in its basis row
+/// (`why::row_basis_rows`).
+fn context_rows(explain: &FeedsExplain, tool: &crate::state::job::ToolConfig) -> Vec<DataRow> {
+    let tool_text = format!(
+        "{} \u{00B7} {} flute \u{00B7} {}",
+        tool.size_label(),
+        explain.flute_count,
+        tool_family_label(explain.query.tool_family),
+    );
+    let material_text = format!(
+        "{} ({})",
+        material_family_label(explain.query.material_family),
+        hardness_label(explain.query_hardness_kind, explain.query_hardness_value),
+    );
+    let source = match &explain.matched_row {
+        Some(row) => {
+            let base = DataRow::value("Vendor row", row.observation_id.clone()).source(
+                Source::Prov(ProvKind::VendorLut, Some(row.observation_id.clone())),
+            );
+            if row.is_extrapolated
+                && row.size_basis.claim().is_none()
+                && row.hardness_basis.cap().is_none()
+            {
+                base.status(
+                    Role::Caution,
+                    format!("approx \u{00D7}{:.2}", combined_scale(row)),
+                )
+            } else {
+                base
             }
-        },
-    )
-    .inner
+        }
+        None => DataRow::value("Vendor row", "none: the formula sets the values")
+            .source(Source::Prov(ProvKind::Formula, None)),
+    };
+    vec![
+        DataRow::value("Tool", tool_text),
+        DataRow::value("Material", material_text),
+        source,
+    ]
 }
 
-/// One `label current → recommended Δ` line in fixed cells, so the inspector
-/// rail can never be widened (or overflowed) by its content.
+/// One `label current → recommended Δ` row, and whether the recommendation
+/// differs from the current value at the precision the row prints.
 ///
 /// `explanation` is the row's own answer to "why is this number what it is",
 /// and it is not optional. W2 deleted the `Why is the recommendation here?`
 /// disclosure precisely because a whole-recipe explanation cannot answer a
 /// per-row question; a row with nothing to say would put that hole back.
-fn rail_row(
-    ui: &mut egui::Ui,
+///
+/// Round 2: a row with no recommendation, a row with no current value, or a
+/// row whose recommendation prints the same as the current value, is not a
+/// difference. The card puts it in `Details`.
+fn change_row(
     label: &str,
     current: Option<f64>,
     recommended: Option<f64>,
     unit: &str,
     precision: f64,
-    explanation: &str,
-) {
+    explanation: String,
+) -> (DataRow, bool) {
     let current_text = compare::format_optional(current, unit, precision);
     let recommended_text = compare::format_optional(recommended, unit, precision);
-    let recommended_text = egui::RichText::new(recommended_text)
-        .small()
-        .color(theme::TEXT_STRONG);
-    rail_line(
-        ui,
-        label,
-        explanation,
-        &current_text,
-        recommended_text,
-        current,
-        recommended,
-    );
-}
-
-/// The five cells of one comparison row. `rail_row` and the scallop-driven
-/// WOC row share it, so both rows keep the same columns.
-fn rail_line(
-    ui: &mut egui::Ui,
-    label: &str,
-    explanation: &str,
-    current_text: &str,
-    recommended_text: egui::RichText,
-    current: Option<f64>,
-    recommended: Option<f64>,
-) {
-    let columns = RailColumns::of(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
-        rail_cell(
-            ui,
-            columns.label,
-            egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
-                .small()
-                .strong()
-                .color(theme::TEXT_HEADING),
-            Some(explanation),
-        );
-        rail_cell(
-            ui,
-            columns.value,
-            egui::RichText::new(current_text)
-                .small()
-                .color(theme::TEXT_DIM),
-            None,
-        );
-        rail_cell(
-            ui,
-            columns.arrow,
-            egui::RichText::new("\u{2192}")
-                .small()
-                .color(theme::TEXT_DIM),
-            None,
-        );
-        rail_cell(ui, columns.value, recommended_text, None);
-        ui.add(egui::Label::new(compare::delta_tag(current, recommended)).truncate());
-    });
-}
-
-/// The label of a verdict row: the row's name, its detail mark, and its
-/// workings behind the mark.
-///
-/// One renderer for one element (`ui/components/CLAUDE.md`). The chipload
-/// verdict and the power reading are the same element — a named verdict whose
-/// workings live on a hover — so they paint through one function rather than
-/// two copies of one `RichText` chain. `component_contracts_up2` counts those
-/// chains per file for exactly this reason: a second copy of an element is
-/// how a surface stops reading the kit.
-///
-/// The chain stays hand-rolled rather than calling `components::text`,
-/// because the rail's rung is `small` (11 points) and the kit's nearest rung,
-/// `text::body_strong`, is 13. A rail row at 13 points does not fit the
-/// 240-point column. Say if the kit should gain a dense rung.
-fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
-                .small()
-                .strong()
-                .color(theme::TEXT_HEADING),
+    // An operation with no value for the field (a 3D finish has no depth per
+    // pass) cannot hold the recommendation, so it is not a difference.
+    let differs = recommended.is_some() && current.is_some() && current_text != recommended_text;
+    (
+        DataRow::change(
+            label,
+            current_text,
+            recommended_text,
+            compare::delta_tag(current, recommended),
         )
-        .truncate(),
+        .hover(explanation),
+        differs,
     )
-    .on_hover_text(hover.to_owned());
 }
 
 /// The rail's chipload verdict — where this cut sits in the corridor, and
-/// what sitting there costs.
+/// what sitting there costs. One row, and a problem when the chip is thin
+/// or heavy.
 ///
 /// # This replaces a gauge that could not fail (Phase A)
 ///
@@ -594,26 +459,22 @@ fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
 /// blank, a bare dash or a 100 %. The ratios go on the face because "1.6×
 /// tool wear" is actionable; `u` in J/mm³ and the ploughing share go on the
 /// hover, where the person who wants the workings will look.
-fn rail_efficiency_row(
-    ui: &mut egui::Ui,
+fn chip_row(
     efficiency: Option<&CutEfficiency>,
     calculator_note: Option<&str>,
     fallback_advance_mm: Option<f64>,
-) {
+) -> (DataRow, bool) {
     // The advance per tooth is feed ÷ (RPM × flutes) — a commanded value,
     // not a force-model output — so it survives the model's refusal and is
     // still printed beside the abstention.
     let advance_mm = efficiency
         .map(|e| e.advance_per_tooth_mm)
         .or(fallback_advance_mm);
-    let (verdict, color) = match efficiency {
+    let (role, verdict) = match efficiency {
         Some(e) => verdict_face(e),
         None => (
-            format!(
-                "{} efficiency not modelled for this material",
-                crate::ui::tokens::GLYPH_UNKNOWN
-            ),
-            theme::TEXT_DIM,
+            Role::Unknown,
+            "efficiency not modelled for this material".to_owned(),
         ),
     };
     let mut hover = match efficiency {
@@ -624,41 +485,26 @@ fn rail_efficiency_row(
         hover.push_str("\n\n");
         hover.push_str(note);
     }
-    // IC1: one line in the comparison's columns. The verdict phrase takes
-    // what the rail leaves and truncates; the hover has the workings.
-    let columns = RailColumns::of(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
-        ui.allocate_ui_with_layout(
-            egui::vec2(columns.label, crate::ui::tokens::ROW_DENSE),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.set_width(columns.label);
-                verdict_row_label(ui, "Chip", &hover);
-            },
-        );
-        rail_cell(
-            ui,
-            columns.value,
-            egui::RichText::new(compare::format_optional(advance_mm, " mm/tooth", 0.0001))
-                .small()
-                .color(theme::TEXT_STRONG),
-            Some(&hover),
-        );
-        ui.add(
-            egui::Label::new(egui::RichText::new(verdict).small().color(color))
-                .truncate()
-                .show_tooltip_when_elided(false),
+    // The status slot truncates in the rail; the hover ends with the whole
+    // verdict.
+    hover.push_str(&format!("\n\nVerdict: {verdict}."));
+    let problem = matches!(role, Role::Caution | Role::Danger);
+    (
+        DataRow::value(
+            "Chip",
+            compare::format_optional(advance_mm, " mm/tooth", 0.0001),
         )
-        .on_hover_text(hover);
-    });
+        .status(role, verdict)
+        .hover(hover),
+        problem,
+    )
 }
 
-/// The verdict phrase and its colour.
+/// The verdict phrase and its role. The status slot adds the role glyph.
 ///
 /// Each arm prints only the ratios that exist. A missing ratio becomes a
 /// short abstention in the phrase, never a silent omission and never a zero.
-fn verdict_face(efficiency: &CutEfficiency) -> (String, egui::Color32) {
+fn verdict_face(efficiency: &CutEfficiency) -> (Role, String) {
     match efficiency.verdict {
         ChipVerdict::Thin => {
             let mut costs = Vec::new();
@@ -673,27 +519,21 @@ fn verdict_face(efficiency: &CutEfficiency) -> (String, egui::Color32) {
             } else {
                 costs.join(", ")
             };
-            (format!("\u{26A0} thin \u{2014} {tail}"), theme::WARNING)
+            (Role::Caution, format!("thin \u{2014} {tail}"))
         }
         ChipVerdict::InBand => {
             let tail = match efficiency.force_headroom {
                 Some(headroom) => headroom_phrase(headroom),
                 None => "force headroom not modelled".to_owned(),
             };
-            (
-                format!(
-                    "{} in vendor range \u{00B7} {tail}",
-                    crate::ui::tokens::GLYPH_OK
-                ),
-                theme::SUCCESS,
-            )
+            (Role::Ok, format!("in vendor range \u{00B7} {tail}"))
         }
         ChipVerdict::Heavy => {
             let tail = match efficiency.force_headroom {
                 Some(headroom) => headroom_phrase(headroom),
                 None => "above the vendor range; force headroom not modelled".to_owned(),
             };
-            (format!("\u{26A0} heavy \u{2014} {tail}"), theme::WARNING)
+            (Role::Caution, format!("heavy \u{2014} {tail}"))
         }
         ChipVerdict::NoBand => {
             let tail = match efficiency.force_headroom {
@@ -701,11 +541,8 @@ fn verdict_face(efficiency: &CutEfficiency) -> (String, egui::Color32) {
                 None => String::new(),
             };
             (
-                format!(
-                    "{} no vendor chipload range matched{tail}",
-                    crate::ui::tokens::GLYPH_UNKNOWN
-                ),
-                theme::TEXT_DIM,
+                Role::Unknown,
+                format!("no vendor chipload range matched{tail}"),
             )
         }
     }
@@ -884,14 +721,6 @@ fn unmodelled_hover(advance_mm: Option<f64>) -> String {
     out
 }
 
-/// The width of the rail's power bar, in points.
-///
-/// The Simulation workspace's rail is 240 points wide and this row also
-/// carries a label and the setting its bound traces back to, so the bar takes
-/// the middle. `horizontal_wrapped` moves it to a line of its own when the
-/// rail is narrower still.
-const POWER_BAR_WIDTH: f32 = 84.0;
-
 /// The power row's payload: the figure at the point this operation ships, or
 /// the typed refusal, plus the provenance of the bound.
 ///
@@ -961,7 +790,8 @@ impl PowerReading {
     }
 }
 
-/// The rail's power row — 0 to the machine's own limit at this spindle speed.
+/// The rail's power row — 0 to the machine's own limit at this spindle
+/// speed. A problem above the caution share of `compare::power_color`.
 ///
 /// # Why the bar is back
 ///
@@ -978,8 +808,8 @@ impl PowerReading {
 /// The face is the percent of the limit and nothing else: every limit on this
 /// product reads 0 to limit, and "limit calculated from X" belongs in the
 /// hover. The kW pair, the provenance clause and the four figures of the
-/// operating point are on the hover. The caption is the SETTING that moves
-/// the bound, so a reader can trace the limit back to it.
+/// operating point are on the hover. The source slot is the SETTING that
+/// moves the bound, so a reader can trace the limit back to it.
 ///
 /// A 100 % reading here is a real reading, not an absent constraint painted
 /// as an all-clear: the Step 6 power ladder clamps a power-limited recipe
@@ -992,7 +822,7 @@ impl PowerReading {
 /// paints its own clause in the dim abstention style the chipload row uses.
 /// An empty bar would read as a cut with power to spare, which is the
 /// opposite of what an absent model says.
-fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
+fn power_row(power: &PowerReading) -> (DataRow, bool) {
     let hover = match (&power.figure, &power.source) {
         (Ok(figure), Some(source)) => {
             let mut hover = power_hover(figure, source);
@@ -1008,88 +838,74 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
         // a panic because a GUI row is not the place to assert an invariant.
         (Ok(_), None) => power_unmodelled_hover(PowerUnmodeled::NoAvailablePower),
     };
-    let columns = RailColumns::of(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
-        ui.allocate_ui_with_layout(
-            egui::vec2(columns.label, crate::ui::tokens::ROW_DENSE),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.set_width(columns.label);
-                verdict_row_label(ui, "Power", &hover);
-            },
-        );
-        match (&power.figure, &power.source) {
-            (Ok(figure), Some(source)) => {
-                // The door promises a finite, positive `available_kw`, so the
-                // ratio is always defined. The FILL is clamped because a bar
-                // cannot draw past its end; the TEXT is not, because a cut
-                // over its ceiling must read over its ceiling.
-                let utilisation = figure.required_kw / figure.available_kw;
-                ui.add(
-                    egui::ProgressBar::new(utilisation.clamp(0.0, 1.0) as f32)
-                        .fill(compare::power_color(utilisation))
-                        .desired_width(POWER_BAR_WIDTH)
-                        .text(egui::RichText::new(power_face(figure)).small()),
+    match (&power.figure, &power.source) {
+        (Ok(figure), Some(source)) => {
+            // The door promises a finite, positive `available_kw`, so the
+            // ratio is always defined. The FILL is clamped because a bar
+            // cannot draw past its end; the TEXT is not, because a cut over
+            // its ceiling must read over its ceiling.
+            let utilisation = figure.required_kw / figure.available_kw;
+            (
+                DataRow::bar(
+                    "Power",
+                    utilisation as f32,
+                    power_face(figure),
+                    compare::power_color(utilisation),
                 )
-                .on_hover_text(hover.clone());
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(source.setting())
-                            .small()
-                            .color(theme::TEXT_DIM),
-                    )
-                    .truncate()
-                    .show_tooltip_when_elided(false),
-                )
-                .on_hover_text(hover.clone());
-            }
-            _ => {
-                let clause = match &power.figure {
-                    Err(reason) => reason.clause(),
-                    Ok(_) => PowerUnmodeled::NoAvailablePower.clause(),
-                };
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!(
-                            "{} {clause}",
-                            crate::ui::tokens::GLYPH_UNKNOWN
-                        ))
-                        .small()
-                        .color(theme::TEXT_DIM),
-                    )
-                    .truncate()
-                    .show_tooltip_when_elided(false),
-                )
-                .on_hover_text(hover.clone());
-            }
+                .source(Source::Setting(source.setting().to_owned()))
+                .hover(hover),
+                utilisation > POWER_CAUTION_SHARE,
+            )
         }
-    });
+        _ => {
+            let clause = match &power.figure {
+                Err(reason) => reason.clause(),
+                Ok(_) => PowerUnmodeled::NoAvailablePower.clause(),
+            };
+            (
+                DataRow::value(
+                    "Power",
+                    format!("{} {clause}", crate::ui::tokens::GLYPH_UNKNOWN),
+                )
+                .tone(theme::TEXT_DIM)
+                .hover(hover),
+                false,
+            )
+        }
+    }
 }
 
-/// The force-line lines under the power row (plan B6 §6), dim.
+/// The share of the power limit above which the power row is a problem: the
+/// share where `compare::power_color` leaves its pass colour.
+const POWER_CAUTION_SHARE: f64 = 0.7;
+
+/// The force-line rows (plan B6 §6), dim.
 ///
 /// - The line's card text, or the refusal headline.
 /// - Only when the mean chip of this cut is outside the printed range: the
 ///   extrapolation line. A measured chip adds no line.
 ///
 /// The hover of each line is the line's detail, or the refusal detail.
-fn rail_force_line_rows(ui: &mut egui::Ui, power: &PowerReading) {
+fn force_line_rows(power: &PowerReading) -> Vec<DataRow> {
     let (face, hover) = rs_cam_core::material::force_line::card_lines(&power.force_line);
-    dim_line(ui, &face, &hover);
+    let mut rows = vec![
+        DataRow::record(face)
+            .tone(theme::TEXT_DIM)
+            .hover(hover.clone()),
+    ];
     if power.force_line.is_ok()
         && let Some(extrapolation) = power
             .force_point
             .as_ref()
             .and_then(ForceAtPoint::extrapolation_text)
     {
-        dim_line(ui, &extrapolation, &hover);
+        rows.push(
+            DataRow::record(extrapolation)
+                .tone(theme::TEXT_DIM)
+                .hover(hover),
+        );
     }
-}
-
-/// One dim line with a hover. A long line truncates on the face.
-fn dim_line(ui: &mut egui::Ui, text: &str, hover: &str) {
-    ui.add(OneLine::new(text).color(theme::TEXT_DIM).detail(hover));
+    rows
 }
 
 /// The face: the percent of the limit, formatted from the two figures it
@@ -1140,30 +956,19 @@ fn power_unmodelled_hover(reason: PowerUnmodeled) -> String {
     )
 }
 
-/// The rail's MRR readout, one line.
-fn rail_mrr_row(ui: &mut egui::Ui, mrr_mm3_min: f64) {
-    ui.horizontal(|ui| {
-        ui.add(egui::Label::new(
-            egui::RichText::new("MRR:").small().color(theme::TEXT_DIM),
-        ));
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{mrr_mm3_min:.0} mm\u{00B3}/min")).small(),
-            )
-            .truncate(),
-        );
-    });
-}
-
 /// The inspector comparison's Apply column.
 ///
 /// Checkpoint I-3 (2026-08-12): on a tool × operation pairing
 /// `validate_tool_for_operation` refuses, the explanation remains visible but
 /// the **whole Apply column is replaced by the refusal**. The write becomes
 /// impossible; the explanation survives.
+///
+/// Round 2: when every row is at the recommendation, the writes would
+/// change nothing, so the column is not drawn.
 fn draw_apply_column(
     ui: &mut egui::Ui,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
+    any_change: bool,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -1195,6 +1000,9 @@ fn draw_apply_column(
             )
             .wrap(),
         );
+        return;
+    }
+    if !any_change {
         return;
     }
     ui.horizontal_wrapped(|ui| {
@@ -1245,31 +1053,20 @@ fn draw_apply_column(
 
 /// WOC (stepover) comparison row. When the operation is in
 /// scallop-driven-stepover mode (S1) the row is rendered as *derived*:
-/// the label gains an "(auto from scallop)" marker and a tooltip
-/// spelling out the chord-height math, so it's visually distinct from a
-/// manually-entered stepover.
+/// the label gains a scallop mark and a hover spelling out the chord-height
+/// math, so it's visually distinct from a manually-entered stepover.
 ///
 /// `woc` is the stepover `⚡ Apply all` writes (G-RECOMAPPLIED). The derived
 /// value of the scallop formula stays on the hover.
 fn woc_row(
-    ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
     woc: f64,
-    explanation: &str,
-) {
+    explanation: String,
+) -> (DataRow, bool) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
-        rail_row(
-            ui,
-            "WOC",
-            current.stepover,
-            Some(woc),
-            " mm",
-            0.01,
-            explanation,
-        );
-        return;
+        return change_row("WOC", current.stepover, Some(woc), " mm", 0.01, explanation);
     }
 
     let h = current.scallop_height.unwrap_or(0.0);
@@ -1301,44 +1098,19 @@ fn woc_row(
     // `clamp_stepover_to_diameter` and the runtime back-off along with
     // everything else. The derived value is on the hover; the face shows the
     // clamped form of it that `⚡ Apply all` writes (G-RECOMAPPLIED).
-    let columns = RailColumns::of(ui);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_1;
-        rail_cell(
-            ui,
-            columns.label,
-            egui::RichText::new("WOC \u{24E2}")
-                .small()
-                .color(theme::TEXT_DIM),
-            Some(&math),
-        );
-        rail_cell(
-            ui,
-            columns.value,
-            egui::RichText::new(compare::format_optional(current.stepover, " mm", 0.01))
-                .small()
-                .color(theme::TEXT_DIM),
-            None,
-        );
-        rail_cell(
-            ui,
-            columns.arrow,
-            egui::RichText::new("\u{2192}")
-                .small()
-                .color(theme::TEXT_DIM),
-            None,
-        );
-        rail_cell(
-            ui,
-            columns.value,
-            egui::RichText::new(format!("{woc:.2} mm (auto)"))
-                .small()
-                .color(theme::SUCCESS),
-            Some(&math),
-        );
-        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(woc))).truncate());
-    });
-    ui.add_space(2.0);
+    let current_text = compare::format_optional(current.stepover, " mm", 0.01);
+    let differs = current_text != format!("{woc:.2} mm");
+    (
+        DataRow::change(
+            "WOC \u{24E2}",
+            current_text,
+            format!("{woc:.2} mm (auto)"),
+            compare::delta_tag(current.stepover, Some(woc)),
+        )
+        .tone(theme::SUCCESS)
+        .hover(format!("{math}\n\n{explanation}")),
+        differs,
+    )
 }
 
 /// S1 — scallop-driven-stepover control for DropCutter. A checkbox
@@ -1395,10 +1167,11 @@ fn draw_scallop_control(
         }
     });
     if current.scallop_height.is_some() && tip_r.is_none() {
-        ui.add(
-            OneLine::new("⚠ No spherical tip: scallop height ignored")
-                .color(theme::WARNING_MILD)
-                .detail("This tool has no ball tip, so the formula stepover is used."),
-        );
+        DataTable::new("feeds_scallop_caution")
+            .row(
+                DataRow::note(Role::Caution, "⚠ No spherical tip: scallop height ignored")
+                    .hover("This tool has no ball tip, so the formula stepover is used."),
+            )
+            .show(ui);
     }
 }

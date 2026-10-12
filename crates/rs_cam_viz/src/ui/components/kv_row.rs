@@ -1,4 +1,6 @@
-//! `KeyValueRow` (§4.6) and `DataTable` (§4.7).
+//! `KeyValueRow` (§4.6) and the row hover tint (§4.7).
+//!
+//! The table of §4.7 is `data_table::DataTable` (inspector clean-up round 2).
 //!
 //! # The row is a FIXED line box
 //!
@@ -190,56 +192,6 @@ impl egui::Widget for KeyValueRow {
             });
         })
         .response
-    }
-}
-
-/// A thin styling wrapper over `egui::Grid`.
-///
-/// The crate has 89 `Grid::new` sites, no `egui_extras` and no
-/// `TableBuilder`, so this adds no dependency. It exists to give every table
-/// one header treatment, one rule, one zebra and one row height.
-pub struct DataTable {
-    id_salt: String,
-    headers: Vec<String>,
-    striped: bool,
-}
-
-impl DataTable {
-    pub fn new(id_salt: impl Into<String>, headers: Vec<String>) -> Self {
-        Self {
-            id_salt: id_salt.into(),
-            headers,
-            striped: true,
-        }
-    }
-
-    #[must_use]
-    pub fn striped(mut self, striped: bool) -> Self {
-        self.striped = striped;
-        self
-    }
-
-    /// Draw the table. The body closure draws rows and calls `ui.end_row()`
-    /// for each, which is the `egui::Grid` contract (ruling R18: this type
-    /// owns row termination for its own HEADER only).
-    pub fn show<R>(
-        self,
-        ui: &mut egui::Ui,
-        body: impl FnOnce(&mut egui::Ui) -> R,
-    ) -> egui::InnerResponse<R> {
-        let columns = self.headers.len().max(1);
-        egui::Grid::new(self.id_salt)
-            .num_columns(columns)
-            .spacing([tokens::SPACE_3, tokens::SPACE_2])
-            .min_row_height(tokens::ROW_DENSE)
-            .striped(self.striped)
-            .show(ui, |ui| {
-                for header in &self.headers {
-                    ui.label(text::subhead(header.clone()));
-                }
-                ui.end_row();
-                body(ui)
-            })
     }
 }
 

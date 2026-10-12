@@ -11,7 +11,7 @@ use crate::state::toolpath::{
 };
 
 use super::super::{advanced, dv, dv_pill, p};
-use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
 /// Fallback tool radius (1/8" endmill) when the active tool's radius is
@@ -764,16 +764,13 @@ fn draw_unified_finish_claims(
 
     // The resolved reference: what the LAST generation used, not what the
     // dial says. `None` before the operation has generated, or when claims
-    // are off and nothing was resolved.
+    // are off and nothing was resolved. Round 2: the readouts are rows of one
+    // table; the reason is on each row's hover.
+    let mut table = DataTable::new("unified_finish_rest_reference");
     match resolved {
         Some(f) => {
             let r = f.resolution;
             let loud = r.needs_attention() || f.territory_clip_skipped();
-            let colour = if loud {
-                crate::ui::tokens::CAUTION
-            } else {
-                crate::ui::tokens::OK
-            };
             let used = match r.reference() {
                 rs_cam_core::finish::unified_finish::CreaseReference::MachinedStock => {
                     "machined prior stock"
@@ -783,23 +780,22 @@ fn draw_unified_finish_claims(
                 }
             };
             let verb = if r.is_derived() { "derived" } else { "pinned" };
-            // IC1: one line each; the reason is on the hover.
-            ui.add(
-                OneLine::new(format!(
-                    "{} Last run: {used} ({verb})",
-                    if loud { "\u{26A0}" } else { "\u{2713}" }
-                ))
-                .color(colour)
-                .detail(r.why()),
+            let (role, word) = if loud {
+                (Role::Caution, "check")
+            } else {
+                (Role::Ok, "ok")
+            };
+            table = table.row(
+                DataRow::value("Rest reference", format!("{used} ({verb})"))
+                    .status(role, word)
+                    .hover(r.why()),
             );
             if f.territory_clip_skipped() {
-                ui.add(
-                    OneLine::new("\u{26A0} Territory Clip skipped")
-                        .color(crate::ui::tokens::CAUTION)
-                        .detail(
-                            "Territory Clip was requested and skipped: this pass covered \
-                             its full territory, not rest islands.",
-                        ),
+                table = table.row(
+                    DataRow::note(Role::Caution, "\u{26A0} Territory Clip skipped").hover(
+                        "Territory Clip was requested and skipped: this pass covered \
+                         its full territory, not rest islands.",
+                    ),
                 );
             }
         }
@@ -807,11 +803,11 @@ fn draw_unified_finish_claims(
             // UNKNOWN, not a grey. Nothing has been measured yet, and §2.6
             // separates "not run" from "passed" so the two cannot be read
             // alike at a glance.
-            ui.add(
-                OneLine::new("Rest reference: not generated yet")
-                    .color(crate::ui::tokens::UNKNOWN)
-                    .detail("The resolved rest reference shows here after this operation runs."),
-            );
+            table =
+                table
+                    .row(DataRow::not_measured("Rest reference").hover(
+                        "The resolved rest reference shows here after this operation runs.",
+                    ));
         }
         None => {}
     }
@@ -823,16 +819,15 @@ fn draw_unified_finish_claims(
         && cfg.claims_reference != ClaimsReference::SelfProbe
         && stock_source == StockSource::Fresh
     {
-        ui.add(
-            OneLine::new("\u{26A0} Fresh stock: no machined prior")
-                .color(crate::ui::tokens::CAUTION)
-                .detail(
-                    "This operation cuts fresh stock, so the machined-stock reference \
-                     cannot be used. Set Start from to After previous ops, then generate \
-                     and simulate the upstream operation.",
-                ),
+        table = table.row(
+            DataRow::note(Role::Caution, "\u{26A0} Fresh stock: no machined prior").hover(
+                "This operation cuts fresh stock, so the machined-stock reference \
+                 cannot be used. Set Start from to After previous ops, then generate \
+                 and simulate the upstream operation.",
+            ),
         );
     }
+    table.show(ui);
 }
 
 pub(in crate::ui::properties) fn draw_unified_finish_params(

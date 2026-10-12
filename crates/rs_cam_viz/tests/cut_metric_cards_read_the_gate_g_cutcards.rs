@@ -228,10 +228,18 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         card.contains("DistributionChart::new("),
         "each measured card draws the shared histogram component"
     );
+    // Inspector clean-up round 2: a metric core could not measure is one
+    // row of the section's abstention table. `DataRow::not_measured` paints
+    // the abstention mark in its value column.
+    let abstention = function_source(&diagnostics, "fn abstention_row(");
     assert!(
-        card.contains("NotMeasured::new()"),
+        abstention.contains("DataRow::not_measured("),
         "a metric core could not measure draws the abstention mark, never \
          an empty histogram (X-VAC)"
+    );
+    assert!(
+        section.contains("abstention_row("),
+        "the section draws the cards core could not measure as abstention rows"
     );
     assert!(
         hover_fn.contains("Depth is reported; the deflection limit decides."),
