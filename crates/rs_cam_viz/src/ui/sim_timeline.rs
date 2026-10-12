@@ -246,7 +246,7 @@ fn draw_verdict_hud(
                 .hide_when_zero()
                 .hover(
                     "Sustained high-load clusters — triage in the Inspector's \
-                     Top hotspots list.",
+                     Warnings tab.",
                 ),
         );
         // Generator traces are debug-grade provenance: only pill them

@@ -113,6 +113,22 @@ pub struct RsCamApp {
 /// one bounds a user drag, that one bounds the arithmetic.
 pub const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
 
+/// The default width of the Simulation inspector, in points.
+///
+/// Measured, not guessed (inspector clean-up round 3). The sentry
+/// `the_sim_inspector_is_tabbed_ic3` draws the Metrics tab of a simulated
+/// pocket through `side_panel` and finds the narrowest width at which no
+/// text run is elided and none paints past the content edge. It asserts
+/// that this constant is at least that width and at most one 8-point step
+/// wider. Run it with `-- --nocapture` to print the measurement.
+///
+/// The measurement of 2026-10-13: at the old 240 points the rail cut the
+/// card peaks ("peak 41 % of limit"), the cell-size rows and the row names
+/// short. From 304 points nothing is cut. The widest rows are the card
+/// header (title, status, peak, two buttons) and the "Radial engagement"
+/// row name in the 42 % name column of `DataTable`.
+pub const SIM_DIAGNOSTICS_DEFAULT_WIDTH: f32 = 304.0;
+
 /// The space between a side panel's content and the right edge of its
 /// scroll area, in points. The floating scroll bar sits in it.
 pub const SIDE_PANEL_GUTTER: f32 = crate::ui::tokens::SPACE_3;
@@ -649,24 +665,30 @@ impl RsCamApp {
         });
 
         // Right panel: diagnostics
-        side_panel(ui, SidePanelEdge::Right, "sim_diagnostics", 240.0, |ui| {
-            let (state, events) = self.controller.state_and_events_mut();
-            let trace_before = state.simulation.open_trace;
-            crate::ui::sim_diagnostics::draw(
-                ui,
-                &mut state.simulation,
-                &state.session,
-                &state.gui,
-                events,
-            );
-            // A card's `< >` button set the trace on this frame. Open it
-            // through the one door, which closes the other modals first.
-            if let Some(metric) = state.simulation.open_trace
-                && trace_before != Some(metric)
-            {
-                state.open_cut_metric_trace(metric);
-            }
-        });
+        side_panel(
+            ui,
+            SidePanelEdge::Right,
+            "sim_diagnostics",
+            SIM_DIAGNOSTICS_DEFAULT_WIDTH,
+            |ui| {
+                let (state, events) = self.controller.state_and_events_mut();
+                let trace_before = state.simulation.open_trace;
+                crate::ui::sim_diagnostics::draw(
+                    ui,
+                    &mut state.simulation,
+                    &state.session,
+                    &state.gui,
+                    events,
+                );
+                // A card's `< >` button set the trace on this frame. Open it
+                // through the one door, which closes the other modals first.
+                if let Some(metric) = state.simulation.open_trace
+                    && trace_before != Some(metric)
+                {
+                    state.open_cut_metric_trace(metric);
+                }
+            },
+        );
 
         // Central panel: 3D viewport
         egui::CentralPanel::default()

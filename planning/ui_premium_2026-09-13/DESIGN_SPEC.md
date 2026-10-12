@@ -735,6 +735,21 @@ fit; otherwise the label takes its own line and the whole set sits under it.
 A row that cannot wrap at all pushes the inspector off its own left edge, so
 the fallback is a stack, never an overflow.
 
+### 4.15 `TabStrip` — added 2026-10-13
+
+The one strip of tabs inside a panel (inspector clean-up round 3). The
+toolpath inspector and the Simulation inspector draw it; the workspace bar
+is chrome and keeps its own tabs. A tab is a label at `SIZE_BODY`, strong,
+with an optional badge: a dot in a role colour before the label, or the
+caution glyph and a count after it in the colour of its role. A count of 0
+shows no badge. The active tab takes `ACCENT_QUIET`, an `ACCENT` underline
+and `RADIUS_SM` on its two top corners. A tab is at least `ROW_ACTION` tall.
+The strip wraps in a narrow rail; no tab paints past the panel edge.
+
+In a `DataTable`, a value that is not measured reads "N/A" in `UNKNOWN`
+with no status chip after it. The reason is the first line of the row
+hover. `NotMeasured` (§4.12) keeps the dash for inline runs.
+
 ---
 
 ### 4.13 Rulings on the gaps and contradictions §4 left open

@@ -1288,6 +1288,45 @@ pub struct SimulationState {
     /// The move window the trace modal shows, as toolpath-local moves.
     /// `None` is the whole run. Runtime-only; opening a trace resets it.
     pub trace_window: Option<(f64, f64)>,
+    /// The tab the Simulation inspector shows (inspector clean-up round 3).
+    /// Runtime-only: the choice lasts while the app runs, and it is not
+    /// saved with the project.
+    pub inspector_tab: SimInspectorTab,
+}
+
+/// A tab of the Simulation inspector (inspector clean-up round 3).
+///
+/// Operator, 2026-10-13: "can we de-clutter by moving the sections into
+/// tabs. default to showing cut metric graphs."
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SimInspectorTab {
+    /// The cut-metric charts of the operation under the playhead, then the
+    /// limits they do not chart. The default tab.
+    #[default]
+    Metrics,
+    /// The findings of the run: the triage items, the counts, the issue
+    /// kinds and the hotspot jump list.
+    Warnings,
+    /// The operation and the span under the playhead, with their jumps.
+    Navigate,
+    /// The run as a whole: cycle time, moves and distances.
+    Project,
+}
+
+impl SimInspectorTab {
+    /// The tabs in strip order.
+    pub const ALL: [Self; 4] = [Self::Metrics, Self::Warnings, Self::Navigate, Self::Project];
+
+    /// The label on the tab.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Metrics => "Metrics",
+            Self::Warnings => "Warnings",
+            Self::Navigate => "Navigate",
+            Self::Project => "Project",
+        }
+    }
 }
 
 impl Default for SimulationState {
