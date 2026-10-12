@@ -435,7 +435,7 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|(f, _)| *f == FaceUp::Bottom)
             .unwrap_or((FaceUp::Bottom, ZRotation::Deg0));
 
-        // The stock panel's "Auto-place keyed pins" calls the same planner
+        // The pin wizard's "Auto-place" calls the same planner
         // with the same inputs: the obstacles (the default part models,
         // the keep-outs and the fixtures) and the diameter of the tool
         // that drills the pin holes (G-PINPANEL, P6). The two doors cannot

@@ -20,7 +20,7 @@
 //! serves every in-plane flip, and the frame comes from the setup map, not
 //! from a second copy of it.
 
-use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_MATCH_TOL_MM, PinFlipKind, PinSetupMap};
+use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_MATCH_TOL_MM, PinSetupMap};
 
 /// Move every pin by `(dx, dy)` mm. The diameters do not change.
 #[must_use]
@@ -36,89 +36,6 @@ pub fn set_diameter(pins: &[AlignmentPin], diameter: f64) -> Vec<AlignmentPin> {
     pins.iter()
         .map(|p| AlignmentPin::new(p.x, p.y, diameter))
         .collect()
-}
-
-/// Make a nearly symmetric set exactly symmetric under the flip `map`.
-///
-/// The flip is a mirror, and the mirror is its own inverse. The function
-/// matches the pins first:
-///
-/// - a pin whose image lands within `2 * tol` of the pin itself is an
-///   axis pin (a pin at distance `t` from the axis has its image `2t`
-///   away);
-/// - two pins of one diameter are a pair when the image of one lands
-///   within `tol` of the other.
-///
-/// The closest matches are taken first, and each pin is in one match only.
-/// Then each axis pin moves to the midpoint of the pin and its image (a
-/// point on the axis). Each pair `(i, j)` moves to `p_i' = (p_i +
-/// map(p_j)) / 2` and `p_j' = map(p_i')`, which is the smallest symmetric
-/// move.
-///
-/// A pin with no match does not move, and the validator then reports that
-/// it does not seat. A map with no in-plane flip returns the set without
-/// a change.
-#[must_use]
-pub fn snap_to_flip(pins: &[AlignmentPin], map: &PinSetupMap, tol: f64) -> Vec<AlignmentPin> {
-    let mut out = pins.to_vec();
-    if map.kind() != PinFlipKind::InPlane {
-        return out;
-    }
-    let images: Vec<(f64, f64)> = pins.iter().map(|p| map.map_xy(p.x, p.y)).collect();
-
-    // (movement, i, j): j == i is an axis pin.
-    let mut candidates: Vec<(f64, usize, usize)> = Vec::new();
-    for (i, (p, img)) in pins.iter().zip(&images).enumerate() {
-        let self_gap = (img.0 - p.x).hypot(img.1 - p.y);
-        if self_gap <= 2.0 * tol {
-            candidates.push((0.5 * self_gap, i, i));
-        }
-        for (j, q) in pins.iter().enumerate().skip(i + 1) {
-            if (p.diameter - q.diameter).abs() > PIN_GEOM_EPS_MM {
-                continue;
-            }
-            let gap = (img.0 - q.x).hypot(img.1 - q.y);
-            if gap <= tol {
-                candidates.push((0.5 * gap, i, j));
-            }
-        }
-    }
-    candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
-
-    let mut used = vec![false; pins.len()];
-    for (_, i, j) in candidates {
-        if used.get(i).copied().unwrap_or(true) || used.get(j).copied().unwrap_or(true) {
-            continue;
-        }
-        let (Some(p_i), Some(&img_i), Some(&img_j)) = (pins.get(i), images.get(i), images.get(j))
-        else {
-            continue;
-        };
-        if i == j {
-            if let Some(slot) = out.get_mut(i) {
-                slot.x = 0.5 * (p_i.x + img_i.0);
-                slot.y = 0.5 * (p_i.y + img_i.1);
-            }
-        } else {
-            let snapped = (0.5 * (p_i.x + img_j.0), 0.5 * (p_i.y + img_j.1));
-            let partner = map.map_xy(snapped.0, snapped.1);
-            if let Some(slot) = out.get_mut(i) {
-                slot.x = snapped.0;
-                slot.y = snapped.1;
-            }
-            if let Some(slot) = out.get_mut(j) {
-                slot.x = partner.0;
-                slot.y = partner.1;
-            }
-        }
-        if let Some(flag) = used.get_mut(i) {
-            *flag = true;
-        }
-        if let Some(flag) = used.get_mut(j) {
-            *flag = true;
-        }
-    }
-    out
 }
 
 /// The axis frame of a flip: an origin on the axis, the unit direction
@@ -491,44 +408,6 @@ mod tests {
         let top = PinSetupMap::new(FaceUp::Top, ZRotation::Deg0, W, D);
         let pins = axis_plus_mirror_pair(&map, mini_pattern()).unwrap();
         assert_eq!(fit_axis_plus_mirror_pair(&pins, &top), None);
-    }
-
-    #[test]
-    fn snap_to_flip_makes_a_slightly_off_set_symmetric() {
-        let map = bottom(ZRotation::Deg0);
-        let off = vec![
-            AlignmentPin::new(59.0, 32.7, 6.0), // 0.2 mm off the axis
-            AlignmentPin::new(6.1, 12.4, 6.0),  // pair, 0.1 and 0.1 off
-            AlignmentPin::new(6.0, 52.5, 6.0),
-        ];
-        let before = validate_pins_for_flip(&off, FaceUp::Bottom, ZRotation::Deg0, W, D);
-        assert!(before.seat_mismatch_mm.unwrap() > 0.1, "{before:?}");
-
-        let snapped = snap_to_flip(&off, &map, PIN_MATCH_TOL_MM);
-        let after = validate_pins_for_flip(&snapped, FaceUp::Bottom, ZRotation::Deg0, W, D);
-        assert!(after.seat_mismatch_mm.unwrap() <= ROUND_MM, "{after:?}");
-        // The axis pin is on the axis, and the pair mirrors exactly.
-        assert!(close(snapped[0].y, 32.5), "{snapped:?}");
-        assert!(close(snapped[0].x, 59.0), "{snapped:?}");
-        assert!(close(snapped[1].x, snapped[2].x), "{snapped:?}");
-        assert!(close(snapped[1].y, D - snapped[2].y), "{snapped:?}");
-        // The smallest symmetric move: the pair x is the mean.
-        assert!(close(snapped[1].x, 6.05), "{snapped:?}");
-        // The fit now reads the preset.
-        assert!(fit_axis_plus_mirror_pair(&snapped, &map).is_some());
-    }
-
-    #[test]
-    fn snap_to_flip_leaves_an_unmatched_pin_and_a_non_flip_alone() {
-        let map = bottom(ZRotation::Deg0);
-        let pins = vec![
-            AlignmentPin::new(59.0, 32.5, 6.0),
-            AlignmentPin::new(6.0, 10.0, 6.0), // its image (6, 55) has no pin
-        ];
-        let snapped = snap_to_flip(&pins, &map, PIN_MATCH_TOL_MM);
-        assert_eq!(snapped[1], pins[1]);
-        let top = PinSetupMap::new(FaceUp::Top, ZRotation::Deg0, W, D);
-        assert_eq!(snap_to_flip(&pins, &top, PIN_MATCH_TOL_MM), pins);
     }
 
     #[test]

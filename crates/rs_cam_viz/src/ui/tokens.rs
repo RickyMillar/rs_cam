@@ -253,6 +253,13 @@ pub const DIAGRAM_CANVAS: Color32 = Color32::from_rgb(0x14, 0x17, 0x1A);
 pub const DIAGRAM_INK: Color32 = ACCENT;
 /// Stock or material body.
 pub const DIAGRAM_MATERIAL: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x36);
+/// The underside of the stock, when a diagram turns the stock over (the
+/// pin wizard's flip diagram). Lighter than [`DIAGRAM_MATERIAL`], so the
+/// operator sees the face change.
+pub const DIAGRAM_MATERIAL_UNDERSIDE: Color32 = INK_35;
+/// The part footprint on the stock (the pin plan view and the flip
+/// diagram). A blue hue, so it reads apart from the grey stock.
+pub const DIAGRAM_PART: Color32 = ACCENT_QUIET;
 /// The cutter body.
 pub const DIAGRAM_TOOL: Color32 = INK_65;
 /// Construction lines and retired geometry.

@@ -1,4 +1,5 @@
-//! P7 — the stock panel's pin editor and the viewport pin overlays.
+//! P7 — the pin editor (since round 2, 2026-10-12: the pin wizard) and the
+//! viewport pin overlays.
 //!
 //! The operator: "the ux is a little clunky at the moment! ITs hard to see
 //! whats going on. id also like existing pins to be ajustable as a set, not
@@ -7,13 +8,13 @@
 //! `tools[0]`, a 6 mm drill on a drill operation, a Top and a Bottom
 //! setup, two 6 mm pins on the flip axis y = 32.5):
 //!
-//! 1. the panel paints the status chips of the one report: the pins seat,
-//!    they do NOT key (a half turn seats them), the walls, and the pin
-//!    drill;
-//! 2. "Use 3-pin preset" writes the placer's set in one edit, and the
-//!    chips then say "Keyed: yes";
-//! 3. a drag of a pattern dimension writes the draft every frame and the
-//!    session ONCE, on release;
+//! 1. the wizard's Place step paints the chips of the one report: the
+//!    pins do NOT key (a half turn seats them) and the walls; the Dowels
+//!    step names the drill of the pin size;
+//! 2. "Auto-place" writes the placer's set into the draft in one click,
+//!    and the chips then say "Keyed"; Apply writes it in one undo step;
+//! 3. a drag of a pattern value writes the draft every frame, keeps the
+//!    preset, and never writes the session before Apply;
 //! 4. the ghost overlay row is ready while the set does not key, refused
 //!    with a reason when it keys, and on by default in the Setup view;
 //! 5. a pick on a flipped setup with the stock origin not at 0 hits the
@@ -38,10 +39,9 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::selection::Selection;
+use rs_cam_viz::ui::AppEvent;
 use rs_cam_viz::ui::overlays::registry::{self, Precondition};
-use rs_cam_viz::ui::properties;
-
-const PANEL_WIDTH: f32 = 340.0;
+use rs_cam_viz::ui::pin_wizard::{self, PinWizardState, WizardStep};
 
 fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
     LoadedModel {
@@ -149,28 +149,32 @@ fn ctx() -> egui::Context {
     ctx
 }
 
-/// One frame of the inspector; the painted texts and their rects.
+/// The mini state with the wizard open on `step`.
+fn wizard_state(step: WizardStep) -> AppState {
+    let mut state = stock_state();
+    let mut wizard = PinWizardState::open(&state.session);
+    wizard.step = step;
+    state.panels.pin_wizard = Some(wizard);
+    state
+}
+
+/// One frame of the pin wizard; the painted texts and the events.
 fn frame(
     ctx: &egui::Context,
     state: &mut AppState,
     events: Vec<egui::Event>,
-) -> Vec<(String, egui::Rect)> {
+) -> (Vec<(String, egui::Rect)>, Vec<AppEvent>) {
     let input = egui::RawInput {
         events,
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
-            egui::vec2(1200.0, 2400.0),
+            egui::vec2(1600.0, 900.0),
         )),
         ..Default::default()
     };
+    let mut app_events = Vec::new();
     let mut out = ctx.run_ui(input, |ui| {
-        egui::Panel::right("pin_editor_properties")
-            .default_size(PANEL_WIDTH)
-            .max_size(PANEL_WIDTH)
-            .show(ui, |ui| {
-                let mut app_events = Vec::new();
-                properties::draw(ui, state, &mut app_events);
-            });
+        pin_wizard::draw(ui.ctx(), state, &mut app_events);
     });
     let mut texts = Vec::new();
     for clipped in &out.shapes {
@@ -180,7 +184,13 @@ fn frame(
         }
     }
     out.textures_delta.clear();
-    texts
+    (texts, app_events)
+}
+
+fn settle(ctx: &egui::Context, state: &mut AppState) -> Vec<(String, egui::Rect)> {
+    let _ = frame(ctx, state, Vec::new());
+    let _ = frame(ctx, state, Vec::new());
+    frame(ctx, state, Vec::new()).0
 }
 
 /// A chip paints its words in capitals, so the match ignores case.
@@ -199,111 +209,113 @@ fn rect_of(texts: &[(String, egui::Rect)], needle: &str) -> egui::Rect {
         .unwrap_or_else(|| panic!("no \"{needle}\" painted; runs were {texts:#?}"))
 }
 
-fn click(ctx: &egui::Context, state: &mut AppState, at: egui::Pos2) {
-    let press = |pressed| egui::Event::PointerButton {
-        pos: at,
+fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos,
         button: egui::PointerButton::Primary,
         pressed,
         modifiers: egui::Modifiers::default(),
-    };
+    }
+}
+
+fn click(ctx: &egui::Context, state: &mut AppState, at: egui::Pos2) -> Vec<AppEvent> {
     let _ = frame(ctx, state, vec![egui::Event::PointerMoved(at)]);
-    let _ = frame(ctx, state, vec![press(true)]);
-    let _ = frame(ctx, state, vec![press(false)]);
+    let _ = frame(ctx, state, vec![press(at, true)]);
+    frame(ctx, state, vec![press(at, false)]).1
+}
+
+fn draft(state: &AppState) -> Vec<AlignmentPin> {
+    state.panels.pin_wizard.as_ref().unwrap().pins.clone()
 }
 
 #[test]
-fn the_chips_say_the_mini_pins_seat_and_do_not_key() {
+fn the_chips_say_the_mini_pins_do_not_key() {
     let ctx = ctx();
-    let mut state = stock_state();
-    let _ = frame(&ctx, &mut state, Vec::new());
-    let texts = frame(&ctx, &mut state, Vec::new());
-    assert!(has(&texts, "Seats after flip: yes"), "{texts:#?}");
-    assert!(has(&texts, "Keyed: NO: seats turned 180 deg"), "{texts:#?}");
-    assert!(has(&texts, "Walls: min"), "{texts:#?}");
-    // No pin-drill operation yet; the door could create one (R1: one row
-    // for each pin size).
-    assert!(
-        has(&texts, "6.00 mm pins (2): drill not created"),
-        "{texts:#?}"
-    );
-    assert!(has(&texts, "Use 3-pin preset"), "{texts:#?}");
-    assert!(has(&texts, "Move the pair off the axis"), "{texts:#?}");
-    // The single-pin drags sit in a closed fold.
-    assert!(has(&texts, "Edit single pins"), "{texts:#?}");
-    assert!(!has(&texts, "Pin 1 X"), "the fold must start closed");
+    let mut state = wizard_state(WizardStep::Place);
+    let texts = settle(&ctx, &mut state);
+    assert!(has(&texts, "Not keyed: seats turned 180 deg"), "{texts:#?}");
+    assert!(has(&texts, "Wall "), "{texts:#?}");
+    // The two axis pins fit no preset: no pattern values, no snap.
+    assert!(!has(&texts, "Pair off axis"), "{texts:#?}");
+    assert!(!has(&texts, "Snap"), "{texts:#?}");
+
+    // The Dowels step names the drill of the 6 mm size (R1: one row for
+    // each pin size).
+    let mut state = wizard_state(WizardStep::Dowels);
+    let texts = settle(&ctx, &mut state);
+    assert!(has(&texts, "6.00 mm: "), "{texts:#?}");
+    assert!(!has(&texts, "6.00 mm: no drill"), "{texts:#?}");
 }
 
 #[test]
-fn the_three_pin_preset_keys_the_set_in_one_edit() {
+fn auto_place_keys_the_set_in_one_edit() {
     let ctx = ctx();
-    let mut state = stock_state();
-    let _ = frame(&ctx, &mut state, Vec::new());
-    let texts = frame(&ctx, &mut state, Vec::new());
-    let button = rect_of(&texts, "Use 3-pin preset").center();
-    assert!(!state.history.can_undo());
-    click(&ctx, &mut state, button);
-    let pins = &state.session.stock_config().alignment_pins;
+    let mut state = wizard_state(WizardStep::Place);
+    let texts = settle(&ctx, &mut state);
+    let stored = state.session.stock_config().alignment_pins.clone();
+    let _ = click(&ctx, &mut state, rect_of(&texts, "Auto-place").center());
+    let pins = draft(&state);
     assert_eq!(pins.len(), 3, "{pins:?}");
-    assert!(state.session.pin_set_report().flip.keyed());
-    assert!(state.history.can_undo(), "the edit is one undo step");
-    let texts = frame(&ctx, &mut state, Vec::new());
-    assert!(has(&texts, "Keyed: yes, margin"), "{texts:#?}");
-    assert!(has(&texts, "3 pins: axis + mirror pair"), "{texts:#?}");
+    assert!(state.session.pin_set_report_for(&pins).flip.keyed());
+    assert_eq!(
+        state.session.stock_config().alignment_pins,
+        stored,
+        "the draft only, before Apply"
+    );
+    let texts = settle(&ctx, &mut state);
+    assert!(has(&texts, "Keyed, margin"), "{texts:#?}");
     assert!(has(&texts, "Pair off axis"), "{texts:#?}");
+
+    // Apply: ONE event with the draft. The pin door writes it in one undo
+    // step (`the_wizard_apply_adds_the_drill_and_writes_once_r4`).
+    let events = click(&ctx, &mut state, rect_of(&texts, "Apply").center());
+    let applied: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AppEvent::PinWizardApply { pins, .. } => Some(pins.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(applied, vec![pins]);
 }
 
 #[test]
-fn a_pattern_drag_writes_the_session_once_on_release() {
+fn a_pattern_drag_keeps_the_preset_and_the_session() {
     let ctx = ctx();
-    let mut state = stock_state();
-    // Start from the keyed 3-pin set.
-    let _ = frame(&ctx, &mut state, Vec::new());
-    let texts = frame(&ctx, &mut state, Vec::new());
-    click(
-        &ctx,
-        &mut state,
-        rect_of(&texts, "Use 3-pin preset").center(),
-    );
-    let texts = frame(&ctx, &mut state, Vec::new());
+    let mut state = wizard_state(WizardStep::Place);
+    if let Some(w) = state.panels.pin_wizard.as_mut() {
+        w.place(&state.session);
+    }
+    let stored = state.session.stock_config().alignment_pins.clone();
+    let texts = settle(&ctx, &mut state);
     let label = rect_of(&texts, "Pair off");
-    let before = state.session.stock_config().alignment_pins.clone();
+    let before = draft(&state);
 
     // The value field sits right of the label column.
     let start = egui::pos2(
         label.left() + rs_cam_viz::ui::tokens::LABEL_COL_WIDTH + 24.0,
         label.center().y,
     );
-    let press = |pos, pressed| egui::Event::PointerButton {
-        pos,
-        button: egui::PointerButton::Primary,
-        pressed,
-        modifiers: egui::Modifiers::default(),
-    };
     let _ = frame(&ctx, &mut state, vec![egui::Event::PointerMoved(start)]);
     let _ = frame(&ctx, &mut state, vec![press(start, true)]);
-    let mut session_writes = 0;
     let mut draft_moved = false;
-    let mut last = before.clone();
     for step in 1..=6 {
         let at = start - egui::vec2(3.0 * step as f32, 0.0);
         let _ = frame(&ctx, &mut state, vec![egui::Event::PointerMoved(at)]);
-        let now = state.session.stock_config().alignment_pins.clone();
-        if now != last {
-            session_writes += 1;
-            last = now;
-        }
-        if let Some(draft) = &state.history.stock_draft {
-            draft_moved |= draft.alignment_pins != before;
-        }
+        assert_eq!(
+            state.session.stock_config().alignment_pins,
+            stored,
+            "a drag frame wrote the session"
+        );
+        draft_moved |= draft(&state) != before;
     }
-    assert_eq!(session_writes, 0, "a drag frame wrote the session");
     assert!(draft_moved, "the drag did not move the draft pins");
     let end = start - egui::vec2(18.0, 0.0);
     let _ = frame(&ctx, &mut state, vec![press(end, false)]);
     let _ = frame(&ctx, &mut state, Vec::new());
-    let after = state.session.stock_config().alignment_pins.clone();
-    assert_ne!(after, before, "the release did not commit the drag");
-    let report = state.session.pin_set_report();
+    let after = draft(&state);
+    assert_ne!(after, before);
+    let report = state.session.pin_set_report_for(&after);
     assert!(
         matches!(
             report.preset,
@@ -311,6 +323,7 @@ fn a_pattern_drag_writes_the_session_once_on_release() {
         ),
         "the edit left the preset"
     );
+    assert!(report.flip.seats(), "the edit broke the symmetry");
 }
 
 fn ghost_row() -> &'static registry::OverlayRow {

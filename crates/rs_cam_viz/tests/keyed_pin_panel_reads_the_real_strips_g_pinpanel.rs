@@ -1,4 +1,5 @@
-//! G-PINPANEL: the stock panel's "Auto-place keyed pins" reads the real
+//! G-PINPANEL: the pin wizard's "Auto-place" (the stock panel's "Auto-place
+//! keyed pins" before round 2) reads the real
 //! clear strips, not the stock padding.
 //!
 //! # What the finding was

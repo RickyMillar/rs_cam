@@ -17,15 +17,16 @@
 //!
 //! Every surface that edits the pins ends here: the MCP describe step
 //! calls [`AppController::finish_pin_edit`], the undo arm, the two-sided
-//! setup and the pin wizard call [`AppController::apply_pin_edit`], and the
-//! stock panel raises `pin_drill_sync`, which the frame loop discharges
-//! through the same synchronisation. Thus a GUI edit and an MCP edit leave
-//! the same toolpath list.
+//! setup and the pin wizard call [`AppController::apply_pin_edit`], and a
+//! stock draft with a pin change raises `pin_drill_sync`, which the frame
+//! loop discharges through the same synchronisation. Thus a GUI edit and
+//! an MCP edit leave the same toolpath list.
 //!
-//! The drill of one size is chosen here too ([`AppController::bind_pin_drill_tool`],
-//! [`AppController::add_pin_drill_tool`]): the stock panel's per-size tool
-//! chooser and its "Add a <d> mm drill" button call these, so the operator
-//! fixes a missing drill in the pin section (R2).
+//! The drill of one size is chosen here too
+//! ([`AppController::bind_pin_drill_tool`]): the pin wizard's Apply adds the
+//! drills it queued and binds the tools it chose (R2, R4). The wizard's
+//! part-model choice applies here too
+//! ([`AppController::set_pin_part_models`]).
 
 use rs_cam_core::compute::alignment_pins::{pin_diameters, pin_holes_of_diameter};
 use rs_cam_core::session::{
@@ -106,7 +107,7 @@ impl PinEdit {
 /// The refusal when no setup is a `Top` setup at 0 deg.
 ///
 /// The pin-drill operation drills the dowel holes from the top of the
-/// stock, at the pin positions as the stock panel dimensions them. The
+/// stock, at the pin positions as the pin wizard places them. The
 /// generator does not turn the pin holes with the setup. So a flipped
 /// setup, or a `Top` setup turned 90, 180 or 270 deg, drills the same SET
 /// of holes only when the pattern maps onto itself under that turn (C7).
@@ -114,21 +115,21 @@ impl PinEdit {
 pub(crate) const PIN_DRILL_NEEDS_TOP_SETUP: &str = "The pin-drill operation was not created: no \
      setup has face 'Top' at 0 deg. The pin holes are drilled from the top of the stock at the \
      stock-panel positions, and the holes are not turned with a turned setup. Add a Top setup \
-     at 0 deg; the pin section's 'Add a Top setup' does this.";
+     at 0 deg; the pin wizard's 'Add a Top setup' does this.";
 
 /// The refusal when no tool drills the holes of the pin size `diameter`
 /// (`ProjectSession::pin_drill_tool_for`). The door does not take
 /// `tools[0]`: on the mini test piece that is a 3 mm end mill, and 3 mm
 /// holes do not take 6 mm dowels (P6).
 ///
-/// The text names the fix in the pin section, where the operator is (R2).
+/// The text names the fix in the pin wizard (R2).
 /// The MCP route adds the tool with `add_tool` and edits the pins again.
 #[must_use]
 pub(crate) fn pin_drill_needs_tool(diameter: f64) -> String {
     format!(
         "The pin-drill operation of the {diameter:.2} mm pins was not created: no tool of \
          {diameter:.2} mm is in the project. Press 'Add a {diameter:.2} mm drill' in the pin \
-         section, or add a {diameter:.2} mm tool (MCP add_tool) and edit the pins again."
+         wizard, or add a {diameter:.2} mm tool (MCP add_tool) and edit the pins again."
     )
 }
 
@@ -158,8 +159,8 @@ impl PinDrillBlocker {
 /// with no `Top` setup at 0 deg, else [`PinDrillBlocker::NeedsTool`] with
 /// no tool that drills the holes of the size.
 ///
-/// The door and the stock panel's per-size rows read this one function,
-/// so a row states the refusal the door gives.
+/// The door, the stock panel's pin block and the wizard's per-size rows
+/// read this one function, so a row states the refusal the door gives.
 pub(crate) fn pin_drill_blocker(
     session: &rs_cam_core::session::ProjectSession,
     diameter: f64,
@@ -240,8 +241,8 @@ impl<B: ComputeBackend> AppController<B> {
         let (outcome, _) = self.sync_pin_drill_inner();
         self.refresh_pin_load_warnings();
         // A refusal toasts once. A nudge of a set with a size that has no
-        // drill refuses on every edit, and the pin section already says so
-        // in place; a toast on each edit is noise.
+        // drill refuses on every edit, and the pin block and the wizard
+        // already say so in place; a toast on each edit is noise.
         let refusals: Vec<String> = outcome
             .iter()
             .filter_map(|size| match &size.outcome {
@@ -259,7 +260,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// Bind the pin-drill operation of the pin size `diameter` to the
-    /// tool `tool_id` (R2: the per-size tool chooser of the pin section).
+    /// tool `tool_id` (R2: the per-size tool chooser of the pin wizard).
     ///
     /// The operation exists: a `SetToolpathTool` row rebinds it. It does
     /// not exist: the door creates it with that tool.
@@ -301,41 +302,15 @@ impl<B: ComputeBackend> AppController<B> {
         outcome
     }
 
-    /// Add a drill of `diameter` (`ProjectSession::pin_drill_tool_template`,
-    /// through the `AddTool` row) and bind the pin-drill operation of that
-    /// pin size to it (R2: "Add a <d> mm drill" in the pin section). The
-    /// door creates the operation when the size has pins and no operation.
-    ///
-    /// Returns the id of the new tool, or `None` when the session refused
-    /// the tool.
-    pub(crate) fn add_pin_drill_tool(&mut self, diameter: f64) -> Option<usize> {
-        let tool = self.state.session.pin_drill_tool_template(diameter);
-        let index = self.apply_created(Command::AddTool(AddToolArgs {
-            tool: Box::new(tool),
-        }))?;
-        let tool_id = self.state.session.tools().get(index)?.id.0;
-        self.state.gui.mark_edited();
-        let has_pins = self
-            .state
-            .session
-            .stock_config()
-            .alignment_pins
-            .iter()
-            .any(|p| rs_cam_core::compute::alignment_pins::same_pin_diameter(p.diameter, diameter));
-        if has_pins {
-            let _ = self.bind_pin_drill_tool(diameter, tool_id);
-        }
-        Some(tool_id)
-    }
-
     /// Apply the pin wizard (R4): the minimum rows, in this order.
     ///
     /// 1. One `AddTool` row for each size of `add_drills`
-    ///    ([`Self::add_pin_drill_tool`] with the template drill).
+    ///    (`ProjectSession::pin_drill_tool_template`).
     /// 2. One `SetAlignmentPins` row with `pins`, through
     ///    [`Self::apply_pin_edit`]: the door synchronises the pin-drill
     ///    operations, one for each pin size.
-    /// 3. A size whose drill the wizard added gets that drill
+    /// 3. A size whose drill the wizard added gets that drill, and a size
+    ///    in `use_tools` gets the tool the operator chose
     ///    ([`Self::bind_pin_drill_tool`]), when the door chose another tool.
     ///
     /// The pin edit is ONE undo step (`UndoAction::StockChange`). A tool
@@ -349,6 +324,7 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         pins: Vec<crate::state::job::AlignmentPin>,
         add_drills: &[f64],
+        use_tools: &[(f64, usize)],
     ) -> Result<PinEdit, SessionError> {
         let old = self.state.session.stock_config().clone();
         let mut added: Vec<(f64, usize)> = Vec::new();
@@ -364,14 +340,16 @@ impl<B: ComputeBackend> AppController<B> {
         let edit = self.apply_pin_edit(Command::SetAlignmentPins(
             rs_cam_core::session::SetAlignmentPinsArgs { pins },
         ))?;
-        for (d, tool_id) in added {
+        for (d, tool_id) in added.into_iter().chain(use_tools.iter().copied()) {
             let bound = self
                 .state
                 .session
                 .pin_drill_op_for(d)
                 .and_then(|i| self.state.session.toolpath_configs().get(i))
                 .map(|tc| tc.tool_id);
-            if bound != Some(tool_id) {
+            // No operation: the synchronisation above refused the size and
+            // said why; a bind would refuse and toast a second time.
+            if bound.is_some_and(|b| b != tool_id) {
                 let _ = self.bind_pin_drill_tool(d, tool_id);
             }
         }
@@ -391,7 +369,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Add a setup with the face `face_up` at 0 deg for the pins, then run
     /// the pin-drill synchronisation. The selection stays, so the operator
-    /// stays in the pin section (R2) or the pin wizard (R4).
+    /// stays in the pin wizard (R4).
     ///
     /// A `Top` setup gives the pin-drill operation a home; a `Bottom`
     /// setup gives the pins a flip to key.
@@ -405,6 +383,26 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.gui.mark_edited();
             self.pending_upload = true;
             let _ = self.sync_alignment_pin_drill();
+        }
+    }
+
+    /// Apply the pin wizard's part-model choice (`None`: the default rule)
+    /// as one `SetPinPartModels` row, with one undo step. The row stales
+    /// nothing.
+    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<usize>>) {
+        let old = self.state.session.stock_config().clone();
+        let command =
+            Command::SetPinPartModels(rs_cam_core::session::SetPinPartModelsArgs { models });
+        if self.apply_quietly(command).is_none() {
+            return;
+        }
+        self.state.gui.mark_edited();
+        self.pending_upload = true;
+        let new = self.state.session.stock_config().clone();
+        if old != new {
+            self.state
+                .history
+                .push(crate::state::history::UndoAction::StockChange { old, new });
         }
     }
 

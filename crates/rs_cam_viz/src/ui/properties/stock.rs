@@ -1,9 +1,8 @@
 use rs_cam_core::geo::BoundingBox3;
 
 use super::PanelEdit;
-use super::pins::{PinSectionInputs, PinSectionOut};
+use super::pins::PinSummary;
 use crate::state::job::StockConfig;
-use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::components::text;
@@ -62,18 +61,15 @@ pub fn reconcile_auto_from_model(
 /// the caption under the checkbox, because "refit to the model" is not
 /// an offer the panel can keep without one.
 ///
-/// `pins` holds what the "Alignment pins" section reads besides the draft
-/// (`super::pins`). `pin_plan_memo` holds the last plan of the placer, so a
-/// frame that changes no input does not run the placer again. The answer
-/// carries the panel's edit and the pin section's requests.
+/// `pins` holds the words of the "Alignment pins" block (`super::pins`).
+/// The block only opens the pin wizard; the wizard edits the pins. The
+/// answer carries the panel's edit and the block's request.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     has_model: bool,
-    pins: &PinSectionInputs<'_>,
-    pin_plan_memo: &mut crate::state::panels::KeyedPinPlanMemo,
-    events: &mut Vec<AppEvent>,
-) -> PinSectionOut {
+    pins: &PinSummary,
+) -> StockPanelOut {
     ui.heading("Stock Setup");
     ui.separator();
 
@@ -200,9 +196,20 @@ pub fn draw(
     }
 
     ui.add_space(12.0);
-    let mut out = super::pins::draw(ui, stock, pins, pin_plan_memo, events);
-    out.edit.merge(edit);
-    out
+    let open_pin_wizard = super::pins::draw(ui, pins);
+    StockPanelOut {
+        edit,
+        open_pin_wizard,
+    }
+}
+
+/// What the stock panel asks of the caller.
+#[derive(Debug, Default)]
+pub struct StockPanelOut {
+    /// The edit of the stock draft.
+    pub edit: PanelEdit,
+    /// "Set up pins…" or "Edit pins…": open the pin wizard.
+    pub open_pin_wizard: bool,
 }
 
 /// Hierarchical material picker: drills `Category ▶ → species`. Wood

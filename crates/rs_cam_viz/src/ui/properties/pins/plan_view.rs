@@ -1,10 +1,11 @@
-//! The overhead plan view of the pins (R3, 2026-10-12).
+//! The overhead plan view of the pins (R3; round 2, 2026-10-12).
 //!
 //! The view looks down on the stock: the stock rectangle with X0 Y0 at its
-//! min corner and the X and Y axes, the part outlines, the keep-out zones
+//! min corner and the X and Y axes, the part footprints, the keep-out zones
 //! and the fixtures, the flip axis, each pin at true scale with its number
 //! and its diameter, and the wrong-seating ghost when the set does not
-//! key. Each pin carries its thinnest wall.
+//! key. Each pin carries its thinnest wall. The stock and the part have two
+//! different fills, with a legend (round 2).
 //!
 //! Every number comes from the ONE core report
 //! (`ProjectSession::pin_set_report_for`): the obstacles
@@ -12,9 +13,11 @@
 //! the ghost and the walls. The view computes no pin number. It only maps
 //! millimetres to points.
 //!
-//! A drag on the view moves the pin SET as one: the draft moves every
-//! frame, and the edit commits once, on release (`PanelEdit::drag`). The
-//! step is 0.1 mm. A click marks the pin under the pointer.
+//! A drag on the view moves the pin SET as one, ALONG the flip axis only
+//! (round 2): the view projects the drag onto the axis, so the set stays
+//! symmetric. The draft moves every frame, and the edit commits once, on
+//! release (`PanelEdit::drag`). The step is 0.1 mm. A click marks the pin
+//! under the pointer.
 
 use rs_cam_core::compute::alignment_pins::{AlignmentPin, PIN_WALL_MM, PinObstacleKind};
 use rs_cam_core::session::PinSetReport;
@@ -28,7 +31,7 @@ use crate::ui::tokens;
 const DRAG_STEPS_PER_MM: f64 = 10.0;
 
 /// The margin round the stock rectangle, in points: room for the axis
-/// labels and for a pin on the stock edge.
+/// labels, the legend and a pin on the stock edge.
 const MARGIN_PX: f32 = 18.0;
 
 /// A pin smaller than this on the screen also gets a dot, in points.
@@ -37,14 +40,8 @@ const MIN_PIN_PX: f32 = 2.5;
 /// How far from a pin centre a click still marks it, in points.
 const PICK_PX: f32 = 10.0;
 
-/// The size of the view.
-#[derive(Debug, Clone, Copy)]
-pub enum PlanSize {
-    /// The stock panel: the inspector width, at most this height.
-    Compact { max_height: f32 },
-    /// The pin wizard: the width given, at most this height.
-    Large { max_height: f32 },
-}
+/// The height of one fill row of a polygon, in points.
+const FILL_ROW_PX: f32 = 1.0;
 
 /// What the view did this frame.
 #[derive(Debug, Default)]
@@ -105,11 +102,9 @@ impl PlanFrame {
     }
 }
 
-/// The height the view takes for a `w` x `d` stock at `width`.
-fn view_height(width: f32, w: f64, d: f64, size: PlanSize) -> f32 {
-    let max_height = match size {
-        PlanSize::Compact { max_height } | PlanSize::Large { max_height } => max_height,
-    };
+/// The height a view takes for a `w` x `d` stock at `width`, at most
+/// `max_height`.
+pub(super) fn view_height(width: f32, w: f64, d: f64, max_height: f32) -> f32 {
     // SAFETY: the aspect ratio of a stock is far inside the f32 range.
     #[allow(clippy::cast_possible_truncation)]
     let aspect = if w > 0.0 { (d / w) as f32 } else { 1.0 };
@@ -144,10 +139,12 @@ pub struct PlanInputs<'a> {
     pub report: &'a PinSetReport,
     /// The marked pin.
     pub selected: Option<usize>,
-    pub size: PlanSize,
+    /// The largest height of the view, in points.
+    pub max_height: f32,
 }
 
-/// Draw the plan view, and move the draft `pins` by a drag.
+/// Draw the plan view, and move the draft `pins` along the flip axis by a
+/// drag.
 pub fn show(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -160,16 +157,15 @@ pub fn show(
         stock_d,
         report,
         selected,
-        size,
+        max_height,
     } = inputs;
     let mut out = PlanViewOut::default();
     let width = ui.available_width().max(4.0 * MARGIN_PX);
-    let height = view_height(width, stock_w, stock_d, size);
+    let height = view_height(width, stock_w, stock_d, max_height);
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
     let response = response.on_hover_text(
-        "Plan view from above. Drag to move all the pins together (0.1 mm steps). Click a \
-         pin to mark it.",
+        "Drag: move the pins along the flip axis (0.1 mm steps). Click: mark a pin.",
     );
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, tokens::RADIUS_SM, tokens::DIAGRAM_CANVAS);
@@ -177,27 +173,30 @@ pub fn show(
         return out;
     };
 
-    // The drag moves the set. The remainder under one step stays in egui
-    // memory as drag state (a drag index, not panel content).
+    // The drag moves the set along the flip axis. The remainder under one
+    // step stays in egui memory as drag state (a drag index, not panel
+    // content).
     let remainder_id = ui.id().with((id_salt, "pin_plan_drag_remainder"));
-    if response.dragged() && !pins.is_empty() {
+    if response.dragged()
+        && !pins.is_empty()
+        && let Some((ux, uy)) = edit::axis_unit(&report.map)
+    {
         let (dx, dy) = frame.to_mm(response.drag_delta());
-        let (rx, ry) = ui
+        let remainder = ui
             .ctx()
-            .data(|d| d.get_temp::<(f64, f64)>(remainder_id))
-            .unwrap_or((0.0, 0.0));
-        let (tx, ty) = (rx + dx, ry + dy);
-        let step = |v: f64| (v * DRAG_STEPS_PER_MM).round() / DRAG_STEPS_PER_MM;
-        let (sx, sy) = (step(tx), step(ty));
-        if sx != 0.0 || sy != 0.0 {
-            *pins = edit::move_all(pins, sx, sy);
+            .data(|d| d.get_temp::<f64>(remainder_id))
+            .unwrap_or(0.0);
+        let along = remainder + dx * ux + dy * uy;
+        let step = (along * DRAG_STEPS_PER_MM).round() / DRAG_STEPS_PER_MM;
+        if step != 0.0 {
+            *pins = edit::move_along_axis(pins, &report.map, step);
             edit_out.changed = true;
         }
         ui.ctx()
-            .data_mut(|d| d.insert_temp(remainder_id, (tx - sx, ty - sy)));
+            .data_mut(|d| d.insert_temp(remainder_id, along - step));
     }
     if response.drag_stopped() {
-        ui.ctx().data_mut(|d| d.remove::<(f64, f64)>(remainder_id));
+        ui.ctx().data_mut(|d| d.remove::<f64>(remainder_id));
     }
     edit_out.committed |= response.drag_stopped();
     edit_out.in_flight |= response.dragged();
@@ -232,6 +231,17 @@ fn paint(
         egui::Stroke::new(1.0, tokens::BORDER),
         egui::StrokeKind::Middle,
     );
+    // The part footprints, filled.
+    for obstacle in &report.obstacles_local {
+        if obstacle.kind == PinObstacleKind::Part && obstacle.closed {
+            let points: Vec<egui::Pos2> = obstacle
+                .points
+                .iter()
+                .map(|&(x, y)| frame.to_screen(x, y))
+                .collect();
+            fill_polygon(painter, &points, tokens::DIAGRAM_PART);
+        }
+    }
     let origin = stock.left_bottom();
     let arm = (stock.width().min(stock.height()) * 0.2).clamp(8.0, 28.0);
     painter.arrow(
@@ -265,6 +275,7 @@ fn paint(
         micro.clone(),
         tokens::TEXT_MUTED,
     );
+    legend(painter, &micro);
 
     // The part outlines, the keep-out zones and the fixtures.
     for obstacle in &report.obstacles_local {
@@ -383,6 +394,86 @@ fn paint(
     }
 }
 
+/// The legend in the top margin: a swatch and a word for the stock and
+/// for the part.
+pub(super) fn legend(painter: &egui::Painter, font: &egui::FontId) {
+    let mut at = painter.clip_rect().left_top() + egui::vec2(4.0, 4.0);
+    for (colour, word) in [
+        (tokens::DIAGRAM_MATERIAL, "Stock"),
+        (tokens::DIAGRAM_PART, "Part"),
+    ] {
+        let swatch = egui::Rect::from_min_size(at, egui::vec2(8.0, 8.0));
+        painter.rect_filled(swatch, 1.0, colour);
+        painter.rect_stroke(
+            swatch,
+            1.0,
+            egui::Stroke::new(1.0, tokens::BORDER),
+            egui::StrokeKind::Middle,
+        );
+        let text = painter.text(
+            swatch.right_center() + egui::vec2(3.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            word,
+            font.clone(),
+            tokens::TEXT_MUTED,
+        );
+        at.x = text.right() + 8.0;
+    }
+}
+
+/// The horizontal spans that fill the closed polygon `points`, one row of
+/// [`FILL_ROW_PX`] at a time, by the even-odd rule: `(top, left, right)`.
+/// The fill is correct on a concave outline too; `egui`'s path fill is
+/// correct on a convex outline only.
+#[must_use]
+pub fn scanline_spans(points: &[egui::Pos2]) -> Vec<(f32, f32, f32)> {
+    let mut out = Vec::new();
+    if points.len() < 3 {
+        return out;
+    }
+    let top = points.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+    let bottom = points.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
+    if !(top.is_finite() && bottom.is_finite()) {
+        return out;
+    }
+    let edges: Vec<(egui::Pos2, egui::Pos2)> = points
+        .iter()
+        .copied()
+        .zip(points.iter().copied().cycle().skip(1))
+        .collect();
+    let mut y = top;
+    let mut xs: Vec<f32> = Vec::new();
+    while y < bottom {
+        let centre = y + 0.5 * FILL_ROW_PX;
+        xs.clear();
+        for (a, b) in &edges {
+            if (a.y <= centre) != (b.y <= centre) {
+                xs.push(a.x + (centre - a.y) * (b.x - a.x) / (b.y - a.y));
+            }
+        }
+        xs.sort_by(f32::total_cmp);
+        for [left, right] in xs.as_chunks::<2>().0 {
+            out.push((y, *left, *right));
+        }
+        y += FILL_ROW_PX;
+    }
+    out
+}
+
+/// Fill the closed polygon `points` with `colour` (a concave one too).
+pub(super) fn fill_polygon(painter: &egui::Painter, points: &[egui::Pos2], colour: egui::Color32) {
+    let mut mesh = egui::Mesh::default();
+    for (top, left, right) in scanline_spans(points) {
+        mesh.add_colored_rect(
+            egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, top + FILL_ROW_PX)),
+            colour,
+        );
+    }
+    if !mesh.is_empty() {
+        painter.add(egui::Shape::mesh(mesh));
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
@@ -401,5 +492,23 @@ mod tests {
             (dx - 5.0).abs() < 1e-4 && (dy - 2.0).abs() < 1e-4,
             "{dx} {dy}"
         );
+    }
+
+    /// The fill covers a concave L shape and leaves its notch empty.
+    #[test]
+    fn the_fill_spans_a_concave_outline() {
+        let l = [
+            egui::pos2(0.0, 0.0),
+            egui::pos2(20.0, 0.0),
+            egui::pos2(20.0, 10.0),
+            egui::pos2(10.0, 10.0),
+            egui::pos2(10.0, 20.0),
+            egui::pos2(0.0, 20.0),
+        ];
+        let spans = scanline_spans(&l);
+        assert_eq!(spans.len(), 20, "one span per row");
+        let area: f32 = spans.iter().map(|(_, a, b)| b - a).sum();
+        assert!((area - 300.0).abs() < 1e-3, "the L area is 300: {area}");
+        assert!(spans.iter().all(|(y, _, b)| *y < 10.0 || *b <= 10.0));
     }
 }

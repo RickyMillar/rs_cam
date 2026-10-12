@@ -1,71 +1,54 @@
-//! The stock panel's "Alignment pins" section (P7, 2026-10-12).
+//! The alignment pins (P7; round 2, 2026-10-12).
 //!
-//! The operator edits the pins AS A SET: a preset picker, the pattern
-//! dimensions, "Move all", "Snap to flip" and one diameter. The single-pin
-//! drags sit in a closed "Edit single pins" fold. Status chips, the table
-//! and the keying warning read the ONE core report,
-//! `ProjectSession::pin_set_report_for`, of the draft pins, so they follow
-//! a drag before it commits.
+//! The stock panel shows ONE compact block ([`draw`]): a status line, at
+//! most one warning line and one button that opens the pin wizard
+//! (`ui/pin_wizard.rs`). The wizard edits the pins; this folder holds its
+//! parts: the pure set edits (`edit.rs`), the drill rows (`drills.rs`),
+//! the plan view (`plan_view.rs`), the flip diagram (`flip_view.rs`) and
+//! the words of the pin state (`status.rs`).
 //!
-//! Every edit writes the stock draft. The inspector applies a finished
-//! edit as one `SetAlignmentPins` (or `SetPinPartModels`) through
-//! `panel_apply::apply_stock_draft`, which raises the pin-drill
-//! synchronisation of the one pin door (`controller/events/pins.rs`).
+//! Every number comes from the ONE core report,
+//! `ProjectSession::pin_set_report_for`. Every edit reaches the session
+//! through the one pin door (`controller/events/pins.rs`).
 
-mod controls;
 pub mod drills;
 pub mod edit;
+pub mod flip_view;
 pub mod plan_view;
 mod status;
 
-pub use controls::{mixed_large_diameter, mixed_start_large_diameter};
-pub use status::{Chip, chip_words};
+pub use status::{Chip, PinSummary, chip_words, summary};
 
 use rs_cam_core::compute::alignment_pins::{NOMINAL_DOWEL_MM, PinObstacle, PinPlacementError};
-use rs_cam_core::session::PinSetReport;
 
-use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, StockConfig, ZRotation};
-use crate::ui::AppEvent;
+use crate::ui::components::{Button, text};
 
 /// Why the door cannot create the pin-drill operation of one pin size
 /// (`controller::pin_drill_blocker`, the door's own check).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinDrillBlock {
     /// No setup is a `Top` setup at 0 deg.
-    NeedsTopSetup(String),
+    NeedsTopSetup,
     /// No tool of the pin size is in the project.
-    NeedsTool(String),
+    NeedsTool,
 }
 
-impl PinDrillBlock {
-    /// The refusal text of the door.
-    #[must_use]
-    pub fn text(&self) -> &str {
-        match self {
-            PinDrillBlock::NeedsTopSetup(t) | PinDrillBlock::NeedsTool(t) => t,
-        }
-    }
-}
-
-/// One pin size and the drill that makes its holes, as the pin section
+/// One pin size and the drill that makes its holes, as the pin wizard
 /// shows it (R1, R2). Every value comes from the core bindings
 /// (`ProjectSession::pin_tool_bindings_for`) and the door's check.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PinDrillRow {
     /// The pin diameter of the size, in mm.
     pub diameter: f64,
-    /// The number of pins of the size.
-    pub pin_count: usize,
-    /// The pin-drill operation of the size: its name and its hole count.
-    pub op: Option<(String, usize)>,
     /// The tool that drills (or will drill) the holes: id and name.
     pub tool: Option<(usize, String)>,
     /// The tool diameter, when a tool exists.
     pub tool_diameter: Option<f64>,
     /// Every tool of the size: id and name (`pin_tool_candidates`).
     pub candidates: Vec<(usize, String)>,
-    /// Why the door cannot create the operation, when it cannot.
+    /// Why the door cannot create the operation, when no operation exists
+    /// and the door cannot create one.
     pub block: Option<PinDrillBlock>,
 }
 
@@ -79,7 +62,7 @@ impl PinDrillRow {
     }
 }
 
-/// What the pin-drill operations look like for the stock panel.
+/// What the pin-drill operations look like for the pin block and the wizard.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PinDrillState {
     /// The pin set is empty, so no pin drill is needed.
@@ -89,10 +72,9 @@ pub enum PinDrillState {
 }
 
 impl PinDrillState {
-    /// The state of `pins` (the stock draft) on `session`.
+    /// The state of `pins` (a draft) on `session`.
     #[must_use]
     pub fn of(session: &rs_cam_core::session::ProjectSession, pins: &[AlignmentPin]) -> Self {
-        use crate::state::toolpath::OperationConfig;
         if pins.is_empty() {
             return Self::NoPins;
         }
@@ -108,38 +90,22 @@ impl PinDrillState {
             .pin_tool_bindings_for(pins)
             .into_iter()
             .map(|b| {
-                let op = b.op_index.and_then(|i| {
-                    let tc = session.toolpath_configs().get(i)?;
-                    match &tc.operation {
-                        OperationConfig::AlignmentPinDrill(c) => {
-                            // The holes the door gives the operation: the
-                            // pins of its size in the draft.
-                            let holes = rs_cam_core::compute::alignment_pins::pin_holes_of_diameter(
-                                pins, c.diameter,
-                            );
-                            Some((tc.name.clone(), holes.len()))
-                        }
-                        _ => None,
-                    }
-                });
-                let block = if op.is_some() {
+                let block = if b.op_index.is_some() {
                     None
                 } else {
                     crate::controller::pin_drill_blocker(session, b.pin_diameter).map(|blocker| {
                         match blocker {
                             crate::controller::PinDrillBlocker::NeedsTopSetup => {
-                                PinDrillBlock::NeedsTopSetup(blocker.text())
+                                PinDrillBlock::NeedsTopSetup
                             }
                             crate::controller::PinDrillBlocker::NeedsTool { .. } => {
-                                PinDrillBlock::NeedsTool(blocker.text())
+                                PinDrillBlock::NeedsTool
                             }
                         }
                     })
                 };
                 PinDrillRow {
                     diameter: b.pin_diameter,
-                    pin_count: b.pin_count,
-                    op,
                     tool: b.tool_id.map(|id| (id, tool_name(id))),
                     tool_diameter: b.tool_diameter,
                     candidates: session
@@ -175,170 +141,60 @@ pub struct PartModelRow {
     pub default_part: bool,
 }
 
-/// Everything the section reads besides the draft.
-pub struct PinSectionInputs<'a> {
-    /// The in-plane map of each setup, in setup order.
-    pub setups: &'a [(FaceUp, ZRotation)],
-    /// The placer's obstacles and pin tool.
-    pub keyed: &'a KeyedPinInputs,
-    /// The one report of the DRAFT pins.
-    pub report: &'a PinSetReport,
-    /// The part-model chooser rows.
-    pub models: &'a [PartModelRow],
-    /// The diameters of the drills of the project, ascending: the tools
-    /// of the drilling operations and every `VBit` (the model of a twist
-    /// drill). The mixed preset takes its large size from them.
-    pub drill_diameters: &'a [f64],
-    pub pin_drill: &'a PinDrillState,
-    /// The pin the viewport marked.
-    pub selected_pin: Option<usize>,
-    /// The refusal of the last preset click, until the next finished edit.
-    pub preset_refusal: Option<&'a str>,
+impl PartModelRow {
+    /// One row for each model of `session`, in model order.
+    #[must_use]
+    pub fn of(session: &rs_cam_core::session::ProjectSession) -> Vec<Self> {
+        let part = session.pin_part_models();
+        let default_part = session.default_pin_part_models();
+        session
+            .models()
+            .iter()
+            .map(|m| Self {
+                id: m.id,
+                name: m.name.clone(),
+                is_part: part.contains(&rs_cam_core::ids::ModelId(m.id)),
+                default_part: default_part.contains(&rs_cam_core::ids::ModelId(m.id)),
+            })
+            .collect()
+    }
 }
 
-/// What the section asks of the caller besides the draft edit.
-#[derive(Debug, Default)]
-pub struct PinSectionOut {
-    pub edit: PanelEdit,
-    /// The new marked pin, when the section changed it.
-    pub selected_pin: Option<Option<usize>>,
-    /// "Create the pin drill": run the pin door's synchronisation.
-    pub sync_pin_drill: bool,
-    /// The new preset refusal: `Some(Some(text))` sets it, `Some(None)`
-    /// clears it.
-    pub preset_refusal: Option<Option<String>>,
-    /// "Pin setup...": open the pin wizard (R4).
-    pub open_wizard: bool,
-}
-
-/// Draw the "Alignment pins" section.
-pub fn draw(
-    ui: &mut egui::Ui,
-    stock: &mut StockConfig,
-    inputs: &PinSectionInputs<'_>,
-    plan_memo: &mut crate::state::panels::KeyedPinPlanMemo,
-    events: &mut Vec<AppEvent>,
-) -> PinSectionOut {
-    let report = inputs.report;
-    let map = report.map.clone();
-    let has_flip = report.judged_setup.is_some();
-    let header = egui::RichText::new("Alignment pins")
-        .strong()
-        .color(crate::ui::tokens::TEXT_STRONG);
-
-    egui::CollapsingHeader::new(header)
-        .id_salt("alignment_pins_section")
-        .default_open(!stock.alignment_pins.is_empty() || has_flip)
-        .show(ui, |ui| {
-            let mut out = PinSectionOut::default();
-
-            if !has_flip && stock.alignment_pins.is_empty() {
-                if ui
-                    .add(crate::ui::components::Button::new("Two-sided setup"))
-                    .on_hover_text(
-                        "Adds a flipped Setup 2 and places three keyed pins in the clear \
-                         material.",
-                    )
-                    .clicked()
-                {
-                    events.push(AppEvent::SetupTwoSided);
-                }
-                ui.add_space(crate::ui::tokens::SPACE_2);
-            }
-
-            // The flip axis comes from the setups (P3).
-            wrapped(
-                ui,
-                crate::ui::components::text::caption(format!(
-                    "Flip axis: {}",
-                    map.axis_label()
-                        .unwrap_or_else(|| "none (no flipped Bottom setup)".to_owned())
-                )),
-            );
-
-            // The plan of the placer, cached on its inputs (P6).
-            let (plan_face, plan_turn) = (map.face_up(), map.z_rotation());
-            let fingerprint = keyed_pin_plan_fingerprint(stock, plan_face, plan_turn, inputs.keyed);
-            let plan = plan_memo.get_or_plan(fingerprint, || {
-                keyed_pin_plan(stock, plan_face, plan_turn, inputs.keyed)
-            });
-
-            if ui
-                .add(crate::ui::components::Button::new("Pin setup..."))
-                .on_hover_text(
-                    "Opens the pin wizard: the flip, the dowel sizes and their drills, the \
-                     placement on a large plan view, and a summary before Apply. Cancel \
-                     changes nothing.",
-                )
-                .clicked()
-            {
-                out.open_wizard = true;
-            }
-
-            if !stock.alignment_pins.is_empty() {
-                status::chips(ui, report);
-                // R3: the plan view from above. A drag moves the set.
-                let (w, d) = (stock.x, stock.y);
-                let view = plan_view::show(
-                    ui,
-                    "stock_panel",
-                    &mut stock.alignment_pins,
-                    plan_view::PlanInputs {
-                        stock_w: w,
-                        stock_d: d,
-                        report,
-                        selected: inputs.selected_pin,
-                        size: plan_view::PlanSize::Compact {
-                            max_height: PLAN_VIEW_COMPACT_MAX_HEIGHT,
-                        },
-                    },
-                    &mut out.edit,
-                );
-                if view.selected_pin.is_some() {
-                    out.selected_pin = view.selected_pin;
-                }
-                status::keying_warning(ui, stock, report, &plan, &mut out.edit);
-                drills::drill_rows(ui, inputs.pin_drill, &mut out, events);
-            }
-
-            ui.add_space(crate::ui::tokens::SPACE_2);
-            controls::preset_picker(ui, stock, inputs, &plan, &mut out);
-            controls::pattern_controls(ui, stock, report, inputs.drill_diameters, &mut out.edit);
-            controls::set_controls(ui, stock, report, &mut out.edit);
-            controls::auto_place(ui, stock, has_flip, &plan, &mut out.edit);
-            controls::part_models(ui, stock, inputs.models, &mut out.edit);
-
-            if !stock.alignment_pins.is_empty() {
-                status::pin_table(ui, stock, report, inputs.selected_pin, &mut out);
-            }
-            controls::single_pins(ui, stock, inputs.keyed, &mut out.edit);
-            status::findings(ui, report);
-            if out.edit.committed && inputs.preset_refusal.is_some() {
-                out.preset_refusal = Some(None);
-            }
-            out
-        })
-        .body_returned
-        .unwrap_or_default()
+/// Draw the stock panel's "Alignment pins" block: the status line, at
+/// most one warning line, and the button that opens the wizard. Returns
+/// `true` when the operator clicks the button.
+pub fn draw(ui: &mut egui::Ui, summary: &PinSummary) -> bool {
+    ui.label(text::body_strong("Alignment pins"));
+    wrapped(ui, text::caption(&summary.status));
+    if let Some(warning) = &summary.warning {
+        wrapped(
+            ui,
+            egui::RichText::new(warning)
+                .small()
+                .color(crate::ui::tokens::DANGER),
+        );
+    }
+    let label = if summary.has_pins {
+        "Edit pins\u{2026}"
+    } else {
+        "Set up pins\u{2026}"
+    };
+    ui.add(Button::new(label))
+        .on_hover_text("Opens the pin wizard.")
+        .clicked()
 }
 
 /// A label that wraps at the panel width (R5b).
 ///
 /// The inspector sits in a scroll area that scrolls both ways
-/// (`app::side_panel`), and a plain label there does not wrap: a long
-/// caption ran past the panel edge, and the panel clipped it.
+/// (`app::side_panel`), and a plain label there does not wrap.
 pub(crate) fn wrapped(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
     ui.add(egui::Label::new(text).wrap())
 }
 
-/// The largest height of the plan view in the stock panel, in points. A
-/// long stock gets a short view; a square one fills the inspector width
-/// up to this height.
-const PLAN_VIEW_COMPACT_MAX_HEIGHT: f32 = 220.0;
-
 /// The session values the keyed-pin planner reads.
 ///
-/// ONE constructor for both doors: the stock panel's "Auto-place" and the
+/// ONE constructor for both doors: the pin wizard's "Auto-place" and the
 /// controller's "Two-sided setup". Before G-PINPANEL the panel took its
 /// clear strips from `padding` and a pin diameter from the stored pins. A
 /// hand-sized stock (380 mm wide, origin x -15, model x 0..350, padding 5)
@@ -371,7 +227,7 @@ impl KeyedPinInputs {
     /// size (the dowel the operator has), else the tool of the first
     /// drilling operation, else [`NOMINAL_DOWEL_MM`]. Since R1 each pin
     /// size has its own drill, so the pins set the size and the drill
-    /// follows. A size with no drill shows in the pin section with "Add a
+    /// follows. A size with no drill shows in the wizard with "Add a
     /// <d> mm drill".
     #[must_use]
     pub fn plan_pin_diameter(&self, stock: &StockConfig) -> f64 {
@@ -402,41 +258,6 @@ pub fn keyed_pin_plan(
         &inputs.obstacles,
         inputs.plan_pin_diameter(stock),
     )
-}
-
-/// A hash of every input of [`keyed_pin_plan`]: the stock extent and
-/// origin, the stored pin sizes, the setup map, the pin tool and
-/// every obstacle point. The stock panel's memo
-/// ([`crate::state::panels::KeyedPinPlanMemo`]) keys on it.
-fn keyed_pin_plan_fingerprint(
-    stock: &StockConfig,
-    face_up: FaceUp,
-    z_rotation: ZRotation,
-    inputs: &KeyedPinInputs,
-) -> u64 {
-    use std::hash::{Hash as _, Hasher as _};
-
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    for v in [stock.x, stock.y, stock.origin_x, stock.origin_y] {
-        v.to_bits().hash(&mut h);
-    }
-    // The smallest stored pin size sets the diameter of the plan.
-    for d in rs_cam_core::compute::alignment_pins::pin_diameters(&stock.alignment_pins) {
-        d.to_bits().hash(&mut h);
-    }
-    face_up.hash(&mut h);
-    z_rotation.hash(&mut h);
-    inputs.pin_tool_diameter.map(f64::to_bits).hash(&mut h);
-    for o in &inputs.obstacles {
-        o.kind.hash(&mut h);
-        o.name.hash(&mut h);
-        o.closed.hash(&mut h);
-        for (x, y) in &o.points {
-            x.to_bits().hash(&mut h);
-            y.to_bits().hash(&mut h);
-        }
-    }
-    h.finish()
 }
 
 #[cfg(test)]
@@ -584,9 +405,8 @@ mod command_tests {
         let stored = stored();
         let map = PinSetupMap::new(FaceUp::Bottom, ZRotation::Deg0, 65.0, 65.0);
         for pins in [
-            edit::pair_off_axis(&stored.alignment_pins, &map, 26.5).unwrap(),
-            edit::move_all(&stored.alignment_pins, 0.5, 0.0),
-            edit::snap(&stored.alignment_pins, &map),
+            edit::move_along_axis(&stored.alignment_pins, &map, 0.5),
+            edit::move_along_axis(&stored.alignment_pins, &map, -2.0),
         ] {
             let mut draft = stored.clone();
             draft.alignment_pins = pins.clone();
