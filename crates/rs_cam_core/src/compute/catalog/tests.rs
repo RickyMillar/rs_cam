@@ -74,6 +74,11 @@ fn param_defs_cover_every_config_field() {
             "driver-set: the layer-select route writes this beside the picked list",
         ),
         (
+            "diameter",
+            "driver-set: the pin door keeps one AlignmentPinDrill op per pin diameter \
+             and writes the diameter it drills (R1); an edit would make the op drill nothing",
+        ),
+        (
             "setup_z_flipped",
             "driver-set: the setup transform stamps this, not the operator",
         ),
