@@ -174,7 +174,7 @@ impl StockConfig {
     /// puts pins through the part.
     ///
     /// `pin_diameter` comes from the tool that drills the pin holes
-    /// (`ProjectSession::pin_drill_tool_diameter`) when one does. A hole
+    /// (`ProjectSession::pin_drill_tool_for`) when one does. A hole
     /// planned at 6 mm and drilled with a 3 mm cutter is a hole no 6 mm
     /// dowel ever sees.
     pub fn plan_keyed_pins(

@@ -360,12 +360,11 @@ impl ProjectSession {
         // the stored config records the operator's intent and this is a
         // derived value.
         if let crate::compute::OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
-            cfg.holes = self
-                .stock
-                .alignment_pins
-                .iter()
-                .map(|pin| [pin.x, pin.y])
-                .collect();
+            // R1: the operation drills the pins of its own diameter only.
+            cfg.holes = crate::compute::alignment_pins::pin_holes_of_diameter(
+                &self.stock.alignment_pins,
+                cfg.diameter,
+            );
         }
 
         // Pre-resolve the effective boundary polygon so adaptive3d can

@@ -923,7 +923,29 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
         "wall_to_keep_out_mm": report.wall_to_keep_out_mm(),
         "walls": pin_walls_json,
         "part_models": part_model_names,
-        "pin_tool_diameter_mm": report.pin_tool_diameter,
+        // R1: one row for each pin size: the pin-drill operation and the
+        // tool that drills the holes of the size.
+        "pin_tools": report
+            .pin_tools
+            .iter()
+            .map(|b| {
+                let op = b
+                    .op_index
+                    .and_then(|i| session.toolpath_configs().get(i).map(|tc| (i, tc)));
+                serde_json::json!({
+                    "pin_diameter_mm": b.pin_diameter,
+                    "pin_count": b.pin_count,
+                    "toolpath_index": op.map(|(i, _)| i),
+                    "toolpath_name": op.map(|(_, tc)| tc.name.clone()),
+                    "tool_id": b.tool_id,
+                    "tool_diameter_mm": b.tool_diameter,
+                    "tool_candidates": session.pin_tool_candidates(b.pin_diameter),
+                    "blocker": crate::controller::pin_drill_blocker(session, b.pin_diameter)
+                        .filter(|_| b.op_index.is_none())
+                        .map(|blocker| blocker.text()),
+                })
+            })
+            .collect::<Vec<_>>(),
         "wall_need_mm": PIN_WALL_MM,
         "preset": preset,
         "findings": report.findings,

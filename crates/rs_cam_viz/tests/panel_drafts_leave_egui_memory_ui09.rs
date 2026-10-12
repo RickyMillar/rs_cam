@@ -54,6 +54,12 @@ const EGUI_MEMORY_ALLOWANCE: &[(&str, usize, &str)] = &[
         "a per-modal confirmation tick that dies with the modal",
     ),
     (
+        "ui/properties/pins/plan_view.rs",
+        2,
+        "the sub-step remainder of one drag on the pin plan view (R3): a drag \
+         index that dies on release; the pins themselves live in the draft",
+    ),
+    (
         "ui/tool_library_modal.rs",
         2,
         "the modal's own view shape (search text, selected row)",

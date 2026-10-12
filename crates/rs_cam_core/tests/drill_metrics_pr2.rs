@@ -45,6 +45,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
         name: "Pin Drill".to_owned(),
         enabled: true,
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+            diameter: 4.0,
             holes: vec![[20.0, 20.0], [80.0, 80.0]],
             spoilboard_penetration: 1.0,
             cycle: DrillCycleType::Peck,

@@ -1086,10 +1086,10 @@ impl ProjectSession {
         // pins give the pin-drill holes; a drill or pocket operation on a
         // drawing of the holes is a second copy. The judgement is
         // `hole_source_findings`; this loop only publishes it.
-        let (pin_drill_present, hole_ops) = self.dowel_hole_ops();
+        let (pin_drill_sizes, hole_ops) = self.dowel_hole_ops();
         for finding in crate::compute::alignment_pins::hole_source_findings(
             &self.stock.alignment_pins,
-            pin_drill_present,
+            &pin_drill_sizes,
             &hole_ops,
         ) {
             let kind = match finding.kind {
@@ -1426,20 +1426,23 @@ impl ProjectSession {
     /// position is the target minus the stock origin. A lateral setup
     /// reads the drawing in its own work plane, which is not the pin
     /// plane, so its operations are not judged.
-    pub(crate) fn dowel_hole_ops(&self) -> (bool, Vec<crate::compute::alignment_pins::HoleOp>) {
+    ///
+    /// The first value is the pin diameter of each enabled pin-drill
+    /// operation (R1).
+    pub(crate) fn dowel_hole_ops(&self) -> (Vec<f64>, Vec<crate::compute::alignment_pins::HoleOp>) {
         use crate::compute::alignment_pins::{DrilledHole, HoleOp, HoleOpKind};
         use crate::compute::catalog::OperationConfig;
         use crate::io::dxf_input::DrillTargetKind;
 
         let (ox, oy) = (self.stock.origin_x, self.stock.origin_y);
-        let mut pin_drill_present = false;
+        let mut pin_drill_sizes = Vec::new();
         let mut ops = Vec::new();
         for (index, tc) in self.toolpath_configs.iter().enumerate() {
             if !tc.enabled {
                 continue;
             }
-            if matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)) {
-                pin_drill_present = true;
+            if let OperationConfig::AlignmentPinDrill(cfg) = &tc.operation {
+                pin_drill_sizes.push(cfg.diameter);
                 continue;
             }
             let lateral = self
@@ -1508,6 +1511,6 @@ impl ProjectSession {
                 holes,
             });
         }
-        (pin_drill_present, ops)
+        (pin_drill_sizes, ops)
     }
 }

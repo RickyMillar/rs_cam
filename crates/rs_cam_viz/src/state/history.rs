@@ -167,6 +167,11 @@ impl UndoHistory {
         !self.undo_stack.is_empty()
     }
 
+    /// The number of undo steps.
+    pub fn undo_len(&self) -> usize {
+        self.undo_stack.len()
+    }
+
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }

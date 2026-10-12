@@ -569,6 +569,7 @@ coolant = "off"
 kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
+diameter = 6.0
 holes = [
     [
     59.0,

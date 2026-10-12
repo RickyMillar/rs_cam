@@ -7,8 +7,8 @@
 
 use crate::compute::alignment_pins::{
     AlignmentPin, AxisPairPattern, MixedPairPattern, PIN_MATCH_TOL_MM, PIN_WALL_MM, PinFlipKind,
-    PinFlipReport, PinSetupMap, PinWalls, closest_wrong_seating_images, fit_axis_plus_mirror_pair,
-    fit_two_mixed_diameters, pin_findings_for_setups, pin_tool_finding, pin_wall_findings,
+    PinFlipReport, PinObstacle, PinSetupMap, PinWalls, closest_wrong_seating_images,
+    fit_axis_plus_mirror_pair, fit_two_mixed_diameters, pin_findings_for_setups, pin_wall_findings,
     pin_walls, seat_miss_per_pin_mm, validate_pins_for_flip,
 };
 use crate::compute::transform::{FaceUp, ZRotation};
@@ -64,8 +64,13 @@ pub struct PinSetReport {
     /// `true` when the operator chose the part models; `false` for the
     /// default rule.
     pub part_models_chosen: bool,
-    /// The diameter of the tool that drills the pin holes.
-    pub pin_tool_diameter: Option<f64>,
+    /// One row for each pin size of the reported pins: the pin-drill
+    /// operation and the tool that drills the holes of the size (R1).
+    pub pin_tools: Vec<super::PinToolBinding>,
+    /// The obstacles of the wall check, STOCK-LOCAL (X0 Y0 at the stock's
+    /// min corner): the part models, the keep-out zones and the fixtures.
+    /// The plan view of the stock panel draws these outlines (R3).
+    pub obstacles_local: Vec<PinObstacle>,
     /// The preset the set fits. `None` when the judged map has no flip
     /// axis.
     pub preset: Option<PinPreset>,
@@ -179,6 +184,7 @@ impl ProjectSession {
             .map(|o| o.translated(-stock.origin_x, -stock.origin_y))
             .collect();
         let walls = pins.iter().map(|p| pin_walls(p, w, d, &local)).collect();
+        let pin_tools = self.pin_tool_bindings_for(pins);
 
         // Every setup's findings (a quarter turn on a stock that is not
         // square is judged by no flip map), then the walls and the tool.
@@ -194,7 +200,7 @@ impl ProjectSession {
         findings.extend(
             pin_wall_findings(pins, w, d, &local)
                 .into_iter()
-                .chain(pin_tool_finding(pins, self.pin_drill_tool_diameter()))
+                .chain(self.pin_tool_mismatch_findings(pins))
                 .map(|f| f.text),
         );
 
@@ -217,7 +223,8 @@ impl ProjectSession {
             walls,
             part_models,
             part_models_chosen: stock.pin_part_models.is_some(),
-            pin_tool_diameter: self.pin_drill_tool_diameter(),
+            pin_tools,
+            obstacles_local: local,
             preset,
             findings,
         }

@@ -61,11 +61,12 @@ pub struct PreconditionContext {
     /// Used to validate the rest-machining "prev tool must be larger"
     /// precondition without re-passing the full tool list.
     pub tool_diameters: Vec<ToolDiameterEntry>,
-    /// How many alignment pins the live stock carries. The
+    /// The diameter of each alignment pin of the live stock. The
     /// `AlignmentPinDrill` check reads this, never the op's `holes`
     /// snapshot: the generator replaces `holes` with the live stock pins
-    /// before it drills, so the snapshot can be empty or stale.
-    pub stock_alignment_pin_count: usize,
+    /// of the op's diameter before it drills (R1), so the snapshot can be
+    /// empty or stale.
+    pub stock_alignment_pin_diameters: Vec<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,7 +114,11 @@ pub fn diagnostics_from_preconditions(
             // targets. `cfg.holes` is only a snapshot of the pins, and the
             // generator overwrites it, so this check does not read it.
             let has_picks = cfg.selected_holes.as_ref().is_some_and(|p| !p.is_empty());
-            if ctx.stock_alignment_pin_count == 0 && !has_picks {
+            let has_pins_of_size = ctx
+                .stock_alignment_pin_diameters
+                .iter()
+                .any(|d| crate::compute::alignment_pins::same_pin_diameter(*d, cfg.diameter));
+            if !has_pins_of_size && !has_picks {
                 out.push(Diagnostic {
                     id: DiagnosticId::from(ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES),
                     scope,
@@ -122,9 +127,11 @@ pub fn diagnostics_from_preconditions(
                     confidence: Confidence::Static,
                     state: DiagnosticState::Current,
                     source: Source::StaticValidation,
-                    message: "Alignment pin drill has no hole positions. \
-                              Add alignment pins to the stock before adding this op."
-                        .to_owned(),
+                    message: format!(
+                        "Alignment pin drill has no hole positions: no stock pin is \
+                         {d:.2} mm. Add alignment pins of that size to the stock.",
+                        d = cfg.diameter
+                    ),
                     evidence: None,
                     fix: None,
                     supersedes: vec![],
@@ -584,7 +591,7 @@ mod tests {
     #[test]
     fn alignment_pin_drill_silent_with_stock_pins_and_empty_holes() {
         let ctx = PreconditionContext {
-            stock_alignment_pin_count: 2,
+            stock_alignment_pin_diameters: vec![6.0, 6.0],
             ..Default::default()
         };
         let diags =

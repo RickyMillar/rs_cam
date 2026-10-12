@@ -576,9 +576,19 @@ impl RsCamApp {
                     events.push(AppEvent::Ui(UiCommand::CloseOptimizeProject(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseToolLibrary(NoArgs)));
+                    // R5a: "none" also closes the load-warning modal and
+                    // the pin wizard (its Cancel: nothing changes).
+                    self.controller.set_show_load_warnings(false);
                     let state = self.controller.state_mut();
                     state.show_preflight = false;
                     state.show_shortcuts = false;
+                    state.panels.pin_wizard = None;
+                }
+                "pin_wizard" => {
+                    let wizard = crate::ui::pin_wizard::PinWizardState::open(
+                        &self.controller.state().session,
+                    );
+                    self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
                 "feeds_modal" | "optimize_modal" => {
                     let Selection::Toolpath(tp_id) = self.controller.state().selection else {
@@ -609,7 +619,7 @@ impl RsCamApp {
                 other => {
                     return json_str(serde_json::json!({
                         "error": format!(
-                            "Unknown modal '{other}'. Valid: feeds_modal, optimize_modal, \
+                            "Unknown modal '{other}'. Valid: feeds_modal, optimize_modal, pin_wizard, \
                              export_wizard, tool_library, none"
                         )
                     }));

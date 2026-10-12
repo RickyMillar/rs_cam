@@ -79,6 +79,7 @@ pub use multitool::{
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
 pub use pin_report::{PinPreset, PinSetReport, PinStatus};
+pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 

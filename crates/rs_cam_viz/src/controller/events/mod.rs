@@ -197,6 +197,16 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::CancelRemoveSetup => self.state.panels.pending_setup_removal = None,
             AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
+            AppEvent::PinDrillUseTool { diameter, tool_id } => {
+                let _ = self.bind_pin_drill_tool(diameter, tool_id);
+            }
+            AppEvent::PinDrillAddTool { diameter } => {
+                let _ = self.add_pin_drill_tool(diameter);
+            }
+            AppEvent::PinAddSetup(face_up) => self.handle_pin_add_setup(face_up),
+            AppEvent::PinWizardApply { pins, add_drills } => {
+                let _ = self.apply_pin_wizard(pins, &add_drills);
+            }
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
             AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
             AppEvent::RemoveFixture(setup_id, fixture_id) => {

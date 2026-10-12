@@ -318,8 +318,8 @@ impl PinFindingKind {
                  \"Auto-place keyed pins\" searches the clear area."
             }
             PinFindingKind::PinToolMismatch => {
-                "Give the pins the diameter of the drill that makes the holes, or choose the \
-                 drill of the dowel size for the pin-drill operation."
+                "In the stock panel's pin section, choose the drill of the dowel size for that \
+                 pin size, or add a drill of that size there."
             }
         }
     }
@@ -595,25 +595,64 @@ pub fn pin_findings_for_setups(
     out
 }
 
-/// The finding when the pins and the tool that drills their holes do not
-/// agree (P6).
-///
-/// `tool_diameter` is the diameter of the tool that drills the pin holes
-/// (`ProjectSession::pin_drill_tool_diameter`). A hole is the size of its
-/// drill, so a dowel of another size does not fit it. No pins or no tool:
-/// no finding (with no tool there is no hole to compare).
+/// `true` when `a` and `b` are one dowel size: they differ by no more than
+/// [`PIN_CAD_ROUNDING_MM`].
 #[must_use]
-pub fn pin_tool_finding(pins: &[AlignmentPin], tool_diameter: Option<f64>) -> Option<PinFinding> {
-    let tool = tool_diameter?;
-    let worst = pins
+pub fn same_pin_diameter(a: f64, b: f64) -> bool {
+    (a - b).abs() <= PIN_CAD_ROUNDING_MM
+}
+
+/// The distinct pin diameters of `pins`, in ascending order (R1,
+/// 2026-10-12). Two diameters within [`PIN_CAD_ROUNDING_MM`] are one size;
+/// the size takes the value of its first pin in `pins`.
+///
+/// The pin door keeps one pin-drill operation for each size in this list.
+#[must_use]
+pub fn pin_diameters(pins: &[AlignmentPin]) -> Vec<f64> {
+    let mut out: Vec<f64> = Vec::new();
+    for pin in pins {
+        if !out.iter().any(|d| same_pin_diameter(*d, pin.diameter)) {
+            out.push(pin.diameter);
+        }
+    }
+    out.sort_by(f64::total_cmp);
+    out
+}
+
+/// The hole centres of the pins of size `diameter`, in pin order (R1).
+///
+/// A pin-drill operation drills only these holes. The generation pass,
+/// the pin door and the drill-op view read this one function, so the three
+/// cannot disagree about which hole a drill makes.
+#[must_use]
+pub fn pin_holes_of_diameter(pins: &[AlignmentPin], diameter: f64) -> Vec<[f64; 2]> {
+    pins.iter()
+        .filter(|p| same_pin_diameter(p.diameter, diameter))
+        .map(|p| [p.x, p.y])
+        .collect()
+}
+
+/// The findings when a pin size and the tool that drills its holes do not
+/// agree (P6, per size since R1).
+///
+/// `sizes` holds one row for each pin size: the pin diameter, and the
+/// diameter of the tool of the pin-drill operation of that size
+/// (`ProjectSession::pin_tool_bindings`). A hole is the size of its drill,
+/// so a dowel of another size does not fit it. A size with no tool gives
+/// no finding: there is no hole to compare.
+#[must_use]
+pub fn pin_tool_findings(sizes: &[(f64, Option<f64>)]) -> Vec<PinFinding> {
+    sizes
         .iter()
-        .map(|p| p.diameter)
-        .max_by(|a, b| (a - tool).abs().total_cmp(&(b - tool).abs()))?;
-    ((worst - tool).abs() > PIN_CAD_ROUNDING_MM).then(|| PinFinding {
-        kind: PinFindingKind::PinToolMismatch,
-        text: format!(
-            "An alignment pin is {worst:.2} mm, but the tool that drills the pin holes is \
-             {tool:.2} mm. The dowel does not fit the hole."
-        ),
-    })
+        .filter_map(|&(pin, tool)| {
+            let tool = tool?;
+            (!same_pin_diameter(pin, tool)).then(|| PinFinding {
+                kind: PinFindingKind::PinToolMismatch,
+                text: format!(
+                    "An alignment pin is {pin:.2} mm, but the tool that drills the holes of \
+                     that pin size is {tool:.2} mm. The dowel does not fit the hole."
+                ),
+            })
+        })
+        .collect()
 }

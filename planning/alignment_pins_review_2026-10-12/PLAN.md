@@ -50,8 +50,28 @@ Drill op (6 mm drill, 6.3 mm into the spoilboard) is the one hole source.
 0 collisions; the G-code headers list the dowels.
 
 Open (lead look on screen):
-- The load-warning modal keeps the load-time keying warning after a pin
-  edit fixes it (stale text until Close).
-- The stock panel's pin section clips on the right at 1600 px (the warning
-  box and the button row run past the panel edge).
 - Operator look at the editor and the viewport marks (acceptance 5).
+
+## Follow-up 2026-10-12: drill by size, fix in place, plan view, wizard
+
+Trigger: the operator's complaint about the mixed preset refusal
+("Add a drill operation ..., then choose the preset again"). Review:
+`REVIEW_UX.md`. Agent work, uncommitted, for the lead to review by path.
+
+- R1: one pin-drill operation per pin diameter
+  (`AlignmentPinDrillConfig::diameter`, required). The door creates,
+  moves and removes one op per size; `pin_tool_bindings` replaces the one
+  pin tool. The mixed preset is now machinable. Sentry:
+  `pin_holes_are_drilled_by_size_r1`. Break: a project file without the
+  field does not load; every project file in the repo was migrated.
+- R2: the "Drills" block of the pin section: per size, the tool chooser,
+  "Add a <d> mm drill", "Add a Top setup". The mixed preset never refuses
+  for a missing drill.
+- R3: the overhead plan view (`pins/plan_view.rs`); a drag moves the set.
+- R4: the pin wizard (`ui/pin_wizard.rs`), four steps, own draft.
+- R5: the stale load warning drops after a keying edit; MCP
+  `set_ui_view(modal: none)` closes it. The pin section fits 240 points.
+
+Open: the lead's look on screen at 1600 x 900; the start value of the
+large mixed dowel (small + 2 x `PIN_MATCH_TOL_MM`) is a choice, not a
+dowel standard.

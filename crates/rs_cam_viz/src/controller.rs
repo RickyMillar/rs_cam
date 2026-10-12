@@ -2,7 +2,7 @@
 
 mod events;
 pub(crate) use events::pins::PinDrillSync;
-pub(crate) use events::pins::{PIN_DRILL_NEEDS_TOOL, pin_drill_blocker};
+pub(crate) use events::pins::{PinDrillBlocker, pin_drill_blocker};
 pub mod generate_all;
 #[cfg(test)]
 #[allow(
@@ -124,6 +124,14 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     pending_upload: bool,
     collision_positions: Vec<[f32; 3]>,
     load_warnings: Vec<String>,
+    /// The load warnings that came from the pin check of the loader
+    /// (`ProjectLoadWarning::AlignmentPinsUnkeyed`). The pin door drops one
+    /// when the live pins no longer give it (R5a).
+    load_pin_warnings: Vec<String>,
+    /// The pin-drill refusals the last GUI synchronisation toasted. A
+    /// refusal toasts once, not on every pin edit; the pin section shows
+    /// it in place while it stands.
+    pin_drill_refusals_toasted: Vec<String>,
     show_load_warnings: bool,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
@@ -261,6 +269,8 @@ impl<B: ComputeBackend> AppController<B> {
             pending_upload: false,
             collision_positions: Vec::new(),
             load_warnings: Vec::new(),
+            load_pin_warnings: Vec::new(),
+            pin_drill_refusals_toasted: Vec::new(),
             show_load_warnings: false,
             status_message: None,
             notifications: Vec::new(),

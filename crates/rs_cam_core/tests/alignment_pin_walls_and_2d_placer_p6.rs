@@ -52,7 +52,7 @@ use rs_cam_core::compute::alignment_pins::{
 };
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
-use rs_cam_core::compute::operation_configs::DrillConfig;
+use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig};
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
@@ -207,11 +207,11 @@ fn the_pin_tool_is_the_drill_not_tools_0() {
     let session = mini_session(true);
     assert!((session.tools()[0].diameter - 3.0).abs() < 1e-12);
     let drill = session
-        .pin_drill_tool_diameter()
+        .default_pin_tool_diameter()
         .expect("the drill op names a tool");
     assert!((drill - PIN_D).abs() < 1e-12, "{drill}");
     // No operation drills the holes: no tool, never `tools[0]`.
-    assert_eq!(mini_session(false).pin_drill_tool_diameter(), None);
+    assert_eq!(mini_session(false).default_pin_tool_diameter(), None);
 }
 
 /// The rim is 12 mm. A 6 mm pin with a 2 mm wall each side needs 10 mm,
@@ -230,7 +230,7 @@ fn the_mini_rim_holds_a_keyed_three_pin_pattern() {
             FaceUp::Bottom,
             ZRotation::Deg0,
             &obstacles,
-            session.pin_drill_tool_diameter().unwrap(),
+            session.default_pin_tool_diameter().unwrap(),
         )
         .unwrap_or_else(|e| panic!("the rim holds the pins; got the refusal {e}"));
     assert!(
@@ -355,7 +355,18 @@ fn a_pin_in_the_part_or_a_keep_out_is_a_wall_finding() {
 
 #[test]
 fn a_pin_that_differs_from_the_drill_is_a_finding() {
-    let mut session = mini_session(true);
+    // R1: the pin-drill operation of the 3 mm pins names the 6 mm drill.
+    let mut pin_drill = drill_op(3, CAVITY);
+    pin_drill.operation = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+        diameter: 3.0,
+        ..AlignmentPinDrillConfig::default()
+    });
+    let mut session = ProjectSessionBuilder::new()
+        .stock(mini_stock(W, D))
+        .tool(tool(0, ToolType::EndMill, 3.0))
+        .tool(tool(3, ToolType::VBit, 6.0))
+        .toolpath(pin_drill)
+        .build();
     let _ = session
         .apply(Command::SetAlignmentPins(SetAlignmentPinsArgs {
             pins: vec![AlignmentPin::new(59.0, 32.5, 3.0)],

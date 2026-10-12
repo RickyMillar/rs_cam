@@ -256,7 +256,14 @@ impl Default for DrillConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlignmentPinDrillConfig {
-    /// Pin hole XY positions (snapshot from stock.alignment_pins at submit time).
+    /// The diameter of the pins this operation drills, in mm (R1,
+    /// 2026-10-12). The pin door keeps one pin-drill operation for each pin
+    /// diameter. The operation drills the pins of this diameter (within
+    /// `PIN_CAD_ROUNDING_MM`) and no other pin. The field is required: a
+    /// project file without it does not load.
+    pub diameter: f64,
+    /// Pin hole XY positions: the pins of [`Self::diameter`], a snapshot
+    /// of `stock.alignment_pins` (`alignment_pins::pin_holes_of_diameter`).
     #[serde(default)]
     pub holes: Vec<[f64; 2]>,
     /// How far below stock bottom to drill into spoilboard (mm).
@@ -306,6 +313,7 @@ impl AlignmentPinDrillConfig {
 impl Default for AlignmentPinDrillConfig {
     fn default() -> Self {
         Self {
+            diameter: crate::compute::alignment_pins::NOMINAL_DOWEL_MM,
             holes: Vec::new(),
             spoilboard_penetration: 2.0,
             cycle: DrillCycleType::Peck,

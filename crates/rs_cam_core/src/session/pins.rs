@@ -1,11 +1,11 @@
 //! The session inputs of the alignment-pin placer and of the pin wall
-//! check (P6, 2026-10-12): the part models, the obstacles and the tool
-//! that drills the pin holes. Also the dowel notes of one setup for the
-//! export header and the setup sheet (P10).
+//! check (P6, 2026-10-12): the part models, the obstacles and the tools
+//! that drill the pin holes, one for each pin size (R1). Also the dowel
+//! notes of one setup for the export header and the setup sheet (P10).
 
 use crate::compute::alignment_pins::{
     PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind, PinSetupNotes,
-    pin_setup_notes, pin_tool_finding,
+    pin_diameters, pin_setup_notes, pin_tool_findings, same_pin_diameter,
 };
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ModelId;
@@ -71,14 +71,19 @@ impl ProjectSession {
         }
     }
 
-    /// The pin diameters: each stored pin diameter and the diameter of the
-    /// tool that drills the pin holes.
+    /// The pin diameters: each stored pin diameter and the diameter of
+    /// each tool that drills pin holes.
     fn pin_diameters(&self) -> Vec<f64> {
         self.stock
             .alignment_pins
             .iter()
             .map(|p| p.diameter)
-            .chain(self.pin_drill_tool_diameter())
+            .chain(
+                self.pin_tool_bindings()
+                    .into_iter()
+                    .filter_map(|b| b.tool_diameter),
+            )
+            .chain(self.default_pin_tool_diameter())
             .collect()
     }
 
@@ -161,34 +166,33 @@ impl ProjectSession {
         out
     }
 
-    /// The id of the tool that drills the alignment pin holes.
-    ///
-    /// The tool of the first `AlignmentPinDrill` operation, else the tool
-    /// of the first `Drill` operation, else `None`. The tool type does not
-    /// say "drill" (a twist drill is modelled as a `VBit` with a 118 deg
-    /// point), so the operation that drills holes is the evidence. It is
-    /// never `tools[0]`: in the mini test piece that is a 3 mm end mill,
-    /// and 3 mm pins in 6 mm dowel holes do not register anything. A door
-    /// that creates the pin-drill operation reads this id too, so the plan
-    /// and the hole agree.
+    /// The pin-drill operations: for each, its toolpath index and the pin
+    /// diameter it drills, in toolpath order (R1).
     #[must_use]
-    pub fn pin_drill_tool_id(&self) -> Option<usize> {
+    pub fn pin_drill_ops(&self) -> Vec<(usize, f64)> {
         self.toolpath_configs
             .iter()
-            .find(|tc| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
-            .or_else(|| {
-                self.toolpath_configs
-                    .iter()
-                    .find(|tc| matches!(tc.operation, OperationConfig::Drill(_)))
+            .enumerate()
+            .filter_map(|(index, tc)| match &tc.operation {
+                OperationConfig::AlignmentPinDrill(cfg) => Some((index, cfg.diameter)),
+                _ => None,
             })
-            .map(|tc| tc.tool_id)
+            .collect()
     }
 
-    /// The diameter of the tool [`Self::pin_drill_tool_id`] names. `None`
-    /// when no tool drills the holes or the tool has no positive diameter.
+    /// The index of the first pin-drill operation of the pin size
+    /// `diameter`, or `None`.
     #[must_use]
-    pub fn pin_drill_tool_diameter(&self) -> Option<f64> {
-        let tool_id = self.pin_drill_tool_id()?;
+    pub fn pin_drill_op_for(&self, diameter: f64) -> Option<usize> {
+        self.pin_drill_ops()
+            .into_iter()
+            .find(|(_, d)| same_pin_diameter(*d, diameter))
+            .map(|(index, _)| index)
+    }
+
+    /// The diameter of the tool `tool_id`, or `None` when no tool has the
+    /// id or its diameter is not positive.
+    fn tool_diameter(&self, tool_id: usize) -> Option<f64> {
         self.tools
             .iter()
             .find(|t| t.id.0 == tool_id)
@@ -196,20 +200,157 @@ impl ProjectSession {
             .filter(|d| *d > 0.0)
     }
 
+    /// The id of the tool that drills the holes of the pin size `diameter`
+    /// (R1).
+    ///
+    /// The tool of the pin-drill operation of that size, else the tool of
+    /// a drilling operation (`Drill` or `AlignmentPinDrill`) whose tool has
+    /// that diameter (within `PIN_CAD_ROUNDING_MM`), else a tool of that
+    /// diameter (a `VBit` first), else `None`. The tool
+    /// type does not say "drill" (a twist drill is modelled as a `VBit`
+    /// with a 118 deg point), so the operation that drills holes is the
+    /// evidence. It is never `tools[0]`: in the mini test piece that is a
+    /// 3 mm end mill. The pin door reads this id when it creates the
+    /// operation of a size, so the plan and the hole agree.
+    #[must_use]
+    pub fn pin_drill_tool_for(&self, diameter: f64) -> Option<usize> {
+        if let Some(index) = self.pin_drill_op_for(diameter) {
+            return self.toolpath_configs.get(index).map(|tc| tc.tool_id);
+        }
+        self.toolpath_configs
+            .iter()
+            .filter(|tc| {
+                matches!(
+                    tc.operation,
+                    OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
+                )
+            })
+            .map(|tc| tc.tool_id)
+            .find(|&id| {
+                self.tool_diameter(id)
+                    .is_some_and(|d| same_pin_diameter(d, diameter))
+            })
+            .or_else(|| self.pin_tool_of_size(diameter))
+    }
+
+    /// A tool of the size `diameter` that no drilling operation names
+    /// yet: the first `VBit` of the size (the project's model of a twist
+    /// drill), else the first tool of the size. The tool that "Add a <d>
+    /// mm drill" or the MCP `add_tool` adds is such a tool, so the door
+    /// finds it.
+    fn pin_tool_of_size(&self, diameter: f64) -> Option<usize> {
+        use crate::compute::tool_config::ToolType;
+        let of_size = || {
+            self.tools
+                .iter()
+                .filter(move |t| t.diameter > 0.0 && same_pin_diameter(t.diameter, diameter))
+        };
+        of_size()
+            .find(|t| t.tool_type == ToolType::VBit)
+            .or_else(|| of_size().next())
+            .map(|t| t.id.0)
+    }
+
+    /// The ids of every tool whose diameter is `diameter` (within
+    /// `PIN_CAD_ROUNDING_MM`), in tool order: the choice the pin section
+    /// offers for one pin size (R2). The tool that
+    /// [`Self::pin_drill_tool_for`] names is first.
+    #[must_use]
+    pub fn pin_tool_candidates(&self, diameter: f64) -> Vec<usize> {
+        let mut out: Vec<usize> = self
+            .tools
+            .iter()
+            .filter(|t| t.diameter > 0.0 && same_pin_diameter(t.diameter, diameter))
+            .map(|t| t.id.0)
+            .collect();
+        if let Some(first) = self.pin_drill_tool_for(diameter)
+            && let Some(at) = out.iter().position(|id| *id == first)
+        {
+            out.remove(at);
+            out.insert(0, first);
+        }
+        out
+    }
+
+    /// One row for each pin size of the stored pins, in ascending order of
+    /// diameter (R1). Every reader of "the pin tool" reads this list: the
+    /// pin-tool findings, the pin report, the stock panel and the MCP
+    /// `pin_report`.
+    #[must_use]
+    pub fn pin_tool_bindings(&self) -> Vec<PinToolBinding> {
+        self.pin_tool_bindings_for(&self.stock.alignment_pins)
+    }
+
+    /// [`Self::pin_tool_bindings`] for the pin set `pins` (a draft of the
+    /// stock panel or the pin wizard).
+    #[must_use]
+    pub fn pin_tool_bindings_for(
+        &self,
+        pins: &[crate::compute::alignment_pins::AlignmentPin],
+    ) -> Vec<PinToolBinding> {
+        pin_diameters(pins)
+            .into_iter()
+            .map(|pin_diameter| {
+                let tool_id = self.pin_drill_tool_for(pin_diameter);
+                PinToolBinding {
+                    pin_diameter,
+                    pin_count: pins
+                        .iter()
+                        .filter(|p| same_pin_diameter(p.diameter, pin_diameter))
+                        .count(),
+                    op_index: self.pin_drill_op_for(pin_diameter),
+                    tool_id,
+                    tool_diameter: tool_id.and_then(|id| self.tool_diameter(id)),
+                }
+            })
+            .collect()
+    }
+
+    /// The pin diameter the placer gives a NEW pin set when no pin is
+    /// stored: the diameter of the tool of the first pin-drill operation,
+    /// else of the first `Drill` operation. `None` when no operation drills
+    /// holes. It is never `tools[0]`.
+    #[must_use]
+    pub fn default_pin_tool_diameter(&self) -> Option<f64> {
+        let first_of = |pin_drill: bool| {
+            self.toolpath_configs.iter().find(|tc| {
+                if pin_drill {
+                    matches!(tc.operation, OperationConfig::AlignmentPinDrill(_))
+                } else {
+                    matches!(tc.operation, OperationConfig::Drill(_))
+                }
+            })
+        };
+        first_of(true)
+            .or_else(|| first_of(false))
+            .and_then(|tc| self.tool_diameter(tc.tool_id))
+    }
+
     /// The pin findings that need the session and not only the stock: a
     /// wall thinner than `PIN_WALL_MM` to the stock edge, to the part
     /// models ([`Self::pin_part_models`]), to a keep-out
-    /// zone or to a fixture, and a pin diameter that differs from the
-    /// tool that drills the holes.
+    /// zone or to a fixture, and a pin size whose drill has another
+    /// diameter ([`Self::pin_tool_bindings`]).
     #[must_use]
     pub fn pin_placement_findings(&self) -> Vec<PinFinding> {
         let obstacles = self.pin_obstacles(&self.pin_part_models());
         let mut out = self.stock.pin_wall_findings(&obstacles);
-        out.extend(pin_tool_finding(
-            &self.stock.alignment_pins,
-            self.pin_drill_tool_diameter(),
-        ));
+        out.extend(self.pin_tool_mismatch_findings(&self.stock.alignment_pins));
         out
+    }
+
+    /// The pin-tool findings of `pins`: one for each pin size whose drill
+    /// has another diameter.
+    pub(crate) fn pin_tool_mismatch_findings(
+        &self,
+        pins: &[crate::compute::alignment_pins::AlignmentPin],
+    ) -> Vec<PinFinding> {
+        let sizes: Vec<(f64, Option<f64>)> = self
+            .pin_tool_bindings_for(pins)
+            .iter()
+            .map(|b| (b.pin_diameter, b.tool_diameter))
+            .collect();
+        pin_tool_findings(&sizes)
     }
 
     /// The dowel notes of the setup `setup_id` for the per-setup G-code
@@ -239,10 +380,11 @@ impl ProjectSession {
         )
     }
 
-    /// `true` when `setup` holds an enabled operation that drills the
-    /// dowel holes: an `AlignmentPinDrill` operation, or a drill or
-    /// pocket operation with a hole within [`PIN_MATCH_TOL_MM`] of a pin
-    /// (a drawing of the dowel holes, as in the mini test piece).
+    /// `true` when `setup` drills every dowel hole: each pin is drilled by
+    /// an enabled pin-drill operation of its size in the setup, or by a
+    /// drill or pocket operation in the setup with a hole within
+    /// [`PIN_MATCH_TOL_MM`] of the pin (a drawing of the dowel holes, as
+    /// in the mini test piece).
     fn setup_drills_dowel_holes(&self, setup: &super::SetupData) -> bool {
         let in_setup = |id: usize| {
             setup.toolpath_indices.iter().any(|&i| {
@@ -251,24 +393,132 @@ impl ProjectSession {
                     .is_some_and(|tc| tc.enabled && tc.id.0 == id)
             })
         };
-        let pin_drill = setup.toolpath_indices.iter().any(|&i| {
-            self.toolpath_configs.get(i).is_some_and(|tc| {
-                tc.enabled && matches!(tc.operation, OperationConfig::AlignmentPinDrill(_))
+        let pin_drill_sizes: Vec<f64> = setup
+            .toolpath_indices
+            .iter()
+            .filter_map(|&i| self.toolpath_configs.get(i))
+            .filter(|tc| tc.enabled)
+            .filter_map(|tc| match &tc.operation {
+                OperationConfig::AlignmentPinDrill(cfg) => Some(cfg.diameter),
+                _ => None,
             })
-        });
-        if pin_drill {
-            return true;
-        }
+            .collect();
         let pins = &self.stock.alignment_pins;
         let (_, hole_ops) = self.dowel_hole_ops();
-        hole_ops
+        let setup_hole_ops: Vec<_> = hole_ops
             .iter()
             .filter(|op| in_setup(op.toolpath_id))
-            .any(|op| {
-                op.holes.iter().any(|h| {
-                    pins.iter()
-                        .any(|p| (p.x - h.x).hypot(p.y - h.y) <= PIN_MATCH_TOL_MM)
-                })
+            .collect();
+        !pins.is_empty()
+            && pins.iter().all(|p| {
+                pin_drill_sizes
+                    .iter()
+                    .any(|d| same_pin_diameter(*d, p.diameter))
+                    || setup_hole_ops.iter().any(|op| {
+                        op.holes
+                            .iter()
+                            .any(|h| (p.x - h.x).hypot(p.y - h.y) <= PIN_MATCH_TOL_MM)
+                    })
             })
+    }
+}
+
+/// One pin size and the drill that makes its holes
+/// ([`ProjectSession::pin_tool_bindings`], R1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PinToolBinding {
+    /// The pin diameter of the size, in mm.
+    pub pin_diameter: f64,
+    /// The number of pins of the size.
+    pub pin_count: usize,
+    /// The toolpath index of the pin-drill operation of the size, or
+    /// `None` when the door has not created it.
+    pub op_index: Option<usize>,
+    /// The tool that drills the holes of the size
+    /// ([`ProjectSession::pin_drill_tool_for`]), or `None` when no tool
+    /// of the size drills holes.
+    pub tool_id: Option<usize>,
+    /// The diameter of that tool.
+    pub tool_diameter: Option<f64>,
+}
+
+/// The point angle of the twist drill that
+/// [`ProjectSession::pin_drill_tool_template`] gives a new pin drill when
+/// the project has no drill to copy: the 118 deg of the 6 mm twist drill
+/// of the mini test piece (`planning/rivmap_block_job/testpiece_mini.toml`,
+/// tool id 3, "6 mm twist drill, 118 deg point").
+pub const TWIST_DRILL_POINT_DEG: f64 = 118.0;
+
+impl ProjectSession {
+    /// A drill of `diameter` for the holes of one pin size (R2): the tool
+    /// that the pin section's "Add a <d> mm drill" adds.
+    ///
+    /// - The type and the settings come from the tool of a pin-drill or
+    ///   drill operation (the project's own drill), else a `VBit` with
+    ///   [`TWIST_DRILL_POINT_DEG`] (a twist drill, as the mini test piece
+    ///   models it).
+    /// - The diameter, the shaft and the shank are `diameter`.
+    /// - The cutting length reaches the hole bottom: the stock height plus
+    ///   the spoilboard penetration of a pin-drill operation (else the
+    ///   default of `AlignmentPinDrillConfig`). The stick-out is never
+    ///   shorter than the cutting length.
+    /// - The tool number is one more than the largest in the project.
+    ///
+    /// The id is a placeholder; the `AddTool` row assigns it.
+    #[must_use]
+    pub fn pin_drill_tool_template(
+        &self,
+        diameter: f64,
+    ) -> crate::compute::tool_config::ToolConfig {
+        use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+        let source = self
+            .toolpath_configs
+            .iter()
+            .filter(|tc| {
+                matches!(
+                    tc.operation,
+                    OperationConfig::AlignmentPinDrill(_) | OperationConfig::Drill(_)
+                )
+            })
+            .find_map(|tc| self.tools.iter().find(|t| t.id.0 == tc.tool_id));
+        let mut tool = match source {
+            Some(t) => t.clone(),
+            None => {
+                let mut t = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+                t.included_angle = TWIST_DRILL_POINT_DEG;
+                t
+            }
+        };
+        let penetration = self
+            .toolpath_configs
+            .iter()
+            .find_map(|tc| match &tc.operation {
+                OperationConfig::AlignmentPinDrill(cfg) => Some(cfg.spoilboard_penetration),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                crate::compute::operation_configs::AlignmentPinDrillConfig::default()
+                    .spoilboard_penetration
+            });
+        let reach = self.stock.z + penetration;
+        tool.id = ToolId(0);
+        tool.diameter = diameter;
+        tool.shaft_diameter = diameter;
+        tool.shank_diameter = diameter;
+        tool.cutting_length = tool.cutting_length.max(reach);
+        tool.stickout = tool.stickout.max(tool.cutting_length);
+        tool.tool_number = self.tools.iter().map(|t| t.tool_number).max().unwrap_or(0) + 1;
+        tool.name = if tool.tool_type == ToolType::VBit {
+            format!(
+                "{diameter:.2} mm twist drill, {:.0} deg point",
+                tool.included_angle
+            )
+        } else {
+            format!("{diameter:.2} mm drill")
+        };
+        tool.vendor.clear();
+        tool.product_id.clear();
+        let _ = tool.normalize_geometry();
+        tool
     }
 }

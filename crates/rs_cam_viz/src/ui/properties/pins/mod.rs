@@ -13,8 +13,13 @@
 //! synchronisation of the one pin door (`controller/events/pins.rs`).
 
 mod controls;
+pub mod drills;
 pub mod edit;
+pub mod plan_view;
 mod status;
+
+pub use controls::{mixed_large_diameter, mixed_start_large_diameter};
+pub use status::{Chip, chip_words};
 
 use rs_cam_core::compute::alignment_pins::{NOMINAL_DOWEL_MM, PinObstacle, PinPlacementError};
 use rs_cam_core::session::PinSetReport;
@@ -23,40 +28,138 @@ use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, StockConfig, ZRotation};
 use crate::ui::AppEvent;
 
-/// What the pin-drill operation looks like for the stock panel's chip.
+/// Why the door cannot create the pin-drill operation of one pin size
+/// (`controller::pin_drill_blocker`, the door's own check).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PinDrillBlock {
+    /// No setup is a `Top` setup at 0 deg.
+    NeedsTopSetup(String),
+    /// No tool of the pin size is in the project.
+    NeedsTool(String),
+}
+
+impl PinDrillBlock {
+    /// The refusal text of the door.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        match self {
+            PinDrillBlock::NeedsTopSetup(t) | PinDrillBlock::NeedsTool(t) => t,
+        }
+    }
+}
+
+/// One pin size and the drill that makes its holes, as the pin section
+/// shows it (R1, R2). Every value comes from the core bindings
+/// (`ProjectSession::pin_tool_bindings_for`) and the door's check.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PinDrillRow {
+    /// The pin diameter of the size, in mm.
+    pub diameter: f64,
+    /// The number of pins of the size.
+    pub pin_count: usize,
+    /// The pin-drill operation of the size: its name and its hole count.
+    pub op: Option<(String, usize)>,
+    /// The tool that drills (or will drill) the holes: id and name.
+    pub tool: Option<(usize, String)>,
+    /// The tool diameter, when a tool exists.
+    pub tool_diameter: Option<f64>,
+    /// Every tool of the size: id and name (`pin_tool_candidates`).
+    pub candidates: Vec<(usize, String)>,
+    /// Why the door cannot create the operation, when it cannot.
+    pub block: Option<PinDrillBlock>,
+}
+
+impl PinDrillRow {
+    /// `true` when the tool diameter is not the pin diameter.
+    #[must_use]
+    pub fn tool_mismatch(&self) -> bool {
+        self.tool_diameter.is_some_and(|d| {
+            !rs_cam_core::compute::alignment_pins::same_pin_diameter(d, self.diameter)
+        })
+    }
+}
+
+/// What the pin-drill operations look like for the stock panel.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PinDrillState {
-    /// The stock has no pins, so no pin drill is needed.
+    /// The pin set is empty, so no pin drill is needed.
     NoPins,
-    /// The pin-drill operation exists and drills `holes` holes.
-    Exists { name: String, holes: usize },
-    /// No pin-drill operation exists, and the door can create one.
-    Missing,
-    /// No pin-drill operation exists, and the door refuses with this text
-    /// (`controller::pin_drill_blocker`).
-    Refused(&'static str),
+    /// One row for each pin size, in ascending order of diameter.
+    Sizes(Vec<PinDrillRow>),
 }
 
 impl PinDrillState {
-    /// The state of `session`.
+    /// The state of `pins` (the stock draft) on `session`.
     #[must_use]
-    pub fn of(session: &rs_cam_core::session::ProjectSession) -> Self {
+    pub fn of(session: &rs_cam_core::session::ProjectSession, pins: &[AlignmentPin]) -> Self {
         use crate::state::toolpath::OperationConfig;
-        if session.stock_config().alignment_pins.is_empty() {
+        if pins.is_empty() {
             return Self::NoPins;
         }
-        let op = session
-            .toolpath_configs()
-            .iter()
-            .find_map(|tc| match &tc.operation {
-                OperationConfig::AlignmentPinDrill(c) => Some((tc.name.clone(), c.holes.len())),
-                _ => None,
-            });
-        match op {
-            Some((name, holes)) => Self::Exists { name, holes },
-            None => {
-                crate::controller::pin_drill_blocker(session).map_or(Self::Missing, Self::Refused)
-            }
+        let tool_name = |id: usize| {
+            session
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == id)
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| format!("tool {id}"))
+        };
+        let rows = session
+            .pin_tool_bindings_for(pins)
+            .into_iter()
+            .map(|b| {
+                let op = b.op_index.and_then(|i| {
+                    let tc = session.toolpath_configs().get(i)?;
+                    match &tc.operation {
+                        OperationConfig::AlignmentPinDrill(c) => {
+                            // The holes the door gives the operation: the
+                            // pins of its size in the draft.
+                            let holes = rs_cam_core::compute::alignment_pins::pin_holes_of_diameter(
+                                pins, c.diameter,
+                            );
+                            Some((tc.name.clone(), holes.len()))
+                        }
+                        _ => None,
+                    }
+                });
+                let block = if op.is_some() {
+                    None
+                } else {
+                    crate::controller::pin_drill_blocker(session, b.pin_diameter).map(|blocker| {
+                        match blocker {
+                            crate::controller::PinDrillBlocker::NeedsTopSetup => {
+                                PinDrillBlock::NeedsTopSetup(blocker.text())
+                            }
+                            crate::controller::PinDrillBlocker::NeedsTool { .. } => {
+                                PinDrillBlock::NeedsTool(blocker.text())
+                            }
+                        }
+                    })
+                };
+                PinDrillRow {
+                    diameter: b.pin_diameter,
+                    pin_count: b.pin_count,
+                    op,
+                    tool: b.tool_id.map(|id| (id, tool_name(id))),
+                    tool_diameter: b.tool_diameter,
+                    candidates: session
+                        .pin_tool_candidates(b.pin_diameter)
+                        .into_iter()
+                        .map(|id| (id, tool_name(id)))
+                        .collect(),
+                    block,
+                }
+            })
+            .collect();
+        Self::Sizes(rows)
+    }
+
+    /// The rows, or none.
+    #[must_use]
+    pub fn rows(&self) -> &[PinDrillRow] {
+        match self {
+            PinDrillState::NoPins => &[],
+            PinDrillState::Sizes(rows) => rows,
         }
     }
 }
@@ -82,7 +185,9 @@ pub struct PinSectionInputs<'a> {
     pub report: &'a PinSetReport,
     /// The part-model chooser rows.
     pub models: &'a [PartModelRow],
-    /// The diameters of the tools of the drilling operations, ascending.
+    /// The diameters of the drills of the project, ascending: the tools
+    /// of the drilling operations and every `VBit` (the model of a twist
+    /// drill). The mixed preset takes its large size from them.
     pub drill_diameters: &'a [f64],
     pub pin_drill: &'a PinDrillState,
     /// The pin the viewport marked.
@@ -102,6 +207,8 @@ pub struct PinSectionOut {
     /// The new preset refusal: `Some(Some(text))` sets it, `Some(None)`
     /// clears it.
     pub preset_refusal: Option<Option<String>>,
+    /// "Pin setup...": open the pin wizard (R4).
+    pub open_wizard: bool,
 }
 
 /// Draw the "Alignment pins" section.
@@ -140,11 +247,14 @@ pub fn draw(
             }
 
             // The flip axis comes from the setups (P3).
-            ui.label(crate::ui::components::text::caption(format!(
-                "Flip axis: {}",
-                map.axis_label()
-                    .unwrap_or_else(|| "none (no flipped Bottom setup)".to_owned())
-            )));
+            wrapped(
+                ui,
+                crate::ui::components::text::caption(format!(
+                    "Flip axis: {}",
+                    map.axis_label()
+                        .unwrap_or_else(|| "none (no flipped Bottom setup)".to_owned())
+                )),
+            );
 
             // The plan of the placer, cached on its inputs (P6).
             let (plan_face, plan_turn) = (map.face_up(), map.z_rotation());
@@ -153,14 +263,47 @@ pub fn draw(
                 keyed_pin_plan(stock, plan_face, plan_turn, inputs.keyed)
             });
 
+            if ui
+                .add(crate::ui::components::Button::new("Pin setup..."))
+                .on_hover_text(
+                    "Opens the pin wizard: the flip, the dowel sizes and their drills, the \
+                     placement on a large plan view, and a summary before Apply. Cancel \
+                     changes nothing.",
+                )
+                .clicked()
+            {
+                out.open_wizard = true;
+            }
+
             if !stock.alignment_pins.is_empty() {
-                status::chips(ui, report, inputs.pin_drill, &mut out, events);
+                status::chips(ui, report);
+                // R3: the plan view from above. A drag moves the set.
+                let (w, d) = (stock.x, stock.y);
+                let view = plan_view::show(
+                    ui,
+                    "stock_panel",
+                    &mut stock.alignment_pins,
+                    plan_view::PlanInputs {
+                        stock_w: w,
+                        stock_d: d,
+                        report,
+                        selected: inputs.selected_pin,
+                        size: plan_view::PlanSize::Compact {
+                            max_height: PLAN_VIEW_COMPACT_MAX_HEIGHT,
+                        },
+                    },
+                    &mut out.edit,
+                );
+                if view.selected_pin.is_some() {
+                    out.selected_pin = view.selected_pin;
+                }
                 status::keying_warning(ui, stock, report, &plan, &mut out.edit);
+                drills::drill_rows(ui, inputs.pin_drill, &mut out, events);
             }
 
             ui.add_space(crate::ui::tokens::SPACE_2);
             controls::preset_picker(ui, stock, inputs, &plan, &mut out);
-            controls::pattern_controls(ui, stock, report, &mut out.edit);
+            controls::pattern_controls(ui, stock, report, inputs.drill_diameters, &mut out.edit);
             controls::set_controls(ui, stock, report, &mut out.edit);
             controls::auto_place(ui, stock, has_flip, &plan, &mut out.edit);
             controls::part_models(ui, stock, inputs.models, &mut out.edit);
@@ -179,6 +322,20 @@ pub fn draw(
         .unwrap_or_default()
 }
 
+/// A label that wraps at the panel width (R5b).
+///
+/// The inspector sits in a scroll area that scrolls both ways
+/// (`app::side_panel`), and a plain label there does not wrap: a long
+/// caption ran past the panel edge, and the panel clipped it.
+pub(crate) fn wrapped(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.add(egui::Label::new(text).wrap())
+}
+
+/// The largest height of the plan view in the stock panel, in points. A
+/// long stock gets a short view; a square one fills the inspector width
+/// up to this height.
+const PLAN_VIEW_COMPACT_MAX_HEIGHT: f32 = 220.0;
+
 /// The session values the keyed-pin planner reads.
 ///
 /// ONE constructor for both doors: the stock panel's "Auto-place" and the
@@ -194,8 +351,9 @@ pub struct KeyedPinInputs {
     /// ([`rs_cam_core::session::ProjectSession::pin_obstacles`] of
     /// [`rs_cam_core::session::ProjectSession::pin_part_models`]).
     pub obstacles: Vec<PinObstacle>,
-    /// The diameter of the tool that drills the pin holes
-    /// ([`rs_cam_core::session::ProjectSession::pin_drill_tool_diameter`]).
+    /// The pin diameter of a NEW set when no pin is stored: the tool of
+    /// the first pin-drill or drill operation
+    /// ([`rs_cam_core::session::ProjectSession::default_pin_tool_diameter`]).
     /// `None` when no pin-drill or drill operation exists.
     pub pin_tool_diameter: Option<f64>,
 }
@@ -205,18 +363,22 @@ impl KeyedPinInputs {
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
             obstacles: session.pin_obstacles(&session.pin_part_models()),
-            pin_tool_diameter: session.pin_drill_tool_diameter(),
+            pin_tool_diameter: session.default_pin_tool_diameter(),
         }
     }
 
-    /// The diameter the placer gives the pins: the tool that drills the
-    /// holes, else the first stored pin, else [`NOMINAL_DOWEL_MM`]. A
-    /// stored pin that differs from the tool is a finding
-    /// (`pin_tool_finding`), not a silent change.
+    /// The diameter the placer gives the pins: the smallest stored pin
+    /// size (the dowel the operator has), else the tool of the first
+    /// drilling operation, else [`NOMINAL_DOWEL_MM`]. Since R1 each pin
+    /// size has its own drill, so the pins set the size and the drill
+    /// follows. A size with no drill shows in the pin section with "Add a
+    /// <d> mm drill".
     #[must_use]
     pub fn plan_pin_diameter(&self, stock: &StockConfig) -> f64 {
-        self.pin_tool_diameter
-            .or_else(|| stock.alignment_pins.first().map(|p| p.diameter))
+        rs_cam_core::compute::alignment_pins::pin_diameters(&stock.alignment_pins)
+            .first()
+            .copied()
+            .or(self.pin_tool_diameter)
             .unwrap_or(NOMINAL_DOWEL_MM)
     }
 }
@@ -243,7 +405,7 @@ pub fn keyed_pin_plan(
 }
 
 /// A hash of every input of [`keyed_pin_plan`]: the stock extent and
-/// origin, the first stored pin's diameter, the setup map, the pin tool and
+/// origin, the stored pin sizes, the setup map, the pin tool and
 /// every obstacle point. The stock panel's memo
 /// ([`crate::state::panels::KeyedPinPlanMemo`]) keys on it.
 fn keyed_pin_plan_fingerprint(
@@ -258,12 +420,10 @@ fn keyed_pin_plan_fingerprint(
     for v in [stock.x, stock.y, stock.origin_x, stock.origin_y] {
         v.to_bits().hash(&mut h);
     }
-    // The first stored pin sets the diameter when no tool drills the holes.
-    stock
-        .alignment_pins
-        .first()
-        .map(|p| p.diameter.to_bits())
-        .hash(&mut h);
+    // The smallest stored pin size sets the diameter of the plan.
+    for d in rs_cam_core::compute::alignment_pins::pin_diameters(&stock.alignment_pins) {
+        d.to_bits().hash(&mut h);
+    }
     face_up.hash(&mut h);
     z_rotation.hash(&mut h);
     inputs.pin_tool_diameter.map(f64::to_bits).hash(&mut h);

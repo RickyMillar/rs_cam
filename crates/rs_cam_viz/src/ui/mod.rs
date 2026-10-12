@@ -11,6 +11,7 @@ pub mod multitool_planner;
 pub mod optimize_modal;
 pub mod optimize_project;
 pub mod overlays;
+pub mod pin_wizard;
 pub mod preferences;
 pub mod preflight;
 pub mod properties;
@@ -135,6 +136,28 @@ pub enum AppEvent {
     RenameSetup(SetupId, String),
     /// One-click two-sided setup: create flipped Setup 2, set flip axis, auto-place pins.
     SetupTwoSided,
+    /// R2: bind the pin-drill operation of one pin size to a tool (the
+    /// per-size tool chooser of the pin section). Through the pin door.
+    PinDrillUseTool {
+        diameter: f64,
+        tool_id: usize,
+    },
+    /// R2: add a drill of one pin size and bind the pin-drill operation of
+    /// that size to it ("Add a <d> mm drill"). Through the pin door.
+    PinDrillAddTool {
+        diameter: f64,
+    },
+    /// Add a setup with this face at 0 deg for the pins ("Add a Top setup"
+    /// of the pin section, "Add a Bottom setup" of the pin wizard). The
+    /// selection stays, and the pin door runs its synchronisation.
+    PinAddSetup(crate::state::job::FaceUp),
+    /// R4: the pin wizard's Apply. The pin door adds the drills of
+    /// `add_drills`, applies `pins` as one `SetAlignmentPins` (one undo
+    /// step) and synchronises the pin-drill operations.
+    PinWizardApply {
+        pins: Vec<crate::state::job::AlignmentPin>,
+        add_drills: Vec<f64>,
+    },
 
     // Fixtures and keep-out zones
     AddFixture(SetupId),

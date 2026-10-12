@@ -220,8 +220,12 @@ fn the_chips_say_the_mini_pins_seat_and_do_not_key() {
     assert!(has(&texts, "Seats after flip: yes"), "{texts:#?}");
     assert!(has(&texts, "Keyed: NO: seats turned 180 deg"), "{texts:#?}");
     assert!(has(&texts, "Walls: min"), "{texts:#?}");
-    // No pin-drill operation yet; the door could create one.
-    assert!(has(&texts, "Pin drill: not created"), "{texts:#?}");
+    // No pin-drill operation yet; the door could create one (R1: one row
+    // for each pin size).
+    assert!(
+        has(&texts, "6.00 mm pins (2): drill not created"),
+        "{texts:#?}"
+    );
     assert!(has(&texts, "Use 3-pin preset"), "{texts:#?}");
     assert!(has(&texts, "Move the pair off the axis"), "{texts:#?}");
     // The single-pin drags sit in a closed fold.

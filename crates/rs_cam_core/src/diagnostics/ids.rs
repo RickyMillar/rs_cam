@@ -97,7 +97,7 @@ pub const PROJECT_DOWEL_HOLES_DISAGREE: &str = "project.dowel_holes_disagree";
 pub const PROJECT_PIN_WALL_THIN: &str = "project.pin_wall_thin";
 /// A stock pin differs in diameter from the tool that drills the pin holes
 /// (P6). The judgement lives in
-/// [`crate::compute::alignment_pins::pin_tool_finding`].
+/// [`crate::compute::alignment_pins::pin_tool_findings`].
 pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch";
 /// A gate declined to produce a verdict because the metric it reads is not
 /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).

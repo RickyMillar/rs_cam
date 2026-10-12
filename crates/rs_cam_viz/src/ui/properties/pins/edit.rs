@@ -52,6 +52,49 @@ pub const MIN_PAIR_ACROSS_MM: f64 = 2.0 * PIN_MATCH_TOL_MM;
 /// difference under the CAD rounding is one size.
 pub const MIN_DIAMETER_STEP_MM: f64 = PIN_CAD_ROUNDING_MM;
 
+/// The mixed preset (two pins of `small_d` and `large_d` on the flip axis)
+/// made from `current` (R2, R4).
+///
+/// The positions: two pins of `current` on the axis keep their places;
+/// else the axis positions of the placer's plan `plan`. The stock panel's
+/// preset picker and the pin wizard call this one function.
+///
+/// # Errors
+///
+/// A sentence when no two axis positions exist or the map has no flip
+/// axis.
+pub fn mixed_preset_pins(
+    current: &[AlignmentPin],
+    map: &PinSetupMap,
+    plan: Option<&[AlignmentPin; 3]>,
+    small_d: f64,
+    large_d: f64,
+) -> Result<Vec<AlignmentPin>, String> {
+    let alongs = match current {
+        [a, b] => along_on_axis(map, a).zip(along_on_axis(map, b)),
+        _ => None,
+    }
+    .or_else(|| {
+        let fit = rs_cam_core::compute::alignment_pins::fit_axis_plus_mirror_pair(plan?, map)?;
+        Some((fit.axis_along, fit.pair_along))
+    });
+    let Some((small_along, large_along)) = alongs else {
+        return Err(
+            "The mixed preset needs two pins on the flip axis or a placer plan.".to_owned(),
+        );
+    };
+    mixed_pins(
+        map,
+        MixedPairPattern {
+            small_along,
+            large_along,
+            small_diameter: small_d,
+            large_diameter: large_d,
+        },
+    )
+    .ok_or_else(|| "No flip axis.".to_owned())
+}
+
 /// The pins of the 3-pin preset with `pattern`, or `None` when `map` has
 /// no flip axis.
 #[must_use]
