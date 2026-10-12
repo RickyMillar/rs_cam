@@ -12,7 +12,8 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. A cut-metric
   card flips to a median line on a min-max band; `< >` opens it large.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
-- `export_wizard.rs`, `pin_wizard.rs` (R4), `optimize_*.rs`, `multitool_planner.rs`, `*_modal.rs`.
+- `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `optimize_*.rs`,
+  `multitool_planner.rs`, `*_modal.rs`.
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`,
   `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs.
 

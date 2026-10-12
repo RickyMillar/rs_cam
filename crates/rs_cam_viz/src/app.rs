@@ -1006,7 +1006,7 @@ impl RsCamApp {
             }
         }
 
-        // Pin wizard (R4): "Pin setup..." of the stock panel.
+        // Pin wizard (R4): "Set up pins…" or "Edit pins…" of the stock panel.
         if self.controller.state().panels.pin_wizard.is_some() {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::pin_wizard::draw(ctx, state, events);

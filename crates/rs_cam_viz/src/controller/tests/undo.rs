@@ -1013,18 +1013,24 @@ mod pin_edit_one_door_p5 {
             vec![(6.0, 6.0, vec![[10.0, 20.0]])]
         );
 
-        // "Add a 8.00 mm drill": one tool, and the 8 mm operation with it.
+        // The wizard's "Add a 8.00 mm drill", then Apply: one tool, and the
+        // 8 mm operation with it.
         let tools_before = controller.state.session.tools().len();
-        let tool_id = controller
-            .add_pin_drill_tool(8.0)
-            .expect("the session takes the drill");
+        let pins_now = controller
+            .state
+            .session
+            .stock_config()
+            .alignment_pins
+            .clone();
+        let _ = controller
+            .apply_pin_wizard(pins_now, &[8.0], &[])
+            .expect("the wizard's pins are taken");
         assert_eq!(controller.state.session.tools().len(), tools_before + 1);
         let tool = controller
             .state
             .session
             .tools()
-            .iter()
-            .find(|t| t.id.0 == tool_id)
+            .last()
             .expect("the new tool");
         assert!((tool.diameter - 8.0).abs() < 1e-12, "{tool:?}");
         assert_eq!(
@@ -1057,8 +1063,8 @@ mod pin_edit_one_door_p5 {
         );
     }
 
-    /// R2: the per-size tool chooser rebinds the operation of one size
-    /// through the door; the other size keeps its tool.
+    /// R2, round 2: the wizard's per-size tool chooser queues a tool; Apply
+    /// rebinds the operation of that size through the door.
     #[test]
     fn the_tool_chooser_binds_one_size_r2() {
         let mut controller = flipped_first_controller();
@@ -1079,11 +1085,25 @@ mod pin_edit_one_door_p5 {
             .expect("an index");
         let second_id = controller.state.session.tools()[index].id.0;
         assert_eq!(controller.state.session.pin_tool_candidates(6.0).len(), 2);
-        let outcome = controller.bind_pin_drill_tool(6.0, second_id);
-        assert!(
-            matches!(outcome, PinDrillSync::Updated { .. }),
-            "{outcome:?}"
+        let op = controller
+            .state
+            .session
+            .pin_drill_op_for(6.0)
+            .expect("the op");
+        assert_ne!(
+            controller.state.session.toolpath_configs()[op].tool_id,
+            second_id,
+            "non-vacuity: the door chose the first tool"
         );
+        let pins = controller
+            .state
+            .session
+            .stock_config()
+            .alignment_pins
+            .clone();
+        let _ = controller
+            .apply_pin_wizard(pins, &[], &[(6.0, second_id)])
+            .expect("the wizard's pins are taken");
         let op = controller
             .state
             .session
@@ -1106,7 +1126,7 @@ mod pin_edit_one_door_p5 {
             AlignmentPin::new(40.0, 20.0, 8.0),
         ];
         let edit = controller
-            .apply_pin_wizard(pins.clone(), &[8.0])
+            .apply_pin_wizard(pins.clone(), &[8.0], &[])
             .expect("the wizard's pins are taken");
         assert!(
             edit.pin_drill
@@ -1140,7 +1160,8 @@ mod pin_edit_one_door_p5 {
         let toolpaths_before = toolpath_list(&controller);
 
         let mut wizard = crate::ui::pin_wizard::PinWizardState::open(&controller.state.session);
-        wizard.pins = crate::ui::properties::pins::edit::move_all(&wizard.pins, 3.0, 0.0);
+        let map = controller.state.session.pin_set_report().map;
+        wizard.pins = crate::ui::properties::pins::edit::move_along_axis(&wizard.pins, &map, 3.0);
         wizard.pins.push(AlignmentPin::new(40.0, 20.0, 8.0));
         wizard.add_drills.push(8.0);
         controller.state.panels.pin_wizard = Some(wizard);
@@ -1152,8 +1173,33 @@ mod pin_edit_one_door_p5 {
         assert_eq!(toolpath_list(&controller), toolpaths_before);
     }
 
+    /// Round 2: the wizard's part-model choice goes through the door as one
+    /// `SetPinPartModels` row and one undo step; the default rule comes back
+    /// the same way.
+    #[test]
+    fn the_wizard_part_model_choice_is_one_door_row() {
+        let mut controller = flipped_first_controller();
+        let undo_before = controller.state.history.undo_len();
+        assert_eq!(
+            controller.state.session.stock_config().pin_part_models,
+            None
+        );
+        controller.set_pin_part_models(Some(Vec::new()));
+        assert_eq!(
+            controller.state.session.stock_config().pin_part_models,
+            Some(Vec::new())
+        );
+        assert_eq!(controller.state.history.undo_len(), undo_before + 1);
+        controller.set_pin_part_models(None);
+        assert_eq!(
+            controller.state.session.stock_config().pin_part_models,
+            None
+        );
+        assert_eq!(controller.state.history.undo_len(), undo_before + 2);
+    }
+
     /// A size with no drill refuses on every GUI pin edit, but it toasts
-    /// once: the pin section states the refusal in place.
+    /// once: the stock panel pin block and the wizard state the refusal.
     #[test]
     fn a_standing_refusal_toasts_once() {
         let mut controller = flipped_first_controller();

@@ -10,7 +10,7 @@
 //!   mirror pair, in the clear area of the stock (P6).
 //! - `walls.rs` — [`pin_walls`] and [`pin_wall_findings`]: the wall of each
 //!   pin to the stock edge, the part, the keep-outs and the fixtures (P6).
-//! - `pattern.rs` — pure set edits: move, diameter, snap to the flip, and
+//! - `pattern.rs` — pure set edits: move, diameter, and
 //!   the presets with their read-back (P4).
 //! - `hole_sources.rs` — [`hole_source_findings`]: a second operation that
 //!   drills the dowel holes again, or drills them where the pins are not
@@ -41,7 +41,7 @@ pub use keying::{
 };
 pub use pattern::{
     AxisPairPattern, MixedPairPattern, axis_plus_mirror_pair, fit_axis_plus_mirror_pair,
-    fit_two_mixed_diameters, set_diameter, snap_to_flip, translate, two_mixed_diameters,
+    fit_two_mixed_diameters, set_diameter, translate, two_mixed_diameters,
 };
 pub use placement::{PinPlacementError, PinPlacementRequest, place_keyed_pins};
 pub use setup_notes::{NOT_KEYED_WARNING, PinSetupNotes, pin_setup_notes};

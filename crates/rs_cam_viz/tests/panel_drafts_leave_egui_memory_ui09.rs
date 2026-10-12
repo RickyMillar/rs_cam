@@ -56,8 +56,8 @@ const EGUI_MEMORY_ALLOWANCE: &[(&str, usize, &str)] = &[
     (
         "ui/properties/pins/plan_view.rs",
         2,
-        "the sub-step remainder of one drag on the pin plan view (R3): a drag \
-         index that dies on release; the pins themselves live in the draft",
+        "the sub-step remainder of one drag along the flip axis on the pin plan view (R3): a \
+         drag index that dies on release; the pins themselves live in the draft",
     ),
     (
         "ui/tool_library_modal.rs",

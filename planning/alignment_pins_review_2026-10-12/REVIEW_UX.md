@@ -62,3 +62,38 @@ the small drill. So the refusal hid a missing capability (R1).
   today. The pin edit itself is one `StockChange` undo step, as now.
 - The 3D viewport keeps its own pin marks. The plan view does not replace
   them; both read the one report.
+
+## Round 2 (2026-10-12, after a live look)
+
+Operator: "the wizard first page has no options. loads of text. bad ui.
+... in 3, can you shade the stock different from the model. and also
+review the snap to fit ... remove the summary page completely ... the
+stock side bar. its too busy."
+
+Changes (lead rulings 1-6):
+
+1. **Stock panel: one block.** A status line ("2 pins · do not key"), at
+   most one warning in the danger colour, and ONE button ("Set up pins…" /
+   "Edit pins…") that opens the wizard. The pin editor left the panel:
+   presets, set controls, nudges, table, drills, plan view, chips, single
+   pins, warning boxes and the part-model chooser.
+2. **Wizard: two steps.** Step 1 "Dowels": an animated flip diagram of the
+   judged setup (a card turn computed from its `PinSetupMap`; a hover shows
+   the part turned over) with a one-line caption, or the refusal and "Add a
+   Bottom setup"; then the pattern, the sizes and the drill rows. Step 2
+   "Place": the plan view, Auto-place, a move along the axis, the pattern
+   values and the part models; the keying and wall chips sit beside Apply.
+   The summary step is gone.
+3. **Less text.** Every paragraph became a label or a short hover. A test
+   holds every painted wizard text to one short line, except a refusal.
+4. **Plan view shading.** The stock and the part footprint have two fills
+   (`DIAGRAM_MATERIAL`, new `DIAGRAM_PART`), with a "Stock / Part" legend.
+   A scan-line fill paints a concave outline correctly.
+5. **Snap deleted.** Every pin control keeps the set symmetric: a set move
+   (drag or nudge) goes along the flip axis only, the distance off the axis
+   is "Pair off axis", and a size changes per pattern role. Single-pin
+   editing is gone. Core `pattern::snap_to_flip` had no caller left and is
+   deleted with its two tests (a break).
+6. **The wizard holds the drill fixes.** A drill add and a tool choice wait
+   in the draft until Apply. "Add a Top/Bottom setup" and the part-model
+   choice apply at once through the pin door; their hover says so.

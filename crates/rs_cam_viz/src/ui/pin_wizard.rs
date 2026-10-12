@@ -1,38 +1,35 @@
-//! The pin wizard (R4, 2026-10-12): "Pin setup..." of the stock panel's
-//! pin section.
+//! The pin wizard (R4; round 2, 2026-10-12): the one place that edits the
+//! alignment pins. The stock panel's "Set up pins…" or "Edit pins…" opens
+//! it.
 //!
-//! Four steps:
+//! Two steps:
 //!
-//! 1. The flip: which setup the pins are judged against and its flip axis.
-//!    With no flipped setup, the step says so and offers "Add a Bottom
-//!    setup" (the `AddSetup` row, at once).
-//! 2. The dowel: the pattern (3 pins of one size, or 2 pins of two sizes)
-//!    and the dowel sizes. A size with no drill offers "Add a <d> mm
-//!    drill"; the wizard adds it on Apply.
-//! 3. The placement: the large plan view, Auto-place, the nudges, the
-//!    along and across values and a drag of the set, with the live keying
-//!    margin and walls.
-//! 4. The summary: keyed or not, the walls, and the tools and operations
-//!    that Apply creates, moves or removes.
+//! 1. Dowels: the flip diagram of the judged setup (or the refusal and its
+//!    fix), the pattern, the dowel sizes and one drill row for each size.
+//! 2. Place: the plan view, Auto-place, a move along the flip axis, the
+//!    pattern values, the part models, and the chips of the report beside
+//!    Apply.
 //!
-//! The wizard works on its OWN draft (`PinWizardState::pins`). Cancel
-//! changes nothing. Apply sends ONE `AppEvent::PinWizardApply`: the pin
-//! door adds the queued drills, applies one `SetAlignmentPins` (one undo
-//! step for the pins) and synchronises the pin-drill operations. Every
-//! number the wizard shows comes from the one core report,
-//! `ProjectSession::pin_set_report_for`, of the draft.
+//! Every pin control keeps the set symmetric under the flip: a set move
+//! goes along the flip axis only, and the distance off the axis is the
+//! pattern's "Pair off axis" value (`pins::edit`).
+//!
+//! The wizard works on its OWN draft (`PinWizardState::pins`, the drill
+//! queue). Cancel changes nothing that the draft holds. Apply sends ONE
+//! `AppEvent::PinWizardApply`; the pin door applies it. Three fixes apply
+//! at once through the door, and their hover says so: "Add a Bottom
+//! setup", "Add a Top setup" and the part-model choice. Every number comes
+//! from the one core report, `ProjectSession::pin_set_report_for`, of the
+//! draft.
 
-use rs_cam_core::compute::alignment_pins::{
-    AlignmentPin, NOMINAL_DOWEL_MM, pin_diameters, same_pin_diameter,
-};
+use rs_cam_core::compute::alignment_pins::{AlignmentPin, NOMINAL_DOWEL_MM, same_pin_diameter};
 use rs_cam_core::session::{PinPreset, PinSetReport, ProjectSession};
 
 use super::AppEvent;
 use super::components::{Banner, Button, ChoiceRow, Role, StatusChip, UiExt as _, ValueRow, text};
 use super::properties::PanelEdit;
 use super::properties::pins::{
-    KeyedPinInputs, chip_words, edit, keyed_pin_plan, mixed_large_diameter,
-    mixed_start_large_diameter, plan_view,
+    KeyedPinInputs, PartModelRow, chip_words, drills, edit, flip_view, keyed_pin_plan, plan_view,
 };
 use crate::state::AppState;
 use crate::state::job::FaceUp;
@@ -44,53 +41,34 @@ const DEFAULT_HEIGHT: f32 = 640.0;
 /// The space the window keeps clear round it on the screen, in points.
 const SCREEN_MARGIN: f32 = 48.0;
 /// The height of the window parts round the step body: the title bar, the
-/// stepper, the two separators and the button row, in points.
-const CHROME_HEIGHT: f32 = 150.0;
+/// stepper, the two separators, the chips and the button row, in points.
+const CHROME_HEIGHT: f32 = 180.0;
 /// The smallest height of the step body, in points.
 const MIN_BODY_HEIGHT: f32 = 200.0;
-/// The largest height of the plan view of step 3, in points.
+/// The largest height of the plan view of step 2, in points.
 const PLAN_MAX_HEIGHT: f32 = 420.0;
-/// The nudge steps of the set, in mm.
+/// The steps of a move along the flip axis, in mm.
 const NUDGE_STEPS_MM: [f64; 4] = [-1.0, -0.5, 0.5, 1.0];
 
-/// The four steps.
+/// The two steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WizardStep {
-    Flip,
-    Dowel,
-    Placement,
-    Summary,
+    Dowels,
+    Place,
 }
 
 impl WizardStep {
-    const ALL: [Self; 4] = [Self::Flip, Self::Dowel, Self::Placement, Self::Summary];
+    const ALL: [Self; 2] = [Self::Dowels, Self::Place];
 
     fn title(self) -> &'static str {
         match self {
-            Self::Flip => "1. Flip",
-            Self::Dowel => "2. Dowel",
-            Self::Placement => "3. Placement",
-            Self::Summary => "4. Summary",
+            Self::Dowels => "1. Dowels",
+            Self::Place => "2. Place",
         }
-    }
-
-    fn index(self) -> usize {
-        Self::ALL.iter().position(|s| *s == self).unwrap_or(0)
-    }
-
-    fn next(self) -> Self {
-        Self::ALL.get(self.index() + 1).copied().unwrap_or(self)
-    }
-
-    fn back(self) -> Self {
-        self.index()
-            .checked_sub(1)
-            .and_then(|i| Self::ALL.get(i).copied())
-            .unwrap_or(self)
     }
 }
 
-/// The pin pattern of step 2.
+/// The pin pattern of step 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WizardPattern {
     /// One pin on the flip axis and a mirror pair off it, one dowel size.
@@ -121,6 +99,8 @@ pub struct PinWizardState {
     pub pins: Vec<AlignmentPin>,
     /// The drill sizes that Apply adds as tools.
     pub add_drills: Vec<f64>,
+    /// The tool that Apply binds to the pin-drill operation of a size.
+    pub use_tools: Vec<(f64, usize)>,
     /// The pin marked on the plan view.
     pub selected: Option<usize>,
     /// The refusal of the last placement, until the next one.
@@ -143,23 +123,24 @@ impl PinWizardState {
             _ => (
                 WizardPattern::AxisPair,
                 small_d,
-                mixed_large_diameter(small_d, &drills),
+                edit::mixed_large_diameter(small_d, &drills),
             ),
         };
         Self {
-            step: WizardStep::Flip,
+            step: WizardStep::Dowels,
             pattern,
             small_d,
             large_d,
             pins: stock.alignment_pins.clone(),
             add_drills: Vec::new(),
+            use_tools: Vec::new(),
             selected: None,
             place_refusal: None,
         }
     }
 
-    /// Place the pattern with the placer of the stock panel
-    /// (`keyed_pin_plan`), at the wizard's dowel sizes.
+    /// Place the pattern with the placer (`keyed_pin_plan`), at the
+    /// wizard's dowel sizes.
     pub fn place(&mut self, session: &ProjectSession) {
         let report = session.pin_set_report_for(&self.pins);
         let map = &report.map;
@@ -193,15 +174,25 @@ impl PinWizardState {
         }
     }
 
-    /// The pin sizes of the draft that no tool of the project drills and
-    /// that Apply does not add.
-    #[must_use]
-    pub fn sizes_without_drill(&self, session: &ProjectSession) -> Vec<f64> {
-        pin_diameters(&self.pins)
-            .into_iter()
-            .filter(|d| session.pin_tool_candidates(*d).is_empty())
-            .filter(|d| !self.add_drills.iter().any(|a| same_pin_diameter(*a, *d)))
-            .collect()
+    /// Give the pins the wizard's dowel sizes, per pattern role. A draft
+    /// that fits the chosen pattern keeps its positions; any other draft
+    /// is placed again.
+    pub fn resize(&mut self, session: &ProjectSession) {
+        let report = session.pin_set_report_for(&self.pins);
+        let fits = matches!(
+            (self.pattern, report.preset),
+            (
+                WizardPattern::AxisPair,
+                Some(PinPreset::AxisPlusMirrorPair(_))
+            ) | (WizardPattern::Mixed, Some(PinPreset::TwoMixedDiameters(_)))
+        );
+        match edit::with_diameters(&report.map, report.preset, self.small_d, self.large_d) {
+            Some(pins) if fits => {
+                self.pins = pins;
+                self.place_refusal = None;
+            }
+            _ => self.place(session),
+        }
     }
 }
 
@@ -237,20 +228,18 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent
         .max_height(max_height)
         .open(&mut still_open)
         .show(ctx, |ui| {
-            stepper(ui, &mut wizard.step);
+            stepper(ui, &mut wizard, session);
             ui.separator();
             // The step scrolls; the stepper and the buttons stay in view.
             egui::ScrollArea::vertical()
                 .max_height((max_height - CHROME_HEIGHT).max(MIN_BODY_HEIGHT))
                 .auto_shrink([false, true])
                 .show(ui, |ui| match wizard.step {
-                    WizardStep::Flip => step_flip(ui, session, &report, events),
-                    WizardStep::Dowel => step_dowel(ui, session, &mut wizard),
-                    WizardStep::Placement => step_placement(ui, session, &report, &mut wizard),
-                    WizardStep::Summary => step_summary(ui, session, &report, &wizard),
+                    WizardStep::Dowels => step_dowels(ui, session, &report, &mut wizard, events),
+                    WizardStep::Place => step_place(ui, session, &report, &mut wizard, events),
                 });
             ui.separator();
-            close = nav(ui, &mut wizard, session);
+            close = nav(ui, &mut wizard, session, &report);
         });
     if !still_open {
         close = Close::Cancel;
@@ -261,55 +250,65 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent
         Close::Apply => events.push(AppEvent::PinWizardApply {
             pins: wizard.pins,
             add_drills: wizard.add_drills,
+            use_tools: wizard.use_tools,
         }),
     }
 }
 
-fn stepper(ui: &mut egui::Ui, step: &mut WizardStep) {
+/// Go to `step`. The Place step with no pins places the pattern first.
+fn go_to(wizard: &mut PinWizardState, session: &ProjectSession, step: WizardStep) {
+    if step == WizardStep::Place && wizard.pins.is_empty() {
+        wizard.place(session);
+    }
+    wizard.step = step;
+}
+
+fn stepper(ui: &mut egui::Ui, wizard: &mut PinWizardState, session: &ProjectSession) {
     ui.horizontal_wrapped(|ui| {
         for s in WizardStep::ALL {
             let mut title = egui::RichText::new(s.title());
-            if s == *step {
+            if s == wizard.step {
                 title = title.strong();
             }
-            if ui.selectable_label(s == *step, title).clicked() {
-                *step = s;
+            if ui.selectable_label(s == wizard.step, title).clicked() {
+                go_to(wizard, session, s);
             }
         }
     });
 }
 
-fn nav(ui: &mut egui::Ui, wizard: &mut PinWizardState, session: &ProjectSession) -> Close {
+fn nav(
+    ui: &mut egui::Ui,
+    wizard: &mut PinWizardState,
+    session: &ProjectSession,
+    report: &PinSetReport,
+) -> Close {
     let mut close = Close::Stay;
+    if wizard.step == WizardStep::Place && !wizard.pins.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            for chip in chip_words(report) {
+                ui.add(StatusChip::new(chip.word, chip.role));
+            }
+        });
+    }
+    let valid = !wizard.pins.is_empty() && report.flip.seats() && report.flip.keyed();
     ui.horizontal_wrapped(|ui| {
         if ui
-            .add(Button::new("Back").enabled(wizard.step != WizardStep::Flip))
+            .add(Button::new("Back").enabled(wizard.step == WizardStep::Place))
             .clicked()
         {
-            wizard.step = wizard.step.back();
+            wizard.step = WizardStep::Dowels;
         }
-        if wizard.step == WizardStep::Summary {
-            let missing = wizard.sizes_without_drill(session);
-            let apply = ui
-                .add(Button::primary("Apply").enabled(!wizard.pins.is_empty()))
-                .on_hover_text(
-                    "Adds the drills of the list, writes the pins in one step and makes the \
-                     pin-drill operations follow them.",
-                );
-            if apply.clicked() {
-                close = Close::Apply;
-            }
-            if !missing.is_empty() {
-                ui.label(text::caption(
-                    "A pin size has no drill: its operation is refused until a drill of the \
-                     size exists. Step 2 adds one.",
-                ));
-            }
-        } else if ui.add(Button::primary("Next")).clicked() {
-            if wizard.step == WizardStep::Dowel && wizard.pins.is_empty() {
-                wizard.place(session);
-            }
-            wizard.step = wizard.step.next();
+        if wizard.step == WizardStep::Dowels && ui.add(Button::primary("Next")).clicked() {
+            go_to(wizard, session, WizardStep::Place);
+        }
+        let can_apply = !wizard.pins.is_empty() && (wizard.step == WizardStep::Place || valid);
+        if ui
+            .add(Button::primary("Apply").enabled(can_apply))
+            .on_hover_text("Writes the pins and the drills (one undo step).")
+            .clicked()
+        {
+            close = Close::Apply;
         }
         if ui
             .add(Button::quiet("Cancel"))
@@ -322,85 +321,49 @@ fn nav(ui: &mut egui::Ui, wizard: &mut PinWizardState, session: &ProjectSession)
     close
 }
 
-/// Step 1: the flip.
-fn step_flip(
+/// The flip diagram and its one-line caption, or the refusal and its fix.
+fn flip_block(
     ui: &mut egui::Ui,
     session: &ProjectSession,
     report: &PinSetReport,
+    pins: &[AlignmentPin],
     events: &mut Vec<AppEvent>,
 ) {
-    ui.label(text::caption(
-        "The pins register the part when it turns over. The check judges the pins against \
-         the first setup that turns the part over in the plane of the pins.",
-    ));
-    for (i, setup) in session.list_setups().iter().enumerate() {
-        let judged = report.judged_setup == Some(i);
-        let line = format!(
-            "{}: face {}, {}{}",
-            setup.name,
-            setup.face_up.label(),
-            setup.z_rotation.label(),
-            if judged { " (judged)" } else { "" }
-        );
-        ui.label(if judged {
-            text::body_strong(line)
-        } else {
-            text::caption(line)
-        });
-    }
-    ui.add_space(crate::ui::tokens::SPACE_2);
-    match report.map.axis_label() {
-        Some(axis) if report.judged_setup.is_some() => {
-            ui.add(StatusChip::new(format!("Flip axis: {axis}"), Role::Ok));
+    let judged = report
+        .judged_setup
+        .and_then(|i| session.list_setups().get(i))
+        .map(|s| s.name.clone());
+    match (judged, report.map.axis_label()) {
+        (Some(name), Some(axis)) => {
+            let stock = session.stock_config();
+            let _ = flip_view::show(ui, report, pins, stock.x, stock.y);
+            ui.label(text::caption(format!("Flip: {name}, about {axis}")));
         }
         _ => {
             Banner::new(
                 Role::Danger,
-                "No setup turns the part over in the plane of the pins, so the pins have no \
-                 flip to key.",
+                "No setup turns the part over in the pin plane.",
             )
             .show(ui);
             if ui
                 .add(Button::primary("Add a Bottom setup"))
-                .on_hover_text(
-                    "Adds a setup with face Bottom at 0 deg now. Cancel does not remove it.",
-                )
+                .on_hover_text("Adds it now. Cancel does not remove it.")
                 .clicked()
             {
                 events.push(AppEvent::PinAddSetup(FaceUp::Bottom));
             }
         }
     }
-    let has_top = session
-        .list_setups()
-        .iter()
-        .any(|s| s.face_up == FaceUp::Top && s.z_rotation == crate::state::job::ZRotation::Deg0);
-    if !has_top {
-        ui.add_space(crate::ui::tokens::SPACE_2);
-        Banner::new(
-            Role::Caution,
-            "No setup has face Top at 0 deg. The pin drill drills from the top of the stock, \
-             so it needs one.",
-        )
-        .show(ui);
-        if ui
-            .add(Button::new("Add a Top setup"))
-            .on_hover_text("Adds a setup with face Top at 0 deg now. Cancel does not remove it.")
-            .clicked()
-        {
-            events.push(AppEvent::PinAddSetup(FaceUp::Top));
-        }
-    }
 }
 
 /// A row of quick size picks. A click writes the size into `value`.
-fn size_picks(ui: &mut egui::Ui, label: &str, sizes: &[f64], value: &mut f64) -> bool {
+fn size_picks(ui: &mut egui::Ui, sizes: &[f64], value: &mut f64) -> bool {
     if sizes.is_empty() {
         return false;
     }
     let mut picked = false;
     ui.horizontal_wrapped(|ui| {
-        ui.label(text::caption(label));
+        ui.label(text::caption("Sizes:"));
         for d in sizes {
             if ui.add(Button::quiet(format!("{d:.2} mm"))).clicked() {
                 *value = *d;
@@ -411,17 +374,36 @@ fn size_picks(ui: &mut egui::Ui, label: &str, sizes: &[f64], value: &mut f64) ->
     picked
 }
 
-/// Step 2: the dowel.
-fn step_dowel(ui: &mut egui::Ui, session: &ProjectSession, wizard: &mut PinWizardState) {
-    let mut changed = false;
+/// The one-line refusal of the last placement.
+fn refusal_line(ui: &mut egui::Ui, wizard: &PinWizardState) {
+    if let Some(reason) = &wizard.place_refusal {
+        ui.label(
+            egui::RichText::new(reason)
+                .small()
+                .color(crate::ui::tokens::DANGER),
+        );
+    }
+}
+
+/// Step 1: the dowels.
+fn step_dowels(
+    ui: &mut egui::Ui,
+    session: &ProjectSession,
+    report: &PinSetReport,
+    wizard: &mut PinWizardState,
+    events: &mut Vec<AppEvent>,
+) {
+    flip_block(ui, session, report, &wizard.pins, events);
+    ui.add_space(crate::ui::tokens::SPACE_2);
+
     let before = wizard.pattern;
     ui.add(
         ChoiceRow::new("Pattern", &mut wizard.pattern, &WizardPattern::OPTIONS).hover(
-            "3 pins, one size: one pin on the flip axis and a mirror pair off it; one drill. \
-             2 pins, two sizes: two pins on the flip axis of different diameters; two drills.",
+            "3 pins: one on the flip axis and a mirror pair, one drill. 2 pins: two sizes on \
+             the axis, two drills.",
         ),
     );
-    changed |= wizard.pattern != before;
+    let pattern_changed = wizard.pattern != before;
 
     // The sizes the project can drill, and the nominal dowel.
     let mut known = super::properties::drill_tool_diameters(session);
@@ -441,11 +423,11 @@ fn step_dowel(ui: &mut egui::Ui, session: &ProjectSession, wizard: &mut PinWizar
         let out = ValueRow::new(small_label, &mut wizard.small_d, " mm", 0.1, 1.0..=25.0).show(ui);
         edit_out.drag(&out.value_response);
     });
-    changed |= size_picks(ui, "Sizes of the project:", &known, &mut wizard.small_d);
+    let mut resized = size_picks(ui, &known, &mut wizard.small_d);
     if wizard.pattern == WizardPattern::Mixed {
         let min_large = wizard.small_d + edit::MIN_DIAMETER_STEP_MM;
         if wizard.large_d < min_large {
-            wizard.large_d = mixed_start_large_diameter(wizard.small_d);
+            wizard.large_d = edit::mixed_start_large_diameter(wizard.small_d);
         }
         ui.param_grid("pin_wizard_dowel_large", |ui| {
             let out = ValueRow::new(
@@ -455,100 +437,39 @@ fn step_dowel(ui: &mut egui::Ui, session: &ProjectSession, wizard: &mut PinWizar
                 0.1,
                 min_large..=25.0,
             )
+            .tooltip(Some("Set it to the dowel you have."))
             .show(ui);
             edit_out.drag(&out.value_response);
         });
         let larger: Vec<f64> = known.iter().copied().filter(|d| *d > min_large).collect();
-        changed |= size_picks(
-            ui,
-            "Larger sizes of the project:",
-            &larger,
-            &mut wizard.large_d,
-        );
-        ui.label(text::caption(format!(
-            "With no larger drill, the start value is the small dowel plus twice the hole slop \
-             ({:.2} mm). Set it to the dowel you have.",
-            mixed_start_large_diameter(wizard.small_d) - wizard.small_d
-        )));
+        resized |= size_picks(ui, &larger, &mut wizard.large_d);
     }
-    changed |= edit_out.committed;
-    if changed {
+    resized |= edit_out.committed;
+    if pattern_changed {
         wizard.place(session);
+    } else if resized {
+        wizard.resize(session);
     }
-    if let Some(reason) = &wizard.place_refusal {
-        ui.label(
-            egui::RichText::new(reason)
-                .small()
-                .color(crate::ui::tokens::DANGER),
-        );
-    }
+    refusal_line(ui, wizard);
 
-    // The drill of each size: the project's tool, a queued add, or the
-    // button that queues one.
     ui.add_space(crate::ui::tokens::SPACE_2);
     ui.label(text::subhead("Drills"));
-    let sizes = pin_diameters(&wizard.pins);
-    for d in sizes {
-        ui.push_id(("pin_wizard_drill", d.to_bits()), |ui| {
-            let tools = session.pin_tool_candidates(d);
-            let queued = wizard
-                .add_drills
-                .iter()
-                .position(|a| same_pin_diameter(*a, d));
-            if let Some(&tool_id) = tools.first() {
-                let name = session
-                    .tools()
-                    .iter()
-                    .find(|t| t.id.0 == tool_id)
-                    .map_or_else(String::new, |t| t.name.clone());
-                ui.add(StatusChip::new(format!("{d:.2} mm: {name}"), Role::Ok));
-            } else if let Some(at) = queued {
-                ui.add(StatusChip::new(
-                    format!(
-                        "{d:.2} mm: Apply adds '{}'",
-                        session.pin_drill_tool_template(d).name
-                    ),
-                    Role::Info,
-                ));
-                if ui.add(Button::quiet("Do not add it")).clicked() {
-                    wizard.add_drills.remove(at);
-                }
-            } else {
-                ui.add(StatusChip::new(
-                    format!("{d:.2} mm: no drill"),
-                    Role::Danger,
-                ));
-                if ui
-                    .add(Button::primary(format!("Add a {d:.2} mm drill")))
-                    .on_hover_text(
-                        "Apply adds a drill of this size: a copy of the project's drill with \
-                         the new diameter.",
-                    )
-                    .clicked()
-                {
-                    wizard.add_drills.push(d);
-                }
-            }
-        });
-    }
-    // A queued drill of a size the draft no longer has is dropped.
-    let live = pin_diameters(&wizard.pins);
-    wizard
-        .add_drills
-        .retain(|a| live.iter().any(|d| same_pin_diameter(*a, *d)));
+    let mut queue = drills::DrillQueue {
+        add_drills: &mut wizard.add_drills,
+        use_tools: &mut wizard.use_tools,
+    };
+    drills::drill_rows(ui, session, &wizard.pins, &mut queue, events);
 }
 
-/// Step 3: the placement.
-fn step_placement(
+/// Step 2: the placement.
+fn step_place(
     ui: &mut egui::Ui,
     session: &ProjectSession,
     report: &PinSetReport,
     wizard: &mut PinWizardState,
+    events: &mut Vec<AppEvent>,
 ) {
     let stock = session.stock_config();
-    for chip in chip_words(report) {
-        ui.add(StatusChip::new(chip.word, chip.role));
-    }
     let mut edit_out = PanelEdit::default();
     let view = plan_view::show(
         ui,
@@ -559,54 +480,36 @@ fn step_placement(
             stock_d: stock.y,
             report,
             selected: wizard.selected,
-            size: plan_view::PlanSize::Large {
-                max_height: PLAN_MAX_HEIGHT,
-            },
+            max_height: PLAN_MAX_HEIGHT,
         },
         &mut edit_out,
     );
     if let Some(selected) = view.selected_pin {
         wizard.selected = selected;
     }
+    let has_axis = edit::axis_unit(&report.map).is_some();
     ui.horizontal_wrapped(|ui| {
         if ui
             .add(Button::new("Auto-place"))
-            .on_hover_text(
-                "Places the pattern of step 2 in the clear material, with a wall to the edge, \
-                 the part, the keep-outs and the fixtures.",
-            )
+            .on_hover_text("Places the pattern in the clear material.")
             .clicked()
         {
             wizard.place(session);
         }
-        if ui
-            .add(Button::new("Snap to flip"))
-            .on_hover_text("Moves the pins the least distance that makes the set symmetric.")
-            .clicked()
-        {
-            wizard.pins = edit::snap(&wizard.pins, &report.map);
-        }
-    });
-    if let Some(reason) = &wizard.place_refusal {
-        ui.label(
-            egui::RichText::new(reason)
-                .small()
-                .color(crate::ui::tokens::DANGER),
-        );
-    }
-    for (axis, along_x) in [("X", true), ("Y", false)] {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(text::caption(format!("Nudge {axis}")));
+        if has_axis {
+            ui.label(text::caption("Move along the axis"));
             for step in NUDGE_STEPS_MM {
                 if ui.add(Button::quiet(format!("{step:+}"))).clicked() {
-                    let (dx, dy) = if along_x { (step, 0.0) } else { (0.0, step) };
-                    wizard.pins = edit::move_all(&wizard.pins, dx, dy);
+                    wizard.pins = edit::move_along_axis(&wizard.pins, &report.map, step);
                 }
             }
-        });
-    }
-    // The along and across values of the preset the draft fits.
+        }
+    });
+    refusal_line(ui, wizard);
+
+    // The values of the pattern the draft fits.
     let length = edit::axis_length(&report.map);
+    let along_hover = Some("The distance along the flip axis from its first end.");
     match report.preset {
         Some(PinPreset::AxisPlusMirrorPair(fit)) => {
             let mut p = fit;
@@ -618,8 +521,11 @@ fn step_placement(
                     0.5,
                     0.0..=length,
                 )
+                .tooltip(along_hover)
                 .show(ui);
-                ValueRow::new("Pair along", &mut p.pair_along, " mm", 0.5, 0.0..=length).show(ui);
+                ValueRow::new("Pair along", &mut p.pair_along, " mm", 0.5, 0.0..=length)
+                    .tooltip(along_hover)
+                    .show(ui);
                 ValueRow::new(
                     "Pair off axis",
                     &mut p.pair_across,
@@ -627,6 +533,7 @@ fn step_placement(
                     0.5,
                     edit::MIN_PAIR_ACROSS_MM..=length.max(edit::MIN_PAIR_ACROSS_MM),
                 )
+                .tooltip(Some("The distance of each pair pin from the flip axis."))
                 .show(ui);
             });
             if p != fit
@@ -645,6 +552,7 @@ fn step_placement(
                     0.5,
                     0.0..=length,
                 )
+                .tooltip(along_hover)
                 .show(ui);
                 ValueRow::new(
                     "Large pin along",
@@ -653,6 +561,7 @@ fn step_placement(
                     0.5,
                     0.0..=length,
                 )
+                .tooltip(along_hover)
                 .show(ui);
             });
             if p != fit
@@ -663,105 +572,51 @@ fn step_placement(
         }
         Some(PinPreset::Custom) | None => {}
     }
-    walls_caption(ui, report);
+    part_models(ui, session, events);
 }
 
-/// One caption with the thinnest walls of the report.
-fn walls_caption(ui: &mut egui::Ui, report: &PinSetReport) {
-    let part = |v: Option<f64>| v.map_or_else(|| "\u{2014}".to_owned(), |w| format!("{w:.1}"));
-    ui.label(text::caption(format!(
-        "Thinnest walls, mm: stock edge {}, part {}, keep-out or fixture {}.",
-        part(report.wall_to_stock_edge_mm()),
-        part(report.wall_to_part_mm()),
-        part(report.wall_to_keep_out_mm()),
-    )));
-}
-
-/// The lines of the summary: what Apply does. A pure function, so a test
-/// reads the lines the wizard paints.
-#[must_use]
-pub fn summary_lines(session: &ProjectSession, wizard: &PinWizardState) -> Vec<(String, Role)> {
-    let mut out = Vec::new();
-    for d in &wizard.add_drills {
-        out.push((
-            format!(
-                "Add the tool '{}'.",
-                session.pin_drill_tool_template(*d).name
-            ),
-            Role::Info,
-        ));
+/// The part-model chooser: which models the placer and the wall check call
+/// the part. A choice applies at once through the pin door, so the plan
+/// view and the placer read it.
+fn part_models(ui: &mut egui::Ui, session: &ProjectSession, events: &mut Vec<AppEvent>) {
+    let models = PartModelRow::of(session);
+    if models.is_empty() {
+        return;
     }
-    out.push((
-        format!(
-            "Write {} pins in one step (one undo step).",
-            wizard.pins.len()
-        ),
-        Role::Info,
-    ));
-    let has_top = session
-        .list_setups()
-        .iter()
-        .any(|s| s.face_up == FaceUp::Top && s.z_rotation == crate::state::job::ZRotation::Deg0);
-    let sizes = pin_diameters(&wizard.pins);
-    for d in &sizes {
-        let count = wizard
-            .pins
-            .iter()
-            .filter(|p| same_pin_diameter(p.diameter, *d))
-            .count();
-        let op = session
-            .pin_drill_op_for(*d)
-            .and_then(|i| session.toolpath_configs().get(i));
-        let queued = wizard.add_drills.iter().any(|a| same_pin_diameter(*a, *d));
-        let line = match op {
-            Some(tc) => (
-                format!("'{}' drills the {count} hole(s) of {d:.2} mm.", tc.name),
-                Role::Ok,
-            ),
-            None if !has_top => (
-                format!("The {d:.2} mm drill is refused: no setup has face Top at 0 deg."),
-                Role::Danger,
-            ),
-            None if queued || session.pin_drill_tool_for(*d).is_some() => (
-                format!("Create the pin-drill operation of {d:.2} mm ({count} hole(s))."),
-                Role::Ok,
-            ),
-            None => (
-                format!("The {d:.2} mm drill is refused: no tool of {d:.2} mm."),
-                Role::Danger,
-            ),
-        };
-        out.push(line);
-    }
-    for (index, d) in session.pin_drill_ops() {
-        if !sizes.iter().any(|s| same_pin_diameter(*s, d))
-            && let Some(tc) = session.toolpath_configs().get(index)
-        {
-            out.push((
-                format!("Remove '{}': no pin is {d:.2} mm.", tc.name),
-                Role::Caution,
-            ));
+    let count = models.iter().filter(|m| m.is_part).count();
+    let chosen = session.stock_config().pin_part_models.is_some();
+    let title = format!("Part models: {count} of {}", models.len());
+    ui.disclosure("pin_wizard_part_models", &title, false, |ui| {
+        let mut picked: Vec<usize> = models.iter().filter(|m| m.is_part).map(|m| m.id).collect();
+        let mut changed = false;
+        for m in &models {
+            let mut on = m.is_part;
+            let label = if m.default_part {
+                m.name.clone()
+            } else {
+                format!("{} (not part by default)", m.name)
+            };
+            if ui
+                .checkbox(&mut on, label)
+                .on_hover_text("Applies now.")
+                .changed()
+            {
+                changed = true;
+                if on {
+                    picked.push(m.id);
+                } else {
+                    picked.retain(|id| *id != m.id);
+                }
+            }
         }
-    }
-    out
-}
-
-/// Step 4: the summary.
-fn step_summary(
-    ui: &mut egui::Ui,
-    session: &ProjectSession,
-    report: &PinSetReport,
-    wizard: &PinWizardState,
-) {
-    for chip in chip_words(report) {
-        ui.add(StatusChip::new(chip.word, chip.role));
-    }
-    walls_caption(ui, report);
-    ui.add_space(crate::ui::tokens::SPACE_2);
-    ui.label(text::subhead("Apply does this"));
-    for (line, role) in summary_lines(session, wizard) {
-        ui.add(StatusChip::new(line, role));
-    }
+        if changed {
+            picked.sort_unstable();
+            events.push(AppEvent::PinPartModels(Some(picked)));
+        }
+        if chosen && ui.add(Button::quiet("Use the default")).clicked() {
+            events.push(AppEvent::PinPartModels(None));
+        }
+    });
 }
 
 #[cfg(test)]
@@ -770,10 +625,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_steps_go_forward_and_back() {
-        assert_eq!(WizardStep::Flip.next(), WizardStep::Dowel);
-        assert_eq!(WizardStep::Summary.next(), WizardStep::Summary);
-        assert_eq!(WizardStep::Flip.back(), WizardStep::Flip);
-        assert_eq!(WizardStep::Summary.back(), WizardStep::Placement);
+    fn the_wizard_has_two_steps() {
+        assert_eq!(WizardStep::ALL, [WizardStep::Dowels, WizardStep::Place]);
+        assert_eq!(WizardStep::Place.title(), "2. Place");
     }
 }

@@ -121,13 +121,6 @@ impl PanelEdit {
         self.changed = true;
         self.committed = true;
     }
-
-    /// Fold in what a sub-panel reported.
-    pub fn merge(&mut self, other: Self) {
-        self.changed |= other.changed;
-        self.committed |= other.committed;
-        self.in_flight |= other.in_flight;
-    }
 }
 
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
@@ -145,7 +138,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 
     match state.selection.clone() {
         Selection::None => draw_nothing_selected(ui, state),
-        Selection::Stock => draw_stock_selection(ui, state, events),
+        Selection::Stock => draw_stock_selection(ui, state),
         Selection::PostProcessor => draw_post_selection(ui, state),
         Selection::Machine => draw_machine_selection(ui, state, events),
         Selection::Model(id) => draw_model_selection(ui, state, events, id),
@@ -898,17 +891,11 @@ fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 /// The `Stock` arm of [`draw`]'s selection dispatch.
-fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
     // Capture snapshot for undo before editing
     if state.history.stock_snapshot.is_none() {
         state.history.stock_snapshot = Some(state.session.stock_config().clone());
     }
-    let setup_maps: Vec<_> = state
-        .session
-        .list_setups()
-        .iter()
-        .map(|s| (s.face_up, s.z_rotation))
-        .collect();
     // WP6: the widgets write a DRAFT, not the session. The draft
     // is re-read from the session on any frame no widget of this
     // panel is dragged or focused, so an edit made on another
@@ -926,25 +913,11 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         .models()
         .iter()
         .any(|model| model.mesh.is_some() || model.polygons.is_some());
-    // P7: the pin section reads the one core report of the DRAFT pins, so
-    // its chips follow a drag before the edit commits.
-    let pin_inputs = pins::KeyedPinInputs::from_session(&state.session);
+    // Round 2: the pin block is one status line, at most one warning and
+    // the button that opens the pin wizard. It reads the one core report.
     let pin_report = state.session.pin_set_report_for(&draft.alignment_pins);
-    let part_models = state.session.pin_part_models();
-    let default_part_models = state.session.default_pin_part_models();
-    let model_rows: Vec<pins::PartModelRow> = state
-        .session
-        .models()
-        .iter()
-        .map(|m| pins::PartModelRow {
-            id: m.id,
-            name: m.name.clone(),
-            is_part: part_models.contains(&rs_cam_core::ids::ModelId(m.id)),
-            default_part: default_part_models.contains(&rs_cam_core::ids::ModelId(m.id)),
-        })
-        .collect();
-    let drill_diameters = drill_tool_diameters(&state.session);
     let pin_drill = pins::PinDrillState::of(&state.session, &draft.alignment_pins);
+    let pin_summary = pins::summary(&pin_report, &pin_drill, draft.alignment_pins.len());
     if state
         .panels
         .selected_pin
@@ -952,35 +925,8 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
     {
         state.panels.selected_pin = None;
     }
-    let pin_section = pins::PinSectionInputs {
-        setups: &setup_maps,
-        keyed: &pin_inputs,
-        report: &pin_report,
-        models: &model_rows,
-        drill_diameters: &drill_diameters,
-        pin_drill: &pin_drill,
-        selected_pin: state.panels.selected_pin,
-        preset_refusal: state.panels.pin_preset_refusal.as_deref(),
-    };
-    let out = stock::draw(
-        ui,
-        &mut draft,
-        has_model,
-        &pin_section,
-        &mut state.panels.keyed_pin_plan,
-        events,
-    );
-    if let Some(selected) = out.selected_pin {
-        state.panels.selected_pin = selected;
-        state.panel_side_effects.upload = true;
-    }
-    if out.sync_pin_drill {
-        state.panel_side_effects.pin_drill_sync = true;
-    }
-    if let Some(refusal) = out.preset_refusal {
-        state.panels.pin_preset_refusal = refusal;
-    }
-    if out.open_wizard {
+    let out = stock::draw(ui, &mut draft, has_model, &pin_summary);
+    if out.open_pin_wizard {
         state.panels.pin_wizard = Some(crate::ui::pin_wizard::PinWizardState::open(&state.session));
     }
     let edit = out.edit;
