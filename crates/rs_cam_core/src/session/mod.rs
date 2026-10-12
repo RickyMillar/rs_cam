@@ -38,26 +38,25 @@ pub use command::{
     ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
     ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle,
-    MoveStockChangeArgs, MoveToolpathToSetupArgs, OptimizeToolpathArgs, PreviewTierMapArgs, Query,
-    QueryAnswer, Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs,
-    RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs,
-    RemoveToolpathArgs, ReorderToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs,
-    ReplaceStockChangeArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs, ReplaceToolsArgs,
-    RestoreToolpathSnapshotArgs, SaveProjectArgs, SetAlignmentPinDrillHolesArgs,
-    SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
-    SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
-    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
-    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
-    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
+    RemoveModelArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    ReorderToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceStockChangeArgs,
+    ReplaceToolArgs, ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs,
+    SaveProjectArgs, SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs,
+    SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs,
+    SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs,
+    SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
+    SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs,
+    SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
-    GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, TriageSessionKey, execute_generation,
-    execute_job, execute_optimize_toolpath, execute_recommend_clearing_strategy,
+    GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
+    ResolvedGenInputs, TriageSessionKey, execute_generation, execute_job,
+    execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,
@@ -197,21 +196,6 @@ pub enum SessionError {
     /// owns every "an empty result is legitimate here" exemption — see that
     /// module's doc.
     GeneratedEmpty(String),
-    /// WP14b — the job needs a baseline cut trace and the session holds
-    /// none.
-    ///
-    /// Distinct from [`Self::MissingGeometry`] on purpose: the geometry
-    /// is present, and what is absent is a MEASUREMENT of it. The
-    /// operator's repair is a simulation run, not an import.
-    ///
-    /// The payload names what needs the trace, so the sentence reads as
-    /// one instruction. Raised by
-    /// [`ProjectSession::start`] for the `optimize_toolpath` row, which
-    /// reads the trace off the session (§28 ruling 5). A session
-    /// mutation clears that slot, so an optimize issued after an edit
-    /// refuses here rather than scoring against a measurement the edit
-    /// already invalidated.
-    SimulationRequired(String),
     /// WP3 — a completion answers a superseded parameter set.
     ///
     /// A generation runs off the frame loop. The lane stamps the
@@ -283,9 +267,6 @@ impl std::fmt::Display for SessionError {
             // "Generated empty: " prefix would only push the toolpath name
             // further from the start of a truncated GUI badge.
             Self::GeneratedEmpty(msg) => write!(f, "{msg}"),
-            Self::SimulationRequired(what) => {
-                write!(f, "Run a simulation first — {what}")
-            }
             Self::StaleCompletion {
                 index,
                 submitted,
@@ -955,7 +936,7 @@ pub struct ToolpathConfig {
     /// Debug trace options for this toolpath.
     pub debug_options: ToolpathDebugOptions,
     /// Per-dimension provenance of the feeds stored on `operation` — how each
-    /// applied value was produced (vendor LUT / formula / manual / optimizer /
+    /// applied value was produced (vendor LUT / formula / manual /
     /// auto-correct). Stamped at write time and read back by the UI instead of
     /// recomputing a fresh lookup. Defaults to all-`None` ("config default").
     pub feeds_provenance: crate::feeds::FeedsProvenance,
@@ -1204,9 +1185,8 @@ pub struct SimulationOptions {
     ///   this bullet recorded is gone; J-3 ruled the library default only,
     ///   and (g1) closed the CLI side separately. Corrected 2026-09-08
     ///   (found alongside G-AIRDENOM).
-    /// * CLI `smoke.rs` and `tool_load::optimize::candidate` pin `false`
-    ///   in full struct literals, protecting the smoke baseline and
-    ///   keeping the optimizer's candidate ranking un-conflated.
+    /// * CLI `smoke.rs` pins `false` in a full struct literal, to protect
+    ///   the smoke baseline.
     ///
     /// The algorithm itself lives in
     /// `crate::dressup::feed_modulation::adaptive_feed_modulate`; see
@@ -1368,14 +1348,10 @@ impl SimulationDropCauses {
 /// Use [`ProjectSession::load`] to load from a TOML project file, or
 /// [`ProjectSession::from_project_file`] to construct from a parsed file.
 ///
-/// # The clone (WP14b, §24 ruling 2)
+/// # The clone
 ///
-/// The session derives `Clone` so the `optimize_toolpath` job can own a
-/// private copy. That row is the one job that MUTATES what it scores: it
-/// writes the toolpath's parameters, regenerates it and re-simulates the
-/// project once per candidate. It cannot reduce its inputs to a capture
-/// list the way the two read rows do, so it copies the session instead of
-/// borrowing the caller's.
+/// The session derives `Clone`. A caller that needs a private copy of the
+/// project clones it.
 ///
 /// **A clone is cheaper than the field list suggests.** Every geometry
 /// field is behind an `Arc` and costs a refcount: the model meshes and
@@ -1447,10 +1423,6 @@ pub struct ProjectSession {
     /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
     /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
     pub(crate) simulation_resolution: SimulationResolution,
-    /// `false` on a WHAT-IF copy (the optimizer's private session): the
-    /// rest-stock identity rule is not enforced there. See
-    /// [`Self::what_if_copy`].
-    pub(crate) rest_identity_enforced: bool,
     /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
     /// starts empty, and the key reads the inputs, not a counter.
     pub(crate) load_report_memo: load_report::LoadReportMemo,
@@ -1495,7 +1467,6 @@ impl ProjectSession {
             simulation_drop_epochs: [0; SimulationDropCause::COUNT],
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
-            rest_identity_enforced: true,
             load_report_memo: load_report::LoadReportMemo::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,

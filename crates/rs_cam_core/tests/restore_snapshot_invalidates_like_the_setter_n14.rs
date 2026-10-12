@@ -19,11 +19,8 @@
 //!   same file, walked the chain. A drill pick changes which holes the
 //!   operation cuts, so it changes the stock the downstream row reads.
 //!
-//! The core optimizer keeps a narrow path on purpose — see
-//! `apply_toolpath_param_snapshot_narrow`'s own doc. This file does not
-//! reach it: `pub(crate)` keeps it inside the crate. The in-crate test
-//! `the_narrow_path_leaves_the_neighbour_result_cached`
-//! (`session/mutation.rs`) pins that half.
+//! The optimizer kept a narrow path, `apply_toolpath_param_snapshot_narrow`.
+//! The optimizer cull (2026-10-13) deleted it.
 //!
 //! The fixture is the one `mutation_paths_invalidate_alike_p0.rs` uses:
 //! one setup, two enabled toolpaths in plan order, index 1 reading the
@@ -294,16 +291,16 @@ fn a_byte_identical_restore_still_drops_the_chain_f2_5() {
 
 /// `Some` provenance lands on the configuration.
 ///
-/// Three optimizer paths used to call `set_feeds_provenance` right after
-/// the snapshot, so an undo restored the pre-optimizer values and left
-/// the `Optimizer` stamp standing on them. The payload carries the stamp
-/// now, and one command writes both.
+/// Three optimizer paths (deleted 2026-10-13) used to call
+/// `set_feeds_provenance` right after the snapshot, so an undo restored
+/// the earlier values and left the later stamp standing on them. The
+/// payload carries the stamp now, and one command writes both.
 #[test]
 fn the_payload_writes_the_feeds_provenance() {
     let mut s = fixture(OperationConfig::Pocket(PocketConfig::default()));
     let operation = s.toolpath_configs()[0].operation.clone();
     let provenance = FeedsProvenance {
-        feed_rate: Some(ValueProvenance::optimizer()),
+        feed_rate: Some(ValueProvenance::manual()),
         ..FeedsProvenance::default()
     };
 

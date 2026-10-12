@@ -56,7 +56,7 @@ use rs_cam_core::stock::collision::{CollisionEvent, CollisionKind, CollisionRepo
 
 use crate::compute::{
     CollisionRequest, CollisionResult, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
-    GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
+    GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use crate::controller::AppController;
 use crate::state::job::{ModelKind, ModelUnits, SetupId};
@@ -90,7 +90,6 @@ impl ComputeBackend for ScriptedLane {
         self.collision_submits += 1;
         self.collision_motion.push(Arc::clone(&request.annotated));
     }
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         std::mem::take(&mut self.drained)

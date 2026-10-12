@@ -8,8 +8,6 @@ pub mod generation_resolution_modal;
 pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;
-pub mod optimize_modal;
-pub mod optimize_project;
 pub mod overlays;
 pub mod pin_wizard;
 pub mod preferences;
@@ -253,24 +251,6 @@ pub enum AppEvent {
     /// notification, and closes the wizard on success.
     WizardSave,
 
-    // Optimize (U2 of OPTIMIZER_UX_PLAN.md)
-    /// Open the Optimize modal for a specific toolpath. Triggers
-    /// optimize_toolpath synchronously and stashes the outcome on
-    /// `AppState::optimize_modal`. Long-running — the GUI freezes
-    /// until U3's worker-thread integration lands.
-    OpenOptimizeModal(ToolpathId),
-    /// Apply a candidate from the Optimize modal. Carries the candidate
-    /// index into `OptimizeOutcome::Ranked(..)` so the controller can
-    /// look up the params + delta from the cached outcome rather than
-    /// shipping the full `OperationConfig` through an event.
-    ApplyOptimizeCandidate {
-        toolpath_id: ToolpathId,
-        /// Index into the cached `Ranked` candidates list. Index 0 is
-        /// the baseline (apply does nothing); index ≥ 1 selects a
-        /// non-baseline candidate.
-        candidate_index: usize,
-    },
-
     // Feeds & Speeds modal (Feeds-tab redesign)
     /// Open the redesigned Feeds & Speeds modal focused on a specific
     /// toolpath. The modal renders the current/recommended comparison
@@ -331,18 +311,6 @@ pub enum AppEvent {
     },
     /// Apply Feeds recommendations to every selected (checked) toolpath.
     ApplyFeedsProjectSelected,
-
-    // Optimize project (U3 of OPTIMIZER_UX_PLAN.md)
-    /// Open the project-level Optimize rollup. Submits an
-    /// `OptimizeRequest::Project` to the Optimize lane over a CLONE of
-    /// the session, which walks every enabled toolpath. The view opens
-    /// in `Loading` state immediately; the rollup populates when the
-    /// worker returns.
-    OpenOptimizeProject,
-    /// Apply every row whose checkbox is currently true. Each
-    /// applied candidate is the first-safe recommendation from that
-    /// row's outcome. Routes through `Command::RestoreToolpathSnapshot`.
-    ApplyOptimizeProject,
 
     // Multi-tool finishing planner (Phase U of the multi-tool plan)
     /// Submit the `preview_tier_map` `Job` row on the Job lane (WP14b).

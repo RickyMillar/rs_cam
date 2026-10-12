@@ -8,7 +8,6 @@
 //! assertion 5 slices the named `match` arms of `set_toolpath_param_impl` and
 //! requires each one to call `check_param_range`.
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use tracing::instrument;
@@ -16,10 +15,7 @@ use tracing::instrument;
 use crate::compute::tool_config::ToolId;
 use crate::session::{Command, Effects, ProjectSession, SessionError, SetToolpathParamArgs};
 
-use super::{
-    AdvisorContext, OptimizeToolpathHandle, RecommendClearingStrategyHandle,
-    execute_recommend_clearing_strategy,
-};
+use super::{AdvisorContext, RecommendClearingStrategyHandle, execute_recommend_clearing_strategy};
 
 /// Strip a single layer of surrounding ASCII double-quotes from a string
 /// if present. Used by the MCP coercion path to tolerate clients that
@@ -688,56 +684,6 @@ impl ProjectSession {
             index,
             inputs,
             context,
-        })
-    }
-
-    /// Capture the `optimize_toolpath` job — step (i).
-    ///
-    /// It CLONES the session and takes the baseline cut trace off the
-    /// session beside it. The candidate loop writes the toolpath's
-    /// parameters, regenerates it and re-simulates the project once per
-    /// candidate, so this row cannot reduce its inputs to a capture list
-    /// the way the two read rows do (§24 ruling 2).
-    ///
-    /// It takes `&self` and writes nothing. The clone is the job's own,
-    /// so the live session stays usable while the search runs.
-    ///
-    /// **The trace comes from the SESSION, not from a caller** (§28
-    /// ruling 5). The GUI adopts every simulation into the session, so
-    /// the two slots hold one run until a mutation clears the session's.
-    ///
-    /// # Errors
-    ///
-    /// [`SessionError::ToolpathNotFound`] when `index` names no
-    /// toolpath, and [`SessionError::SimulationRequired`] when the
-    /// session holds no cut trace to score against.
-    pub(crate) fn capture_optimize_toolpath(
-        &self,
-        index: usize,
-    ) -> Result<OptimizeToolpathHandle, SessionError> {
-        if self.toolpath_configs.get(index).is_none() {
-            return Err(SessionError::ToolpathNotFound(index));
-        }
-        let trace = self
-            .simulation_result()
-            .and_then(|result| result.cut_trace.as_ref())
-            .map(Arc::clone)
-            .ok_or_else(|| {
-                SessionError::SimulationRequired(
-                    "optimize_toolpath scores every candidate against a baseline cut trace"
-                        .to_owned(),
-                )
-            })?;
-        Ok(OptimizeToolpathHandle {
-            index,
-            // G-RESTRES: a what-if copy (`ProjectSession::what_if_copy`).
-            session: self.what_if_copy(),
-            trace,
-            // WP29 — a SILENT sink at the construction site. A caller that
-            // wants to read the search's progress attaches its own with
-            // `OptimizeToolpathHandle::with_progress`; the MCP route
-            // attaches none and writes nowhere.
-            progress: Arc::new(crate::tool_load::optimize::OptimizeProgress::default()),
         })
     }
 }

@@ -44,7 +44,7 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
-    GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
+    GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
@@ -73,7 +73,6 @@ impl ComputeBackend for SilentBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         Vec::new()

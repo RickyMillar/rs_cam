@@ -219,9 +219,6 @@ pub struct SetToolLoadOverrideArgs {
     pub accept_exceeded: bool,
 }
 
-/// Which project rollup row of the optimizer to select or deselect.
-pub(crate) type ToggleOptimizeProjectRowArgs = usize;
-
 /// Whether export emits the previous geometry of an edited operation.
 pub(crate) type SetStaleExportPolicyArgs = StaleResultPolicy;
 
@@ -659,8 +656,8 @@ macro_rules! for_each_ui_command {
                  cli: Reach::Skip("the batch CLI carries its own export flags"),
              }),
 
-            // ── Optimizer modal view state ──────────────────────────
-            (UiCommand, CancelOptimizeRun, "cancel_optimize_run", NoArgs, (),
+            // ── GUI job progress row ────────────────────────────────
+            (UiCommand, CancelJobRun, "cancel_job_run", NoArgs, (),
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
@@ -668,26 +665,6 @@ macro_rules! for_each_ui_command {
                  ),
                  cli: Reach::Skip("the batch CLI draws no progress row"),
              }),
-            (UiCommand, CloseOptimizeModal, "close_optimize_modal", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("optimize_toolpath answers without a modal"),
-                 cli: Reach::Skip("the batch CLI draws no modal"),
-             }),
-            (UiCommand, CloseOptimizeProject, "close_optimize_project", NoArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool opens the project rollup"),
-                 cli: Reach::Skip("the batch CLI draws no rollup"),
-             }),
-            (UiCommand, ToggleOptimizeProjectRow, "toggle_optimize_project_row",
-             ToggleOptimizeProjectRowArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool selects a rollup row"),
-                 cli: Reach::Skip("the batch CLI draws no rollup"),
-             }),
-
             // ── Export policy ───────────────────────────────────────
             (UiCommand, SetStaleExportPolicy, "set_stale_export_policy",
              SetStaleExportPolicyArgs, (),

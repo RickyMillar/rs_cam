@@ -11,9 +11,8 @@
 //!
 //! # The veto shape, copied
 //!
-//! `ui::optimize_project` is the precedent: a status enum (Loading / Failed /
-//! Ready) rendered from cached state, a per-row control, and one explicit
-//! Apply. The named anti-pattern is the strategy advisor — MCP-only, zero GUI
+//! A status enum (Loading / Failed / Ready) rendered from cached state, a
+//! per-row control, and one explicit Apply. The named anti-pattern is the strategy advisor — MCP-only, zero GUI
 //! surface, no apply path — which is why this dialog exists at all rather than
 //! the tier map being something only an agent can see.
 //!
@@ -47,7 +46,7 @@ use crate::ui_command::{NoArgs, UiCommand};
 
 /// Draw the planner dialog if it is open.
 pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    let lane_busy = state.is_optimizing();
+    let lane_busy = state.is_job_running();
     let Some(planner) = state.multitool_planner.as_mut() else {
         return;
     };

@@ -762,11 +762,10 @@ fn raw_input(width: f32, height: f32, events: Vec<egui::Event>) -> egui::RawInpu
     }
 }
 
-fn idle_lanes() -> [LaneSnapshot; 5] {
+fn idle_lanes() -> [LaneSnapshot; 4] {
     [
         LaneSnapshot::idle(ComputeLane::Toolpath),
         LaneSnapshot::idle(ComputeLane::Analysis),
-        LaneSnapshot::idle(ComputeLane::Optimize),
         LaneSnapshot::idle(ComputeLane::Job),
         LaneSnapshot::idle(ComputeLane::Reach),
     ]

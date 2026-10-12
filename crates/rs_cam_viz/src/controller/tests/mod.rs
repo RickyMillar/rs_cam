@@ -22,7 +22,6 @@ mod inspect_simulation;
 mod machine_import_during_a_run_g_machinestale;
 mod mcp_cancel;
 mod model_relink;
-mod optimize;
 mod planner;
 mod post_mirror;
 mod rapid_collision_verdict_g_rapidframe;
@@ -57,8 +56,8 @@ use rs_cam_core::toolpath::Toolpath;
 use super::*;
 
 use crate::compute::{
-    CollisionRequest, ComputeMessage, ComputeRequest, JobRequest, LaneState, OptimizeRequest,
-    SimulationRequest, SimulationResult, ToolpathSubmitOutcome,
+    CollisionRequest, ComputeMessage, ComputeRequest, JobRequest, LaneState, SimulationRequest,
+    SimulationResult, ToolpathSubmitOutcome,
 };
 
 use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
@@ -84,7 +83,6 @@ use rs_cam_core::session::{
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
     analysis_lane: LaneSnapshot,
-    optimize_lane: LaneSnapshot,
     reach_lane: LaneSnapshot,
     job_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
@@ -96,13 +94,10 @@ struct ScriptedBackend {
     /// under test makes the same decision the real lane makes.
     active_toolpath_id: Option<ToolpathId>,
     submitted: Vec<ToolpathId>,
-    /// Optimize-lane submissions, kept WHOLE rather than counted. Only the
-    /// project rollup rides this lane since WP14b.
-    optimize_requests: Vec<OptimizeRequest>,
-    /// `Job`-lane submissions, kept WHOLE for the same reason. The Phase U
-    /// tier preview and the per-toolpath Optimize run both ride this lane
-    /// since WP14b, and each handle carries what was actually asked for, so
-    /// a test can witness the request rather than only that one happened.
+    /// `Job`-lane submissions, kept WHOLE rather than counted. The Phase U
+    /// tier preview rides this lane since WP14b, and each handle carries
+    /// what was actually asked for, so a test can witness the request
+    /// rather than only that one happened.
     ///
     /// `ComputeBackend::submit_job` has an empty default body, so a backend
     /// that does not override it records nothing.
@@ -117,13 +112,11 @@ impl ScriptedBackend {
         Self {
             toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
-            optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
             reach_lane: LaneSnapshot::idle(ComputeLane::Reach),
             job_lane: LaneSnapshot::idle(ComputeLane::Job),
             drained: Vec::new(),
             active_toolpath_id: None,
             submitted: Vec::new(),
-            optimize_requests: Vec::new(),
             job_requests: Vec::new(),
             reach_requests: Vec::new(),
         }
@@ -142,9 +135,6 @@ impl ComputeBackend for ScriptedBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, request: OptimizeRequest) {
-        self.optimize_requests.push(request);
-    }
     fn submit_job(&mut self, request: JobRequest) {
         self.job_requests.push(request);
     }
@@ -156,7 +146,6 @@ impl ComputeBackend for ScriptedBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.state = LaneState::Cancelling,
             ComputeLane::Analysis => self.analysis_lane.state = LaneState::Cancelling,
-            ComputeLane::Optimize => self.optimize_lane.state = LaneState::Cancelling,
             ComputeLane::Reach => self.reach_lane.state = LaneState::Cancelling,
             ComputeLane::Job => self.job_lane.state = LaneState::Cancelling,
         }
@@ -170,7 +159,6 @@ impl ComputeBackend for ScriptedBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.clone(),
             ComputeLane::Analysis => self.analysis_lane.clone(),
-            ComputeLane::Optimize => self.optimize_lane.clone(),
             ComputeLane::Reach => self.reach_lane.clone(),
             ComputeLane::Job => self.job_lane.clone(),
         }
@@ -582,7 +570,6 @@ impl crate::compute::ComputeBackend for CapturingBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: crate::compute::ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         Vec::new()
@@ -741,7 +728,6 @@ impl ComputeBackend for RestChainBackend {
     }
 
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         std::mem::take(&mut self.drained)
@@ -941,7 +927,6 @@ impl ComputeBackend for LaneModelBackend {
 
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {
         if self.active.is_some() {
             self.active_cancelled = true;

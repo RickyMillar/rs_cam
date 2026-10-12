@@ -399,14 +399,6 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_project_diagnostics();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
-            // WP14b: a `Job` submit, not a synchronous run. The arm
-            // starts the job on the frame loop and stores the oneshot;
-            // the drain answers it. The wire is unchanged — the CLIENT
-            // still waits as long as it did, and the FRAME LOOP no
-            // longer does.
-            McpRequestKind::OptimizeToolpath { index } => {
-                self.mcp_optimize_toolpath(index, response_tx);
-            }
             McpRequestKind::AddToolpathViaGui {
                 operation_type,
                 setup_index,

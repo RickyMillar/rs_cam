@@ -19,7 +19,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 - The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer.
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new
   toolpath is a wrong picture, not a cosmetic lag.
-- `OptimizeToolpath` is a `Job` over a cloned session. It does not mutate it.
+- A GUI `Job` (tier-map preview) sets `AppState::job_run`; only `deliver_gui_job` clears it.
 - Generate is a PLAN over the dependency edges, and core owns its order. Do
   not replace it with a single pass, and do not re-derive the walk here.
 - The plan advances by DIRECT CALL from `drain_compute_results`. A step that

@@ -64,17 +64,6 @@
 //! convention, and `macro_rules!` cannot build an identifier by
 //! concatenation.
 //!
-//! WP14b adds the fourth `Job` row, `optimize_toolpath`, and it is the
-//! first job that MUTATES. The optimizer writes the toolpath's
-//! parameters, regenerates it and re-simulates the project once per
-//! candidate, so it cannot reduce its inputs to a capture list. Step (i)
-//! CLONES the session into the handle and takes the baseline cut trace
-//! off the session beside it; step (ii) runs the search on that clone;
-//! there is no step (iii). [`ProjectSession`] derives `Clone` for this
-//! row alone. The GUI used to hand the whole session to the Optimize
-//! lane with `std::mem::replace` and draw against an empty placeholder
-//! until the lane gave it back.
-//!
 //! WP15a closes the `apply`-only write path from the registry side
 //! (§25 ruling 1). Twenty-four public `ProjectSession` setters had no
 //! row: a surface reached them, the registry never named them, and the
@@ -104,9 +93,9 @@ use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
 use super::{
-    GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, OptimizeToolpathHandle,
-    PreviewTierMapHandle, ProjectSession, RecommendClearingStrategyHandle, SessionError,
-    ToolpathComputeResult, ToolpathConfig,
+    GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
+    ProjectSession, RecommendClearingStrategyHandle, SessionError, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use crate::compute::catalog::{OperationConfig, OperationSchema};
 use crate::compute::config::DressupConfig;
@@ -115,7 +104,6 @@ use crate::feeds::FeedsProvenance;
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::machine::strategy_advisor::StrategyRecommendation;
 use crate::stock::simulation_cut::SimulationCutTrace;
-use crate::tool_load::optimize::OptimizeOutcome;
 
 /// Declares every command, query and job row once.
 ///
@@ -803,7 +791,7 @@ macro_rules! for_each_command {
              SetFeedsProvenanceArgs, Effects,
              Surfaces {
                  gui: Reach::Skip(
-                     "the optimizer carries the stamp in restore_toolpath_snapshot since WP8",
+                     "no GUI panel stamps a provenance on its own",
                  ),
                  mcp: Reach::Skip(
                      "no MCP tool stamps a provenance on its own",
@@ -848,15 +836,6 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no planner preview command",
-                 ),
-             }),
-            (Job, OptimizeToolpath, "optimize_toolpath", OptimizeToolpathArgs,
-             OptimizeOutcome,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no optimizer command",
                  ),
              }),
         }
@@ -999,12 +978,10 @@ impl std::fmt::Debug for AdoptSimulationArgs {
 
 /// The arguments of the `restore_toolpath_snapshot` command.
 ///
-/// The GUI undo stack, the GUI redo stack and the three optimizer apply
-/// paths all install a captured `(operation, dressups, face_selection)`
-/// triple on one toolpath. The optimizer paths also stamp a feeds
-/// provenance on the dimensions they changed, which is why the payload
-/// carries one: before WP8 they wrote it in a second call, and an undo
-/// then restored the earlier values under the later stamp.
+/// The GUI undo stack and the GUI redo stack install a captured
+/// `(operation, dressups, face_selection)` triple on one toolpath. The
+/// payload also carries the feeds provenance of that triple, so one
+/// command writes the values and the stamp together.
 ///
 /// **The command invalidates UNCONDITIONALLY, by contract.** It compares
 /// nothing. A restore of the byte-identical configuration the cached
@@ -1110,22 +1087,6 @@ pub struct PreviewTierMapArgs {
     /// The ladder and the dials to preview. Nothing here is derived from
     /// the session; every field is an operator dial.
     pub spec: Box<MultitoolPlanSpec>,
-}
-
-/// The arguments of the `optimize_toolpath` job.
-///
-/// The payload names the toolpath and nothing else. The baseline cut
-/// trace, the machine and the material all come from the session at step
-/// (i), so a caller cannot hand one in (§28 ruling 5). The trace used to
-/// come from the VIEW's own simulation slot on both surfaces, and the two
-/// slots diverge: a session mutation clears the session's. An
-/// `optimize_toolpath` issued after such an edit now refuses at submit
-/// with [`SessionError::SimulationRequired`], where it used to score
-/// against a measurement the edit had already invalidated.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OptimizeToolpathArgs {
-    /// The index of the toolpath to optimize.
-    pub index: usize,
 }
 
 /// What a command changed.
@@ -2035,9 +1996,8 @@ pub struct ReplaceToolsArgs {
 /// nor the simulation.
 ///
 /// **A caller that also writes the values takes
-/// [`RestoreToolpathSnapshotArgs`] instead.** The three optimizer apply
-/// paths stamped in a second call until WP8, and an undo then restored
-/// the earlier values under the later stamp.
+/// [`RestoreToolpathSnapshotArgs`] instead.** A stamp in a second call
+/// lets an undo restore the earlier values under the later stamp.
 ///
 /// The provenance is boxed, as [`RestoreToolpathSnapshotArgs`] boxes
 /// its own: it carries six slots.
@@ -2340,10 +2300,6 @@ pub enum JobHandle {
     RecommendClearingStrategy(Box<RecommendClearingStrategyHandle>),
     /// What the `preview_tier_map` job captured.
     PreviewTierMap(Box<PreviewTierMapHandle>),
-    /// What the `optimize_toolpath` job captured. The heaviest handle
-    /// here: it owns a whole cloned session, which is the reason the
-    /// boxing rule is not optional.
-    OptimizeToolpath(Box<OptimizeToolpathHandle>),
 }
 
 impl JobHandle {
@@ -2353,7 +2309,6 @@ impl JobHandle {
             JobHandle::GenerateToolpath(_) => CommandId::GenerateToolpath,
             JobHandle::RecommendClearingStrategy(_) => CommandId::RecommendClearingStrategy,
             JobHandle::PreviewTierMap(_) => CommandId::PreviewTierMap,
-            JobHandle::OptimizeToolpath(_) => CommandId::OptimizeToolpath,
         }
     }
 }
@@ -2738,17 +2693,12 @@ impl ProjectSession {
     /// boundary walks a full-grid tier map. A `start` that resolved that
     /// map under a flag of its own would make Cancel a lie for the whole
     /// of it.
-    /// Three of the four rows leave the caller's session alone.
+    /// Two of the three rows leave the caller's session alone.
     /// `recommend_clearing_strategy` and `preview_tier_map` are READS:
     /// they mutate nothing, so their step (i) drops no result and moves
-    /// no revision, and they carry no step (iii). `optimize_toolpath`
-    /// WRITES, but it writes the handle's own CLONE of the session
-    /// (§24 ruling 2): its candidate loop regenerates and re-simulates
-    /// per candidate, so it cannot reduce its inputs to a capture list,
-    /// and it carries no step (iii) either — the GUI modal applies a
-    /// chosen candidate through `Command::RestoreToolpathSnapshot` on an
-    /// operator click. `&mut self` is the door's signature, not a claim
-    /// that every row writes the caller's session.
+    /// no revision, and they carry no step (iii). `&mut self` is the
+    /// door's signature, not a claim that every row writes the caller's
+    /// session.
     pub fn start(&mut self, job: Job, cancel: &AtomicBool) -> Result<JobHandle, SessionError> {
         match job {
             Job::GenerateToolpath(args) => {
@@ -2762,10 +2712,6 @@ impl ProjectSession {
             Job::PreviewTierMap(args) => {
                 let handle = self.capture_preview_tier_map(&args.spec)?;
                 Ok(JobHandle::PreviewTierMap(Box::new(handle)))
-            }
-            Job::OptimizeToolpath(args) => {
-                let handle = self.capture_optimize_toolpath(args.index)?;
-                Ok(JobHandle::OptimizeToolpath(Box::new(handle)))
             }
         }
     }

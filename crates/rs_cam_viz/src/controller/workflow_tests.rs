@@ -11,9 +11,7 @@ use rs_cam_core::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId, SurfaceTyp
 use rs_cam_core::io::step_input::load_step;
 
 use super::*;
-use crate::compute::{
-    CollisionRequest, ComputeMessage, LaneState, OptimizeRequest, SimulationRequest,
-};
+use crate::compute::{CollisionRequest, ComputeMessage, LaneState, SimulationRequest};
 use crate::state::job::{ModelId, ToolConfig, ToolId, ToolType};
 use crate::state::runtime::ToolpathRuntime;
 use crate::state::selection::Selection;
@@ -29,7 +27,6 @@ use rs_cam_core::session::{
 struct ScriptedBackend {
     toolpath_lane: LaneSnapshot,
     analysis_lane: LaneSnapshot,
-    optimize_lane: LaneSnapshot,
     reach_lane: LaneSnapshot,
     job_lane: LaneSnapshot,
     drained: Vec<ComputeMessage>,
@@ -40,7 +37,6 @@ impl ScriptedBackend {
         Self {
             toolpath_lane: LaneSnapshot::idle(ComputeLane::Toolpath),
             analysis_lane: LaneSnapshot::idle(ComputeLane::Analysis),
-            optimize_lane: LaneSnapshot::idle(ComputeLane::Optimize),
             reach_lane: LaneSnapshot::idle(ComputeLane::Reach),
             job_lane: LaneSnapshot::idle(ComputeLane::Job),
             drained: Vec::new(),
@@ -57,13 +53,11 @@ impl ComputeBackend for ScriptedBackend {
     }
     fn submit_simulation(&mut self, _request: SimulationRequest) {}
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
 
     fn cancel_lane(&mut self, lane: ComputeLane) {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.state = LaneState::Cancelling,
             ComputeLane::Analysis => self.analysis_lane.state = LaneState::Cancelling,
-            ComputeLane::Optimize => self.optimize_lane.state = LaneState::Cancelling,
             ComputeLane::Reach => self.reach_lane.state = LaneState::Cancelling,
             ComputeLane::Job => self.job_lane.state = LaneState::Cancelling,
         }
@@ -77,7 +71,6 @@ impl ComputeBackend for ScriptedBackend {
         match lane {
             ComputeLane::Toolpath => self.toolpath_lane.clone(),
             ComputeLane::Analysis => self.analysis_lane.clone(),
-            ComputeLane::Optimize => self.optimize_lane.clone(),
             ComputeLane::Reach => self.reach_lane.clone(),
             ComputeLane::Job => self.job_lane.clone(),
         }

@@ -707,7 +707,7 @@ mod release_for_new_run_m1 {
     use super::*;
     use crate::compute::{
         ComputeError, ComputeMessage, ComputeRequest, GenerationControl, LaneSnapshot,
-        OptimizeRequest, ToolpathSubmitOutcome,
+        ToolpathSubmitOutcome,
     };
     use crate::state::freshness::SimFreshness;
     use crate::state::simulation::{SimulationResults, SimulationRunMeta};
@@ -731,7 +731,6 @@ mod release_for_new_run_m1 {
             self.simulations += 1;
         }
         fn submit_collision(&mut self, _request: CollisionRequest) {}
-        fn submit_optimize(&mut self, _request: OptimizeRequest) {}
         fn cancel_lane(&mut self, _lane: ComputeLane) {}
         fn drain_results(&mut self) -> Vec<ComputeMessage> {
             std::mem::take(&mut self.queued)

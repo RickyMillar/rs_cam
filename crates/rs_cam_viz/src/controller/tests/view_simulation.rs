@@ -154,21 +154,12 @@ fn a_toolpath_edit_clears_the_view_simulation_wp19() {
     assert!(controller.state.simulation.last_run.is_none());
 }
 
-// ── WP24 — the Optimize run is state, not a lockout ──────────────────
+// ── WP24 — a GUI job is state, not a lockout ─────────────────────────
 //
 // Programme: `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md`
-// §30 ruling 3 (operator, 2026-09-13). The draw half of this finding is
-// `crates/rs_cam_viz/tests/optimize_run_is_non_modal_wp24.rs`; these three
-// arms are the state half, and they need `ScriptedBackend` plus the
-// `pub(crate)` drain, so they live here.
-//
-// All three arms drive the run with the TIER-MAP PREVIEW. It is the same
-// `OptimizeRun` the per-toolpath Optimize carries, and it needs no cut
-// trace: no controller fixture in this crate holds one
-// (`cut_trace: None` on every one of them), and
-// `capture_optimize_toolpath` refuses without one. So the `Toolpath` kind
-// of `OptimizeRun` is NOT exercised in-crate, and this heading says so
-// rather than hiding it.
+// §30 ruling 3 (operator, 2026-09-13). These arms need `ScriptedBackend`
+// plus the `pub(crate)` drain, so they live here. They drive the run with
+// the TIER-MAP PREVIEW, the one GUI job (`JobRun`).
 
 /// The event loop never blocked, and a run no longer blocks the drawing.
 ///
@@ -178,10 +169,6 @@ fn a_toolpath_edit_clears_the_view_simulation_wp19() {
 /// writer who puts the lockout back into the event loop instead of into
 /// the draw.
 ///
-/// RED at the parent revision: COMPILE-red. The arm names
-/// `AppState::optimize_run`, which does not exist there — the state is a
-/// bare `is_optimizing: bool`.
-///
 /// The probe is `UiCommand::ToggleSimPlayback`, and NOT
 /// `UiCommand::SwitchWorkspace`. The controller's arm for a workspace
 /// switch is a no-op (`controller/events/mod.rs:586`); `RsCamApp` applies
@@ -190,14 +177,14 @@ fn a_toolpath_edit_clears_the_view_simulation_wp19() {
 /// workspace switch at all, and the probe has to be a command the
 /// controller itself applies.
 #[test]
-fn a_view_command_still_applies_while_an_optimize_run_is_in_flight() {
+fn a_view_command_still_applies_while_a_gui_job_is_in_flight() {
     let mut controller = planner_controller();
     controller.handle_internal_event(AppEvent::Ui(UiCommand::OpenMultitoolPlanner(NoArgs)));
     tick_ball_tools(&mut controller);
     controller.handle_internal_event(AppEvent::PreviewMultitoolPlan);
 
     assert!(
-        controller.state.optimize_run.is_some(),
+        controller.state.job_run.is_some(),
         "the preview is in flight, so the run is on the state"
     );
     assert_eq!(controller.compute.job_requests.len(), 1);
@@ -213,7 +200,7 @@ fn a_view_command_still_applies_while_an_optimize_run_is_in_flight() {
         "a view command applies during a run — the GUI stays usable"
     );
     assert!(
-        controller.state.optimize_run.is_some(),
+        controller.state.job_run.is_some(),
         "and the unrelated command leaves the run alone"
     );
 }

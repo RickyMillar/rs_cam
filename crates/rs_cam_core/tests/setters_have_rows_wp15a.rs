@@ -126,8 +126,6 @@ const WRAPPERS_OVER_APPLY: &[&str] = &["set_toolpath_param"];
 /// - the three `*_mut` hatches, which `hatches_are_crate_private_wp7`
 ///   owns.
 /// - `start_generate_toolpath`, the raw half of the `start` door.
-/// - `apply_toolpath_param_snapshot_narrow`, the undo path's narrow
-///   write.
 ///
 /// No row delegates to any of them. Four match a row's text by accident
 /// — `with_effects`, `insert_result`, `invalidate_result_chain` and
@@ -141,7 +139,6 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "add_setup_impl",
     "add_tool_impl",
     "add_toolpath_impl",
-    "apply_toolpath_param_snapshot_narrow",
     "bump_all_revisions",
     "drop_all_results",
     // 424411da (G-RESTSTALE): the rest-result sweep that

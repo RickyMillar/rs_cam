@@ -8,9 +8,8 @@ mod toolpath;
 mod undo;
 
 use rs_cam_core::session::{
-    Command, Effects, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
-    SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetPostConfigArgs,
-    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
+    Command, Effects, ReplaceToolpathConfigArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs,
+    SetPostConfigArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -359,24 +358,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::Undo => self.undo(),
             AppEvent::Redo => self.redo(),
 
-            // --- Optimize modal (U2) ---
-            AppEvent::OpenOptimizeModal(toolpath_id) => {
-                self.open_optimize_modal(toolpath_id);
-            }
-            AppEvent::ApplyOptimizeCandidate {
-                toolpath_id,
-                candidate_index,
-            } => {
-                self.apply_optimize_candidate(toolpath_id, candidate_index);
-            }
-
-            // --- Optimize project (U3) ---
-            AppEvent::OpenOptimizeProject => {
-                self.open_optimize_project();
-            }
-            AppEvent::ApplyOptimizeProject => {
-                self.apply_optimize_project();
-            }
             AppEvent::PreviewMultitoolPlan => {
                 self.request_multitool_preview();
             }
@@ -542,46 +523,8 @@ impl<B: ComputeBackend> AppController<B> {
                     self.handle_sim_jump_to_op_start(boundary_index);
                 }
                 UiCommand::CancelCompute(NoArgs) => self.compute.cancel_all(),
-                UiCommand::CancelOptimizeRun(NoArgs) => {
-                    self.cancel_optimize_run();
-                }
-                UiCommand::CloseOptimizeModal(NoArgs) => {
-                    // WP14b: the run is a `Job` on the SHARED FIFO Job
-                    // lane, so a lane cancel would also kill an MCP
-                    // caller's job queued behind it. Arm this submit's
-                    // own flag instead, and leave the entry in the map:
-                    // the job still completes, the drain discards the
-                    // outcome against a closed modal, and the drain is
-                    // where `optimize_run` goes back to `None`.
-                    //
-                    // This arm KEEPS arm-and-close. WP24's progress row
-                    // cancels without closing, which is a different
-                    // thing: if close stopped cancelling,
-                    // `land_optimize_outcome` would discard the answer
-                    // against a closed modal and the operator would pay
-                    // for a search whose result nothing shows.
-                    if self.state.is_optimizing() {
-                        self.cancel_gui_optimize_jobs();
-                    }
-                    self.state.optimize_modal = None;
-                }
-                UiCommand::CloseOptimizeProject(NoArgs) => {
-                    // The project rollup keeps the Optimize lane (§28
-                    // ruling 6): it has no registry row, so it is still
-                    // the only thing on that lane and a lane cancel
-                    // reaches nobody else.
-                    if self.state.is_optimizing() {
-                        self.compute
-                            .cancel_lane(crate::compute::ComputeLane::Optimize);
-                    }
-                    self.state.optimize_project = None;
-                }
-                UiCommand::ToggleOptimizeProjectRow(idx) => {
-                    if let Some(view) = self.state.optimize_project.as_mut()
-                        && let Some(slot) = view.row_selected.get_mut(idx)
-                    {
-                        *slot = !*slot;
-                    }
+                UiCommand::CancelJobRun(NoArgs) => {
+                    self.cancel_job_run();
                 }
                 // --- Multi-tool finishing planner (Phase U) ---
                 UiCommand::OpenMultitoolPlanner(NoArgs) => {
@@ -654,339 +597,53 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Open the per-toolpath Optimize modal.
-    ///
-    /// WP14b: this submits the `optimize_toolpath` `Job` row on the Job
-    /// lane. Step (i) runs here on the frame loop and CLONES the session
-    /// into the handle, so the view keeps its own and every panel stays
-    /// readable. The modal opens in `Loading`; the answer lands through
-    /// `ComputeMessage::Job` on a later drain.
-    ///
-    /// **The baseline trace comes from the SESSION now** (§28 ruling 5),
-    /// not from the view's simulation slot. The two slots diverge after a
-    /// mutation clears the session's, so an Optimize issued after an edit
-    /// refuses at submit where it used to score against the older trace.
-    /// That refusal renders as the same `Skipped { SimulationRequired }`
-    /// card the operator already knows.
-    fn open_optimize_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        use rs_cam_core::tool_load::RefuseReason;
-        use rs_cam_core::tool_load::optimize::{OptimizeOutcome, OptimizeProgress};
-
-        let Some(idx) = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id)
-        else {
-            self.push_notification(
-                format!("Optimize failed: toolpath id {} not found", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-
-        // Refuse to start a second Optimize run while one is already in
-        // flight (§28 ruling 8).
-        //
-        // WP24 deleted the full-screen placeholder, so the buttons that
-        // fire this event are CLICKABLE during a run and the refusal is
-        // reachable by hand. A `tracing::warn!` alone is invisible to the
-        // operator, so the refusal pushes a toast that NAMES the run
-        // holding the policy.
-        if self.state.is_optimizing() {
-            let busy = self.optimize_run_label();
-            tracing::warn!("Ignored OpenOptimizeModal — {busy} is already running");
-            self.push_notification(
-                format!("{busy} is already running — one Optimize run at a time."),
-                crate::controller::Severity::Warning,
-            );
-            return;
-        }
-
-        // §22 ruling 3: a FRESH flag per submit. The close arm arms it.
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        // WP29 — a FRESH progress sink per submit, beside the flag. The
-        // handle writes it on the worker thread and the row reads it on the
-        // frame loop.
-        let progress = std::sync::Arc::new(OptimizeProgress::default());
-        let started = self.state.session.start(
-            rs_cam_core::session::Job::OptimizeToolpath(
-                rs_cam_core::session::OptimizeToolpathArgs { index: idx },
-            ),
-            &cancel,
-        );
-        let mut handle = match started {
-            Ok(handle) => handle,
-            Err(rs_cam_core::session::SessionError::SimulationRequired(_)) => {
-                // U3: a simulation that kept no cut trace is a different
-                // cause. The modal's card says "no simulation has been run
-                // yet", which is false directly after a run, so this case
-                // names the missing trace in the toast the project-level
-                // Optimize gives (`menu_bar::OPTIMIZE_NEEDS_CUT_TRACE`).
-                use crate::ui::menu_bar::{OPTIMIZE_NEEDS_CUT_TRACE, optimize_baseline_missing};
-                if optimize_baseline_missing(&self.state) == Some(OPTIMIZE_NEEDS_CUT_TRACE) {
-                    self.push_notification(
-                        OPTIMIZE_NEEDS_CUT_TRACE.to_owned(),
-                        crate::controller::Severity::Warning,
-                    );
-                    return;
-                }
-                // No simulation: surface the typed Skipped the modal already
-                // renders as "run a simulation first", rather than a toast.
-                self.state.close_modals_for_exclusivity();
-                self.state.optimize_modal = Some(crate::state::OptimizeModalState {
-                    toolpath_id,
-                    status: crate::state::OptimizeRunStatus::Ready(OptimizeOutcome::skipped(
-                        RefuseReason::SimulationRequired,
-                    )),
-                });
-                return;
-            }
-            Err(error) => {
-                self.push_notification(
-                    format!("Optimize failed: {error}"),
-                    crate::controller::Severity::Error,
-                );
-                return;
-            }
-        };
-
-        // `submit_gui_job` stamps `AppState::optimize_run`, so the stamp
-        // runs AFTER this call. `close_modals_for_exclusivity` SPARES a
-        // running Optimize, and a stamp before it would make the rule
-        // spare the previous settled modal instead of closing it.
-        self.state.close_modals_for_exclusivity();
-        self.state.optimize_modal = Some(crate::state::OptimizeModalState {
-            toolpath_id,
-            status: crate::state::OptimizeRunStatus::Loading,
-        });
-        // The progress rides the HANDLE, not a parameter on
-        // `execute_optimize_toolpath`: that signature is pinned by
-        // `optimize_toolpath_is_a_job_wp14b.rs`.
-        if let rs_cam_core::session::JobHandle::OptimizeToolpath(optimize) = &mut handle {
-            optimize.with_progress(std::sync::Arc::clone(&progress));
-        }
-        self.submit_gui_job(
-            handle,
-            cancel,
-            crate::controller::GuiJobTarget::OptimizeModal { toolpath_id },
-            Some(progress),
-        );
-    }
-
-    /// Name the Optimize run in flight, for a refusal toast and a log line.
+    /// Name the GUI job in flight, for a refusal toast and a log line.
     ///
     /// One function serves both, so the sentence the operator reads names
     /// the same run the workspace bar's progress row is showing. The
     /// fallback answers the caller that asks with no run in flight; such a
-    /// caller has already tested [`crate::state::AppState::is_optimizing`].
-    pub(crate) fn optimize_run_label(&self) -> String {
-        self.state.optimize_run.as_ref().map_or_else(
-            || "An Optimize run".to_owned(),
-            |run| run.kind.label(&self.state.session),
-        )
+    /// caller has already tested [`crate::state::AppState::is_job_running`].
+    pub(crate) fn job_run_label(&self) -> String {
+        self.state
+            .job_run
+            .as_ref()
+            .map_or_else(|| "A job".to_owned(), |run| run.kind.label().to_owned())
     }
 
-    /// Cancel the Optimize run in flight, and close no window (WP24).
+    /// Cancel the GUI job in flight, and close no window (WP24).
     ///
     /// The workspace bar's progress row is the caller. It arms the ONE
     /// submit that is running — not every entry in `gui_jobs`, and not a
     /// whole lane. The `Job` lane is FIFO and shared with the MCP surface,
     /// so `cancel_lane(ComputeLane::Job)` would also kill an MCP caller's
     /// job queued behind this one. An exact cancel is possible because
-    /// `OptimizeRun` carries the submit's id.
+    /// `JobRun` carries the submit's id.
     ///
-    /// The run STATE stays. The drain is the one clearing site, and a
-    /// cancelled Optimize still returns a partial outcome.
-    fn cancel_optimize_run(&mut self) {
-        let Some(run) = self.state.optimize_run.as_ref() else {
+    /// The run STATE stays. The drain is the one clearing site.
+    fn cancel_job_run(&mut self) {
+        let Some(run) = self.state.job_run.as_mut() else {
             return;
         };
-        let kind = run.kind;
-        let job_id = run.job_id;
-        match kind {
-            crate::state::OptimizeRunKind::Toolpath { .. }
-            | crate::state::OptimizeRunKind::MultitoolPreview => {
-                if let Some(job) = job_id.and_then(|id| self.gui_jobs.get(&id)) {
-                    job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-                }
-            }
-            crate::state::OptimizeRunKind::Project => {
-                // The rollup is the only arm left on the Optimize lane
-                // (§28 ruling 6), so a lane cancel reaches nobody else.
-                self.compute
-                    .cancel_lane(crate::compute::ComputeLane::Optimize);
-            }
+        if let Some(job) = self.gui_jobs.get(&run.job_id) {
+            job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        if let Some(run) = self.state.optimize_run.as_mut() {
-            run.cancel_requested = true;
-        }
+        run.cancel_requested = true;
     }
 
-    /// Arm the cancel flag of every `Job` this GUI started for the
-    /// Optimize modal or the planner dialog.
+    /// Arm the cancel flag of every `Job` this GUI started for the planner
+    /// dialog.
     ///
     /// The entries STAY in the map. The lane still reports the job, and
     /// the drain is the one place a GUI-started job clears
-    /// `AppState::optimize_run`. Removing the entry here would strand the
-    /// run on the state with nothing left to clear it.
+    /// `AppState::job_run`. Removing the entry here would strand the run
+    /// on the state with nothing left to clear it.
     ///
-    /// This helper is the CLOSE arms' cancel, and it is deliberately broad.
-    /// WP24's [`Self::cancel_optimize_run`] arms one entry instead, because
-    /// the progress row knows which submit is running.
-    fn cancel_gui_optimize_jobs(&self) {
+    /// This helper is the CLOSE arm's cancel, and it is deliberately broad.
+    /// WP24's [`Self::cancel_job_run`] arms one entry instead, because the
+    /// progress row knows which submit is running.
+    fn cancel_gui_jobs(&self) {
         for job in self.gui_jobs.values() {
             job.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-
-    /// Apply a candidate from the cached Optimize outcome. Index 0 is
-    /// the baseline (no-op); higher indexes select a non-baseline
-    /// candidate. Routes through `Command::RestoreToolpathSnapshot`
-    /// with the candidate's params, the candidate's dressups and the
-    /// provenance stamp. The dressups carry the link lever.
-    fn apply_optimize_candidate(
-        &mut self,
-        toolpath_id: crate::state::toolpath::ToolpathId,
-        candidate_index: usize,
-    ) {
-        use rs_cam_core::tool_load::optimize::OutcomeKind;
-
-        // Lookup phase: extract everything we need from the cached
-        // outcome and the toolpath config, then drop the borrow before
-        // any mutation. The session call needs &mut; the optimize_modal
-        // read needs &.
-        let Some(modal) = self.state.optimize_modal.as_ref() else {
-            self.push_notification(
-                "Apply failed: Optimize modal not open".to_owned(),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let candidates = match &modal.status {
-            crate::state::OptimizeRunStatus::Ready(outcome)
-                if outcome.kind == OutcomeKind::Ranked =>
-            {
-                &outcome.candidates
-            }
-            _ => {
-                self.push_notification(
-                    "Apply failed: Optimize has no candidates to apply".to_owned(),
-                    crate::controller::Severity::Error,
-                );
-                return;
-            }
-        };
-        let Some(candidate) = candidates.get(candidate_index) else {
-            self.push_notification(
-                format!("Apply failed: candidate index {candidate_index} out of range"),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        if candidate_index == 0 {
-            // Index 0 is the baseline — nothing to do.
-            self.state.optimize_modal = None;
-            return;
-        }
-        // R8: the controller is the door, not the button. A candidate that
-        // is not safe is never applied, whatever index the event names.
-        if let Some(reason) = rs_cam_core::tool_load::optimize::candidate_unsafe_reason(candidate) {
-            self.push_notification(
-                format!("The candidate is not safe to apply: {reason}"),
-                crate::controller::Severity::Error,
-            );
-            return;
-        }
-        let candidate_op = candidate.params.clone();
-        let candidate_dressups = (*candidate.dressups).clone();
-
-        let Some(idx) = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id)
-        else {
-            self.push_notification(
-                format!("Apply failed: toolpath id {} not found", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
-            self.push_notification(
-                format!("Apply failed: toolpath {} disappeared", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let face_selection = tc.face_selection.clone();
-        // W2.1: stamp Optimizer provenance on the dimensions the chosen
-        // candidate actually changed, before the baseline operation is replaced.
-        let baseline_op = tc.operation.clone();
-        let new_provenance = tc
-            .feeds_provenance
-            .clone()
-            .stamped_optimizer(&baseline_op, &candidate_op);
-
-        // One command writes the params, the dressups and the provenance
-        // stamp. Two calls left an undo able to restore the params under
-        // the later stamp (WP8, N14).
-        let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
-            RestoreToolpathSnapshotArgs {
-                index: idx,
-                operation: Box::new(candidate_op),
-                dressups: Box::new(candidate_dressups),
-                face_selection,
-                feeds_provenance: Some(Box::new(new_provenance)),
-            },
-        ));
-        let effects = match restored {
-            Ok(effects) => effects,
-            Err(e) => {
-                self.push_notification(
-                    format!("Apply failed: {e}"),
-                    crate::controller::Severity::Error,
-                );
-                return;
-            }
-        };
-
-        self.state.gui.mark_edited();
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        self.state.optimize_modal = None;
-
-        // Roadmap F.2 — auto-verify after Apply. Set the pending flag,
-        // submit the regen, and let the drain handler kick a full
-        // project sim when this toolpath's regen lands. The user gets
-        // a live verdict for the applied params without clicking
-        // Regenerate → Run Simulation by hand.
-        //
-        // We only chain the re-sim when the project had a baseline
-        // sim — otherwise there's nothing to "verify against" and a
-        // forced sim against an unused project just wastes wall-clock
-        // time.
-        let had_baseline_sim = self.state.simulation.results.is_some();
-        if had_baseline_sim {
-            self.state.pending_apply_resim = Some(toolpath_id.0);
-            self.push_notification(
-                format!(
-                    "Applied optimize candidate to toolpath {}; regenerating and verifying…",
-                    toolpath_id.0
-                ),
-                crate::controller::Severity::Info,
-            );
-            self.submit_toolpath_compute(toolpath_id);
-        } else {
-            self.push_notification(
-                format!(
-                    "Applied optimize candidate to toolpath {}. Regenerate to take effect.",
-                    toolpath_id.0
-                ),
-                crate::controller::Severity::Info,
-            );
         }
     }
 
@@ -1392,235 +1049,4 @@ impl<B: ComputeBackend> AppController<B> {
     // operation", so the handler had nothing to check. Apply paths now build a
     // `FeedsPreview` inside `apply_feeds_through_funnel`, which carries the
     // refusal and the numbers together.
-
-    /// Open the project-level Optimize rollup. Submits an
-    /// `OptimizeRequest::Project` to the Optimize lane over a CLONE of
-    /// the session. The view opens in `Loading` immediately and the
-    /// rollup populates when the worker returns.
-    ///
-    /// The rollup has no registry row and gets none in WP14b (§28 ruling
-    /// 6). It stays on this lane; what changed is that the session is
-    /// copied rather than moved, so the view keeps its own and the result
-    /// carries none back.
-    fn open_optimize_project(&mut self) {
-        // Pre-flight: needs a baseline trace.
-        let trace_clone = self
-            .state
-            .simulation
-            .results
-            .as_ref()
-            .and_then(|r| r.cut_trace.clone());
-        let Some(trace) = trace_clone else {
-            // U3: a run with no cut trace names that cause and its remedy,
-            // not "Run a simulation first". The menu reads the same text.
-            let reason = crate::ui::menu_bar::optimize_baseline_missing(&self.state)
-                .unwrap_or(crate::ui::menu_bar::OPTIMIZE_NEEDS_SIMULATION);
-            self.push_notification(reason.to_owned(), crate::controller::Severity::Warning);
-            return;
-        };
-
-        if self.state.is_optimizing() {
-            let busy = self.optimize_run_label();
-            tracing::warn!("Ignored OpenOptimizeProject — {busy} is already running");
-            self.push_notification(
-                format!("{busy} is already running — one Optimize run at a time."),
-                crate::controller::Severity::Warning,
-            );
-            return;
-        }
-
-        // The walk mutates what it scores, so it needs a session of its
-        // own. It takes a COPY; the view keeps the original.
-        // G-RESTRES: the optimizer searches on a what-if copy.
-        let session = self.state.session.what_if_copy();
-        // The stamp runs AFTER the exclusivity call, for the reason
-        // `open_optimize_modal` records: the rule spares a RUNNING
-        // Optimize, so a stamp before it would spare the previous settled
-        // modal. The rollup stamps itself rather than going through
-        // `submit_gui_job`, because it rides `ComputeLane::Optimize` and
-        // carries no `Job` id.
-        self.state.close_modals_for_exclusivity();
-        self.state.optimize_run = Some(crate::state::OptimizeRun {
-            kind: crate::state::OptimizeRunKind::Project,
-            job_id: None,
-            started_at: std::time::Instant::now(),
-            cancel_requested: false,
-            // The rollup runs `optimize_toolpath` per toolpath through its
-            // own lane and attaches no progress sink, so the row shows the
-            // elapsed seconds alone. The follow-on is one line —
-            // `impl ProgressReporter for OptimizeProgress` — and it is
-            // NOT in WP29's scope.
-            progress: None,
-        });
-        self.state.optimize_project = Some(crate::state::OptimizeProjectState {
-            status: crate::state::OptimizeProjectStatus::Loading,
-            row_selected: Vec::new(),
-        });
-        self.compute
-            .submit_optimize(crate::compute::OptimizeRequest::Project {
-                session,
-                baseline_trace: trace,
-            });
-    }
-
-    /// Apply every selected row from the project rollup. Each row's
-    /// candidate is the first-safe recommendation from that row's
-    /// outcome. Routes through `Command::RestoreToolpathSnapshot` for
-    /// each toolpath, with the candidate's params and dressups; closes the rollup and marks every touched
-    /// toolpath — and every toolpath downstream of one — stale so
-    /// auto-regen kicks in.
-    fn apply_optimize_project(&mut self) {
-        use rs_cam_core::tool_load::optimize::OutcomeKind;
-
-        // Lookup phase: pull out (toolpath_id, params, delta) tuples
-        // from the cached state. Drop the borrow before any mutation.
-        let Some(view) = self.state.optimize_project.as_ref() else {
-            return;
-        };
-        let crate::state::OptimizeProjectStatus::Ready(report) = &view.status else {
-            return;
-        };
-        let mut targets: Vec<(
-            usize,
-            rs_cam_core::compute::catalog::OperationConfig,
-            rs_cam_core::compute::config::DressupConfig,
-        )> = Vec::new();
-        let mut unsafe_rows: Vec<String> = Vec::new();
-        for (idx, ((toolpath_index, outcome), selected)) in report
-            .per_toolpath
-            .iter()
-            .zip(view.row_selected.iter())
-            .enumerate()
-        {
-            if !selected {
-                continue;
-            }
-            if outcome.kind != OutcomeKind::Ranked {
-                continue;
-            }
-            let Some(candidate) = outcome.first_safe() else {
-                tracing::debug!("Skipping row {idx}: no first_safe candidate");
-                continue;
-            };
-            // R8: the same door as the per-toolpath apply. `first_safe`
-            // already filters on safety; this check keeps the rule in the
-            // controller if that selection changes.
-            if let Some(reason) =
-                rs_cam_core::tool_load::optimize::candidate_unsafe_reason(candidate)
-            {
-                unsafe_rows.push(format!(
-                    "row {}: the candidate is not safe to apply: {reason}",
-                    idx + 1
-                ));
-                continue;
-            }
-            targets.push((
-                *toolpath_index,
-                candidate.params.clone(),
-                (*candidate.dressups).clone(),
-            ));
-        }
-
-        for refusal in unsafe_rows {
-            self.push_notification(refusal, crate::controller::Severity::Error);
-        }
-        if targets.is_empty() {
-            self.push_notification(
-                "No applicable rows selected.".to_owned(),
-                crate::controller::Severity::Info,
-            );
-            return;
-        }
-
-        let mut applied: usize = 0;
-        let mut failed: Vec<String> = Vec::new();
-        for (toolpath_index, params, dressups) in targets {
-            let Some(tc) = self.state.session.get_toolpath_config(toolpath_index) else {
-                failed.push(format!("toolpath idx {toolpath_index} disappeared"));
-                continue;
-            };
-            let face_selection = tc.face_selection.clone();
-            // W2.1: stamp Optimizer on changed dimensions before applying.
-            let baseline_op = tc.operation.clone();
-            let new_provenance = tc
-                .feeds_provenance
-                .clone()
-                .stamped_optimizer(&baseline_op, &params);
-
-            let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
-                RestoreToolpathSnapshotArgs {
-                    index: toolpath_index,
-                    operation: Box::new(params),
-                    dressups: Box::new(dressups),
-                    face_selection,
-                    feeds_provenance: Some(Box::new(new_provenance)),
-                },
-            ));
-            let effects = match restored {
-                Ok(effects) => effects,
-                Err(e) => {
-                    failed.push(format!("toolpath idx {toolpath_index}: {e}"));
-                    continue;
-                }
-            };
-            // Mark stale so auto-regen picks it up. The set covers the
-            // rows downstream of this one too.
-            crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-            applied += 1;
-        }
-
-        self.state.gui.mark_edited();
-        // Keep the rollup open. The drain handler will transition
-        // Reconciling -> Reconciled when the project sim completes.
-        // The intervening regen is async via the GUI's auto-regen
-        // path: each touched toolpath is marked stale; the regen
-        // results land on `gui.toolpath_rt`, and we kick the sim
-        // once they all complete (see `maybe_kick_reconciliation_sim`).
-        let touched_ids: Vec<rs_cam_core::ToolpathId> = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .map(|tc| tc.id)
-            .collect();
-        if let Some(view) = self.state.optimize_project.as_mut()
-            && let crate::state::OptimizeProjectStatus::Ready(report) = &view.status
-        {
-            view.status = crate::state::OptimizeProjectStatus::Reconciling(report.clone());
-        }
-        self.state.pending_reconciliation_for_ids = touched_ids;
-        self.push_notification(
-            if failed.is_empty() {
-                format!(
-                    "Applied {applied} candidate(s). Regenerating + running reconciliation sim…"
-                )
-            } else {
-                format!(
-                    "Applied {applied} candidates; {failed_count} failed: {first}",
-                    failed_count = failed.len(),
-                    first = failed.first().cloned().unwrap_or_default()
-                )
-            },
-            if failed.is_empty() {
-                crate::controller::Severity::Info
-            } else {
-                crate::controller::Severity::Warning
-            },
-        );
-
-        // Submit regen for every enabled toolpath (worker lane). The
-        // toolpath-drain handler watches `pending_reconciliation_for_ids`
-        // and kicks the sim once they're all done.
-        let enabled_ids: Vec<crate::state::toolpath::ToolpathId> = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .filter(|tc| tc.enabled)
-            .map(|tc| tc.id)
-            .collect();
-        for id in enabled_ids {
-            self.submit_toolpath_compute(id);
-        }
-    }
 }

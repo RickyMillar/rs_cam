@@ -61,7 +61,6 @@ impl ComputeBackend for InlineBackend {
     }
 
     fn submit_collision(&mut self, _request: CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: ComputeLane) {}
     fn drain_results(&mut self) -> Vec<ComputeMessage> {
         std::mem::take(&mut self.drained)

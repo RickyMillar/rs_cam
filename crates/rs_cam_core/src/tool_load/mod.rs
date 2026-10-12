@@ -26,7 +26,6 @@ pub mod distribution;
 pub mod drill_gates;
 pub mod locality;
 pub mod metric_guide;
-pub mod optimize;
 pub mod plunge_stress;
 pub mod power;
 pub mod verdict;
@@ -65,8 +64,9 @@ use crate::stock::simulation_cut::SimulationCutSample;
 /// (2026-06-20): the tip-displacement force is now affine in feed per
 /// tooth (`F = ap·(Ks·fz·sinθ + F_edge)`), so the deflection gate must
 /// evaluate at the same effective feed as power/chipload — that is what
-/// lets a path the F-039 optimizer feeds down for deflection read `Within`
-/// at the gate (the optimizer↔gate consistency the unified model closes).
+/// lets a path the F-039 feed modulation feeds down for deflection read
+/// `Within` at the gate (the modulation↔gate consistency the unified model
+/// closes).
 #[inline]
 pub fn effective_feed_for_sample(
     sample: &SimulationCutSample,
@@ -98,89 +98,6 @@ pub use verdict::{
     UnmodeledReason,
 };
 
-/// Why the optimizer refused to produce a recommendation. Typed
-/// reasons, no free-form fallback — the rollup view composes the
-/// user-facing narrative from these via `explanation_for_optimize`.
-///
-/// Used by `optimize::OptimizeOutcome::{Skipped, NoSafeImprovement}`.
-/// The variants are a superset of the old suggest module's refusal
-/// kinds plus optimizer-specific ones (`NoImprovementFound`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "kind", content = "detail")]
-pub enum RefuseReason {
-    /// No simulation trace was available — the optimizer needs the
-    /// same per-sample data the gate uses to score candidates.
-    SimulationRequired,
-    /// The simulation lacks per-sample arc engagement; without it
-    /// we can't compute the power-cap or steady-state engagement.
-    ArcEngagementNotCaptured,
-    /// The stock material has no measured force line (ruling B6) — the
-    /// optimizer refuses rather than scoring against an unknown load.
-    MaterialUnvalidated,
-    /// No vendor LUT row matches this (tool family, material family,
-    /// operation family, pass role) tuple at the toolpath's
-    /// diameter.
-    NoVendorData,
-    /// Steady-state samples are missing — typically a pure-plunge
-    /// drill cycle. The optimizer is calibrated for steady-state
-    /// cutting, so it refuses rather than tuning a plunge feed.
-    SteadyStateSamplesNotPresent,
-    /// Every compatible LUT row has a chipload range that, even at
-    /// the row's nominal RPM, would require a feed below the
-    /// machine's minimum or above the machine's maximum feed.
-    NoFeasibleRow,
-    /// The matched row's RPM bracket has no overlap with the
-    /// machine's spindle range. A different cutter would be needed.
-    RpmBracketEmpty,
-    /// Every must-match LUT row was rejected by the
-    /// diameter-extrapolation gate.
-    DiameterExtrapolationTooPoor,
-    /// Optimizer-specific: no evaluated candidate was both faster than
-    /// the baseline and free of a criterion row that refuses an export,
-    /// or the search evaluated no candidate.
-    NoImprovementFound,
-}
-
-impl RefuseReason {
-    /// One-line user-facing explanation for use in the optimizer
-    /// rollup or per-toolpath modal. Matches Engineering Default 4
-    /// in `planning/OPTIMIZER_UX_PLAN.md`. Generic shape — the
-    /// optimizer orchestrator can append a more specific narrative
-    /// ("gate-limited at chipload 0.0072") for cases where peak
-    /// values are available.
-    pub fn explanation_for_optimize(&self) -> &'static str {
-        match self {
-            Self::SimulationRequired => {
-                "no simulation has been run yet — Optimize needs a baseline sim to score against"
-            }
-            Self::ArcEngagementNotCaptured => {
-                "simulation trace lacks per-sample arc engagement — re-run the simulation"
-            }
-            Self::MaterialUnvalidated => {
-                "stock material has no measured force line — Optimize cannot model power against an unknown material"
-            }
-            Self::NoVendorData => {
-                "no vendor LUT row matches this tool, material, and operation — no calibrated chipload envelope to optimise against"
-            }
-            Self::SteadyStateSamplesNotPresent => {
-                "no steady-state cutting samples — typically a drill cycle or all-ramp toolpath, which Optimize cannot tune"
-            }
-            Self::NoFeasibleRow => {
-                "every compatible LUT row falls outside the machine's feed or RPM range"
-            }
-            Self::RpmBracketEmpty => {
-                "the matched LUT row's RPM bracket has no overlap with the machine's spindle range — a different cutter is needed"
-            }
-            Self::DiameterExtrapolationTooPoor => {
-                "no LUT row is calibrated close enough to this tool's diameter to give a trustworthy recommendation"
-            }
-            Self::NoImprovementFound => {
-                "no candidate was both faster than the baseline and free of a criterion row that refuses an export"
-            }
-        }
-    }
-}
-
 /// Build a `toolpath_id -> chipload_envelope` map for every enabled
 /// toolpath in the session. The envelope is the matched vendor LUT
 /// row's `(chip_load_min, chip_load_max)` for that toolpath's
@@ -193,7 +110,7 @@ impl RefuseReason {
 /// timeline's per-toolpath envelope readout. Replaces the old
 /// `tool_load::suggest::project_suggestions` access pattern — this
 /// function does just the LUT match without the full feed/RPM
-/// recommendation machinery the optimizer made redundant.
+/// recommendation machinery.
 ///
 /// # The unit, and who consumes it — F-HEATMAP, fixed 2026-08-08
 ///
@@ -412,7 +329,7 @@ pub fn chip_target_for_toolpath(
                 .fold(0.0_f64, f64::max)
         })
         .unwrap_or(0.0);
-    // F3.4 — same canonical resolver as the gate / optimizer, at the same
+    // F3.4 — same canonical resolver as the gate, at the same
     // lookup key (ruling A1: the tip of a tapered ball; ruling B4: the
     // nominal diameter of a V-bit).
     let matched = chipload::matched_chip_envelope(
@@ -465,10 +382,8 @@ pub fn chip_target_for_toolpath(
 
 /// Soft fractional widenings on the chipload + power hard-gate triggers.
 /// Default is all-zeros (preserves strict LUT/machine-ceiling behaviour).
-/// Every production caller, the optimizer included, passes the default:
-/// the optimizer judges a candidate by the same strict bands as the
-/// tool-load card. The non-zero fields exist for the gate unit tests.
-/// History: `planning/OPTIMIZER_REFACTOR_G16.md` §11.4 "Layer 1".
+/// Every production caller passes the default. The non-zero fields exist
+/// for the gate unit tests.
 ///
 /// Tolerance widens the *trigger condition* only — the underlying
 /// `peak_above` / `triggering` metrics on `Within` verdicts continue to
@@ -607,8 +522,7 @@ impl MetricEvaluator for DeflectionGate {
 /// `&ToleranceBands::default()` for strict LUT/machine-ceiling behaviour.
 ///
 /// This is the **single** `ToolpathLoadVerdict` assembly site (Phase 6
-/// task 2) — `gcode::project_load_report` and the optimizer both call
-/// it, so per-field population (incl. `modulation_summary`, which the
+/// task 2) — every report path calls it, so per-field population (incl. `modulation_summary`, which the
 /// two sites had silently diverged on pre-Phase-6) cannot drift again.
 ///
 /// S6 (stock changes, "cut as"): the gates judge each sample as the
@@ -719,8 +633,7 @@ fn evaluate_population(
     // §6.E / Step 3 PR2: evaluate drill gates when this toolpath
     // carries a `DrillOp` payload. Mirrors what
     // `gcode::project_load_report` does for the user-facing report so
-    // the optimizer and the gcode-export paths agree on drill-side
-    // verdicts.
+    // every report path agrees on drill-side verdicts.
     let drill_gates = ctx.drill_op.map(|drill_op| {
         let samples = crate::ops::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
         let summary = crate::ops::drill_metrics::build_drill_toolpath_summary(
@@ -733,7 +646,7 @@ fn evaluate_population(
     // T1.1 — the chipload gate hands back its stage-labelled record
     // alongside the verdict. Assembled here, at the single
     // `ToolpathLoadVerdict` assembly site, so every report path (gcode
-    // export, optimizer, GUI) sees the same one.
+    // export, GUI) sees the same one.
     let (chipload_verdict, feed_explanation) = chipload::evaluate_with_explanation(ctx, &env);
     ToolpathLoadVerdict {
         toolpath_id: ctx.toolpath_id,
@@ -741,8 +654,8 @@ fn evaluate_population(
         power: power::evaluate(ctx, &env),
         deflection: deflection::evaluate(ctx, &env),
         // S3 — the depth row. Assembled HERE, at the single
-        // `ToolpathLoadVerdict` assembly site, so the optimizer, the
-        // g-code export path and the GUI all see one depth verdict.
+        // `ToolpathLoadVerdict` assembly site, so the g-code export path
+        // and the GUI see one depth verdict.
         depth: depth::evaluate(ctx, &env),
         drill_gates,
         // Feed-modulation rollup captured by the simulator for this
@@ -760,9 +673,8 @@ fn evaluate_population(
         //
         // `gcode::project_load_report` DOES hold both (it has the
         // `ProjectSession`), so it fills this slot after the call — see
-        // `ProjectSession::kinematic_utilization_for`. The optimizer path
-        // (`tool_load::optimize`, which calls `evaluate_toolpath` directly)
-        // therefore leaves it `None`. Closing that divergence — the exact
+        // `ProjectSession::kinematic_utilization_for`. A caller that calls
+        // `evaluate_toolpath` directly therefore gets `None`. Closing that divergence — the exact
         // shape the Phase 6 doc comment above warns about — means threading
         // `toolpath: Option<&'a Toolpath>` and `plunge_rate_mm_min: f64`
         // through `ToolpathLoadContext`, which has 22 literal sites across

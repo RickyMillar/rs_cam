@@ -521,20 +521,6 @@ fn the_view_registry_declares_only_view_kinds() {
 /// The two files that hold a `AppEvent::Ui(cmd) => match cmd` block.
 const UI_DISPATCH: &[&str] = &["src/controller/events/mod.rs", "src/app/input.rs"];
 
-/// Ruling 10's named exemption, kept as a record rather than a hole.
-///
-/// `CloseOptimizeModal` and `CloseOptimizeProject` were expected to write
-/// the session: the optimizer took it by `std::mem::replace` and
-/// something had to put it back. Measured at WP13: the `std::mem::replace`
-/// sat in `open_optimize_modal` and the restore sat in the compute drain,
-/// so NEITHER close arm wrote the session and both passed the scan
-/// unaided. WP14b deleted all three `mem::replace` sites — the two Job
-/// rows own a cloned or captured handle and the project rollup takes
-/// `session.clone()` — so there is no lend and no restore left to
-/// exempt. The names stay here because ruling 10 named them; they buy no
-/// exemption today and bought none then.
-const P3_NAMED_EXEMPTIONS: &[&str] = &["CloseOptimizeModal", "CloseOptimizeProject"];
-
 /// What a view handler must never contain.
 ///
 /// The pattern is scoped to the SESSION receiver on purpose. A bare
@@ -609,8 +595,7 @@ fn no_view_command_handler_writes_the_session() {
         offenders.is_empty(),
         "a view command handler writes ProjectSession: {offenders:#?}. A \
          view command writes the VIEW. A row that must write the session \
-         belongs in the core registry. Named exemptions: \
-         {P3_NAMED_EXEMPTIONS:?}"
+         belongs in the core registry."
     );
     assert!(checked > 50, "only {checked} view arms were scanned");
 }

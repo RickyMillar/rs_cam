@@ -508,10 +508,6 @@ const RAW_GRID_ALLOWANCE: &[(&str, usize)] = &[
     ("ui/multitool_planner.rs", 2),
     // 9 columns, striped — the project feeds table.
     ("ui/readiness_panel.rs", 1),
-    // 4 and 5 columns, both striped — attempted moves and candidates.
-    ("ui/optimize_modal.rs", 2),
-    // 5 and a run-time column count, both striped.
-    ("ui/optimize_project.rs", 2),
 ];
 
 /// The folder that OWNS the renderers. A grid written here is the kit.
@@ -519,7 +515,7 @@ const GRID_HOME: &str = "ui/components/";
 
 /// The fewest raw grids the allow-list must still account for, so a sweep
 /// that deleted the tables rather than the duplication fails this arm.
-const MIN_ALLOWED_GRIDS: usize = 8;
+const MIN_ALLOWED_GRIDS: usize = 6;
 
 fn rel_path(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)

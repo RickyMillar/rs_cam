@@ -1669,8 +1669,8 @@ impl Material {
     /// from `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
     ///
     /// `feed_scale_factor = 1.0` (softwood baseline) — the value that
-    /// `tool_load/power.rs:470`, `tool_load/deflection.rs:456`,
-    /// `tool_load/optimize/mod.rs:859`, and `compute/validate.rs:538`
+    /// `tool_load/power.rs:470`, `tool_load/deflection.rs:456`, the
+    /// optimizer (deleted 2026-10-13), and `compute/validate.rs:538`
     /// constructed ad hoc before this helper landed. Tests that want
     /// different defaults should construct `Material::Custom { ... }`
     /// directly.

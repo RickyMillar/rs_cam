@@ -287,7 +287,7 @@ pub struct ToolpathLoadVerdict {
     /// machine kinematics and the operation's own `plunge_rate` in
     /// scope — today that is `gcode::project_load_report`, through
     /// [`crate::session::ProjectSession::kinematic_utilization_for`].
-    /// The optimizer path leaves it `None`; see the note at
+    /// A direct `evaluate_toolpath` call leaves it `None`; see the note at
     /// [`crate::tool_load::evaluate_toolpath`].
     ///
     /// Report-only and additive: no gate, threshold or severity reads
@@ -424,7 +424,7 @@ impl ToolpathLoadVerdict {
             self.depth.as_criterion_status(),
         ];
         // Read the drill answer off the gates that already decided it,
-        // not off `drill_gates`: the optimizer path leaves `drill_gates`
+        // not off `drill_gates`: a direct `evaluate_toolpath` call leaves `drill_gates`
         // `None` on a drill toolpath, and the row must still say
         // "doesn't apply" there.
         let plunge_only = rows.iter().all(|s| is_not_applicable(s.unmodeled_reason));
@@ -1552,8 +1552,7 @@ pub enum ChiploadVerdict {
         /// ([`ChipBoundsSource::low_side_is_advisory`]): surfaced as a
         /// structured advisory instead of flipping to `Exceeds(Low)`.
         /// The verdict stays `Within`, so the advisory does not refuse
-        /// an export (`gcode::refusing_exceedances`) and the optimizer
-        /// does not reject a candidate on it.
+        /// an export (`gcode::refusing_exceedances`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         burn_advisory: Option<Box<ChiploadMetric>>,
     },

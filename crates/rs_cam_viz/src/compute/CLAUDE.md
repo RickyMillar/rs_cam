@@ -1,7 +1,7 @@
 # viz `compute/` — the worker lanes
 
-The background workers that run generation, simulation and optimisation off
-the UI thread. The entry point is `compute::worker`.
+The background workers that run generation, simulation, reach maps and core
+`Job` rows off the UI thread. The entry point is `compute::worker`.
 
 ## Files
 
@@ -32,7 +32,6 @@ the UI thread. The entry point is `compute::worker`.
 - `cargo test -p rs_cam_viz -q --lib generate_all_plan_g_genplan`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`
 - `cargo test -p rs_cam_viz -q --test export_parity_core_vs_gui_p0`
-- `cargo test -p rs_cam_viz -q --test optimize_runs_on_the_job_lane_wp14b`
 - `cargo test -p rs_cam_viz compute::worker::tests::`
 
 ## Do not

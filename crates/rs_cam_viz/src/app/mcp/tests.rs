@@ -850,7 +850,6 @@ impl crate::compute::ComputeBackend for U4SilentBackend {
     }
     fn submit_simulation(&mut self, _request: crate::compute::SimulationRequest) {}
     fn submit_collision(&mut self, _request: crate::compute::CollisionRequest) {}
-    fn submit_optimize(&mut self, _request: crate::compute::OptimizeRequest) {}
     fn cancel_lane(&mut self, _lane: crate::compute::ComputeLane) {}
     fn drain_results(&mut self) -> Vec<crate::compute::ComputeMessage> {
         Vec::new()

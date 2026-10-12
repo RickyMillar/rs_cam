@@ -13,7 +13,6 @@ use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
-use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::tool::MillingCutter;
 use crate::trace::debug_trace::ToolpathDebugRecorder;
 use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
@@ -1462,104 +1461,6 @@ pub fn execute_recommend_clearing_strategy(
         .collect();
 
     Ok(recommend_strategy(&candidates, machine))
-}
-
-/// What [`ProjectSession::start`] captured for one `optimize_toolpath`
-/// job.
-///
-/// The handle owns a PRIVATE CLONE of the session. The candidate loop
-/// regenerates and re-simulates per candidate, so this row cannot reduce
-/// its inputs to a capture list the way the two read rows do (§24 ruling
-/// 2). The clone is the job's own, so step (ii) holds no reference to the
-/// caller's session and the live session stays usable.
-///
-/// `index` is public because a caller labels the job with it. `session`
-/// and `trace` stay private, so no caller outside this module builds a
-/// handle: a handle is the evidence of one submit.
-pub struct OptimizeToolpathHandle {
-    /// The index of the toolpath this job optimizes.
-    pub index: usize,
-    /// The session the candidate loop mutates. A private clone.
-    session: ProjectSession,
-    /// The baseline trace the candidates are scored against.
-    ///
-    /// Held BESIDE the clone, not read out of it.
-    /// [`crate::tool_load::optimize::optimize_toolpath`] takes
-    /// `&mut ProjectSession` and `&SimulationCutTrace` at once, and a
-    /// trace borrowed from `session.simulation` cannot live across the
-    /// mutable borrow of `session`.
-    trace: Arc<SimulationCutTrace>,
-    /// Where the search publishes its rung and its candidate count
-    /// (WP29).
-    ///
-    /// The progress rides the HANDLE and not a fifth parameter on
-    /// [`execute_optimize_toolpath`], because that signature is pinned by
-    /// `crates/rs_cam_core/tests/optimize_toolpath_is_a_job_wp14b.rs`:
-    /// the arm coerces the function to
-    /// `fn(&mut OptimizeToolpathHandle, &AtomicBool) -> OptimizeOutcome`,
-    /// and a fifth parameter breaks that coercion.
-    ///
-    /// It starts SILENT. One door attaches a readable one, so the field
-    /// stays private and a handle is still the evidence of one submit.
-    progress: Arc<crate::tool_load::optimize::OptimizeProgress>,
-}
-
-impl OptimizeToolpathHandle {
-    /// Attach the progress sink the caller reads while the search runs
-    /// (WP29).
-    ///
-    /// The GUI builds one `Arc` per submit, attaches it here and clones it
-    /// into `AppState::optimize_run`, so the frame loop reads what the
-    /// worker thread writes. A caller that never calls this keeps the
-    /// silent default and changes nothing.
-    pub fn with_progress(&mut self, progress: Arc<crate::tool_load::optimize::OptimizeProgress>) {
-        self.progress = progress;
-    }
-}
-
-/// Run the optimizer's candidate search from a handle — step (ii) of the
-/// `optimize_toolpath` job.
-///
-/// **This function holds no reference to the caller's session.** It is a
-/// free function over `&mut`[`OptimizeToolpathHandle`], so it coerces to
-/// a plain `fn` pointer and cannot capture a `&ProjectSession`. The
-/// session it mutates is the handle's own clone.
-///
-/// It takes the handle by `&mut` rather than by `&` because
-/// [`crate::tool_load::optimize::optimize_toolpath`] takes
-/// `&mut ProjectSession`: a shared handle would make this function clone
-/// the session a SECOND time (§28 ruling 4).
-///
-/// There is no step (iii). The outcome goes to the caller; the live
-/// session is untouched, and the GUI applies a chosen candidate through
-/// `Command::RestoreToolpathSnapshot` on an operator click.
-///
-/// The answer is the bare [`OptimizeOutcome`](crate::tool_load::optimize::OptimizeOutcome)
-/// and not a `Result`. The optimizer reports every refusal as an
-/// `OutcomeKind::Skipped` value and never as an `Err`.
-///
-/// `cancel` is polled between candidates and between search stages, and
-/// it reaches the generator and the candidate simulation.
-///
-/// The search publishes its rung and its candidate count on the handle's
-/// own progress sink (WP29). The sink rides the HANDLE, so this
-/// signature does not move.
-pub fn execute_optimize_toolpath(
-    handle: &mut OptimizeToolpathHandle,
-    cancel: &AtomicBool,
-) -> crate::tool_load::optimize::OptimizeOutcome {
-    let index = handle.index;
-    let trace = Arc::clone(&handle.trace);
-    // WP29 — clone the progress OUT before the `&mut handle.session`
-    // borrow, the way the trace above already is.
-    let progress = Arc::clone(&handle.progress);
-    crate::tool_load::optimize::optimize_toolpath_observed(
-        &mut handle.session,
-        &trace,
-        index,
-        cancel,
-        &progress,
-    )
 }
 
 /// Strategy-advisor companion to

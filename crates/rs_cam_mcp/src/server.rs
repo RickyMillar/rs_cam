@@ -369,8 +369,8 @@ pub struct SetUiViewParam {
     /// kinematics + GRBL $$ import) or "stock". Switches to the Setup
     /// workspace so the panel is visible on the right.
     pub select: Option<String>,
-    /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
-    /// "tool_library", "pin_wizard", or "none" to close all modals (the
+    /// Modal to open: "feeds_modal", "export_wizard", "tool_library",
+    /// "pin_wizard", or "none" to close all modals (the
     /// load-warning modal and the pin wizard too).
     pub modal: Option<String>,
     /// Viewport overlays to switch on or off, as `{"<id>": true|false}`.
@@ -437,12 +437,6 @@ pub struct SetToolpathParamInput {
     /// this field carries an explicit type list.
     #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
-}
-
-#[derive(Deserialize, schemars::JsonSchema, Default)]
-pub struct OptimizeToolpathInput {
-    /// Toolpath index (0-based)
-    pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -1910,12 +1904,6 @@ pub fn build_info() -> serde_json::Value {
             // `pin_report`, and `inspect_stock` carries `pin_report`.
             "alignment_pin_set_tools",
             "alignment_pin_report",
-            // Optimizer rebuild R2 (2026-10-12): an `optimize_toolpath`
-            // candidate carries `full_cut` (the full-cut check against the
-            // baseline), `dressups` and `delta.link_moves`; the narrative
-            // carries `unmodeled` and `refused_cells`; `assumptions` holds
-            // one `operating_point`.
-            "optimize_full_cut_check",
         ],
     })
 }
@@ -1998,7 +1986,6 @@ mod tests {
             "stock_change_cut_as",
             "alignment_pin_set_tools",
             "alignment_pin_report",
-            "optimize_full_cut_check",
         ] {
             assert!(
                 features.contains(&flag),

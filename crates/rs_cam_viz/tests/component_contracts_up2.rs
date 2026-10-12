@@ -685,20 +685,9 @@ fn a_count_pill_is_on_the_grid_up2() {
 /// number of chains each one holds and the reason they are not headers.
 const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     (
-        "ui/optimize_project.rs",
-        10,
-        "grid COLUMN headers; a SectionHeader draws a rule and its own \
-         vertical space, so it cannot sit in a grid cell",
-    ),
-    (
         "ui/multitool_planner.rs",
         12,
         "11 grid column headers, plus the tier-cap warning sentence",
-    ),
-    (
-        "ui/optimize_modal.rs",
-        2,
-        "the one grid column header helper and one CollapsingHeader title",
     ),
     (
         "ui/sim_op_list.rs",
@@ -748,7 +737,9 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
 
 /// The fewest `SectionHeader` / `named_section` call sites the crate must
 /// hold. A conversion that deleted headers rather than routing them fails.
-const MIN_KIT_HEADERS: usize = 20;
+/// The optimizer cull (2026-10-13) deleted two windows and their headers,
+/// so the floor moved from 20 to 16.
+const MIN_KIT_HEADERS: usize = 16;
 
 fn ui_src_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
