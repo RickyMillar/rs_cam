@@ -14,6 +14,32 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-12 — the optimizer is a post-sim tuner (branch `optimizer-rebuild`)
+
+Operator ruling: delete every optimizer part that duplicates the feeds work,
+then rebuild; Suggest does the pre-sim calculation, the optimizer tunes with
+the post-sim readings. `planning/optimize_review_2026-10-12/` (REVIEW, PLAN,
+RESULT).
+- Phase 1 cull (e3210f80): 13 247 lines deleted from `tool_load/optimize/`
+  (headroom, grid, retargeters, policy, rank, the second safety predicate,
+  pre-flight, the GUI lever suggestions, the MarginalSafe/TradeOff tiers).
+- Phase 2 (4a9884f7, 79e4100b): two levers (links; depth x width cells with
+  `feeds::calculate` speeds, bound by `cutter_axial_constraints`), one
+  measure (the GUI operating point), the full-cut check (volume, collisions,
+  over-cut), the export predicate as the safety rule (the depth
+  rule-of-thumb row reports, never vetoes). GUI and MCP follow; feature
+  `optimize_full_cut_check`.
+- Two owner defects found by the Z22 measurement and fixed: G-OVERCUTREF
+  (98e3de6f, the over-cut finding read a stepped op against 3x its median
+  bite) and G-SPEEDSAPPLY (d5d1daaa, a speeds-only Suggest apply shipped the
+  feed for a clamped depth the op did not cut).
+- Z22 back channel: baseline 1 315 s; `Ranked` 360 s (-72.6 %) at dpp 2.75 /
+  stepover 0.838, full cut holds, 0 collisions. Power and deflection stay
+  Unmodeled on this oak (no FPL density); the outcome says so.
+- Handed off: readiness and export pre-flight read `any_exceeded` (the depth
+  rule-of-thumb row reads Fail there); the per-field feeds pill still reads
+  the `Both` dry run; P9 (histogram boundary rule).
+
 ## Update 2026-10-02 (cloud session) — tiered finishing trial on the 350 board
 
 Operator request: which tools / finishes give the least time at a good

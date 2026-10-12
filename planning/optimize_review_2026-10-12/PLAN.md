@@ -1,7 +1,9 @@
 # Optimizer clean-up and rebuild plan, 2026-10-12
 
-Status: Phase 1 in progress. Branch `optimizer-rebuild`, worktree
-`.claude/worktrees/optimizer-rebuild`, target dir `target/optrebuild`.
+Status: Phase 1 DONE (e3210f80). Phase 2 R1 DONE (4a9884f7), R2 DONE
+(79e4100b). Follow-ups from the first Z22 measurement are in §5. The
+result record is `RESULT.md` beside this file. Branch `optimizer-rebuild`,
+worktree `.claude/worktrees/optimizer-rebuild`, target dir `target/optrebuild`.
 
 The review is `REVIEW.md` beside this file. The operator ruled: remove every
 duplicate that is not the new feeds work, then rebuild. The feeds screen
@@ -155,3 +157,26 @@ features, `cargo fmt --all -- --check`. No full gate.
   No Janka-to-density proxy is invented here.
 - P9 (the card's boundary rule in `distribution.rs`) is a card fix, not
   an optimizer change; handed off.
+
+## 5. Follow-ups from the first Z22 measurement (2026-10-12)
+
+The headline run (`tests/optimize_z22_headline.rs`, 96 s) gave `Ranked`
+876 s against 1 315 s at dpp 0.815 / stepover 1.05. Three findings:
+
+- The over-cut finding (`stock/sim_triage.rs`, "3x this pass's own
+  median bite") fired on every deeper cell with a peak equal to the
+  cell's own dpp, and gave opposite readings at one dpp on two stepovers.
+  Lead ruling: fix the reference in the owner (the commanded dpp of the
+  pass); keep the finding on a real thick bite into standing material.
+- Rapid collisions at stepover 1.05 (18 at dpp 1.22, 8 at dpp 2.75;
+  none at 0.838). Lead ruling: read the records; real collisions keep
+  the veto; a defect goes to its owner.
+- `feeds::suggest::apply_speeds_to_op` re-derived the feed for the
+  clamped depth (3877 against the calculator's 2423 at 2.5 x D). Lead
+  ruling: a speeds-only apply ships the feed for the depth the operation
+  keeps; a feeds-side package with a test.
+- Handed off, not in scope: the GUI readiness check and the export
+  pre-flight read `ToolLoadReport::any_exceeded`, which counts the
+  depth rule-of-thumb row as a Fail (`ui/readiness.rs`, `ui/preflight.rs`);
+  the export door itself uses `refuses_export` (S4).
+
