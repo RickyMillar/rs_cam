@@ -293,9 +293,8 @@ VCarve in softwood since B4; 12.0 mm serves.
    By Area WP3 can rebase.
 4. B7 (RULINGS §B7): extend the deflection envelope to the 2D
    operations, then retire the 0.88 / 0.75 long-tool share.
-5. The Optimize resolution parity gap
-   (`tool_load/optimize/outcome.rs`, per-request auto resolution;
-   ce6642be).
+5. The Optimize resolution parity gap: CLOSED 2026-10-12 (one measure,
+   4a9884f7; sentry `one_measure_for_baseline_and_candidate_g_opt6`).
 6. Operator owes: the B3 sim witness run, the bull literature cells,
    the hardwood V-bit 0.37x question, B5 open question 1 (Amana's
    printed 18 000 rpm against the 14 000 drill cap),

@@ -53,8 +53,10 @@ no de-rate below 1 x D). The volume tolerance is one floor layer,
 - The depth lever is the lever: 2.75 mm (0.92 x D, 8 levels) against 0.595 mm
   (37 levels) removes 29 of 37 level changes and their retracts.
 - The link lever is a no-op on this pocket (row 6 equals the baseline).
-- The DOC bound 2.75 mm is the vendor `ap` rule (1 x D, realised on the 22 mm
-  staircase) because the material has no force line. The review's what-if with the
+- CAUTION. The DOC bound 2.75 mm is the vendor `ap` rule (1 x D, realised on
+  the 22 mm staircase) because the material has no force line; deflection is
+  Unmodeled on the recommended cell and Apply is enabled. The -72.6 % is as
+  safe as the vendor `ap` rule and no safer. The review's what-if with the
   FPL White Oak line gave 0.26 mm of tip deflection at 3.0 mm and 0.18 mm at 2.0 mm
   against the gate bound 0.200 mm: with an FPL row the bound would sit near 2 mm and
   the deflection gate would judge the cell. The outcome states this.
@@ -67,4 +69,5 @@ no de-rate below 1 x D). The volume tolerance is one floor layer,
   narrower than one 0.2 mm cell, and `conservative_top` lowers only on one
   full cover (`dexel_stock/stamping.rs::for_each_covered_cell`). The veto
   stands (the reading is an upper bound); the fix is a sub-cell coverage
-  mask in the stamp. With that fix row 8 (317 s, -75.9 %) is the candidate.
+  mask in the stamp. Row 8 (317 s) would be the fastest full-cut candidate if the
+  stale-top reading cleared; not measured.
