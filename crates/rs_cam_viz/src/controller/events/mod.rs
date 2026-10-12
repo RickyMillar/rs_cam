@@ -845,7 +845,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// Apply a candidate from the cached Optimize outcome. Index 0 is
     /// the baseline (no-op); higher indexes select a non-baseline
     /// candidate. Routes through `Command::RestoreToolpathSnapshot`
-    /// with the candidate's params and its provenance stamp.
+    /// with the candidate's params, the candidate's dressups and the
+    /// provenance stamp. The dressups carry the link lever.
     fn apply_optimize_candidate(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
@@ -891,6 +892,7 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
         let candidate_op = candidate.params.clone();
+        let candidate_dressups = (*candidate.dressups).clone();
 
         let Some(idx) = self
             .state
@@ -912,7 +914,6 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         };
-        let dressups = tc.dressups.clone();
         let face_selection = tc.face_selection.clone();
         // W2.1: stamp Optimizer provenance on the dimensions the chosen
         // candidate actually changed, before the baseline operation is replaced.
@@ -922,14 +923,14 @@ impl<B: ComputeBackend> AppController<B> {
             .clone()
             .stamped_optimizer(&baseline_op, &candidate_op);
 
-        // One command writes the params and the provenance stamp. Two
-        // calls left an undo able to restore the params under the later
-        // stamp (WP8, N14).
+        // One command writes the params, the dressups and the provenance
+        // stamp. Two calls left an undo able to restore the params under
+        // the later stamp (WP8, N14).
         let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
             RestoreToolpathSnapshotArgs {
                 index: idx,
                 operation: Box::new(candidate_op),
-                dressups: Box::new(dressups),
+                dressups: Box::new(candidate_dressups),
                 face_selection,
                 feeds_provenance: Some(Box::new(new_provenance)),
             },
@@ -1457,7 +1458,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// Apply every selected row from the project rollup. Each row's
     /// candidate is the first-safe recommendation from that row's
     /// outcome. Routes through `Command::RestoreToolpathSnapshot` for
-    /// each toolpath; closes the rollup and marks every touched
+    /// each toolpath, with the candidate's params and dressups; closes the rollup and marks every touched
     /// toolpath — and every toolpath downstream of one — stale so
     /// auto-regen kicks in.
     fn apply_optimize_project(&mut self) {
@@ -1471,7 +1472,11 @@ impl<B: ComputeBackend> AppController<B> {
         let crate::state::OptimizeProjectStatus::Ready(report) = &view.status else {
             return;
         };
-        let mut targets: Vec<(usize, rs_cam_core::compute::catalog::OperationConfig)> = Vec::new();
+        let mut targets: Vec<(
+            usize,
+            rs_cam_core::compute::catalog::OperationConfig,
+            rs_cam_core::compute::config::DressupConfig,
+        )> = Vec::new();
         for (idx, ((toolpath_index, outcome), selected)) in report
             .per_toolpath
             .iter()
@@ -1488,7 +1493,11 @@ impl<B: ComputeBackend> AppController<B> {
                 tracing::debug!("Skipping row {idx}: no first_safe candidate");
                 continue;
             };
-            targets.push((*toolpath_index, candidate.params.clone()));
+            targets.push((
+                *toolpath_index,
+                candidate.params.clone(),
+                (*candidate.dressups).clone(),
+            ));
         }
 
         if targets.is_empty() {
@@ -1501,12 +1510,11 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mut applied: usize = 0;
         let mut failed: Vec<String> = Vec::new();
-        for (toolpath_index, params) in targets {
+        for (toolpath_index, params, dressups) in targets {
             let Some(tc) = self.state.session.get_toolpath_config(toolpath_index) else {
                 failed.push(format!("toolpath idx {toolpath_index} disappeared"));
                 continue;
             };
-            let dressups = tc.dressups.clone();
             let face_selection = tc.face_selection.clone();
             // W2.1: stamp Optimizer on changed dimensions before applying.
             let baseline_op = tc.operation.clone();

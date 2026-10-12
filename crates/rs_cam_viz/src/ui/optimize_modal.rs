@@ -17,13 +17,16 @@
 //! WP24 deleted that, so the hint below is true.
 
 use rs_cam_core::tool_load::optimize::{
-    BaselineTraceAssumptions, GateKind, KinematicsSource, LimitingGate, LutQueryStamp,
-    MachineSnapshot, OptimizeCandidate, OptimizeOutcome, OutcomeKind, OutcomeNarrative,
-    SearchEnvelopeReached, SimAssumptionStamp, limiting_gates_for_verdict,
+    FullCutCheck, FullCutVerdict, GateKind, KinematicsSource, LimitingGate, LutQueryStamp,
+    MachineSnapshot, OperatingPointStamp, OptimizeCandidate, OptimizeOutcome, OutcomeKind,
+    OutcomeNarrative, SearchEnvelopeReached, SimAssumptionStamp, candidate_is_safe,
+    limiting_gates_for_verdict,
 };
-use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
+use rs_cam_core::tool_load::verdict::{ChipSide, LoadState, ToolpathLoadVerdict};
 
-use super::components::format::{format_cycle, format_delta};
+use super::components::format::{
+    format_cycle, format_delta, format_full_cut_readings, format_full_cut_verdict, truncate,
+};
 use super::components::{FreshnessGate, UiExt};
 use super::{AppEvent, theme};
 use crate::state::AppState;
@@ -203,6 +206,7 @@ fn draw_outcome(
                     text.color(theme::TEXT_MUTED)
                 });
             }
+            draw_unmodeled_note(ui, narrative);
             if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
                 ui.add_space(4.0);
                 ui.label(
@@ -211,6 +215,7 @@ fn draw_outcome(
                         .color(theme::TEXT_MUTED),
                 );
             }
+            draw_refused_cells(ui, narrative);
             ui.add_space(8.0);
             if attempted.len() <= 1 {
                 // No non-baseline candidates ran (early refuse). Nothing to
@@ -223,6 +228,12 @@ fn draw_outcome(
             }
         }
         OutcomeKind::Ranked => {
+            for line in narrative_prose(narrative) {
+                ui.label(egui::RichText::new(line).small());
+            }
+            draw_unmodeled_note(ui, narrative);
+            draw_refused_cells(ui, narrative);
+            ui.add_space(4.0);
             draw_ranked(
                 ui,
                 &outcome.candidates,
@@ -264,10 +275,8 @@ fn draw_outcome(
 /// siblings in `optimize_project.rs`.
 ///
 /// **It renders absence as absence.** `assumptions: None` means *not
-/// stamped* — never "the defaults" — and `baseline.resolution_mm: None` means
-/// the trace does not record a dexel cell, which is a different statement
-/// from "the same cell as the candidates". Substituting a guess for either is
-/// precisely the defect the stamp exists to close.
+/// stamped*, never "the defaults". The stamp holds ONE operating point:
+/// the baseline and every candidate simulate with the same options.
 fn draw_run_provenance(ui: &mut egui::Ui, outcome: &OptimizeOutcome) {
     ui.separator();
     // `default_open(true)`, unlike the sibling drawers in
@@ -355,58 +364,7 @@ fn draw_machine_snapshot(ui: &mut egui::Ui, m: &MachineSnapshot) {
 }
 
 fn draw_assumptions(ui: &mut egui::Ui, a: &SimAssumptionStamp) {
-    let c = &a.candidates;
-    ui.named_section("Candidate scoring sims", |ui| {
-        ui.param_grid("optimize_prov_candidates", |ui| {
-            prov_row(
-                ui,
-                "Dexel cell (rank / report)",
-                format!(
-                    "{:.2} mm / {:.2} mm",
-                    c.coarse_resolution_mm, c.refined_resolution_mm
-                ),
-            );
-            prov_row(
-                ui,
-                "Feed modulation",
-                if c.adaptive_feed_modulation {
-                    format!(
-                        "on ({:?}, feed scale {:.2})",
-                        c.modulation_strategy, c.modulation_feed_scale
-                    )
-                } else {
-                    "off".to_owned()
-                },
-            );
-            prov_row(
-                ui,
-                "Predicted feed in gates",
-                if c.use_predicted_feed_in_gates {
-                    "on"
-                } else {
-                    "off"
-                },
-            );
-        });
-    });
-
-    // The disclosure the review actually asked for — say it in words, not
-    // just as a flag the operator has to interpret.
-    if c.diverges_from_library_default_modulation() {
-        ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new(
-                "Candidates were scored with feed modulation OFF while normal \
-                 simulation runs it ON. \"Safe\" and \"faster\" here mean safe \
-                 and faster in the unmodulated commanded-feed model.",
-            )
-            .small()
-            .color(theme::WARNING),
-        );
-    }
-
-    ui.add_space(6.0);
-    draw_baseline_assumptions(ui, &a.baseline);
+    draw_operating_point(ui, &a.operating_point);
 
     ui.add_space(6.0);
     ui.named_section("Model provenance", |ui| {
@@ -438,36 +396,45 @@ fn draw_assumptions(ui: &mut egui::Ui, a: &SimAssumptionStamp) {
     });
 }
 
-fn draw_baseline_assumptions(ui: &mut egui::Ui, b: &BaselineTraceAssumptions) {
-    ui.named_section("Baseline (your on-screen sim)", |ui| {
-        ui.param_grid("optimize_prov_baseline", |ui| {
-            prov_row(
-                ui,
-                "Dexel cell",
-                match b.resolution_mm {
-                    Some(mm) => format!("{mm:.2} mm"),
-                    // Not "same as the candidates" — the trace does not
-                    // record a cell at all.
-                    None => "not recorded by the trace".to_owned(),
-                },
-            );
+/// The one operating point. The baseline and every candidate simulate
+/// with these options, the options of the GUI simulation.
+fn draw_operating_point(ui: &mut egui::Ui, op: &OperatingPointStamp) {
+    ui.named_section("Simulation operating point", |ui| {
+        ui.param_grid("optimize_prov_operating_point", |ui| {
+            prov_row(ui, "Dexel cell", format!("{:.2} mm", op.resolution_mm));
             prov_row(
                 ui,
                 "Feed modulation",
-                match b.adaptive_feed_modulation {
-                    Some(true) => "on (observed in the trace)",
-                    Some(false) | None => "not measured",
+                if op.adaptive_feed_modulation {
+                    "on"
+                } else {
+                    "off"
                 },
             );
-            prov_row(ui, "Sampling step", format!("{:.3} mm", b.sample_step_mm));
+            prov_row(
+                ui,
+                "Modulation strategy",
+                format!("{:?}", op.modulation_strategy),
+            );
+            prov_row(
+                ui,
+                "Modulation feed scale",
+                format!("{:.2}", op.modulation_feed_scale),
+            );
+            prov_row(
+                ui,
+                "Predicted feed in gates",
+                if op.use_predicted_feed_in_gates {
+                    "on"
+                } else {
+                    "off"
+                },
+            );
         });
         ui.label(
-            egui::RichText::new(
-                "The baseline row is scored against this trace directly — it \
-                 is not re-simulated at the candidate operating point.",
-            )
-            .small()
-            .color(theme::TEXT_MUTED),
+            egui::RichText::new("The baseline and every candidate use these simulation options.")
+                .small()
+                .color(theme::TEXT_MUTED),
         );
     });
 }
@@ -529,17 +496,16 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
 
     crate::ui::components::SectionHeader::new("Candidates evaluated (none beat baseline)").show(ui);
 
-    // UI-02: 4 columns and striped, so `param_grid` does not fit.
+    // UI-02: 5 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("optimize_attempted_grid")
-        .num_columns(4)
+        .num_columns(5)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
         .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
-            ui.label(egui::RichText::new("Δ").small().strong());
-            ui.label(egui::RichText::new("cycle").small().strong());
-            ui.label(egui::RichText::new("verdict").small().strong());
-            ui.label(egui::RichText::new("status").small().strong());
+            for title in ["Δ", "cycle", "verdict", "full cut", "status"] {
+                column_header(ui, title);
+            }
             ui.end_row();
 
             for candidate in rest {
@@ -580,6 +546,7 @@ fn draw_attempted_row(
     );
 
     draw_verdict_badges(ui, &candidate.verdict);
+    draw_full_cut_cell(ui, &candidate.full_cut);
 
     // G17 A2: per-row limiting reading. Replaces the generic "gate"
     // status with the specific reading that stopped this candidate —
@@ -692,17 +659,17 @@ fn draw_ranked(
     let recommended_index =
         recommended.and_then(|r| candidates.iter().position(|c| std::ptr::eq(c, r)));
 
-    // UI-02: 5 columns and striped, so `param_grid` does not fit.
+    // UI-02: 6 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("optimize_candidates_grid")
-        .num_columns(5)
+        .num_columns(6)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
         .min_row_height(crate::ui::tokens::ROW_DENSE)
         .striped(true)
         .show(ui, |ui| {
             ui.label(egui::RichText::new("").small()); // ⭐ column
-            ui.label(egui::RichText::new("Δ").small().strong());
-            ui.label(egui::RichText::new("cycle").small().strong());
-            ui.label(egui::RichText::new("verdict").small().strong());
+            for title in ["Δ", "cycle", "verdict", "full cut"] {
+                column_header(ui, title);
+            }
             ui.label(egui::RichText::new("").small()); // apply column
             ui.end_row();
 
@@ -757,6 +724,10 @@ fn draw_baseline_card(ui: &mut egui::Ui, baseline: &OptimizeCandidate) {
         ui.label(egui::RichText::new("Verdict:").small());
         draw_verdict_badges(ui, &baseline.verdict);
         ui.end_row();
+        ui.label(egui::RichText::new("Full cut:").small());
+        ui.label(egui::RichText::new(format_full_cut_readings(&baseline.full_cut)).small())
+            .on_hover_text("The baseline readings. Each candidate is compared with them.");
+        ui.end_row();
     });
 }
 
@@ -796,10 +767,12 @@ fn draw_candidate_row(
     );
 
     draw_verdict_badges(ui, &candidate.verdict);
+    draw_full_cut_cell(ui, &candidate.full_cut);
 
-    // Derived from `criteria()` (Phase 6 task 5) — a fourth gate gates
-    // the Apply button automatically.
-    let safe = !candidate.verdict.any_exceeded();
+    // The core predicate: no criterion row refuses an export AND the
+    // full cut holds. A depth row that exceeds its bound does not
+    // disable Apply, because the depth row never refuses an export.
+    let safe = candidate_is_safe(candidate);
     let label = if is_recommended { "Apply ⭐" } else { "Apply" };
     let button = ui.add_enabled(safe, egui::Button::new(label));
     if button.clicked() {
@@ -812,22 +785,25 @@ fn draw_candidate_row(
 
 fn draw_verdict_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
     ui.horizontal(|ui| {
-        verdict_badge_state(ui, "advance/tooth", verdict.chipload.state());
-        verdict_badge_state(ui, "power", verdict.power.state());
-        verdict_badge_state(ui, "L/D", verdict.deflection.state());
-        verdict_badge_state(ui, "depth of cut", verdict.depth.state());
+        verdict_badge_state(ui, "advance/tooth", verdict.chipload.state(), theme::ERROR);
+        verdict_badge_state(ui, "power", verdict.power.state(), theme::ERROR);
+        verdict_badge_state(ui, "L/D", verdict.deflection.state(), theme::ERROR);
+        // The depth row reports and never refuses an export (S3). Its
+        // `Exceeds` is the warning colour.
+        verdict_badge_state(ui, "depth of cut", verdict.depth.state(), theme::WARNING);
     });
 }
 
+/// One gate badge. `exceeds_color` is the colour of an `Exceeds` state.
 fn verdict_badge_state(
     ui: &mut egui::Ui,
     label: &str,
-    state: rs_cam_core::tool_load::verdict::LoadState,
+    state: LoadState,
+    exceeds_color: egui::Color32,
 ) {
-    use rs_cam_core::tool_load::verdict::LoadState;
     let (color, glyph) = match state {
         LoadState::Within => (theme::SUCCESS, "✓"),
-        LoadState::Exceeds => (theme::ERROR, "⚠"),
+        LoadState::Exceeds => (exceeds_color, "⚠"),
         LoadState::Unmodeled => (theme::TEXT_MUTED, "·"),
     };
     ui.label(
@@ -835,6 +811,68 @@ fn verdict_badge_state(
             .small()
             .color(color),
     );
+}
+
+/// One grid column header.
+fn column_header(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title).small().strong());
+}
+
+/// The colour of a full-cut verdict: success for `Holds`, error for
+/// `Fails`, muted for `NotMeasured`.
+pub(super) fn full_cut_color(verdict: &FullCutVerdict) -> egui::Color32 {
+    match verdict {
+        FullCutVerdict::Holds => theme::SUCCESS,
+        FullCutVerdict::Fails { .. } => theme::ERROR,
+        FullCutVerdict::NotMeasured { .. } => theme::TEXT_MUTED,
+    }
+}
+
+/// The full-cut cell: the verdict, and the three readings on hover.
+fn draw_full_cut_cell(ui: &mut egui::Ui, check: &FullCutCheck) {
+    let verdict = format_full_cut_verdict(&check.verdict);
+    let hover = format!("{verdict}\n{}", format_full_cut_readings(check));
+    ui.label(
+        egui::RichText::new(truncate(&verdict, FULL_CUT_CELL_CHARS))
+            .small()
+            .color(full_cut_color(&check.verdict)),
+    )
+    .on_hover_text(hover);
+}
+
+/// The longest full-cut text a grid cell shows. The hover shows all of it.
+const FULL_CUT_CELL_CHARS: usize = 48;
+
+/// The note that a model is not available, as one line under the
+/// headline. Nothing is drawn when the narrative holds no note.
+fn draw_unmodeled_note(ui: &mut egui::Ui, narrative: &OutcomeNarrative) {
+    if let Some(note) = narrative.unmodeled.as_deref() {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new(note).small().color(theme::WARNING));
+    }
+}
+
+/// The cells the search refused or did not measure, as a collapsed
+/// list. Nothing is drawn when the list is empty.
+fn draw_refused_cells(ui: &mut egui::Ui, narrative: &OutcomeNarrative) {
+    if narrative.refused_cells.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    egui::CollapsingHeader::new(
+        egui::RichText::new(format!(
+            "Cells not measured ({})",
+            narrative.refused_cells.len()
+        ))
+        .small(),
+    )
+    .id_salt("optimize_refused_cells")
+    .default_open(false)
+    .show(ui, |ui| {
+        for cell in &narrative.refused_cells {
+            ui.label(egui::RichText::new(cell).small().color(theme::TEXT_MUTED));
+        }
+    });
 }
 
 /// G17 A2 — one-line summary of the search envelope reached, e.g.

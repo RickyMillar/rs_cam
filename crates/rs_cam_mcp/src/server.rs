@@ -1910,6 +1910,12 @@ pub fn build_info() -> serde_json::Value {
             // `pin_report`, and `inspect_stock` carries `pin_report`.
             "alignment_pin_set_tools",
             "alignment_pin_report",
+            // Optimizer rebuild R2 (2026-10-12): an `optimize_toolpath`
+            // candidate carries `full_cut` (the full-cut check against the
+            // baseline), `dressups` and `delta.link_moves`; the narrative
+            // carries `unmodeled` and `refused_cells`; `assumptions` holds
+            // one `operating_point`.
+            "optimize_full_cut_check",
         ],
     })
 }
@@ -1992,6 +1998,7 @@ mod tests {
             "stock_change_cut_as",
             "alignment_pin_set_tools",
             "alignment_pin_report",
+            "optimize_full_cut_check",
         ] {
             assert!(
                 features.contains(&flag),

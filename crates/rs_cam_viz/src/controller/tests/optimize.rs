@@ -174,17 +174,17 @@ fn a_second_optimize_request_is_refused_with_a_toast() {
 /// A run with progress names the rung, the candidate and the list.
 ///
 /// Three claims in one arm, because one builder answers all three: the
-/// row's sentence, the window's three-row list, and the mark that says
-/// which rung is running. A second arm would fabricate the same run twice.
+/// row's sentence, the window's two-row list, and the mark that says
+/// which rung is running. The arm reads the run on the first rung, then
+/// on the second rung, so each of the three marks appears.
 #[test]
 fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
+    use crate::state::OptimizeStageMark;
     use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase};
 
     let state = AppState::new();
     let progress = Arc::new(OptimizeProgress::default());
-    progress.begin_phase(SearchPhase::FeedRpm, 1);
-    progress.begin_candidate(0);
-    progress.begin_phase(SearchPhase::AxisGrid, 8);
+    progress.begin_phase(SearchPhase::Links, 8);
     progress.begin_candidate(2);
 
     let run = crate::state::OptimizeRun {
@@ -197,9 +197,10 @@ fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
         progress: Some(Arc::clone(&progress)),
     };
 
+    // The first rung runs.
     let text = run.progress_text(&state.session);
     assert!(
-        text.contains("stage 2/3"),
+        text.contains("stage 1/2"),
         "the row must name the rung and the ladder length, got {text:?}"
     );
     assert!(
@@ -207,35 +208,43 @@ fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
         "the row must name the candidate now running and the count the \
          rung formed, got {text:?}"
     );
-
     let rows = run.stage_rows();
     assert_eq!(
         rows.len(),
-        3,
+        SearchPhase::ALL.len(),
         "the window lists every rung of the ladder, not only the running \
          one"
     );
-    let marks: Vec<crate::state::OptimizeStageMark> = rows.iter().map(|row| row.mark).collect();
+    let marks: Vec<OptimizeStageMark> = rows.iter().map(|row| row.mark).collect();
     assert_eq!(
         marks,
-        vec![
-            crate::state::OptimizeStageMark::Done,
-            crate::state::OptimizeStageMark::Current,
-            crate::state::OptimizeStageMark::Pending,
-        ],
-        "the finished rung reads done, the running rung reads current, \
-         and the rung the search has not reached reads pending"
+        vec![OptimizeStageMark::Current, OptimizeStageMark::Pending],
+        "the running rung reads current, and the rung the search has not \
+         reached reads pending"
     );
     assert!(
-        rows.iter()
-            .filter_map(|row| row.count.as_deref())
-            .any(|count| count.contains("3 / 8")),
+        rows.first()
+            .and_then(|row| row.count.as_deref())
+            .is_some_and(|count| count.contains("3 / 8")),
         "the running rung's row carries its own count, got {rows:?}"
     );
     assert!(
         rows.last().is_some_and(|row| row.count.is_none()),
         "a rung the search has not announced reports NO count, because \
          its total is not known until it starts: {rows:?}"
+    );
+
+    // The second rung runs.
+    progress.begin_phase(SearchPhase::DepthWidth, 4);
+    progress.begin_candidate(1);
+    let text = run.progress_text(&state.session);
+    assert!(text.contains("stage 2/2"), "got {text:?}");
+    assert!(text.contains("candidate 2/4"), "got {text:?}");
+    let marks: Vec<OptimizeStageMark> = run.stage_rows().iter().map(|row| row.mark).collect();
+    assert_eq!(
+        marks,
+        vec![OptimizeStageMark::Done, OptimizeStageMark::Current],
+        "the finished rung reads done, and the running rung reads current"
     );
 }
 

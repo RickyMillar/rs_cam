@@ -697,8 +697,8 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/optimize_modal.rs",
-        8,
-        "7 grid column headers and one CollapsingHeader title",
+        2,
+        "the one grid column header helper and one CollapsingHeader title",
     ),
     (
         "ui/sim_op_list.rs",

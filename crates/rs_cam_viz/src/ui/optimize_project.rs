@@ -10,12 +10,15 @@
 //! inline truncation).
 
 use rs_cam_core::tool_load::optimize::{
-    OptimizeCandidate, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport,
+    OptimizeCandidate, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport, candidate_is_safe,
 };
+use rs_cam_core::tool_load::verdict::LoadState;
 
 use super::components::FreshnessGate;
-use super::components::format::{format_cycle, format_delta};
-use super::optimize_modal::narrative_prose;
+use super::components::format::{
+    format_cycle, format_delta, format_full_cut_readings, format_full_cut_verdict, truncate,
+};
+use super::optimize_modal::{full_cut_color, narrative_prose};
 use super::{AppEvent, theme};
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 use crate::ui_command::{NoArgs, UiCommand};
@@ -78,8 +81,8 @@ fn draw_loading(ui: &mut egui::Ui, events: &mut Vec<AppEvent>) {
     ui.add_space(6.0);
     ui.label(
         egui::RichText::new(
-            "Stage 0/1/2 search across every enabled toolpath. Expect 3–10 minutes \
-             on a wanaka-sized job. The GUI is responsive — click Cancel to stop \
+            "The search runs the links lever, then the depth and width lever, on \
+             every enabled toolpath. Each candidate is one simulation. The GUI is responsive — click Cancel to stop \
              and discard the partial run.",
         )
         .small()
@@ -430,16 +433,40 @@ fn not_optimized_row_text(
     }
 }
 
+/// The verdict cell of a rollup row: one glyph for the gates, then the
+/// full-cut verdict. The hover gives the depth row and the three
+/// full-cut readings.
+///
+/// The glyph reads the core predicate `candidate_is_safe`. A depth row
+/// that exceeds its bound is the warning colour, never the refuse
+/// colour, because the depth row never refuses an export (S3).
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
-    // Derived from `criteria()` (Phase 6 task 5) — a fourth gate joins
-    // this badge automatically.
-    let any_exceed = candidate.verdict.any_exceeded();
-    let (glyph, color) = if any_exceed {
-        ("⚠", theme::ERROR)
-    } else {
-        ("✓", theme::SUCCESS)
+    let depth_exceeds = candidate.verdict.depth.state() == LoadState::Exceeds;
+    let (glyph, color) = match (candidate_is_safe(candidate), depth_exceeds) {
+        (false, _) => ("⚠", theme::ERROR),
+        (true, true) => ("⚠", theme::WARNING),
+        (true, false) => ("✓", theme::SUCCESS),
     };
-    ui.label(egui::RichText::new(glyph).color(color));
+    let verdict = format_full_cut_verdict(&candidate.full_cut.verdict);
+    let mut hover = format!(
+        "full cut {verdict}\n{}",
+        format_full_cut_readings(&candidate.full_cut)
+    );
+    if depth_exceeds {
+        hover.push_str(
+            "\nThe depth of cut is above its bound. The depth row reports; it does not refuse.",
+        );
+    }
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(glyph).color(color));
+        ui.label(
+            egui::RichText::new(format!("full cut {}", truncate(&verdict, 32)))
+                .small()
+                .color(full_cut_color(&candidate.full_cut.verdict)),
+        );
+    })
+    .response
+    .on_hover_text(hover);
 }
 
 /// Reconciling: rollup is visible but dimmed; spinner indicates the
@@ -649,16 +676,6 @@ fn draw_readonly_row(
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_owned()
-    } else {
-        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-        out.push('…');
-        out
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -711,7 +728,8 @@ mod tests {
     fn not_optimized_row_carries_both_narrative_fields() {
         let outcome = no_safe_row(OutcomeNarrative {
             headline: "No candidate was searched.".to_owned(),
-            explanation: "The search has no levers yet; the post-sim tuner is being rebuilt."
+            explanation: "This operation has no lever: it holds no depth per pass with a \
+                          total depth, and its links are already on or do not apply to it."
                 .to_owned(),
             ..OutcomeNarrative::default()
         });
@@ -724,18 +742,6 @@ mod tests {
             detail.contains("No candidate was searched."),
             "got: {detail}"
         );
-        assert!(detail.contains("no levers yet"), "got: {detail}");
-    }
-
-    #[test]
-    fn truncate_short() {
-        assert_eq!(truncate("abc", 10), "abc");
-    }
-
-    #[test]
-    fn truncate_long_appends_ellipsis() {
-        let out = truncate("the quick brown fox", 10);
-        assert_eq!(out.chars().count(), 10);
-        assert!(out.ends_with('…'));
+        assert!(detail.contains("has no lever"), "got: {detail}");
     }
 }

@@ -448,9 +448,8 @@ impl OptimizeRun {
     /// operator reads. `ui/workspace_bar.rs` now calls this.
     ///
     /// There is NO time-left figure, and this function holds no estimate.
-    /// The whole-run candidate total is not known up front, and a refine
-    /// candidate simulates at a finer cell than a grid candidate, so one
-    /// mean second per candidate mixes two populations.
+    /// The whole-run candidate total is not known at the start: a rung
+    /// announces its count only when it starts.
     #[must_use]
     pub fn progress_text(&self, session: &rs_cam_core::session::ProjectSession) -> String {
         let label = self.kind.label(session);
@@ -469,7 +468,7 @@ impl OptimizeRun {
     /// The rung list the Optimize window draws (WP29).
     ///
     /// Empty for a run that walks no candidate ladder, so the rollup and
-    /// the tier-map preview list nothing rather than three pending rungs.
+    /// the tier-map preview list nothing rather than pending rungs.
     #[must_use]
     pub fn stage_rows(&self) -> Vec<OptimizeStageRow> {
         use rs_cam_core::tool_load::optimize::SearchPhase;
@@ -513,7 +512,7 @@ impl OptimizeRun {
             .collect()
     }
 
-    /// The row's stage half: `stage 2/3 · candidate 3/8`.
+    /// The row's stage half: `stage 2/2 · candidate 3/8`.
     ///
     /// `None` when the run walks no ladder, and `None` again when the
     /// ladder has settled — a finished run must not leave the row claiming
