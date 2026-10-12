@@ -1,14 +1,20 @@
 //! End-to-end smoke test for the optimizer.
 //!
-//! The 60+ unit tests in `tool_load::optimize` cover the algorithm
-//! pieces (Stage 0 scaling math, DOC variant grid, refusal narratives,
-//! candidate ranking) but no test exercises the full
-//! apply -> regen -> sim -> gate -> outcome path against a real
-//! toolpath. This file does.
+//! The unit tests in `tool_load::optimize` cover the pieces (the
+//! outcome builder, the narrative, the skip paths). This file runs the
+//! real entry points against a generated and simulated toolpath.
 //!
-//! The fixture is the already-checked-in `fixtures/demo_pocket.svg` —
-//! a small rectangle with a circular island, parses fast and produces
-//! a deterministic pocket toolpath.
+//! **The post-sim tuner** (`planning/optimize_review_2026-10-12/PLAN.md`
+//! §2): a run scores the baseline from the trace, pulls the depth and
+//! width lever (the fixture already links, so the link lever has no
+//! candidate), simulates every cell with the one set of options, and
+//! judges each cell's full cut against the baseline. The guard restores
+//! the parameters.
+//!
+//! The fixture is the checked-in `fixtures/demo_pocket.svg`: a small
+//! rectangle with a circular island. It parses fast and gives a
+//! deterministic pocket toolpath. The project cell is 1 mm, so each
+//! candidate costs one generation and one coarse simulation.
 
 #![allow(
     clippy::unwrap_used,
@@ -32,12 +38,17 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
-    SetStockConfigArgs, SimulationOptions, ToolpathConfig,
+    SetSimulationResolutionArgs, SetStockConfigArgs, SimulationResolution, ToolpathConfig,
 };
 use rs_cam_core::tool_load::optimize::{
-    NoProgress, OutcomeKind, optimize_project, optimize_toolpath,
+    FullCutVerdict, NoProgress, OutcomeKind, SearchStage, candidate_sim_options, optimize_project,
+    optimize_toolpath,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
+
+/// The project's stored simulation cell, in mm. Coarse, so the smoke
+/// test is fast.
+const CELL_MM: f64 = 1.0;
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
 /// pocket op. Returns the session and the toolpath index. Returns
@@ -71,6 +82,13 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
             stock: Box::new(stock),
         }))
         .expect("the stock row refuses nothing");
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("the resolution row refuses nothing");
 
     // Add a 6mm end mill (matches the optimize gate's typical wood
     // router setup). add_tool returns the vec index; we want the
@@ -147,7 +165,6 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
 }
 
 #[test]
-#[ignore = "expensive optimizer full-pipeline smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_toolpath_full_pipeline() {
     let Some((mut session, toolpath_index)) = build_pocket_session() else {
         return;
@@ -160,16 +177,8 @@ fn optimize_toolpath_full_pipeline() {
         .expect("baseline generate");
 
     // Baseline sim — produces the trace the optimizer scores against.
-    let opts = SimulationOptions {
-        resolution: 1.0, // faster than 0.5; the optimizer rescales internally
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    // The on-screen baseline runs with the one set of options.
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -180,84 +189,76 @@ fn optimize_toolpath_full_pipeline() {
             .clone()
     };
 
-    // Snapshot the toolpath's params so we can verify the
-    // BaselineRestoreGuard restored them after optimize_toolpath
-    // returns. Use feed_rate as the tell-tale field — it's part of
-    // every operation config and the optimizer routinely scales it.
+    // Snapshot the toolpath's params, so the test can show that the
+    // BaselineRestoreGuard restored them after `optimize_toolpath`.
     let baseline_op_before = session
         .get_toolpath_config(toolpath_index)
         .expect("toolpath_index in range")
         .operation
         .clone();
-    let baseline_feed_before = baseline_op_before.feed_rate();
 
     // Run the optimizer end-to-end.
     let outcome = optimize_toolpath(&mut session, &baseline_trace, toolpath_index, &cancel);
 
-    // Verify session is restored regardless of outcome.
+    // The guard restored the parameters.
     let baseline_op_after = session
         .get_toolpath_config(toolpath_index)
         .expect("toolpath still present")
         .operation
         .clone();
-    let feed_after = baseline_op_after.feed_rate();
-    assert!(
-        (feed_after - baseline_feed_before).abs() < 1e-6,
-        "BaselineRestoreGuard must restore feed_rate: {} -> {}",
-        baseline_feed_before,
-        feed_after,
+    assert_eq!(
+        format!("{baseline_op_after:?}"),
+        format!("{baseline_op_before:?}"),
+        "BaselineRestoreGuard must restore the operation parameters"
     );
 
-    // Outcome shape: must be one of the three variants. For a tiny
-    // pocket that's typically Skipped (no LUT row matches the
-    // hardcoded tool/material) or Ranked. We assert only that the
-    // outcome was produced — not the specific variant — because
-    // LUT-routing outcomes drift as the calibration data evolves.
+    // The search simulated cells; index 0 is the baseline.
+    assert_ne!(outcome.kind, OutcomeKind::Skipped, "{outcome:?}");
+    assert!(
+        outcome.candidates.len() >= 2,
+        "the depth and width lever simulates at least one cell: {:?}",
+        outcome.narrative
+    );
+    let baseline = &outcome.candidates[0];
+    assert_eq!(baseline.stage, SearchStage::Baseline);
+    assert!(
+        !baseline.delta.has_changes(),
+        "index 0 is the baseline (no delta)"
+    );
+    assert!(
+        baseline.cycle_time_s > 0.0,
+        "the baseline cycle time comes from the trace"
+    );
+    assert_eq!(baseline.full_cut.verdict, FullCutVerdict::Holds);
+    assert!(
+        baseline.full_cut.removed_volume_mm3.is_some()
+            && baseline.full_cut.rapid_collisions.is_some()
+            && baseline.full_cut.overcut_peak_mm.is_some(),
+        "the session holds the baseline simulation, so every reading is measured: {:?}",
+        baseline.full_cut
+    );
+    for c in &outcome.candidates[1..] {
+        assert_eq!(c.stage, SearchStage::Measured);
+        assert!(c.cycle_time_s.is_finite() && c.cycle_time_s > 0.0);
+        assert!(
+            !matches!(c.full_cut.verdict, FullCutVerdict::NotMeasured { .. }),
+            "a simulated candidate has every reading: {:?}",
+            c.full_cut
+        );
+    }
     match outcome.kind {
         OutcomeKind::Ranked => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "Ranked outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
+            let best = outcome.first_safe().expect("a ranked outcome recommends");
+            assert!(best.cycle_time_s < baseline.cycle_time_s);
+            assert!(best.full_cut.verdict.holds());
         }
-        OutcomeKind::NoSafeImprovement => {
-            assert!(
-                !outcome.narrative.explanation.is_empty(),
-                "NoSafeImprovement must carry an explanation"
-            );
-        }
-        OutcomeKind::Skipped => {
-            // Acceptable for a fixture with no LUT-matching tool.
-        }
-        OutcomeKind::TradeOff => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "TradeOff outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
-        }
-        OutcomeKind::MarginalSafe => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "MarginalSafe outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
-        }
+        _ => assert_eq!(outcome.recommended_index, None),
     }
+    assert!(outcome.machine_snapshot.is_some());
+    assert!(outcome.assumptions.is_some());
 }
 
 #[test]
-#[ignore = "expensive optimizer full-project smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_project_full_pipeline() {
     let Some((mut session, _toolpath_index)) = build_pocket_session() else {
         return;
@@ -270,16 +271,7 @@ fn optimize_project_full_pipeline() {
             .generate_toolpath(idx, &cancel)
             .expect("baseline generate");
     }
-    let opts = SimulationOptions {
-        resolution: 1.0,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel)
@@ -292,20 +284,30 @@ fn optimize_project_full_pipeline() {
 
     let report = optimize_project(&mut session, &baseline_trace, &NoProgress, &cancel);
 
-    // Report has one entry per enabled toolpath (just one).
+    // One row per enabled toolpath (just one).
     assert_eq!(
         report.per_toolpath.len(),
         1,
         "Expected one per_toolpath row (one enabled toolpath)"
     );
-    // Baseline cycle time was sourced from the trace — should be > 0
-    // for a non-trivial pocket op, but a tiny SVG with cutting paths
-    // could be very fast. Just assert non-negative.
+    // The baseline cycle sum comes from the trace.
     assert!(
-        report.baseline_cycle_time_s >= 0.0,
-        "baseline_cycle_time_s must be non-negative, got {}",
+        report.baseline_cycle_time_s > 0.0,
+        "baseline_cycle_time_s must come from the trace, got {}",
         report.baseline_cycle_time_s
     );
+    // One toolpath carries all of the runtime, so it is the bottleneck.
+    assert_eq!(report.bottleneck_index, Some(report.per_toolpath[0].0));
+    // The row searched, and the saving is the recommended candidate's.
+    let outcome = &report.per_toolpath[0].1;
+    assert_ne!(outcome.kind, OutcomeKind::Skipped, "{outcome:?}");
+    let saving = report.baseline_cycle_time_s - report.optimized_cycle_time_s(&[true]);
+    match outcome.first_safe() {
+        Some(best) => assert!(
+            (saving - (outcome.candidates[0].cycle_time_s - best.cycle_time_s)).abs() < 1e-9
+        ),
+        None => assert!(saving.abs() < 1e-12, "no recommendation means no saving"),
+    }
 }
 
 #[test]
@@ -323,16 +325,7 @@ fn optimize_toolpath_cancel_returns_quickly() {
     session
         .generate_toolpath(toolpath_index, &cancel_off)
         .expect("baseline generate");
-    let opts = SimulationOptions {
-        resolution: 1.0,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
+    let opts = candidate_sim_options(&session);
     let baseline_trace = {
         let sim = session
             .run_simulation(&opts, &cancel_off)

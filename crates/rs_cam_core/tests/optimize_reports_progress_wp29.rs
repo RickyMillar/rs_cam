@@ -36,27 +36,29 @@
 //! The fixture pays for one generation, one simulation and one whole
 //! candidate search. Three `#[test]` arms would pay for it three times,
 //! which is how a targeted suite stops being targeted. So one arm makes
-//! five assertions on one run.
+//! four assertions on one run.
 //!
 //! # The fixture
 //!
 //! Fixture G of the WP14b suite: a 40 mm square pocket in a
 //! 44 x 44 x 6 mm board, one depth pass, one Ø6 mm end mill, generated
-//! and simulated once at a 1 mm cell. It is the one fixture in this tree
-//! that REACHES `BaselineRestoreGuard` and therefore evaluates real
-//! candidates. `optimize_toolpath_is_a_job_wp14b.rs`'s arm
+//! and simulated once at a 1 mm cell, links off. It REACHES `BaselineRestoreGuard`.
+//! `optimize_toolpath_is_a_job_wp14b.rs`'s arm
 //! `the_job_leaves_the_live_session_alone` proves that on this same
 //! fixture, by measuring the residue the guard's drop leaves. That arm is
 //! the non-vacuity proof for this one, and the verifier runs both.
 //!
+//! # Phase 2 (2026-10-12)
+//!
+//! `planning/optimize_review_2026-10-12/PLAN.md` §2 gives the search two
+//! rungs: `Links` and `DepthWidth`. The fixture turns the links off, so
+//! the link rung forms one candidate. The arm pins: every rung is named
+//! (the high-water mark reaches the last rung), each rung entered every
+//! candidate it formed, and a settled run claims no rung. The fixture
+//! simulates with the project cell of 1 mm.
+//!
 //! # NOT MEASURED
 //!
-//! - **Stage F.** `ChiploadVerdict` has three variants, and an
-//!   `Unmodeled` chipload with no exceeding load gate runs NEITHER
-//!   Stage-F mode. The fixture's verdict is not known to the lane that
-//!   wrote this file, so no assertion names the Stage-F rung. The
-//!   orchestrator still announces rung 1 with a zero total, so the
-//!   window's first row ticks on that path.
 //! - **The silent default.** `OptimizeToolpathHandle::progress` is
 //!   private with no accessor, so no test reads it. WP14b arms (c) and
 //!   (d) run the handle `capture_optimize_toolpath` built; while they
@@ -88,12 +90,11 @@ use common::session::{
 };
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
 use rs_cam_core::session::{
-    Job, JobHandle, OptimizeToolpathArgs, OptimizeToolpathHandle, ProjectSession,
-    SimulationOptions, execute_optimize_toolpath,
+    Command, Job, JobHandle, OptimizeToolpathArgs, OptimizeToolpathHandle, ProjectSession,
+    SetSimulationResolutionArgs, SimulationResolution, execute_optimize_toolpath,
 };
-use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase};
+use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase, candidate_sim_options};
 
 // ── constants ────────────────────────────────────────────────────────
 
@@ -104,8 +105,8 @@ const HALF_MM: f64 = 20.0;
 /// operation cuts in.
 const STOCK_Z_MM: f64 = 6.0;
 
-/// The dexel cell the fixture simulates at, in mm. Coarse on purpose:
-/// the arm measures what the search announced, not a cut.
+/// The project's stored dexel cell, in mm. Coarse on purpose: the arm
+/// measures what the search announced, not a cut.
 const SIM_CELL_MM: f64 = 1.0;
 
 // ── fixture ──────────────────────────────────────────────────────────
@@ -120,20 +121,11 @@ fn pocket_op() -> OperationConfig {
     })
 }
 
-/// The baseline simulation's options, at the coarse cell.
-fn sim_options() -> SimulationOptions {
-    SimulationOptions {
-        resolution: SIM_CELL_MM,
-        skip_ids: Vec::new(),
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy: ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    }
-}
-
 /// Fixture G — a generated and simulated pocket the optimizer searches.
+///
+/// The links are off, so the link rung forms one candidate. The depth per
+/// pass is the whole depth, so the depth and width rung forms one cell for
+/// each stepover.
 fn guard_session() -> ProjectSession {
     let mut session = single_op_session_with(
         stock_under(HALF_MM, STOCK_Z_MM),
@@ -141,12 +133,20 @@ fn guard_session() -> ProjectSession {
         polygon_model(vec![square_polygon(HALF_MM)], "square"),
         "Pocket",
         pocket_op(),
-        |_| {},
+        |tc| tc.dressups.link_moves = None,
     );
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(SIM_CELL_MM),
+            },
+        ))
+        .expect("the resolution row refuses nothing");
     generate(&mut session, 0);
     let cancel = AtomicBool::new(false);
+    let opts = candidate_sim_options(&session);
     let _ = session
-        .run_simulation(&sim_options(), &cancel)
+        .run_simulation(&opts, &cancel)
         .expect("the fixture pocket simulates");
     session
 }
@@ -167,22 +167,13 @@ fn start_job(session: &mut ProjectSession, cancel: &AtomicBool) -> Box<OptimizeT
 
 // ── the arm ──────────────────────────────────────────────────────────
 
-/// The search announces every rung it walks, and enters every candidate
-/// it announced.
+/// The search announces every rung, forms its candidates per rung, and
+/// enters every candidate it formed.
 ///
 /// **Why a high-water mark.** This arm runs the search to completion on
 /// one thread, so it cannot watch a rung go by. The mark is what makes
 /// the measurement possible at all, and that is why `OptimizeProgress`
 /// keeps one — it is not a convenience.
-///
-/// **Why `reached == total` is the load-bearing half.** The tick sits at
-/// the TOP of each candidate loop, not inside `evaluate_candidate`. Both
-/// the Stage-F and the Stage-1 loops `continue` when
-/// `apply_patches_to_op` fails and never reach the evaluator, so a tick
-/// inside it would leave `reached` short of `total` for the rest of the
-/// rung and the row would freeze. There is no post-loop call that writes
-/// `reached = total`: such a call would report a cancelled rung as
-/// complete, and it would hide exactly this defect.
 #[test]
 fn the_search_publishes_its_rungs_and_its_candidate_counts() {
     let cancel = AtomicBool::new(false);
@@ -191,58 +182,46 @@ fn the_search_publishes_its_rungs_and_its_candidate_counts() {
 
     let mut handle = start_job(&mut session, &cancel);
     handle.with_progress(Arc::clone(&progress));
-    let _ = execute_optimize_toolpath(&mut handle, &cancel);
+    let outcome = execute_optimize_toolpath(&mut handle, &cancel);
     drop(handle);
 
-    // 1 — the run reached the last rung.
+    // 0 — the run reached the levers, so the rung announcements below
+    // are not from an early skip.
+    assert!(
+        outcome.candidates.len() >= 2,
+        "the fixture must pass every skip path and simulate a candidate; \
+         it returned {outcome:?}"
+    );
+
+    // 1 — the run named every rung, up to the last.
     assert_eq!(
         progress.high_water_phase(),
-        Some(SearchPhase::Refine),
-        "the search walks a fixed three-rung ladder and this fixture \
-         reaches the end of it, so the high-water mark must name the \
-         refine rung"
+        Some(SearchPhase::DepthWidth),
+        "the search announces each rung of the two-rung ladder, so the \
+         high-water mark must name the depth and width rung"
     );
 
-    // 2 — the grid formed candidates, so assertion 3 is not vacuous.
-    let grid = progress.rung(SearchPhase::AxisGrid);
-    assert!(
-        grid.1 >= 1,
-        "the axis grid must form at least one candidate, or assertion 3 \
-         compares two zeroes and measures nothing; it reports {grid:?}"
-    );
-
-    // 3 — the grid entered every candidate it announced.
+    // 2 — the link rung formed one candidate and entered it; the depth
+    // and width rung entered every cell it formed.
     assert_eq!(
-        grid.0, grid.1,
-        "the grid loop must enter every candidate it announced. A tick \
-         placed inside evaluate_candidate instead of at the top of the \
-         loop leaves this pair unequal, because the loop's \
-         apply_patches_to_op arm skips a candidate the evaluator never \
-         sees. It reports {grid:?}"
+        progress.rung(SearchPhase::Links),
+        (1, 1),
+        "the links are off, so the link rung forms and enters one candidate"
     );
-
-    // 4 — the refine rung did the same.
-    let refine = progress.rung(SearchPhase::Refine);
+    let (entered, formed) = progress.rung(SearchPhase::DepthWidth);
     assert!(
-        refine.1 >= 1,
-        "the refine rung must form at least one candidate. It takes the \
-         Stage-1 survivors, so a zero here means no grid candidate \
-         survived its gate on this fixture — check that before blaming \
-         the progress struct. It reports {refine:?}"
-    );
-    assert_eq!(
-        refine.0, refine.1,
-        "the refine loop must enter every candidate it announced, for \
-         the reason assertion 3 gives; it reports {refine:?}"
+        formed >= 1 && entered == formed,
+        "the depth and width rung must enter every cell it formed; it \
+         reports ({entered}, {formed})"
     );
 
-    // 5 — a settled run claims no rung.
+    // 3 — a settled run claims no rung.
     let snapshot = progress.snapshot();
     assert!(
         snapshot.phase.is_none(),
         "a settled run must not leave the row claiming a rung. finish() \
          clears the rung and leaves the per-rung counters, which is why \
-         assertions 1 to 4 still read after it; the snapshot reports \
+         assertions 1 and 2 still read after it; the snapshot reports \
          {snapshot:?}"
     );
 }

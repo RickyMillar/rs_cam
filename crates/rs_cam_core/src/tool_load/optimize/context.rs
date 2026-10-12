@@ -1,5 +1,5 @@
 //! Per-toolpath evaluation context, baseline-restore RAII, and the
-//! pure trace/LUT helpers each candidate evaluation reads.
+//! trace readers each candidate evaluation uses.
 //!
 //! - [`EvaluationContext`] — resources (tool, material, op kind, LUT
 //!   routing) computed once per `optimize_toolpath` call and shared
@@ -8,22 +8,18 @@
 //!   that snapshots `(operation, dressups, face_selection)` at
 //!   construction and re-applies them on drop. Restoration runs on
 //!   every exit path (Ok, refusal, cancel, panic).
-//! - Pure helpers: [`cycle_time_from_trace`], [`baseline_rpm_from_trace`],
-//!   [`diameter_for_lut_lookup`], [`find_matched_lut_row`],
-//!   [`lut_op_family_from`], [`lut_pass_role_from`],
-//!   [`machine_max_power_kw`].
+//! - Trace readers: [`cycle_time_from_trace`],
+//!   [`air_cut_fraction_of_total_runtime_from_trace`].
+//! - LUT routing: [`lut_op_family_from`], [`lut_pass_role_from`].
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::DressupConfig;
-use crate::feeds::vendor_lookup::MatchedRow;
 use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::{OperationFamily, PassRole};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ToolpathId;
-use crate::machine::{MachineProfile, PowerModel};
 use crate::session::{ProjectSession, SessionError};
 use crate::stock::simulation_cut::SimulationCutTrace;
-use crate::tool::MillingCutter;
 
 /// Look up this toolpath's per-toolpath cycle time from the trace's
 /// per-toolpath summary. Returns `None` if the toolpath isn't
@@ -65,105 +61,6 @@ pub(crate) fn air_cut_fraction_of_total_runtime_from_trace(
         })
 }
 
-/// Read the baseline cutting-RPM as the median spindle RPM observed in
-/// the trace's cutting samples. Falls back to the operation's commanded
-/// RPM, then to the machine's minimum RPM.
-pub(crate) fn baseline_rpm_from_trace(
-    trace: &SimulationCutTrace,
-    toolpath_id: ToolpathId,
-    op_rpm: Option<u32>,
-    machine: &MachineProfile,
-) -> f64 {
-    let mut samples_rpm: Vec<f64> = trace
-        .samples
-        .iter()
-        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
-        .map(|s| f64::from(s.spindle_rpm))
-        .collect();
-    samples_rpm.sort_by(f64::total_cmp);
-    if let Some(rpm) = samples_rpm.get(samples_rpm.len() / 2).copied() {
-        return rpm;
-    }
-    op_rpm
-        .map(f64::from)
-        .unwrap_or_else(|| machine.rpm_range().0)
-}
-
-/// Pick the diameter to feed into the LUT lookup for a given
-/// commanded DOC: [`crate::feeds::geometry::lut_key_diameter_for_cutter`],
-/// the key that the gate and Suggest also use.
-///
-/// - Tapered ball: the ball tip at every depth (ruling A1, 2026-09-24).
-///   Not `tool.diameter()`, which is the shaft of a tapered ball.
-/// - V-bit: the nominal diameter at every DOC (ruling B4, 2026-09-25).
-/// - Cylindrical tools (end mill, bull nose, drill, plain ball nose):
-///   the nominal diameter.
-///
-/// When the operation has no commanded DOC (drilling per peck, V-carve,
-/// scallop, ...) or the value is not positive and finite, a V-bit takes
-/// its nominal diameter. Since B4 that is the same key as with a DOC. No
-/// shape depends on the DOC now.
-pub(crate) fn diameter_for_lut_lookup(
-    tool: &crate::tool::ToolDefinition,
-    commanded_doc_mm: Option<f64>,
-) -> f64 {
-    match commanded_doc_mm {
-        Some(doc) if doc.is_finite() && doc > 0.0 => {
-            crate::feeds::geometry::lut_key_diameter_for_cutter(tool, doc)
-        }
-        _ => match tool.to_geometry_hint() {
-            crate::feeds::ToolGeometryHint::VBit { .. } => tool.diameter(),
-            crate::feeds::ToolGeometryHint::Flat
-            | crate::feeds::ToolGeometryHint::Ball
-            | crate::feeds::ToolGeometryHint::Bull { .. }
-            | crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
-                crate::feeds::geometry::lut_key_diameter_for_cutter(tool, 0.0)
-            }
-        },
-    }
-}
-
-/// Look up the best-matching LUT row for the toolpath's tool /
-/// material / operation combination. Mirrors `suggest::evaluate`'s
-/// LUT plumbing so the optimizer reads from the same calibration data
-/// the gate does. Returns `None` for ProjectCurve+FacingBit (a V-bit
-/// routes to the printed Trace rows instead, operator ruling 2026-09-25)
-/// where [`crate::feeds::vendor_normalize::lut_query_for`] refuses, or
-/// for `Custom` material.
-///
-/// A-8 doc correction (2026-08-13): this named `routed_lookup_family`,
-/// which Checkpoint K (a4) replaced with the shared `lut_query_for` so
-/// Suggest and the gate could not route differently. The routing is
-/// reached **transitively** here, through `matched_chip_envelope` — the
-/// optimizer never names it, which is why
-/// [`super::outcome::LutQueryStamp`] now records which family the band
-/// was actually negotiated under.
-///
-/// **The row this returns is the RAW (diameter/hardness-scaled) vendor
-/// row.** It is *not* the band the chipload gate compares against: the
-/// gate additionally applies `geometry::derate_chipload_bounds` with the
-/// measured peak axial DOC. Callers that need the bar a verdict was
-/// judged by must read `ChiploadMetric::bounds` off the verdict, not
-/// these fields. See `OPTIMIZER_ASSUMPTIONS.md` §3.
-pub(crate) fn find_matched_lut_row(
-    tool: &crate::tool::ToolDefinition,
-    material: &crate::material::Material,
-    ctx: &EvaluationContext,
-    commanded_doc_mm: Option<f64>,
-) -> Option<MatchedRow> {
-    // F3.4 — delegate to the canonical chipload-envelope resolver, so
-    // the optimizer retargets against the same envelope the gate's
-    // verdict was judged by.
-    crate::tool_load::chipload::matched_chip_envelope(
-        tool,
-        material,
-        ctx.operation_kind,
-        ctx.lut_op_family,
-        ctx.lut_pass_role,
-        diameter_for_lut_lookup(tool, commanded_doc_mm),
-    )
-}
-
 /// Map the operation's `feeds_family` (used by the F&S calculator) to
 /// the `LutOperationFamily` (used by the chipload/power gate's LUT
 /// lookup).
@@ -184,16 +81,6 @@ pub(crate) fn lut_pass_role_from(role: PassRole) -> LutPassRole {
         PassRole::Roughing => LutPassRole::Roughing,
         PassRole::SemiFinish => LutPassRole::SemiFinish,
         PassRole::Finish => LutPassRole::Finish,
-    }
-}
-
-/// Maximum power the spindle is capable of delivering at any RPM.
-/// `ConstantPower` reports its flat figure; `VfdConstantTorque` reports
-/// rated power (the cap above rated RPM).
-pub(crate) fn machine_max_power_kw(machine: &MachineProfile) -> f64 {
-    match machine.power {
-        PowerModel::ConstantPower { power_kw } => power_kw,
-        PowerModel::VfdConstantTorque { rated_power_kw, .. } => rated_power_kw,
     }
 }
 
@@ -311,11 +198,6 @@ pub(crate) struct EvaluationContext {
     /// Operation kind — used for the gate's LUT routing and for
     /// skipping ops the optimizer can't model.
     pub operation_kind: OperationType,
-    /// The op's `feeds_family` (pre-LUT-routing). Used by the pre-flight
-    /// prescription helpers to phrase op-aware refusals. The
-    /// `lut_op_family` field below is what the LUT lookup uses; this
-    /// one is for human-readable surface only.
-    pub op_family: OperationFamily,
     /// LUT family from the op's `feeds_family`.
     pub lut_op_family: LutOperationFamily,
     /// LUT pass role from the op's `feeds_pass_role`.
@@ -327,9 +209,8 @@ pub(crate) struct EvaluationContext {
     /// Where the search publishes its rung and its candidate count
     /// (WP29).
     ///
-    /// The field rides the CONTEXT rather than a parameter, because all
-    /// four candidate-forming helpers already take `&EvaluationContext`.
-    /// That is the whole reason it is here: no helper signature moves.
+    /// The field rides the CONTEXT rather than a parameter, because the
+    /// candidate driver already takes `&EvaluationContext`.
     ///
     /// [`Self::from_session`] supplies a silent default, so a caller that
     /// observes nothing writes nothing and changes nothing.
@@ -352,7 +233,6 @@ impl EvaluationContext {
             toolpath_index,
             toolpath_id: tc.id,
             operation_kind: tc.operation.op_type(),
-            op_family: spec.feeds_family,
             lut_op_family: lut_op_family_from(spec.feeds_family),
             lut_pass_role: lut_pass_role_from(spec.feeds_pass_role),
             tool,
@@ -582,5 +462,37 @@ mod restore_guard_tests {
     fn air_cut_fraction_zero_runtime_returns_none() {
         let trace = trace_with_summary(ToolpathId(7), 0.0, 0.0);
         assert!(air_cut_fraction_of_total_runtime_from_trace(&trace, ToolpathId(7)).is_none());
+    }
+
+    // Ported from the deleted `stage1_grid_tests.rs`: the LUT routing
+    // of the evaluation context survives the cull.
+    #[test]
+    fn lut_op_family_mapping_covers_all_variants() {
+        use crate::feeds::OperationFamily;
+        for (family, lut) in [
+            (OperationFamily::Adaptive, LutOperationFamily::Adaptive),
+            (OperationFamily::Pocket, LutOperationFamily::Pocket),
+            (OperationFamily::Contour, LutOperationFamily::Contour),
+            (OperationFamily::Parallel, LutOperationFamily::Parallel),
+            (OperationFamily::Scallop, LutOperationFamily::Scallop),
+            (OperationFamily::Trace, LutOperationFamily::Trace),
+            (OperationFamily::Face, LutOperationFamily::Face),
+        ] {
+            assert_eq!(lut_op_family_from(family), lut);
+        }
+    }
+
+    #[test]
+    fn lut_pass_role_mapping_covers_all_variants() {
+        use crate::feeds::PassRole;
+        assert_eq!(
+            lut_pass_role_from(PassRole::Roughing),
+            LutPassRole::Roughing
+        );
+        assert_eq!(
+            lut_pass_role_from(PassRole::SemiFinish),
+            LutPassRole::SemiFinish
+        );
+        assert_eq!(lut_pass_role_from(PassRole::Finish), LutPassRole::Finish);
     }
 }

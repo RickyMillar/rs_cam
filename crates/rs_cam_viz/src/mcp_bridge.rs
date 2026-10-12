@@ -519,8 +519,8 @@ pub enum McpRequestKind {
     /// derived from `ProjectDiagnostics::verdicts`.
     GetProjectDiagnostics,
     /// Run the optimizer on a single toolpath and return the
-    /// OptimizeOutcome as JSON. Long-running (~1-2 min for a typical
-    /// 3D op); the GUI thread is blocked for the duration.
+    /// OptimizeOutcome as JSON. Long-running: each candidate is one
+    /// simulation. It runs as a `Job` on the Job lane (WP14b).
     OptimizeToolpath {
         index: usize,
     },

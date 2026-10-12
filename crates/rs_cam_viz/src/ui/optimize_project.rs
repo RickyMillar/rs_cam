@@ -5,19 +5,20 @@
 //! cycle time (with a `+N not estimated` note for skipped rows and a
 //! baseline-provenance line). W3.5/OPT-004 re-groups the grid by what
 //! the operator can do: **Apply now** (Ranked + safe candidate —
-//! checkbox-only column), **Needs your call** (TradeOff / MarginalSafe
-//! — role chip + a Review button that opens the per-toolpath modal,
-//! OPT-002), and a collapsed **Not optimized** disclosure (no-safe /
-//! skipped — full narrative behind a per-row expander, no inline
-//! truncation).
+//! checkbox-only column) and a collapsed **Not optimized** disclosure
+//! (no-safe / skipped — full narrative behind a per-row expander, no
+//! inline truncation).
 
 use rs_cam_core::tool_load::optimize::{
-    OptimizeCandidate, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport,
+    OptimizeCandidate, OptimizeOutcome, OutcomeKind, ProjectOptimizeReport, candidate_is_safe,
 };
+use rs_cam_core::tool_load::verdict::LoadState;
 
 use super::components::FreshnessGate;
-use super::components::format::{format_cycle, format_delta};
-use super::optimize_modal::narrative_prose;
+use super::components::format::{
+    format_cycle, format_delta, format_full_cut_readings, format_full_cut_verdict, truncate,
+};
+use super::optimize_modal::{full_cut_color, narrative_prose};
 use super::{AppEvent, theme};
 use crate::state::{AppState, OptimizeProjectState, OptimizeProjectStatus};
 use crate::ui_command::{NoArgs, UiCommand};
@@ -80,8 +81,8 @@ fn draw_loading(ui: &mut egui::Ui, events: &mut Vec<AppEvent>) {
     ui.add_space(6.0);
     ui.label(
         egui::RichText::new(
-            "Stage 0/1/2 search across every enabled toolpath. Expect 3–10 minutes \
-             on a wanaka-sized job. The GUI is responsive — click Cancel to stop \
+            "The search runs the links lever, then the depth and width lever, on \
+             every enabled toolpath. Each candidate is one simulation. The GUI is responsive — click Cancel to stop \
              and discard the partial run.",
         )
         .small()
@@ -137,19 +138,15 @@ fn draw_ready(
     }
 
     // OPT-004: bucket rows by what the operator can actually do, so
-    // "apply this", "decide on this", and "nothing to apply" never
-    // share one unlabeled column. `row_idx` is preserved so the
+    // "apply this" and "nothing to apply" never share one unlabeled
+    // column. `row_idx` is preserved so the
     // Apply-now checkbox still indexes `row_selected` correctly.
     let mut apply_now: Vec<(usize, usize, &OptimizeOutcome)> = Vec::new();
-    let mut needs_call: Vec<(usize, &OptimizeOutcome)> = Vec::new();
     let mut not_optimized: Vec<(usize, &OptimizeOutcome)> = Vec::new();
     for (row_idx, (tp_index, outcome)) in report.per_toolpath.iter().enumerate() {
         match outcome.kind {
             OutcomeKind::Ranked if outcome.first_safe().is_some() => {
                 apply_now.push((row_idx, *tp_index, outcome));
-            }
-            OutcomeKind::TradeOff | OutcomeKind::MarginalSafe => {
-                needs_call.push((*tp_index, outcome));
             }
             _ => not_optimized.push((*tp_index, outcome)),
         }
@@ -183,28 +180,6 @@ fn draw_ready(
                                 row_selected,
                                 events,
                             );
-                            ui.end_row();
-                        }
-                    });
-                ui.add_space(8.0);
-            }
-
-            if !needs_call.is_empty() {
-                draw_section_heading(ui, "NEEDS YOUR CALL");
-                // UI-02: 4 columns and striped, so `param_grid` does not fit.
-                egui::Grid::new("optimize_needs_call_grid")
-                    .num_columns(4)
-                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                    .min_row_height(crate::ui::tokens::ROW_DENSE)
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new("role").small().strong());
-                        ui.label(egui::RichText::new("toolpath").small().strong());
-                        ui.label(egui::RichText::new("note").small().strong());
-                        ui.label(egui::RichText::new("action").small().strong());
-                        ui.end_row();
-                        for (tp_index, outcome) in &needs_call {
-                            draw_needs_call_row(ui, state, *tp_index, outcome, events);
                             ui.end_row();
                         }
                     });
@@ -322,12 +297,9 @@ fn draw_bottleneck_callout(
         .per_toolpath
         .iter()
         .find(|(idx, _)| *idx == bottleneck_index)
-        .and_then(|(_, outcome)| match outcome.kind {
-            OutcomeKind::Ranked | OutcomeKind::MarginalSafe => {
-                outcome.candidates.first().map(|c| c.cycle_time_s)
-            }
-            _ => None,
-        })
+        // Index 0 is the baseline of every outcome that scored one; a
+        // skipped outcome has no candidates.
+        .and_then(|(_, outcome)| outcome.candidates.first().map(|c| c.cycle_time_s))
         .unwrap_or(0.0);
     let pct = if baseline > 0.0 {
         100.0 * bottleneck_cycle / baseline
@@ -382,46 +354,6 @@ fn draw_apply_now_row(
         // Defensive: bucketing guarantees a safe candidate here.
         ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
         ui.label(egui::RichText::new("—").small().color(theme::TEXT_MUTED));
-        ui.label("");
-    }
-}
-
-/// OPT-002 / OPT-004 "Needs your call" row: TradeOff / MarginalSafe.
-/// A role chip (not a fake checkbox) names *why* it needs a decision,
-/// and the Review button opens the per-toolpath modal for that exact
-/// row — closing the old dead-end where the user had to hunt for it.
-fn draw_needs_call_row(
-    ui: &mut egui::Ui,
-    state: &AppState,
-    toolpath_index: usize,
-    outcome: &OptimizeOutcome,
-    events: &mut Vec<AppEvent>,
-) {
-    let name = toolpath_name(state, toolpath_index);
-    let tried = outcome.candidates.len().saturating_sub(1);
-    let (chip, note) = match outcome.kind {
-        OutcomeKind::TradeOff => ("trade-off", format!("{tried} faster, gate regression")),
-        OutcomeKind::MarginalSafe => ("verify scrap", format!("{tried} inside tolerance band")),
-        _ => ("review", String::new()),
-    };
-    ui.label(egui::RichText::new(chip).small().color(theme::WARNING));
-    ui.label(egui::RichText::new(name).small());
-    ui.label(egui::RichText::new(note).small().color(theme::WARNING));
-
-    let tp_id = state
-        .session
-        .toolpath_configs()
-        .get(toolpath_index)
-        .map(|tc| tc.id);
-    if let Some(id) = tp_id {
-        if ui
-            .small_button("Review ▸")
-            .on_hover_text("Open the per-toolpath optimize detail to inspect and apply.")
-            .clicked()
-        {
-            events.push(AppEvent::OpenOptimizeModal(id));
-        }
-    } else {
         ui.label("");
     }
 }
@@ -490,8 +422,9 @@ fn not_optimized_row_text(
                 detail,
             )
         }
-        // Ranked-without-safe lands here too (bucketed as not-optimized).
-        _ => (
+        // A Ranked outcome with no safe candidate is bucketed as not
+        // optimized.
+        OutcomeKind::Ranked => (
             "·",
             theme::TEXT_MUTED,
             "no improvement found".to_owned(),
@@ -500,16 +433,40 @@ fn not_optimized_row_text(
     }
 }
 
+/// The verdict cell of a rollup row: one glyph for the gates, then the
+/// full-cut verdict. The hover gives the depth row and the three
+/// full-cut readings.
+///
+/// The glyph reads the core predicate `candidate_is_safe`. A depth row
+/// that exceeds its bound is the warning colour, never the refuse
+/// colour, because the depth row never refuses an export (S3).
 fn draw_compact_verdict(ui: &mut egui::Ui, candidate: &OptimizeCandidate) {
-    // Derived from `criteria()` (Phase 6 task 5) — a fourth gate joins
-    // this badge automatically.
-    let any_exceed = candidate.verdict.any_exceeded();
-    let (glyph, color) = if any_exceed {
-        ("⚠", theme::ERROR)
-    } else {
-        ("✓", theme::SUCCESS)
+    let depth_exceeds = candidate.verdict.depth.state() == LoadState::Exceeds;
+    let (glyph, color) = match (candidate_is_safe(candidate), depth_exceeds) {
+        (false, _) => ("⚠", theme::ERROR),
+        (true, true) => ("⚠", theme::WARNING),
+        (true, false) => ("✓", theme::SUCCESS),
     };
-    ui.label(egui::RichText::new(glyph).color(color));
+    let verdict = format_full_cut_verdict(&candidate.full_cut.verdict);
+    let mut hover = format!(
+        "full cut {verdict}\n{}",
+        format_full_cut_readings(&candidate.full_cut)
+    );
+    if depth_exceeds {
+        hover.push_str(
+            "\nThe depth of cut is above its bound. The depth row reports; it does not refuse.",
+        );
+    }
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(glyph).color(color));
+        ui.label(
+            egui::RichText::new(format!("full cut {}", truncate(&verdict, 32)))
+                .small()
+                .color(full_cut_color(&candidate.full_cut.verdict)),
+        );
+    })
+    .response
+    .on_hover_text(hover);
 }
 
 /// Reconciling: rollup is visible but dimmed; spinner indicates the
@@ -716,52 +673,6 @@ fn draw_readonly_row(
                 ui.label("");
             }
         }
-        OutcomeKind::TradeOff => {
-            ui.label(egui::RichText::new(name).small());
-            ui.label(
-                egui::RichText::new("trade-off")
-                    .small()
-                    .color(theme::WARNING),
-            );
-            let tried = outcome.candidates.len().saturating_sub(1);
-            ui.label(
-                egui::RichText::new(format!("{tried} faster candidate(s) — needs review"))
-                    .small()
-                    .color(theme::WARNING),
-            );
-            ui.label("");
-            if show_reconciled {
-                ui.label("");
-            }
-        }
-        OutcomeKind::MarginalSafe => {
-            ui.label(egui::RichText::new(name).small());
-            ui.label(
-                egui::RichText::new("verify on scrap")
-                    .small()
-                    .color(theme::WARNING),
-            );
-            let tried = outcome.candidates.len().saturating_sub(1);
-            ui.label(
-                egui::RichText::new(format!("{tried} candidate(s) inside tolerance band"))
-                    .small()
-                    .color(theme::WARNING),
-            );
-            ui.label("");
-            if show_reconciled {
-                ui.label("");
-            }
-        }
-    }
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_owned()
-    } else {
-        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-        out.push('…');
-        out
     }
 }
 
@@ -779,34 +690,13 @@ mod tests {
     use rs_cam_core::tool_load::optimize::OutcomeNarrative;
 
     fn no_safe_row(narrative: OutcomeNarrative) -> OptimizeOutcome {
-        // Zero candidates — a pre-flight refusal never gets to burn a
-        // sim, so `tried` is 0 and the disclosure body is the prose
-        // alone.
+        // Zero candidates, so `tried` is 0 and the disclosure body is
+        // the prose alone.
         OptimizeOutcome::no_safe_improvement(
             Vec::new(),
-            RefuseReason::DeflectionSetupLocked,
+            RefuseReason::NoImprovementFound,
             narrative,
         )
-    }
-
-    /// G-EXPL-HIDDEN. The rollup row already read `explanation`, so the
-    /// deflection prescription reached it — this pins that the shared
-    /// helper did not lose it.
-    #[test]
-    fn not_optimized_row_carries_the_deflection_prescription() {
-        let outcome = no_safe_row(OutcomeNarrative {
-            explanation: "Deflection is setup-locked: predicted peak 622 µm exceeds the \
-                          200 µm bound. Reduce stickout to 31.4 mm."
-                .to_owned(),
-            ..OutcomeNarrative::default()
-        });
-        let (_, _, phrase, detail) = not_optimized_row_text(&outcome);
-        assert!(detail.contains("stickout"), "got: {detail}");
-        assert!(detail.contains("622 µm"), "got: {detail}");
-        assert!(
-            phrase.starts_with("no safe gain — Deflection"),
-            "got: {phrase}"
-        );
     }
 
     /// G-EXPL-HIDDEN, the rollup's half of the defect. A search that ran
@@ -832,31 +722,26 @@ mod tests {
         assert!(phrase.contains("Tried 6 candidates"), "got: {phrase}");
     }
 
-    /// Both fields populated (QN-c's typed chipload refusal) — both
-    /// reach the row, explanation second.
+    /// The Phase 1 outcome: the search has no levers, so the headline
+    /// and the explanation both reach the row.
     #[test]
     fn not_optimized_row_carries_both_narrative_fields() {
         let outcome = no_safe_row(OutcomeNarrative {
-            headline: "No candidate proposed — the chipload retarget was refused.".to_owned(),
-            explanation: "chipload retarget refused: the band [0.0900, 0.1000] mm/tooth is \
-                          narrower than the 1.20× high-side headroom"
+            headline: "No candidate was searched.".to_owned(),
+            explanation: "This operation has no lever: it holds no depth per pass with a \
+                          total depth, and its links are already on or do not apply to it."
                 .to_owned(),
             ..OutcomeNarrative::default()
         });
-        let (_, _, _, detail) = not_optimized_row_text(&outcome);
-        assert!(detail.contains("No candidate proposed"), "got: {detail}");
-        assert!(detail.contains("0.0900"), "got: {detail}");
-    }
-
-    #[test]
-    fn truncate_short() {
-        assert_eq!(truncate("abc", 10), "abc");
-    }
-
-    #[test]
-    fn truncate_long_appends_ellipsis() {
-        let out = truncate("the quick brown fox", 10);
-        assert_eq!(out.chars().count(), 10);
-        assert!(out.ends_with('…'));
+        let (_, _, phrase, detail) = not_optimized_row_text(&outcome);
+        assert!(
+            phrase.starts_with("no safe gain — No candidate was searched."),
+            "got: {phrase}"
+        );
+        assert!(
+            detail.contains("No candidate was searched."),
+            "got: {detail}"
+        );
+        assert!(detail.contains("has no lever"), "got: {detail}");
     }
 }

@@ -1334,8 +1334,7 @@ pub enum ChiploadStatistic {
     PeakInRange,
 }
 
-/// Where the chipload bounds came from. Distinct from
-/// `optimize::bounds::BoundsSource` (axis-bound source).
+/// Where the chipload bounds came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChipBoundsSource {
@@ -1552,8 +1551,9 @@ pub enum ChiploadVerdict {
         /// floor, but the floor's provenance is too weak to refuse on
         /// ([`ChipBoundsSource::low_side_is_advisory`]): surfaced as a
         /// structured advisory instead of flipping to `Exceeds(Low)`.
-        /// Candidates carrying this land in the MarginalSafe tier
-        /// rather than auto-recommending.
+        /// The verdict stays `Within`, so the advisory does not refuse
+        /// an export (`gcode::refusing_exceedances`) and the optimizer
+        /// does not reject a candidate on it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         burn_advisory: Option<Box<ChiploadMetric>>,
     },

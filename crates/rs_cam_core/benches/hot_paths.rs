@@ -1382,6 +1382,7 @@ fn bench_viz_triage_build(c: &mut Criterion) {
                     toolpath_names: &BTreeMap::new(),
                     holder_collisions: &[],
                     tool_diameters_mm: &tool_diameters_mm,
+                    commanded_depth_per_pass_mm: &BTreeMap::new(),
                     kinematic_utilization: &kinematic_utilization,
                     region_of: None,
                 };

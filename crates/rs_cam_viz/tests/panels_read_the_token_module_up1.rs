@@ -510,8 +510,8 @@ const RAW_GRID_ALLOWANCE: &[(&str, usize)] = &[
     ("ui/readiness_panel.rs", 1),
     // 4 and 5 columns, both striped — attempted moves and candidates.
     ("ui/optimize_modal.rs", 2),
-    // 5, 4 and a run-time column count, all striped.
-    ("ui/optimize_project.rs", 3),
+    // 5 and a run-time column count, both striped.
+    ("ui/optimize_project.rs", 2),
 ];
 
 /// The folder that OWNS the renderers. A grid written here is the kit.

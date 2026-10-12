@@ -763,7 +763,7 @@ impl ProjectSession {
             &crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
         >,
     ) -> crate::stock::sim_triage::SimulationTriage {
-        use crate::stock::sim_triage::{SimulationTriage, TriageInputs};
+        use crate::stock::sim_triage::{SimulationTriage, TriageInputs, commanded_step_mm};
 
         let diagnostics =
             crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
@@ -781,6 +781,17 @@ impl ProjectSession {
                 let cutter = crate::compute::cutter::build_cutter(tool_cfg);
                 Some((tc.id, crate::tool::MillingCutter::diameter(&cutter)))
             })
+            .collect();
+
+        // G-OVERCUTREF: the commanded step of each stepped toolpath, the
+        // reference of the standing-material rule. It reads each row's
+        // operation, and the load-report key holds the operation bytes
+        // (`RowKey::operation`), so an edit of the depth per pass makes a
+        // new triage. `TriageSessionKey` needs no new part.
+        let commanded_depth_per_pass_mm: std::collections::BTreeMap<ToolpathId, f64> = self
+            .toolpath_configs
+            .iter()
+            .filter_map(|tc| commanded_step_mm(&tc.operation).map(|step| (tc.id, step)))
             .collect();
 
         // G-ENTRYLOAD scope: the same predicate that arms the pencil entry
@@ -819,6 +830,7 @@ impl ProjectSession {
                 toolpath_names: &toolpath_names,
                 holder_collisions: &evidence.holder_collisions,
                 tool_diameters_mm: &tool_diameters_mm,
+                commanded_depth_per_pass_mm: &commanded_depth_per_pass_mm,
                 kinematic_utilization,
                 region_of: None,
             },

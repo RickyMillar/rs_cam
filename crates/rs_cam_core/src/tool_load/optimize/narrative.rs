@@ -1,181 +1,114 @@
-//! Unified outcome narrative for `OptimizeOutcome`.
+//! The outcome narrative of an `OptimizeOutcome`.
 //!
-//! A1 of `planning/OPTIMIZE_EXPLAINABILITY_AND_PEAK_FINDING.md` —
-//! promotes the free `explanation: String` to typed fields the UI
-//! (A2) and any agent client (MCP) can render selectively.
+//! A1 of `planning/OPTIMIZE_EXPLAINABILITY_AND_PEAK_FINDING.md` made
+//! the free `explanation: String` into typed fields that the GUI and
+//! an MCP client render.
 //!
-//! [`OutcomeNarrative`] attaches to every tier (Ranked, MarginalSafe,
-//! TradeOff, NoSafeImprovement, Skipped). Carries the union of the
-//! per-tier rationale shapes; fields that don't apply to a given tier
-//! stay empty and are skipped on the wire.
+//! [`OutcomeNarrative`] attaches to every [`super::OutcomeKind`]. A
+//! field that does not apply to a kind stays empty and is not written
+//! to the wire.
 //!
-//! Builders here are pure functions over the attempted candidate set;
-//! `build_outcome` calls them. Headlines are mechanical for A1 — A2
-//! can rephrase them in the UI without touching this module.
-//!
-//! **Vocabulary contract:** when thread B (peak-finding) lands, the
-//! per-probe rationale must reuse [`LimitingGate`] / [`OperatorSuggestion`]
-//! enums so engine and UI converge on the same operator-facing words.
+//! The builders here are pure functions over the attempted candidate
+//! set; `rank_candidates` calls them.
 
 use serde::{Deserialize, Serialize};
 
-use crate::machine::MachineProfile;
 use crate::tool_load::verdict::{
-    ChipSide, ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict,
+    ChipSide, ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
 };
 
 use super::OptimizeCandidate;
-use super::retarget::NarrowChipBandRefusal;
 
-/// Unified narrative carried by every [`super::OptimizeOutcome`] tier.
-/// Roadmap F.7 collapsed the prior split (`FailureNarrative` +
-/// `TradeOffNarrative`) into one shape so MCP agents and the GUI modal
-/// can render outcomes uniformly without per-tier match logic.
+/// The narrative of every [`super::OptimizeOutcome`] kind. Roadmap F.7
+/// made this one shape, so MCP agents and the GUI modal render every
+/// outcome the same way.
 ///
-/// Per-tier population:
+/// The fields each kind fills:
 ///
-/// - **Ranked**: `headline` + `envelope` only.
-/// - **MarginalSafe**: `headline`, `explanation`, `envelope`,
-///   `limiting_gates` (band-admitted readings), `entry_advisories`.
-/// - **TradeOff**: `headline`, `envelope`, `improved_gates`,
-///   `worsened_gates`.
+/// - **Ranked**: `headline` + `envelope`.
 /// - **NoSafeImprovement**: `headline`, `explanation`, `envelope`,
-///   `limiting_gates` (Exceeds readings), `entry_advisories`,
-///   `suggestions`.
-/// - **Skipped**: empty (no candidates were evaluated).
+///   `limiting_gates` (the exceeded rows of the fastest candidate).
+/// - **Skipped**: empty (the search evaluated no candidate).
+///
+/// `unmodeled` and `refused_cells` can fill on `Ranked` and on
+/// `NoSafeImprovement`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OutcomeNarrative {
-    /// One-line headline for the modal. Operator-facing language;
-    /// mechanically generated for A1.
+    /// One-line headline for the modal, in operator language.
     pub headline: String,
-    /// Free-form modal subhead. Long-form text the UI shows under the
-    /// headline. Empty for tiers that don't need one (Ranked,
-    /// TradeOff, Skipped).
+    /// The text the modal shows under the headline. Empty when the
+    /// kind needs none.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub explanation: String,
-    /// Extents per knob axis across the attempted candidate set —
-    /// surfaces "We tried feeds up to X mm/min" without the UI
-    /// re-computing.
+    /// The extent of each parameter across the attempted candidates, so
+    /// the GUI can say "we tried feeds up to X mm/min" without a second
+    /// computation.
     #[serde(default)]
     pub envelope: SearchEnvelopeReached,
-    /// Per-gate limiting readings on the closest-to-safe candidate.
-    /// For `NoSafeImprovement`, an Exceeds gate; for `MarginalSafe`,
-    /// a Within reading admitted only by the phase-1 tolerance band.
+    /// The exceeded rows of the fastest non-baseline candidate. Only
+    /// `NoSafeImprovement` fills it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub limiting_gates: Vec<LimitingGate>,
-    /// G17 C2 — entry-sample spikes from the recommended /
-    /// closest-to-safe candidate that exceeded the gate's bound but
-    /// were excluded from the trip decision (helix / plunge entries).
-    /// Empty when no entry sample breached its bound.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entry_advisories: Vec<EntryAdvisory>,
-    /// Operator-actionable suggestions. A4 populates from heuristics;
-    /// A1 emits `Vec::new()`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub suggestions: Vec<OperatorSuggestion>,
-    /// TradeOff: gates the recommended candidate moved from
-    /// Exceeds/Worse → Within/Better. Empty for other tiers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub improved_gates: Vec<GateKind>,
-    /// TradeOff: gates the recommended candidate moved from
-    /// Within/Better → Exceeds/Worse. Empty for other tiers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub worsened_gates: Vec<GateKind>,
-    /// F2.3 — structured numbers behind a `DeflectionSetupLocked`
-    /// refusal so MCP/GUI consumers read values instead of parsing
-    /// the explanation prose. `None` for every other outcome.
+    /// The statement when the stock has no force line: "Power and
+    /// deflection are not modelled: <reason>; stock source
+    /// `<source_id>`". The search then ran on the bounds that remain.
+    /// `None` when a force line exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deflection_setup: Option<DeflectionSetupDetail>,
-    /// **Q-NARROW (c), 2026-08-14** — structured numbers behind a
-    /// chipload retarget the retargeter **declined**: the band the gate
-    /// judges by, both headroom targets, and the observed peak. Same
-    /// contract as [`Self::deflection_setup`] — the machine-readable
-    /// half of a refusal whose prose half is on
-    /// [`Self::explanation`].
-    ///
-    /// `None` means **no retarget was refused on this outcome** — it is
-    /// not a "not measured" slot. It is populated whenever a retargeter
-    /// refused during the run, including on outcomes that went on to
-    /// find a candidate some other way (a grid candidate can win while
-    /// the chipload retarget was still declined, and both facts are
-    /// true).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chipload_band_refusal: Option<NarrowChipBandRefusal>,
+    pub unmodeled: Option<String>,
+    /// One line for each cell the search did not simulate: the
+    /// calculator refused it or moved its depth, or its evaluation
+    /// failed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refused_cells: Vec<String>,
 }
 
-/// F2.3 — the numbers behind a `DeflectionSetupLocked` refusal
-/// (mirrors `refusal::DeflectionSetupPrescription` minus the prose).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DeflectionSetupDetail {
-    /// Predicted peak tip deflection at baseline load, µm.
-    pub peak_um: f64,
-    /// The Exceeds safety limit the peak breached, µm.
-    pub bound_um: f64,
-    /// Stickout estimated to land peak δ in the Within band, mm.
-    pub target_stickout_mm: f64,
-}
-
-/// G17 C2 — informational entry-sample breach surfaced on the
-/// narrative. Sourced from `verdict::EntrySpike`. The UI renders it
-/// as a "Note:" line under the headline; not a blocker.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntryAdvisory {
-    pub gate: GateKind,
-    pub side: Option<ChipSide>,
-    pub observed: f64,
-    pub bound: f64,
-    /// Signed: positive for over-the-bound, negative for
-    /// under-the-bound (chipload Low entries).
-    pub overshoot_fraction: f64,
-    pub locality: String,
-}
-
-/// One per-gate limiting reading. The same shape covers
-/// "Exceeds — over the bound" (NoSafeImprovement) and
-/// "Within but admitted by tolerance band" (MarginalSafe), with
-/// `band_admitted` distinguishing the cases.
+/// One exceeded criterion row of a candidate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitingGate {
     pub gate: GateKind,
-    /// Only meaningful for chipload (Low burn / High breakage). `None`
-    /// for power / deflection.
+    /// Only the chipload row has a side (Low = burn, High = breakage).
+    /// `None` for the other rows.
     pub side: Option<ChipSide>,
     /// Observed value at the limiting sample.
     pub observed: f64,
-    /// LUT / model bound the observation was compared against.
-    /// For chipload Low this is `min_mm_per_tooth`; for chipload
-    /// High this is `max_mm_per_tooth`. For power, `available_kw`.
-    /// For deflection, `bounds.exceeds_mm`.
+    /// The bound the gate compared the observation with. Chipload Low:
+    /// `min_mm_per_tooth`; chipload High: `max_mm_per_tooth`; power:
+    /// `available_kw`; deflection: `bounds.exceeds_mm`; depth: the
+    /// rigidity cap in mm.
     pub bound: f64,
     /// Signed fractional overshoot: `(observed - bound) / bound`.
-    /// Positive for High / over-the-bound readings, negative for Low /
-    /// under-the-bound readings.
+    /// Positive above the bound, negative below it (chipload Low).
     pub overshoot_fraction: f64,
-    /// True if the gate verdict is `Within` and this reading exceeded
-    /// the strict LUT bound but was admitted by the phase-1 tolerance
-    /// band (G16 §11.4 layer 1). False otherwise — including all
-    /// `Exceeds` cases.
+    /// Always `false`. The optimizer judges with the strict bands
+    /// (`ToleranceBands::default()`), so no `Within` reading is past
+    /// its bound. The field stays on the wire for the GUI and MCP
+    /// readers.
     pub band_admitted: bool,
-    /// G17 A3 — short operator-facing locality label for the
-    /// triggering sample: "slot section", "heavy engagement",
-    /// "plunge entry", "helix entry". `None` for steady-state
-    /// samples or when arc engagement was not captured. Sourced from
-    /// `SampleEvidence.locality`, populated by per-gate evaluators
-    /// via [`crate::tool_load::locality::classify_sample_locality`].
+    /// G17 A3 — short operator label for the locality of the
+    /// triggering sample: "slot section", "heavy engagement", "plunge
+    /// entry", "helix entry". `None` for a steady-state sample or when
+    /// the simulation did not capture the arc engagement. The source is
+    /// `SampleEvidence.locality`, which the gates fill through
+    /// [`crate::tool_load::locality::classify_sample_locality`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locality: Option<String>,
 }
 
+/// The criterion row a [`LimitingGate`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateKind {
     Chipload,
     Power,
     Deflection,
+    /// The depth-of-cut row. Its bound is a rule of thumb, so the row
+    /// is reported and never refuses an export (S3).
+    Depth,
 }
 
-/// Knob-axis extents observed across attempted candidates. Each field
-/// is `Some` when at least one candidate moved that axis off baseline.
+/// The extent of each parameter across the attempted candidates. A field
+/// is `Some` when at least one candidate (or the baseline) carries that
+/// parameter.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchEnvelopeReached {
     pub feed_mm_min: Option<AxisExtent>,
@@ -185,454 +118,173 @@ pub struct SearchEnvelopeReached {
     pub scallop_height_mm: Option<AxisExtent>,
 }
 
-/// Min / max range observed for one axis across the attempted set.
-/// `min == max` when only one value was tried (typical for axes the
-/// search held fixed).
+/// The minimum and maximum of one parameter across the attempted set.
+/// `min == max` when the search tried only one value.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AxisExtent {
     pub min: f64,
     pub max: f64,
 }
 
-/// Operator-actionable suggestion. Built by [`suggest_levers`] from the
-/// limiting-gate readings + search envelope. Units are implied by
-/// `KnobAxis` (Feed = mm/min, SpindleRpm = rpm, Stepover /
-/// DepthPerPass / ScallopHeight = mm).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum OperatorSuggestion {
-    /// "Cap feed below ~2960 mm/min and re-optimize." Used when an
-    /// axis is too high (chipload over LUT max → cap feed; deflection
-    /// over threshold → cap DOC; power saturated → cap stepover).
-    CapAxisAt { axis: KnobAxis, ceiling: f64 },
-    /// "Raise feed above ~3950 mm/min and re-optimize." Used when an
-    /// axis is too low (chipload below LUT min → raise feed).
-    RaiseAxisAbove { axis: KnobAxis, floor: f64 },
-    /// "No vendor LUT data above ~0.055 chipload — calibration would help."
-    DataGapHere { reason: String },
+/// The narrative of an outcome whose operation has no lever: no depth
+/// per pass to change and links already on.
+pub(crate) fn build_no_search_narrative(baseline: &OptimizeCandidate) -> OutcomeNarrative {
+    OutcomeNarrative {
+        headline: super::NO_SEARCH_HEADLINE.to_owned(),
+        explanation: super::NO_SEARCH_EXPLANATION.to_owned(),
+        envelope: envelope_across(baseline, &[]),
+        ..OutcomeNarrative::default()
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum KnobAxis {
-    Feed,
-    SpindleRpm,
-    Stepover,
-    DepthPerPass,
-    ScallopHeight,
-}
-
-/// Build an `OutcomeNarrative` for a `Ranked` outcome — headline +
-/// envelope only. Per-row deltas live on each `OptimizeCandidate`, so
-/// the narrative just needs the search envelope summary for the
-/// modal's subheader.
-pub(crate) fn build_ranked_narrative(candidates: &[OptimizeCandidate]) -> OutcomeNarrative {
-    let envelope = candidates
-        .split_first()
-        .map(|(baseline, rest)| envelope_across(baseline, rest))
-        .unwrap_or_default();
-    let non_baseline = candidates.len().saturating_sub(1);
-    // UX dial-in finding C3: quote the cycle-time delta so the headline
-    // is self-contained ("Found 3; best -42% at 145.5s vs 249.5s
-    // baseline") rather than just an opaque count.
-    let cycle_delta_tail = candidates
-        .split_first()
-        .and_then(|(baseline, rest)| {
-            let baseline_s = baseline.cycle_time_s;
-            if baseline_s <= 0.0 {
-                return None;
-            }
-            let best_s = rest
+/// The narrative of a `Ranked` outcome: the headline, the envelope, and a
+/// note when the recommended candidate's depth row exceeds its rule of
+/// thumb.
+/// `ordered[0]` is the baseline and `ordered[1]` the recommended
+/// candidate. `attempted` is the count of simulated candidates.
+pub(crate) fn build_ranked_narrative(
+    ordered: &[OptimizeCandidate],
+    attempted: usize,
+) -> OutcomeNarrative {
+    let Some((baseline, rest)) = ordered.split_first() else {
+        return OutcomeNarrative::default();
+    };
+    let envelope = envelope_across(baseline, rest);
+    let headline = match rest.first() {
+        Some(best) if baseline.cycle_time_s > 0.0 => {
+            let delta_pct =
+                (best.cycle_time_s - baseline.cycle_time_s) / baseline.cycle_time_s * 100.0;
+            format!(
+                "Tried {attempted} {}. The fastest safe full cut takes {:.0} s against {:.0} s \
+                 ({delta_pct:+.1} %).",
+                candidates_word(attempted),
+                best.cycle_time_s,
+                baseline.cycle_time_s,
+            )
+        }
+        _ => format!("Tried {attempted} {}.", candidates_word(attempted)),
+    };
+    // The recommended candidate can carry a row over a bound that does
+    // not refuse an export (the depth row, S3). Say so, with the reading,
+    // so the operator does not read a red badge with no text (F1).
+    let explanation = rest
+        .first()
+        .map(|best| {
+            limiting_gates_for_verdict(&best.verdict)
                 .iter()
-                .map(|c| c.cycle_time_s)
-                .filter(|s| *s > 0.0)
-                .fold(f64::INFINITY, f64::min);
-            if !best_s.is_finite() {
-                return None;
-            }
-            let delta_pct = (best_s - baseline_s) / baseline_s * 100.0;
-            Some(format!(
-                " Best: {delta_pct:+.1}% cycle time at {best_s:.1}s vs {baseline_s:.1}s baseline."
-            ))
+                .filter(|g| g.gate == GateKind::Depth)
+                .map(|g| {
+                    format!(
+                        "The recommended candidate's depth of cut {:.2} mm is over the {:.2} mm \
+                         rule of thumb (reported, not a limit).",
+                        g.observed, g.bound
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
         })
         .unwrap_or_default();
-    let headline = match non_baseline {
-        0 => String::new(),
-        1 => format!("Found 1 candidate that improves on the baseline.{cycle_delta_tail}"),
-        n => format!("Found {n} candidates that improve on the baseline.{cycle_delta_tail}"),
-    };
     OutcomeNarrative {
         headline,
+        explanation,
         envelope,
         ..OutcomeNarrative::default()
     }
 }
 
-/// Build an `OutcomeNarrative` for a `NoSafeImprovement` outcome. The
-/// closest-to-safe candidate is the first non-baseline entry in the
-/// attempted set (already sorted by composite score in `build_outcome`).
-/// `limiting_gates` are its `Exceeds` readings.
-///
-/// `machine` is consulted to filter operator suggestions that fall
-/// outside the machine envelope (e.g. "raise feed above 10080 mm/min"
-/// when the machine's `max_feed_mm_min` is 4000). Roadmap F.4.
-pub(crate) fn build_no_safe_narrative(
-    baseline: &OptimizeCandidate,
-    attempted: &[OptimizeCandidate],
-    machine: &MachineProfile,
-) -> OutcomeNarrative {
-    let envelope = envelope_across(baseline, attempted);
-    let closest = attempted.get(1);
-    let limiting_gates = closest
-        .map(|c| limiting_gates_from_exceeds(&c.verdict))
+/// The narrative of a `NoSafeImprovement` outcome after a search.
+/// `attempted[0]` is the baseline. `limiting_gates` are the exceeded
+/// rows of the fastest non-baseline candidate, and the explanation names
+/// why that candidate is not recommended: a row that refuses an export,
+/// its full-cut verdict, or a cycle time that is not shorter.
+pub(crate) fn build_no_safe_narrative(attempted: &[OptimizeCandidate]) -> OutcomeNarrative {
+    let Some((baseline, rest)) = attempted.split_first() else {
+        return OutcomeNarrative::default();
+    };
+    let envelope = envelope_across(baseline, rest);
+    let fastest = rest
+        .iter()
+        .min_by(|a, b| a.cycle_time_s.total_cmp(&b.cycle_time_s));
+    let limiting_gates = fastest
+        .map(|c| limiting_gates_for_verdict(&c.verdict))
         .unwrap_or_default();
-    let headline = headline_no_safe(attempted.len().saturating_sub(1), &limiting_gates);
-    let raw_suggestions = closest
-        .map(|c| suggest_levers(&limiting_gates, c))
-        .unwrap_or_default();
-    let suggestions = filter_suggestions_by_envelope(raw_suggestions, machine);
-    let entry_advisories = closest
-        .map(|c| entry_advisories_for_verdict(&c.verdict))
-        .unwrap_or_default();
+    let headline = headline_no_safe(rest.len(), &limiting_gates);
+    let base = NO_SAFE_BASE;
+    let explanation = match fastest {
+        None => format!("{base}. No cell reached a simulation; the refused cells name the cause."),
+        Some(c) => {
+            let mut why: Vec<String> = Vec::new();
+            let criteria = c.verdict.criteria();
+            let refusing: Vec<&str> = crate::gcode::refusing_exceedances(&criteria)
+                .iter()
+                .map(|row| row.kind.label())
+                .collect();
+            if !refusing.is_empty() {
+                why.push(format!(
+                    "its {} row refuses an export",
+                    refusing.join(" and ")
+                ));
+            }
+            if let Some(reason) = c.full_cut.verdict.reason() {
+                let lead = if c.full_cut.verdict.holds() {
+                    ""
+                } else if matches!(
+                    c.full_cut.verdict,
+                    super::full_cut::FullCutVerdict::NotMeasured { .. }
+                ) {
+                    "the full cut is not proved, "
+                } else {
+                    "the full-cut check fails: "
+                };
+                why.push(format!("{lead}{reason}"));
+            }
+            if c.cycle_time_s >= baseline.cycle_time_s {
+                why.push(format!(
+                    "it takes {:.0} s against {:.0} s on the baseline",
+                    c.cycle_time_s, baseline.cycle_time_s
+                ));
+            }
+            if why.is_empty() {
+                format!("{base}.")
+            } else {
+                format!(
+                    "{base}. The fastest candidate ({:.0} s): {}.",
+                    c.cycle_time_s,
+                    why.join("; ")
+                )
+            }
+        }
+    };
     OutcomeNarrative {
-        deflection_setup: None,
-        chipload_band_refusal: None,
         headline,
-        explanation: String::new(),
+        explanation,
         envelope,
         limiting_gates,
-        entry_advisories,
-        suggestions,
-        improved_gates: Vec::new(),
-        worsened_gates: Vec::new(),
+        ..OutcomeNarrative::default()
     }
 }
 
-/// Build an `OutcomeNarrative` for a `MarginalSafe` outcome. The
-/// recommended candidate is the first non-baseline entry that is
-/// marginally safe (every gate Within, at least one reading
-/// band-admitted). `limiting_gates` are its band-admitted readings.
-pub(crate) fn build_marginal_safe_narrative(
-    baseline: &OptimizeCandidate,
-    candidates: &[OptimizeCandidate],
-) -> OutcomeNarrative {
-    let envelope = envelope_across(baseline, candidates);
-    let recommended = candidates
-        .iter()
-        .skip(1)
-        .find(|c| !limiting_gates_from_band_admit(&c.verdict).is_empty());
-    let limiting_gates = recommended
-        .map(|c| limiting_gates_from_band_admit(&c.verdict))
-        .unwrap_or_default();
-    let headline = headline_marginal(&limiting_gates);
-    let entry_advisories = recommended
-        .map(|c| entry_advisories_for_verdict(&c.verdict))
-        .unwrap_or_default();
-    // MarginalSafe candidates are already inside the tolerance band —
-    // no operator action needed unless the user wants to tighten further.
-    // Skip suggestions for now; the "verify on a scrap" header covers it.
-    OutcomeNarrative {
-        deflection_setup: None,
-        chipload_band_refusal: None,
-        headline,
-        explanation: String::new(),
-        envelope,
-        limiting_gates,
-        entry_advisories,
-        suggestions: Vec::new(),
-        improved_gates: Vec::new(),
-        worsened_gates: Vec::new(),
+/// The first sentence of a `NoSafeImprovement` explanation after a
+/// search. It names the three conditions of a recommendation.
+const NO_SAFE_BASE: &str = "No candidate was faster than the baseline, free of a criterion row \
+     that refuses an export, and a full cut";
+
+fn candidates_word(count: usize) -> &'static str {
+    if count == 1 {
+        "candidate"
+    } else {
+        "candidates"
     }
 }
 
-/// G17 A4 — synthesize operator-actionable suggestions from the
-/// limiting-gate readings on the closest-to-safe candidate.
+/// Every `Exceeds` row of one candidate's verdict: chipload, power,
+/// deflection and depth of cut. Returns an empty `Vec` when no row
+/// exceeds. The GUI uses it for the "what stopped this candidate" badge
+/// of each row.
 ///
-/// Heuristics:
-///
-/// - **Chipload Exceeds High** → invert `cl = feed / (RPM × teeth)`:
-///   the chipload-to-feed relationship is linear in feed at constant
-///   RPM, so `target_feed = current_feed × (bound / observed) × 0.95`.
-///   The 5% safety margin sits inside the breakage_tolerance band so
-///   the recommended feed is comfortably under the gate trigger.
-/// - **Chipload Exceeds Low (burn)** → same math, opposite direction:
-///   `target_feed = current_feed × (bound / observed) × 1.05`. Emit
-///   `RaiseAxisAbove`. F7 — also emit a parallel `CapAxisAt(SpindleRpm)`
-///   suggestion so operators whose feed is already at the machine cap
-///   have an alternative lever (lower RPM raises chipload at the same
-///   feed).
-/// - **Deflection Exceeds** → tip deflection scales roughly linearly
-///   with axial DOC (force ∝ DOC × engagement; tip deflection ∝ force).
-///   `target_doc = current_doc × (bound / observed) × 0.95`.
-/// - **Power Exceeds** → MRR ∝ feed × DOC × stepover; reducing
-///   stepover proportionally reduces engagement and so power.
-///   `target_stepover = current_stepover × (bound / observed) × 0.95`.
-///
-/// Per-gate suggestions are independent — emitting all of them lets
-/// the operator pick the lever they prefer (e.g. cap feed *or* cap
-/// DOC, not both).
-pub fn suggest_levers(
-    limiting_gates: &[LimitingGate],
-    candidate: &OptimizeCandidate,
-) -> Vec<OperatorSuggestion> {
-    let mut out: Vec<OperatorSuggestion> = Vec::new();
-    for g in limiting_gates {
-        out.extend(suggest_for_gate_all(g, candidate));
-    }
-    out
-}
-
-fn suggest_for_gate_all(
-    g: &LimitingGate,
-    candidate: &OptimizeCandidate,
-) -> Vec<OperatorSuggestion> {
-    let mut out: Vec<OperatorSuggestion> = Vec::new();
-    if let Some(primary) = suggest_for_gate(g, candidate) {
-        out.push(primary);
-    }
-    // F7 — burn-side chipload has two physical fix levers (raise feed
-    // OR lower RPM). The default suggestion is RaiseAxisAbove(Feed),
-    // which is useless when feed is already at the machine cap. Emit
-    // the RPM-down alternative unconditionally so the operator sees
-    // both options and can pick whichever respects their machine
-    // limits. Until the optimizer's Stage 1.5 RPM-down sweep (F1)
-    // lands, this is the only way operators learn about the lever.
-    if let (GateKind::Chipload, Some(ChipSide::Low)) = (g.gate, g.side)
-        && g.observed.abs() >= 1e-9
-        && g.bound.abs() >= 1e-9
-        && let Some(rpm) = candidate.params.spindle_rpm()
-        && rpm > 0
-    {
-        // chipload = feed / (rpm × flutes). To raise observed → bound
-        // at fixed feed, scale RPM by observed/bound. The 0.95 margin
-        // sits the result safely inside the burn-tolerance band.
-        let ratio = g.observed / g.bound;
-        let ceiling = f64::from(rpm) * ratio * 0.95;
-        if ceiling.is_finite() && ceiling > 0.0 {
-            out.push(OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::SpindleRpm,
-                ceiling,
-            });
-        }
-    }
-    out
-}
-
-fn suggest_for_gate(g: &LimitingGate, candidate: &OptimizeCandidate) -> Option<OperatorSuggestion> {
-    if g.observed.abs() < 1e-9 || g.bound.abs() < 1e-9 {
-        return None;
-    }
-    let ratio = g.bound / g.observed;
-    match (g.gate, g.side) {
-        (GateKind::Chipload, Some(ChipSide::High)) => {
-            let current_feed = candidate.params.feed_rate();
-            if current_feed < 1e-6 {
-                return None;
-            }
-            let ceiling = current_feed * ratio * 0.95;
-            Some(OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::Feed,
-                ceiling,
-            })
-        }
-        (GateKind::Chipload, Some(ChipSide::Low)) => {
-            let current_feed = candidate.params.feed_rate();
-            if current_feed < 1e-6 {
-                return None;
-            }
-            let floor = current_feed * ratio * 1.05;
-            Some(OperatorSuggestion::RaiseAxisAbove {
-                axis: KnobAxis::Feed,
-                floor,
-            })
-        }
-        (GateKind::Deflection, _) => {
-            let current_doc = candidate.params.depth_per_pass()?;
-            if current_doc < 1e-6 {
-                return None;
-            }
-            let ceiling = current_doc * ratio * 0.95;
-            Some(OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::DepthPerPass,
-                ceiling,
-            })
-        }
-        (GateKind::Power, _) => {
-            let current_stepover = candidate.params.stepover()?;
-            if current_stepover < 1e-6 {
-                return None;
-            }
-            let ceiling = current_stepover * ratio * 0.95;
-            Some(OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::Stepover,
-                ceiling,
-            })
-        }
-        (GateKind::Chipload, None) => None,
-    }
-}
-
-/// Roadmap F.4 — filter operator suggestions against the machine
-/// envelope so the user never sees infeasible advice. Examples:
-///
-/// - "Raise feed above 10080 mm/min" when `machine.max_feed_mm_min`
-///   is 4000 — the operator literally cannot do this.
-/// - "Cap RPM below 3166" when the spindle's `min_rpm` is 8000 — the
-///   spindle won't run that slow.
-/// - "Cap feed below 30 mm/min" when that's below the minimum feed
-///   needed for the operation to make any chip — typically a
-///   pathological recommendation from a near-zero `bound/observed`
-///   ratio.
-///
-/// When the filter drops every primary suggestion, replace the list
-/// with a single `DataGapHere` variant describing the envelope
-/// conflict so the operator at least sees *why* there's no actionable
-/// lever (e.g. "feed must be ≥10080 but machine cap is 4000; RPM must
-/// be ≤3166 but spindle min is 8000 — consider larger tool diameter
-/// or stiffer toolholder").
-fn filter_suggestions_by_envelope(
-    suggestions: Vec<OperatorSuggestion>,
-    machine: &MachineProfile,
-) -> Vec<OperatorSuggestion> {
-    let (rpm_min, rpm_max) = machine.rpm_range();
-    // F4: operator suggestions are about cutting feeds.
-    let feed_max = machine.cutting_feed_ceiling_mm_min();
-
-    let mut dropped: Vec<String> = Vec::new();
-    let mut kept: Vec<OperatorSuggestion> = Vec::new();
-
-    for s in suggestions {
-        match s {
-            OperatorSuggestion::RaiseAxisAbove {
-                axis: KnobAxis::Feed,
-                floor,
-            } if floor > feed_max => {
-                dropped.push(format!(
-                    "feed would need to rise above {floor:.0} mm/min, but machine cap is {feed_max:.0}"
-                ));
-            }
-            OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::SpindleRpm,
-                ceiling,
-            } if ceiling < rpm_min => {
-                dropped.push(format!(
-                    "RPM would need to drop below {ceiling:.0}, but spindle floor is {rpm_min:.0}"
-                ));
-            }
-            OperatorSuggestion::RaiseAxisAbove {
-                axis: KnobAxis::SpindleRpm,
-                floor,
-            } if floor > rpm_max => {
-                dropped.push(format!(
-                    "RPM would need to rise above {floor:.0}, but spindle ceiling is {rpm_max:.0}"
-                ));
-            }
-            // Other CapAxisAt(Feed/DepthPerPass/Stepover/ScallopHeight)
-            // and RaiseAxisAbove cases don't have a single-axis machine
-            // bound that makes them flatly infeasible — keep them.
-            other => kept.push(other),
-        }
-    }
-
-    if kept.is_empty() && !dropped.is_empty() {
-        let reason = format!(
-            "No safe improvement within machine envelope: {}. Consider a larger tool diameter, a different material, or a stiffer toolholder.",
-            dropped.join("; ")
-        );
-        return vec![OperatorSuggestion::DataGapHere { reason }];
-    }
-
-    kept
-}
-
-/// Build an `OutcomeNarrative` for a `TradeOff` outcome. Reads the
-/// recommended candidate's `gate_deltas` (populated by `build_outcome`)
-/// to list improved / worsened gates.
-pub(crate) fn build_tradeoff_narrative(
-    baseline: &OptimizeCandidate,
-    candidates: &[OptimizeCandidate],
-) -> OutcomeNarrative {
-    let envelope = envelope_across(baseline, candidates);
-    let (improved_gates, worsened_gates) = candidates
-        .iter()
-        .skip(1)
-        .find_map(|c| c.gate_deltas.map(|d| split_improved_worsened(&d)))
-        .unwrap_or_default();
-    let headline = headline_tradeoff(&improved_gates, &worsened_gates);
-    OutcomeNarrative {
-        deflection_setup: None,
-        chipload_band_refusal: None,
-        headline,
-        explanation: String::new(),
-        envelope,
-        limiting_gates: Vec::new(),
-        entry_advisories: Vec::new(),
-        suggestions: Vec::new(),
-        improved_gates,
-        worsened_gates,
-    }
-}
-
-/// All non-clean readings for one candidate's verdict — both `Exceeds`
-/// gates and `Within`-but-band-admitted readings. UI uses this to
-/// render per-row "what stopped this candidate" badges in A2's modal
-/// rework. Returns an empty Vec for a strictly-safe verdict.
+/// A depth row is in the list when it exceeds, but it does not make the
+/// candidate unsafe: its bound is a rule of thumb (S3).
 pub fn limiting_gates_for_verdict(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGate> {
-    let mut out = limiting_gates_from_exceeds(verdict);
-    out.extend(limiting_gates_from_band_admit(verdict));
-    out
-}
-
-/// G17 C2 — collect entry-spike advisories from a candidate's verdict.
-/// Reads `entry_spikes` / `entry_spike` from each Within arm and maps
-/// to UI-facing [`EntryAdvisory`] entries. Returns empty for verdicts
-/// with no entry breaches (the common case).
-pub fn entry_advisories_for_verdict(verdict: &ToolpathLoadVerdict) -> Vec<EntryAdvisory> {
-    let mut out: Vec<EntryAdvisory> = Vec::new();
-    if let ChiploadVerdict::Within { entry_spikes, .. } = &verdict.chipload {
-        for s in entry_spikes {
-            out.push(EntryAdvisory {
-                gate: GateKind::Chipload,
-                side: s.side,
-                observed: s.observed,
-                bound: s.bound,
-                overshoot_fraction: signed_overshoot(s.observed, s.bound),
-                locality: s.locality.clone(),
-            });
-        }
-    }
-    if let PowerVerdict::Within {
-        entry_spike: Some(s),
-        ..
-    } = &verdict.power
-    {
-        out.push(EntryAdvisory {
-            gate: GateKind::Power,
-            side: None,
-            observed: s.observed,
-            bound: s.bound,
-            overshoot_fraction: signed_overshoot(s.observed, s.bound),
-            locality: s.locality.clone(),
-        });
-    }
-    if let DeflectionVerdict::Within {
-        entry_spike: Some(s),
-        ..
-    } = &verdict.deflection
-    {
-        out.push(EntryAdvisory {
-            gate: GateKind::Deflection,
-            side: None,
-            observed: s.observed,
-            bound: s.bound,
-            overshoot_fraction: signed_overshoot(s.observed, s.bound),
-            locality: s.locality.clone(),
-        });
-    }
-    out
-}
-
-fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGate> {
     let mut out = Vec::new();
     if let ChiploadVerdict::Exceeds {
         side, triggering, ..
@@ -686,86 +338,25 @@ fn limiting_gates_from_exceeds(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGat
             locality: evidence.locality.clone(),
         });
     }
-    out
-}
-
-fn limiting_gates_from_band_admit(verdict: &ToolpathLoadVerdict) -> Vec<LimitingGate> {
-    // A band-admitted Within reading is one whose observed value is
-    // outside the strict LUT bound but inside the phase-1 tolerance
-    // band (G16 §11.4). For A1 we surface the chipload high-side band
-    // admit, which is the only producer today (power_breach_tolerance
-    // and deflection_breach_tolerance default to 0).
-    //
-    // Checkpoint P (2): these two comparisons are verbatim duplicates of
-    // `delta.rs`'s `chipload_within_breaches_strict` and must stay in step
-    // with it — the tier says "verify on a scrap" and this decides which
-    // gate the modal *names* as the reason. Both now go through the
-    // `ChipBounds` methods, so neither can be decided by a 1-ulp
-    // reconstruction. Tolerance `0.0`: the strict bound is the question.
-    let mut out = Vec::new();
-    if let ChiploadVerdict::Within {
-        approach_to_max, ..
-    } = &verdict.chipload
-        && approach_to_max
-            .bounds
-            .exceeds_high(approach_to_max.observed_mm_per_tooth, 0.0)
-    {
-        out.push(LimitingGate {
-            gate: GateKind::Chipload,
-            side: Some(ChipSide::High),
-            observed: approach_to_max.observed_mm_per_tooth,
-            bound: approach_to_max.bounds.max_mm_per_tooth,
-            overshoot_fraction: signed_overshoot(
-                approach_to_max.observed_mm_per_tooth,
-                approach_to_max.bounds.max_mm_per_tooth,
-            ),
-            band_admitted: true,
-            locality: approach_to_max.evidence.locality.clone(),
-        });
-    }
-    if let ChiploadVerdict::Within {
-        approach_to_min: Some(metric),
+    if let DepthVerdict::Exceeds {
+        peak_mm,
+        bound,
+        evidence,
         ..
-    } = &verdict.chipload
-        && metric.bounds.below_low(metric.observed_mm_per_tooth, 0.0) == Some(true)
-        && let Some(strict_min) = metric.bounds.min_mm_per_tooth
+    } = &verdict.depth
     {
+        let cap_mm = bound.cap_mm();
         out.push(LimitingGate {
-            gate: GateKind::Chipload,
-            side: Some(ChipSide::Low),
-            observed: metric.observed_mm_per_tooth,
-            bound: strict_min,
-            overshoot_fraction: signed_overshoot(metric.observed_mm_per_tooth, strict_min),
-            band_admitted: true,
-            locality: metric.evidence.locality.clone(),
+            gate: GateKind::Depth,
+            side: None,
+            observed: *peak_mm,
+            bound: cap_mm,
+            overshoot_fraction: signed_overshoot(*peak_mm, cap_mm),
+            band_admitted: false,
+            locality: evidence.locality.clone(),
         });
     }
     out
-}
-
-fn split_improved_worsened(deltas: &super::delta::GateDeltas) -> (Vec<GateKind>, Vec<GateKind>) {
-    use super::delta::GateDelta;
-    let mut improved = Vec::new();
-    let mut worsened = Vec::new();
-    if matches!(deltas.chipload, GateDelta::Improved) {
-        improved.push(GateKind::Chipload);
-    }
-    if matches!(deltas.chipload, GateDelta::Worsened) {
-        worsened.push(GateKind::Chipload);
-    }
-    if matches!(deltas.power, GateDelta::Improved) {
-        improved.push(GateKind::Power);
-    }
-    if matches!(deltas.power, GateDelta::Worsened) {
-        worsened.push(GateKind::Power);
-    }
-    if matches!(deltas.deflection, GateDelta::Improved) {
-        improved.push(GateKind::Deflection);
-    }
-    if matches!(deltas.deflection, GateDelta::Worsened) {
-        worsened.push(GateKind::Deflection);
-    }
-    (improved, worsened)
 }
 
 fn envelope_across(
@@ -804,12 +395,9 @@ type ConfigAxes = (
     Option<f64>,
 );
 
-/// Read the five optimizer-known axes off an `OperationConfig`. The
-/// envelope only needs the axes the optimizer actually moves; we
-/// enumerate the four families the optimizer targets today
-/// (Pocket / Adaptive / Adaptive3d / Scallop) and fall through to
-/// `(None, …)` for everything else. Adding more is an op-by-op call
-/// later.
+/// Read the five parameters off an `OperationConfig`. The function
+/// names four operation families (Pocket, Adaptive, Adaptive3d,
+/// Scallop) and returns `(None, …)` for every other one.
 fn config_axes(cfg: &crate::compute::catalog::OperationConfig) -> ConfigAxes {
     use crate::compute::catalog::OperationConfig as Op;
     match cfg {
@@ -869,26 +457,25 @@ fn signed_overshoot(observed: f64, bound: f64) -> f64 {
 }
 
 fn headline_no_safe(non_baseline_count: usize, limiting: &[LimitingGate]) -> String {
-    if non_baseline_count == 0 {
-        return "No candidates were produced — the search space is empty for this op.".to_owned();
-    }
+    let lead = format!(
+        "Tried {non_baseline_count} {}; none was a safe full cut faster than the baseline.",
+        candidates_word(non_baseline_count)
+    );
     if limiting.is_empty() {
-        return format!(
-            "Tried {non_baseline_count} candidates; none were faster than baseline by enough to recommend."
-        );
+        return lead;
     }
     let pieces: Vec<String> = limiting
         .iter()
         .map(|g| match g.gate {
             GateKind::Chipload => match g.side {
                 Some(ChipSide::High) => format!(
-                    "chipload {:.4} mm/tooth ({:+.0}% over LUT max {:.4})",
+                    "chipload {:.4} mm/tooth ({:+.0} % over the LUT max {:.4})",
                     g.observed,
                     g.overshoot_fraction * 100.0,
                     g.bound,
                 ),
                 Some(ChipSide::Low) => format!(
-                    "chipload {:.4} mm/tooth ({:+.0}% below LUT min {:.4})",
+                    "chipload {:.4} mm/tooth ({:+.0} % below the LUT min {:.4})",
                     g.observed,
                     g.overshoot_fraction * 100.0,
                     g.bound,
@@ -896,53 +483,26 @@ fn headline_no_safe(non_baseline_count: usize, limiting: &[LimitingGate]) -> Str
                 None => format!("chipload {:.4} mm/tooth", g.observed),
             },
             GateKind::Power => format!(
-                "power {:.2} kW ({:+.0}% over available {:.2})",
+                "power {:.2} kW ({:+.0} % over the available {:.2})",
                 g.observed,
                 g.overshoot_fraction * 100.0,
                 g.bound,
             ),
             GateKind::Deflection => format!(
-                "deflection {:.0} µm ({:+.0}% over the {:.0} µm threshold)",
+                "deflection {:.0} µm ({:+.0} % over the {:.0} µm bound)",
                 g.observed * 1000.0,
                 g.overshoot_fraction * 100.0,
                 g.bound * 1000.0,
             ),
+            GateKind::Depth => format!(
+                "depth of cut {:.2} mm ({:+.0} % over the {:.2} mm rule of thumb; reported, not a limit)",
+                g.observed,
+                g.overshoot_fraction * 100.0,
+                g.bound,
+            ),
         })
         .collect();
-    format!(
-        "Tried {non_baseline_count} candidates; closest-to-safe still hit: {}.",
-        pieces.join("; "),
-    )
-}
-
-fn headline_marginal(limiting: &[LimitingGate]) -> String {
-    let admitted = limiting.iter().find(|g| g.band_admitted);
-    match admitted {
-        Some(g) => format!(
-            "Best candidate is {:+.0}% past the strict {} bound — admitted by the tolerance band; verify on a scrap before applying.",
-            g.overshoot_fraction * 100.0,
-            match g.gate {
-                GateKind::Chipload => "chipload",
-                GateKind::Power => "power",
-                GateKind::Deflection => "deflection",
-            },
-        ),
-        None => "Best candidate is admitted only by the layer-1 tolerance band — verify on a scrap before applying.".to_owned(),
-    }
-}
-
-fn headline_tradeoff(improved: &[GateKind], worsened: &[GateKind]) -> String {
-    let label = |g: &GateKind| match g {
-        GateKind::Chipload => "chipload",
-        GateKind::Power => "power",
-        GateKind::Deflection => "deflection",
-    };
-    let imp = improved.iter().map(label).collect::<Vec<_>>().join(" + ");
-    let wor = worsened.iter().map(label).collect::<Vec<_>>().join(" + ");
-    if imp.is_empty() || wor.is_empty() {
-        return "Faster candidate found, but the gate trade-off is mixed.".to_owned();
-    }
-    format!("Faster candidate improves {imp} but worsens {wor}.")
+    format!("{lead} The fastest one exceeds: {}.", pieces.join("; "))
 }
 
 #[cfg(test)]
@@ -957,19 +517,13 @@ mod tests {
     use crate::compute::catalog::OperationConfig;
     use crate::compute::operation_configs::PocketConfig;
     use crate::ids::ToolpathId;
-    use crate::tool_load::optimize::delta::{GateDelta, GateDeltas, ParamDelta};
-    use crate::tool_load::optimize::{OptimizeCandidate, SearchStage};
+    use crate::tool_load::optimize::{OptimizeCandidate, ParamDelta, SearchStage};
     use crate::tool_load::verdict::{
         ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
         DeflectionBounds, SampleEvidence, ToolpathLoadVerdict,
     };
 
-    fn candidate(
-        feed: f64,
-        cycle: f64,
-        verdict: ToolpathLoadVerdict,
-        gate_deltas: Option<GateDeltas>,
-    ) -> OptimizeCandidate {
+    fn candidate(feed: f64, cycle: f64, verdict: ToolpathLoadVerdict) -> OptimizeCandidate {
         OptimizeCandidate {
             params: OperationConfig::Pocket(PocketConfig {
                 feed_rate: feed,
@@ -979,13 +533,22 @@ mod tests {
                 feed_mm_min: Some(feed),
                 ..Default::default()
             },
+            dressups: Box::default(),
             cycle_time_s: cycle,
             verdict,
-            stage: SearchStage::Refined,
+            full_cut: crate::tool_load::optimize::FullCutCheck::default(),
+            stage: SearchStage::Measured,
             reconciled_cycle_time_s: None,
             reconciled_verdict: None,
-            gate_deltas,
             air_cut_fraction_of_total_runtime: None,
+        }
+    }
+
+    fn band() -> ChipBounds {
+        ChipBounds {
+            min_mm_per_tooth: Some(0.038),
+            max_mm_per_tooth: 0.07,
+            source: ChipBoundsSource::VendorLut,
         }
     }
 
@@ -995,21 +558,13 @@ mod tests {
                 observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::MedianLow,
                 evidence: SampleEvidence::empty(),
-                bounds: ChipBounds {
-                    min_mm_per_tooth: Some(0.038),
-                    max_mm_per_tooth: 0.07,
-                    source: ChipBoundsSource::VendorLut,
-                },
+                bounds: band(),
             }),
             approach_to_max: ChiploadMetric {
                 observed_mm_per_tooth: observed,
                 statistic: ChiploadStatistic::PeakInRange,
                 evidence: SampleEvidence::empty(),
-                bounds: ChipBounds {
-                    min_mm_per_tooth: Some(0.038),
-                    max_mm_per_tooth: 0.07,
-                    source: ChipBoundsSource::VendorLut,
-                },
+                bounds: band(),
             },
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
@@ -1024,11 +579,7 @@ mod tests {
                 observed_mm_per_tooth: peak,
                 statistic: ChiploadStatistic::PeakHigh,
                 evidence: SampleEvidence::at(0),
-                bounds: ChipBounds {
-                    min_mm_per_tooth: Some(0.038),
-                    max_mm_per_tooth: 0.07,
-                    source: ChipBoundsSource::VendorLut,
-                },
+                bounds: band(),
             },
             confidence: Confidence::Validated,
         }
@@ -1087,55 +638,35 @@ mod tests {
         }
     }
 
+    /// The narrative names the exceeded rows of the FASTEST candidate,
+    /// and the envelope spans every attempted feed.
     #[test]
-    fn no_safe_narrative_surfaces_chipload_high_overshoot() {
-        // Wanaka TP 1 case: every refined candidate Exceeds chipload
-        // High at +28%; closest-to-safe is the first non-baseline.
+    fn no_safe_narrative_names_the_fastest_candidate() {
         let baseline = candidate(
             3150.0,
             773.0,
-            vd(within_chipload(0.025), within_deflection(0.158)),
-            None,
+            vd(within_chipload(0.050), within_deflection(0.158)),
         );
         let attempted = vec![
-            baseline.clone(),
+            baseline,
+            candidate(
+                3600.0,
+                474.0,
+                vd(exceeds_chipload_high(0.0707), within_deflection(0.158)),
+            ),
             candidate(
                 4000.0,
                 431.0,
                 vd(exceeds_chipload_high(0.0707), exceeds_deflection(0.237)),
-                Some(GateDeltas {
-                    chipload: GateDelta::Worsened,
-                    power: GateDelta::Same,
-                    deflection: GateDelta::Worsened,
-                }),
-            ),
-            candidate(
-                4000.0,
-                474.0,
-                vd(exceeds_chipload_high(0.0707), within_deflection(0.158)),
-                Some(GateDeltas {
-                    chipload: GateDelta::Worsened,
-                    power: GateDelta::Same,
-                    deflection: GateDelta::Same,
-                }),
             ),
         ];
-        let n = build_no_safe_narrative(&baseline, &attempted, &MachineProfile::default());
+        let n = build_no_safe_narrative(&attempted);
         assert!(
-            n.headline.contains("chipload"),
-            "headline should mention chipload, got: {}",
+            n.headline.contains("chipload") && n.headline.contains("deflection"),
+            "the headline names the rows of the fastest candidate, got: {}",
             n.headline,
         );
-        assert!(
-            n.headline.contains("over LUT max") || n.headline.contains("over"),
-            "headline should mention overshoot direction, got: {}",
-            n.headline,
-        );
-        assert_eq!(
-            n.limiting_gates.len(),
-            2,
-            "chipload + deflection both Exceeds"
-        );
+        assert_eq!(n.limiting_gates.len(), 2, "chipload + deflection exceed");
         let chipload_gate = n
             .limiting_gates
             .iter()
@@ -1144,453 +675,40 @@ mod tests {
         assert_eq!(chipload_gate.side, Some(ChipSide::High));
         assert!(!chipload_gate.band_admitted);
         assert!(chipload_gate.overshoot_fraction > 0.0);
-        // Envelope should span feed 3150 → 4000.
         let feed = n.envelope.feed_mm_min.expect("feed extent present");
         assert!((feed.min - 3150.0).abs() < 1e-9);
         assert!((feed.max - 4000.0).abs() < 1e-9);
-        // G17 A4: suggestions are now non-empty when the closest-to-safe
-        // candidate has limiting gates with knobs we know how to invert.
-        assert!(
-            !n.suggestions.is_empty(),
-            "A4 emits suggestions for chipload-high + deflection-exceeds"
-        );
+        assert!(!n.explanation.is_empty());
     }
 
+    /// The depth row names itself with `GateKind::Depth` and reads its
+    /// bound from the rigidity cap.
     #[test]
-    fn marginal_narrative_surfaces_band_admitted_chipload() {
-        // Wanaka TP 6 case: best candidate has chipload peak 0.072
-        // (1.3% over strict max 0.07) admitted by the 5% breakage_tolerance
-        // band. limiting_gates.band_admitted should be true.
-        let baseline = candidate(
-            3150.0,
-            200.0,
-            vd(within_chipload(0.072), within_deflection(0.157)),
-            None,
-        );
-        let candidates = vec![
-            baseline.clone(),
-            candidate(
-                3500.0,
-                188.0,
-                vd(within_chipload(0.072), within_deflection(0.157)),
-                Some(GateDeltas {
-                    chipload: GateDelta::Same,
-                    power: GateDelta::Same,
-                    deflection: GateDelta::Same,
-                }),
-            ),
-        ];
-        let n = build_marginal_safe_narrative(&baseline, &candidates);
-        let admitted = n
-            .limiting_gates
-            .iter()
-            .find(|g| g.band_admitted)
-            .expect("at least one band-admitted reading");
-        assert!(matches!(admitted.gate, GateKind::Chipload));
-        assert_eq!(admitted.side, Some(ChipSide::High));
-        assert!(admitted.overshoot_fraction > 0.0);
-        assert!(
-            n.headline.contains("tolerance band") || n.headline.contains("scrap"),
-            "headline should mention scrap / tolerance band, got: {}",
-            n.headline,
-        );
-    }
-
-    #[test]
-    fn suggest_levers_caps_feed_when_chipload_high() {
-        // Wanaka TP 1 case shape: chipload observed 0.0707 vs the
-        // existing fixture's LUT max 0.07 → +1% over. At feed 4000:
-        //   target_feed = 4000 × (0.07 / 0.0707) × 0.95 ≈ 3762 mm/min.
-        let cand = candidate(
-            4000.0,
-            431.0,
-            vd(exceeds_chipload_high(0.0707), exceeds_deflection(0.237)),
-            None,
-        );
-        let limiting = limiting_gates_from_exceeds(&cand.verdict);
-        let suggestions = suggest_levers(&limiting, &cand);
-        let cap_feed = suggestions
-            .iter()
-            .find(|s| {
-                matches!(
-                    s,
-                    OperatorSuggestion::CapAxisAt {
-                        axis: KnobAxis::Feed,
-                        ..
-                    }
-                )
-            })
-            .expect("chipload-high should suggest capping feed");
-        let OperatorSuggestion::CapAxisAt { ceiling, .. } = cap_feed else {
-            unreachable!();
+    fn an_exceeded_depth_row_names_itself() {
+        let cap = crate::machine::RigidityDepthCap {
+            factor: 0.25,
+            diameter_mm: 6.0,
         };
-        assert!(
-            (3700.0..3800.0).contains(ceiling),
-            "expected feed cap ~3762 mm/min for the fixture's +1% overshoot, got {ceiling}"
-        );
-        // Deflection exceedance also fires → expect a DOC cap too.
-        let cap_doc = suggestions.iter().find(|s| {
-            matches!(
-                s,
-                OperatorSuggestion::CapAxisAt {
-                    axis: KnobAxis::DepthPerPass,
-                    ..
-                }
-            )
-        });
-        assert!(
-            cap_doc.is_some(),
-            "deflection-exceeds should suggest capping DOC: {suggestions:?}"
-        );
-    }
-
-    #[test]
-    fn suggest_levers_raises_feed_when_chipload_low() {
-        // Burn-side: chipload median 0.025 vs LUT min 0.032 at feed
-        // 3000 mm/min → suggest raising feed above current_feed ×
-        // (0.032/0.025) × 1.05 = 4032 mm/min.
-        use crate::tool_load::verdict::{
-            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
-            SampleEvidence,
-        };
-        let burn_chipload = ChiploadVerdict::Exceeds {
-            side: ChipSide::Low,
-            triggering: ChiploadMetric {
-                observed_mm_per_tooth: 0.025,
-                statistic: ChiploadStatistic::MedianLow,
-                evidence: SampleEvidence::empty(),
-                bounds: ChipBounds {
-                    min_mm_per_tooth: Some(0.032),
-                    max_mm_per_tooth: 0.055,
-                    source: ChipBoundsSource::VendorLut,
-                },
-            },
+        let mut verdict = vd(within_chipload(0.050), within_deflection(0.10));
+        verdict.depth = DepthVerdict::Exceeds {
+            peak_mm: 3.0,
+            bound: cap,
+            evidence: SampleEvidence::at(0),
             confidence: Confidence::Validated,
         };
-        let cand = candidate(
-            3000.0,
-            500.0,
-            vd(burn_chipload, within_deflection(0.030)),
-            None,
-        );
-        let limiting = limiting_gates_from_exceeds(&cand.verdict);
-        let suggestions = suggest_levers(&limiting, &cand);
-        let raise = suggestions
-            .iter()
-            .find(|s| matches!(s, OperatorSuggestion::RaiseAxisAbove { .. }))
-            .expect("chipload-low should suggest raising feed");
-        let OperatorSuggestion::RaiseAxisAbove { axis, floor } = raise else {
-            unreachable!();
-        };
-        assert_eq!(*axis, KnobAxis::Feed);
-        // 3000 × (0.032/0.025) × 1.05 = 4032
-        assert!(
-            (4000.0..4100.0).contains(floor),
-            "expected feed floor ~4032, got {floor}"
-        );
+        let gates = limiting_gates_for_verdict(&verdict);
+        assert_eq!(gates.len(), 1, "only the depth row exceeds: {gates:?}");
+        let depth = &gates[0];
+        assert_eq!(depth.gate, GateKind::Depth);
+        assert!((depth.bound - cap.cap_mm()).abs() < 1e-12);
+        assert!((depth.observed - 3.0).abs() < 1e-12);
+        assert!(depth.overshoot_fraction > 0.0);
     }
 
-    /// F7 — chipload-low candidates with an explicit spindle_rpm should
-    /// surface a parallel CapAxisAt(SpindleRpm) suggestion. The RPM
-    /// suggestion is the alternate physical lever for fixing burn risk:
-    /// at fixed feed, lowering RPM raises chipload. Operators whose feed
-    /// is already at the machine cap rely on this hint until the
-    /// optimizer's Stage 1.5 RPM-down sweep (F1) lands.
+    /// A clean verdict names no row.
     #[test]
-    fn suggest_levers_chipload_low_also_offers_lower_rpm() {
-        use crate::tool_load::verdict::{
-            ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, Confidence,
-            SampleEvidence,
-        };
-        let burn_chipload = ChiploadVerdict::Exceeds {
-            side: ChipSide::Low,
-            triggering: ChiploadMetric {
-                observed_mm_per_tooth: 0.025,
-                statistic: ChiploadStatistic::MedianLow,
-                evidence: SampleEvidence::empty(),
-                bounds: ChipBounds {
-                    min_mm_per_tooth: Some(0.032),
-                    max_mm_per_tooth: 0.055,
-                    source: ChipBoundsSource::VendorLut,
-                },
-            },
-            confidence: Confidence::Validated,
-        };
-        // Build a candidate at feed 4000 (machine cap) and explicit
-        // spindle_rpm = 18000 — the wanaka case.
-        let mut cand = candidate(
-            4000.0,
-            500.0,
-            vd(burn_chipload, within_deflection(0.030)),
-            None,
-        );
-        if let OperationConfig::Pocket(ref mut p) = cand.params {
-            p.spindle_rpm = Some(18_000);
-        }
-        let limiting = limiting_gates_from_exceeds(&cand.verdict);
-        let suggestions = suggest_levers(&limiting, &cand);
-        let cap_rpm = suggestions
-            .iter()
-            .find_map(|s| match s {
-                OperatorSuggestion::CapAxisAt {
-                    axis: KnobAxis::SpindleRpm,
-                    ceiling,
-                } => Some(*ceiling),
-                _ => None,
-            })
-            .expect("chipload-low at explicit RPM should also offer CapAxisAt(SpindleRpm)");
-        // 18000 × (0.025/0.032) × 0.95 ≈ 13359
-        assert!(
-            (13000.0..14000.0).contains(&cap_rpm),
-            "expected RPM ceiling ~13359, got {cap_rpm}"
-        );
-    }
-
-    #[test]
-    fn entry_advisories_surface_chipload_high_helix_spike() {
-        // G17 C2: a Within chipload with an entry-spike payload should
-        // produce an EntryAdvisory in the narrative.
-        use crate::tool_load::verdict::EntrySpike;
-        let chipload_with_spike = match within_chipload(0.054) {
-            ChiploadVerdict::Within {
-                approach_to_min,
-                approach_to_max,
-                confidence,
-                ..
-            } => ChiploadVerdict::Within {
-                approach_to_min,
-                approach_to_max,
-                confidence,
-                entry_spikes: vec![EntrySpike {
-                    observed: 0.0707,
-                    bound: 0.055,
-                    locality: "helix entry".to_owned(),
-                    side: Some(ChipSide::High),
-                }],
-                burn_advisory: None,
-            },
-            _ => panic!("within_chipload should produce Within"),
-        };
-        let cand = candidate(
-            3000.0,
-            500.0,
-            ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(0),
-                chipload: chipload_with_spike,
-                power: within_power(),
-                deflection: within_deflection(0.030),
-                // S3: a hand-built fixture states no measured depth; the
-                // row keeps the posture of the gates beside it.
-                depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
-                drill_gates: None,
-                modulation_summary: None,
-                feed_explanation: None,
-                kinematic_utilization: None,
-                material_split: None,
-            },
-            None,
-        );
-        let advisories = entry_advisories_for_verdict(&cand.verdict);
-        assert_eq!(advisories.len(), 1);
-        let a = &advisories[0];
-        assert!(matches!(a.gate, GateKind::Chipload));
-        assert_eq!(a.side, Some(ChipSide::High));
-        assert_eq!(a.locality, "helix entry");
-        assert!(a.overshoot_fraction > 0.0);
-    }
-
-    #[test]
-    fn suggest_levers_skips_when_no_limiting_gates() {
-        let cand = candidate(
-            3000.0,
-            500.0,
-            vd(within_chipload(0.054), within_deflection(0.030)),
-            None,
-        );
-        let suggestions = suggest_levers(&[], &cand);
-        assert!(suggestions.is_empty());
-    }
-
-    /// Roadmap F.4 — TP12 (Rivers copy) case shape: optimizer wants
-    /// "raise feed above 10080 mm/min", but the project's machine has
-    /// `max_feed_mm_min = 4000`. The infeasible suggestion must be
-    /// filtered out and replaced with a DataGapHere explaining the
-    /// envelope conflict.
-    #[test]
-    fn filter_envelope_drops_infeasible_feed_raise_and_emits_data_gap() {
-        let suggestions = vec![OperatorSuggestion::RaiseAxisAbove {
-            axis: KnobAxis::Feed,
-            floor: 10080.0,
-        }];
-        let machine = MachineProfile::default(); // max_feed_mm_min = 4000
-        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
-        assert_eq!(filtered.len(), 1);
-        match &filtered[0] {
-            OperatorSuggestion::DataGapHere { reason } => {
-                assert!(
-                    reason.contains("feed") && reason.contains("4000"),
-                    "DataGapHere should explain the feed envelope conflict, got: {reason}"
-                );
-            }
-            other => panic!("expected DataGapHere, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn filter_envelope_drops_infeasible_rpm_cap() {
-        let suggestions = vec![OperatorSuggestion::CapAxisAt {
-            axis: KnobAxis::SpindleRpm,
-            ceiling: 3166.0,
-        }];
-        let machine = MachineProfile::default(); // min_rpm = 8000
-        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
-        assert_eq!(filtered.len(), 1);
-        match &filtered[0] {
-            OperatorSuggestion::DataGapHere { reason } => {
-                assert!(
-                    reason.contains("RPM") && reason.contains("8000"),
-                    "DataGapHere should explain the spindle envelope conflict, got: {reason}"
-                );
-            }
-            other => panic!("expected DataGapHere, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn filter_envelope_keeps_feasible_suggestions() {
-        // Feed cap at 3000 mm/min is inside the 4000 cap — totally
-        // feasible. Keep it.
-        let suggestions = vec![OperatorSuggestion::CapAxisAt {
-            axis: KnobAxis::Feed,
-            ceiling: 3000.0,
-        }];
-        let machine = MachineProfile::default();
-        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
-        assert_eq!(filtered.len(), 1);
-        assert!(matches!(
-            &filtered[0],
-            OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::Feed,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn filter_envelope_mixed_drops_only_infeasible() {
-        // Two suggestions: one feasible (cap DOC), one not (raise feed
-        // above machine cap). Filter should keep the DOC cap.
-        let suggestions = vec![
-            OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::DepthPerPass,
-                ceiling: 2.0,
-            },
-            OperatorSuggestion::RaiseAxisAbove {
-                axis: KnobAxis::Feed,
-                floor: 10080.0,
-            },
-        ];
-        let machine = MachineProfile::default();
-        let filtered = filter_suggestions_by_envelope(suggestions, &machine);
-        assert_eq!(filtered.len(), 1, "DOC cap should survive the filter");
-        assert!(matches!(
-            &filtered[0],
-            OperatorSuggestion::CapAxisAt {
-                axis: KnobAxis::DepthPerPass,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn filter_envelope_passes_through_when_no_suggestions() {
-        let filtered = filter_suggestions_by_envelope(Vec::new(), &MachineProfile::default());
-        assert!(filtered.is_empty());
-    }
-
-    #[test]
-    fn tradeoff_narrative_lists_improved_and_worsened() {
-        // Synthetic: baseline Exceeds chipload, candidate brings
-        // chipload Within but pushes deflection over.
-        let baseline = candidate(
-            3000.0,
-            500.0,
-            vd(exceeds_chipload_high(0.08), within_deflection(0.030)),
-            None,
-        );
-        let candidates = vec![
-            baseline.clone(),
-            candidate(
-                2500.0,
-                450.0,
-                vd(within_chipload(0.040), exceeds_deflection(0.250)),
-                Some(GateDeltas {
-                    chipload: GateDelta::Improved,
-                    power: GateDelta::Same,
-                    deflection: GateDelta::Worsened,
-                }),
-            ),
-        ];
-        let n = build_tradeoff_narrative(&baseline, &candidates);
-        assert_eq!(n.improved_gates, vec![GateKind::Chipload]);
-        assert_eq!(n.worsened_gates, vec![GateKind::Deflection]);
-        assert!(
-            n.headline.contains("chipload") && n.headline.contains("deflection"),
-            "headline should reference both gates, got: {}",
-            n.headline,
-        );
-    }
-
-    /// **Checkpoint P (2) — sites 5 and 6.**
-    ///
-    /// `limiting_gates_from_band_admit` holds a verbatim duplicate of
-    /// `delta.rs`'s strict-breach pair. `delta.rs` decides the *tier*
-    /// (auto-recommend vs verify-on-scrap); this decides which gate the modal
-    /// then **names** as the reason. If the two disagree the operator is told
-    /// "verify on a scrap" with no gate named, or a gate is named on a run
-    /// that was not demoted.
-    ///
-    /// RED at the parent (`f2c0b09d`): both wrote bare `>` / `<`, so a 1-ulp
-    /// reconstruction produced a `LimitingGate` with `band_admitted: true` on
-    /// a candidate the epsilon-aware gate had called `Within`.
-    ///
-    /// GREEN after: both go through the `ChipBounds` methods, and a genuine
-    /// overshoot is still surfaced.
-    #[test]
-    fn a_one_ulp_reconstruction_does_not_manufacture_a_band_admit() {
-        let ceiling = 0.07_f64;
-        let one_ulp_above = f64::from_bits(ceiling.to_bits() + 1);
-        let noise = vd(within_chipload(one_ulp_above), within_deflection(0.10));
-        assert!(
-            limiting_gates_from_band_admit(&noise).is_empty(),
-            "1 ulp over the ceiling is reconstruction noise, not a band admit"
-        );
-
-        let real = vd(within_chipload(ceiling * 1.05), within_deflection(0.10));
-        let gates = limiting_gates_from_band_admit(&real);
-        assert!(
-            gates.iter().any(|g| matches!(g.gate, GateKind::Chipload)
-                && g.side == Some(ChipSide::High)
-                && g.band_admitted),
-            "a genuine 5 % overshoot must still be surfaced as a band admit, \
-             got {gates:?}"
-        );
-
-        // Low side, same shape. `within_chipload` shares one band across both
-        // metrics, so a value 1 ulp under the 0.038 floor probes the burn arm.
-        let floor = 0.038_f64;
-        let one_ulp_below = f64::from_bits(floor.to_bits() - 1);
-        let low_noise = vd(within_chipload(one_ulp_below), within_deflection(0.10));
-        assert!(
-            limiting_gates_from_band_admit(&low_noise).is_empty(),
-            "1 ulp under the floor is not a burn-side band admit"
-        );
-        let low_real = vd(within_chipload(floor * 0.9), within_deflection(0.10));
-        assert!(
-            limiting_gates_from_band_admit(&low_real)
-                .iter()
-                .any(|g| g.side == Some(ChipSide::Low) && g.band_admitted),
-            "a genuine sub-floor median must still be surfaced"
-        );
+    fn a_clean_verdict_names_no_row() {
+        let verdict = vd(within_chipload(0.050), within_deflection(0.10));
+        assert!(limiting_gates_for_verdict(&verdict).is_empty());
     }
 }

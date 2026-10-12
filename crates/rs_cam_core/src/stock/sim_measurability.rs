@@ -299,8 +299,12 @@ pub struct MeasurabilityReport {
 impl MeasurabilityReport {
     /// Build the report from a finished trace.
     ///
-    /// `cell_mm` is the simulation resolution, when the caller knows it —
-    /// it only ever enriches a reason payload, never changes a verdict.
+    /// `cell_mm` is the simulation resolution, when the caller knows it.
+    /// Here it only enriches a reason payload and changes no verdict of
+    /// this report. The triage reads the stored value as the tolerance of
+    /// the standing-material rule (G-OVERCUTREF,
+    /// `stock::sim_triage::standing_material_finding`), so pass the real
+    /// cell or `None`, never a placeholder.
     pub fn from_trace(trace: &SimulationCutTrace, cell_mm: Option<f64>) -> Self {
         let mut entries = Vec::new();
 

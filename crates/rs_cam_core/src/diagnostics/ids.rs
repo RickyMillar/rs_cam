@@ -104,10 +104,13 @@ pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch";
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
 /// toolpath, it is a statement about the simulation.
 pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
-/// R-12 (census §6.4). A surface-following pass is cutting through material
-/// an upstream operation left standing. The actionable half of the "Rivers
-/// B4" investigation: the simulator's reading was correct all along, and what
-/// was missing was anyone saying what it meant.
+/// R-12 (census §6.4). A pass is cutting through material an upstream
+/// operation left standing. The actionable half of the "Rivers B4"
+/// investigation: the simulator's reading was correct all along, and what
+/// was missing was anyone saying what it meant. G-OVERCUTREF (2026-10-12): a
+/// stepped op is read against its commanded step plus one cell, and a
+/// surface-following op against its own median bite
+/// (`stock::sim_triage::standing_material_finding`).
 pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material";
 /// G-ENTRYLOAD (2026-08-23). A pass's ENTRY motion removes multiples of what
 /// the pass itself takes in steady cutting. The three load gates

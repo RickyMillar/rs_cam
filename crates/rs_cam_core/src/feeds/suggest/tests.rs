@@ -330,12 +330,9 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
         SuggestContext::default(),
     );
 
-    // speeds identical to the combined apply
-    assert_eq!(speeds.feed_rate(), both.feed_rate());
-    assert_eq!(speeds.plunge_rate(), both.plunge_rate());
-    assert_eq!(speeds.spindle_rpm(), both.spindle_rpm());
-    assert_eq!(speeds_prov.feed_rate, both_prov.feed_rate);
+    // the speeds are written
     assert!(speeds_prov.feed_rate.is_some());
+    assert_eq!(speeds.spindle_rpm(), both.spindle_rpm());
     // cut geometry + its provenance untouched
     assert_eq!(speeds.as_params().stepover(), base.as_params().stepover());
     assert_eq!(
@@ -344,6 +341,35 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
     );
     assert!(speeds_prov.stepover.is_none());
     assert!(speeds_prov.depth_per_pass.is_none());
+
+    // Adapted by G-SPEEDSAPPLY (2026-10-12). This test asserted that the
+    // speeds of a speeds-only apply equal the speeds of the combined apply
+    // on the base op (stepover 1.234, DPP 2.345). Those speeds were sized for
+    // the geometry the combined apply writes, not for the geometry the base
+    // op keeps. A speeds-only apply now resolves the speeds for the kept
+    // geometry, so the equality holds when the op already carries the
+    // geometry that the combined apply writes.
+    let mut at_both_geometry = base;
+    at_both_geometry.set_stepover(both.stepover().expect("pocket carries a stepover"));
+    at_both_geometry.set_depth_per_pass(both.depth_per_pass().expect("pocket carries a DPP"));
+    let mut kept = at_both_geometry.clone();
+    let mut kept_prov = crate::feeds::FeedsProvenance::default();
+    apply_speeds_to_op(
+        &mut kept,
+        &mut kept_prov,
+        &result,
+        &tool,
+        &machine,
+        &material,
+        role,
+        SuggestContext::default(),
+    );
+    assert_eq!(kept.feed_rate().to_bits(), both.feed_rate().to_bits());
+    assert_eq!(kept.plunge_rate().to_bits(), both.plunge_rate().to_bits());
+    assert_eq!(kept.spindle_rpm(), both.spindle_rpm());
+    assert_eq!(kept_prov.feed_rate, both_prov.feed_rate);
+    assert_eq!(kept.stepover(), at_both_geometry.stepover());
+    assert_eq!(kept.depth_per_pass(), at_both_geometry.depth_per_pass());
 }
 
 #[test]

@@ -812,9 +812,9 @@ pub fn predict_move_count(
 // pre-simulation solve can know the achieved/commanded feed ratio, which
 // is what the current gate observation actually depends on. Any feed
 // lift now belongs to the **simulation-backed** path
-// (`feed_modulation`, `tool_load::optimize::retarget::chipload`), which
-// corrects from a measured observation — that path is measured clean 4/4
-// on the same fixtures. The two `SuggestWarning` variants
+// (`feed_modulation`), which corrects from a measured observation — that
+// path is measured clean 4/4 on the same fixtures. The post-sim
+// optimizer (`tool_load::optimize`) reads its feeds from the calculator. The two `SuggestWarning` variants
 // (`FeedRaisedForChipload`, `ChiploadStillLowAfterRecalibration`) were
 // deliberately KEPT for that path to reuse; see their own docs.
 //

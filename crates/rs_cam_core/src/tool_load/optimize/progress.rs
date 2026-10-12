@@ -9,24 +9,24 @@
 //!
 //! # Why the counts are PER RUNG
 //!
-//! The search walks a fixed ladder of three rungs, and each rung forms
+//! The search walks a fixed ladder of two rungs, and each rung forms
 //! its own candidate list in one call before it walks it. A rung's total
 //! is therefore honest the moment that rung starts, and a WHOLE-RUN
-//! total is not: Stage F's count is unknown until the retargeters run,
-//! Stage 1's until the grid builds, and Stage 2's is a function of
-//! Stage 1's output. One pair per rung records what each rung did, and
-//! the pairs stand after the run returns.
+//! total is not: the depth and width cells are known only after the
+//! link rung decides which dressups they carry. One pair per rung
+//! records what each rung did, and the pairs stand after the run
+//! returns.
 //!
-//! **There is no time-left figure, and this type carries no clock.** Two
-//! reasons, both structural: the whole-run total is not known up front,
-//! and a Stage-2 candidate simulates at a finer cell than a Stage-1
-//! candidate, so one mean second per candidate mixes two populations.
+//! **There is no time-left figure, and this type carries no clock.** The
+//! whole-run total is not known up front, and a deep cell simulates
+//! fewer levels than a shallow one, so one mean second per candidate is
+//! not a forecast.
 //!
 //! # Why atomics and not a `Mutex`
 //!
 //! The GUI frame loop reads this while the worker thread writes it. A
 //! contended or poisoned mutex on the frame loop is a new failure mode
-//! for no gain. Eight atomics carry every number the row, the window and
+//! for no gain. Six atomics carry every number the row, the window and
 //! the sentry read. The ordering is `SeqCst`, which matches the cancel
 //! flag the same loops poll.
 //!
@@ -44,40 +44,36 @@
 
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
-/// Which rung of the fixed three-rung ladder the search is on.
+/// Which rung of the fixed two-rung ladder the search is on.
 ///
-/// **This is not [`super::SearchStage`].** That enum describes a
-/// CANDIDATE's provenance, and a Stage-F retarget candidate is stamped
-/// `Coarse` exactly as a Stage-1 candidate is. The two vocabularies
-/// answer different questions.
+/// **This is not [`super::SearchStage`].** That enum describes the
+/// source of a CANDIDATE; this one describes where the RUN is. The two
+/// vocabularies answer different questions.
+///
+/// The rungs are the levers of the post-sim tuner
+/// (`planning/optimize_review_2026-10-12/PLAN.md` §2): first the link
+/// lever, then the depth and width lever.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchPhase {
-    /// Stage F — the closed-form feed and RPM solve.
-    FeedRpm,
-    /// Stage 1 — the axis grid at the coarse cell.
-    AxisGrid,
-    /// Stage 2 — the survivors, re-simulated at the refined cell.
-    Refine,
+    /// Lever L1: the link-moves dressup on the baseline operation.
+    Links,
+    /// Lever L2: the depth-per-pass and stepover cells.
+    DepthWidth,
 }
 
 impl SearchPhase {
     /// The ladder, in the order the search walks it.
     ///
     /// One list, so the rung count appears once. The row reads the length
-    /// for its "stage 2/3" denominator and the window walks the list.
-    pub const ALL: [SearchPhase; 3] = [
-        SearchPhase::FeedRpm,
-        SearchPhase::AxisGrid,
-        SearchPhase::Refine,
-    ];
+    /// for its "stage 1/2" denominator and the window walks the list.
+    pub const ALL: [SearchPhase; 2] = [SearchPhase::Links, SearchPhase::DepthWidth];
 
     /// This rung's position on the ladder, counted from one.
     #[must_use]
     pub fn index_from_one(self) -> usize {
         match self {
-            SearchPhase::FeedRpm => 1,
-            SearchPhase::AxisGrid => 2,
-            SearchPhase::Refine => 3,
+            SearchPhase::Links => 1,
+            SearchPhase::DepthWidth => 2,
         }
     }
 
@@ -88,9 +84,8 @@ impl SearchPhase {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            SearchPhase::FeedRpm => "feed and RPM",
-            SearchPhase::AxisGrid => "axis grid",
-            SearchPhase::Refine => "refine at full resolution",
+            SearchPhase::Links => "links",
+            SearchPhase::DepthWidth => "depth and width",
         }
     }
 
@@ -98,18 +93,16 @@ impl SearchPhase {
     /// rung runs", so every rung code is positive.
     fn code(self) -> u8 {
         match self {
-            SearchPhase::FeedRpm => 1,
-            SearchPhase::AxisGrid => 2,
-            SearchPhase::Refine => 3,
+            SearchPhase::Links => 1,
+            SearchPhase::DepthWidth => 2,
         }
     }
 
     /// Read a rung back from its stored code. `None` for zero.
     fn from_code(code: u8) -> Option<Self> {
         match code {
-            1 => Some(SearchPhase::FeedRpm),
-            2 => Some(SearchPhase::AxisGrid),
-            3 => Some(SearchPhase::Refine),
+            1 => Some(SearchPhase::Links),
+            2 => Some(SearchPhase::DepthWidth),
             _ => None,
         }
     }
@@ -130,18 +123,14 @@ pub struct OptimizeProgress {
     phase: AtomicU8,
     /// The highest rung code the run ever reached. It never falls.
     high_water: AtomicU8,
-    /// Candidates Stage F formed.
-    feed_rpm_total: AtomicUsize,
-    /// Candidates Stage F entered.
-    feed_rpm_reached: AtomicUsize,
-    /// Candidates Stage 1 formed.
-    axis_grid_total: AtomicUsize,
-    /// Candidates Stage 1 entered.
-    axis_grid_reached: AtomicUsize,
-    /// Candidates Stage 2 formed.
-    refine_total: AtomicUsize,
-    /// Candidates Stage 2 entered.
-    refine_reached: AtomicUsize,
+    /// Candidates the link rung formed.
+    links_total: AtomicUsize,
+    /// Candidates the link rung entered.
+    links_reached: AtomicUsize,
+    /// Cells the depth and width rung formed.
+    depth_width_total: AtomicUsize,
+    /// Cells the depth and width rung entered.
+    depth_width_reached: AtomicUsize,
 }
 
 /// One read of an [`OptimizeProgress`], taken on the frame loop.
@@ -171,10 +160,8 @@ pub struct OptimizeProgressSnapshot {
 impl OptimizeProgress {
     /// Announce a rung and the candidate count it formed.
     ///
-    /// The orchestrator announces Stage F with a zero total before it
-    /// chooses a Stage-F mode, because neither mode runs on some
-    /// baselines and the window's first row must still tick. Each helper
-    /// then re-announces its own real total once the list exists.
+    /// A rung with no candidates is announced with a total of zero, so
+    /// the window still names it.
     pub fn begin_phase(&self, phase: SearchPhase, candidate_total: usize) {
         let (reached, total) = self.slot(phase);
         total.store(candidate_total, Ordering::SeqCst);
@@ -240,9 +227,8 @@ impl OptimizeProgress {
     /// One rung's `(reached, total)` pair. A `match`, never an index.
     fn slot(&self, phase: SearchPhase) -> (&AtomicUsize, &AtomicUsize) {
         match phase {
-            SearchPhase::FeedRpm => (&self.feed_rpm_reached, &self.feed_rpm_total),
-            SearchPhase::AxisGrid => (&self.axis_grid_reached, &self.axis_grid_total),
-            SearchPhase::Refine => (&self.refine_reached, &self.refine_total),
+            SearchPhase::Links => (&self.links_reached, &self.links_total),
+            SearchPhase::DepthWidth => (&self.depth_width_reached, &self.depth_width_total),
         }
     }
 }
@@ -276,28 +262,28 @@ mod tests {
     #[test]
     fn each_rung_keeps_its_own_pair_and_the_mark_never_falls() {
         let progress = OptimizeProgress::default();
-        progress.begin_phase(SearchPhase::FeedRpm, 1);
+        progress.begin_phase(SearchPhase::Links, 1);
         progress.begin_candidate(0);
-        progress.begin_phase(SearchPhase::AxisGrid, 8);
+        progress.begin_phase(SearchPhase::DepthWidth, 8);
         progress.begin_candidate(2);
 
         let snapshot = progress.snapshot();
-        assert_eq!(snapshot.phase, Some(SearchPhase::AxisGrid));
+        assert_eq!(snapshot.phase, Some(SearchPhase::DepthWidth));
         assert_eq!(snapshot.phase_index, 2);
         assert_eq!(snapshot.candidate, 3, "the tick publishes index + 1");
         assert_eq!(snapshot.candidate_total, 8);
         assert_eq!(
-            progress.rung(SearchPhase::FeedRpm),
+            progress.rung(SearchPhase::Links),
             (1, 1),
             "the earlier rung's pair stands"
         );
-        assert_eq!(progress.high_water_phase(), Some(SearchPhase::AxisGrid));
+        assert_eq!(progress.high_water_phase(), Some(SearchPhase::DepthWidth));
 
         // A re-announce of an EARLIER rung must not lower the mark.
-        progress.begin_phase(SearchPhase::FeedRpm, 3);
+        progress.begin_phase(SearchPhase::Links, 3);
         assert_eq!(
             progress.high_water_phase(),
-            Some(SearchPhase::AxisGrid),
+            Some(SearchPhase::DepthWidth),
             "the high-water mark never falls"
         );
     }
@@ -306,14 +292,14 @@ mod tests {
     #[test]
     fn finish_clears_the_rung_and_keeps_the_counts() {
         let progress = OptimizeProgress::default();
-        progress.begin_phase(SearchPhase::Refine, 2);
+        progress.begin_phase(SearchPhase::DepthWidth, 2);
         progress.begin_candidate(1);
         progress.finish();
 
         let snapshot = progress.snapshot();
         assert!(snapshot.phase.is_none(), "a settled run claims no rung");
-        assert_eq!(snapshot.high_water_index, 3, "but it says how far it got");
-        assert_eq!(progress.rung(SearchPhase::Refine), (2, 2));
+        assert_eq!(snapshot.high_water_index, 2, "but it says how far it got");
+        assert_eq!(progress.rung(SearchPhase::DepthWidth), (2, 2));
     }
 
     /// A tick before any announce writes nothing, rather than guessing a

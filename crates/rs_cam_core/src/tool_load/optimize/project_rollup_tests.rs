@@ -5,8 +5,7 @@
 //! simulation infrastructure. Bottleneck-detection and progress
 //! sequencing are observable from the outcomes alone.
 //!
-//! Moved out of `tool_load/optimize/mod.rs` by P4; the module body is
-//! unchanged.
+//! Moved out of `tool_load/optimize/mod.rs` by P4.
 
 #![allow(
     clippy::unwrap_used,
@@ -273,7 +272,7 @@ fn progress_reports_in_order_for_each_enabled_toolpath() {
 fn bottleneck_threshold_constant_is_thirty_percent() {
     // Lock the constant in place so a future tweak to the
     // threshold gets a deliberate test update.
-    assert!((search_policy().bottleneck_fraction.value - 0.30).abs() < 1e-9);
+    assert!((BOTTLENECK_FRACTION - 0.30).abs() < 1e-9);
 }
 
 #[test]

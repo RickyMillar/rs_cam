@@ -174,17 +174,17 @@ fn a_second_optimize_request_is_refused_with_a_toast() {
 /// A run with progress names the rung, the candidate and the list.
 ///
 /// Three claims in one arm, because one builder answers all three: the
-/// row's sentence, the window's three-row list, and the mark that says
-/// which rung is running. A second arm would fabricate the same run twice.
+/// row's sentence, the window's two-row list, and the mark that says
+/// which rung is running. The arm reads the run on the first rung, then
+/// on the second rung, so each of the three marks appears.
 #[test]
 fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
+    use crate::state::OptimizeStageMark;
     use rs_cam_core::tool_load::optimize::{OptimizeProgress, SearchPhase};
 
     let state = AppState::new();
     let progress = Arc::new(OptimizeProgress::default());
-    progress.begin_phase(SearchPhase::FeedRpm, 1);
-    progress.begin_candidate(0);
-    progress.begin_phase(SearchPhase::AxisGrid, 8);
+    progress.begin_phase(SearchPhase::Links, 8);
     progress.begin_candidate(2);
 
     let run = crate::state::OptimizeRun {
@@ -197,9 +197,10 @@ fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
         progress: Some(Arc::clone(&progress)),
     };
 
+    // The first rung runs.
     let text = run.progress_text(&state.session);
     assert!(
-        text.contains("stage 2/3"),
+        text.contains("stage 1/2"),
         "the row must name the rung and the ladder length, got {text:?}"
     );
     assert!(
@@ -207,35 +208,43 @@ fn a_running_optimize_reports_its_stage_and_its_candidate_count() {
         "the row must name the candidate now running and the count the \
          rung formed, got {text:?}"
     );
-
     let rows = run.stage_rows();
     assert_eq!(
         rows.len(),
-        3,
+        SearchPhase::ALL.len(),
         "the window lists every rung of the ladder, not only the running \
          one"
     );
-    let marks: Vec<crate::state::OptimizeStageMark> = rows.iter().map(|row| row.mark).collect();
+    let marks: Vec<OptimizeStageMark> = rows.iter().map(|row| row.mark).collect();
     assert_eq!(
         marks,
-        vec![
-            crate::state::OptimizeStageMark::Done,
-            crate::state::OptimizeStageMark::Current,
-            crate::state::OptimizeStageMark::Pending,
-        ],
-        "the finished rung reads done, the running rung reads current, \
-         and the rung the search has not reached reads pending"
+        vec![OptimizeStageMark::Current, OptimizeStageMark::Pending],
+        "the running rung reads current, and the rung the search has not \
+         reached reads pending"
     );
     assert!(
-        rows.iter()
-            .filter_map(|row| row.count.as_deref())
-            .any(|count| count.contains("3 / 8")),
+        rows.first()
+            .and_then(|row| row.count.as_deref())
+            .is_some_and(|count| count.contains("3 / 8")),
         "the running rung's row carries its own count, got {rows:?}"
     );
     assert!(
         rows.last().is_some_and(|row| row.count.is_none()),
         "a rung the search has not announced reports NO count, because \
          its total is not known until it starts: {rows:?}"
+    );
+
+    // The second rung runs.
+    progress.begin_phase(SearchPhase::DepthWidth, 4);
+    progress.begin_candidate(1);
+    let text = run.progress_text(&state.session);
+    assert!(text.contains("stage 2/2"), "got {text:?}");
+    assert!(text.contains("candidate 2/4"), "got {text:?}");
+    let marks: Vec<OptimizeStageMark> = run.stage_rows().iter().map(|row| row.mark).collect();
+    assert_eq!(
+        marks,
+        vec![OptimizeStageMark::Done, OptimizeStageMark::Current],
+        "the finished rung reads done, and the running rung reads current"
     );
 }
 
@@ -274,5 +283,122 @@ fn a_run_without_progress_keeps_the_elapsed_only_text() {
     assert!(
         run.stage_rows().is_empty(),
         "the window lists no rung for a run that walks no ladder"
+    );
+}
+
+/// R8: the controller refuses a candidate that is not safe, whatever index
+/// the event names. Only the button read `candidate_is_safe` before; an
+/// event from another door (a script, a stale modal) applied the
+/// candidate.
+///
+/// The candidate below is faster and moves the feed, but its full
+/// cut fails. The apply must leave the operation as it was, keep the modal
+/// open, and say why.
+#[test]
+fn an_unsafe_candidate_is_refused_by_the_controller_r8() {
+    use rs_cam_core::tool_load::optimize::{
+        FullCutCheck, FullCutReadings, FullCutVerdict, OptimizeCandidate, OptimizeOutcome,
+        OutcomeNarrative, ParamDelta, SearchStage,
+    };
+    use rs_cam_core::tool_load::verdict::{
+        ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
+        UnmodeledReason,
+    };
+
+    let mut controller = sample_controller();
+    let toolpath_id = push_toolpath(&mut controller, "R8");
+    let index = index_of(&controller, toolpath_id);
+    let before = controller
+        .state
+        .session
+        .get_toolpath_config(index)
+        .expect("the toolpath exists")
+        .operation
+        .clone();
+
+    let na = || UnmodeledReason::NotApplicableForOp("R8 fixture".to_owned());
+    let verdict = ToolpathLoadVerdict {
+        toolpath_id,
+        chipload: ChiploadVerdict::Unmodeled { reason: na() },
+        power: PowerVerdict::Unmodeled { reason: na() },
+        deflection: DeflectionVerdict::Unmodeled { reason: na() },
+        depth: DepthVerdict::Unmodeled { reason: na() },
+        drill_gates: None,
+        modulation_summary: None,
+        feed_explanation: None,
+        kinematic_utilization: None,
+        material_split: None,
+    };
+    let readings = FullCutReadings {
+        removed_volume_mm3: Some(1000.0),
+        rapid_collisions: Some(0),
+        overcut_peak_mm: Some(0.0),
+    };
+    let candidate = |full_cut: FullCutCheck, params: OperationConfig| OptimizeCandidate {
+        params,
+        dressups: Box::default(),
+        delta: ParamDelta::default(),
+        cycle_time_s: 100.0,
+        verdict: verdict.clone(),
+        full_cut,
+        stage: SearchStage::Measured,
+        reconciled_cycle_time_s: None,
+        reconciled_verdict: None,
+        air_cut_fraction_of_total_runtime: None,
+    };
+    let mut faster = before.clone();
+    faster.set_feed_rate(before.feed_rate() + 500.0);
+    assert!((faster.feed_rate() - before.feed_rate() - 500.0).abs() < 1e-9);
+    let failing = FullCutCheck {
+        verdict: FullCutVerdict::Fails {
+            reason: "the removed volume is short".to_owned(),
+        },
+        ..FullCutCheck::reference(readings)
+    };
+    let mut baseline = candidate(FullCutCheck::reference(readings), before.clone());
+    baseline.stage = SearchStage::Baseline;
+    baseline.cycle_time_s = 200.0;
+    let outcome = OptimizeOutcome::ranked(
+        vec![baseline, candidate(failing, faster)],
+        None,
+        OutcomeNarrative::default(),
+    );
+    controller.state.optimize_modal = Some(crate::state::OptimizeModalState {
+        toolpath_id,
+        status: crate::state::OptimizeRunStatus::Ready(outcome),
+    });
+
+    controller.handle_internal_event(AppEvent::ApplyOptimizeCandidate {
+        toolpath_id,
+        candidate_index: 1,
+    });
+
+    let after = &controller
+        .state
+        .session
+        .get_toolpath_config(index)
+        .expect("the toolpath exists")
+        .operation;
+    assert_eq!(
+        format!("{after:?}"),
+        format!("{before:?}"),
+        "an unsafe candidate must not be applied"
+    );
+    assert!(
+        controller.state.optimize_modal.is_some(),
+        "the refusal keeps the modal open"
+    );
+    let note = controller
+        .notifications()
+        .iter()
+        .find(|n| {
+            n.message
+                .starts_with("The candidate is not safe to apply: ")
+        })
+        .expect("the refusal is a notification");
+    assert!(
+        note.message.contains("the removed volume is short"),
+        "{}",
+        note.message
     );
 }

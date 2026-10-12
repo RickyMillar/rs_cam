@@ -7,12 +7,9 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 - `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types.
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
-- `sim_triage.rs` — one typed answer to "what should I act on?".
-- `sim_measurability.rs` — can this run measure the metric you will gate on?
-- `collision.rs` — holder/shank collisions, three-state `HolderCollisionCheck`.
-- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` (+ `/stride_tests.rs`)
-  — mesh extraction (`StockMesh` + S5 vertex slots); colours: `export/`.
-- `radial_profile.rs` — the precomputed radial profile lookup table.
+- `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
+- `collision.rs` — three-state `HolderCollisionCheck`; `radial_profile.rs` — the LUT.
+  `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
 - `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs` and the one helper.
 
 ## Invariants
@@ -29,12 +26,15 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - Only a union writes a `MaterialSlot` (0 = stock); it never merges two.
 - `SimulationCutArtifact.trace` is an `Arc` SHARED with the result: pass
   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
+- `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
+  realised step + one cell (`commanded_step_mm`), never its median bite. The
+  optimizer reads `standing_material_reading`; only the finding keeps its floors.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 
 - `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`,
-  `--test measurability_abstention_r8`, `--test narration_denominator_and_hints_d7`
-- `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`
+  `--test measurability_abstention_r8`, `--test narration_denominator_and_hints_d7`,
+  `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
+  `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`
 - `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test
-  rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes
-  (side, sliver, rim wall, shallow plunge) that the check must keep.
+  rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes to keep.

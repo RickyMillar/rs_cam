@@ -335,11 +335,10 @@ pub enum SuggestWarning {
     /// This variant used to report Suggest pass 8's arc-fit chipload feed
     /// recalibration. Checkpoint J-1/J-5 retired that pass — Suggest emits
     /// the un-lifted feed the calculator produced — and **kept this variant
-    /// deliberately** so the *simulation-backed* path (`feed_modulation`,
-    /// `tool_load::optimize::retarget::chipload`) can report its own
-    /// **measured** feed changes through a vocabulary the rationale
-    /// renderer, the feeds modal and the MCP rationale endpoint already
-    /// speak. Nothing in `feeds::suggest` pushes it today; the renderer
+    /// deliberately** so the *simulation-backed* path (`feed_modulation`)
+    /// can report its own **measured** feed changes through a vocabulary
+    /// the rationale renderer, the feeds modal and the MCP rationale
+    /// endpoint already speak. Nothing in `feeds::suggest` pushes it today; the renderer
     /// arms and their round-trip tests remain live.
     ///
     /// The field semantics below are written for that reuse: they describe
@@ -674,10 +673,12 @@ pub enum SuggestWarning {
         target_met: bool,
         /// Why the target was not met, when it was not.
         shortfall: Option<AggressivenessShortfall>,
-        /// `false` when the apply wrote the speeds only
-        /// (`ApplyScope::Speeds`): the pass computed this engagement, and
-        /// the operation does not carry it. The card then says "Apply the cut
-        /// geometry to hold the load at N %" (spec §2.5).
+        /// `false` when the operation does not carry the engagement the
+        /// pass computed. The card then says "Apply the cut geometry to hold
+        /// the load at N %" (spec §2.5). The speeds-only apply
+        /// (`ApplyScope::Speeds`) set it to `false` until G-SPEEDSAPPLY
+        /// (2026-10-12); that apply now does not run the pass, so every
+        /// producer today writes `true`.
         applied: bool,
     },
     /// Ruling R4 Q10 (2026-09-24): the calculator's Step 7 lowered the RPM

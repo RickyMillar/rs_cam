@@ -161,9 +161,9 @@ pub struct AppState {
     /// the user resumes where they left off.
     pub wizard_active_step: u8,
     /// Cached state of the per-toolpath Optimize modal. `None` when
-    /// closed. The optimizer is expensive (~1-2 min per toolpath at
-    /// the Stage 0/1/2 settings), so unlike the suggest modal we
-    /// cannot recompute every frame — the outcome is captured here on
+    /// closed. The optimizer is expensive: it runs one project
+    /// simulation for each candidate. So unlike the suggest modal it
+    /// cannot recompute every frame. The outcome is captured here on
     /// open and rendered every frame from this cache.
     pub optimize_modal: Option<OptimizeModalState>,
     /// Cached project-level Optimize rollup (U3). `None` until the
@@ -448,9 +448,8 @@ impl OptimizeRun {
     /// operator reads. `ui/workspace_bar.rs` now calls this.
     ///
     /// There is NO time-left figure, and this function holds no estimate.
-    /// The whole-run candidate total is not known up front, and a refine
-    /// candidate simulates at a finer cell than a grid candidate, so one
-    /// mean second per candidate mixes two populations.
+    /// The whole-run candidate total is not known at the start: a rung
+    /// announces its count only when it starts.
     #[must_use]
     pub fn progress_text(&self, session: &rs_cam_core::session::ProjectSession) -> String {
         let label = self.kind.label(session);
@@ -469,7 +468,7 @@ impl OptimizeRun {
     /// The rung list the Optimize window draws (WP29).
     ///
     /// Empty for a run that walks no candidate ladder, so the rollup and
-    /// the tier-map preview list nothing rather than three pending rungs.
+    /// the tier-map preview list nothing rather than pending rungs.
     #[must_use]
     pub fn stage_rows(&self) -> Vec<OptimizeStageRow> {
         use rs_cam_core::tool_load::optimize::SearchPhase;
@@ -513,7 +512,7 @@ impl OptimizeRun {
             .collect()
     }
 
-    /// The row's stage half: `stage 2/3 · candidate 3/8`.
+    /// The row's stage half: `stage 2/2 · candidate 3/8`.
     ///
     /// `None` when the run walks no ladder, and `None` again when the
     /// ladder has settled — a finished run must not leave the row claiming
