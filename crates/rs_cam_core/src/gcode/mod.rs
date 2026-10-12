@@ -749,8 +749,8 @@ pub fn project_load_report(
         // chipload guardrail can filter out transient (plunge/ramp/entry)
         // samples and only measure steady-state cutting against the LUT.
         let operation_feed_rate_mm_min = tc.operation.feed_rate();
-        // gcode export keeps strict LUT/machine-ceiling behaviour — only
-        // the optimizer routes wider tolerance bands. See `ToleranceBands`.
+        // The export uses the strict bands, `ToleranceBands::default()`.
+        // The optimizer judges every candidate with the same bands.
         let strict_tolerance = crate::tool_load::ToleranceBands::default();
         // §6.E / Step 3 PR2: when the toolpath is a drill op, thread the
         // `DrillOp` payload into the context so `evaluate_toolpath` runs

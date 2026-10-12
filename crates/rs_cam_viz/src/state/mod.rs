@@ -161,9 +161,9 @@ pub struct AppState {
     /// the user resumes where they left off.
     pub wizard_active_step: u8,
     /// Cached state of the per-toolpath Optimize modal. `None` when
-    /// closed. The optimizer is expensive (~1-2 min per toolpath at
-    /// the Stage 0/1/2 settings), so unlike the suggest modal we
-    /// cannot recompute every frame — the outcome is captured here on
+    /// closed. The optimizer is expensive: it runs one project
+    /// simulation for each candidate. So unlike the suggest modal it
+    /// cannot recompute every frame. The outcome is captured here on
     /// open and rendered every frame from this cache.
     pub optimize_modal: Option<OptimizeModalState>,
     /// Cached project-level Optimize rollup (U3). `None` until the

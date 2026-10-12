@@ -26,7 +26,7 @@ use super::context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
     cycle_time_from_trace,
 };
-use super::full_cut::{FullCutCheck, read_full_cut};
+use super::full_cut::{FullCutCheck, read_full_cut, realised_cell_mm};
 
 /// One candidate's full evaluation record. A simulation of the
 /// candidate measures each field. For the baseline candidate at index 0
@@ -344,10 +344,15 @@ fn evaluate_candidate_inner(
     let air_cut_fraction_of_total_runtime =
         air_cut_fraction_of_total_runtime_from_trace(trace, ctx.toolpath_id);
     let readings = read_full_cut(session_ref, trace, ctx.toolpath_id);
+    // R4: the REALISED cell of this simulation
+    // (`SimulationResult::column_grid_cell_mm`), not the requested
+    // `sim_opts.resolution`; `effective_cell_size` can enlarge it. The
+    // reading's bar and the triage finding read the same field, so the
+    // finding and its reader use one tolerance.
     let full_cut = FullCutCheck::judge(
         baseline_full_cut,
         readings,
-        sim_opts.resolution,
+        realised_cell_mm(session_ref),
         total_depth_mm,
     );
 

@@ -891,6 +891,15 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.optimize_modal = None;
             return;
         }
+        // R8: the controller is the door, not the button. A candidate that
+        // is not safe is never applied, whatever index the event names.
+        if let Some(reason) = rs_cam_core::tool_load::optimize::candidate_unsafe_reason(candidate) {
+            self.push_notification(
+                format!("The candidate is not safe to apply: {reason}"),
+                crate::controller::Severity::Error,
+            );
+            return;
+        }
         let candidate_op = candidate.params.clone();
         let candidate_dressups = (*candidate.dressups).clone();
 
@@ -1477,6 +1486,7 @@ impl<B: ComputeBackend> AppController<B> {
             rs_cam_core::compute::catalog::OperationConfig,
             rs_cam_core::compute::config::DressupConfig,
         )> = Vec::new();
+        let mut unsafe_rows: Vec<String> = Vec::new();
         for (idx, ((toolpath_index, outcome), selected)) in report
             .per_toolpath
             .iter()
@@ -1493,6 +1503,18 @@ impl<B: ComputeBackend> AppController<B> {
                 tracing::debug!("Skipping row {idx}: no first_safe candidate");
                 continue;
             };
+            // R8: the same door as the per-toolpath apply. `first_safe`
+            // already filters on safety; this check keeps the rule in the
+            // controller if that selection changes.
+            if let Some(reason) =
+                rs_cam_core::tool_load::optimize::candidate_unsafe_reason(candidate)
+            {
+                unsafe_rows.push(format!(
+                    "row {}: the candidate is not safe to apply: {reason}",
+                    idx + 1
+                ));
+                continue;
+            }
             targets.push((
                 *toolpath_index,
                 candidate.params.clone(),
@@ -1500,6 +1522,9 @@ impl<B: ComputeBackend> AppController<B> {
             ));
         }
 
+        for refusal in unsafe_rows {
+            self.push_notification(refusal, crate::controller::Severity::Error);
+        }
         if targets.is_empty() {
             self.push_notification(
                 "No applicable rows selected.".to_owned(),

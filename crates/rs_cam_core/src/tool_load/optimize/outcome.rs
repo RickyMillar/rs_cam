@@ -492,9 +492,35 @@ impl ProjectOptimizeReport {
 /// does not make a candidate unsafe; the narrative still names it.
 #[must_use]
 pub fn candidate_is_safe(candidate: &OptimizeCandidate) -> bool {
+    candidate_unsafe_reason(candidate).is_none()
+}
+
+/// Why a candidate is not safe ([`candidate_is_safe`]), or `None` when it
+/// is safe. The text names the rows that refuse an export and the
+/// full-cut reason. An Apply door that refuses a candidate shows it.
+#[must_use]
+pub fn candidate_unsafe_reason(candidate: &OptimizeCandidate) -> Option<String> {
     let criteria = candidate.verdict.criteria();
-    crate::gcode::refusing_exceedances(&criteria).is_empty()
-        && matches!(candidate.full_cut.verdict, FullCutVerdict::Holds)
+    let refusing: Vec<&str> = crate::gcode::refusing_exceedances(&criteria)
+        .iter()
+        .map(|row| row.kind.label())
+        .collect();
+    let mut why: Vec<String> = Vec::new();
+    if !refusing.is_empty() {
+        why.push(format!(
+            "its {} row refuses an export",
+            refusing.join(" and ")
+        ));
+    }
+    if !matches!(candidate.full_cut.verdict, FullCutVerdict::Holds) {
+        let reason = candidate
+            .full_cut
+            .verdict
+            .reason()
+            .unwrap_or("no reason recorded");
+        why.push(format!("the full cut does not hold: {reason}"));
+    }
+    (!why.is_empty()).then(|| why.join("; "))
 }
 
 /// What the search knows about itself, beside the candidates, for the

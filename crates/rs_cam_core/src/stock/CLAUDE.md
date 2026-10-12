@@ -9,8 +9,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
 - `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
 - `collision.rs` — three-state `HolderCollisionCheck`; `radial_profile.rs` — the LUT.
-- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` (+ `/stride_tests.rs`)
-  — mesh extraction (`StockMesh` + S5 vertex slots); colours: `export/`.
+  `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
 - `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs` and the one helper.
 
 ## Invariants
@@ -28,7 +27,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `SimulationCutArtifact.trace` is an `Arc` SHARED with the result: pass
   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
 - `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
-  realised step + one cell (`commanded_step_mm`), never its median bite.
+  realised step + one cell (`commanded_step_mm`), never its median bite. The
+  optimizer reads `standing_material_reading`; only the finding keeps its floors.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 

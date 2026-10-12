@@ -11,9 +11,11 @@
 //!   (`SimulationToolpathCutSummary::total_removed_volume_est_mm3`);
 //! - the rapid collisions that the simulation attributes to this
 //!   toolpath (`ProjectEvidence::attributed_rapid_collisions`);
-//! - the peak of the "crosses material" finding
-//!   (`diagnostics::ids::PROJECT_CROSSES_STANDING_MATERIAL`, scope
-//!   `Toolpath`, evidence `observed`).
+//! - the over-cut peak: the peak bite of the standing-material rule
+//!   (`stock::sim_triage::standing_material_reading`, the population and
+//!   the bar of the "crosses material" finding
+//!   `diagnostics::ids::PROJECT_CROSSES_STANDING_MATERIAL`), without the
+//!   sample and fraction floors of that finding.
 //!
 //! The baseline is the reference. It carries its readings with the
 //! verdict [`FullCutVerdict::Holds`].
@@ -22,13 +24,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::ToolpathId;
 use crate::session::{ProjectEvidence, ProjectSession};
+use crate::stock::sim_triage::{
+    StandingMaterialReading, commanded_step_mm, standing_material_reading,
+};
 use crate::stock::simulation_cut::SimulationCutTrace;
 
 /// The result of the full-cut check on one candidate.
 ///
 /// Each reading is three-valued. `None` means NOT MEASURED. A measured
-/// "no finding" is `Some(0.0)` for the over-cut peak and `Some(0)` for
-/// the collision count.
+/// population with no sample over the bar is `Some(0.0)` for the over-cut
+/// peak, and no flagged rapid is `Some(0)` for the collision count.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FullCutCheck {
     /// The volume this toolpath removed, in mm³. `None` when the trace
@@ -37,9 +42,15 @@ pub struct FullCutCheck {
     /// The rapid collisions the simulation attributes to this toolpath.
     /// `None` when no simulation result was available.
     pub rapid_collisions: Option<usize>,
-    /// The peak bite of the "crosses material" finding, in mm. `Some(0.0)`
-    /// when the triage holds no such finding for this toolpath. `None`
-    /// when no simulation result was available.
+    /// The over-cut peak, in mm: the largest bite of the standing-material
+    /// population when one or more samples are over the bar (the commanded
+    /// step plus one cell, or three times the own median bite), and
+    /// `Some(0.0)` when no sample is over the bar. `None` (NOT MEASURED)
+    /// when no simulation result was available or the population is empty.
+    ///
+    /// The reading has no sample floor and no fraction floor. A deep cell
+    /// with fewer than 50 steady samples is therefore measured, and does
+    /// not read as clean only because the triage finding abstained.
     pub overcut_peak_mm: Option<f64>,
     /// The verdict of the check.
     pub verdict: FullCutVerdict,
@@ -122,6 +133,11 @@ impl FullCutCheck {
     ///
     /// The candidate fails when any of these is true:
     ///
+    /// `resolution_mm` is the REALISED dexel cell of the candidate's
+    /// simulation (`SimulationResult::column_grid_cell_mm`, see
+    /// [`realised_cell_mm`]). The triage finding reads the same field, so
+    /// the finding and this check use one tolerance.
+    ///
     /// 1. **Volume.** `|V_candidate - V_baseline| > V_baseline × r / T`,
     ///    with `r` the dexel cell (`resolution_mm`) and `T` the total
     ///    depth of the operation (`total_depth_mm`). Derivation: a 2.5D
@@ -131,11 +147,26 @@ impl FullCutCheck {
     ///    `T`, so only the cell quantisation of the floor can move the
     ///    volume, and one floor layer is that quantisation. An operation
     ///    with no total depth (`total_depth_mm = None`) skips this rule.
+    ///
+    ///    The derivation assumes that the operation removes `A × T`. An
+    ///    operation that removes less (rest stock, or a top below the
+    ///    stock top) has `V < A × T`, so the tolerance `V × r / T` is
+    ///    smaller than one floor layer `A × r`. The rule is then stricter
+    ///    than one floor layer: it fails in the safe direction.
     /// 2. **Collisions.** The candidate has more rapid collisions than
     ///    the baseline.
-    /// 3. **Over-cut.** The candidate's "crosses material" peak is more
-    ///    than the baseline's peak plus one cell (`r`). A baseline with
-    ///    no finding compares as 0.
+    /// 3. **Over-cut.** The candidate's over-cut peak
+    ///    ([`FullCutCheck::overcut_peak_mm`]) is more than the baseline's
+    ///    peak plus one cell (`r`). The rule compares two peaks, not two
+    ///    findings. A side with no sample over its bar reads 0. The bar of
+    ///    a stepped op already holds one cell (the dexel quantisation of a
+    ///    bite against its own step); the cell in this comparison is a
+    ///    second one, for the quantisation between two simulations.
+    ///
+    /// The collision count is an UPPER-BOUND reading: the dexel
+    /// `conservative_top` stays high over two partial covers, so the check
+    /// can flag a rapid that does not strike. A rise in the count still
+    /// fails the candidate.
     ///
     /// A measured failure gives `Fails`. Else, a reading that a rule needs
     /// and that is `None` on either side gives `NotMeasured`. Else the
@@ -171,7 +202,8 @@ impl FullCutCheck {
             (Some(base), Some(cand)) => {
                 if cand > base {
                     fails.push(format!(
-                        "the rapids hit the stock {cand} times against {base} on the baseline"
+                        "the rapid-collision check flags {cand} rapids against {base} on the \
+                         baseline (an upper-bound reading)"
                     ));
                 }
             }
@@ -188,8 +220,8 @@ impl FullCutCheck {
                     ));
                 }
             }
-            (None, _) => missing.push("the over-cut finding of the baseline".to_owned()),
-            (_, None) => missing.push("the over-cut finding of the candidate".to_owned()),
+            (None, _) => missing.push("the over-cut peak of the baseline".to_owned()),
+            (_, None) => missing.push("the over-cut peak of the candidate".to_owned()),
         }
 
         let verdict = if !fails.is_empty() {
@@ -226,13 +258,48 @@ pub(crate) fn removed_volume_from_trace(
         .map(|s| s.total_removed_volume_est_mm3)
 }
 
+/// The dexel cell of the session's simulation, in mm: the realised
+/// `SimulationResult::column_grid_cell_mm`, which `effective_cell_size` can
+/// make larger than the requested resolution.
+///
+/// Fallback: with no simulation result on the session, the stored project
+/// resolution (`ProjectSession::simulation_resolution_mm`). The cut trace
+/// carries no cell of its own. In that case the collisions and the over-cut
+/// are NOT MEASURED ([`read_full_cut`]), so the fallback can only move the
+/// volume tolerance.
+#[must_use]
+pub(crate) fn realised_cell_mm(session: &ProjectSession) -> f64 {
+    session.simulation_result().map_or_else(
+        || session.simulation_resolution_mm(),
+        |sim| sim.column_grid_cell_mm,
+    )
+}
+
+/// The over-cut peak of a standing-material reading
+/// ([`FullCutCheck::overcut_peak_mm`]): `None` for an empty population,
+/// the peak bite when one or more samples are over the bar, else 0.
+#[must_use]
+pub(crate) fn overcut_peak_from_reading(reading: &StandingMaterialReading) -> Option<f64> {
+    if reading.population == 0 {
+        return None;
+    }
+    if reading.over_bar == 0 {
+        return Some(0.0);
+    }
+    reading.peak_bite_mm
+}
+
 /// Read the three full-cut readings of one toolpath.
 ///
-/// `trace` gives the volume. The session's simulation result gives the
-/// collisions and, through `ProjectSession::simulation_triage`, the
-/// over-cut finding; the triage reads `trace`. With no simulation result
-/// on the session, the collisions and the over-cut are `None` (NOT
-/// MEASURED).
+/// `trace` gives the volume and the over-cut. The session's simulation
+/// result gives the collisions and the dexel cell
+/// ([`realised_cell_mm`]). The over-cut reads the standing-material rule
+/// through its one reading door,
+/// [`crate::stock::sim_triage::standing_material_reading`], with the
+/// commanded step of the operation the session holds now
+/// (`sim_triage::commanded_step_mm`) and the realised cell: the population
+/// and the bar of the triage finding. With no simulation result on the
+/// session, the collisions and the over-cut are `None` (NOT MEASURED).
 #[must_use]
 pub(crate) fn read_full_cut(
     session: &ProjectSession,
@@ -254,29 +321,21 @@ pub(crate) fn read_full_cut(
         .iter()
         .filter(|c| matches!(c.toolpath, Some((id, _)) if id == toolpath_id))
         .count();
-    let triage = session.simulation_triage(&evidence);
-    let overcut_peak_mm = triage
-        .actions
+    let commanded_step = session
+        .toolpath_configs()
         .iter()
-        .chain(triage.safety.iter())
-        .filter(|f| {
-            f.diagnostic.id.as_str() == crate::diagnostics::ids::PROJECT_CROSSES_STANDING_MATERIAL
-                && matches!(
-                    f.diagnostic.scope,
-                    crate::diagnostics::Scope::Toolpath { id } if id == toolpath_id
-                )
-        })
-        .filter_map(|f| match &f.diagnostic.evidence {
-            Some(crate::diagnostics::DiagnosticEvidence::SampleRange { observed, .. }) => {
-                Some(*observed)
-            }
-            _ => None,
-        })
-        .fold(0.0_f64, f64::max);
+        .find(|tc| tc.id == toolpath_id)
+        .and_then(|tc| commanded_step_mm(&tc.operation));
+    let reading = standing_material_reading(
+        trace,
+        toolpath_id,
+        commanded_step,
+        Some(sim.column_grid_cell_mm),
+    );
     FullCutReadings {
         removed_volume_mm3,
         rapid_collisions: Some(rapid_collisions),
-        overcut_peak_mm: Some(overcut_peak_mm),
+        overcut_peak_mm: overcut_peak_from_reading(&reading),
     }
 }
 
@@ -426,6 +485,75 @@ mod tests {
             matches!(check.verdict, FullCutVerdict::NotMeasured { .. }),
             "{check:?}"
         );
+    }
+
+    /// R2: a trace with 10 steady samples, one of them a 3x bite. The
+    /// triage finding abstains (fewer than 50 samples). The reading still
+    /// reports the peak, and the over-cut rule fails the candidate on it.
+    #[test]
+    fn a_reading_under_the_finding_floor_still_fails_the_candidate_on_its_peak() {
+        use crate::stock::sim_triage::standing_material_reading;
+        use crate::stock::simulation_cut::{Engagement, SimulationCutSample};
+
+        const STEP_MM: f64 = 1.0;
+        let samples: Vec<SimulationCutSample> = (0..10)
+            .map(|i| SimulationCutSample {
+                toolpath_id: ToolpathId(1),
+                move_index: i,
+                sample_index: i,
+                segment_time_s: 0.01,
+                is_cutting: true,
+                axial_engagement_mm: if i == 0 { 3.0 * STEP_MM } else { STEP_MM },
+                engagement: Engagement::with_radial_woc(0.3),
+                removed_volume_est_mm3: 1.0,
+                ..SimulationCutSample::test_fixture()
+            })
+            .collect();
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+
+        let reading =
+            standing_material_reading(&trace, ToolpathId(1), Some(STEP_MM), Some(CELL_MM));
+        assert_eq!(reading.population, 10, "{reading:?}");
+        assert_eq!(reading.over_bar, 1, "{reading:?}");
+        assert_eq!(reading.peak_bite_mm, Some(3.0 * STEP_MM), "{reading:?}");
+        // The finding abstains under its sample floor; the sim_triage test
+        // `r2_a_reading_reports_the_peak_where_the_finding_abstains` pins it.
+        assert!(reading.population < crate::stock::sim_triage::STANDING_MATERIAL_MIN_SAMPLES);
+
+        let peak = overcut_peak_from_reading(&reading);
+        assert_eq!(peak, Some(3.0 * STEP_MM));
+        let base = FullCutCheck::reference(readings(10_000.0, 0, 0.0));
+        let check = FullCutCheck::judge(
+            &base,
+            FullCutReadings {
+                overcut_peak_mm: peak,
+                ..readings(10_000.0, 0, 0.0)
+            },
+            CELL_MM,
+            Some(DEPTH_MM),
+        );
+        assert!(
+            matches!(check.verdict, FullCutVerdict::Fails { .. }),
+            "{check:?}"
+        );
+    }
+
+    /// An empty population is NOT MEASURED; a population with no sample
+    /// over the bar is a measured 0.
+    #[test]
+    fn an_empty_population_is_not_measured_and_a_clean_one_is_zero() {
+        use crate::stock::sim_triage::StandingMaterialReading;
+        assert_eq!(
+            overcut_peak_from_reading(&StandingMaterialReading::default()),
+            None
+        );
+        let clean = StandingMaterialReading {
+            population: 5,
+            peak_bite_mm: Some(1.0),
+            over_bar: 0,
+            bar_mm: Some(1.2),
+        };
+        assert_eq!(overcut_peak_from_reading(&clean), Some(0.0));
     }
 
     /// A measured failure outranks a missing reading.

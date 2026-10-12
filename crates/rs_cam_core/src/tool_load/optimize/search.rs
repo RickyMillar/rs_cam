@@ -100,6 +100,35 @@ pub struct DepthWidthPlan {
     /// `(stepover_mm, depth bound in mm)` for each stepover the plan
     /// took.
     pub bounds: Vec<(f64, f64)>,
+    /// The refusals of the plan, for `OutcomeNarrative::refused_cells`:
+    /// a stepover with no sourced depth bound ([`depth_bound_refusal`]),
+    /// or an operation that holds no knob the lever needs.
+    pub refusals: Vec<String>,
+}
+
+/// The refusal of the depth lever at one stepover, or `None` when a
+/// sourced depth bound exists.
+///
+/// With no force line on the material, `cutter_axial_constraints` gives
+/// the deflection bound as its upper bracket (`0.95 x stickout`), which no
+/// source prints. When the matched vendor row also prints no `ap` bound
+/// (`max_doc_vendor_mm` is `None`), the ladder would climb to that bracket
+/// and every load row would read `Unmodeled`. So the lever refuses that
+/// stepover. A material with a force line has a sourced deflection bound;
+/// a vendor `ap` rule is a sourced bound.
+#[must_use]
+pub fn depth_bound_refusal(
+    material: &Material,
+    constraints: &crate::feeds::cutter_constraints::CutterAxialConstraints,
+    stepover_mm: f64,
+) -> Option<String> {
+    if material.force_line().is_ok() || constraints.max_doc_vendor_mm.is_some() {
+        return None;
+    }
+    Some(format!(
+        "depth lever refused at stepover {stepover_mm:.3} mm: no vendor ap rule and no force \
+         line, so no sourced depth bound exists"
+    ))
 }
 
 /// The depth-per-pass values for one stepover (PLAN.md §2 step 3).
@@ -187,8 +216,10 @@ pub fn feeds_at_cell(
 
 /// Form the cells of lever L2 for an operation.
 ///
-/// Returns an empty plan when the operation has no depth per pass or no
-/// total depth.
+/// Returns an empty plan when the operation has no depth per pass. An
+/// operation with a depth per pass and no total depth or no stepover (a
+/// Profile or a Trace) gets an empty plan with one refusal that names the
+/// missing knob.
 ///
 /// - **Stepover values**: the baseline stepover and the calculator's
 ///   `radial_width_mm` for the operation (the Suggest door's own value,
@@ -201,7 +232,9 @@ pub fn feeds_at_cell(
 ///   `lut_row` the calculator's matched vendor row, and `limit_um` the
 ///   deflection gate's own bound (`tool_load::deflection::EXCEEDS_BOUND_MM`).
 ///   With no force line the function returns its upper bracket for
-///   deflection, so the vendor `ap` rule binds.
+///   deflection, so the vendor `ap` rule binds. With no force line AND no
+///   vendor `ap` rule, the stepover forms no cells and the plan holds a
+///   refusal ([`depth_bound_refusal`]).
 /// - **Depth values**: [`doc_values`].
 ///
 /// # Errors
@@ -211,12 +244,25 @@ pub fn depth_width_plan(
     operation: &OperationConfig,
     inputs: &CellInputs<'_>,
 ) -> Result<DepthWidthPlan, crate::feeds::FeedsError> {
-    let (Some(baseline_step), Some(total_depth), Some(baseline_stepover)) = (
-        operation.depth_per_pass(),
-        operation.total_depth(),
-        operation.stepover(),
-    ) else {
+    let Some(baseline_step) = operation.depth_per_pass() else {
         return Ok(DepthWidthPlan::default());
+    };
+    let missing = match (operation.total_depth(), operation.stepover()) {
+        (Some(total), Some(stepover)) => Ok((total, stepover)),
+        (None, _) => Err("the operation holds no total depth"),
+        (_, None) => Err("the operation holds no stepover"),
+    };
+    let (total_depth, baseline_stepover) = match missing {
+        Ok(pair) => pair,
+        Err(knob) => {
+            return Ok(DepthWidthPlan {
+                refusals: vec![format!(
+                    "depth and width lever not searched: {knob}, so the depth x width \
+                     cells cannot be formed"
+                )],
+                ..DepthWidthPlan::default()
+            });
+        }
     };
     let suggest = crate::feeds::suggest::feeds_result_for_operation(
         operation,
@@ -243,7 +289,7 @@ pub fn depth_width_plan(
     let mut plan = DepthWidthPlan::default();
     for stepover in stepovers {
         let at_base = feeds_at_cell(operation, inputs, Some(baseline_step), Some(stepover))?;
-        let bound = crate::feeds::cutter_constraints::cutter_axial_constraints(
+        let constraints = crate::feeds::cutter_constraints::cutter_axial_constraints(
             &tool_def,
             inputs.material,
             stepover,
@@ -251,8 +297,12 @@ pub fn depth_width_plan(
             at_base.matched_lut_row.as_ref(),
             None,
             Some(limit_um),
-        )
-        .safe_max_doc_mm();
+        );
+        if let Some(refusal) = depth_bound_refusal(inputs.material, &constraints, stepover) {
+            plan.refusals.push(refusal);
+            continue;
+        }
+        let bound = constraints.safe_max_doc_mm();
         plan.bounds.push((stepover, bound));
         for depth_per_pass_mm in doc_values(total_depth, baseline_step, bound) {
             plan.cells.push(DepthWidthCell {
@@ -272,7 +322,8 @@ pub fn depth_width_plan(
 ///    ([`feeds_at_cell`]).
 /// 3. Refuse the cell when the calculator moved the depth by more than
 ///    [`GEOMETRY_ROUNDING_STEP_MM`] (the flute guard or the slotting cap
-///    did it), or when the calculator refuses the pair.
+///    did it), when the calculator refuses the pair, or when it gives no
+///    finite positive feed or RPM.
 /// 4. Write the calculator's feed, plunge, RPM and ramp feed with the
 ///    operation's setters ([`write_calculator_speeds`]). The geometry
 ///    stays.
@@ -320,6 +371,15 @@ pub fn depth_width_cell(
     if !(result.feed_rate_mm_min.is_finite() && result.feed_rate_mm_min > 0.0) {
         return Err(format!(
             "cell refused: the calculator gave no feed at depth {:.3} mm, stepover {:.3} mm",
+            cell.depth_per_pass_mm, cell.stepover_mm
+        ));
+    }
+    // The calculator sized the feed for its own RPM. With no RPM to write,
+    // the operation would keep its old RPM under the new feed.
+    if !(result.rpm.is_finite() && result.rpm > 0.0) {
+        return Err(format!(
+            "cell refused: the calculator gave no spindle speed at depth {:.3} mm, \
+             stepover {:.3} mm",
             cell.depth_per_pass_mm, cell.stepover_mm
         ));
     }
@@ -450,6 +510,82 @@ mod tests {
         assert!(
             link_dressups(&plain, OperationType::DropCutter).is_none(),
             "the DropCutter registry row strips the links"
+        );
+    }
+
+    fn constraints(
+        vendor: Option<f64>,
+    ) -> crate::feeds::cutter_constraints::CutterAxialConstraints {
+        crate::feeds::cutter_constraints::CutterAxialConstraints {
+            max_doc_deflection_mm: 0.95 * 20.0,
+            max_doc_vendor_mm: vendor,
+            max_doc_scallop_mm: None,
+            min_doc_chipload_floor_mm: None,
+            binding_constraint: if vendor.is_some() {
+                crate::feeds::cutter_constraints::AxialBindingConstraint::VendorAp
+            } else {
+                crate::feeds::cutter_constraints::AxialBindingConstraint::Deflection
+            },
+        }
+    }
+
+    /// R3: no force line and no vendor `ap` rule: no sourced depth bound,
+    /// so the stepover is refused. A vendor `ap` rule or a force line each
+    /// give a sourced bound.
+    #[test]
+    fn no_force_line_and_no_vendor_ap_refuses_the_depth_lever() {
+        let oak = Material::SolidWoodByJanka {
+            janka_lbf: 1290.0,
+            label: "Oak (feeds_oak.toml janka_lbf)".to_owned(),
+            source_id: "rivmap feeds_oak.toml".to_owned(),
+        };
+        assert!(oak.force_line().is_err());
+        let refusal = depth_bound_refusal(&oak, &constraints(None), 1.05)
+            .expect("no sourced bound must refuse");
+        assert!(refusal.contains("stepover 1.050 mm"), "{refusal}");
+        assert!(
+            refusal.contains("no vendor ap rule and no force line"),
+            "{refusal}"
+        );
+        assert!(depth_bound_refusal(&oak, &constraints(Some(3.0)), 1.05).is_none());
+
+        let maple = Material::SolidWood {
+            species: crate::material::WoodSpecies::HardMaple,
+        };
+        assert!(maple.force_line().is_ok());
+        assert!(depth_bound_refusal(&maple, &constraints(None), 1.05).is_none());
+    }
+
+    /// The nit on the empty plan: an operation with a depth per pass and no
+    /// stepover names the missing knob.
+    #[test]
+    fn a_depth_per_pass_with_no_stepover_names_the_missing_knob() {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::ProfileConfig;
+        let profile = OperationConfig::Profile(ProfileConfig::default());
+        assert!(profile.depth_per_pass().is_some());
+        assert!(profile.stepover().is_none());
+        let tool = crate::compute::tool_config::ToolConfig::new_default(
+            crate::compute::tool_config::ToolId(0),
+            crate::compute::tool_config::ToolType::EndMill,
+        );
+        let material = Material::default();
+        let machine = MachineProfile::default();
+        let dressups = DressupConfig::default();
+        let inputs = CellInputs {
+            tool: &tool,
+            material: &material,
+            machine: &machine,
+            spindle_strategy: SpindleStrategy::default(),
+            dressups: &dressups,
+        };
+        let plan = depth_width_plan(&profile, &inputs).expect("no calculator call");
+        assert!(plan.cells.is_empty());
+        assert_eq!(plan.refusals.len(), 1, "{:?}", plan.refusals);
+        assert!(
+            plan.refusals[0].contains("no stepover"),
+            "{:?}",
+            plan.refusals
         );
     }
 

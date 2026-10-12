@@ -305,10 +305,12 @@ pub enum AppEvent {
     ///
     /// Goes through the same `feeds::suggest::apply` funnel as
     /// [`AppEvent::ApplyFeedsAll`], with `ApplyScope::Speeds` instead of
-    /// `ApplyScope::Both`. It is NOT a per-field apply: the funnel still
-    /// resolves the whole operating point through `enforce_invariants` on a
-    /// scratch clone and then copies back the speed half, so a refused tool ×
-    /// operation pairing still cannot be written.
+    /// `ApplyScope::Both`. It is NOT a per-field apply. Since G-SPEEDSAPPLY
+    /// the funnel keeps the operation's own depth per pass and stepover and
+    /// resolves the speeds for them through
+    /// `enforce_invariants_at_fixed_geometry` on a scratch clone. The
+    /// passes that move geometry do not run. A refused tool × operation
+    /// pairing still cannot be written.
     ///
     /// Phase C of `planning/load_model_2026-09-16/SPEC.md`: the chipload
     /// verdict row tells the operator their chipload is thin, and this is the

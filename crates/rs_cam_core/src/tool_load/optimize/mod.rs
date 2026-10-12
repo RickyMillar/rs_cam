@@ -48,7 +48,7 @@ pub use narrative::{
 pub use outcome::{
     KinematicsSource, LutQueryStamp, MachineSnapshot, OperatingPointStamp, OptimizeOutcome,
     OutcomeKind, ProjectOptimizeReport, SearchNotes, SimAssumptionStamp, candidate_is_safe,
-    rank_candidates,
+    candidate_unsafe_reason, rank_candidates,
 };
 pub use progress::{OptimizeProgress, OptimizeProgressSnapshot, SearchPhase};
 
@@ -421,6 +421,9 @@ fn optimize_toolpath_inner(
         }
         _ => search::DepthWidthPlan::default(),
     };
+    // R3 and the empty-plan note: a stepover with no sourced depth bound,
+    // or a missing knob, is a refusal the narrative names.
+    notes.refused_cells.extend(plan.refusals.iter().cloned());
     ctx.progress
         .begin_phase(SearchPhase::DepthWidth, plan.cells.len());
     for (index, cell) in plan.cells.iter().enumerate() {
@@ -526,6 +529,22 @@ impl ProgressReporter for NoProgress {
 /// between candidates). A cancel mid-walk produces a partial report
 /// containing every toolpath that completed before the cancel.
 ///
+/// **Two traces, two uses (R6).**
+///
+/// - The on-screen `baseline_trace` gives the project baseline cycle time
+///   and the bottleneck. The operator sees these numbers, and the rollup
+///   saving is against them.
+/// - The per-toolpath baseline of the search (candidate 0: its gate
+///   verdict, its cycle time, its removed volume and its over-cut) comes
+///   from the most recent project simulation. For the first toolpath that
+///   is `baseline_trace`. After each toolpath the walk regenerates it at
+///   its baseline parameters and simulates the project again with
+///   [`candidate_sim_options`]; the next toolpath reads THAT trace. Its
+///   collisions and its cell come from the same re-simulation, so all the
+///   baseline readings of one row come from one simulation. When the
+///   re-simulation fails, the next row keeps the previous trace and its
+///   collisions read NOT MEASURED.
+///
 /// **Baseline cycle time** comes from `baseline_trace.toolpath_summaries`
 /// — the same trace the gate read from. The bottleneck index is the
 /// toolpath whose baseline cycle is at least [`BOTTLENECK_FRACTION`] of
@@ -564,7 +583,11 @@ pub fn optimize_project(
         .collect();
     let baseline_cycle_time_s: f64 = baseline_cycles.iter().map(|(_, c)| *c).sum();
 
-    // 3. Walk the enabled toolpaths sequentially.
+    // 3. Walk the enabled toolpaths sequentially. `current_trace` is the
+    //    trace of the most recent project simulation: the per-row baseline
+    //    of the search (R6). `None` means the on-screen trace. It is an
+    //    `Arc` shared with the simulation result (G-SIMMEM).
+    let mut current_trace: Option<std::sync::Arc<SimulationCutTrace>> = None;
     let mut per_toolpath: Vec<(usize, OptimizeOutcome)> = Vec::with_capacity(total);
     for (completed, (idx, _id, name)) in enabled.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
@@ -576,7 +599,8 @@ pub fn optimize_project(
             &format!("TP {} / {} — {}", completed + 1, total, name),
         );
 
-        let outcome = optimize_toolpath(session, baseline_trace, *idx, cancel);
+        let row_trace: &SimulationCutTrace = current_trace.as_deref().unwrap_or(baseline_trace);
+        let outcome = optimize_toolpath(session, row_trace, *idx, cancel);
         per_toolpath.push((*idx, outcome));
 
         // The BaselineRestoreGuard inside `optimize_toolpath` cleared
@@ -591,7 +615,13 @@ pub fn optimize_project(
         let _ = session.generate_toolpath(*idx, cancel);
         if completed + 1 < total {
             let opts = candidate_sim_options(session);
-            let _ = session.run_simulation(&opts, cancel);
+            if session.run_simulation(&opts, cancel).is_ok()
+                && let Some(trace) = session
+                    .simulation_result()
+                    .and_then(|sim| sim.cut_trace.as_ref())
+            {
+                current_trace = Some(std::sync::Arc::clone(trace));
+            }
         }
     }
 

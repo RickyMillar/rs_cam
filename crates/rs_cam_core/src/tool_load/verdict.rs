@@ -1551,8 +1551,9 @@ pub enum ChiploadVerdict {
         /// floor, but the floor's provenance is too weak to refuse on
         /// ([`ChipBoundsSource::low_side_is_advisory`]): surfaced as a
         /// structured advisory instead of flipping to `Exceeds(Low)`.
-        /// Candidates carrying this land in the MarginalSafe tier
-        /// rather than auto-recommending.
+        /// The verdict stays `Within`, so the advisory does not refuse
+        /// an export (`gcode::refusing_exceedances`) and the optimizer
+        /// does not reject a candidate on it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         burn_advisory: Option<Box<ChiploadMetric>>,
     },
