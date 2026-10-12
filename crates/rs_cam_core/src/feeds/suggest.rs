@@ -335,11 +335,10 @@ pub enum SuggestWarning {
     /// This variant used to report Suggest pass 8's arc-fit chipload feed
     /// recalibration. Checkpoint J-1/J-5 retired that pass — Suggest emits
     /// the un-lifted feed the calculator produced — and **kept this variant
-    /// deliberately** so the *simulation-backed* path (`feed_modulation`,
-    /// `tool_load::optimize::retarget::chipload`) can report its own
-    /// **measured** feed changes through a vocabulary the rationale
-    /// renderer, the feeds modal and the MCP rationale endpoint already
-    /// speak. Nothing in `feeds::suggest` pushes it today; the renderer
+    /// deliberately** so the *simulation-backed* path (`feed_modulation`)
+    /// can report its own **measured** feed changes through a vocabulary
+    /// the rationale renderer, the feeds modal and the MCP rationale
+    /// endpoint already speak. Nothing in `feeds::suggest` pushes it today; the renderer
     /// arms and their round-trip tests remain live.
     ///
     /// The field semantics below are written for that reuse: they describe

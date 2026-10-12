@@ -935,11 +935,9 @@ pub enum OperationConfig {
 /// variant. The match in [`OperationConfig::optimization_surface`] has no
 /// wildcard arm, so adding a new variant without classifying it is a
 /// compile-time error.
-pub enum OptimizationSurface<'op> {
-    /// The optimizer can search this op. Carries an `AxisView` into the
-    /// op plus the static binding list describing which axes are
-    /// available.
-    Optimizable(crate::tool_load::optimize::axes::AxisView<'op>),
+pub enum OptimizationSurface {
+    /// The optimizer can search this op.
+    Optimizable,
     /// The op is intentionally not optimizable (e.g., drilling cycles
     /// where chipload is meaningless and DOC is fixed by hole depth).
     /// `reason` surfaces in the orchestrator's outcome.
@@ -1000,80 +998,39 @@ impl OperationConfig {
     /// G16 Step 3: classify this op for optimization. Every variant is
     /// named explicitly — the match has **no wildcard arm**. Adding a
     /// new `OperationConfig` variant without classifying it here is a
-    /// compile error, which is the type-safety win this method provides
-    /// over the previous `has_doc_knob` allowlist.
+    /// compile error.
     ///
     /// See `planning/STEP3_PREP_OPTIMIZATION_SURFACE.md` for the
     /// design rationale per variant.
-    pub fn optimization_surface(&self) -> OptimizationSurface<'_> {
+    pub fn optimization_surface(&self) -> OptimizationSurface {
         use crate::tool_load::RefuseReason;
-        use crate::tool_load::optimize::axes::{
-            AxisView, FEED_RPM_DOC, FEED_RPM_DOC_STEPOVER, FEED_RPM_ONLY, FEED_RPM_SCALLOP,
-            FEED_RPM_STEPOVER,
-        };
-
-        macro_rules! optimizable {
-            ($bindings:expr, $op_type:expr) => {
-                OptimizationSurface::Optimizable(AxisView {
-                    op: self,
-                    bindings: $bindings,
-                    op_type: $op_type,
-                })
-            };
-        }
 
         match self {
-            OperationConfig::Face(_) => optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Face),
-            OperationConfig::Pocket(_) => {
-                optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Pocket)
-            }
-            OperationConfig::Profile(_) => optimizable!(FEED_RPM_DOC, OperationType::Profile),
-            OperationConfig::Adaptive(_) => {
-                optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Adaptive)
-            }
-            OperationConfig::VCarve(_) => optimizable!(FEED_RPM_STEPOVER, OperationType::VCarve),
-            OperationConfig::Rest(_) => {
-                optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Rest)
-            }
-            OperationConfig::Inlay(_) => optimizable!(FEED_RPM_STEPOVER, OperationType::Inlay),
-            OperationConfig::Zigzag(_) => {
-                optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Zigzag)
-            }
-            OperationConfig::Trace(_) => optimizable!(FEED_RPM_DOC, OperationType::Trace),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Rest(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_) => OptimizationSurface::Optimizable,
             OperationConfig::Drill(_) => OptimizationSurface::NotOptimizable {
                 reason: RefuseReason::SteadyStateSamplesNotPresent,
             },
-            OperationConfig::Chamfer(_) => optimizable!(FEED_RPM_ONLY, OperationType::Chamfer),
-            OperationConfig::DropCutter(_) => {
-                optimizable!(FEED_RPM_STEPOVER, OperationType::DropCutter)
-            }
-            OperationConfig::Adaptive3d(_) => {
-                optimizable!(FEED_RPM_DOC_STEPOVER, OperationType::Adaptive3d)
-            }
-            OperationConfig::Waterline(_) => optimizable!(FEED_RPM_DOC, OperationType::Waterline),
-            OperationConfig::Pencil(_) => optimizable!(FEED_RPM_STEPOVER, OperationType::Pencil),
-            OperationConfig::Scallop(_) => optimizable!(FEED_RPM_SCALLOP, OperationType::Scallop),
-            OperationConfig::UnifiedFinish(_) => {
-                optimizable!(FEED_RPM_SCALLOP, OperationType::UnifiedFinish)
-            }
-            OperationConfig::SteepShallow(_) => {
-                optimizable!(FEED_RPM_STEPOVER, OperationType::SteepShallow)
-            }
-            OperationConfig::RampFinish(_) => {
-                optimizable!(FEED_RPM_DOC, OperationType::RampFinish)
-            }
-            OperationConfig::SpiralFinish(_) => {
-                optimizable!(FEED_RPM_STEPOVER, OperationType::SpiralFinish)
-            }
-            OperationConfig::RadialFinish(_) => {
-                optimizable!(FEED_RPM_ONLY, OperationType::RadialFinish)
-            }
-            OperationConfig::HorizontalFinish(_) => {
-                optimizable!(FEED_RPM_STEPOVER, OperationType::HorizontalFinish)
-            }
-            OperationConfig::ProjectCurve(_) => {
-                optimizable!(FEED_RPM_ONLY, OperationType::ProjectCurve)
-            }
             OperationConfig::AlignmentPinDrill(_) => OptimizationSurface::NotOptimizable {
                 reason: RefuseReason::SteadyStateSamplesNotPresent,
             },

@@ -125,17 +125,6 @@ pub enum RefuseReason {
     /// drill cycle. The optimizer is calibrated for steady-state
     /// cutting, so it refuses rather than tuning a plunge feed.
     SteadyStateSamplesNotPresent,
-    /// Some samples ran below the row's chipload-min while others
-    /// ran above the row's chipload-max in the same toolpath — no
-    /// single feed fixes both. The user should reduce stepover
-    /// variation, not change feed.
-    BipolarEngagement,
-    /// Tool L/D ratio is above the deflection guardrail. Stickout and
-    /// diameter are tool-config inputs — feed/RPM/DOC/stepover can't
-    /// move them, so the optimizer refuses rather than searching a
-    /// space that can't reach a safe answer. The fix is a setup
-    /// change (shorten stickout, swap to a stiffer tool).
-    DeflectionSetupLocked,
     /// Every compatible LUT row has a chipload range that, even at
     /// the row's nominal RPM, would require a feed below the
     /// machine's minimum or above the machine's maximum feed.
@@ -146,20 +135,10 @@ pub enum RefuseReason {
     /// Every must-match LUT row was rejected by the
     /// diameter-extrapolation gate.
     DiameterExtrapolationTooPoor,
-    /// Optimizer-specific: every Stage-1/Stage-2 candidate was
-    /// either slower than baseline or failed the gate.
+    /// Optimizer-specific: no evaluated candidate was both faster than
+    /// the baseline and free of a criterion row that refuses an export,
+    /// or the search evaluated no candidate.
     NoImprovementFound,
-    /// **Q-NARROW (c), 2026-08-14.** The matched vendor band the gate
-    /// judges by is narrower than the retarget's own headroom policy,
-    /// so no feed can both clear the headroom and stay inside the band.
-    /// The retargeter refused instead of emitting a candidate its own
-    /// gate had already rejected; the numbers behind the decision are on
-    /// [`optimize::narrative::OutcomeNarrative::chipload_band_refusal`].
-    ///
-    /// Distinct from [`Self::NoImprovementFound`], which claims a search
-    /// happened and came back empty-handed. Here the retarget was
-    /// declined before it ran.
-    ChiploadBandNarrowerThanHeadroom,
 }
 
 impl RefuseReason {
@@ -186,12 +165,6 @@ impl RefuseReason {
             Self::SteadyStateSamplesNotPresent => {
                 "no steady-state cutting samples — typically a drill cycle or all-ramp toolpath, which Optimize cannot tune"
             }
-            Self::BipolarEngagement => {
-                "stepover varies wildly across the toolpath — no single feed/RPM fixes both extremes; reduce stepover variation"
-            }
-            Self::DeflectionSetupLocked => {
-                "predicted tip deflection exceeds the 200 µm limit even at the lightest reachable cut — feed/RPM/DOC/stepover can't fix this; shorten the stickout or use a stiffer tool"
-            }
             Self::NoFeasibleRow => {
                 "every compatible LUT row falls outside the machine's feed or RPM range"
             }
@@ -202,10 +175,7 @@ impl RefuseReason {
                 "no LUT row is calibrated close enough to this tool's diameter to give a trustworthy recommendation"
             }
             Self::NoImprovementFound => {
-                "no candidate was both faster than baseline and within the gate's safe envelope"
-            }
-            Self::ChiploadBandNarrowerThanHeadroom => {
-                "the matched vendor chipload band is narrower than the retarget headroom — no feed can both clear the headroom and stay inside the band, so the optimizer refused rather than propose one it would reject"
+                "no candidate was both faster than the baseline and free of a criterion row that refuses an export"
             }
         }
     }
@@ -495,11 +465,10 @@ pub fn chip_target_for_toolpath(
 
 /// Soft fractional widenings on the chipload + power hard-gate triggers.
 /// Default is all-zeros (preserves strict LUT/machine-ceiling behaviour).
-/// The optimizer derives non-zero values from
-/// `optimize::policy::SearchPolicy::ranking` so single-sample transients
-/// (e.g. wanaka TP4 5/2026: one sample 1.05% over `chip_load_max`) don't
-/// flip a candidate to `Exceeds`. See `planning/OPTIMIZER_REFACTOR_G16.md`
-/// §11.4 "Layer 1".
+/// Every production caller, the optimizer included, passes the default:
+/// the optimizer judges a candidate by the same strict bands as the
+/// tool-load card. The non-zero fields exist for the gate unit tests.
+/// History: `planning/OPTIMIZER_REFACTOR_G16.md` §11.4 "Layer 1".
 ///
 /// Tolerance widens the *trigger condition* only — the underlying
 /// `peak_above` / `triggering` metrics on `Within` verdicts continue to

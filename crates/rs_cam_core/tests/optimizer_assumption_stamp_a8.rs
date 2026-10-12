@@ -40,9 +40,10 @@
 //! completes in milliseconds while exercising the real production entry
 //! point, not a hand-built outcome.
 //!
-//! The one thing that costs a sim — whether a **retargeted** candidate
-//! actually reconciles — is measured separately, in
-//! `tool_load::optimize::retarget_reconciliation_a8`.
+//! The one thing that costs a sim — whether a candidate actually
+//! reconciles — had its own fixture with the old retarget stage. That
+//! fixture was deleted with the stage on 2026-10-12 (Phase 1 of
+//! `planning/optimize_review_2026-10-12/PLAN.md`).
 
 #![allow(
     clippy::unwrap_used,

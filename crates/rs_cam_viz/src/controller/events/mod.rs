@@ -370,13 +370,6 @@ impl<B: ComputeBackend> AppController<B> {
             } => {
                 self.apply_optimize_candidate(toolpath_id, candidate_index);
             }
-            AppEvent::ReoptimizeWithAxisOverride {
-                toolpath_id,
-                axis,
-                value,
-            } => {
-                self.reoptimize_with_axis_override(toolpath_id, axis, value);
-            }
 
             // --- Optimize project (U3) ---
             AppEvent::OpenOptimizeProject => {
@@ -873,10 +866,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let candidates = match &modal.status {
             crate::state::OptimizeRunStatus::Ready(outcome)
-                if matches!(
-                    outcome.kind,
-                    OutcomeKind::Ranked | OutcomeKind::MarginalSafe
-                ) =>
+                if outcome.kind == OutcomeKind::Ranked =>
             {
                 &outcome.candidates
             }
@@ -989,149 +979,6 @@ impl<B: ComputeBackend> AppController<B> {
                 crate::controller::Severity::Info,
             );
         }
-    }
-
-    /// OPT-005 — accept an operator suggestion from the Optimize modal:
-    /// set the named axis to the suggested value on the toolpath, then
-    /// re-open the modal so the search re-runs against the new baseline.
-    /// An explicit operator click (never an auto-apply) that removes the
-    /// manual re-typing the prose suggestions used to require.
-    fn reoptimize_with_axis_override(
-        &mut self,
-        toolpath_id: crate::state::toolpath::ToolpathId,
-        axis: rs_cam_core::tool_load::optimize::KnobAxis,
-        value: f64,
-    ) {
-        use rs_cam_core::tool_load::optimize::KnobAxis;
-
-        let Some(idx) = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .position(|tc| tc.id == toolpath_id)
-        else {
-            self.push_notification(
-                format!(
-                    "Re-optimize failed: toolpath id {} not found",
-                    toolpath_id.0
-                ),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let Some(tc) = self.state.session.get_toolpath_config(idx) else {
-            self.push_notification(
-                format!("Re-optimize failed: toolpath {} disappeared", toolpath_id.0),
-                crate::controller::Severity::Error,
-            );
-            return;
-        };
-        let baseline_op = tc.operation.clone();
-        let mut new_op = baseline_op.clone();
-        let dressups = tc.dressups.clone();
-        let face_selection = tc.face_selection.clone();
-        match axis {
-            KnobAxis::Feed => new_op.set_feed_rate(value),
-            KnobAxis::SpindleRpm => new_op.set_spindle_rpm(Some(value.round().max(0.0) as u32)),
-            // These two setters report whether the operation carries the
-            // field (N5). This path keeps its existing behaviour and
-            // discards the answer.
-            KnobAxis::Stepover => {
-                new_op.set_stepover(value);
-            }
-            KnobAxis::DepthPerPass => {
-                new_op.set_depth_per_pass(value);
-            }
-            KnobAxis::ScallopHeight => new_op.set_scallop_height(value),
-        }
-        // Checkpoint I-4 (2026-08-12): route the accepted axis value through
-        // the apply funnel's clamp stage. This is the ONE optimizer write that
-        // joins the funnel — the candidate applies above (O1/O3 in the A-3
-        // census) stay out, deliberately, because their operating points were
-        // scored against a simulated cut trace end to end and re-clamping them
-        // against a pre-simulation estimator would replace the stronger
-        // evidence with the weaker. This path is different in kind: it writes
-        // a **suggested, never-simulated** single value, and before this it
-        // did so with no clamp at all — hazard (c) in a second neighbourhood.
-        // The accepted number is not re-solved; only the safety clamps run.
-        // Q1: the bbox of the model this toolpath machines. The clamp
-        // stage reads `SuggestContext::model_bbox`; this site used to
-        // pass `None`. Bound before the closure below, which borrows
-        // `self`. `upstream_leftover_stock_mm` stays `None`: no lookup
-        // here gives it, and v1 does not read it.
-        let model_bbox = self.state.session.model_bbox(tc.model_id);
-        let clamp_warnings = self
-            .state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))
-            .cloned()
-            .map(|tool| {
-                let machine = self.state.session.machine().clone();
-                let material = self.state.session.stock_config().material.clone();
-                let pass_role = new_op.feeds_style().1;
-                rs_cam_core::feeds::suggest::resolve_operation_invariants(
-                    &mut new_op,
-                    &tool,
-                    &machine,
-                    &material,
-                    pass_role,
-                    rs_cam_core::feeds::suggest::SuggestContext {
-                        model_bbox: model_bbox.as_ref(),
-                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                    },
-                )
-            })
-            .unwrap_or_default();
-        // W2.1: the override value originates from the optimizer's own
-        // suggestion, so stamp Optimizer provenance on the changed dim.
-        let new_provenance = tc
-            .feeds_provenance
-            .clone()
-            .stamped_optimizer(&baseline_op, &new_op);
-
-        let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
-            RestoreToolpathSnapshotArgs {
-                index: idx,
-                operation: Box::new(new_op),
-                dressups: Box::new(dressups),
-                face_selection,
-                feeds_provenance: Some(Box::new(new_provenance)),
-            },
-        ));
-        let effects = match restored {
-            Ok(effects) => effects,
-            Err(e) => {
-                self.push_notification(
-                    format!("Re-optimize failed: {e}"),
-                    crate::controller::Severity::Error,
-                );
-                return;
-            }
-        };
-        if !clamp_warnings.is_empty() {
-            // A clamp that fires silently is the defect, not the fix: the
-            // operator accepted a number and got a different one.
-            self.push_notification(
-                format!(
-                    "Accepted {axis:?} suggestion, then clamped it for safety: {}",
-                    clamp_warnings
-                        .iter()
-                        .map(|w| format!("{w:?}"))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                ),
-                crate::controller::Severity::Warning,
-            );
-        }
-        self.state.gui.mark_edited();
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        // Re-run the search against the new baseline. open_optimize_modal
-        // reuses the cached baseline trace; the modal's FreshnessGate
-        // banner flags that the trace is now one edit behind.
-        self.open_optimize_modal(toolpath_id);
     }
 
     // ── Feeds & Speeds modal ───────────────────────────────────────

@@ -1,14 +1,19 @@
 //! End-to-end smoke test for the optimizer.
 //!
-//! The 60+ unit tests in `tool_load::optimize` cover the algorithm
-//! pieces (Stage 0 scaling math, DOC variant grid, refusal narratives,
-//! candidate ranking) but no test exercises the full
-//! apply -> regen -> sim -> gate -> outcome path against a real
-//! toolpath. This file does.
+//! The unit tests in `tool_load::optimize` cover the pieces (the
+//! outcome builder, the narrative, the skip paths). This file runs the
+//! real entry points against a generated and simulated toolpath.
 //!
-//! The fixture is the already-checked-in `fixtures/demo_pocket.svg` —
-//! a small rectangle with a circular island, parses fast and produces
-//! a deterministic pocket toolpath.
+//! **Phase 1 contract** (`planning/optimize_review_2026-10-12/PLAN.md`
+//! §1): the search has no levers. A run scores the baseline from the
+//! trace, evaluates no candidate, and returns `NoSafeImprovement` with
+//! candidate 0 = the baseline and the "no search" explanation. The
+//! guard restores the parameters. Phase 2 replaces these assertions.
+//!
+//! The fixture is the checked-in `fixtures/demo_pocket.svg`: a small
+//! rectangle with a circular island. It parses fast and gives a
+//! deterministic pocket toolpath. With no candidate to simulate, each
+//! test costs one generation and one simulation at a 1 mm cell.
 
 #![allow(
     clippy::unwrap_used,
@@ -35,8 +40,12 @@ use rs_cam_core::session::{
     SetStockConfigArgs, SimulationOptions, ToolpathConfig,
 };
 use rs_cam_core::tool_load::optimize::{
-    NoProgress, OutcomeKind, optimize_project, optimize_toolpath,
+    NoProgress, OutcomeKind, SearchStage, optimize_project, optimize_toolpath,
 };
+
+/// The Phase 1 explanation. The GUI matches the same text.
+const NO_SEARCH_EXPLANATION: &str =
+    "The search has no levers yet; the post-sim tuner is being rebuilt.";
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// Build a session with the demo_pocket SVG, an end mill, and a
@@ -147,7 +156,6 @@ fn build_pocket_session() -> Option<(ProjectSession, usize)> {
 }
 
 #[test]
-#[ignore = "expensive optimizer full-pipeline smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_toolpath_full_pipeline() {
     let Some((mut session, toolpath_index)) = build_pocket_session() else {
         return;
@@ -180,84 +188,53 @@ fn optimize_toolpath_full_pipeline() {
             .clone()
     };
 
-    // Snapshot the toolpath's params so we can verify the
-    // BaselineRestoreGuard restored them after optimize_toolpath
-    // returns. Use feed_rate as the tell-tale field — it's part of
-    // every operation config and the optimizer routinely scales it.
+    // Snapshot the toolpath's params, so the test can show that the
+    // BaselineRestoreGuard restored them after `optimize_toolpath`.
     let baseline_op_before = session
         .get_toolpath_config(toolpath_index)
         .expect("toolpath_index in range")
         .operation
         .clone();
-    let baseline_feed_before = baseline_op_before.feed_rate();
 
     // Run the optimizer end-to-end.
     let outcome = optimize_toolpath(&mut session, &baseline_trace, toolpath_index, &cancel);
 
-    // Verify session is restored regardless of outcome.
+    // The guard restored the parameters.
     let baseline_op_after = session
         .get_toolpath_config(toolpath_index)
         .expect("toolpath still present")
         .operation
         .clone();
-    let feed_after = baseline_op_after.feed_rate();
-    assert!(
-        (feed_after - baseline_feed_before).abs() < 1e-6,
-        "BaselineRestoreGuard must restore feed_rate: {} -> {}",
-        baseline_feed_before,
-        feed_after,
+    assert_eq!(
+        format!("{baseline_op_after:?}"),
+        format!("{baseline_op_before:?}"),
+        "BaselineRestoreGuard must restore the operation parameters"
     );
 
-    // Outcome shape: must be one of the three variants. For a tiny
-    // pocket that's typically Skipped (no LUT row matches the
-    // hardcoded tool/material) or Ranked. We assert only that the
-    // outcome was produced — not the specific variant — because
-    // LUT-routing outcomes drift as the calibration data evolves.
-    match outcome.kind {
-        OutcomeKind::Ranked => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "Ranked outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
-        }
-        OutcomeKind::NoSafeImprovement => {
-            assert!(
-                !outcome.narrative.explanation.is_empty(),
-                "NoSafeImprovement must carry an explanation"
-            );
-        }
-        OutcomeKind::Skipped => {
-            // Acceptable for a fixture with no LUT-matching tool.
-        }
-        OutcomeKind::TradeOff => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "TradeOff outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
-        }
-        OutcomeKind::MarginalSafe => {
-            assert!(
-                !outcome.candidates.is_empty(),
-                "MarginalSafe outcome must carry at least the baseline candidate"
-            );
-            assert!(
-                !outcome.candidates[0].delta.has_changes(),
-                "Index 0 must be baseline (no delta)"
-            );
-        }
-    }
+    // Phase 1: one candidate, the baseline, and the "no search" text.
+    assert_eq!(
+        outcome.kind,
+        OutcomeKind::NoSafeImprovement,
+        "Phase 1 searches nothing, so the outcome is NoSafeImprovement: {outcome:?}"
+    );
+    assert_eq!(outcome.candidates.len(), 1, "only the baseline candidate");
+    let baseline = &outcome.candidates[0];
+    assert_eq!(baseline.stage, SearchStage::Baseline);
+    assert!(
+        !baseline.delta.has_changes(),
+        "index 0 is the baseline (no delta)"
+    );
+    assert!(
+        baseline.cycle_time_s > 0.0,
+        "the baseline cycle time comes from the trace"
+    );
+    assert_eq!(outcome.narrative.explanation, NO_SEARCH_EXPLANATION);
+    assert_eq!(outcome.recommended_index, None);
+    assert!(outcome.machine_snapshot.is_some());
+    assert!(outcome.assumptions.is_some());
 }
 
 #[test]
-#[ignore = "expensive optimizer full-project smoke; run with `cargo test --test optimize_smoke -- --ignored`"]
 fn optimize_project_full_pipeline() {
     let Some((mut session, _toolpath_index)) = build_pocket_session() else {
         return;
@@ -292,19 +269,28 @@ fn optimize_project_full_pipeline() {
 
     let report = optimize_project(&mut session, &baseline_trace, &NoProgress, &cancel);
 
-    // Report has one entry per enabled toolpath (just one).
+    // One row per enabled toolpath (just one).
     assert_eq!(
         report.per_toolpath.len(),
         1,
         "Expected one per_toolpath row (one enabled toolpath)"
     );
-    // Baseline cycle time was sourced from the trace — should be > 0
-    // for a non-trivial pocket op, but a tiny SVG with cutting paths
-    // could be very fast. Just assert non-negative.
+    // The baseline cycle sum comes from the trace.
     assert!(
-        report.baseline_cycle_time_s >= 0.0,
-        "baseline_cycle_time_s must be non-negative, got {}",
+        report.baseline_cycle_time_s > 0.0,
+        "baseline_cycle_time_s must come from the trace, got {}",
         report.baseline_cycle_time_s
+    );
+    // One toolpath carries all of the runtime, so it is the bottleneck.
+    assert_eq!(report.bottleneck_index, Some(report.per_toolpath[0].0));
+    // Phase 1: the row is the "no search" outcome, and the walk saves
+    // nothing.
+    let outcome = &report.per_toolpath[0].1;
+    assert_eq!(outcome.kind, OutcomeKind::NoSafeImprovement);
+    assert_eq!(outcome.narrative.explanation, NO_SEARCH_EXPLANATION);
+    assert!(
+        (report.optimized_cycle_time_s(&[true]) - report.baseline_cycle_time_s).abs() < 1e-12,
+        "no candidate means no saving"
     );
 }
 

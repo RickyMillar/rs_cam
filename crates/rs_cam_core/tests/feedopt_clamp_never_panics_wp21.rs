@@ -18,11 +18,12 @@
 //!
 //! # The observed shape
 //!
-//! `tool_load::optimize::retarget_reconciliation_a8` commands 12 000 mm/min
-//! (`BASELINE_FEED_MM_MIN`) against the default ceiling of 3 000 mm/min.
-//! Both of its arms panic with `min > max, or either was NaN. min = 6000.0,
-//! max = 3000.0`. That fixture raises its MACHINE feed ceiling to 24 000
-//! mm/min, which proves the binding number is the dressup dial and not the
+//! The A-8 optimizer reconciliation fixture (deleted with the old
+//! retarget stage, 2026-10-12; `git show 009bee30` holds it) commanded
+//! 12 000 mm/min against the default ceiling of 3 000 mm/min. Both of its
+//! arms panicked with `min > max, or either was NaN. min = 6000.0,
+//! max = 3000.0`. That fixture raised its MACHINE feed ceiling to 24 000
+//! mm/min, which proved the binding number is the dressup dial and not the
 //! machine profile.
 //!
 //! # The two arms

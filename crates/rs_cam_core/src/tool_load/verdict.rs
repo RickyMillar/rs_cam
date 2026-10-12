@@ -1334,8 +1334,7 @@ pub enum ChiploadStatistic {
     PeakInRange,
 }
 
-/// Where the chipload bounds came from. Distinct from
-/// `optimize::bounds::BoundsSource` (axis-bound source).
+/// Where the chipload bounds came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChipBoundsSource {

@@ -46,10 +46,13 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 /// Which rung of the fixed three-rung ladder the search is on.
 ///
-/// **This is not [`super::SearchStage`].** That enum describes a
-/// CANDIDATE's provenance, and a Stage-F retarget candidate is stamped
-/// `Coarse` exactly as a Stage-1 candidate is. The two vocabularies
-/// answer different questions.
+/// **This is not [`super::SearchStage`].** That enum describes the
+/// source of a CANDIDATE; this one describes where the RUN is. The two
+/// vocabularies answer different questions.
+///
+/// Phase 1 of `planning/optimize_review_2026-10-12/PLAN.md` keeps the
+/// three rungs and announces each with a total of zero, because the
+/// search has no levers. Phase 2 renames the rungs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchPhase {
     /// Stage F — the closed-form feed and RPM solve.
@@ -171,10 +174,8 @@ pub struct OptimizeProgressSnapshot {
 impl OptimizeProgress {
     /// Announce a rung and the candidate count it formed.
     ///
-    /// The orchestrator announces Stage F with a zero total before it
-    /// chooses a Stage-F mode, because neither mode runs on some
-    /// baselines and the window's first row must still tick. Each helper
-    /// then re-announces its own real total once the list exists.
+    /// A rung with no candidates is announced with a total of zero, so
+    /// the window still names it.
     pub fn begin_phase(&self, phase: SearchPhase, candidate_total: usize) {
         let (reached, total) = self.slot(phase);
         total.store(candidate_total, Ordering::SeqCst);

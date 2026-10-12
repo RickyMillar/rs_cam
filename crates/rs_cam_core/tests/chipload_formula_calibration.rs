@@ -40,9 +40,10 @@
 //! Consequences for this file:
 //!
 //! - The formula check survives unchanged and is still worth having —
-//!   `effective_chip_thickness_mm` is still consumed by
-//!   `is_bipolar_engagement`, the MCP per-sample peak and the narration
-//!   histogram. Only its *rationale sentence* was wrong and is corrected.
+//!   `effective_chip_thickness_mm` is still consumed by the MCP
+//!   per-sample peak and the narration histogram (the optimizer's
+//!   bipolar-engagement predicate also read it until its deletion on
+//!   2026-10-12). Only its *rationale sentence* was wrong and is corrected.
 //! - **Both gate-verdict tests carried a fixture whose commanded feed
 //!   and declared chipload disagreed by 6.5×** (`feed_rate_mm_min: 1000`
 //!   at 18 000 rpm × 2 flutes is 0.0278 mm/tooth, not the 0.18 the

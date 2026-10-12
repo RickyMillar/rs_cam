@@ -749,8 +749,8 @@ fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
 ///
 /// **The production mirror was deleted on 2026-08-06 with D9.** This
 /// test is kept and is still not vacuous: `MillingCutter::chip_geometry`
-/// still ships and is still read by `is_bipolar_engagement`, the MCP
-/// per-sample peak and the narration histogram, and the closed form
+/// still ships and is still read by the MCP per-sample peak and the
+/// narration histogram, and the closed form
 /// below is still the right one for it. What the test no longer does is
 /// underwrite a gate identity.
 ///
@@ -986,8 +986,9 @@ fn the_gate_observation_reconciles_to_the_two_labelled_stages() {
 /// than by cancellation: the observation is `effective_feed / (rpm ·
 /// flutes)` and there is no arc term to cancel. Kept because a reader
 /// should be able to see that the gate is not engagement-aware — and
-/// because that is precisely what `is_bipolar_engagement` and the
-/// chipload entry-spike advisory now cannot get from it (recorded in
+/// because that is precisely what the chipload entry-spike advisory
+/// (and, until 2026-10-12, the optimizer's bipolar-engagement predicate)
+/// now cannot get from it (recorded in
 /// `tool_load::chipload`).
 ///
 /// Two fixtures differing only in sample arc (1.5 rad vs 0.4 rad — a

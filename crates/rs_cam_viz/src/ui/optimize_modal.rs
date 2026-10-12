@@ -17,10 +17,9 @@
 //! WP24 deleted that, so the hint below is true.
 
 use rs_cam_core::tool_load::optimize::{
-    BaselineTraceAssumptions, EntryAdvisory, GateKind, KinematicsSource, KnobAxis, LimitingGate,
-    LutQueryStamp, MachineSnapshot, OperatorSuggestion, OptimizeCandidate, OptimizeOutcome,
-    OutcomeKind, OutcomeNarrative, SearchEnvelopeReached, SimAssumptionStamp,
-    limiting_gates_for_verdict,
+    BaselineTraceAssumptions, GateKind, KinematicsSource, LimitingGate, LutQueryStamp,
+    MachineSnapshot, OptimizeCandidate, OptimizeOutcome, OutcomeKind, OutcomeNarrative,
+    SearchEnvelopeReached, SimAssumptionStamp, limiting_gates_for_verdict,
 };
 use rs_cam_core::tool_load::verdict::{ChipSide, ToolpathLoadVerdict};
 
@@ -188,12 +187,8 @@ fn draw_outcome(
             // limiting-gate readings replace the generic "gate" status.
             //
             // G-EXPL-HIDDEN (2026-08-16): the prose is `headline` AND
-            // `explanation`, not headline alone. This branch used to
-            // drop `explanation` on the floor, which hid F2.3's
-            // `DeflectionSetupLocked` prescription entirely — that
-            // refusal ships an EMPTY headline and puts the whole
-            // prescription on `explanation`, so the card printed a
-            // blank line where the operator's instructions belonged.
+            // `explanation`, not headline alone. A narrative can have an
+            // empty headline and put all its text on `explanation`.
             ui.label(
                 egui::RichText::new("No improvement found")
                     .strong()
@@ -216,21 +211,6 @@ fn draw_outcome(
                         .color(theme::TEXT_MUTED),
                 );
             }
-            // G17 C2: entry-spike advisories on the closest-to-safe
-            // candidate. Informational; not blocking.
-            for advisory in &narrative.entry_advisories {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-            }
-            // G17 A4 / OPT-005: operator-actionable suggestions, if any.
-            if !narrative.suggestions.is_empty() {
-                ui.add_space(6.0);
-                draw_suggestions(ui, &narrative.suggestions, toolpath_id, events);
-            }
             ui.add_space(8.0);
             if attempted.len() <= 1 {
                 // No non-baseline candidates ran (early refuse). Nothing to
@@ -250,85 +230,6 @@ fn draw_outcome(
                 toolpath_id,
                 events,
             );
-        }
-        OutcomeKind::MarginalSafe => {
-            // G16 §11.4 Layer 3: candidates passed every gate but at
-            // least one Within reading was admitted only by the
-            // tolerance band. G17 A2 swaps the prior generic
-            // explanation for narrative.headline (which carries the
-            // band-admit overshoot) and renders the search envelope.
-            //
-            // G-EXPL-HIDDEN (2026-08-16): "swaps" turned out to mean
-            // "drops" — `build_outcome` still sets an `explanation` on
-            // this tier ("verify on a scrap before applying; the strict
-            // LUT bound was exceeded by less than the configured
-            // breakage / burn tolerance"), and it was never rendered.
-            // Same omission as the `NoSafeImprovement` branch, same fix,
-            // found while fixing that one. `TradeOff` is left alone: its
-            // narrative contract populates no `explanation` at all.
-            ui.label(
-                egui::RichText::new("Verify on a scrap")
-                    .strong()
-                    .color(theme::WARNING),
-            );
-            for (i, line) in narrative_prose(narrative).into_iter().enumerate() {
-                ui.add_space(4.0);
-                let text = egui::RichText::new(line).small();
-                ui.label(if i == 0 {
-                    text
-                } else {
-                    text.color(theme::TEXT_MUTED)
-                });
-            }
-            if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(envelope)
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-            }
-            // G17 C2: entry-spike advisories on the recommended
-            // marginal candidate.
-            for advisory in &narrative.entry_advisories {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(format!("Note: {}", format_entry_advisory(advisory)))
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-            }
-            ui.add_space(8.0);
-            draw_ranked(
-                ui,
-                &outcome.candidates,
-                outcome.first_marginal_safe(),
-                toolpath_id,
-                events,
-            );
-        }
-        OutcomeKind::TradeOff => {
-            // Trade-off candidates: faster than baseline AND improve a
-            // failing gate, but worsen another. G17 A2 renders the
-            // structured narrative.headline ("improves chipload but
-            // worsens deflection") instead of the generic copy.
-            ui.label(
-                egui::RichText::new("Trade-off candidates")
-                    .strong()
-                    .color(theme::WARNING),
-            );
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(&narrative.headline).small());
-            if let Some(envelope) = format_envelope_summary(&narrative.envelope) {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(envelope)
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-            }
-            ui.add_space(8.0);
-            draw_ranked(ui, &outcome.candidates, None, toolpath_id, events);
         }
     }
 
@@ -686,7 +587,9 @@ fn draw_attempted_row(
     // "slower"; defensively-clean rows say "ok".
     let limiting = limiting_gates_for_verdict(&candidate.verdict);
     if let Some(g) = limiting.first() {
-        let color = if g.band_admitted {
+        // The depth row reports and never refuses (S3), so it is a
+        // warning colour, not an error colour.
+        let color = if g.gate == GateKind::Depth {
             theme::WARNING
         } else {
             theme::ERROR
@@ -727,12 +630,9 @@ fn draw_refusal_section(ui: &mut egui::Ui, heading: &str, explanation: &str) {
 /// half-reported somewhere. What each drop cost, checked against the
 /// construction sites rather than assumed:
 ///
-/// - **The modal, on four paths, showed nothing at all.** A pre-flight
-///   refusal (`DeflectionSetupLocked`, `BipolarEngagement`), a cancel
-///   before any candidate, a stage-2 evaluation failure and a cancelled
-///   partial all build from `OutcomeNarrative::default()` plus an
-///   `explanation`, so `headline` is **empty** and the branch printed a
-///   blank label. F2.3's stickout prescription is one of these.
+/// - **The modal, on some paths, showed nothing at all.** A narrative
+///   that holds only an `explanation` has an **empty** `headline`, and
+///   the branch printed a blank label.
 /// - **The modal, on the ordinary path, dropped the reason.** A search
 ///   that ran and lost populates BOTH: `headline_no_safe` names the
 ///   limiting gate readings, and `build_outcome` sets an `explanation`
@@ -915,6 +815,7 @@ fn draw_verdict_badges(ui: &mut egui::Ui, verdict: &ToolpathLoadVerdict) {
         verdict_badge_state(ui, "advance/tooth", verdict.chipload.state());
         verdict_badge_state(ui, "power", verdict.power.state());
         verdict_badge_state(ui, "L/D", verdict.deflection.state());
+        verdict_badge_state(ui, "depth of cut", verdict.depth.state());
     });
 }
 
@@ -934,93 +835,6 @@ fn verdict_badge_state(
             .small()
             .color(color),
     );
-}
-
-/// G17 A4 / OPT-005 — render the suggestions as a small inline callout.
-/// `CapAxisAt` / `RaiseAxisAbove` carry a concrete axis + value, so each
-/// gets an **Apply & re-optimize** button that sets that axis and re-runs
-/// the search — an explicit operator click that just removes the manual
-/// re-typing step (we still never auto-apply a heuristic). `DataGapHere`
-/// has no value to apply, so it stays a plain note.
-fn draw_suggestions(
-    ui: &mut egui::Ui,
-    suggestions: &[OperatorSuggestion],
-    toolpath_id: rs_cam_core::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
-    egui::Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .inner_margin(egui::Margin::symmetric(8, 6))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new("Try this")
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_MUTED),
-            );
-            for s in suggestions {
-                ui.horizontal(|ui| match s {
-                    OperatorSuggestion::CapAxisAt { axis, ceiling } => {
-                        ui.label(
-                            egui::RichText::new(format_suggestion_action(*axis, *ceiling)).small(),
-                        );
-                        suggestion_apply_button(ui, toolpath_id, *axis, *ceiling, events);
-                    }
-                    OperatorSuggestion::RaiseAxisAbove { axis, floor } => {
-                        ui.label(
-                            egui::RichText::new(format_suggestion_action(*axis, *floor)).small(),
-                        );
-                        suggestion_apply_button(ui, toolpath_id, *axis, *floor, events);
-                    }
-                    OperatorSuggestion::DataGapHere { reason } => {
-                        ui.label(
-                            egui::RichText::new(format!("\u{24D8} Data gap: {reason}"))
-                                .small()
-                                .color(theme::TEXT_MUTED),
-                        );
-                    }
-                });
-            }
-        });
-}
-
-/// OPT-005 — the Apply-&-re-optimize button shared by both actionable
-/// suggestion kinds.
-fn suggestion_apply_button(
-    ui: &mut egui::Ui,
-    toolpath_id: rs_cam_core::ToolpathId,
-    axis: KnobAxis,
-    value: f64,
-    events: &mut Vec<AppEvent>,
-) {
-    if ui
-        .small_button("Apply & re-optimize")
-        .on_hover_text("Set this axis to the suggested value and re-run the search.")
-        .clicked()
-    {
-        events.push(AppEvent::ReoptimizeWithAxisOverride {
-            toolpath_id,
-            axis,
-            value,
-        });
-    }
-}
-
-/// (display label, units, decimal places) for an optimizer search axis.
-fn axis_label_units(axis: KnobAxis) -> (&'static str, &'static str, usize) {
-    match axis {
-        KnobAxis::Feed => ("feed", "mm/min", 0),
-        KnobAxis::SpindleRpm => ("RPM", "rpm", 0),
-        KnobAxis::Stepover => ("stepover", "mm", 2),
-        KnobAxis::DepthPerPass => ("depth-per-pass", "mm", 2),
-        KnobAxis::ScallopHeight => ("scallop height", "mm", 3),
-    }
-}
-
-/// OPT-005 — compact button-row label, e.g. "Cap feed \u{2192} 2961 mm/min".
-fn format_suggestion_action(axis: KnobAxis, value: f64) -> String {
-    let (label, units, dp) = axis_label_units(axis);
-    format!("{label} \u{2192} {value:.dp$} {units}", dp = dp)
 }
 
 /// G17 A2 — one-line summary of the search envelope reached, e.g.
@@ -1060,36 +874,6 @@ fn format_envelope_summary(env: &SearchEnvelopeReached) -> Option<String> {
     }
 }
 
-/// G17 C2 — operator-friendly one-liner for an entry-sample advisory.
-/// "helix entry chipload reached 0.0707 (+29% over LUT max 0.055) —
-/// consider gentler entry."
-fn format_entry_advisory(a: &EntryAdvisory) -> String {
-    let pct = a.overshoot_fraction * 100.0;
-    let gate_phrase = match a.gate {
-        GateKind::Chipload => match a.side {
-            Some(rs_cam_core::tool_load::verdict::ChipSide::High) => format!(
-                "advance/tooth reached {:.4} mm/tooth ({pct:+.0}% over vendor band max {:.4})",
-                a.observed, a.bound,
-            ),
-            Some(rs_cam_core::tool_load::verdict::ChipSide::Low) => format!(
-                "advance/tooth dropped to {:.4} mm/tooth ({pct:+.0}% under vendor band min {:.4})",
-                a.observed, a.bound,
-            ),
-            None => format!("advance/tooth {:.4} mm/tooth", a.observed),
-        },
-        GateKind::Power => format!(
-            "power reached {:.2} kW ({pct:+.0}% over available {:.2})",
-            a.observed, a.bound,
-        ),
-        GateKind::Deflection => format!(
-            "deflection reached {:.0} µm ({pct:+.0}% over the {:.0} µm threshold)",
-            a.observed * 1000.0,
-            a.bound * 1000.0,
-        ),
-    };
-    format!("{} {gate_phrase} — consider gentler entry.", a.locality)
-}
-
 /// G17 A2 + A3 — compact per-gate reading with optional locality
 /// suffix. "chipload 0.0707 (+29%) — slot section" for the wanaka
 /// TP 1 case. The locality suffix tells the operator *where* in the
@@ -1105,6 +889,7 @@ fn format_limiting_gate(g: &LimitingGate) -> String {
         },
         GateKind::Power => format!("power {:.2} kW ({pct:+.0}%)", g.observed),
         GateKind::Deflection => format!("defl {:.0} µm ({pct:+.0}%)", g.observed * 1000.0),
+        GateKind::Depth => format!("depth of cut {:.2} mm ({pct:+.0}%)", g.observed),
     };
     match &g.locality {
         Some(loc) => format!("{core} — {loc}"),
@@ -1122,77 +907,6 @@ fn format_limiting_gate(g: &LimitingGate) -> String {
 mod tests {
     use super::*;
 
-    /// The narrative a pre-flight `DeflectionSetupLocked` refusal builds:
-    /// `OutcomeNarrative::default()` plus an `explanation`, so the
-    /// headline is EMPTY. Shape pinned core-side by
-    /// `deflection_exceeds_with_unreachable_corner_refuses_setup_locked`
-    /// (`tool_load/optimize/mod.rs`).
-    fn deflection_setup_locked_narrative() -> OutcomeNarrative {
-        OutcomeNarrative {
-            explanation: "Deflection is setup-locked: predicted peak 622 µm exceeds the \
-                          200 µm safety bound even at the lowest-force corner the search \
-                          can reach. Reduce stickout to 31.4 mm or fit a stiffer tool."
-                .to_owned(),
-            ..OutcomeNarrative::default()
-        }
-    }
-
-    /// The narrative `attach_retarget_refusals` builds for a
-    /// `ChiploadBandNarrowerThanHeadroom` refusal at zero non-baseline
-    /// attempts: headline replaced (the stock one falsely claims an
-    /// empty search space), explanation carrying the band and the
-    /// unreachable target. Shape pinned core-side by
-    /// `a_refused_retarget_names_itself_on_the_outcome`.
-    fn narrow_band_refusal_narrative() -> OutcomeNarrative {
-        OutcomeNarrative {
-            headline: "No candidate proposed — the chipload retarget was refused: the vendor \
-                       band the gate judges by is narrower than the retarget headroom."
-                .to_owned(),
-            explanation: "chipload retarget refused: the band the gate judges by \
-                          [0.0900, 0.1000] mm/tooth is narrower than the 1.20× high-side \
-                          headroom, so its target 0.0833 mm/tooth falls outside that band"
-                .to_owned(),
-            ..OutcomeNarrative::default()
-        }
-    }
-
-    /// G-EXPL-HIDDEN. The prescription is the ONLY prose this refusal
-    /// carries — before the fix the branch rendered `headline` alone and
-    /// the operator got a blank line where the instruction belonged.
-    #[test]
-    fn narrative_prose_renders_the_deflection_prescription() {
-        let narrative = deflection_setup_locked_narrative();
-        let prose = narrative_prose(&narrative);
-        assert_eq!(
-            prose,
-            vec![narrative.explanation.as_str()],
-            "the deflection prescription must reach the card verbatim"
-        );
-        assert!(prose[0].contains("stickout"), "got: {:?}", prose[0]);
-        assert!(prose[0].contains("µm"), "got: {:?}", prose[0]);
-    }
-
-    /// G-EXPL-HIDDEN. QN-c's typed refusal populates both fields; both
-    /// render, explanation second, and it is the explanation that
-    /// carries the band and the unreachable target.
-    #[test]
-    fn narrative_prose_renders_both_lines_for_a_narrow_band_refusal() {
-        let narrative = narrow_band_refusal_narrative();
-        let prose = narrative_prose(&narrative);
-        assert_eq!(prose.len(), 2, "got: {prose:?}");
-        assert_eq!(prose[0], narrative.headline.as_str());
-        assert_eq!(prose[1], narrative.explanation.as_str());
-        assert!(prose[1].contains("0.0900"), "got: {:?}", prose[1]);
-        assert!(prose[1].contains("0.0833"), "got: {:?}", prose[1]);
-        // The unwind of QN-c's headline-only workaround: the band is
-        // stated once, on the explanation, not twice in one card.
-        assert!(
-            !prose[0].contains("mm/tooth"),
-            "the headline should no longer duplicate the band, got: {:?}",
-            prose[0]
-        );
-    }
-
     /// The control. A narrative carrying only a headline yields exactly
     /// one line — the helper never emits a blank second label. Not a
     /// shipped `NoSafeImprovement` shape (every construction site sets
@@ -1209,32 +923,6 @@ mod tests {
         assert_eq!(
             narrative_prose(&narrative),
             vec![narrative.headline.as_str()]
-        );
-    }
-
-    /// G-EXPL-HIDDEN, second surface. `build_outcome` sets this exact
-    /// explanation on every `MarginalSafe` outcome (`outcome.rs`), and
-    /// the modal's branch rendered `headline` alone — so the one
-    /// sentence telling the operator to cut a scrap first never
-    /// appeared on the card that recommends the candidate.
-    #[test]
-    fn narrative_prose_renders_the_marginal_safe_scrap_warning() {
-        let narrative = OutcomeNarrative {
-            headline: "Best candidate is 0.1840 mm/tooth against a 0.1600 LUT max, \
-                       admitted by the tolerance band."
-                .to_owned(),
-            explanation: "Best candidate is admitted only by the layer-1 tolerance band — \
-                          verify on a scrap before applying. The strict LUT bound was \
-                          exceeded by less than the configured breakage / burn tolerance."
-                .to_owned(),
-            ..OutcomeNarrative::default()
-        };
-        let prose = narrative_prose(&narrative);
-        assert_eq!(prose.len(), 2, "got: {prose:?}");
-        assert!(
-            prose[1].contains("verify on a scrap"),
-            "got: {:?}",
-            prose[1]
         );
     }
 
@@ -1308,48 +996,6 @@ mod tests {
     }
 
     #[test]
-    fn format_suggestion_action_feed_rounds_to_int() {
-        // OPT-005: compact button-row label, "feed → 2961 mm/min".
-        let rendered = format_suggestion_action(KnobAxis::Feed, 2960.7);
-        assert_eq!(rendered, "feed \u{2192} 2961 mm/min");
-    }
-
-    #[test]
-    fn format_suggestion_action_rpm() {
-        let rendered = format_suggestion_action(KnobAxis::SpindleRpm, 16000.0);
-        assert_eq!(rendered, "RPM \u{2192} 16000 rpm");
-    }
-
-    #[test]
-    fn format_suggestion_action_doc_uses_two_decimals() {
-        let rendered = format_suggestion_action(KnobAxis::DepthPerPass, 3.87);
-        assert_eq!(rendered, "depth-per-pass \u{2192} 3.87 mm");
-    }
-
-    #[test]
-    fn format_entry_advisory_chipload_high_includes_locality_and_pct() {
-        let a = EntryAdvisory {
-            gate: GateKind::Chipload,
-            side: Some(rs_cam_core::tool_load::verdict::ChipSide::High),
-            observed: 0.0707,
-            bound: 0.055,
-            overshoot_fraction: (0.0707 - 0.055) / 0.055,
-            locality: "helix entry".to_owned(),
-        };
-        let s = format_entry_advisory(&a);
-        // Wanaka shape: helix entry sample reading + vendor band max +
-        // pct + operator-friendly suggestion. "LUT max" became "vendor
-        // band max" at Checkpoint H2 — the word "chipload" survives only
-        // where a vendor band is named, so the band gets named.
-        assert!(s.starts_with("helix entry"));
-        assert!(s.contains("0.0707"));
-        assert!(s.contains("advance/tooth"));
-        assert!(s.contains("vendor band max"));
-        assert!(s.contains("+29") || s.contains("+28"));
-        assert!(s.ends_with("consider gentler entry."));
-    }
-
-    #[test]
     fn format_limiting_gate_appends_locality_suffix() {
         // G17 A3: locality is rendered as " — <label>" after the
         // reading. Wanaka TP 1 case: chipload peak in a full-slot
@@ -1388,5 +1034,23 @@ mod tests {
             s.contains("237"),
             "deflection should be rendered in µm: {s}"
         );
+    }
+
+    /// The depth row names itself as "depth of cut" and gives the
+    /// reading in mm.
+    #[test]
+    fn format_limiting_gate_depth_names_itself() {
+        let g = LimitingGate {
+            gate: GateKind::Depth,
+            side: None,
+            observed: 6.0,
+            bound: 4.0,
+            overshoot_fraction: (6.0 - 4.0) / 4.0,
+            band_admitted: false,
+            locality: None,
+        };
+        let s = format_limiting_gate(&g);
+        assert!(s.starts_with("depth of cut 6.00 mm"), "got: {s}");
+        assert!(s.contains("+50%"), "got: {s}");
     }
 }

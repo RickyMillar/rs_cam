@@ -686,7 +686,7 @@ fn a_count_pill_is_on_the_grid_up2() {
 const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     (
         "ui/optimize_project.rs",
-        14,
+        10,
         "grid COLUMN headers; a SectionHeader draws a rule and its own \
          vertical space, so it cannot sit in a grid cell",
     ),
@@ -697,9 +697,8 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/optimize_modal.rs",
-        9,
-        "7 grid column headers, one CollapsingHeader title and the \
-         \"Try this\" notice",
+        8,
+        "7 grid column headers and one CollapsingHeader title",
     ),
     (
         "ui/sim_op_list.rs",

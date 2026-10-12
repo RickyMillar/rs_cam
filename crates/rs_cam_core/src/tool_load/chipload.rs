@@ -90,12 +90,10 @@ use crate::stock::simulation_cut::SimulationCutTrace;
 use super::locality::SpanLookup;
 
 /// F3.4 (defect class C5) — THE canonical chipload-envelope row
-/// resolution. Pre-F3.4 four call sites re-derived this independently
-/// (the gate below, the optimizer context's `find_matched_lut_row`,
-/// the viewport envelope map, the preflight/retargeter via the
-/// optimizer row) — with three different lookup strategies (angle-aware
-/// vs first-of-enumerate vs first-match), so advice could be computed
-/// against a different envelope than the verdict.
+/// resolution. Before F3.4 several call sites (the gate below, the
+/// viewport envelope map, and the optimizer) found this row with three
+/// different lookup strategies, so advice could be computed against a
+/// different envelope than the verdict.
 ///
 /// Semantics:
 /// - `Custom` material → `None` (no validated LUT category).
@@ -103,8 +101,7 @@ use super::locality::SpanLookup;
 ///   Adaptive3d reroutes).
 /// - `lookup_diameter_mm` is the LUT lookup key. Every caller computes
 ///   it with [`crate::feeds::geometry::lut_key_diameter_for_cutter`]: the
-///   gate at the peak steady-state DOC, the viewport at its peak DOC, and
-///   the optimizer through `diameter_for_lut_lookup(tool, commanded DOC)`.
+///   gate at the peak steady-state DOC and the viewport at its peak DOC.
 ///   A tapered ball is keyed at its tip at every depth (ruling A1,
 ///   2026-09-24); a V-bit at its nominal diameter (ruling B4, 2026-09-25).
 /// - Since B4 the recipe resolver tries the same chipload-bearing rows
@@ -226,79 +223,6 @@ pub(crate) struct SteadyStateSamples<'a> {
     /// samples at all" (SimulationRequired) from "samples exist but
     /// none meet the steady-state threshold" (SteadyStateSamplesNotPresent).
     pub any_in_cut: bool,
-}
-
-/// Fraction of valid steady-state samples that must fall below
-/// `cl_min` (rubbing/burn) AND above `cl_max` (breakage) for the
-/// bipolar predicate to fire. Looser than 1 sample (which would
-/// trigger on a single transient noise sample) but tight enough to
-/// catch real bipolar toolpaths where engagement varies wildly.
-pub(crate) const BIPOLAR_SIDE_FRACTION: f64 = 0.05;
-
-/// Detect bipolar engagement: steady-state samples for one toolpath
-/// straddle both the LUT row's chipload-min and chipload-max bounds.
-///
-/// **Unit caveat, recorded 2026-08-06 and deliberately NOT fixed here.**
-/// This predicate compares each sample's raw `effective_chip_thickness_mm`
-/// — an arc-mean chip, uncorrected for achieved feed — against a band the
-/// B-lit verdict established is a linear **advance** per tooth. That is
-/// the same mismatch the gate above just deleted, in a sibling consumer.
-///
-/// It is left standing on purpose, because the deletion does not
-/// transfer. The gate's observation could become an advance per tooth
-/// because the census proved the sample's own arc cancels out of it. This
-/// predicate is *about* that arc: it asks whether engagement varies enough
-/// across one toolpath that no single feed/RPM scaling fixes both ends.
-/// Re-expressing it in advance per tooth would make it read only the
-/// kinematic feed map and go near-vacuous — a worse answer, not a
-/// better-unit one.
-///
-/// So the honest position is: the samples are the right quantity and the
-/// **bounds** are the wrong yardstick for them. Fixing it needs a
-/// chip-thickness envelope, which no vendor in the shipped LUT publishes
-/// (verdict §2.3), or a different predicate. Owner: the optimizer
-/// pre-flight lane. Re-open condition: a source for a chip-thickness
-/// band, or a ruling that an engagement-variance refusal may be scaled
-/// from an advance band by an explicit, disclosed factor.
-/// When true, no single feed/RPM scaling fixes both extremes —
-/// raising feed clears burn but pushes more samples above breakage;
-/// lowering feed clears breakage but pushes more samples below burn.
-/// The user's lever is engagement variance (stepover / DOC / op
-/// strategy), not feed/RPM.
-///
-/// Uses sample counts rather than the median so a 30%-below /
-/// 40%-above toolpath isn't classified as Within by median collapse.
-/// `BIPOLAR_SIDE_FRACTION` (5% of valid samples) on each side is the
-/// threshold; both sides must clear it for the predicate to fire.
-pub(crate) fn is_bipolar_engagement(
-    steady_samples: &[(usize, &crate::stock::simulation_cut::SimulationCutSample)],
-    cl_min: f64,
-    cl_max: f64,
-) -> bool {
-    let mut total: usize = 0;
-    let mut below: usize = 0;
-    let mut above: usize = 0;
-    for (_, s) in steady_samples {
-        let Some(cl) = s.effective_chip_thickness_mm else {
-            continue;
-        };
-        total += 1;
-        // Checkpoint K (b1) — same boundary contract as the gate, at
-        // zero tolerance. (The *yardstick* mismatch this predicate
-        // documents above is untouched: it is still a chip thickness
-        // against an advance band. The comparison's boundary semantics
-        // and its choice of quantity are separate defects.)
-        if super::boundary::below_low(cl, cl_min, 0.0) {
-            below += 1;
-        } else if super::boundary::exceeds_high(cl, cl_max, 0.0) {
-            above += 1;
-        }
-    }
-    if total == 0 {
-        return false;
-    }
-    let threshold = ((total as f64 * BIPOLAR_SIDE_FRACTION).ceil() as usize).max(1);
-    below >= threshold && above >= threshold
 }
 
 /// Filter a sim trace down to the steady-state samples for one
@@ -2011,91 +1935,6 @@ mod tests {
                 reason: UnmodeledReason::AllSamplesAirCutOrRapid
             }
         ));
-    }
-
-    // ── Bipolar engagement predicate ─────────────────────────────────
-
-    #[test]
-    fn bipolar_fires_when_both_extremes_populated() {
-        // 30 samples: 5 below cl_min=0.02, 5 above cl_max=0.10, rest in
-        // range. 5 / 30 = 16.7%, well above the 5% per-side threshold.
-        let mut samples = Vec::new();
-        for i in 0..5 {
-            samples.push(sample(0, i, 0.005, 0.5));
-        }
-        for i in 0..5 {
-            samples.push(sample(0, 100 + i, 0.15, 0.5));
-        }
-        for i in 0..20 {
-            samples.push(sample(0, 200 + i, 0.05, 0.5));
-        }
-        let refs: Vec<_> = samples.iter().enumerate().collect();
-        assert!(is_bipolar_engagement(&refs, 0.02, 0.10));
-    }
-
-    #[test]
-    fn bipolar_does_not_fire_when_only_below_min() {
-        // 10 samples below cl_min, 0 above cl_max → not bipolar (just
-        // burn risk, fixable by raising feed).
-        let mut samples = Vec::new();
-        for i in 0..10 {
-            samples.push(sample(0, i, 0.005, 0.5));
-        }
-        for i in 0..20 {
-            samples.push(sample(0, 100 + i, 0.05, 0.5));
-        }
-        let refs: Vec<_> = samples.iter().enumerate().collect();
-        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
-    }
-
-    #[test]
-    fn bipolar_does_not_fire_when_only_above_max() {
-        // 10 samples above cl_max, 0 below cl_min → not bipolar (just
-        // breakage risk, fixable by lowering feed).
-        let mut samples = Vec::new();
-        for i in 0..10 {
-            samples.push(sample(0, i, 0.20, 0.5));
-        }
-        for i in 0..20 {
-            samples.push(sample(0, 100 + i, 0.05, 0.5));
-        }
-        let refs: Vec<_> = samples.iter().enumerate().collect();
-        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
-    }
-
-    #[test]
-    fn bipolar_ignores_single_transient_samples_below_threshold() {
-        // 1 sample below + 1 sample above out of 100 → 1% on each side,
-        // below the 5% threshold. Single transient samples (corner
-        // brush, lead-in) shouldn't trip bipolar.
-        let mut samples = Vec::new();
-        samples.push(sample(0, 0, 0.005, 0.5));
-        samples.push(sample(0, 1, 0.20, 0.5));
-        for i in 0..98 {
-            samples.push(sample(0, 100 + i, 0.05, 0.5));
-        }
-        let refs: Vec<_> = samples.iter().enumerate().collect();
-        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
-    }
-
-    #[test]
-    fn bipolar_returns_false_for_empty_samples() {
-        let samples: Vec<(usize, &SimulationCutSample)> = Vec::new();
-        assert!(!is_bipolar_engagement(&samples, 0.02, 0.10));
-    }
-
-    #[test]
-    fn bipolar_skips_samples_without_chip_thickness() {
-        // Samples whose effective_chip_thickness is None don't count
-        // toward the total — they aren't classified.
-        let mut s_below = sample(0, 0, 0.005, 0.5);
-        s_below.effective_chip_thickness_mm = None;
-        let mut s_above = sample(0, 1, 0.20, 0.5);
-        s_above.effective_chip_thickness_mm = None;
-        let in_range = sample(0, 2, 0.05, 0.5);
-        let samples = [s_below, s_above, in_range];
-        let refs: Vec<_> = samples.iter().enumerate().collect();
-        assert!(!is_bipolar_engagement(&refs, 0.02, 0.10));
     }
 
     /// Resolve the LUT chipload max for the 6.35 mm flat / HardMaple /

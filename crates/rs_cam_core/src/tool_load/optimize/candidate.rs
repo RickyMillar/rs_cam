@@ -1,41 +1,34 @@
-//! Stage-1 candidate generation, the per-candidate evaluation driver,
-//! and Stage-2 refinement.
+//! The candidate record, the parameter diff, and the per-candidate
+//! evaluation driver.
 //!
-//! - [`OptimizeCandidate`] — the record produced by every search-stage
-//!   evaluation; what the orchestrator hands to outcome dispatch.
-//! - [`evaluate_candidate`] — the single per-candidate driver. Apply →
-//!   regenerate → sim → gate → produce an `OptimizeCandidate`. Every
-//!   Stage-1 / Stage-2 / retarget candidate goes through this.
-//! - Stage-1 grid builders — `build_doc_variants`,
-//!   `build_stepover_variants`, `build_scallop_height_variants`.
-//! - Stage-2 refinement — `select_stage2_candidates`, `refine_stage2`.
-//! - Pipeline helpers — `finalize_partial`, `has_doc_knob`.
+//! - [`OptimizeCandidate`] — the record of one evaluation; the
+//!   orchestrator gives the list to `build_outcome`.
+//! - [`ParamDelta`] and [`delta_against_baseline`] — which parameters a
+//!   candidate moves away from the baseline.
+//! - [`evaluate_candidate`] — the one per-candidate driver: apply,
+//!   regenerate, simulate, gate, and record.
+//! - [`candidate_sim_options`] — the one construction site for the
+//!   candidate simulation options.
 
 use std::sync::atomic::AtomicBool;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::feeds::vendor_lookup::MatchedRow;
+use crate::compute::catalog::OperationConfig;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 use crate::tool_load::verdict::ToolpathLoadVerdict;
-use crate::tool_load::{ToolpathLoadContext, evaluate_toolpath};
+use crate::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 use crate::util::panic_message::panic_payload_message;
 
-use super::axes::SearchAxis;
-use super::bounds;
+use super::SearchStage;
 use super::context::{
     BaselineRestoreGuard, EvaluationContext, air_cut_fraction_of_total_runtime_from_trace,
     cycle_time_from_trace,
 };
-use super::delta::{GateDeltas, ParamDelta};
-use super::policy::{self, SearchPolicy};
-use super::rank::composite_score;
-use super::{SearchPhase, SearchStage, search_policy, tolerance_bands_from_policy};
 
-/// One candidate's full evaluation record. Populated by the optimizer
-/// during Stage 0/1/2; each field is sim-measured (or, for the baseline
-/// candidate at index 0, sourced from `baseline_trace`).
+/// One candidate's full evaluation record. A simulation of the
+/// candidate measures each field. For the baseline candidate at index 0
+/// the fields come from `baseline_trace`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizeCandidate {
     /// The full operation config that would be applied. Carries
@@ -48,7 +41,7 @@ pub struct OptimizeCandidate {
     pub cycle_time_s: f64,
     /// Verdict from the gate over this candidate's sim.
     pub verdict: ToolpathLoadVerdict,
-    /// Which stage produced this candidate.
+    /// Which source produced this candidate.
     pub stage: SearchStage,
     /// Project-level reconciliation result (U4). After the user Applies
     /// and the project re-sims end-to-end, downstream stock-state
@@ -57,11 +50,6 @@ pub struct OptimizeCandidate {
     pub reconciled_cycle_time_s: Option<f64>,
     /// Reconciled verdict from the post-Apply project sim (U4).
     pub reconciled_verdict: Option<ToolpathLoadVerdict>,
-    /// Per-criterion delta vs the baseline candidate at index 0. `None`
-    /// for the baseline itself. Populated by the tier dispatcher in
-    /// `build_outcome` so consumers don't have to recompute.
-    #[serde(default)]
-    pub gate_deltas: Option<GateDeltas>,
     /// Roadmap F.12 — fraction of **total runtime (cutting + rapids)** this
     /// toolpath spent in air in this candidate's sim. Range 0.0..=1.0.
     /// `None` when the trace lacked a per-toolpath summary (failed sim).
@@ -76,42 +64,80 @@ pub struct OptimizeCandidate {
     pub air_cut_fraction_of_total_runtime: Option<f64>,
 }
 
-/// True if this op exposes a meaningful `depth_per_pass` knob.
+/// The diff between a candidate and the baseline, for the GUI row text.
+/// Each field is `Some(new_value)` only when the candidate changes that
+/// parameter. The modal renders "feed 1899→2100" from it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ParamDelta {
+    /// New feed in mm/min. `None` if the candidate keeps the baseline feed.
+    pub feed_mm_min: Option<f64>,
+    /// New spindle RPM. `None` if the candidate keeps the baseline RPM.
+    pub spindle_rpm: Option<u32>,
+    /// New radial stepover in mm.
+    pub stepover_mm: Option<f64>,
+    /// New depth per pass in mm.
+    pub depth_per_pass_mm: Option<f64>,
+    /// New scallop ridge height in mm. This is a different parameter
+    /// from `stepover_mm`: Scallop derives its stepover from
+    /// `(scallop_height, ball_radius)`. G2 (2026-05-08).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scallop_height_mm: Option<f64>,
+}
+
+impl ParamDelta {
+    /// True if any field is `Some(_)`, i.e. the candidate changes a
+    /// parameter.
+    pub fn has_changes(&self) -> bool {
+        self.feed_mm_min.is_some()
+            || self.spindle_rpm.is_some()
+            || self.stepover_mm.is_some()
+            || self.depth_per_pass_mm.is_some()
+            || self.scallop_height_mm.is_some()
+    }
+}
+
+/// The smallest feed change, in mm/min, that [`delta_against_baseline`]
+/// shows as a parameter change.
 ///
-/// G2/G3 history: this allowlist used to be split across multiple
-/// places. Now a single source of truth so the Stage-1 grid builder
-/// and the strategy harness can share a definition. The list is hand-
-/// maintained because the catalog's surface API doesn't yet have a
-/// "this op has DOC" flag — per-op `OperationParams::depth_per_pass`
-/// returns `Some(_)` for the same set, but consulting that on every
-/// candidate is awkward when we just need the kind.
-///
-/// Operation kinds:
-/// - G1: Adaptive3d, Pocket, Adaptive, Rest, Face — primary clearing
-///   ops with explicit DOC.
-/// - G2: Profile, Zigzag — newer 2D clearing ops; both expose DOC via
-///   `OperationParams`.
-/// - G3: Trace, RampFinish, Waterline — Trace already exposes
-///   `depth_per_pass()`; RampFinish wraps `max_stepdown` and Waterline
-///   wraps `z_step` as DOC-equivalent axes via the trait.
-///
-/// `AxisGridStrategy` collapses the stepover and scallop_height
-/// dimensions for ops that don't expose those, so adding ops here
-/// doesn't fan out duplicate sims.
-pub(crate) fn has_doc_knob(op_kind: OperationType) -> bool {
-    matches!(
-        op_kind,
-        OperationType::Adaptive3d
-            | OperationType::Pocket
-            | OperationType::Adaptive
-            | OperationType::Rest
-            | OperationType::Face
-            | OperationType::Profile
-            | OperationType::Zigzag
-            | OperationType::Trace
-            | OperationType::RampFinish
-            | OperationType::Waterline
-    )
+/// A display precision, not a cutting limit. The value is the one the
+/// deleted search policy printed
+/// (`git show 009bee30:crates/rs_cam_core/src/tool_load/optimize/policy.rs`,
+/// `delta_display_tolerance_mm_min`, source "GUI/display precision").
+const FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN: f64 = 0.5;
+
+/// Compute a [`ParamDelta`] from two `OperationConfig`s. A feed change
+/// smaller than [`FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN`] is not shown.
+// SAFETY: Phase 2 (planning/optimize_review_2026-10-12/PLAN.md §2) calls
+// this for each candidate; Phase 1 evaluates no candidate, so no
+// production caller exists yet.
+#[allow(dead_code)]
+pub(crate) fn delta_against_baseline(
+    baseline: &OperationConfig,
+    candidate: &OperationConfig,
+) -> ParamDelta {
+    let mut delta = ParamDelta::default();
+    if (baseline.feed_rate() - candidate.feed_rate()).abs() > FEED_DELTA_DISPLAY_TOLERANCE_MM_MIN {
+        delta.feed_mm_min = Some(candidate.feed_rate());
+    }
+    if baseline.spindle_rpm() != candidate.spindle_rpm() {
+        delta.spindle_rpm = candidate.spindle_rpm();
+    }
+    if baseline.stepover() != candidate.stepover()
+        && let Some(s) = candidate.stepover()
+    {
+        delta.stepover_mm = Some(s);
+    }
+    if baseline.depth_per_pass() != candidate.depth_per_pass()
+        && let Some(d) = candidate.depth_per_pass()
+    {
+        delta.depth_per_pass_mm = Some(d);
+    }
+    if baseline.scallop_height() != candidate.scallop_height()
+        && let Some(s) = candidate.scallop_height()
+    {
+        delta.scallop_height_mm = Some(s);
+    }
+    delta
 }
 
 /// The **one** construction site for the optimizer's candidate-scoring
@@ -169,168 +195,13 @@ pub(crate) fn candidate_sim_options(sim_resolution_mm: f64) -> SimulationOptions
     }
 }
 
-/// Build a partial `OptimizeOutcome` after cancellation. If we have
-/// no candidates yet, surface NoSafeImprovement; otherwise dispatch
-/// the candidates we managed to evaluate. The user sees a partial
-/// rollup rather than nothing — open-and-walk-away cancellation
-/// shouldn't lose the work done before they hit Cancel.
-pub(crate) fn finalize_partial(
-    baseline: OptimizeCandidate,
-    candidates: Vec<OptimizeCandidate>,
-    machine: &crate::machine::MachineProfile,
-) -> super::OptimizeOutcome {
-    if candidates.is_empty() {
-        let narrative = super::OutcomeNarrative {
-            explanation: "cancelled before any candidates were evaluated".to_owned(),
-            ..super::OutcomeNarrative::default()
-        };
-        return super::OptimizeOutcome::no_safe_improvement(
-            vec![baseline],
-            super::RefuseReason::NoImprovementFound,
-            narrative,
-        );
-    }
-    super::build_outcome(baseline, candidates, machine)
-}
-
-// ── Stage 1: DOC candidate generation (Engineering Default 9) ─────────
-//
-// Five geometry-bearing ops carry a `depth_per_pass`; the optimizer
-// sweeps DOC at the headroom point (baseline `depth_per_pass`) and
-// scores each variant via the gate over a fresh sim.
-//
-// Grid construction prefers the matched LUT row's calibrated bounds
-// (`ap_min_mm`, `ap_max_mm`) where available, clamping a multiplier
-// envelope (0.7×–1.4× of baseline) inside them. When the LUT row
-// doesn't carry bounds, the multiplier envelope is the grid directly.
-//
-// 3-variant ops (Adaptive3d, Rest, Face): `[lo, base, hi]`.
-// 4-variant ops (Pocket, Adaptive): `[lo, base, mid(base, hi), hi]`.
-
-/// Build the DOC candidate grid for a Stage-1 sweep. Always includes
-/// the baseline (`baseline_doc_mm`) as a control candidate; the lo and
-/// hi endpoints come from the LUT row's calibrated bounds (clamped by
-/// the multiplier envelope) or fall back to the multiplier envelope
-/// alone.
-///
-/// Always also includes the operation's own factory default DOC as an
-/// "anchor" candidate so a wildly-out-of-envelope baseline (e.g. user
-/// set 0.5mm DOC on an op whose default is 3.0mm) can still walk back
-/// to the well-known-safe value the variant search would otherwise miss.
-///
-/// Returns variants sorted ascending. May return fewer than the
-/// nominal 3 or 4 entries when adjacent values dedupe (e.g. an LUT
-/// row whose `ap_max` lies inside `1.4 × baseline` ends up with the
-/// hi endpoint very close to baseline). Always contains at least the
-/// baseline value.
-pub(crate) fn build_doc_variants(
-    baseline_doc_mm: f64,
-    lut_row: Option<&MatchedRow>,
-    op_type: OperationType,
-) -> Vec<f64> {
-    let policy = search_policy();
-    let bounds = bounds::resolve_doc_bounds(baseline_doc_mm, lut_row, op_type, policy);
-    build_geometry_variants_from_bounds(
-        &bounds,
-        op_type,
-        SearchAxis::DepthPerPass,
-        &policy.axes.doc,
-        policy,
-    )
-}
-
-/// Build the stepover candidate grid for a Stage-1 sweep. Same shape
-/// as `build_doc_variants` but anchored to the LUT row's
-/// `ae_min_mm`/`ae_max_mm` (radial engagement) bounds instead of
-/// `ap_*`. Always includes the baseline (`baseline_stepover_mm`).
-///
-/// 4-variant ops (Pocket, Adaptive) get `[lo, baseline, mid, hi]` so
-/// the search has more granularity on the dominant clearing
-/// strategies; 3-variant ops (Adaptive3d, Rest, Face) get
-/// `[lo, baseline, hi]`. Returns variants sorted ascending. May
-/// return fewer than the nominal entries when adjacent values dedupe.
-pub(crate) fn build_stepover_variants(
-    baseline_stepover_mm: f64,
-    lut_row: Option<&MatchedRow>,
-    op_type: OperationType,
-) -> Vec<f64> {
-    let policy = search_policy();
-    let bounds = bounds::resolve_stepover_bounds(baseline_stepover_mm, lut_row, op_type, policy);
-    build_geometry_variants_from_bounds(
-        &bounds,
-        op_type,
-        SearchAxis::Stepover,
-        &policy.axes.stepover,
-        policy,
-    )
-}
-
-/// Shared composer used by `build_doc_variants` / `build_stepover_variants`.
-/// Combines the warm-start grid, outside-preferred probes (when policy
-/// permits and the LUT envelope is present), and the operation's factory
-/// default anchor. Sorts and dedupes per axis policy.
-fn build_geometry_variants_from_bounds(
-    bounds: &bounds::AxisBounds,
-    op_type: OperationType,
-    axis: SearchAxis,
-    axis_policy: &policy::AxisPolicy,
-    policy: &policy::SearchPolicy,
-) -> Vec<f64> {
-    let four_variant = matches!(op_type, OperationType::Pocket | OperationType::Adaptive);
-    let n_points = if four_variant { 4 } else { 3 };
-    let mut variants = bounds.warm_start_grid(n_points, axis_policy.midpoint_weight.value);
-
-    // Outside-preferred probes — extends the search beyond the LUT
-    // envelope when policy permits. This is the §1.3 wanaka TP 4 fix:
-    // when LUT ae_max caps below operator intent, probes above LUT max
-    // give the chipload gate retargeters a wider feasible set.
-    variants.extend(bounds.outside_preferred_probes(axis_policy));
-
-    // Factory default anchor — recovers a candidate at the well-tested
-    // canonical setup when the user's baseline has drifted far from it.
-    // Always added; dedup handles the no-op case where it lands inside
-    // the warm-start grid.
-    if let Some(default_v) = bounds::factory_default_for_axis(axis, op_type, policy) {
-        variants.push(default_v);
-    }
-
-    variants.sort_by(f64::total_cmp);
-    let dedup_tolerance = axis_policy.dedup_tolerance.value;
-    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
-    variants
-}
-
-/// Build the scallop-height candidate grid for a Stage-1 sweep.
-/// Multiplicative envelope only (no LUT clamping) — the LUT's `ae_*_mm`
-/// bounds describe radial step in mm, which differs in units and
-/// magnitude from `scallop_height` (a 0.1 mm scallop target on a 6 mm
-/// ball produces ~1.55 mm radial step). Returns variants sorted
-/// ascending; always includes the baseline. Floored at the policy's
-/// scallop-height hard floor.
-pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64> {
-    let policy = search_policy();
-    let axis_policy = &policy.axes.scallop_height;
-    // Scallop height is a 3-point quality axis on Scallop ops. Use
-    // `OperationType::Scallop` so the bounds resolver picks the
-    // 3-variant multiplier path; Scallop is not in the four-variant
-    // clearing set.
-    let bounds =
-        bounds::resolve_scallop_height_bounds(baseline_scallop_mm, OperationType::Scallop, policy);
-    let mut variants = bounds.warm_start_grid(3, axis_policy.midpoint_weight.value);
-    variants.sort_by(f64::total_cmp);
-    let dedup_tolerance = axis_policy.dedup_tolerance.value;
-    variants.dedup_by(|a, b| (*a - *b).abs() < dedup_tolerance);
-    variants
-}
-
 // ── Candidate evaluation: apply → regen → sim → gate ──────────────────
 //
-// The single per-candidate driver. Apply the candidate's params via the
-// restore guard, regen the toolpath, run a project sim at the
-// requested resolution, and produce an `OptimizeCandidate` with
-// sim-measured cycle time and gate verdict. Every Stage-1 and Stage-2
-// candidate goes through this function — there is no second sim or
-// second gate anywhere.
+// The one per-candidate driver. It applies the candidate's parameters
+// through the restore guard, regenerates the toolpath, runs a project
+// simulation at the requested resolution, and records the measured
+// cycle time and gate verdict. Every candidate goes through this
+// function; there is no second simulation and no second gate.
 
 /// Evaluate one candidate end-to-end:
 ///   1. Apply candidate params via the restore guard.
@@ -346,20 +217,20 @@ pub(crate) fn build_scallop_height_variants(baseline_scallop_mm: f64) -> Vec<f64
 /// by the underlying generate/sim functions and surfaces here as
 /// `SessionError::Simulation(SimulationError::Cancelled)`.
 ///
-/// **Panic isolation (R1, tech-debt review 2026-06-10).** Candidate
-/// evaluation regenerates toolpaths at parameters the generators were
-/// never exercised at interactively (the search space's hard floors —
-/// 0.05 mm DOC / stepover). A panic anywhere in the geometry stack
-/// (e.g. `cavalier_contours`' `parallel_offset` asserts on degenerate
-/// inputs) must cost one candidate, not the whole optimize run, so the
-/// inner evaluation runs under `catch_unwind` and a panic surfaces as
-/// `SessionError::OperationFailed`. Grid/retarget loops already skip
-/// `Err` candidates; `refine_stage2`'s caller degrades to a partial
-/// outcome. State safety: the params the panicking candidate applied
-/// are overwritten by the next candidate's apply (or by the guard's
-/// `Drop` restoring the baseline), and `generate_toolpath` /
-/// `run_simulation` only publish results on success, so a mid-panic
-/// leaves the previous (stale-tracked) result in place.
+/// **Panic isolation (R1, tech-debt review 2026-06-10).** A candidate
+/// can regenerate a toolpath at parameters that no operator tried. A
+/// panic in the geometry stack (for example `cavalier_contours`'
+/// `parallel_offset` asserts on a degenerate input) must cost one
+/// candidate, not the whole run. The inner evaluation therefore runs
+/// under `catch_unwind`, and a panic becomes
+/// `SessionError::OperationFailed`. State safety: the next candidate's
+/// apply (or the guard's `Drop`) writes over the parameters the
+/// panicking candidate applied, and `generate_toolpath` /
+/// `run_simulation` publish results only on success.
+// SAFETY: Phase 2 (planning/optimize_review_2026-10-12/PLAN.md §2) calls
+// this for each lever cell; Phase 1 evaluates no candidate, so no
+// production caller exists yet.
+#[allow(dead_code)]
 pub(crate) fn evaluate_candidate(
     guard: &mut BaselineRestoreGuard<'_>,
     ctx: &EvaluationContext,
@@ -469,12 +340,13 @@ fn evaluate_candidate_inner(
         spans,
         drill_op: drill_op.map(|arc| arc.as_ref()),
     };
-    let policy_tolerance = tolerance_bands_from_policy(search_policy());
+    // The strict bands of the tool-load card: the optimizer judges a
+    // candidate by the same measure as the card.
     let verdict = evaluate_toolpath(
         &load_ctx,
         trace,
         Some(session_ref.machine()),
-        &policy_tolerance,
+        &ToleranceBands::default(),
     );
     let cycle_time_s = trace
         .and_then(|t| cycle_time_from_trace(t, ctx.toolpath_id))
@@ -491,94 +363,8 @@ fn evaluate_candidate_inner(
         stage,
         reconciled_cycle_time_s: None,
         reconciled_verdict: None,
-        gate_deltas: None,
         air_cut_fraction_of_total_runtime,
     })
-}
-
-// ── Stage 2 candidate refinement ──────────────────────────────────────
-//
-// Stage 2 takes the top-N by Stage-1 composite_score (G16 §11 layer 2b
-// — replaces the prior cycle-time-only sort) and re-evaluates them at
-// 0.5mm dexel. The reported numbers on the rollup are always Stage-2
-// numbers.
-
-/// Sort `stage1_winners` by descending `composite_score` against
-/// `baseline` and keep the top `n` (highest-score) entries. The score
-/// weights cycle savings against chipload-distance / power-overuse /
-/// deflection-overuse penalties — see [`super::rank`] for the formula.
-pub(crate) fn select_stage2_candidates(
-    mut stage1_winners: Vec<OptimizeCandidate>,
-    baseline: &OptimizeCandidate,
-    policy: &SearchPolicy,
-    n: usize,
-) -> Vec<OptimizeCandidate> {
-    stage1_winners.sort_by(|a, b| {
-        composite_score(b, baseline, policy).total_cmp(&composite_score(a, baseline, policy))
-    });
-    stage1_winners.truncate(n);
-    stage1_winners
-}
-
-/// Re-evaluate each Stage-1 winner at Stage-2 resolution. Returns the
-/// list of refined candidates in the same order as the input. Each
-/// re-evaluation goes through `evaluate_candidate` so the Stage-2
-/// numbers come from the same simulator and gate as Stage 1 — there
-/// is no second model anywhere.
-///
-/// R1 isolation: a candidate that fails (or panics) at Stage-2
-/// resolution is dropped — matching the Stage-1 grid/retarget loops —
-/// rather than aborting the whole refinement. Only cancellation
-/// propagates as `Err`, which the orchestrator turns into a partial
-/// outcome.
-pub(crate) fn refine_stage2(
-    guard: &mut BaselineRestoreGuard<'_>,
-    ctx: &EvaluationContext,
-    stage1_winners: Vec<OptimizeCandidate>,
-    cancel: &AtomicBool,
-) -> Result<Vec<OptimizeCandidate>, SessionError> {
-    use std::sync::atomic::Ordering;
-    // WP29 — capture the length before the loop consumes the `Vec`. The
-    // `with_capacity` call below is not a capture: it reads the same
-    // length but the loop then moves the vector.
-    let refine_total = stage1_winners.len();
-    ctx.progress.begin_phase(SearchPhase::Refine, refine_total);
-    let mut refined = Vec::with_capacity(refine_total);
-    for (index, c) in stage1_winners.into_iter().enumerate() {
-        if cancel.load(Ordering::SeqCst) {
-            break;
-        }
-        // The tick sits after the cancel break, so a cancelled rung reads
-        // honestly short of its total rather than claiming a candidate it
-        // never entered.
-        ctx.progress.begin_candidate(index);
-        match evaluate_candidate(
-            guard,
-            ctx,
-            c.params,
-            c.delta,
-            SearchStage::Refined,
-            search_policy().stages.refined_resolution_mm.value,
-            cancel,
-        ) {
-            Ok(candidate) => refined.push(candidate),
-            // A budget stop ends the search as a cancel does; it is not a
-            // dropped candidate.
-            Err(SessionError::Simulation(
-                stop @ (crate::compute::simulate::SimulationError::Cancelled
-                | crate::compute::simulate::SimulationError::OverBudget { .. }),
-            )) => {
-                return Err(SessionError::Simulation(stop));
-            }
-            Err(e) => {
-                tracing::warn!(
-                    toolpath_id = ctx.toolpath_id.0,
-                    "stage-2 refinement dropped a candidate: {e:?}"
-                );
-            }
-        }
-    }
-    Ok(refined)
 }
 
 #[cfg(test)]
@@ -623,5 +409,52 @@ mod tests {
             panic_payload_message(payload.as_ref()),
             "non-string panic payload"
         );
+    }
+
+    // ── ParamDelta and delta_against_baseline ────────────────────────
+
+    use super::{ParamDelta, delta_against_baseline};
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::PocketConfig;
+
+    #[test]
+    fn param_delta_has_changes_detects_any_field() {
+        assert!(!ParamDelta::default().has_changes());
+        assert!(
+            ParamDelta {
+                feed_mm_min: Some(2100.0),
+                ..Default::default()
+            }
+            .has_changes()
+        );
+        assert!(
+            ParamDelta {
+                stepover_mm: Some(0.8),
+                ..Default::default()
+            }
+            .has_changes()
+        );
+    }
+
+    /// A feed change below the display tolerance is not a change; a
+    /// depth change is.
+    #[test]
+    fn delta_against_baseline_names_only_the_moved_parameters() {
+        let base = PocketConfig::default();
+        let deeper_dpp = base.depth_per_pass + 1.0;
+        let same_feed = OperationConfig::Pocket(PocketConfig {
+            feed_rate: base.feed_rate + 0.1,
+            ..PocketConfig::default()
+        });
+        let deeper = OperationConfig::Pocket(PocketConfig {
+            depth_per_pass: deeper_dpp,
+            ..PocketConfig::default()
+        });
+        let baseline = OperationConfig::Pocket(base);
+        assert!(!delta_against_baseline(&baseline, &same_feed).has_changes());
+
+        let delta = delta_against_baseline(&baseline, &deeper);
+        assert_eq!(delta.depth_per_pass_mm, Some(deeper_dpp));
+        assert_eq!(delta.feed_mm_min, None);
     }
 }
