@@ -79,6 +79,32 @@ pub struct ValueRowOutcome {
     pub label_response: egui::Response,
 }
 
+/// The label cell of a parameter row: `LABEL_COL_WIDTH` wide, the text at
+/// its left edge.
+///
+/// The label never wraps and never breaks mid-word. A parameter label is read
+/// as a name, not as prose, so when the column is tight it truncates with an
+/// ellipsis and the hover carries the rest.
+///
+/// IC1: `add_sized` centred the label in the cell, so a `ValueRow` label sat
+/// to the right of a plain `ui.label` in the same column and the column read
+/// ragged. The cell now lays the label out from its left edge.
+pub fn label_cell(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(
+            crate::ui::tokens::LABEL_COL_WIDTH,
+            crate::ui::tokens::ROW_DENSE,
+        ),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_width(crate::ui::tokens::LABEL_COL_WIDTH);
+            ui.add(egui::Label::new(label).truncate())
+                .on_hover_text(label)
+        },
+    )
+    .inner
+}
+
 pub struct ValueRow<'a> {
     label: &'a str,
     value: &'a mut f64,
@@ -162,21 +188,7 @@ impl<'a> ValueRow<'a> {
 
     /// Draw the row and call `ui.end_row()` (grid-friendly).
     pub fn show(self, ui: &mut egui::Ui) -> ValueRowOutcome {
-        // The label never wraps and never breaks mid-word. A parameter label
-        // is read as a name, not as prose, so when the column is tight it
-        // truncates with an ellipsis and the hover carries the rest.
-        let label_response = ui
-            .add_sized(
-                [
-                    crate::ui::tokens::LABEL_COL_WIDTH,
-                    crate::ui::tokens::ROW_DENSE,
-                ],
-                egui::Label::new(self.label)
-                    .truncate()
-                    .wrap_mode(egui::TextWrapMode::Truncate)
-                    .halign(egui::Align::LEFT),
-            )
-            .on_hover_text(self.label);
+        let label_response = label_cell(ui, self.label);
         let mut suggested = false;
         let mut value_response = None;
         ui.horizontal(|ui| {

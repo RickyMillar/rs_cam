@@ -209,52 +209,64 @@ pub(super) fn render_diagnostic_row(
         d.evidence.as_ref().and_then(evidence_line)
     };
 
-    ui.horizontal_wrapped(|ui| {
-        let prefix = if matches!(d.category, Category::State) && matches!(tier, RowTier::Stateful) {
-            String::new()
-        } else {
-            format!("{category_label}: ")
-        };
-        // Wrapped EXPLICITLY, not by inheritance from `horizontal_wrapped`
-        // (G-REACHWRAP). A diagnostic message is a whole sentence — the
-        // chipload-clamp caution names the guarantee that is NOT met and
-        // then the alternatives — and the review's 1400×900 capture shows
-        // it cut at "The whole derat…", which is the worst half to lose:
-        // a truncated caveat reads as an unqualified result.
-        let row_label = ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{prefix}{}", d.message))
-                    .small()
-                    .color(color),
-            )
-            .wrap(),
-        );
-        if let Some(line) = evidence_hover {
-            row_label.on_hover_text(line);
+    let prefix = if matches!(d.category, Category::State) && matches!(tier, RowTier::Stateful) {
+        String::new()
+    } else {
+        format!("{category_label}: ")
+    };
+    // IC1 (2026-10-13): one line per finding. A long message truncates on
+    // the face, and the hover gives the whole message, the confidence and
+    // the evidence. G-REACHWRAP made this line wrap so a caveat was never
+    // cut; the hover now carries it, and the row keeps its role colour.
+    let mut hover = format!("{prefix}{}", d.message);
+    if matches!(tier, RowTier::Actionable) {
+        let chip_text = confidence_chip_label(d.confidence);
+        if !chip_text.is_empty() {
+            hover.push_str(&format!("\nConfidence: {chip_text}"));
         }
-        if matches!(tier, RowTier::Actionable) {
-            let chip_text = confidence_chip_label(d.confidence);
-            if !chip_text.is_empty() {
-                ui.label(
-                    egui::RichText::new(chip_text)
-                        .small()
-                        .italics()
-                        .color(crate::ui::tokens::TEXT_FAINT),
-                );
-            }
-        }
+    }
+    if let Some(line) = evidence_hover {
+        hover.push_str(&format!("\n{line}"));
+    }
 
-        // Stale-default fix button — looks up the matching defect by
-        // rule_id (the adapter only carries the id; the canonical
-        // payload lives in `stale_default_defects`). Mirrors the
-        // existing validator-banner Fix button so behaviour is
-        // identical to clicking that.
-        if let Some(DiagnosticFix::ApplyStaleDefault {
+    // Stale-default fix button — looks up the matching defect by rule_id
+    // (the adapter only carries the id; the canonical payload lives in
+    // `stale_default_defects`).
+    let fix = match &d.fix {
+        Some(DiagnosticFix::ApplyStaleDefault {
             rule_id, new_value, ..
-        }) = &d.fix
-            && let Some(defect) = stale_default_defects
-                .iter()
-                .find(|defect| defect.rule_id.id() == rule_id.as_str())
+        }) => stale_default_defects
+            .iter()
+            .find(|defect| defect.rule_id.id() == rule_id.as_str())
+            .map(|defect| (defect, rule_id.as_str(), *new_value)),
+        _ => None,
+    };
+    ui.horizontal(|ui| {
+        // The Fix button sits at the right edge; the message takes the rest.
+        let fix_width = if fix.is_some() {
+            crate::ui::tokens::FIX_BUTTON_WIDTH
+        } else {
+            0.0
+        };
+        let line_width = (ui.available_width() - fix_width).max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(line_width, crate::ui::tokens::ROW_DENSE),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.set_width(line_width);
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{prefix}{}", d.message))
+                            .small()
+                            .color(color),
+                    )
+                    .truncate()
+                    .show_tooltip_when_elided(false),
+                )
+                .on_hover_text(hover);
+            },
+        );
+        if let Some((defect, rule_id, new_value)) = fix
             && ui
                 .small_button(format!("\u{2713} Fix ({new_value:.3})"))
                 .on_hover_text(format!(
@@ -352,10 +364,10 @@ fn evidence_line(ev: &rs_cam_core::diagnostics::DiagnosticEvidence) -> Option<St
 fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static str {
     use rs_cam_core::diagnostics::Confidence as C;
     match c {
-        C::Verified => "(verified)",
-        C::Approximate => "(approximate)",
+        C::Verified => "verified",
+        C::Approximate => "approximate",
         C::Static => "",
-        C::Heuristic => "(heuristic)",
+        C::Heuristic => "heuristic",
     }
 }
 
@@ -443,33 +455,44 @@ pub(super) fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, ba
     });
 }
 
-/// Operator-facing caption text for a [`rs_cam_core::surface::rest_field::RestRegionPathology`]
-/// — shared by the Rest Analysis section (this toolpath's own regions) and
-/// the Machining Boundary section (a `DerivedRestRegions` source's regions).
+/// The caution line for a [`rs_cam_core::surface::rest_field::RestRegionPathology`]
+/// — shared by the rest analysis (this toolpath's own regions) and the
+/// Machining Boundary section (a `DerivedRestRegions` source's regions).
 /// See `crates/rs_cam_core/src/surface/rest_field.rs` for the underlying
 /// classification (2026-07-06 sliver-storm incident).
-pub(super) fn rest_region_pathology_caption(
+///
+/// IC1: one line with the count or the share; the cause and the remedy are
+/// on the hover.
+pub(super) fn rest_region_pathology_line(
     pathology: rs_cam_core::surface::rest_field::RestRegionPathology,
-) -> String {
-    match pathology {
-        rs_cam_core::surface::rest_field::RestRegionPathology::TooManyIslands { count } => format!(
-            "⚠ {count} rest regions — threshold likely below the prior pass's cusp height; \
-             raise Min Valley Depth."
+) -> crate::ui::components::OneLine {
+    use rs_cam_core::surface::rest_field::RestRegionPathology;
+    let (face, detail) = match pathology {
+        RestRegionPathology::TooManyIslands { count } => (
+            format!("\u{26A0} {count} rest regions"),
+            "The threshold is probably below the cusp height of the prior pass. \
+             Raise Min Valley Depth."
+                .to_owned(),
         ),
-        rs_cam_core::surface::rest_field::RestRegionPathology::SingleGiantRegion {
+        // LH-2: the percentage is of the part's COVERED XY FOOTPRINT (the
+        // rest grid's solved cells), not of its bounding rectangle — say so,
+        // because the two differ by ~2x on any non-rectangular part.
+        RestRegionPathology::SingleGiantRegion {
             part_footprint_fraction,
-        } => {
-            // LH-2: the percentage is of the part's COVERED XY FOOTPRINT (the
-            // rest grid's solved cells), not of its bounding rectangle — say
-            // so, because the two differ by ~2x on any non-rectangular part.
+        } => (
             format!(
-                "⚠ Rest region covers {:.0}% of the part footprint — regions barely restrict \
-                 the fine pass; raise Min Valley Depth, or set Start from to \
-                 After previous ops for an honest rest picture.",
+                "\u{26A0} One rest region covers {:.0}% of the part",
                 part_footprint_fraction * 100.0
-            )
-        }
-    }
+            ),
+            "The percentage is of the part footprint. The regions barely restrict \
+             the fine pass. Raise Min Valley Depth, or set Start from to After \
+             previous ops for a true rest picture."
+                .to_owned(),
+        ),
+    };
+    crate::ui::components::OneLine::new(face)
+        .color(crate::ui::tokens::CAUTION)
+        .detail(detail)
 }
 
 /// The two ways an operation can start, in the order an operator meets
@@ -511,6 +534,7 @@ pub(super) fn draw_geometry_wiring(
             .map(|(_, s, _)| s.as_str())
             .unwrap_or("(none)");
         egui::ComboBox::from_id_salt("tp_tool")
+            .truncate()
             .selected_text(tool_label)
             .show_ui(ui, |ui| {
                 for (id, name, _) in tools {
@@ -528,6 +552,7 @@ pub(super) fn draw_geometry_wiring(
             .map(|(_, s)| s.as_str())
             .unwrap_or("(none)");
         egui::ComboBox::from_id_salt("tp_model")
+            .truncate()
             .selected_text(model_label)
             .show_ui(ui, |ui| {
                 for (id, name) in models {
@@ -542,12 +567,10 @@ pub(super) fn draw_geometry_wiring(
     // It stays adjacent to the Input model combo it concerns.
     if model_is_step_missing_brep {
         ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new(
-                "⚠ BREP topology not loaded — face picker unavailable. Reload model.",
-            )
-            .color(crate::ui::tokens::CAUTION)
-            .strong(),
+        ui.add(
+            crate::ui::components::OneLine::new("\u{26A0} BREP topology not loaded")
+                .color(crate::ui::tokens::CAUTION)
+                .detail("The face picker is unavailable. Reload the model."),
         );
     }
 

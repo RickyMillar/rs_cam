@@ -20,8 +20,19 @@ pub(super) fn draw_model_properties(
     ui.heading(&model.name);
     ui.separator();
 
-    ui.label(format!("Type: {:?}", model.kind));
-    ui.label(format!("Path: {}", model.path.display()));
+    // IC1: the kind and the path are one row. The path is often longer than
+    // the panel, so it truncates and its hover gives it in full.
+    let kind = match model.kind {
+        Some(crate::state::job::ModelKind::Stl) => "STL",
+        Some(crate::state::job::ModelKind::Dxf) => "DXF",
+        Some(crate::state::job::ModelKind::Svg) => "SVG",
+        Some(crate::state::job::ModelKind::Step) => "STEP",
+        None => "Unknown type",
+    };
+    ui.add(
+        crate::ui::components::OneLine::new(format!("{kind} \u{00B7} {}", model.path.display()))
+            .color(crate::ui::tokens::TEXT_BODY),
+    );
 
     // G-MODELRELINK (F4.3). Two things this panel could not do before.
     //
@@ -73,11 +84,7 @@ pub(super) fn draw_model_properties(
         let dz = bb.max.z - bb.min.z;
 
         ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("Dimensions (after scaling)")
-                .strong()
-                .color(crate::ui::tokens::TEXT_STRONG),
-        );
+        crate::ui::components::SectionHeader::new("Dimensions (after scaling)").show(ui);
         ui.param_grid("mesh_dims", |ui| {
             ui.label("X:");
             ui.label(format!(
@@ -104,14 +111,16 @@ pub(super) fn draw_model_properties(
         let min_dim = dx.min(dy).min(dz);
         if max_dim < 1.0 {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Very small! Probably in meters - try scaling x1000")
-                    .color(crate::ui::tokens::CAUTION),
+            ui.add(
+                crate::ui::components::OneLine::new("\u{26A0} Very small: metres?")
+                    .color(crate::ui::tokens::CAUTION)
+                    .detail("The model is under 1 mm. It is probably in metres; scale it x1000."),
             );
         } else if min_dim > 5000.0 {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Very large! Check units").color(crate::ui::tokens::CAUTION),
+            ui.add(
+                crate::ui::components::OneLine::new("\u{26A0} Very large: check the units")
+                    .color(crate::ui::tokens::CAUTION),
             );
         }
 
@@ -120,23 +129,19 @@ pub(super) fn draw_model_properties(
             && *report > 1.0
         {
             ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(format!(
-                    "\u{26A0} {:.1}% inconsistent normals detected (auto-fixed on load)",
-                    report
+            ui.add(
+                crate::ui::components::OneLine::new(format!(
+                    "\u{26A0} {report:.1}% inconsistent normals"
                 ))
-                .color(crate::ui::tokens::CAUTION),
+                .color(crate::ui::tokens::CAUTION)
+                .detail("The loader fixed the normals when it read the model."),
             );
         }
 
         // Units / scale selector (all formats including STEP)
         {
             ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Units / Scale")
-                    .strong()
-                    .color(crate::ui::tokens::TEXT_STRONG),
-            );
+            crate::ui::components::SectionHeader::new("Units / Scale").show(ui);
 
             let current_units = model.units.unwrap_or(ModelUnits::Millimeters);
             let current_label = current_units.label();
@@ -144,6 +149,7 @@ pub(super) fn draw_model_properties(
             ui.horizontal(|ui| {
                 ui.label("Import as:");
                 egui::ComboBox::from_id_salt("model_units")
+                    .truncate()
                     .selected_text(&current_label)
                     .show_ui(ui, |ui| {
                         for &(units, label) in ModelUnits::PRESETS {
@@ -192,11 +198,7 @@ pub(super) fn draw_model_properties(
             .default_open(false)
             .show(ui, |ui| {
                 if let Some(mesh) = &model.mesh {
-                    ui.label(
-                        egui::RichText::new("Mesh Info")
-                            .strong()
-                            .color(crate::ui::tokens::TEXT_STRONG),
-                    );
+                    crate::ui::components::SectionHeader::new("Mesh Info").show(ui);
                     ui.param_grid("mesh_info", |ui| {
                         ui.label("Vertices:");
                         ui.label(format!("{}", mesh.vertices.len()));
@@ -210,11 +212,7 @@ pub(super) fn draw_model_properties(
                 // BREP face metadata (STEP only)
                 if let Some(enriched) = &model.enriched_mesh {
                     ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new("BREP Topology")
-                            .strong()
-                            .color(crate::ui::tokens::TEXT_STRONG),
-                    );
+                    crate::ui::components::SectionHeader::new("BREP Topology").show(ui);
                     ui.param_grid("brep_info", |ui| {
                         ui.label("Faces:");
                         ui.label(format!("{}", enriched.face_count()));
@@ -279,11 +277,7 @@ pub(super) fn draw_simulation_panel(
     ui.separator();
 
     // Toolpath checklist
-    ui.label(
-        egui::RichText::new("Included Toolpaths")
-            .strong()
-            .color(crate::ui::tokens::TEXT_STRONG),
-    );
+    crate::ui::components::SectionHeader::new("Included Toolpaths").show(ui);
 
     // Snapshot boundary data to avoid borrow conflicts with playback mutation below.
     let boundary_snapshots: Vec<_> = state
@@ -377,11 +371,7 @@ pub(super) fn draw_simulation_panel(
 
     // Tool position readout
     if let Some(pos) = state.simulation.playback.tool_position {
-        ui.label(
-            egui::RichText::new("Tool Position")
-                .strong()
-                .color(crate::ui::tokens::TEXT_STRONG),
-        );
+        crate::ui::components::SectionHeader::new("Tool Position").show(ui);
         ui.param_grid("sim_tool_pos", |ui| {
             ui.label("X:");
             ui.label(format!("{:.3} mm", pos[0]));
@@ -400,11 +390,7 @@ pub(super) fn draw_simulation_panel(
     // Current operation info
     if let Some(boundary) = state.simulation.current_boundary() {
         let (within, total) = state.simulation.current_toolpath_progress();
-        ui.label(
-            egui::RichText::new("Current Operation")
-                .strong()
-                .color(crate::ui::tokens::TEXT_STRONG),
-        );
+        crate::ui::components::SectionHeader::new("Current Operation").show(ui);
         ui.label(format!("{} ({})", boundary.name, boundary.tool_name));
         ui.label(format!("Move {}/{}", within, total));
     }

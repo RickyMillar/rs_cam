@@ -10,8 +10,8 @@ use crate::state::toolpath::{
     UnifiedFinishConfig, WaterlineConfig,
 };
 
-use super::super::{dv, dv_pill, p};
-use crate::ui::components::UiExt as _;
+use super::super::{advanced, dv, dv_pill, p};
+use crate::ui::components::{OneLine, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
 /// Fallback tool radius (1/8" endmill) when the active tool's radius is
@@ -34,6 +34,8 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
             0.05..=50.0,
             stepover_sugg,
         );
+    });
+    advanced(ui, "dc_adv", |ui| {
         dv(
             ui,
             p(OperationType::DropCutter, "min_z", "Min Z:"),
@@ -110,28 +112,9 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             0.05,
             0.0..=10.0,
         );
-        dv(
-            ui,
-            p(OperationType::Adaptive3d, "tolerance", "Tolerance:"),
-            &mut cfg.tolerance,
-            " mm",
-            0.01,
-            0.01..=1.0,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::Adaptive3d,
-                "min_cutting_radius",
-                "Min Cut Radius:",
-            ),
-            &mut cfg.min_cutting_radius,
-            " mm",
-            0.1,
-            0.0..=50.0,
-        );
         ui.label("Entry Style:");
         egui::ComboBox::from_id_salt("a3d_entry")
+            .truncate()
             .selected_text(match cfg.entry_style {
                 Adaptive3dEntryStyle::Plunge => "Plunge",
                 Adaptive3dEntryStyle::Helix => "Helix",
@@ -203,22 +186,9 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 );
             }
         }
-        ui.label("Detect Flat:");
-        ui.checkbox(&mut cfg.detect_flat_areas, "");
-        ui.end_row();
-        ui.label("Ordering:");
-        egui::ComboBox::from_id_salt("a3d_ord")
-            .selected_text(match cfg.region_ordering {
-                RegionOrdering::Global => "Global",
-                RegionOrdering::ByArea => "By Area",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global");
-                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
-            });
-        ui.end_row();
         ui.label("Strategy:");
         egui::ComboBox::from_id_salt("a3d_strat")
+            .truncate()
             .selected_text(match cfg.clearing_strategy {
                 ClearingStrategy::ContourParallel => "Contour Parallel",
                 ClearingStrategy::Adaptive => "Adaptive",
@@ -258,6 +228,43 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 );
             });
         ui.end_row();
+    });
+    advanced(ui, "a3d_adv", |ui| {
+        dv(
+            ui,
+            p(OperationType::Adaptive3d, "tolerance", "Tolerance:"),
+            &mut cfg.tolerance,
+            " mm",
+            0.01,
+            0.01..=1.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::Adaptive3d,
+                "min_cutting_radius",
+                "Min Cut Radius:",
+            ),
+            &mut cfg.min_cutting_radius,
+            " mm",
+            0.1,
+            0.0..=50.0,
+        );
+        ui.label("Detect Flat:");
+        ui.checkbox(&mut cfg.detect_flat_areas, "");
+        ui.end_row();
+        ui.label("Ordering:");
+        egui::ComboBox::from_id_salt("a3d_ord")
+            .truncate()
+            .selected_text(match cfg.region_ordering {
+                RegionOrdering::Global => "Global",
+                RegionOrdering::ByArea => "By Area",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global");
+                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
+            });
+        ui.end_row();
         ui.label("Z Blend:");
         ui.checkbox(&mut cfg.z_blend, "");
         ui.end_row();
@@ -292,19 +299,18 @@ fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_
          (leading-arc fraction of the tool). Sets the stepover for you — \
          more load = wider step = fewer passes but a heavier cut.",
     );
+    // IC1: the derived stepover is the slider's own text, not a line below.
+    let stepover = cfg.stepover;
     if ui
-        .add(egui::Slider::new(&mut load_pct, 5.0..=45.0).suffix("%"))
+        .add(
+            egui::Slider::new(&mut load_pct, 5.0..=45.0)
+                .suffix(format!("% \u{2192} {stepover:.2} mm")),
+        )
+        .on_hover_text("The stepover this load sets, in mm, follows the arrow.")
         .changed()
     {
         cfg.stepover = 2.0 * r * radial_woc_fraction_from_leading_arc(load_pct / 100.0);
     }
-    ui.end_row();
-    ui.label("");
-    ui.label(
-        egui::RichText::new(format!("→ stepover ≈ {:.2} mm", cfg.stepover))
-            .small()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
     ui.end_row();
 }
 
@@ -325,6 +331,12 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             0.1,
             0.05..=20.0,
         );
+        ui.label("Continuous:");
+        ui.checkbox(&mut cfg.continuous, "");
+        ui.end_row();
+        // Z range now comes from the Heights tab (top_z / bottom_z)
+    });
+    advanced(ui, "wl_adv", |ui| {
         dv(
             ui,
             p(OperationType::Waterline, "sampling", "Sampling:"),
@@ -333,10 +345,6 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             0.1,
             0.1..=5.0,
         );
-        ui.label("Continuous:");
-        ui.checkbox(&mut cfg.continuous, "");
-        ui.end_row();
-        // Z range now comes from the Heights tab (top_z / bottom_z)
     });
 }
 
@@ -372,6 +380,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             "Dihedral (crease)"
         };
         egui::ComboBox::from_id_salt("pen_detector")
+            .truncate()
             .selected_text(selected)
             .show_ui(ui, |ui| {
                 if ui
@@ -441,22 +450,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 90.0..=180.0,
             );
         }
-        dv(
-            ui,
-            p(OperationType::Pencil, "min_cut_length", "Min Cut Length:"),
-            &mut cfg.min_cut_length,
-            " mm",
-            0.5,
-            0.5..=50.0,
-        );
-        dv(
-            ui,
-            p(OperationType::Pencil, "hookup_distance", "Hookup Distance:"),
-            &mut cfg.hookup_distance,
-            " mm",
-            0.5,
-            0.5..=50.0,
-        );
         // UI-10: an integer field. `ValueRow` edits an `f64`, and a
         // temporary f64 would change what a partial edit commits.
         ui.label("Offset Passes:");
@@ -472,14 +465,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             " mm",
             0.1,
             0.05..=10.0,
-        );
-        dv(
-            ui,
-            p(OperationType::Pencil, "sampling", "Sampling:"),
-            &mut cfg.sampling,
-            " mm",
-            0.1,
-            0.1..=5.0,
         );
         // Reference-tool rest gate: keep only valleys the pencil tool (the
         // op's own tool) reaches more than this deeper than the bigger
@@ -517,6 +502,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 .map(|(_, s, _)| s.as_str())
                 .unwrap_or("Nominal Ø");
             egui::ComboBox::from_id_salt("pen_reference_tool")
+                .truncate()
                 .selected_text(ref_label)
                 .show_ui(ui, |ui| {
                     if ui
@@ -558,6 +544,32 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             0.0..=10.0,
         );
     });
+    advanced(ui, "pen_adv", |ui| {
+        dv(
+            ui,
+            p(OperationType::Pencil, "min_cut_length", "Min Cut Length:"),
+            &mut cfg.min_cut_length,
+            " mm",
+            0.5,
+            0.5..=50.0,
+        );
+        dv(
+            ui,
+            p(OperationType::Pencil, "hookup_distance", "Hookup Distance:"),
+            &mut cfg.hookup_distance,
+            " mm",
+            0.5,
+            0.5..=50.0,
+        );
+        dv(
+            ui,
+            p(OperationType::Pencil, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
+    });
 }
 
 pub(in crate::ui::properties) fn draw_scallop_params(
@@ -577,16 +589,9 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             0.01,
             0.01..=2.0,
         );
-        dv(
-            ui,
-            p(OperationType::Scallop, "tolerance", "Tolerance:"),
-            &mut cfg.tolerance,
-            " mm",
-            0.01,
-            0.01..=1.0,
-        );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("sc_dir")
+            .truncate()
             .selected_text(match cfg.direction {
                 ScallopDirection::OutsideIn => "Outside In",
                 ScallopDirection::InsideOut => "Inside Out",
@@ -604,6 +609,24 @@ pub(in crate::ui::properties) fn draw_scallop_params(
                 );
             });
         ui.end_row();
+        dv(
+            ui,
+            p(OperationType::Scallop, "stock_to_leave", "Stock to Leave:"),
+            &mut cfg.stock_to_leave,
+            " mm",
+            0.05,
+            0.0..=10.0,
+        );
+    });
+    advanced(ui, "sc_adv", |ui| {
+        dv(
+            ui,
+            p(OperationType::Scallop, "tolerance", "Tolerance:"),
+            &mut cfg.tolerance,
+            " mm",
+            0.01,
+            0.01..=1.0,
+        );
         ui.label("Continuous:");
         ui.checkbox(&mut cfg.continuous, "");
         ui.end_row();
@@ -632,14 +655,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             1.0,
             0.0..=90.0,
         );
-        dv(
-            ui,
-            p(OperationType::Scallop, "stock_to_leave", "Stock to Leave:"),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
-            0.0..=10.0,
-        );
     });
 }
 
@@ -667,7 +682,7 @@ fn draw_unified_finish_claims(
     stock_source: StockSource,
 ) {
     ui.add_space(6.0);
-    ui.label(egui::RichText::new("Rest Claims").strong());
+    crate::ui::components::SectionHeader::new("Rest Claims").show(ui);
     ui.param_grid("uf_claims", |ui| {
         ui.label("Pencil Claims:");
         ui.checkbox(&mut cfg.pencil_claims, "").on_hover_text(
@@ -680,6 +695,7 @@ fn draw_unified_finish_claims(
 
         ui.label("Rest Reference:");
         egui::ComboBox::from_id_salt("uf_claims_ref")
+            .truncate()
             .selected_text(match cfg.claims_reference {
                 ClaimsReference::Auto => "Auto (derive)",
                 ClaimsReference::SelfProbe => "Analytic self-probe",
@@ -767,23 +783,23 @@ fn draw_unified_finish_claims(
                 }
             };
             let verb = if r.is_derived() { "derived" } else { "pinned" };
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} Last generated against the {used} ({verb}).",
+            // IC1: one line each; the reason is on the hover.
+            ui.add(
+                OneLine::new(format!(
+                    "{} Last run: {used} ({verb})",
                     if loud { "\u{26A0}" } else { "\u{2713}" }
                 ))
-                .small()
-                .color(colour),
-            )
-            .on_hover_text(r.why());
+                .color(colour)
+                .detail(r.why()),
+            );
             if f.territory_clip_skipped() {
-                ui.label(
-                    egui::RichText::new(
-                        "\u{26A0} Territory Clip was requested and SKIPPED — this pass \
-                         covered its full territory, not rest islands.",
-                    )
-                    .small()
-                    .color(crate::ui::tokens::CAUTION),
+                ui.add(
+                    OneLine::new("\u{26A0} Territory Clip skipped")
+                        .color(crate::ui::tokens::CAUTION)
+                        .detail(
+                            "Territory Clip was requested and skipped: this pass covered \
+                             its full territory, not rest islands.",
+                        ),
                 );
             }
         }
@@ -791,13 +807,10 @@ fn draw_unified_finish_claims(
             // UNKNOWN, not a grey. Nothing has been measured yet, and §2.6
             // separates "not run" from "passed" so the two cannot be read
             // alike at a glance.
-            ui.label(
-                egui::RichText::new(
-                    "Not generated yet — the resolved rest reference appears here after \
-                     this operation runs.",
-                )
-                .small()
-                .color(crate::ui::tokens::UNKNOWN),
+            ui.add(
+                OneLine::new("Rest reference: not generated yet")
+                    .color(crate::ui::tokens::UNKNOWN)
+                    .detail("The resolved rest reference shows here after this operation runs."),
             );
         }
         None => {}
@@ -810,15 +823,14 @@ fn draw_unified_finish_claims(
         && cfg.claims_reference != ClaimsReference::SelfProbe
         && stock_source == StockSource::Fresh
     {
-        ui.label(
-            egui::RichText::new(
-                "\u{26A0} This operation cuts FRESH stock, so no machined prior is in \
-                 scope and the machined-stock reference cannot be used. Set Stock \
-                 Source to remaining stock, then generate and simulate the upstream \
-                 operation.",
-            )
-            .small()
-            .color(crate::ui::tokens::CAUTION),
+        ui.add(
+            OneLine::new("\u{26A0} Fresh stock: no machined prior")
+                .color(crate::ui::tokens::CAUTION)
+                .detail(
+                    "This operation cuts fresh stock, so the machined-stock reference \
+                     cannot be used. Set Start from to After previous ops, then generate \
+                     and simulate the upstream operation.",
+                ),
         );
     }
 }
@@ -860,14 +872,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         );
         dv(
             ui,
-            p(OperationType::UnifiedFinish, "overlap_mm", "Overlap:"),
-            &mut cfg.overlap_mm,
-            " mm",
-            0.1,
-            0.0..=10.0,
-        );
-        dv(
-            ui,
             p(
                 OperationType::UnifiedFinish,
                 "scallop_height",
@@ -877,14 +881,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             " mm",
             0.01,
             0.01..=2.0,
-        );
-        dv(
-            ui,
-            p(OperationType::UnifiedFinish, "tolerance", "Tolerance:"),
-            &mut cfg.tolerance,
-            " mm",
-            0.01,
-            0.01..=1.0,
         );
         dv(
             ui,
@@ -908,14 +904,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
         );
         dv(
             ui,
-            p(OperationType::UnifiedFinish, "sampling", "Sampling:"),
-            &mut cfg.sampling,
-            " mm",
-            0.1,
-            0.1..=5.0,
-        );
-        dv(
-            ui,
             p(
                 OperationType::UnifiedFinish,
                 "stock_to_leave",
@@ -925,6 +913,32 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             " mm",
             0.05,
             0.0..=10.0,
+        );
+    });
+    advanced(ui, "uf_adv", |ui| {
+        dv(
+            ui,
+            p(OperationType::UnifiedFinish, "overlap_mm", "Overlap:"),
+            &mut cfg.overlap_mm,
+            " mm",
+            0.1,
+            0.0..=10.0,
+        );
+        dv(
+            ui,
+            p(OperationType::UnifiedFinish, "tolerance", "Tolerance:"),
+            &mut cfg.tolerance,
+            " mm",
+            0.01,
+            0.01..=1.0,
+        );
+        dv(
+            ui,
+            p(OperationType::UnifiedFinish, "sampling", "Sampling:"),
+            &mut cfg.sampling,
+            " mm",
+            0.1,
+            0.1..=5.0,
         );
 
         // `dv` ends its own grid row, so this one opens straight after.
@@ -972,6 +986,37 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             1.0,
             10.0..=80.0,
         );
+        dv_pill(
+            ui,
+            p(OperationType::SteepShallow, "stepover", "Stepover:"),
+            &mut cfg.stepover,
+            " mm",
+            0.1,
+            0.05..=50.0,
+            stepover_sugg,
+        );
+        dv(
+            ui,
+            p(OperationType::SteepShallow, "z_step", "Z Step:"),
+            &mut cfg.z_step,
+            " mm",
+            0.1,
+            0.05..=20.0,
+        );
+        dv(
+            ui,
+            p(
+                OperationType::SteepShallow,
+                "stock_to_leave",
+                "Stock to Leave:",
+            ),
+            &mut cfg.stock_to_leave,
+            " mm",
+            0.05,
+            0.0..=10.0,
+        );
+    });
+    advanced(ui, "ss_adv", |ui| {
         dv(
             ui,
             p(OperationType::SteepShallow, "overlap_distance", "Overlap:"),
@@ -995,23 +1040,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
         ui.label("Steep First:");
         ui.checkbox(&mut cfg.steep_first, "");
         ui.end_row();
-        dv_pill(
-            ui,
-            p(OperationType::SteepShallow, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            0.05..=50.0,
-            stepover_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::SteepShallow, "z_step", "Z Step:"),
-            &mut cfg.z_step,
-            " mm",
-            0.1,
-            0.05..=20.0,
-        );
         dv(
             ui,
             p(OperationType::SteepShallow, "sampling", "Sampling:"),
@@ -1019,18 +1047,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             " mm",
             0.1,
             0.1..=5.0,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::SteepShallow,
-                "stock_to_leave",
-                "Stock to Leave:",
-            ),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
-            0.0..=10.0,
         );
         dv(
             ui,

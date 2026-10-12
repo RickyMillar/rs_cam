@@ -6,7 +6,7 @@ use crate::state::toolpath::{
 };
 use rs_cam_core::compute::operation_configs::PROJECT_CURVE_POINT_CAUTION;
 
-use super::super::{dv, p};
+use super::super::{advanced, dv, p};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -20,8 +20,11 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
     // surface). No stepover/DOC pills; feed/plunge are edited on the
     // Feeds & Speeds tab (W3.2).
 
-    // Surface model selector — lets the user pick a different model for the 3D surface.
-    ui.horizontal(|ui| {
+    // IC1: every row sits in one parameter grid, so the labels share one
+    // column. The two sampling dials are in the Advanced section.
+    ui.param_grid("proj_p", |ui| {
+        // Surface model selector — lets the user pick a different model for
+        // the 3D surface.
         ui.label("Surface:");
         let label = if let Some(surface_id) = cfg.surface_model_id {
             models
@@ -33,6 +36,7 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             "(same as input)"
         };
         egui::ComboBox::from_id_salt("proj_surface_model")
+            .truncate()
             .selected_text(label)
             .show_ui(ui, |ui| {
                 // Option to use same model
@@ -52,12 +56,12 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                     }
                 }
             });
-    });
+        ui.end_row();
 
-    // Projection direction
-    ui.horizontal(|ui| {
+        // Projection direction
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("proj_direction")
+            .truncate()
             .selected_text(cfg.direction.label())
             .show_ui(ui, |ui| {
                 ui.selectable_value(
@@ -73,13 +77,13 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 )
                 .on_hover_text("Project from below (Z-up). Engraves the bottom surface.");
             });
-    });
+        ui.end_row();
 
-    // Projection mode. Point is a deliberate choice: the hover text and the
-    // static caution diagnostic carry the same sentence.
-    ui.horizontal(|ui| {
+        // Projection mode. Point is a deliberate choice: the hover text and
+        // the static caution diagnostic carry the same sentence.
         ui.label("Projection:");
         egui::ComboBox::from_id_salt("proj_projection")
+            .truncate()
             .selected_text(cfg.projection.label())
             .show_ui(ui, |ui| {
                 ui.selectable_value(
@@ -96,13 +100,13 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                          {PROJECT_CURVE_POINT_CAUTION}"
                     ));
             });
-    });
+        ui.end_row();
 
-    // Tool radius compensation side (closed rings only)
-    ui.horizontal(|ui| {
+        // Tool radius compensation side (closed rings only)
         ui.label("Side:")
             .on_hover_text("Closed rings only. Open paths always trace on the line.");
         egui::ComboBox::from_id_salt("proj_side")
+            .truncate()
             .selected_text(cfg.side.label())
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut cfg.side, ProjectCurveSide::Center, "On Line")
@@ -112,9 +116,8 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
                 ui.selectable_value(&mut cfg.side, ProjectCurveSide::Outside, "Outside")
                     .on_hover_text("Offset outward by tool radius. Cut stays outside the line.");
             });
-    });
+        ui.end_row();
 
-    ui.param_grid("proj_p", |ui| {
         dv(
             ui,
             p(OperationType::ProjectCurve, "depth", "Depth:"),
@@ -123,6 +126,8 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             0.1,
             -20.0..=20.0,
         );
+    });
+    advanced(ui, "proj_adv", |ui| {
         dv(
             ui,
             p(
@@ -135,9 +140,8 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             0.1,
             0.1..=5.0,
         );
-        // Chaining is OFF at 0.0 and ships that way — the hover text
-        // (registered on the label in `properties::tooltip_for`, which is
-        // where every `dv` row's tooltip lives) says so.
+        // Chaining is OFF at 0.0 and ships that way — the row's hover (the
+        // registry help of `chain_distance_mm`) says so.
         dv(
             ui,
             p(

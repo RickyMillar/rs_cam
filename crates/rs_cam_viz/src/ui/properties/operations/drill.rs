@@ -97,6 +97,7 @@ fn draw_drill_target_selector(
         }
         if !layers.is_empty() {
             egui::ComboBox::from_id_salt("drill_layer_select")
+                .truncate()
                 .selected_text("Select layer…")
                 .show_ui(ui, |ui| {
                     for layer in layers {
@@ -140,6 +141,7 @@ fn draw_drill_target_selector(
 fn draw_drill_cycle_combo(ui: &mut egui::Ui, id_salt: &str, cycle: &mut DrillCycleType) {
     ui.label("Cycle:");
     egui::ComboBox::from_id_salt(id_salt)
+        .truncate()
         .selected_text(match cycle {
             DrillCycleType::Simple => "Simple (G81)",
             DrillCycleType::Dwell => "Dwell (G82)",

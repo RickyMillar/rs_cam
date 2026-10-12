@@ -111,23 +111,19 @@ impl<T: PartialEq + Copy> egui::Widget for ChoiceRow<'_, T> {
                 }
             }
         };
-        let label = egui::Label::new(self.label)
-            .truncate()
-            .wrap_mode(egui::TextWrapMode::Truncate)
-            .halign(egui::Align::LEFT);
         let inner = ui.vertical(|ui| {
             if inline {
                 ui.horizontal(|ui| {
-                    // A fixed, truncating label column, the same rung
+                    // A fixed, truncating label column, the same cell
                     // `ValueRow` uses, so this row lines up with the
                     // parameter rows above it and cannot widen the panel.
-                    ui.add_sized([tokens::LABEL_COL_WIDTH, tokens::ROW_DENSE], label);
+                    super::value_row::label_cell(ui, self.label);
                     draw_options(ui);
                 });
             } else {
                 // The label takes its own line, at the panel width, and the
                 // closed set stays together under it.
-                ui.add(label);
+                ui.add(egui::Label::new(self.label).truncate());
                 if one_line {
                     ui.horizontal(&mut draw_options);
                 } else {

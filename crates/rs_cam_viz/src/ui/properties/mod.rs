@@ -29,7 +29,7 @@ pub(crate) use panel_apply::{
 // descendant such as `operations/boundary_2d.rs` (`super::super::dv`) or
 // `pills.rs` (`super::prov_from_chipload`) resolves through.
 use feeds_speeds::prov_from_chipload;
-use linking_dressup::{depth_caution_row, dv, dv_pill, p, through_cut_row};
+use linking_dressup::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
 use machine_panel::draw_machine_panel;
 use model_sim_panels::{draw_model_properties, draw_simulation_panel};
 use panel_apply::{
@@ -124,6 +124,10 @@ impl PanelEdit {
 }
 
 pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // IC1: a combo in the value column must fit the 240-point rail. egui's
+    // default minimum (100 points) does not; every inspector combo also
+    // truncates its text at the panel edge.
+    ui.spacing_mut().combo_width = crate::ui::tokens::INSPECTOR_COMBO_WIDTH;
     // Show simulation panel only when in the Simulation workspace
     if state.workspace == crate::state::Workspace::Simulation && state.simulation.has_results() {
         draw_simulation_panel(ui, state, events);

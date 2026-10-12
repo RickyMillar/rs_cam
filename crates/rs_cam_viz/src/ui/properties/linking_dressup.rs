@@ -51,6 +51,20 @@ pub(super) fn dv(
     record_stock_to_leave(ui, param.name, &out);
 }
 
+/// IC1: the ONE collapsed "Advanced" section of a tab.
+///
+/// It holds the parameters an operator rarely changes, in a parameter grid
+/// of its own, so the tab opens on the parameters that decide the cut. Every
+/// parameter in it stays settable; only its default visibility changes. The
+/// section is collapsed until the operator opens it, and egui keeps that
+/// choice per `id_salt`.
+pub(super) fn advanced(ui: &mut egui::Ui, id_salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(crate::ui::tokens::SPACE_2);
+    ui.disclosure(id_salt, "Advanced", false, |ui| {
+        ui.param_grid((id_salt, "grid"), add);
+    });
+}
+
 /// The help line for one operation parameter, from the core registry.
 ///
 /// UI-04: the key is the registry parameter NAME, not the visible label. The
@@ -296,11 +310,21 @@ pub(super) fn draw_linking_params(
 
     // ── Entry & Exit ──────────────────────────────────────────
     crate::ui::components::SectionHeader::new("Entry & Exit").show(ui);
+    // IC1: the entry diagram summarises the entry move, so it opens the
+    // section, above the rows that set it.
+    {
+        let fallback_ctx = HeightContext::simple(10.0, 5.0);
+        let ctx = height_ctx.unwrap_or(&fallback_ctx);
+        let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
+        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, ctx, &entry.heights);
+        ui.add_space(4.0);
+    }
 
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
         ui.add_enabled_ui(entry_disabled_msg.is_none(), |ui| {
             let combo = egui::ComboBox::from_id_salt("dressup_entry")
+.truncate()
                 .selected_text(match cfg.entry_style {
                     DressupEntryStyle::None => "None",
                     DressupEntryStyle::Ramp => "Ramp",
@@ -378,11 +402,7 @@ pub(super) fn draw_linking_params(
                 } else {
                     format!("  Emits r {:.2} mm", h.emitted_mm)
                 };
-                ui.label(
-                    egui::RichText::new(text)
-                        .small()
-                        .color(crate::ui::tokens::TEXT_MUTED),
-                );
+                ui.add(crate::ui::components::OneLine::new(text));
             }
             ui.param_grid("helix_p", |ui| {
                 if let Some(radius) = cfg.helix_radius.as_mut() {
@@ -417,13 +437,6 @@ pub(super) fn draw_linking_params(
             });
         }
         DressupEntryStyle::None => {}
-    }
-    {
-        let fallback_ctx = HeightContext::simple(10.0, 5.0);
-        let ctx = height_ctx.unwrap_or(&fallback_ctx);
-        ui.add_space(4.0);
-        let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
-        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, ctx, &entry.heights);
     }
 
     ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
@@ -500,10 +513,23 @@ pub(super) fn draw_linking_params(
         });
     }
 
+    ui.add_enabled_ui(reorder_ok, |ui| {
+        let resp = ui
+            .checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
+            .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Only operations whose cut order does not change what later moves meet allow it.");
+        if !reorder_ok {
+            resp.on_disabled_hover_text("This operation keeps its planned cut order: its entries and keep-down links are planned against the stock that earlier cuts leave, so a reorder would feed into uncut stock.");
+        }
+    });
+
+    // IC1: feed-rate optimization applies to fresh-stock 2D operations only,
+    // so it is the tab's Advanced section.
     let feed_opt_reason = crate::state::toolpath::feed_optimization_unavailable_reason(
         &entry.operation,
         entry.stock_source,
     );
+    ui.add_space(crate::ui::tokens::SPACE_2);
+    ui.disclosure("linking_adv", "Advanced", false, |ui| {
     if let Some(reason) = feed_opt_reason {
         // G-LINKFEEDOPT: viewing a tab commits nothing. The disabled
         // checkbox reads a local copy; `dressup_apply` already skips the
@@ -542,14 +568,6 @@ pub(super) fn draw_linking_params(
             );
         });
     }
-
-    ui.add_enabled_ui(reorder_ok, |ui| {
-        let resp = ui
-            .checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
-            .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Only operations whose cut order does not change what later moves meet allow it.");
-        if !reorder_ok {
-            resp.on_disabled_hover_text("This operation keeps its planned cut order: its entries and keep-down links are planned against the stock that earlier cuts leave, so a reorder would feed into uncut stock.");
-        }
     });
 }
 

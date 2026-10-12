@@ -253,20 +253,11 @@ pub fn draw(
 ) {
     let setup_id = inputs.setup_id;
     ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Stock changes")
-            .strong()
-            .color(tokens::TEXT_STRONG),
-    )
-    .on_hover_text(SECTION_HOVER);
-
-    if inputs.rows.is_empty() {
-        ui.label(
-            egui::RichText::new("No stock changes")
-                .italics()
-                .color(tokens::TEXT_MUTED),
-        );
-    }
+    // IC1: the shared section header. An empty list shows only its Add
+    // button; a "No stock changes" line said the same thing again.
+    crate::ui::components::SectionHeader::new("Stock changes")
+        .hover(SECTION_HOVER)
+        .show(ui);
     let count = inputs.rows.len();
     for (position, row) in inputs.rows.iter().enumerate() {
         draw_row(ui, setup_id, row, position, count, editor, events);
@@ -524,6 +515,7 @@ fn draw_model_pick(ui: &mut egui::Ui, geometry: &mut StockGeometry, models: &[Mo
             ui.horizontal(|ui| {
                 ui.label("Model:");
                 egui::ComboBox::from_id_salt("stock_change_mesh")
+                    .truncate()
                     .selected_text(selected)
                     .show_ui(ui, |ui| {
                         for m in &meshes {

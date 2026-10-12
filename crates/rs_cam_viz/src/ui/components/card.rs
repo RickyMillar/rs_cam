@@ -25,6 +25,7 @@ pub struct SectionHeader {
     title: String,
     trailing: Option<String>,
     rule: bool,
+    hover: Option<String>,
 }
 
 impl SectionHeader {
@@ -33,6 +34,7 @@ impl SectionHeader {
             title: title.into(),
             trailing: None,
             rule: true,
+            hover: None,
         }
     }
 
@@ -40,6 +42,14 @@ impl SectionHeader {
     #[must_use]
     pub fn trailing(mut self, trailing: impl Into<String>) -> Self {
         self.trailing = Some(trailing.into());
+        self
+    }
+
+    /// The hover of the title: what the section holds (IC1). A section
+    /// explains itself here, not in a caption under the header.
+    #[must_use]
+    pub fn hover(mut self, hover: impl Into<String>) -> Self {
+        self.hover = Some(hover.into());
         self
     }
 
@@ -58,7 +68,10 @@ impl SectionHeader {
     pub fn show(self, ui: &mut egui::Ui) {
         ui.add_space(tokens::SPACE_4);
         ui.horizontal(|ui| {
-            ui.label(text::subhead(&self.title));
+            let title = ui.label(text::subhead(&self.title));
+            if let Some(hover) = &self.hover {
+                title.on_hover_text(hover);
+            }
             if let Some(trailing) = &self.trailing {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(text::caption(trailing));
