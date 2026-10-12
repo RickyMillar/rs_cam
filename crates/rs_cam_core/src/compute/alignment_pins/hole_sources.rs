@@ -13,7 +13,7 @@
 //! gives in the stock-local frame (the frame of the pins). It does not read
 //! an operation name.
 
-use super::{AlignmentPin, PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM};
+use super::{AlignmentPin, PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, same_pin_diameter};
 
 /// One hole that an operation drills, in the stock-local frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -94,15 +94,16 @@ fn nearest_pin_mm<'a>(pins: impl IntoIterator<Item = &'a AlignmentPin>, x: f64, 
 /// Judge the hole sources of a project.
 ///
 /// - `pins`: the stock pins, stock-local.
-/// - `pin_drill_present`: `true` when an enabled pin-drill operation
-///   exists.
+/// - `pin_drill_sizes`: the pin diameter of each enabled pin-drill
+///   operation (R1: one operation for each pin size).
 /// - `ops`: every other enabled operation that drills holes, with its
 ///   holes stock-local.
 ///
 /// The rules:
 ///
-/// 1. "Drilled twice": `pin_drill_present`, and the operation drills a
-///    hole within [`PIN_MATCH_TOL_MM`] of a stock pin.
+/// 1. "Drilled twice": the operation drills a hole within
+///    [`PIN_MATCH_TOL_MM`] of a stock pin whose size a pin-drill operation
+///    in `pin_drill_sizes` drills.
 /// 2. "Disagree": a [`HoleOpKind::Drill`] operation drills a hole whose
 ///    stated diameter is a pin diameter (within
 ///    [`PIN_CAD_ROUNDING_MM`]), and no pin of that diameter is within
@@ -113,7 +114,7 @@ fn nearest_pin_mm<'a>(pins: impl IntoIterator<Item = &'a AlignmentPin>, x: f64, 
 #[must_use]
 pub fn hole_source_findings(
     pins: &[AlignmentPin],
-    pin_drill_present: bool,
+    pin_drill_sizes: &[f64],
     ops: &[HoleOp],
 ) -> Vec<HoleSourceFinding> {
     let mut out = Vec::new();
@@ -121,11 +122,19 @@ pub fn hole_source_findings(
         return out;
     }
     for op in ops {
-        if pin_drill_present {
+        let drilled: Vec<&AlignmentPin> = pins
+            .iter()
+            .filter(|p| {
+                pin_drill_sizes
+                    .iter()
+                    .any(|d| same_pin_diameter(*d, p.diameter))
+            })
+            .collect();
+        if !drilled.is_empty() {
             let at_pins = op
                 .holes
                 .iter()
-                .filter(|h| nearest_pin_mm(pins, h.x, h.y) <= PIN_MATCH_TOL_MM)
+                .filter(|h| nearest_pin_mm(drilled.iter().copied(), h.x, h.y) <= PIN_MATCH_TOL_MM)
                 .count();
             if at_pins > 0 {
                 out.push(HoleSourceFinding {
@@ -217,8 +226,8 @@ mod tests {
     #[test]
     fn a_drill_on_the_pins_is_drilled_twice_only_with_a_pin_drill() {
         let op = drill(&[(6.0, 32.5, Some(6.0)), (59.0, 32.5, Some(6.0))]);
-        assert!(hole_source_findings(&pins(), false, std::slice::from_ref(&op)).is_empty());
-        let found = hole_source_findings(&pins(), true, &[op]);
+        assert!(hole_source_findings(&pins(), &[], std::slice::from_ref(&op)).is_empty());
+        let found = hole_source_findings(&pins(), &[6.0], &[op]);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].kind, HoleSourceKind::DrilledTwice);
         assert!(found[0].text.contains("2 hole(s)"), "{}", found[0].text);
@@ -228,7 +237,7 @@ mod tests {
     fn a_pocket_on_the_pins_is_drilled_twice_but_never_disagrees() {
         let mut op = drill(&[(6.0, 32.5, Some(6.0)), (30.0, 10.0, Some(6.0))]);
         op.kind = HoleOpKind::Pocket;
-        let found = hole_source_findings(&pins(), true, &[op]);
+        let found = hole_source_findings(&pins(), &[6.0], &[op]);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].kind, HoleSourceKind::DrilledTwice);
     }
@@ -236,7 +245,7 @@ mod tests {
     #[test]
     fn dowel_sized_holes_off_the_pins_disagree() {
         let op = drill(&[(6.0, 22.5, Some(6.0)), (59.0, 32.5, Some(6.0))]);
-        let found = hole_source_findings(&pins(), false, &[op]);
+        let found = hole_source_findings(&pins(), &[], &[op]);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].kind, HoleSourceKind::DowelHolesDisagree);
         assert!(found[0].text.contains("1 hole(s)"), "{}", found[0].text);
@@ -252,12 +261,12 @@ mod tests {
             (30.0, 50.0, None),
             (6.0 + 0.5 * PIN_MATCH_TOL_MM, 32.5, Some(6.0)),
         ]);
-        assert!(hole_source_findings(&pins(), false, &[op]).is_empty());
+        assert!(hole_source_findings(&pins(), &[], &[op]).is_empty());
     }
 
     #[test]
     fn no_pins_means_no_finding() {
         let op = drill(&[(6.0, 22.5, Some(6.0))]);
-        assert!(hole_source_findings(&[], true, &[op]).is_empty());
+        assert!(hole_source_findings(&[], &[6.0], &[op]).is_empty());
     }
 }

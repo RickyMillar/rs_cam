@@ -51,11 +51,11 @@ impl<'a, T: PartialEq + Copy> ChoiceRow<'a, T> {
         self
     }
 
-    /// Is there room for the label column AND every option on one line?
+    /// The width of every option on one line, with the gaps, in points.
     ///
     /// Measured, not guessed. The widths come from the same layout the
     /// buttons then use, so the answer cannot disagree with what is drawn.
-    fn options_fit_beside_the_label(&self, ui: &egui::Ui) -> bool {
+    fn options_width(&self, ui: &egui::Ui) -> f32 {
         let font = ui
             .style()
             .text_styles
@@ -64,8 +64,7 @@ impl<'a, T: PartialEq + Copy> ChoiceRow<'a, T> {
             .unwrap_or_default();
         let padding = ui.spacing().button_padding.x * 2.0;
         let gap = ui.spacing().item_spacing.x;
-        let options: f32 = self
-            .options
+        self.options
             .iter()
             .map(|(_, text)| {
                 ui.painter()
@@ -75,8 +74,24 @@ impl<'a, T: PartialEq + Copy> ChoiceRow<'a, T> {
                     + padding
                     + gap
             })
-            .sum();
-        tokens::LABEL_COL_WIDTH + gap + options <= ui.available_width()
+            .sum()
+    }
+
+    /// Is there room for the label column AND every option on one line?
+    fn options_fit_beside_the_label(&self, ui: &egui::Ui) -> bool {
+        let gap = ui.spacing().item_spacing.x;
+        tokens::LABEL_COL_WIDTH + gap + self.options_width(ui) <= ui.available_width()
+    }
+
+    /// Is there room for every option on one line of its own?
+    ///
+    /// R5b (2026-10-12): the stacked fallback put the options in one
+    /// `horizontal` strip. Three long options ("3 pins: axis + mirror
+    /// pair", "2 pins, mixed diameter", "Custom") are wider than the 240
+    /// point rail, and the strip ran past the panel edge. A set that does
+    /// not fit on one line goes one option per line.
+    fn options_fit_on_a_line(&self, ui: &egui::Ui) -> bool {
+        self.options_width(ui) <= ui.available_width()
     }
 }
 
@@ -84,6 +99,7 @@ impl<T: PartialEq + Copy> egui::Widget for ChoiceRow<'_, T> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let mut changed = false;
         let inline = self.options_fit_beside_the_label(ui);
+        let one_line = inline || self.options_fit_on_a_line(ui);
         let value = self.value;
         let options = self.options;
         let mut draw_options = |ui: &mut egui::Ui| {
@@ -112,7 +128,11 @@ impl<T: PartialEq + Copy> egui::Widget for ChoiceRow<'_, T> {
                 // The label takes its own line, at the panel width, and the
                 // closed set stays together under it.
                 ui.add(label);
-                ui.horizontal(&mut draw_options);
+                if one_line {
+                    ui.horizontal(&mut draw_options);
+                } else {
+                    ui.vertical(&mut draw_options);
+                }
             }
         });
         let mut response = inner.response;

@@ -495,6 +495,12 @@ impl<B: ComputeBackend> AppController<B> {
         );
         self.collision_positions.clear();
         self.pending_upload = true;
+        // R5a: the pin door drops a pin warning when a pin edit fixes it.
+        self.load_pin_warnings = load_warnings
+            .iter()
+            .filter(|w| matches!(w, ProjectLoadWarning::AlignmentPinsUnkeyed { .. }))
+            .map(ProjectLoadWarning::message)
+            .collect();
         self.load_warnings = warning_messages;
         self.show_load_warnings = !self.load_warnings.is_empty();
         tracing::info!("Loaded project via unified session path");

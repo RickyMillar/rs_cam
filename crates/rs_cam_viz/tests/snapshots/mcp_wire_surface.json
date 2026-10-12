@@ -2895,7 +2895,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "modal": {
-          "description": "Modal to open: \"feeds_modal\", \"optimize_modal\", \"export_wizard\",\n\"tool_library\", or \"none\" to close all modals.",
+          "description": "Modal to open: \"feeds_modal\", \"optimize_modal\", \"export_wizard\",\n\"tool_library\", \"pin_wizard\", or \"none\" to close all modals (the\nload-warning modal and the pin wizard too).",
           "type": [
             "string",
             "null"

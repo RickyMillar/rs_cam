@@ -847,6 +847,7 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
     );
 
     let pin_cfg = || AlignmentPinDrillConfig {
+        diameter: 6.0,
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,

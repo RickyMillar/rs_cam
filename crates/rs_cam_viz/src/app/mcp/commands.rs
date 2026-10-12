@@ -2995,40 +2995,48 @@ impl RsCamApp {
         use crate::controller::PinDrillSync;
 
         let edit = self.controller.finish_pin_edit(effects);
-        let pin_drill = {
+        // R1: one row for each pin size (and each removed operation).
+        let pin_drill: Vec<serde_json::Value> = {
             let session = &self.controller.state().session;
             let locate = |id: crate::state::toolpath::ToolpathId| {
                 session.toolpath_configs().iter().position(|tc| tc.id == id)
             };
-            let mut json = serde_json::json!({ "action": edit.pin_drill.action() });
-            let (toolpath_id, setup_index, reason) = match &edit.pin_drill {
-                PinDrillSync::Unchanged => (None, None, None),
-                PinDrillSync::Created {
-                    toolpath_id,
-                    setup_index,
-                } => (Some(*toolpath_id), Some(*setup_index), None),
-                PinDrillSync::Updated { toolpath_id } | PinDrillSync::Removed { toolpath_id } => {
-                    (Some(*toolpath_id), None, None)
-                }
-                PinDrillSync::Refused(reason) => (None, None, Some(reason.clone())),
-            };
-            if let Some(object) = json.as_object_mut() {
-                if let Some(id) = toolpath_id {
-                    object.insert("toolpath_id".to_owned(), id.0.into());
-                    // `null` for a removed toolpath: it has no index now.
-                    object.insert("toolpath_index".to_owned(), locate(id).into());
-                }
-                if let Some(index) = setup_index {
-                    object.insert("setup_index".to_owned(), index.into());
-                }
-                if let Some(reason) = reason {
-                    object.insert("reason".to_owned(), reason.into());
-                }
-            }
-            json
+            edit.pin_drill
+                .iter()
+                .map(|size| {
+                    let mut json = serde_json::json!({
+                        "diameter_mm": size.diameter,
+                        "action": size.outcome.action(),
+                    });
+                    let (toolpath_id, setup_index, reason) = match &size.outcome {
+                        PinDrillSync::Unchanged => (None, None, None),
+                        PinDrillSync::Created {
+                            toolpath_id,
+                            setup_index,
+                        } => (Some(*toolpath_id), Some(*setup_index), None),
+                        PinDrillSync::Updated { toolpath_id }
+                        | PinDrillSync::Removed { toolpath_id } => (Some(*toolpath_id), None, None),
+                        PinDrillSync::Refused(reason) => (None, None, Some(reason.clone())),
+                    };
+                    if let Some(object) = json.as_object_mut() {
+                        if let Some(id) = toolpath_id {
+                            object.insert("toolpath_id".to_owned(), id.0.into());
+                            // `null` for a removed toolpath: it has no index now.
+                            object.insert("toolpath_index".to_owned(), locate(id).into());
+                        }
+                        if let Some(index) = setup_index {
+                            object.insert("setup_index".to_owned(), index.into());
+                        }
+                        if let Some(reason) = reason {
+                            object.insert("reason".to_owned(), reason.into());
+                        }
+                    }
+                    json
+                })
+                .collect()
         };
         if let Some(object) = applied.as_object_mut() {
-            object.insert("pin_drill".to_owned(), pin_drill);
+            object.insert("pin_drill".to_owned(), pin_drill.into());
             object.insert(
                 "pin_report".to_owned(),
                 super::project::pin_report_json(&self.controller.state().session),

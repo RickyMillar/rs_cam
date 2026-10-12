@@ -132,6 +132,7 @@ fn hole_drill_op() -> OperationConfig {
 
 fn pin_drill_op() -> OperationConfig {
     OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+        diameter: 6.0,
         holes: vec![PIN],
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,

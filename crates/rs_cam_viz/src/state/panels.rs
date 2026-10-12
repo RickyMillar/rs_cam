@@ -125,6 +125,9 @@ pub struct PanelDrafts {
     /// The refusal of the stock panel's last preset click (P7). It stays
     /// until the next finished pin edit.
     pub pin_preset_refusal: Option<String>,
+    /// The pin wizard (R4), when it is open. It holds its own draft pins,
+    /// so Cancel changes nothing.
+    pub pin_wizard: Option<crate::ui::pin_wizard::PinWizardState>,
 }
 
 /// The result of the keyed-pin placer.

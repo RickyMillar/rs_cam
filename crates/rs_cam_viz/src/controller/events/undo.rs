@@ -144,10 +144,12 @@ impl<B: ComputeBackend> AppController<B> {
         if matches!(command, Command::SetAlignmentPins(_)) {
             // P5: the one pin-edit door, so the undo moves the pin-drill
             // operation the way the edit did.
-            if let Ok(edit) = self.apply_pin_edit(command)
-                && let super::pins::PinDrillSync::Refused(reason) = edit.pin_drill
-            {
-                self.push_notification(reason, super::super::Severity::Warning);
+            if let Ok(edit) = self.apply_pin_edit(command) {
+                for size in edit.pin_drill {
+                    if let super::pins::PinDrillSync::Refused(reason) = size.outcome {
+                        self.push_notification(reason, super::super::Severity::Warning);
+                    }
+                }
             }
         } else {
             let _ = self.apply_quietly(command);

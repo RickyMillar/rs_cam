@@ -944,7 +944,7 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         })
         .collect();
     let drill_diameters = drill_tool_diameters(&state.session);
-    let pin_drill = pins::PinDrillState::of(&state.session);
+    let pin_drill = pins::PinDrillState::of(&state.session, &draft.alignment_pins);
     if state
         .panels
         .selected_pin
@@ -980,6 +980,9 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
     if let Some(refusal) = out.preset_refusal {
         state.panels.pin_preset_refusal = refusal;
     }
+    if out.open_wizard {
+        state.panels.pin_wizard = Some(crate::ui::pin_wizard::PinWizardState::open(&state.session));
+    }
     let edit = out.edit;
     if edit.committed {
         apply_stock_draft(state, draft.clone());
@@ -1003,10 +1006,11 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
     }
 }
 
-/// The diameters of the tools that the drilling operations name, in
-/// ascending order and without repeats. The mixed pin preset takes its
-/// second dowel size from them.
-fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSession) -> Vec<f64> {
+/// The diameters of the drills of the project, in ascending order and
+/// without repeats: the tools that the drilling operations name, and every
+/// `VBit` (the project's model of a twist drill). The mixed pin preset
+/// and the pin wizard offer them as dowel sizes.
+pub(crate) fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSession) -> Vec<f64> {
     use crate::state::toolpath::OperationConfig;
     let mut out: Vec<f64> = session
         .toolpath_configs()
@@ -1018,6 +1022,12 @@ fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSession) -> Vec<f
             )
         })
         .filter_map(|tc| session.tools().iter().find(|t| t.id.0 == tc.tool_id))
+        .chain(
+            session
+                .tools()
+                .iter()
+                .filter(|t| t.tool_type == rs_cam_core::compute::tool_config::ToolType::VBit),
+        )
         .map(|t| t.diameter)
         .filter(|d| *d > 0.0)
         .collect();

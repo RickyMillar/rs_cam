@@ -5,11 +5,9 @@
 use rs_cam_core::compute::alignment_pins::PIN_WALL_MM;
 use rs_cam_core::session::{PinSetReport, PinStatus};
 
-use super::{PinDrillState, PinSectionOut, edit};
+use super::{PinSectionOut, edit};
 use crate::state::job::StockConfig;
 use crate::state::panels::KeyedPinPlan;
-use crate::state::toolpath::OperationType;
-use crate::ui::AppEvent;
 use crate::ui::components::{Banner, Button, DataTable, Role, StatusChip, UiExt as _, text};
 use crate::ui::properties::PanelEdit;
 
@@ -78,78 +76,13 @@ pub fn chip_words(report: &PinSetReport) -> Vec<Chip> {
     chips
 }
 
-/// The pin-drill chip.
-#[must_use]
-pub fn pin_drill_chip(state: &PinDrillState) -> Option<Chip> {
-    match state {
-        PinDrillState::NoPins => None,
-        PinDrillState::Exists { name, holes } => Some(Chip {
-            word: format!("Pin drill: '{name}', {holes} holes"),
-            role: Role::Ok,
-        }),
-        PinDrillState::Missing => Some(Chip {
-            word: "Pin drill: not created".to_owned(),
-            role: Role::Caution,
-        }),
-        PinDrillState::Refused(_) => Some(Chip {
-            word: "Pin drill: refused".to_owned(),
-            role: Role::Danger,
-        }),
-    }
-}
-
-/// Draw the chips and, under a refused or missing pin drill, its next step.
-pub(super) fn chips(
-    ui: &mut egui::Ui,
-    report: &PinSetReport,
-    pin_drill: &PinDrillState,
-    out: &mut PinSectionOut,
-    events: &mut Vec<AppEvent>,
-) {
+/// Draw the chips of the report. The pin-drill state of each pin size is
+/// the "Drills" block (`drills.rs`).
+pub(super) fn chips(ui: &mut egui::Ui, report: &PinSetReport) {
     // One chip per line: a column of chips aligns (DESIGN_SPEC §4.3), and
     // a long chip never runs off the rail.
-    for chip in chip_words(report)
-        .into_iter()
-        .chain(pin_drill_chip(pin_drill))
-    {
+    for chip in chip_words(report) {
         ui.add(StatusChip::new(chip.word, chip.role));
-    }
-    match pin_drill {
-        PinDrillState::Refused(reason) => {
-            ui.label(text::caption(*reason));
-            ui.horizontal_wrapped(|ui| {
-                if *reason == crate::controller::PIN_DRILL_NEEDS_TOOL {
-                    if ui
-                        .add(Button::new("Add a drill operation"))
-                        .on_hover_text(
-                            "Adds a Drill operation. Set its tool to the drill of the dowel \
-                             size, then press 'Create the pin drill'.",
-                        )
-                        .clicked()
-                    {
-                        events.push(AppEvent::AddToolpath(OperationType::Drill));
-                    }
-                } else if ui
-                    .add(Button::new("Add a setup"))
-                    .on_hover_text(
-                        "Adds a setup. Set its face to Top at 0 deg, then press 'Create the \
-                         pin drill'.",
-                    )
-                    .clicked()
-                {
-                    events.push(AppEvent::AddSetup);
-                }
-                if ui.add(Button::quiet("Create the pin drill")).clicked() {
-                    out.sync_pin_drill = true;
-                }
-            });
-        }
-        PinDrillState::Missing => {
-            if ui.add(Button::new("Create the pin drill")).clicked() {
-                out.sync_pin_drill = true;
-            }
-        }
-        PinDrillState::NoPins | PinDrillState::Exists { .. } => {}
     }
 }
 
@@ -171,7 +104,9 @@ pub(super) fn keying_warning(
          rings in the viewport show where the holes then land.",
     )
     .show(ui);
-    ui.horizontal_wrapped(|ui| {
+    // R5b: the two buttons stack, one per line. In a wrapped row at the
+    // inspector width the second button ran past the panel edge.
+    ui.vertical(|ui| {
         let use_preset = ui
             .add(Button::primary("Use 3-pin preset").enabled(plan.is_ok()))
             .on_hover_text(
@@ -207,7 +142,7 @@ pub(super) fn keying_warning(
         }
     });
     if let Err(reason) = plan {
-        ui.label(text::caption(format!("The placer refuses: {reason}")));
+        super::wrapped(ui, text::caption(format!("The placer refuses: {reason}")));
     }
 }
 
@@ -220,9 +155,12 @@ pub(super) fn pin_table(
     out: &mut PinSectionOut,
 ) {
     ui.add_space(crate::ui::tokens::SPACE_2);
-    let headers = ["Pin", "X", "Y", "\u{00D8}", "Edge", "Part"]
-        .map(str::to_owned)
-        .to_vec();
+    // R5b: three columns. Six columns (Pin, X, Y, diameter, Edge, Part)
+    // were wider than the 240 point rail, and the table pushed the section
+    // past the panel edge. The pin hover gives the diameter (the plan view
+    // and the Drills block show it too). The wall column is the thinnest
+    // wall; its hover names the edge and the part walls.
+    let headers = ["Pin", "X, Y", "Wall"].map(str::to_owned).to_vec();
     DataTable::new("alignment_pin_table", headers).show(ui, |ui| {
         for (i, pin) in stock.alignment_pins.iter().enumerate() {
             let colour = crate::state::pin_view::pin_status_colour(report.pin_status(i));
@@ -232,30 +170,40 @@ pub(super) fn pin_table(
                 .strong();
             if ui
                 .selectable_label(marked, number)
-                .on_hover_text(status_hover(report.pin_status(i)))
+                .on_hover_text(format!(
+                    "\u{00D8} {:.2} mm. {}",
+                    pin.diameter,
+                    status_hover(report.pin_status(i))
+                ))
                 .clicked()
             {
                 out.selected_pin = Some(if marked { None } else { Some(i) });
             }
             let walls = report.walls.get(i);
-            ui.label(text::numeric(format!("{:.2}", pin.x)));
-            ui.label(text::numeric(format!("{:.2}", pin.y)));
-            ui.label(text::numeric(format!("{:.2}", pin.diameter)));
-            ui.label(text::numeric(walls.map_or("\u{2014}".to_owned(), |w| {
-                format!("{:.1}", w.stock_edge_mm)
-            })));
-            ui.label(text::numeric(
-                walls
-                    .and_then(|w| w.part.as_ref())
-                    .map_or("\u{2014}".to_owned(), |n| format!("{:.1}", n.wall_mm)),
+            ui.label(text::numeric(format!("{:.2}, {:.2}", pin.x, pin.y)));
+            let dash = || "\u{2014}".to_owned();
+            let wall = ui.label(text::numeric(
+                walls.map_or_else(dash, |w| format!("{:.1}", w.min_mm())),
             ));
+            if let Some(w) = walls {
+                let _ = wall.on_hover_text(format!(
+                    "Edge {:.1} mm, part {} mm.",
+                    w.stock_edge_mm,
+                    w.part
+                        .as_ref()
+                        .map_or_else(dash, |n| format!("{:.1}", n.wall_mm)),
+                ));
+            }
             ui.end_row();
         }
     });
-    ui.label(text::caption(
-        "mm, stock-local (X0 Y0 at the stock's min corner). Edge and Part are the \
-         walls from the pin edge.",
-    ));
+    super::wrapped(
+        ui,
+        text::caption(
+            "mm, stock-local (X0 Y0 at the stock's min corner). Wall is the thinnest wall \
+             from the pin edge.",
+        ),
+    );
 }
 
 fn status_hover(status: PinStatus) -> String {
@@ -276,7 +224,8 @@ pub(super) fn findings(ui: &mut egui::Ui, report: &PinSetReport) {
     let title = format!("Pin findings ({})", report.findings.len());
     ui.disclosure("alignment_pin_findings", &title, false, |ui| {
         for finding in &report.findings {
-            ui.label(
+            super::wrapped(
+                ui,
                 egui::RichText::new(finding)
                     .small()
                     .color(crate::ui::tokens::CAUTION),

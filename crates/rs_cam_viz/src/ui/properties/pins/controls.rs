@@ -6,9 +6,7 @@
 //! (`PanelEdit::drag`). A button commits on its click. So one finished edit
 //! is one `SetAlignmentPins` and one undo step.
 
-use rs_cam_core::compute::alignment_pins::{
-    MixedPairPattern, PIN_MATCH_TOL_MM, PinSetupMap, set_diameter,
-};
+use rs_cam_core::compute::alignment_pins::{PIN_MATCH_TOL_MM, PinSetupMap, set_diameter};
 use rs_cam_core::session::{PinPreset, PinSetReport};
 
 use super::edit::{self, PresetChoice};
@@ -32,9 +30,10 @@ pub(super) fn preset_picker(
 ) {
     let report = inputs.report;
     if report.map.axis_segment().is_none() {
-        ui.label(text::caption(
-            "The presets need a flip axis: add a Bottom setup at 0 or 180 deg.",
-        ));
+        super::wrapped(
+            ui,
+            text::caption("The presets need a flip axis: add a Bottom setup at 0 or 180 deg."),
+        );
         return;
     }
     let shown = edit::preset_choice(report);
@@ -43,13 +42,15 @@ pub(super) fn preset_picker(
         ChoiceRow::new("Preset", &mut choice, &PresetChoice::OPTIONS).hover(
             "3 pins: one pin on the flip axis plus a mirror pair off it; it keys with one \
              drill. 2 pins, mixed diameter: two pins of different diameters on the axis; it \
-             keys with two holes and needs two drills. Custom: any other set.",
+             keys with two holes and needs two drills (the Drills block below adds a missing \
+             one). Custom: any other set.",
         ),
     );
     // The refusal of the last preset click stays on the panel until the
     // next finished edit, so the operator reads it.
     if let Some(reason) = inputs.preset_refusal {
-        ui.label(
+        super::wrapped(
+            ui,
             egui::RichText::new(reason)
                 .small()
                 .color(crate::ui::tokens::DANGER),
@@ -77,55 +78,50 @@ pub(super) fn preset_picker(
     }
 }
 
+/// The large dowel size of a new mixed preset when no larger drill is in
+/// the project: the small size plus twice [`PIN_MATCH_TOL_MM`], the hole
+/// slop a dowel finds its hole within. It is a start value, not a dowel
+/// standard: the operator sets the "Large diameter" to the dowel he has,
+/// and the "Drills" block offers "Add a <d> mm drill" for it.
+#[must_use]
+pub fn mixed_start_large_diameter(small_d: f64) -> f64 {
+    small_d + 2.0 * PIN_MATCH_TOL_MM
+}
+
+/// The large dowel size of a new mixed preset: the smallest drill of the
+/// project that is larger than `small_d`, else
+/// [`mixed_start_large_diameter`].
+#[must_use]
+pub fn mixed_large_diameter(small_d: f64, drill_diameters: &[f64]) -> f64 {
+    drill_diameters
+        .iter()
+        .copied()
+        .find(|d| *d > small_d + edit::MIN_DIAMETER_STEP_MM)
+        .unwrap_or_else(|| mixed_start_large_diameter(small_d))
+}
+
 /// The mixed preset from the current pins.
 ///
 /// The positions: two pins on the axis keep their places; else the axis
-/// positions of the placer's plan. The diameters: the pin drill, and the
-/// next larger drill of a drilling operation. A dowel size with no drill
-/// makes a hole no dowel fits, so the preset refuses without one.
+/// positions of the placer's plan. The diameters: the current dowel, and
+/// [`mixed_large_diameter`]. The preset never refuses for a missing
+/// drill (R2): a size with no drill shows in the "Drills" block with "Add
+/// a <d> mm drill", in this section.
 fn to_mixed(
     stock: &StockConfig,
     report: &PinSetReport,
     inputs: &PinSectionInputs<'_>,
     plan: &KeyedPinPlan,
 ) -> Result<Vec<AlignmentPin>, String> {
-    let map = &report.map;
     let small_d = inputs.keyed.plan_pin_diameter(stock);
-    let Some(large_d) = inputs
-        .drill_diameters
-        .iter()
-        .copied()
-        .find(|d| *d > small_d + edit::MIN_DIAMETER_STEP_MM)
-    else {
-        return Err(format!(
-            "The mixed preset needs a second drill larger than {small_d:.2} mm. Add a drill \
-             operation with that drill, then choose the preset again."
-        ));
-    };
-    let alongs = match stock.alignment_pins.as_slice() {
-        [a, b] => edit::along_on_axis(map, a).zip(edit::along_on_axis(map, b)),
-        _ => None,
-    }
-    .or_else(|| {
-        let pins = plan.as_ref().ok()?;
-        let fit = rs_cam_core::compute::alignment_pins::fit_axis_plus_mirror_pair(pins, map)?;
-        Some((fit.axis_along, fit.pair_along))
-    });
-    let Some((small_along, large_along)) = alongs else {
-        return Err(
-            "The mixed preset needs two pins on the flip axis or a placer plan.".to_owned(),
-        );
-    };
-    edit::mixed_pins(
-        map,
-        MixedPairPattern {
-            small_along,
-            large_along,
-            small_diameter: small_d,
-            large_diameter: large_d,
-        },
+    let large_d = mixed_large_diameter(small_d, inputs.drill_diameters);
+    edit::mixed_preset_pins(
+        &stock.alignment_pins,
+        &report.map,
+        plan.as_ref().ok(),
+        small_d,
+        large_d,
     )
-    .ok_or_else(|| "No flip axis.".to_owned())
 }
 
 /// The largest distance from the flip axis to a stock corner, in mm: the
@@ -152,6 +148,7 @@ pub(super) fn pattern_controls(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     report: &PinSetReport,
+    drills: &[f64],
     edit_out: &mut PanelEdit,
 ) {
     let map = &report.map;
@@ -248,6 +245,33 @@ pub(super) fn pattern_controls(
                 .show(ui);
                 edit_out.drag(&out.value_response);
             });
+            // The drills of the project larger than the small pin: one
+            // click makes the large pin that size.
+            let picks: Vec<f64> = drills
+                .iter()
+                .copied()
+                .filter(|d| *d > p.small_diameter + edit::MIN_DIAMETER_STEP_MM)
+                .filter(|d| {
+                    !rs_cam_core::compute::alignment_pins::same_pin_diameter(*d, p.large_diameter)
+                })
+                .collect();
+            if !picks.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(text::caption("Large pin of a drill:"));
+                    for d in &picks {
+                        if ui
+                            .add(Button::quiet(format!("{d:.2} mm")))
+                            .on_hover_text(
+                                "Makes the large pin this size: a drill of it is in the project.",
+                            )
+                            .clicked()
+                        {
+                            p.large_diameter = *d;
+                            edit_out.commit();
+                        }
+                    }
+                });
+            }
             if p != fit
                 && let Some(pins) = edit::mixed_pins(map, p)
             {
@@ -365,7 +389,8 @@ pub(super) fn auto_place(
         edit_out.commit();
     }
     if has_flip && let Err(reason) = plan {
-        ui.label(
+        super::wrapped(
+            ui,
             egui::RichText::new(format!("Auto-place refuses: {reason}"))
                 .small()
                 .color(crate::ui::tokens::DANGER),
@@ -393,10 +418,13 @@ pub(super) fn part_models(
         if chosen { "chosen" } else { "default" }
     );
     ui.disclosure("alignment_pin_part_models", &title, false, |ui| {
-        ui.label(text::caption(
-            "The pins keep a wall to these models. The default leaves out a model that \
+        super::wrapped(
+            ui,
+            text::caption(
+                "The pins keep a wall to these models. The default leaves out a model that \
              covers the whole stock and a drawing of pin holes.",
-        ));
+            ),
+        );
         let mut picked: Vec<usize> = models.iter().filter(|m| m.is_part).map(|m| m.id).collect();
         let mut changed = false;
         for m in models {

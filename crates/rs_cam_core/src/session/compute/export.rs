@@ -307,7 +307,12 @@ impl ProjectSession {
             tool_diameters,
             // The generator drills the live stock pins (see
             // `generate_toolpath`), so the check counts them here.
-            stock_alignment_pin_count: self.stock.alignment_pins.len(),
+            stock_alignment_pin_diameters: self
+                .stock
+                .alignment_pins
+                .iter()
+                .map(|p| p.diameter)
+                .collect(),
         }
     }
 

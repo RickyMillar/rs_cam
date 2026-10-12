@@ -620,14 +620,27 @@ mod pin_edit_one_door_p5 {
 
     use crate::controller::PinDrillSync;
     use crate::controller::events::pins::{
-        PIN_DRILL_NEEDS_TOOL, PIN_DRILL_NEEDS_TOP_SETUP, PinEdit,
+        PIN_DRILL_NEEDS_TOP_SETUP, PinEdit, pin_drill_needs_tool,
     };
     use crate::state::job::AlignmentPin;
 
-    /// Add a drill operation to `setup_index`, so the project names the
-    /// tool that drills the pin holes (P6: the door reads
-    /// `pin_drill_tool_id`, never `tools[0]`).
+    /// Add a 6 mm drill and a drill operation with it to `setup_index`, so
+    /// the project names the tool that drills the 6 mm pin holes (P6, R1:
+    /// the door reads `pin_drill_tool_for`, never `tools[0]`).
     fn add_drill_op(controller: &mut AppController<ScriptedBackend>, setup_index: usize) {
+        let mut drill =
+            rs_cam_core::compute::tool_config::ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        drill.diameter = 6.0;
+        let created = controller
+            .state
+            .session
+            .apply(Command::AddTool(rs_cam_core::session::AddToolArgs {
+                tool: Box::new(drill),
+            }))
+            .expect("a tool can be added")
+            .created
+            .expect("the add reports the index");
+        let drill_id = controller.state.session.tools()[created].id.0;
         let session = &controller.state.session;
         let mut config = session
             .toolpath_configs()
@@ -642,6 +655,7 @@ mod pin_edit_one_door_p5 {
             .map_or(0, |m| m + 1);
         config.id = ToolpathId(next);
         config.name = "Dowel holes".to_owned();
+        config.tool_id = drill_id;
         config.operation =
             OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig::default());
         let _ = controller
@@ -753,7 +767,10 @@ mod pin_edit_one_door_p5 {
             "an MCP add and a GUI add must leave the same toolpath list"
         );
         assert!(
-            matches!(edit.pin_drill, PinDrillSync::Created { setup_index: 1, .. }),
+            matches!(
+                edit.outcome_of(6.0),
+                Some(PinDrillSync::Created { setup_index: 1, .. })
+            ),
             "the MCP door created the pin drill in setup 1, got {:?}",
             edit.pin_drill
         );
@@ -773,7 +790,7 @@ mod pin_edit_one_door_p5 {
         assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
         let drill_index = toolpath_list(&mcp).len() - 1;
         assert!(
-            matches!(edit.pin_drill, PinDrillSync::Updated { .. }),
+            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Updated { .. })),
             "{:?}",
             edit.pin_drill
         );
@@ -799,7 +816,7 @@ mod pin_edit_one_door_p5 {
             }))
             .expect("a set is never refused");
         assert!(
-            matches!(edit.pin_drill, PinDrillSync::Removed { .. }),
+            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Removed { .. })),
             "{:?}",
             edit.pin_drill
         );
@@ -821,8 +838,8 @@ mod pin_edit_one_door_p5 {
         let count = controller.state.session.toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
-            edit.pin_drill,
-            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned())
+            edit.outcome_of(6.0),
+            Some(&PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned()))
         );
         assert_eq!(
             controller.state.session.toolpath_configs().len(),
@@ -889,8 +906,8 @@ mod pin_edit_one_door_p5 {
         let count = controller.state.session.toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
-            edit.pin_drill,
-            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned())
+            edit.outcome_of(6.0),
+            Some(&PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned()))
         );
         assert!(
             PIN_DRILL_NEEDS_TOP_SETUP.contains("'Top' at 0 deg"),
@@ -913,7 +930,10 @@ mod pin_edit_one_door_p5 {
             .expect("a setup can be added");
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(30.0, 20.0, 6.0));
         assert!(
-            matches!(edit.pin_drill, PinDrillSync::Created { setup_index: 1, .. }),
+            matches!(
+                edit.outcome_of(6.0),
+                Some(PinDrillSync::Created { setup_index: 1, .. })
+            ),
             "{:?}",
             edit.pin_drill
         );
@@ -925,7 +945,7 @@ mod pin_edit_one_door_p5 {
     #[test]
     fn no_drilling_operation_refuses_the_pin_drill_p6() {
         let mut controller = sample_controller();
-        assert_eq!(controller.state.session.pin_drill_tool_id(), None);
+        assert_eq!(controller.state.session.pin_drill_tool_for(6.0), None);
         assert!(
             !controller.state.session.tools().is_empty(),
             "non-vacuity: a tool exists that the old door took"
@@ -933,9 +953,361 @@ mod pin_edit_one_door_p5 {
         let count = controller.state.session.toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
-            edit.pin_drill,
-            PinDrillSync::Refused(PIN_DRILL_NEEDS_TOOL.to_owned())
+            edit.outcome_of(6.0),
+            Some(&PinDrillSync::Refused(pin_drill_needs_tool(6.0)))
         );
         assert_eq!(controller.state.session.toolpath_configs().len(), count);
+    }
+
+    /// The pin-drill operations of the project: (diameter, tool diameter,
+    /// holes), in toolpath order.
+    fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64, Vec<[f64; 2]>)> {
+        let session = &controller.state.session;
+        session
+            .toolpath_configs()
+            .iter()
+            .filter_map(|tc| match &tc.operation {
+                OperationConfig::AlignmentPinDrill(c) => {
+                    let tool = session
+                        .tools()
+                        .iter()
+                        .find(|t| t.id.0 == tc.tool_id)
+                        .map_or(0.0, |t| t.diameter);
+                    Some((c.diameter, tool, c.holes.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn set_pins(
+        controller: &mut AppController<ScriptedBackend>,
+        pins: Vec<AlignmentPin>,
+    ) -> PinEdit {
+        controller
+            .apply_pin_edit(Command::SetAlignmentPins(SetAlignmentPinsArgs { pins }))
+            .expect("a set is never refused")
+    }
+
+    /// R1: two pin sizes give two pin-drill operations. Each drills the
+    /// holes of its own size with a tool of its own size. Before R1 the
+    /// one operation drilled the 8 mm hole with the 6 mm drill.
+    #[test]
+    fn two_pin_sizes_give_two_pin_drills_r1() {
+        let mut controller = flipped_first_controller();
+        let small = AlignmentPin::new(10.0, 20.0, 6.0);
+        let large = AlignmentPin::new(40.0, 20.0, 8.0);
+
+        // No 8 mm tool: the 6 mm operation is made, the 8 mm one refused.
+        let edit = set_pins(&mut controller, vec![small.clone(), large]);
+        assert!(
+            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Created { .. })),
+            "{edit:?}"
+        );
+        assert_eq!(
+            edit.outcome_of(8.0),
+            Some(&PinDrillSync::Refused(pin_drill_needs_tool(8.0)))
+        );
+        assert_eq!(
+            pin_drills(&controller),
+            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
+        );
+
+        // "Add a 8.00 mm drill": one tool, and the 8 mm operation with it.
+        let tools_before = controller.state.session.tools().len();
+        let tool_id = controller
+            .add_pin_drill_tool(8.0)
+            .expect("the session takes the drill");
+        assert_eq!(controller.state.session.tools().len(), tools_before + 1);
+        let tool = controller
+            .state
+            .session
+            .tools()
+            .iter()
+            .find(|t| t.id.0 == tool_id)
+            .expect("the new tool");
+        assert!((tool.diameter - 8.0).abs() < 1e-12, "{tool:?}");
+        assert_eq!(
+            pin_drills(&controller),
+            vec![
+                (6.0, 6.0, vec![[10.0, 20.0]]),
+                (8.0, 8.0, vec![[40.0, 20.0]]),
+            ],
+            "one operation per size, each with its own holes and a tool of its size"
+        );
+
+        // A pin move updates only the holes of its size.
+        let moved = AlignmentPin::new(42.0, 20.0, 8.0);
+        let edit = set_pins(&mut controller, vec![small.clone(), moved]);
+        assert_eq!(edit.outcome_of(6.0), Some(&PinDrillSync::Unchanged));
+        assert!(matches!(
+            edit.outcome_of(8.0),
+            Some(PinDrillSync::Updated { .. })
+        ));
+
+        // The 8 mm pin goes: its operation goes, the 6 mm one stays.
+        let edit = set_pins(&mut controller, vec![small]);
+        assert!(matches!(
+            edit.outcome_of(8.0),
+            Some(PinDrillSync::Removed { .. })
+        ));
+        assert_eq!(
+            pin_drills(&controller),
+            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
+        );
+    }
+
+    /// R2: the per-size tool chooser rebinds the operation of one size
+    /// through the door; the other size keeps its tool.
+    #[test]
+    fn the_tool_chooser_binds_one_size_r2() {
+        let mut controller = flipped_first_controller();
+        let _ = set_pins(&mut controller, vec![AlignmentPin::new(10.0, 20.0, 6.0)]);
+        let mut second = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+            ToolId(0),
+            ToolType::EndMill,
+        );
+        second.diameter = 6.0;
+        let index = controller
+            .state
+            .session
+            .apply(Command::AddTool(rs_cam_core::session::AddToolArgs {
+                tool: Box::new(second),
+            }))
+            .expect("a tool can be added")
+            .created
+            .expect("an index");
+        let second_id = controller.state.session.tools()[index].id.0;
+        assert_eq!(controller.state.session.pin_tool_candidates(6.0).len(), 2);
+        let outcome = controller.bind_pin_drill_tool(6.0, second_id);
+        assert!(
+            matches!(outcome, PinDrillSync::Updated { .. }),
+            "{outcome:?}"
+        );
+        let op = controller
+            .state
+            .session
+            .pin_drill_op_for(6.0)
+            .expect("the op");
+        assert_eq!(
+            controller.state.session.toolpath_configs()[op].tool_id,
+            second_id
+        );
+    }
+
+    /// R4: the wizard's Apply adds the queued drill, writes the pins in one
+    /// step (one undo entry) and leaves one operation per size.
+    #[test]
+    fn the_wizard_apply_adds_the_drill_and_writes_once_r4() {
+        let mut controller = flipped_first_controller();
+        let undo_before = controller.state.history.undo_len();
+        let pins = vec![
+            AlignmentPin::new(10.0, 20.0, 6.0),
+            AlignmentPin::new(40.0, 20.0, 8.0),
+        ];
+        let edit = controller
+            .apply_pin_wizard(pins.clone(), &[8.0])
+            .expect("the wizard's pins are taken");
+        assert!(
+            edit.pin_drill
+                .iter()
+                .all(|s| !matches!(s.outcome, PinDrillSync::Refused(_))),
+            "{edit:?}"
+        );
+        assert_eq!(controller.state.session.stock_config().alignment_pins, pins);
+        assert_eq!(
+            pin_drills(&controller),
+            vec![
+                (6.0, 6.0, vec![[10.0, 20.0]]),
+                (8.0, 8.0, vec![[40.0, 20.0]]),
+            ]
+        );
+        assert_eq!(
+            controller.state.history.undo_len(),
+            undo_before + 1,
+            "the pin edit is one undo step"
+        );
+    }
+
+    /// R4: the wizard works on its own draft. A wizard that edits its
+    /// pins and queues a drill, then closes without Apply, changes nothing.
+    #[test]
+    fn the_wizard_cancel_changes_nothing_r4() {
+        let mut controller = flipped_first_controller();
+        let _ = set_pins(&mut controller, vec![AlignmentPin::new(10.0, 20.0, 6.0)]);
+        let stock_before = controller.state.session.stock_config().clone();
+        let tools_before = controller.state.session.tools().len();
+        let toolpaths_before = toolpath_list(&controller);
+
+        let mut wizard = crate::ui::pin_wizard::PinWizardState::open(&controller.state.session);
+        wizard.pins = crate::ui::properties::pins::edit::move_all(&wizard.pins, 3.0, 0.0);
+        wizard.pins.push(AlignmentPin::new(40.0, 20.0, 8.0));
+        wizard.add_drills.push(8.0);
+        controller.state.panels.pin_wizard = Some(wizard);
+        // Cancel: the draw drops the wizard; nothing reaches the session.
+        controller.state.panels.pin_wizard = None;
+
+        assert_eq!(*controller.state.session.stock_config(), stock_before);
+        assert_eq!(controller.state.session.tools().len(), tools_before);
+        assert_eq!(toolpath_list(&controller), toolpaths_before);
+    }
+
+    /// A size with no drill refuses on every GUI pin edit, but it toasts
+    /// once: the pin section states the refusal in place.
+    #[test]
+    fn a_standing_refusal_toasts_once() {
+        let mut controller = flipped_first_controller();
+        let toasts = |c: &AppController<ScriptedBackend>| {
+            c.notifications()
+                .iter()
+                .filter(|n| n.message == pin_drill_needs_tool(7.0))
+                .count()
+        };
+        for x in [40.0, 41.0, 42.0] {
+            let mut draft = controller.state.session.stock_config().clone();
+            draft.alignment_pins = vec![
+                AlignmentPin::new(10.0, 20.0, 6.0),
+                AlignmentPin::new(x, 20.0, 7.0),
+            ];
+            crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
+            controller.discharge_panel_side_effects();
+        }
+        assert_eq!(toasts(&controller), 1, "one toast for a standing refusal");
+    }
+
+    /// R5a: a pin edit that keys the set drops the load-time keying
+    /// warning at once, and the modal closes when no warning is left. A
+    /// warning that is not a pin warning stays.
+    #[test]
+    fn a_keying_pin_edit_drops_the_stale_load_warning_r5a() {
+        let mut controller = flipped_first_controller();
+        let unkeyed = vec![
+            AlignmentPin::new(10.0, 20.0, 6.0),
+            AlignmentPin::new(30.0, 20.0, 6.0),
+        ];
+        let _ = set_pins(&mut controller, unkeyed);
+        let session = &controller.state.session;
+        let live: Vec<String> = session
+            .stock_config()
+            .pin_findings_for_setups(
+                session
+                    .list_setups()
+                    .iter()
+                    .map(|s| (s.face_up, s.z_rotation)),
+            )
+            .into_iter()
+            .map(|f| f.text)
+            .collect();
+        assert!(!live.is_empty(), "non-vacuity: the two pins give a finding");
+        // The state a load leaves: the pin warnings and one other warning.
+        controller.load_pin_warnings = live.clone();
+        controller.load_warnings = live;
+        controller.show_load_warnings = true;
+
+        // The keyed 3-pin set of the placer clears the pin warnings. The
+        // warning that is not a pin warning stays, and so does the modal.
+        controller
+            .load_warnings
+            .push("Model 'x.stl' failed to load".to_owned());
+        // One pin on the flip axis and a mirror pair off it: the first
+        // pattern of a small grid that keys on the fixture's stock.
+        let map = controller.state.session.pin_set_report().map;
+        let length = crate::ui::properties::pins::edit::axis_length(&map);
+        let keyed = [0.1, 0.2]
+            .into_iter()
+            .flat_map(|a| [0.7, 0.9].into_iter().map(move |b| (a, b)))
+            .flat_map(|(a, b)| [0.2, 0.3, 0.4].into_iter().map(move |c| (a, b, c)))
+            .filter_map(|(a, b, c)| {
+                crate::ui::properties::pins::edit::axis_pair_pins(
+                    &map,
+                    rs_cam_core::compute::alignment_pins::AxisPairPattern {
+                        axis_along: a * length,
+                        pair_along: b * length,
+                        pair_across: c * length,
+                        diameter: 6.0,
+                    },
+                )
+            })
+            .find(|pins| {
+                controller
+                    .state
+                    .session
+                    .pin_set_report_for(pins)
+                    .flip
+                    .keyed()
+            })
+            .expect("a keyed pattern exists on the fixture");
+        let _ = set_pins(&mut controller, keyed);
+        assert!(
+            controller.state.session.pin_set_report().flip.keyed(),
+            "non-vacuity: the new set keys"
+        );
+        let pin_left = controller
+            .load_warnings
+            .iter()
+            .filter(|w| controller.load_pin_warnings.contains(w))
+            .count();
+        assert_eq!(
+            pin_left,
+            controller.load_pin_warnings.len(),
+            "the list and the pin list agree"
+        );
+        assert_eq!(
+            controller.load_warnings,
+            vec!["Model 'x.stl' failed to load".to_owned()],
+            "only the warning that is not a pin warning stays"
+        );
+        assert!(
+            controller.show_load_warnings,
+            "one warning stays, so the modal stays"
+        );
+
+        // With no warning left, the modal closes.
+        controller.load_warnings.clear();
+        controller.load_pin_warnings = vec!["stale".to_owned()];
+        controller.load_warnings.push("stale".to_owned());
+        controller.show_load_warnings = true;
+        let pins = controller
+            .state
+            .session
+            .stock_config()
+            .alignment_pins
+            .clone();
+        let _ = set_pins(&mut controller, pins);
+        assert!(controller.load_warnings.is_empty());
+        assert!(!controller.show_load_warnings, "the modal closes");
+    }
+
+    /// The mini test piece (`planning/rivmap_block_job/testpiece_mini.toml`)
+    /// still loads with ONE pin-drill operation of 6 mm and the same three
+    /// holes. A pin edit that keeps the pins leaves it unchanged.
+    #[test]
+    fn the_mini_project_keeps_one_pin_drill_r1() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../planning/rivmap_block_job/testpiece_mini.toml");
+        let mut controller = AppController::with_backend(ScriptedBackend::new());
+        controller
+            .open_job_from_path(&path)
+            .expect("the mini project loads");
+        let expected = vec![[59.0, 32.5], [7.511, 9.0], [7.511, 56.0]];
+        assert_eq!(
+            pin_drills(&controller),
+            vec![(6.0, 6.0, expected.clone())],
+            "one 6 mm pin drill with the three holes"
+        );
+        let pins = controller
+            .state
+            .session
+            .stock_config()
+            .alignment_pins
+            .clone();
+        let edit = set_pins(&mut controller, pins);
+        assert!(
+            edit.pin_drill
+                .iter()
+                .all(|s| s.outcome == PinDrillSync::Unchanged),
+            "{edit:?}"
+        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0, expected)]);
     }
 }

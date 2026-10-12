@@ -370,7 +370,8 @@ pub struct SetUiViewParam {
     /// workspace so the panel is visible on the right.
     pub select: Option<String>,
     /// Modal to open: "feeds_modal", "optimize_modal", "export_wizard",
-    /// "tool_library", or "none" to close all modals.
+    /// "tool_library", "pin_wizard", or "none" to close all modals (the
+    /// load-warning modal and the pin wizard too).
     pub modal: Option<String>,
     /// Viewport overlays to switch on or off, as `{"<id>": true|false}`.
     ///
