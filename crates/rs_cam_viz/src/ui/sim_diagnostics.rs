@@ -2,7 +2,7 @@ use super::AppEvent;
 use super::components::histogram;
 use super::components::{
     ChartFace, ChartFlip, CountPill, DataRow, DataTable, DistributionChart, FreshnessGate,
-    NotMeasured, Role, SectionHeader, Sparkline, TraceOpen, text,
+    NotMeasured, Role, SectionHeader, Sparkline, TabBadge, TabStrip, TraceOpen, text,
 };
 use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_debug::{
@@ -11,7 +11,8 @@ use super::sim_debug::{
 use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{
-    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, SimulationIssueKind, SimulationState,
+    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, SimInspectorTab, SimulationIssueKind,
+    SimulationState,
 };
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
@@ -40,16 +41,11 @@ pub fn draw(
 
     let load_report = sim.cached_load_report(session);
 
-    // DC6 — the page is summary-first. ONE verdict line here, and every dense
-    // section below it is closed until the operator opens it. The line also
-    // carries freshness, so the stale signal is reachable even when a focused
-    // card replaces the scope sections (INS-001/005).
+    // DC6 — ONE verdict line opens the page. It also carries freshness, so
+    // the stale signal is on every tab and above a focused card
+    // (INS-001/005).
     draw_status_header(ui, sim, session);
 
-    // Scope-tiered body (§2.2/2.3). A focused hotspot/issue card is a
-    // mutually-exclusive drill-in overlay (early-return); otherwise the three
-    // concern-scoped sections — Project / Toolpath / Span — render in fixed
-    // order, each summary-first behind its own disclosure.
     if sim.results.is_none() {
         ui.label(
             egui::RichText::new("Run simulation to see the cut overview here.")
@@ -57,49 +53,120 @@ pub fn draw(
                 .italics()
                 .color(theme::TEXT_DIM),
         );
-    } else if draw_focused_hotspot_card(ui, sim, events).is_some() {
-        // Focused hotspot card shown — scope sections suppressed.
-    } else if draw_focused_issue_card(ui, sim, gui, max_feed, events).is_some() {
-        // Focused issue card shown — scope sections suppressed.
-    } else {
-        // Refresh the per-span aggregate cache once up front (cheap Arc
-        // pointer compare when unchanged) and compute the issue list once —
-        // both the Project and Span sections read it.
-        if let Some(trace_arc) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) {
-            let trace_arc = std::sync::Arc::clone(trace_arc);
-            sim.debug.span_aggregates.ensure_built(&trace_arc);
-        }
-        let issues = sim.issues(gui, max_feed);
+        return;
+    }
 
-        draw_project_section(ui, sim, session, gui, &issues, &load_report, events);
-        ui.add_space(6.0);
-        // The limit rows live in ONE place. When the focused toolpath has
-        // cut-metric cards, each card draws its own row and the section
-        // draws the rows with no card after them, so the Inspector lists
-        // every row once, in `criteria()` order. Otherwise "Now playing"
-        // draws the rows, as before.
-        let cut_metrics = cut_metrics_view(sim, session);
-        let cards_shown = matches!(cut_metrics, CutMetricsView::Cards(..));
-        draw_toolpath_section(ui, sim, &load_report, cards_shown, events);
-        ui.add_space(6.0);
-        draw_cut_metrics_section(ui, sim, session, &cut_metrics, &load_report, events);
+    // A focused hotspot or issue card is a drill-in. It sits above the tab
+    // strip, so its Jump, Clear, Prev and Next stay on every tab, and a
+    // focus set from the timeline is seen on any tab.
+    if draw_focused_hotspot_card(ui, sim, events).is_none() {
+        let _ = draw_focused_issue_card(ui, sim, gui, max_feed, events);
+    }
 
-        let trace_arc = sim
-            .results
-            .as_ref()
-            .and_then(|r| r.cut_trace.as_ref())
-            .map(std::sync::Arc::clone);
-        if let Some(trace) = trace_arc.as_ref() {
-            ui.add_space(6.0);
-            draw_span_section(ui, sim, gui, trace, &issues, events);
+    // Refresh the per-span aggregate cache once up front (cheap Arc pointer
+    // compare when unchanged). The Navigate tab reads it.
+    if let Some(trace_arc) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) {
+        let trace_arc = std::sync::Arc::clone(trace_arc);
+        sim.debug.span_aggregates.ensure_built(&trace_arc);
+    }
+
+    // Inspector clean-up round 3: the sections are tabs. Operator,
+    // 2026-10-13: "can we de-clutter by moving the sections into tabs.
+    // default to showing cut metric graphs." The tab lives in
+    // `SimulationState`, so it lasts while the app runs.
+    let badge = {
+        let triage = sim.cached_simulation_triage(session);
+        warnings_badge(triage.safety.len(), triage.actions.len())
+    };
+    let mut tab = sim.inspector_tab;
+    let _ = TabStrip::new(&mut tab)
+        .tab(SimInspectorTab::Metrics, SimInspectorTab::Metrics.label())
+        .tab_badge(
+            SimInspectorTab::Warnings,
+            SimInspectorTab::Warnings.label(),
+            badge,
+        )
+        .tab(SimInspectorTab::Navigate, SimInspectorTab::Navigate.label())
+        .tab(SimInspectorTab::Project, SimInspectorTab::Project.label())
+        .show(ui);
+    sim.inspector_tab = tab;
+    ui.add_space(tokens::SPACE_2);
+
+    match tab {
+        SimInspectorTab::Metrics => draw_metrics_tab(ui, sim, session, &load_report, events),
+        SimInspectorTab::Warnings => {
+            let issues = sim.issues(gui, max_feed);
+            draw_warnings_tab(ui, sim, session, &issues, &load_report, events);
         }
+        SimInspectorTab::Navigate => {
+            draw_now_playing(ui, sim, events);
+            let trace_arc = sim
+                .results
+                .as_ref()
+                .and_then(|r| r.cut_trace.as_ref())
+                .map(std::sync::Arc::clone);
+            if let Some(trace) = trace_arc.as_ref() {
+                let issues = sim.issues(gui, max_feed);
+                ui.add_space(tokens::SPACE_3);
+                draw_span_section(ui, sim, gui, trace, &issues, events);
+            }
+        }
+        SimInspectorTab::Project => draw_project_tab(ui, sim, session, gui),
     }
     // DC6 deletes the "View" section. It was a heading plus one paragraph
-    // that told the operator where the display controls live: the Overlays
-    // panel (shortcut O) and each toolpath row's C / R glyphs. Pattern C of
+    // that told the operator where the display controls live. Pattern C of
     // `planning/ui_declutter_2026-09-14/PLAN.md` rules that nothing which
-    // explains where a control lives survives. Every control the paragraph
-    // named is already reachable, so the paragraph goes and no control moves.
+    // explains where a control lives survives.
+}
+
+/// The badge of the Warnings tab: the number of safety and action items of
+/// the shared triage. The danger role when any item is a safety item, the
+/// caution role otherwise, and no badge at 0.
+///
+/// The count is the triage's, never `issue_count`: that field counts
+/// air-cut emission runs, thousands on a healthy cut (DC6).
+#[must_use]
+pub fn warnings_badge(safety: usize, actions: usize) -> Option<TabBadge> {
+    let count = safety + actions;
+    if count == 0 {
+        return None;
+    }
+    let role = if safety > 0 {
+        Role::Danger
+    } else {
+        Role::Caution
+    };
+    Some(TabBadge::Count(count, role))
+}
+
+/// The Metrics tab (the default): the cut-metric charts of the operation
+/// under the playhead, then the limits they do not chart.
+///
+/// When the operation has no chart, the tab draws its limit rows, so every
+/// row of `criteria()` stays on the page once.
+fn draw_metrics_tab(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    load_report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    let cut_metrics = cut_metrics_view(sim, session);
+    draw_cut_metrics_section(ui, sim, session, &cut_metrics, load_report, events);
+    if matches!(cut_metrics, CutMetricsView::Cards(..)) {
+        return;
+    }
+    let Some(boundary_id) = sim.current_boundary().map(|boundary| boundary.id) else {
+        return;
+    };
+    if let Some(tp) = load_report
+        .per_toolpath
+        .iter()
+        .find(|tp| tp.toolpath_id == boundary_id)
+    {
+        ui.add_space(tokens::SPACE_2);
+        draw_limit_rows(ui, &limit_rows(tp));
+    }
 }
 
 /// What the verdict line draws: the words, the voice, and the caveat on hover.
@@ -145,7 +212,7 @@ fn verdict_line(
     };
     let provenance = "From ProjectSession::simulation_triage \u{2014} the same answer the \
                       CLI report, the MCP get_diagnostics block and narration read. \
-                      Open the sections below for the detail."
+                      Open the Warnings tab for the detail."
         .to_owned();
 
     if let Some(first) = triage.safety.first() {
@@ -203,8 +270,8 @@ fn verdict_line(
 }
 
 /// The verdict line (DC6 / Rule A) — the one summary the page opens with,
-/// plus the freshness chip. Everything dense sits below it behind a
-/// disclosure. Drawn before the card dispatch so the stale signal covers the
+/// plus the freshness chip. Everything dense sits below it on a tab
+/// (round 3). Drawn before the tab strip so the stale signal covers the
 /// focused-card paths too (INS-001/005). No-op when no simulation has run.
 ///
 /// The panel used to hand-roll its own verdict here (collision count, then a
@@ -436,30 +503,20 @@ fn draw_focused_issue_card(
     Some(())
 }
 
-/// Project scope (pass2 inspector §2.3-A) — "is the whole run good?". A
-/// summary-first CollapsingHeader: the header line carries cycle time + the
-/// within/exceeding glance; the body holds the Global grid, the CountPill
-/// Findings rollup, the issue-kind partition, and the nested Top-hotspots
-/// triage list. The verdict banner + freshness moved up to the fixed status
-/// header (§2.1); the now-playing strip and Selected span are their own scope
-/// sections now.
-#[allow(clippy::too_many_arguments)]
-fn draw_project_section(
+/// The Warnings tab: the findings of the run.
+///
+/// The triage items first (the items the tab badge counts, each a jump),
+/// then the rows the stock change did not judge, the count pills, the
+/// metrics the cell size withheld, the issue kinds and the hotspot jump
+/// list. The tab is the disclosure, so no section inside it is closed.
+fn draw_warnings_tab(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
-    gui: &GuiState,
     issues: &[crate::state::simulation::SimulationIssue],
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
-    let (total_cutting, total_rapid, cycle) = aggregate_stats(sim, session, gui);
-    let cycle_str = match cycle.basis {
-        Some(_) => readiness::format_cycle_time(cycle.seconds),
-        // No estimate is a dash, never a plausible-looking 0:00.
-        None => "\u{2014}".to_owned(),
-    };
-
     // Roadmap C.2/F.11 — ToolLoadReport::summary() gives toolpath-counted
     // denominators (and operator-readable exceed labels), the same producer
     // the verdict HUD reads so the two rollups cannot diverge.
@@ -478,18 +535,8 @@ fn draw_project_section(
     );
     let collision_count = sim.checks.total_collision_count();
 
-    // Summary-first header line: cycle + the within/exceeding glance. The
-    // cycle carries its basis — this header sits a panel away from the
-    // timeline's readout, and the two must not look like different numbers.
-    // U3: the tag names each missing input, and reads "no estimate" when
-    // there is none.
-    let basis_tag = format!(" ({})", cycle.label());
-    let header =
-        format!("Project — {cycle_str}{basis_tag} · \u{2713}{ok} within · \u{2715}{bad} exceeding");
-    // DC6 / Rule A — the section header IS the summary, so the body starts
-    // closed. The verdict line above the sections is the page's one always-on
-    // answer; this grid, the findings pills and the hotspot list are the
-    // dig-deeper.
+    draw_triage_rows(ui, sim, session, events);
+
     // S6 (stock changes, "cut as"): the samples of an own material with no
     // force data. The gates did not judge them; name them, one line per
     // toolpath and material, in the core's words.
@@ -502,415 +549,452 @@ fn draw_project_section(
             )
         }))
         .show(ui);
-    egui::CollapsingHeader::new(header)
-        .id_salt("inspector_project")
-        .default_open(false)
-        .show(ui, |ui| {
-            // ─── Global stats ─── (cycle now lives in the header line)
-            SectionHeader::new("Global").show(ui);
-            DataTable::new("cut_overview_table")
-                .row(DataRow::value("Moves", sim.total_moves().to_string()))
-                .row(DataRow::value(
-                    "Operations",
-                    sim.boundaries().len().to_string(),
-                ))
-                .row(DataRow::measured(
-                    "Cut distance",
-                    format!("{total_cutting:.0}"),
-                    "mm",
-                ))
-                .row(DataRow::measured(
-                    "Rapid distance",
-                    format!("{total_rapid:.0}"),
-                    "mm",
-                ))
-                .show(ui);
-
-            ui.add_space(4.0);
-            ui.separator();
-
-            // Project-wide findings counts — the same `CountPill` grammar + `/T`
-            // denominator the verdict HUD uses, reading the same `summary()` producer
-            // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
-            // buckets are verdicts (stroked pills); collisions is an observation
-            // (fill-only pill).
-            crate::ui::components::SectionHeader::new("Findings").show(ui);
-            ui.horizontal_wrapped(|ui| {
-                ui.add(
-                    CountPill::verdict("\u{2713} within", ok)
-                        .denom(total_tp)
-                        .color(crate::ui::tokens::OK)
-                        .hover("Toolpaths within modeled load limits (of total modeled)."),
-                );
-                let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
-                    .denom(total_tp)
-                    .color(crate::ui::tokens::DANGER)
-                    .hover("Toolpaths exceeding a modeled load limit.");
-                ui.add(exceeds_pill.hide_when_zero());
-                // UP4: `unmodeled` is an ABSTENTION, not a caution. The gate
-                // could not model the toolpath, so it returned no verdict at
-                // all — and it wore the same amber as a measurement that came
-                // back and needs review. `DESIGN_SPEC.md` §2.6: "not run" is
-                // UNKNOWN.
-                ui.add(
+    ui.add_space(tokens::SPACE_2);
+    // Project-wide findings counts — the same `CountPill` grammar + `/T`
+    // denominator the verdict HUD uses, reading the same `summary()` producer
+    // so the two rollups cannot diverge (W3.3 carry-over, P4-001/002). Load
+    // buckets are verdicts (stroked pills); collisions is an observation
+    // (fill-only pill).
+    crate::ui::components::SectionHeader::new("Findings").show(ui);
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            CountPill::verdict("\u{2713} within", ok)
+                .denom(total_tp)
+                .color(crate::ui::tokens::OK)
+                .hover("Toolpaths within modeled load limits (of total modeled)."),
+        );
+        let exceeds_pill = CountPill::verdict("\u{2715} exceeding", bad)
+            .denom(total_tp)
+            .color(crate::ui::tokens::DANGER)
+            .hover("Toolpaths exceeding a modeled load limit.");
+        ui.add(exceeds_pill.hide_when_zero());
+        // UP4: `unmodeled` is an ABSTENTION, not a caution. The gate
+        // could not model the toolpath, so it returned no verdict at
+        // all. `DESIGN_SPEC.md` §2.6: "not run" is UNKNOWN.
+        ui.add(
             CountPill::verdict("\u{26A0} unmodeled", unmodeled)
                 .denom(total_tp)
                 .color(crate::ui::tokens::UNKNOWN)
                 .hide_when_zero()
                 .hover("Toolpaths the gate could not model (drill cycles, no vendor data, etc.)."),
         );
-                // Zero-count chips self-hide (density pass V4); the header's
-                // within/exceeding line carries the all-clear.
-                ui.add(
-                    CountPill::observation("collisions", collision_count)
-                        .color(theme::ERROR)
-                        .hide_when_zero()
-                        .hover("Rapid/holder collisions detected during simulation."),
-                );
-            });
+        // Zero-count chips self-hide (density pass V4).
+        ui.add(
+            CountPill::observation("collisions", collision_count)
+                .color(theme::ERROR)
+                .hide_when_zero()
+                .hover("Rapid/holder collisions detected during simulation."),
+        );
+    });
 
-            // Checkpoint D Q2 / census §4: the measurability strip, ABOVE
-            // everything else, because it qualifies everything else. Read
-            // from the shared `ProjectSession::simulation_triage` contract —
-            // the same object the MCP `get_diagnostics` response, the CLI
-            // report and narration consume, so the four surfaces cannot
-            // disagree about what was measured.
-            //
-            // Rendered only when something is NOT measurable: a strip that
-            // says "everything was measured" on every project is a strip
-            // nobody reads by the time it matters.
-            {
-                use rs_cam_core::stock::sim_measurability::Measurability;
-                // Cached on the load report, the session parts beside it
-                // and the evidence. A triage build per frame is a full
-                // trace pass per toolpath plus a sort, to render one strip.
-                let triage = sim.cached_simulation_triage(session);
-                let unmeasured: Vec<_> = triage
-                    .measurability
-                    .entries
-                    .iter()
-                    .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
-                    .collect();
-                if !unmeasured.is_empty() {
-                    let metrics: std::collections::BTreeSet<&str> =
-                        unmeasured.iter().map(|e| e.metric.label()).collect();
-                    let toolpaths: std::collections::BTreeSet<usize> =
-                        unmeasured.iter().map(|e| e.toolpath_id.0).collect();
-                    let reason = unmeasured
-                        .first()
-                        .and_then(|e| e.measurability.reason())
-                        .map(|r| r.describe())
-                        .unwrap_or_default();
-                    DataTable::new("cut_overview_not_measured_strip")
-                        .row(
-                            DataRow::value(
-                                "Not measured",
-                                metrics.into_iter().collect::<Vec<_>>().join(", "),
-                            )
-                            .status(Role::Unknown, format!("{} op(s)", toolpaths.len()))
-                            .hover(format!(
-                                "{reason}\n\nCollision detection, material removal and \
+    // Checkpoint D Q2 / census §4: the measurability strip, ABOVE
+    // everything else, because it qualifies everything else. Read
+    // from the shared `ProjectSession::simulation_triage` contract —
+    // the same object the MCP `get_diagnostics` response, the CLI
+    // report and narration consume, so the four surfaces cannot
+    // disagree about what was measured.
+    //
+    // Rendered only when something is NOT measurable: a strip that
+    // says "everything was measured" on every project is a strip
+    // nobody reads by the time it matters.
+    {
+        use rs_cam_core::stock::sim_measurability::Measurability;
+        // Cached on the load report, the session parts beside it
+        // and the evidence. A triage build per frame is a full
+        // trace pass per toolpath plus a sort, to render one strip.
+        let triage = sim.cached_simulation_triage(session);
+        let unmeasured: Vec<_> = triage
+            .measurability
+            .entries
+            .iter()
+            .filter(|e| matches!(e.measurability, Measurability::NotMeasurable(_)))
+            .collect();
+        if !unmeasured.is_empty() {
+            let metrics: std::collections::BTreeSet<&str> =
+                unmeasured.iter().map(|e| e.metric.label()).collect();
+            let toolpaths: std::collections::BTreeSet<usize> =
+                unmeasured.iter().map(|e| e.toolpath_id.0).collect();
+            let reason = unmeasured
+                .first()
+                .and_then(|e| e.measurability.reason())
+                .map(|r| r.describe())
+                .unwrap_or_default();
+            DataTable::new("cut_overview_not_measured_strip")
+                .row(
+                    DataRow::value(
+                        "Not measured",
+                        metrics.into_iter().collect::<Vec<_>>().join(", "),
+                    )
+                    .status(Role::Unknown, format!("{} op(s)", toolpaths.len()))
+                    .hover(format!(
+                        "{reason}\n\nCollision detection, material removal and \
                                  axial DOC are unaffected and remain valid. Gates reading \
                                  the withheld metrics abstain rather than judge it."
-                            )),
-                        )
-                        .show(ui);
-                }
-            }
+                    )),
+                )
+                .show(ui);
+        }
+    }
 
-            // Roadmap C.1 — partition the issue count by SimulationIssueKind into
-            // a "must address" cluster (collisions, hotspots) and an
-            // informational cluster (low engagement, air cut). The single
-            // `issue_count` row hid 24 800 air-cut "issues" alongside 14
-            // hotspots, which makes the project look broken when most of the
-            // count is emission noise.
-            let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
-            let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
-            let kinds_must = [
-                SimulationIssueKind::RapidCollision,
-                SimulationIssueKind::HolderCollision,
-                SimulationIssueKind::Hotspot,
-                SimulationIssueKind::Annotation,
-            ];
-            // R-4 (census §3.5 D3): `Annotation` was in NEITHER list, so
-            // generation-time debug annotations reached this panel and were
-            // silently dropped — the one issue kind with no home. It is a
-            // curated, generator-authored note, so it belongs with the
-            // must-address cluster's neighbours rather than beside the
-            // per-run tallies; it is listed last there so it cannot outrank
-            // a collision.
-            let kinds_info = [
-                SimulationIssueKind::LowEngagement,
-                SimulationIssueKind::AirCut,
-            ];
-            for kind in kinds_must {
-                let count = issues.iter().filter(|i| i.kind == kind).count();
-                if count > 0 {
-                    must_address.push((kind, count));
-                }
-            }
-            for kind in kinds_info {
-                let count = issues.iter().filter(|i| i.kind == kind).count();
-                informational.push((kind, count));
-            }
-            if !must_address.is_empty() {
-                // The severity is the status chip of each row, so the header
-                // carries no colour of its own.
-                SectionHeader::new("Must address").show(ui);
-                DataTable::new("cut_overview_must_address")
-                    .rows(must_address.iter().map(|(kind, count)| {
-                        DataRow::value(issue_kind_label(*kind), count.to_string())
-                            .status(Role::Danger, "act")
-                    }))
-                    .show(ui);
-            }
-            // Density pass V5 — informational rows report % of runtime from
-            // the trace summary's time-weighted tallies, not raw per-sample
-            // counts ("Air cut 12031" is an expert numerator with no
-            // denominator; "Air cut 12% of runtime" is a judgment a standard
-            // user can act on). Raw sample counts stay reachable on hover.
+    // Roadmap C.1 — partition the issue count by SimulationIssueKind into
+    // a "must address" cluster (collisions, hotspots) and an
+    // informational cluster (low engagement, air cut). The single
+    // `issue_count` row hid 24 800 air-cut "issues" alongside 14
+    // hotspots, which makes the project look broken when most of the
+    // count is emission noise.
+    let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
+    let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
+    let kinds_must = [
+        SimulationIssueKind::RapidCollision,
+        SimulationIssueKind::HolderCollision,
+        SimulationIssueKind::Hotspot,
+        SimulationIssueKind::Annotation,
+    ];
+    // R-4 (census §3.5 D3): `Annotation` was in NEITHER list, so
+    // generation-time debug annotations reached this panel and were
+    // silently dropped — the one issue kind with no home. It is a
+    // curated, generator-authored note, so it belongs with the
+    // must-address cluster's neighbours rather than beside the
+    // per-run tallies; it is listed last there so it cannot outrank
+    // a collision.
+    let kinds_info = [
+        SimulationIssueKind::LowEngagement,
+        SimulationIssueKind::AirCut,
+    ];
+    for kind in kinds_must {
+        let count = issues.iter().filter(|i| i.kind == kind).count();
+        if count > 0 {
+            must_address.push((kind, count));
+        }
+    }
+    for kind in kinds_info {
+        let count = issues.iter().filter(|i| i.kind == kind).count();
+        informational.push((kind, count));
+    }
+    if !must_address.is_empty() {
+        // The severity is the status chip of each row, so the header
+        // carries no colour of its own.
+        SectionHeader::new("Must address").show(ui);
+        DataTable::new("cut_overview_must_address")
+            .rows(must_address.iter().map(|(kind, count)| {
+                DataRow::value(issue_kind_label(*kind), count.to_string())
+                    .status(Role::Danger, "act")
+            }))
+            .show(ui);
+    }
+    // Density pass V5 — informational rows report % of runtime from
+    // the trace summary's time-weighted tallies, not raw per-sample
+    // counts ("Air cut 12031" is an expert numerator with no
+    // denominator; "Air cut 12% of runtime" is a judgment a standard
+    // user can act on). Raw sample counts stay reachable on hover.
+    //
+    // LH-1: "% of runtime" is ambiguous - these are shares of TOTAL
+    // runtime (cutting + rapids), the same measure the banner and the
+    // per-operation thresholds use. The air-cut row also carries the
+    // cutting-time reading on hover, because that is the number the
+    // MCP narration reports for the same seconds.
+    let time_pcts = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|trace| {
+            use rs_cam_core::stock::simulation_cut::AirCutRatios;
+            let s = &trace.summary;
+            // LH-1: the air-cut share comes from the trait, not from
+            // a division written here. `air_cut_pct_of_total_runtime`
+            // is the measure every shipped threshold is tuned
+            // against, and a hand-rolled copy is how two surfaces
+            // come to quote different numbers for the same seconds.
             //
-            // LH-1: "% of runtime" is ambiguous - these are shares of TOTAL
-            // runtime (cutting + rapids), the same measure the banner and the
-            // per-operation thresholds use. The air-cut row also carries the
-            // cutting-time reading on hover, because that is the number the
-            // MCP narration reports for the same seconds.
-            let time_pcts = sim
-                .results
-                .as_ref()
-                .and_then(|r| r.cut_trace.as_ref())
-                .map(|trace| {
-                    use rs_cam_core::stock::simulation_cut::AirCutRatios;
-                    let s = &trace.summary;
-                    // LH-1: the air-cut share comes from the trait, not from
-                    // a division written here. `air_cut_pct_of_total_runtime`
-                    // is the measure every shipped threshold is tuned
-                    // against, and a hand-rolled copy is how two surfaces
-                    // come to quote different numbers for the same seconds.
-                    //
-                    // The declutter of 2026-09-14 replaced that call with a
-                    // local `pct_of_total` closure. LH-1's negative arm greps
-                    // for the field name followed by a divide, which a
-                    // closure applied to the field does not contain — so the
-                    // guard missed it. (This comment must not spell that
-                    // pattern out either: the sentry scans raw source,
-                    // comments included, and an explanation of the trap that
-                    // contains the trap fails the test.) The closure survives
-                    // for low engagement, which the trait publishes no ratio
-                    // for.
-                    let low_engagement_pct_of_total = if s.total_runtime_s > 0.0 {
-                        s.low_engagement_time_s / s.total_runtime_s * 100.0
-                    } else {
-                        0.0
-                    };
-                    (
-                        s.air_cut_pct_of_total_runtime(),
-                        low_engagement_pct_of_total,
-                        s.air_cut_pct_of_cutting_time(),
-                    )
-                });
-            if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
-                SectionHeader::new("Informational").show(ui);
-                let count_for = |kind: SimulationIssueKind| {
-                    informational
-                        .iter()
-                        .find(|(k, _)| *k == kind)
-                        .map(|(_, c)| *c)
-                        .unwrap_or(0)
-                };
-                let air_denominator_note = format!(
-                    "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
+            // The declutter of 2026-09-14 replaced that call with a
+            // local `pct_of_total` closure. LH-1's negative arm greps
+            // for the field name followed by a divide, which a
+            // closure applied to the field does not contain — so the
+            // guard missed it. (This comment must not spell that
+            // pattern out either: the sentry scans raw source,
+            // comments included, and an explanation of the trap that
+            // contains the trap fails the test.) The closure survives
+            // for low engagement, which the trait publishes no ratio
+            // for.
+            let low_engagement_pct_of_total = if s.total_runtime_s > 0.0 {
+                s.low_engagement_time_s / s.total_runtime_s * 100.0
+            } else {
+                0.0
+            };
+            (
+                s.air_cut_pct_of_total_runtime(),
+                low_engagement_pct_of_total,
+                s.air_cut_pct_of_cutting_time(),
+            )
+        });
+    if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
+        SectionHeader::new("Informational").show(ui);
+        let count_for = |kind: SimulationIssueKind| {
+            informational
+                .iter()
+                .find(|(k, _)| *k == kind)
+                .map(|(_, c)| *c)
+                .unwrap_or(0)
+        };
+        let air_denominator_note = format!(
+            "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
                          the banner and the per-operation thresholds use. Over CUTTING \
                          time alone the same seconds read {air_pct_of_cutting:.0}%, \
                          which is what the MCP narration reports."
-                );
-                let rows = [
-                    (
-                        SimulationIssueKind::AirCut,
-                        air_pct,
-                        "Time the tool spends moving at cutting feed without \
+        );
+        let rows = [
+            (
+                SimulationIssueKind::AirCut,
+                air_pct,
+                "Time the tool spends moving at cutting feed without \
                              removing material.",
-                        air_denominator_note.as_str(),
-                    ),
-                    (
-                        SimulationIssueKind::LowEngagement,
-                        low_eng_pct,
-                        // R-3 (census §3.5 D2): this said "< 2% of diameter",
-                        // which is the AIR-CUT trigger, not this one. Low
-                        // engagement is the band ABOVE it — `0.02 <=
-                        // radial_woc < 0.10` (`simulation_cut.rs`).
-                        "Time spent cutting at light radial engagement \
+                air_denominator_note.as_str(),
+            ),
+            (
+                SimulationIssueKind::LowEngagement,
+                low_eng_pct,
+                // R-3 (census §3.5 D2): this said "< 2% of diameter",
+                // which is the AIR-CUT trigger, not this one. Low
+                // engagement is the band ABOVE it — `0.02 <=
+                // radial_woc < 0.10` (`simulation_cut.rs`).
+                "Time spent cutting at light radial engagement \
                              (2-10% of diameter). Below 2% counts as air cut, \
                              on the row above.",
-                        "",
-                    ),
-                ];
-                DataTable::new("cut_overview_informational")
-                    .rows(rows.into_iter().map(|(kind, pct, what, denominator_note)| {
-                        DataRow::value(
-                            issue_kind_label(kind),
-                            format!("{pct:.0}% of total runtime"),
-                        )
-                        .hover(format!(
-                            "{what}\n{} flagged SAMPLES — a per-sample emission \
+                "",
+            ),
+        ];
+        DataTable::new("cut_overview_informational")
+            .rows(rows.into_iter().map(|(kind, pct, what, denominator_note)| {
+                DataRow::value(
+                    issue_kind_label(kind),
+                    format!("{pct:.0}% of total runtime"),
+                )
+                .hover(format!(
+                    "{what}\n{} flagged SAMPLES — a per-sample emission \
                                  tally, not a defect count, and not the same \
                                  population as the coalesced issue RUNS the MCP and \
                                  CLI report (on the census fixture the two differed \
                                  by 43x).{denominator_note}",
-                            count_for(kind)
-                        ))
-                    }))
-                    .show(ui);
-            } else if sim.results.is_some() {
-                // U2: a run with no cut trace measured no air cut and no
-                // engagement. The rows stay, with the abstention mark, so an
-                // absent figure cannot read as a clean 0 %.
-                SectionHeader::new("Informational").show(ui);
-                let reason = MissingInput::NoCutTrace.remedy();
-                DataTable::new("cut_overview_informational_not_measured")
-                    .rows(
-                        [
-                            SimulationIssueKind::AirCut,
-                            SimulationIssueKind::LowEngagement,
-                        ]
-                        .into_iter()
-                        .map(|kind| DataRow::not_measured(issue_kind_label(kind)).hover(reason)),
+                    count_for(kind)
+                ))
+            }))
+            .show(ui);
+    } else if sim.results.is_some() {
+        // U2: a run with no cut trace measured no air cut and no
+        // engagement. The rows stay, with the abstention mark, so an
+        // absent figure cannot read as a clean 0 %.
+        SectionHeader::new("Informational").show(ui);
+        let reason = MissingInput::NoCutTrace.remedy();
+        DataTable::new("cut_overview_informational_not_measured")
+            .rows(
+                [
+                    SimulationIssueKind::AirCut,
+                    SimulationIssueKind::LowEngagement,
+                ]
+                .into_iter()
+                .map(|kind| DataRow::not_measured(issue_kind_label(kind)).hover(reason)),
+            )
+            .show(ui);
+    }
+    // Roadmap C.4 — project-wide hotspot triage list. Source:
+    // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
+    // single-card `draw_focused_hotspot_card` only shows one hotspot at
+    // a time; without this list a user has no glanceable triage of
+    // "where is the tool wasting time?" at the project level.
+    //
+    // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
+    // so we can drop the trace borrow before re-borrowing sim mutably
+    // inside the click handler.
+    let hotspot_snapshot: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = sim
+        .results
+        .as_ref()
+        .and_then(|r| r.cut_trace.as_ref())
+        .map(|trace| {
+            let mut v: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = trace
+                .hotspots
+                .iter()
+                .enumerate()
+                .map(|(idx, h)| {
+                    (
+                        idx,
+                        h.toolpath_id,
+                        h.move_start,
+                        h.wasted_runtime_s,
+                        h.peak_chipload_mm_per_tooth,
                     )
-                    .show(ui);
-            }
-            // Roadmap C.4 — project-wide hotspot triage list. Source:
-            // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
-            // single-card `draw_focused_hotspot_card` only shows one hotspot at
-            // a time; without this list a user has no glanceable triage of
-            // "where is the tool wasting time?" at the project level.
-            //
-            // Snapshot the (idx, toolpath_id, move_start, wasted, peak) tuples
-            // so we can drop the trace borrow before re-borrowing sim mutably
-            // inside the click handler.
-            let hotspot_snapshot: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = sim
-                .results
-                .as_ref()
-                .and_then(|r| r.cut_trace.as_ref())
-                .map(|trace| {
-                    let mut v: Vec<(usize, rs_cam_core::ToolpathId, usize, f64, f64)> = trace
-                        .hotspots
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, h)| {
-                            (
-                                idx,
-                                h.toolpath_id,
-                                h.move_start,
-                                h.wasted_runtime_s,
-                                h.peak_chipload_mm_per_tooth,
-                            )
-                        })
-                        .collect();
-                    v.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
-                    v
                 })
-                .unwrap_or_default();
-            if !hotspot_snapshot.is_empty() {
-                ui.add_space(4.0);
-                egui::CollapsingHeader::new(format!("Top hotspots ({})", hotspot_snapshot.len()))
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        const TOP_N: usize = 10;
-                        let shown: Vec<_> = hotspot_snapshot.iter().take(TOP_N).collect();
-                        let more = hotspot_snapshot.len().saturating_sub(TOP_N);
-                        let clicked = DataTable::new("cut_overview_top_hotspots")
-                            .rows(shown.iter().map(|(_, _, move_start, wasted, peak)| {
-                                DataRow::record(hotspot_summary_line(*move_start, *wasted, *peak))
-                                    .tone(crate::ui::tokens::CAUTION)
-                                    .hover("Click to focus and jump to this hotspot.")
-                                    .clickable()
-                            }))
-                            .row_opt((more > 0).then(|| {
-                                DataRow::record(format!(
-                                    "\u{2026} +{more} more (open Selected for span-scoped list)"
-                                ))
-                            }))
-                            .show(ui)
-                            .clicked;
-                        if let Some(&&(h_idx, tp_id, move_start, _, _)) =
-                            clicked.and_then(|index| shown.get(index))
-                        {
-                            let global_start = sim
-                                .global_move_for_local(tp_id, move_start)
-                                .unwrap_or(move_start);
-                            sim.debug.focused_hotspot = Some((tp_id, h_idx));
-                            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(
-                                SimJumpToMoveArgs {
-                                    move_index: global_start,
-                                },
-                            )));
-                        }
-                    });
-            }
-        });
+                .collect();
+            v.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+            v
+        })
+        .unwrap_or_default();
+    if !hotspot_snapshot.is_empty() {
+        // Round 3: the Warnings tab is the disclosure, so the list
+        // is open. It is the hotspot jump list of the run.
+        SectionHeader::new("Top hotspots")
+            .trailing(hotspot_snapshot.len().to_string())
+            .show(ui);
+        const TOP_N: usize = 10;
+        let shown: Vec<_> = hotspot_snapshot.iter().take(TOP_N).collect();
+        let more = hotspot_snapshot.len().saturating_sub(TOP_N);
+        let clicked = DataTable::new("cut_overview_top_hotspots")
+            .rows(shown.iter().map(|(_, _, move_start, wasted, peak)| {
+                DataRow::record(hotspot_summary_line(*move_start, *wasted, *peak))
+                    .tone(crate::ui::tokens::CAUTION)
+                    .hover("Click to focus and jump to this hotspot.")
+                    .clickable()
+            }))
+            .row_opt((more > 0).then(|| {
+                DataRow::record(format!(
+                    "\u{2026} +{more} more (the Navigate tab lists them by span)"
+                ))
+            }))
+            .show(ui)
+            .clicked;
+        if let Some(&&(h_idx, tp_id, move_start, _, _)) = clicked.and_then(|index| shown.get(index))
+        {
+            let global_start = sim
+                .global_move_for_local(tp_id, move_start)
+                .unwrap_or(move_start);
+            sim.debug.focused_hotspot = Some((tp_id, h_idx));
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: global_start,
+            })));
+        }
+    }
 }
 
-/// Toolpath scope (pass2 inspector §2.3-B) — "what is the op under the
-/// playhead doing?". The header names the playing op (or "—" when idle); the
-/// body carries the tool-load badges + the per-op Jump button.
-fn draw_toolpath_section(
+/// The triage items the Warnings badge counts: safety, then actions, in
+/// the contract's own order. A row with a toolpath jumps to its worst move.
+/// A clear triage reads one "Nothing to act on" row.
+fn draw_triage_rows(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    load_report: &ToolLoadReport,
-    cards_shown: bool,
+    session: &ProjectSession,
     events: &mut Vec<AppEvent>,
 ) {
+    let mut targets: Vec<Option<(ToolpathId, usize)>> = Vec::new();
+    let rows: Vec<DataRow> = {
+        let triage = sim.cached_simulation_triage(session);
+        triage
+            .safety
+            .iter()
+            .map(|finding| (Role::Danger, finding))
+            .chain(
+                triage
+                    .actions
+                    .iter()
+                    .map(|finding| (Role::Caution, finding)),
+            )
+            .map(|(role, finding)| {
+                let target = finding
+                    .dedup_key
+                    .toolpath_id
+                    .map(|id| (id, finding.worst.move_index));
+                targets.push(target);
+                let times = if finding.occurrences > 1 {
+                    format!(" \u{00B7} {}\u{00D7}", finding.occurrences)
+                } else {
+                    String::new()
+                };
+                let row = DataRow::note(role, finding.diagnostic.message.clone());
+                match target {
+                    Some((_, local_move)) => row
+                        .hover(format!(
+                            "Move {local_move} of its operation{times}. Click to jump to it."
+                        ))
+                        .clickable(),
+                    None => row.hover(format!("From the simulation triage{times}.")),
+                }
+            })
+            .collect()
+    };
+    if rows.is_empty() {
+        DataTable::new("warnings_triage_clear")
+            .row(DataRow::note(Role::Ok, "Nothing to act on"))
+            .show(ui);
+        return;
+    }
+    let clicked = DataTable::new("warnings_triage")
+        .rows(rows)
+        .show(ui)
+        .clicked;
+    if let Some((toolpath_id, local_move)) =
+        clicked.and_then(|index| targets.get(index).copied().flatten())
+    {
+        let move_index = sim
+            .global_move_for_local(toolpath_id, local_move)
+            .unwrap_or(local_move);
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index,
+        })));
+    }
+}
+
+/// The Project tab: the run as a whole. The cycle time with its basis, the
+/// move and operation counts, and the cut and rapid distances.
+fn draw_project_tab(
+    ui: &mut egui::Ui,
+    sim: &SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) {
+    let (total_cutting, total_rapid, cycle) = aggregate_stats(sim, session, gui);
+    // No estimate is a dash, never a plausible-looking 0:00. The basis is
+    // on the face: this tab sits a panel away from the timeline's readout,
+    // and the two must not look like different numbers. U3: the basis
+    // names each missing input, and reads "no estimate" when there is none.
+    let cycle_str = match cycle.basis {
+        Some(_) => readiness::format_cycle_time(cycle.seconds),
+        None => "\u{2014}".to_owned(),
+    };
+    DataTable::new("cut_overview_table")
+        .row(
+            DataRow::value("Cycle time", format!("{cycle_str} ({})", cycle.label()))
+                .hover("The same estimate as the timeline readout."),
+        )
+        .row(DataRow::value("Moves", sim.total_moves().to_string()))
+        .row(DataRow::value(
+            "Operations",
+            sim.boundaries().len().to_string(),
+        ))
+        .row(DataRow::measured(
+            "Cut distance",
+            format!("{total_cutting:.0}"),
+            "mm",
+        ))
+        .row(DataRow::measured(
+            "Rapid distance",
+            format!("{total_rapid:.0}"),
+            "mm",
+        ))
+        .show(ui);
+}
+
+/// The operation under the playhead and its jump (Navigate tab). The limit
+/// rows of the operation are on the Metrics tab.
+fn draw_now_playing(ui: &mut egui::Ui, sim: &SimulationState, events: &mut Vec<AppEvent>) {
     let now = sim
         .current_boundary()
-        .map(|boundary| (boundary.id, boundary.name.clone(), boundary.start_move));
-    let title = match &now {
-        Some((_, name, _)) => format!("Now playing: {name}"),
-        None => "Now playing: \u{2014}".to_owned(),
+        .map(|boundary| (boundary.name.clone(), boundary.start_move));
+    SectionHeader::new("Now playing").show(ui);
+    let Some((name, boundary_start)) = now else {
+        DataTable::new("now_playing")
+            .row(
+                DataRow::value("Operation", "\u{2014}")
+                    .hover("Scrub or play to see the active op."),
+            )
+            .show(ui);
+        return;
     };
-    // DC6 / Rule A — the title names the op under the playhead, which is the
-    // summary. The badges and the two buttons are the dig-deeper, so the body
-    // starts closed. It used to open itself on every frame a boundary played.
-    egui::CollapsingHeader::new(title)
-        .id_salt("inspector_toolpath")
-        .default_open(false)
-        .show(ui, |ui| {
-            let Some((boundary_id, _, boundary_start)) = now else {
-                ui.label(
-                    egui::RichText::new("Scrub or play to see the active op.")
-                        .small()
-                        .italics()
-                        .color(theme::TEXT_DIM),
-                );
-                return;
-            };
-            if let Some(tp) = load_report
-                .per_toolpath
-                .iter()
-                .find(|tp| tp.toolpath_id == boundary_id)
-            {
-                // V2 (2026-09-18) — the three caps this function used to
-                // build are gone. Two of them were GUI-owned: the power cap
-                // as `max_power_kw × safety_factor`, and the deflection cap
-                // as an L over D ratio of 4.0 beside a gate that judges
-                // MILLIMETRES. Every row now reads
-                // `CriterionStatus::bound`, which is the value the gate
-                // itself judged against (S4).
-                //
-                // Package C (2026-09-23): when the "Cut metrics" section
-                // shows cards, it draws every row of this toolpath, so the
-                // rows are not drawn twice.
-                if !cards_shown {
-                    draw_limit_rows(ui, &limit_rows(tp));
-                }
-            }
-            ui.horizontal(|ui| {
-                if ui.small_button("Jump to start").clicked() {
-                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                        move_index: boundary_start,
-                    })));
-                }
-            });
-        });
+    DataTable::new("now_playing")
+        .row(DataRow::value("Operation", name))
+        .show(ui);
+    if ui.small_button("Jump to start").clicked() {
+        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+            move_index: boundary_start,
+        })));
+    }
 }
 
 fn issue_kind_label(kind: SimulationIssueKind) -> &'static str {
@@ -1170,6 +1254,17 @@ fn limit_data_row(row: &LimitRow<'_>) -> DataRow {
     let (_, face) = verdict_face(row);
     let (role, word) = limit_status(row);
     let caption = row_caption(row);
+    // Round 3: a limit that is not modelled reads "N/A". The caption (for
+    // example "no machine-side thrust rating is published") and the status
+    // word go to the hover, so the row carries no chip.
+    if row.status.state == LoadState::Unmodeled && !row.status.is_vacuous() {
+        let hover = if caption.is_empty() {
+            hover
+        } else {
+            format!("{caption}\n{hover}")
+        };
+        return DataRow::not_measured(face).status(role, word).hover(hover);
+    }
     let data = if caption.is_empty() {
         DataRow::record(face)
     } else {
@@ -1898,9 +1993,7 @@ fn abstention_row(
         _ => not_measured_text(reason),
     };
     let hover = cut_metric_status_hover(card, row, &spec);
-    DataRow::not_measured(spec.title)
-        .status(Role::Unknown, "not measured")
-        .hover(format!("{hover}\n{reason}"))
+    DataRow::not_measured(spec.title).hover(format!("{hover}\n{reason}"))
 }
 
 /// The rows that say the cell size withheld a metric of `toolpath_id`.
@@ -1948,11 +2041,15 @@ fn measurability_rows(
             MeasurabilityReason::BelowFreshMaterialFloor { .. }
             | MeasurabilityReason::KinematicsNotModelled => "",
         };
-        Some(
-            DataRow::not_measured(capitalised(metric.label()))
-                .status(role, word)
-                .hover(format!("{}{fix}", reason.describe())),
-        )
+        let name = capitalised(metric.label());
+        let hover = format!("{}{fix}", reason.describe());
+        // Round 3: a metric the cell withheld reads "N/A", and the reason
+        // ("not measurable at 0.20 mm cell") is the first hover line. A
+        // degraded metric was measured, so its word is the value.
+        Some(match role {
+            Role::Caution => DataRow::value(name, word).tone(role.text()).hover(hover),
+            _ => DataRow::not_measured(name).status(role, word).hover(hover),
+        })
     })
     .collect()
 }
@@ -2178,7 +2275,7 @@ fn span_display_label(span: &Span, sid: usize) -> String {
 }
 
 /// Find the deepest non-boundary span on `toolpath_id` that contains the
-/// playhead's local move. Used to drive the Selected section when the user
+/// playhead's local move. Used to drive the Span section when the user
 /// hasn't locked it to a ribbon click. Prefers the span with the smallest
 /// move range, which corresponds to the innermost structural level
 /// (Region, then DepthPass, then Operation).
@@ -2205,12 +2302,12 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
         .map(|(i, _)| i as u32)
 }
 
-/// Span scope (pass2 inspector §2.3-C) — "what's in the span I picked?". A
-/// CollapsingHeader titled "Selected: <span>" with the in-panel lock toggle
-/// (INS-008); the body holds the span facts, the per-span metrics grid, and
-/// the in-span findings list, then the nested "Generator item" and "Generation
-/// trace" drill-downs (§2.4), so the inspector has a single "what's selected"
-/// home with two clearly-labelled sub-tiers.
+/// Span scope (pass2 inspector §2.3-C) — "what's in the span I picked?". On
+/// the Navigate tab: a "Span" header that names the span, the in-panel lock
+/// toggle (INS-008), the span facts, the per-span metrics, the in-span
+/// findings as jump rows, then the nested "Generator item" and "Generation
+/// trace" drill-downs (§2.4). The tab is the disclosure, so the block is
+/// open (inspector clean-up round 3).
 fn draw_span_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -2245,43 +2342,40 @@ fn draw_span_section(
     } else {
         ""
     };
-    let title = format!("Selected: {header_label}{lock_glyph}");
+    // Round 3: the Navigate tab is the disclosure, so the span block is open.
+    SectionHeader::new("Span")
+        .trailing(format!("{header_label}{lock_glyph}"))
+        .show(ui);
+    // In-panel lock toggle (INS-008) — the panel's own entry point to
+    // the span lock, writing the same span_scope field the ribbon does.
+    ui.horizontal(|ui| {
+        let (lbl, hover) = if locked_span_id.is_some() {
+            ("\u{1F512} locked", "Click to follow the playhead again.")
+        } else {
+            (
+                "\u{1F513} follow",
+                "Click to lock the Span section to the current span.",
+            )
+        };
+        if ui.small_button(lbl).on_hover_text(hover).clicked() {
+            if locked_span_id.is_some() {
+                sim.debug.span_scope.span_id = None;
+                sim.debug.span_scope.toolpath_id = None;
+            } else if let (Some(tp), Some(sid)) = (toolpath_id, effective) {
+                sim.debug.span_scope.span_id = Some(sid);
+                sim.debug.span_scope.toolpath_id = Some(tp);
+            }
+        }
+    });
 
-    egui::CollapsingHeader::new(title)
-        .id_salt("inspector_span")
-        .default_open(locked_span_id.is_some())
-        .show(ui, |ui| {
-            // In-panel lock toggle (INS-008) — the panel's own entry point to
-            // the span lock, writing the same span_scope field the ribbon does.
-            ui.horizontal(|ui| {
-                let (lbl, hover) = if locked_span_id.is_some() {
-                    ("\u{1F512} locked", "Click to follow the playhead again.")
-                } else {
-                    (
-                        "\u{1F513} follow",
-                        "Click to lock the Selected section to the current span.",
-                    )
-                };
-                if ui.small_button(lbl).on_hover_text(hover).clicked() {
-                    if locked_span_id.is_some() {
-                        sim.debug.span_scope.span_id = None;
-                        sim.debug.span_scope.toolpath_id = None;
-                    } else if let (Some(tp), Some(sid)) = (toolpath_id, effective) {
-                        sim.debug.span_scope.span_id = Some(sid);
-                        sim.debug.span_scope.toolpath_id = Some(tp);
-                    }
-                }
-            });
+    draw_span_body(ui, sim, gui, trace, issues, toolpath_id, effective, events);
 
-            draw_span_body(ui, sim, gui, trace, issues, toolpath_id, effective, events);
-
-            // Nested drill-downs (§2.4): the generator item that produced the
-            // span, and the generation-phase trace — folded here so the top
-            // level no longer carries two competing "selection" collapsers.
-            ui.add_space(4.0);
-            draw_generator_item_disclosure(ui, sim, gui);
-            draw_generation_trace_disclosure(ui, sim, gui);
-        });
+    // Nested drill-downs (§2.4): the generator item that produced the
+    // span, and the generation-phase trace — folded here so the top
+    // level no longer carries two competing "selection" collapsers.
+    ui.add_space(4.0);
+    draw_generator_item_disclosure(ui, sim, gui);
+    draw_generation_trace_disclosure(ui, sim, gui);
 }
 
 /// The Span section body: span facts, the per-span metrics grid, and the

@@ -12,7 +12,7 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 
 use super::{
     CutMetricCache, HolderCheckScope, IssueListCache, SetupBoundary, SimCheckpoint,
-    SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
+    SimInspectorTab, SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
     SimulationTriageCache, SpanAggregateCache, SpanScope, StockVizMode, ToolpathBoundary,
 };
 use crate::state::toolpath::ToolpathId;
@@ -79,6 +79,7 @@ impl SimulationState {
             cut_metric_over_time: Vec::new(),
             open_trace: None,
             trace_window: None,
+            inspector_tab: SimInspectorTab::default(),
         }
     }
 

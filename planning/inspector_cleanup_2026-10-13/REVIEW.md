@@ -357,3 +357,108 @@ Changed on purpose (a parser follows the new shape):
   `the_limit_rows_read_their_own_bound_g_ownbound`: the abstention and the
   limit rows are table rows.
 - `the_inspector_text_is_bounded_ic1`: the Feeds caps are tighter.
+
+## Round 3 (2026-10-13): tabs, the default width, N/A
+
+Operator, after round 2: "looks better! far better. now to clean up more.
+can we de-clutter by moving the sections into tabs. default to showing cut
+metric graphs. Tabs for warning (with the count as an icon) tab for
+navigation and similar? Also default the side bar to be opened fully (it
+default clips the right side, you dont see things like '-- Not
+measurable'). Also instead of that not measurable can you just replace the
+-- with 'N/A' and remove the extra tag on the right."
+
+### The tabs
+
+The Simulation inspector (`ui/sim_diagnostics.rs`) keeps the heading, the
+verdict line, the air-cut caution and the freshness chip at the top. Under
+them is ONE tab strip. A focused hotspot or issue card sits above the strip,
+so its Jump, Clear, Prev and Next are on every tab. The tab is
+`SimulationState::inspector_tab` (runtime state, not egui memory, not
+saved with the project). The tab is the disclosure, so no section inside a
+tab is closed.
+
+| Tab | What it holds |
+|---|---|
+| **Metrics** (default) | The cut-metric section: the Operation row, the charts, the abstention table, Other limits. When the operation has no chart, its limit rows. |
+| **Warnings** | The triage items (safety, then actions) as jump rows, or "Nothing to act on"; the not-judged rows; the Findings pills; the not-measured strip; Must address; Informational; Top hotspots (open, clickable). |
+| **Navigate** | Now playing (the operation and Jump to start); the Span block with its lock, facts, metrics and in-span findings; Generator item; Generation trace. |
+| **Project** | Cycle time with its basis, moves, operations, cut and rapid distance. |
+
+The Warnings label carries the count of the triage's safety and action
+items: "Warnings ⚠ 3". The badge is in the danger colour when one item is
+a safety item, in the caution colour otherwise, and absent at 0. The count
+is the triage's, never `issue_count` (DC6). New: the triage items are now
+listed as rows. Before, only the first one was on the verdict line.
+
+The strip is `ui/components/tab_strip.rs` (`TabStrip`, `TabBadge`), made
+from the toolpath inspector's strip in `properties/tab_badges.rs`, which
+now calls it. The workspace bar keeps its own tabs (chrome; UP3 scans that
+file). `DESIGN_SPEC.md` §4.15 describes the component.
+
+The toolpath inspector (`ui/properties/`) already has a tab strip, and its
+simulation readouts are single sections, not a stacked layout. It is
+unchanged apart from the shared strip.
+
+### The default width
+
+`app.rs` `SIM_DIAGNOSTICS_DEFAULT_WIDTH` = 304 points (was 240). The
+sentry `the_sim_inspector_is_tabbed_ic3` draws the Metrics tab of the
+simulated `limits_fixture` pocket through `side_panel` and sweeps from 240
+in 8-point steps. It reads the painted galleys: an elided run (`truncate`
+cut it) or a run past the content edge fails the width. The measurement:
+
+| Width | Cut short |
+|---|---|
+| 240 | the card peaks ("peak 41 % of limit"), the cell-size rows, "Radial engagement", "Chip engagement" |
+| 264 | 3 peaks, "Radial engagement", "Chip engagement" |
+| 280, 288 | "Radial engagement" (the 42 % name column) |
+| 296 | nothing cut; 6 right-aligned runs 1.16 points past the edge |
+| 304 | nothing |
+
+The sentry holds the constant to at least the measured width and at most
+one step wider. The user's own resize still persists (egui `PanelState`).
+At a 1600-point window the two Simulation rails take 240 + 304 points.
+
+### N/A
+
+`DataTable` (`components/data_table.rs`): a `DataRow::not_measured` value
+cell paints "N/A" (`NOT_MEASURED_TEXT`) in `UNKNOWN`. The row has no status
+or source slot. A status set on it becomes the first line of the row hover
+("Not measurable at 0.50 mm cell"), then the reason. Every table follows,
+because the rule is in the component. `NotMeasured` and `KeyValueRow` keep
+the dash (`tokens::GLYPH_UNKNOWN`; UP2 holds it).
+
+In `sim_diagnostics.rs`:
+
+- A limit row that is not modelled (for example gantry push: "no
+  machine-side thrust rating is published") is an N/A row. Its face keeps
+  the dash in the name (`the_gantry_row_paints_a_dash_g_ownbound`).
+- A cell-size row that is `Degraded` was measured, so it shows the word
+  "degraded at 0.50 mm cell" as its value in the caution colour, not N/A.
+
+### Tests
+
+New: `the_sim_inspector_is_tabbed_ic3` (6 arms): the default tab is Metrics
+and paints the four card titles and none of the other tabs' headers; each
+tab paints its own anchor; the badge counts and roles; the painted label
+"Warnings ⚠ 3" and no badge at 0; a not-measured row paints "N/A" and no
+chip, with the status word on the hover; the default width shows the
+Metrics tab whole, with the sweep above.
+
+Changed on purpose:
+
+- `every_side_panel_fits_its_width_g_panelfit`: `WIDTHS` also holds
+  `SIM_DIAGNOSTICS_DEFAULT_WIDTH`.
+- `component_contracts_up2`: the component set holds `TabStrip` (13 to 14).
+- `the_simulation_page_is_summary_first_dc6`: no arm changed. The header
+  states the new contract: the verdict line opens the page, and the Metrics
+  tab is the default and shows the charts first.
+
+### Open for the operator
+
+- The cards still follow the playhead, not the selection (round 2, cause 2).
+- The Warnings list shows the triage's safety and action items. Advisories
+  are only in the verdict line, as before.
+- A timeline focus does not switch the tab; the focused card shows above
+  the strip on every tab.

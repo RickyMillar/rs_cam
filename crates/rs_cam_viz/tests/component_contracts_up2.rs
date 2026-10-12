@@ -529,7 +529,7 @@ fn the_component_set_is_complete_up2() {
     // this file compiling, which is louder than a runtime check.
     use components::{
         Banner, Button, Card, ChoiceRow, DataTable, EmptyState, KeyValueRow, NotMeasured, Notice,
-        NoticeStack, Role, SectionHeader, StatusChip,
+        NoticeStack, Role, SectionHeader, StatusChip, TabStrip,
     };
 
     let ctx = ctx();
@@ -557,13 +557,20 @@ fn the_component_set_is_complete_up2() {
             .show(ui);
         let _ = NoticeStack::new(vec![Notice::new(Role::Info, "hello")]).show(ui);
         let _ = ui.add(NotMeasured::new());
+        let mut tab = 0_u8;
+        let _ = TabStrip::new(&mut tab)
+            .tab(0, "Metrics")
+            .tab(1, "Warnings")
+            .show(ui);
     });
 
     // The spec's component list. If §4 grows a component, this number moves
     // and the test says so rather than silently covering less.
     // W3 (2026-09-18): 12 to 13. Section 4.14 `ChoiceRow` is W2's new
     // component, the one renderer for a small closed choice (G-STARTFROM).
-    const SPEC_COMPONENTS: usize = 13;
+    // IC3 (2026-10-13): 13 to 14. Section 4.15 `TabStrip` is the one strip
+    // of tabs in a panel.
+    const SPEC_COMPONENTS: usize = 14;
     let covered = [
         "SectionHeader",
         "Card",
@@ -577,6 +584,7 @@ fn the_component_set_is_complete_up2() {
         "NoticeStack",
         "NotMeasured",
         "ChoiceRow",
+        "TabStrip",
         "motion",
     ];
     assert_eq!(

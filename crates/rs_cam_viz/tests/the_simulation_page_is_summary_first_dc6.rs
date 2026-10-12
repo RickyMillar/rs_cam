@@ -40,6 +40,13 @@
 //! air-cut bar. That is how one project's findings came to rank differently
 //! on each surface.
 //!
+//! Inspector clean-up round 3 (2026-10-13) replaced the stacked, closed
+//! sections with one tab strip. The contract is now: the verdict line opens
+//! the page, and the Metrics tab is the default and shows the cut-metric
+//! charts first. `the_sim_inspector_is_tabbed_ic3` holds the tabs; the arms
+//! below hold the verdict line, the timeline and the one run route, which
+//! did not change.
+//!
 //! `issue_count` is named here because it is the trap: it is a coalesced
 //! air-cut emission tally, thousands of entries on a healthy cut, and it has
 //! been mistaken for a defect count before.

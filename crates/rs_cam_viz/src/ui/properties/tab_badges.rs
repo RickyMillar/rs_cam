@@ -4,6 +4,7 @@
 
 use super::ToolpathTab;
 use crate::state::toolpath::{HeightContext, StockSource, ToolpathEntry};
+use crate::ui::components::{TabBadge, TabStrip};
 
 /// Per-tab badge state for the tab bar.
 pub(super) struct TabBadges {
@@ -372,87 +373,15 @@ fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static st
 }
 
 pub(super) fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabBadges) {
-    // `horizontal_wrapped`: the five tabs' natural width (~350 points) exceeds
-    // the Simulation workspace's 240-point rail, and a plain horizontal row
-    // would paint the last tabs past the panel edge (cut off, exactly the
-    // defect UR1 bans). Wrapping drops the tail tabs to a second row in a
-    // narrow rail instead.
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        for &tab in ToolpathTab::ALL {
-            let is_active = *active == tab;
-            // The inspector tab strip takes the same treatment as the
-            // workspace tabs: an active tab is a SELECTED thing, so it takes
-            // ACCENT_QUIET. It used to carry from_rgb(55, 60, 80), a private
-            // blue-violet one step off the workspace bar's own private
-            // violet — two tab strips, two invented palettes, neither
-            // matching the product.
-            let (bg, text_color) = if is_active {
-                (
-                    crate::ui::tokens::ACCENT_QUIET,
-                    crate::ui::tokens::TEXT_STRONG,
-                )
-            } else {
-                (egui::Color32::TRANSPARENT, crate::ui::tokens::TEXT_MUTED)
-            };
-            let label = if let Some(badge_color) = badges.for_tab(tab) {
-                // Prepend a colored dot
-                let mut job = egui::text::LayoutJob::default();
-                job.append(
-                    "\u{25CF} ",
-                    0.0,
-                    egui::TextFormat {
-                        color: badge_color,
-                        font_id: egui::FontId::proportional(8.0),
-                        ..Default::default()
-                    },
-                );
-                job.append(
-                    tab.label(),
-                    0.0,
-                    egui::TextFormat {
-                        color: text_color,
-                        font_id: egui::FontId::proportional(13.0),
-                        ..Default::default()
-                    },
-                );
-                egui::WidgetText::LayoutJob(std::sync::Arc::new(job))
-            } else {
-                egui::RichText::new(tab.label())
-                    .color(text_color)
-                    .strong()
-                    .into()
-            };
-            let button = egui::Button::new(label)
-                .fill(bg)
-                // §2.2: the radius is on the two TOP corners, because a tab
-                // joins the panel below it.
-                .corner_radius(egui::CornerRadius {
-                    nw: crate::ui::tokens::RADIUS_SM,
-                    ne: crate::ui::tokens::RADIUS_SM,
-                    sw: 0,
-                    se: 0,
-                })
-                // Was 24, below the 26-point control floor. That is why the
-                // "Dressup" tab wrapped to "Dressu / p".
-                .min_size(egui::vec2(55.0, crate::ui::tokens::ROW_ACTION));
-            let response = ui.add(button);
-            if response.clicked() && !is_active {
-                *active = tab;
-            }
-            if is_active {
-                let rect = response.rect;
-                ui.painter().line_segment(
-                    [
-                        egui::pos2(rect.min.x, rect.max.y),
-                        egui::pos2(rect.max.x, rect.max.y),
-                    ],
-                    egui::Stroke::new(2.0_f32, crate::ui::tokens::ACCENT),
-                );
-            }
-            ui.add_space(2.0);
-        }
-    });
+    // The strip is the shared `components::TabStrip` (inspector clean-up
+    // round 3); the Simulation inspector draws the same one. It wraps in a
+    // narrow rail, so no tab paints past the panel edge (UR1).
+    let strip = ToolpathTab::ALL
+        .iter()
+        .fold(TabStrip::new(active), |strip, &tab| {
+            strip.tab_badge(tab, tab.label(), badges.for_tab(tab).map(TabBadge::Dot))
+        });
+    let _ = strip.show(ui);
 }
 
 /// The caution line for a [`rs_cam_core::surface::rest_field::RestRegionPathology`]

@@ -25,6 +25,8 @@
 //! Four row kinds share the columns:
 //!
 //! - a value (`DataRow::value`, `DataRow::measured`, `DataRow::not_measured`);
+//!   a value that is not measured reads "N/A", with no chip after it, and its
+//!   reason is on the row hover (round 3);
 //! - a change, current → recommended and the ratio (`DataRow::change`);
 //! - a bar from 0 to a limit (`DataRow::bar`);
 //! - a record, one full-width line for a sentence that core writes
@@ -36,6 +38,12 @@
 use crate::ui::components::{ProvKind, ProvenanceBadge};
 use crate::ui::components::{Role, kv_row::row_hover_tint};
 use crate::ui::tokens;
+
+/// The text a not-measured value cell shows (inspector clean-up round 3).
+///
+/// Operator, 2026-10-13: "instead of that not measurable can you just
+/// replace the -- with 'N/A' and remove the extra tag on the right".
+pub const NOT_MEASURED_TEXT: &str = "N/A";
 
 /// The share of the row width that the name column takes, by default.
 const NAME_SHARE: f32 = 0.42;
@@ -55,7 +63,7 @@ enum Cell {
         unit: Option<String>,
         tone: egui::Color32,
     },
-    /// The product did not measure it: the abstention mark, never a zero.
+    /// The product did not measure it: "N/A", never a zero.
     NotMeasured,
     /// The current value, an arrow, the recommended value and the ratio tag.
     Change {
@@ -123,7 +131,9 @@ impl DataRow {
         Self::value(name, value).unit(unit)
     }
 
-    /// The product abstained. The value column shows the abstention mark.
+    /// The product abstained. The value column shows "N/A". The row has no
+    /// status or source slot: a status word set on it moves to the first
+    /// line of the row hover.
     pub fn not_measured(name: impl Into<String>) -> Self {
         Self::new(name, Cell::NotMeasured)
     }
@@ -203,27 +213,52 @@ impl DataRow {
     }
 
     /// The status slot: a role and a short lower-case word or phrase.
+    ///
+    /// A not-measured row has no status slot. Its word becomes the first
+    /// line of the row hover, so the reason stays one hover away.
     pub fn status(mut self, role: Role, word: impl Into<String>) -> Self {
-        self.status = Some((role, word.into()));
+        let word = word.into();
+        if matches!(self.cell, Cell::NotMeasured) {
+            self.hover = Some(match self.hover.take() {
+                Some(hover) => format!("{}\n{hover}", capitalised(&word)),
+                None => capitalised(&word),
+            });
+            return self;
+        }
+        self.status = Some((role, word));
         self
     }
 
-    /// The source slot.
+    /// The source slot. A not-measured row has none.
     pub fn source(mut self, source: Source) -> Self {
-        self.source = Some(source);
+        if !matches!(self.cell, Cell::NotMeasured) {
+            self.source = Some(source);
+        }
         self
     }
 
-    /// The row hover: the explanation and the provenance.
+    /// The row hover: the explanation and the provenance. On a not-measured
+    /// row it follows the status word, when one is set.
     pub fn hover(mut self, hover: impl Into<String>) -> Self {
-        self.hover = Some(hover.into());
+        let hover = hover.into();
+        self.hover = Some(match (self.hover.take(), &self.cell) {
+            (Some(status), Cell::NotMeasured) => format!("{status}\n{hover}"),
+            _ => hover,
+        });
         self
     }
 
     /// The row hover, when there is one.
     pub fn hover_opt(mut self, hover: Option<impl Into<String>>) -> Self {
-        self.hover = hover.map(Into::into);
-        self
+        match hover {
+            Some(hover) => self.hover(hover),
+            None => {
+                if !matches!(self.cell, Cell::NotMeasured) {
+                    self.hover = None;
+                }
+                self
+            }
+        }
     }
 
     /// Append a line to the row hover: the full status, which the status
@@ -382,6 +417,16 @@ fn cell(ui: &mut egui::Ui, width: f32, text: egui::RichText, row_hover: bool) {
     );
 }
 
+/// `text` with its first letter in upper case: a hover line starts with a
+/// capital.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// The status slot: the role glyph and the word on the role tint.
 fn status_text(role: Role, word: &str) -> String {
     match role.glyph() {
@@ -500,7 +545,7 @@ fn paint_row(ui: &mut egui::Ui, row: &DataRow, width: f32, name_width: f32, has_
             cell(
                 ui,
                 value_width,
-                caption(tokens::GLYPH_UNKNOWN, tokens::UNKNOWN),
+                caption(NOT_MEASURED_TEXT, tokens::UNKNOWN),
                 has_hover,
             );
         }
