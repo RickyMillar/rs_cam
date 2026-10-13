@@ -17,7 +17,7 @@ use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
 use super::shared::{
-    generated_with_cut_run_spans, require_index, require_mesh, require_polygons,
+    generated_with_cut_run_spans, op_link_ceiling, require_index, require_mesh, require_polygons,
     with_depth_run_annotation,
 };
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
@@ -301,11 +301,11 @@ fn chain_project_curve(
         // slide across it drags the cutter over stock this op must not
         // touch (`stock_safety_links_clear_standing_material` pins it).
         flush_ride: false,
-        link_ceiling: Some(crate::finish::surface_link::LinkCeiling {
-            stock: ctx.initial_stock,
-            tool_radius: ctx.tool_def.radius(),
-            fallback_top_z: ctx.heights.top_z,
-        }),
+        // R1: the one builder. Project Curve needs the ceiling on fresh
+        // stock too (`LinkCeilingNeed::Always`), so this is always `Some`.
+        // On fresh stock it reads the stock top, not a pinned `top_z` below
+        // it: a link at the pinned top rides inside the standing stock.
+        link_ceiling: op_link_ceiling(crate::compute::catalog::OperationType::ProjectCurve, ctx),
     };
     let (linked, rep) = crate::finish::surface_link::relink_fragments(
         AnnotatedToolpath::new(tp),

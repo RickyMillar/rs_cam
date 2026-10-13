@@ -892,12 +892,10 @@ impl JobPhases<'_, '_> {
         // (7.03) under a 25 mm stock top, and the split rapided to
         // 7.03 + 2 = 9.033, 1.47 mm into a column cut only to 10.5. A pinned
         // top ABOVE the stock top is kept (`max`): the fallback errs high.
-        let fresh_stock_top_z = self
-            .inputs
-            .emission_stock_bbox
-            .max
-            .z
-            .max(self.inputs.heights.top_z);
+        let fresh_stock_top_z = crate::dressup::fresh_stock_top_z(
+            self.inputs.emission_stock_bbox.max.z,
+            self.inputs.heights.top_z,
+        );
         let (transformed, _split_count) = crate::dressup::optimize_entry_descents_annotated(
             annotated,
             self.gen_initial_stock,

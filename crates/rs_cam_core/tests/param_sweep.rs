@@ -1699,6 +1699,7 @@ fn default_pencil_params() -> PencilParams {
         reference_cutter: None,
         link_kinematics: None,
         link_hop_distance_mm: None,
+        link_fallback_top_z: None,
     }
 }
 

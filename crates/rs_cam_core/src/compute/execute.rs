@@ -516,6 +516,7 @@ pub(crate) use finish_3d::{
     generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
+pub use shared::{LinkCeilingNeed, link_ceiling_for, link_ceiling_need};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
 /// annotations.
