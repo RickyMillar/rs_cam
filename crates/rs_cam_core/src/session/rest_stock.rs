@@ -351,9 +351,9 @@ impl ProjectSession {
                     continue;
                 }
                 let result = self.results.get(&index)?;
-                if contributes_simulated_motion(result.annotated().toolpath.moves.len()) {
-                    after.push(SourceEntry::of(tc.id, result.annotated()));
-                }
+                // G-RESTLEVELS: both builders carve an empty result too (with
+                // no change), so the record lists it.
+                after.push(SourceEntry::of(tc.id, result.annotated()));
             }
         }
         Some(SourceStock {

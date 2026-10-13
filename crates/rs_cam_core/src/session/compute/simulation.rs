@@ -93,34 +93,27 @@ impl ProjectSession {
             // `prior_stocks` snapshot. Visited for every toolpath config in
             // plan order — not just the ones that make it into `entries` —
             // so the scan sees the true "generated yet?" state regardless
-            // of `skip_ids` / short-toolpath filtering below.
+            // of `skip_ids` below.
             let mut phantom_scan = crate::compute::simulate::PhantomPriorStockScan::default();
             for &tp_idx in &setup.toolpath_indices {
                 let Some(tc) = self.toolpath_configs.get(tp_idx) else {
                     continue;
                 };
                 let result = self.results.get(&tp_idx);
-                // G-STICKYEMPTY: the scan's question is "will this op
-                // contribute a carve to the simulation being built", NOT
-                // "does a result object exist". This builder drops entries
-                // below `MIN_SIMULATED_MOVES` a few lines down, and a
-                // dropped entry never reaches
-                // `prior_stocks.insert(entry.id, ..)` — so answering
-                // `result.is_some()` here made an op that generated EMPTY
-                // ineligible for a prior-stock snapshot by both routes at
-                // once, and a `FromRemainingStock` op in that state can
-                // never regenerate again (its generate-time precondition
-                // refuses for want of the snapshot) until a project reload
-                // clears its result cache.
-                let contributes_carve = result.is_some_and(|r| {
-                    crate::compute::simulate::contributes_simulated_motion(
-                        r.annotated().toolpath.moves.len(),
-                    )
-                });
+                // G-RESTLEVELS: an operation that generated EMPTY is carved
+                // with no change. It is an entry like any other, so it gets
+                // its own `prior_stocks` snapshot (its input stock) and it
+                // passes that stock on unchanged. It never takes the phantom
+                // slot: before this, an empty rest op took the group's one
+                // phantom, and every rest op after it was refused for want of
+                // a snapshot. The GUI builder always admitted empty results;
+                // the two builders now give the scan the same answer, "a
+                // result exists" (G-STICKYEMPTY stays fixed: the empty op
+                // keeps a snapshot).
                 phantom_scan.visit(
                     entries.len(),
                     tc.enabled,
-                    contributes_carve,
+                    result.is_some(),
                     tc.id,
                     tc.stock_source,
                 );
@@ -131,11 +124,6 @@ impl ProjectSession {
                     // simulations disagreed on a project with a disabled
                     // generated row (G-RESTRES parity).
                     if !tc.enabled || opts.skip_ids.contains(&tc.id) {
-                        continue;
-                    }
-                    if !crate::compute::simulate::contributes_simulated_motion(
-                        result.annotated().toolpath.moves.len(),
-                    ) {
                         continue;
                     }
 

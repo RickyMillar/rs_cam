@@ -5,7 +5,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 ## Files
 
-- `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types.
+- `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types (`LatticeWindow`: a grid window, G-RESTLEVELS).
 - `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
 - `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
 - `collision.rs` — three-state `HolderCollisionCheck`; `radial_profile.rs` — the LUT.

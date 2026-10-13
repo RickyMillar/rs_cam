@@ -290,6 +290,10 @@ pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty";
 /// A REPORT, not a refusal: the cap is a deliberate anti-sliver-storm guard
 /// and the kept regions are real. What it is not, any more, is silent.
 pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated";
+/// G-RESTLEVELS: a 2.5D rest operation could not clip its levels to the
+/// machined stock, so it cut the whole outline at every level. A REPORT:
+/// the fallback cuts more, never less.
+pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback";
 pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled
@@ -447,6 +451,7 @@ pub const ALL: &[&str] = &[
     GEOM_TIP_FLOAT,
     GEOM_ZERO_REMOVAL,
     GEOM_REGION_CAP_TRUNCATED,
+    GEOM_REST_LEVELS_FALLBACK,
     CONFIG_INERT_CLAIMS_DIAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,

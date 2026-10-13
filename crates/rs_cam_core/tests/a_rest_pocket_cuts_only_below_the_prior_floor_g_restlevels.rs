@@ -1,0 +1,582 @@
+//! G-RESTLEVELS — a rest Pocket cuts only where the remaining stock stands.
+//!
+//! # The defect this file pins
+//!
+//! A 2.5D Pocket with `StockSource::FromRemainingStock` planned every Z
+//! level from `top_z` down and ignored the machined stock. On the operator's
+//! project, op Z23 re-cut 112 levels that op Z22 had already cleared, and
+//! 93.5 % of its cut time was air. The operator's expectation: "if I select
+//! rest I would expect the air cutting to be removed and only mill the left
+//! over".
+//!
+//! The fix (`compute/execute/standing_material.rs`) tests each level against
+//! the stock. A level with no material in the reach of the tool is skipped.
+//! A level with material in part of the outline cuts only that part.
+//!
+//! # The fixture
+//!
+//! One Ø6 mm end mill, a 10 mm board below world Z0, and two pockets on a
+//! 30 mm square. Pocket A cuts fresh stock to 5 mm. Pocket B follows it.
+//! The stock covers A and a copy of B shifted 10 mm in +X, with 2 mm of
+//! margin. Each arm generates A, simulates, generates B, and simulates
+//! again.
+//!
+//! # The claims
+//!
+//! 1. Non-vacuity: B as Fresh cuts every level of its ladder.
+//! 2. B as rest on A's outline cuts nothing at or above A's floor.
+//! 3. B as rest, shifted: above A's floor every cut lies near the material
+//!    A left in B, and the strip outside A is cut at every level.
+//! 4. B as rest to A's own depth: an empty result, and no refusal.
+//! 5. No undercut: the final stock of a rest B equals the final stock of a
+//!    fresh B, cell for cell, over the cells B's tool covers completely, on
+//!    both outlines.
+//! 6. A rest pocket that the clip makes empty does not block the rest pocket
+//!    after it: one empty, two empties in a row, and across a setup.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+// The measured numbers ARE the record.
+#![allow(clippy::print_stderr)]
+
+mod common;
+
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use common::session::{generate, polygon_model, square_polygon, toolpath_config};
+use common::tools::endmill_tool_config;
+use rs_cam_core::compute::StockConfig;
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::config::StockSource;
+use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
+use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
+use rs_cam_core::compute::transform::FaceUp;
+use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
+use rs_cam_core::geo::P2;
+use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::session::{
+    Command, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs, SimulationOptions,
+    SimulationResolution,
+};
+use rs_cam_core::toolpath::{Move, MoveIntent, MoveType};
+
+/// Half-extent (mm) of the square both pockets clear.
+const HALF: f64 = 15.0;
+
+/// The +X shift (mm) of B in the partial-overlap arm.
+const SHIFT: f64 = 10.0;
+
+/// Stock margin (mm) around A ∪ shifted B.
+const MARGIN: f64 = 2.0;
+
+/// Stock height (mm). The board hangs below `z = 0`.
+const STOCK_Z: f64 = 10.0;
+
+/// Cutter diameter (mm).
+const TOOL_D: f64 = 6.0;
+
+/// Cutter radius (mm).
+const TOOL_R: f64 = TOOL_D / 2.0;
+
+/// Simulation cell (mm).
+const CELL_MM: f64 = 0.5;
+
+/// Depth (mm) of A. B's rest levels must stay below `-A_DEPTH`.
+const A_DEPTH: f64 = 5.0;
+
+/// Depth (mm) of B: two levels below A's floor.
+const B_DEPTH: f64 = 7.0;
+
+/// Depth per pass (mm) of both pockets: one level per millimetre.
+const DPP: f64 = 1.0;
+
+fn stock() -> StockConfig {
+    StockConfig {
+        x: 2.0 * HALF + SHIFT + 2.0 * MARGIN,
+        y: 2.0 * HALF + 2.0 * MARGIN,
+        z: STOCK_Z,
+        origin_x: -HALF - MARGIN,
+        origin_y: -HALF - MARGIN,
+        origin_z: -STOCK_Z,
+        auto_from_model: false,
+        ..StockConfig::default()
+    }
+}
+
+fn pocket(depth: f64) -> OperationConfig {
+    pocket_with(depth, PocketPattern::Contour)
+}
+
+fn pocket_with(depth: f64, pattern: PocketPattern) -> OperationConfig {
+    OperationConfig::Pocket(PocketConfig {
+        stepover: 2.0,
+        depth,
+        depth_per_pass: DPP,
+        pattern,
+        ..PocketConfig::default()
+    })
+}
+
+/// A's square shifted `dx` in +X, wound CCW.
+fn shifted_square(dx: f64) -> Polygon2 {
+    Polygon2::new(vec![
+        P2::new(-HALF + dx, -HALF),
+        P2::new(HALF + dx, -HALF),
+        P2::new(HALF + dx, HALF),
+        P2::new(-HALF + dx, HALF),
+    ])
+}
+
+/// What one arm left behind.
+struct Arm {
+    moves: Vec<Move>,
+    final_stock: Arc<TriDexelStock>,
+    finding: Option<RestLevelsFinding>,
+}
+
+/// Generate A, simulate, generate B, simulate again.
+fn run(b_shift: f64, b_depth: f64, b_source: StockSource) -> Arm {
+    run_with(b_shift, b_depth, b_source, PocketPattern::Contour)
+}
+
+/// [`run`] with the pocket pattern of B.
+fn run_with(b_shift: f64, b_depth: f64, b_source: StockSource, pattern: PocketPattern) -> Arm {
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_a = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
+    let model_b = builder.add_model(polygon_model(vec![shifted_square(b_shift)], "b"));
+    let _ = builder
+        .add_toolpath(0, toolpath_config("A", pocket(A_DEPTH), tool_id, model_a))
+        .expect("add A");
+    let mut b = toolpath_config("B", pocket_with(b_depth, pattern), tool_id, model_b);
+    b.stock_source = b_source;
+    let _ = builder.add_toolpath(0, b).expect("add B");
+    let mut session = builder.build();
+
+    generate(&mut session, 0);
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
+    simulate(&mut session);
+    generate(&mut session, 1);
+    simulate(&mut session);
+
+    let result = session.get_result(1).expect("B holds a result");
+    let final_stock = session
+        .simulation_result()
+        .and_then(|sim| sim.checkpoints.last().map(|c| Arc::clone(&c.mesh_stock)))
+        .expect("the second simulation carved B");
+    Arm {
+        moves: result.toolpath().moves.clone(),
+        final_stock,
+        finding: result.stats.rest_levels,
+    }
+}
+
+fn simulate(session: &mut ProjectSession) {
+    let cancel = AtomicBool::new(false);
+    let _ = session
+        .run_simulation(
+            &SimulationOptions {
+                resolution: CELL_MM,
+                auto_resolution: false,
+                adaptive_feed_modulation: false,
+                ..SimulationOptions::default()
+            },
+            &cancel,
+        )
+        .expect("simulation");
+}
+
+/// The cutting moves: feed moves that the planner marks as a cut. Entry
+/// and link moves are a dressup's business and are not judged here.
+fn cutting_moves(moves: &[Move]) -> Vec<&Move> {
+    moves
+        .iter()
+        .filter(|m| {
+            m.move_type != MoveType::Rapid
+                && matches!(m.intent, MoveIntent::ClearingCut | MoveIntent::FinishingCut)
+        })
+        .collect()
+}
+
+/// The ladder of B: `-DPP, -2·DPP, …, -depth`.
+fn ladder(depth: f64) -> Vec<f64> {
+    let n = (depth / DPP).round() as usize;
+    (1..=n).map(|i| -(i as f64) * DPP).collect()
+}
+
+fn cuts_at(moves: &[&Move], z: f64) -> Vec<P2> {
+    moves
+        .iter()
+        .filter(|m| (m.target.z - z).abs() < 1e-6)
+        .map(|m| P2::new(m.target.x, m.target.y))
+        .collect()
+}
+
+/// 1. Non-vacuity: a fresh B cuts every level, so a rest B that cuts fewer
+///    levels is a change the clip made.
+#[test]
+fn a_fresh_pocket_cuts_every_level() {
+    let arm = run(0.0, B_DEPTH, StockSource::Fresh);
+    let cuts = cutting_moves(&arm.moves);
+    for z in ladder(B_DEPTH) {
+        assert!(
+            !cuts_at(&cuts, z).is_empty(),
+            "a fresh pocket must cut level {z}"
+        );
+    }
+    assert_eq!(
+        arm.finding, None,
+        "a fresh pocket reads no stock, so it tests no level"
+    );
+}
+
+/// 2. Same outline: every cut of the rest B lies below A's floor.
+#[test]
+fn a_rest_pocket_on_the_same_outline_cuts_only_below_the_prior_floor() {
+    let arm = run(0.0, B_DEPTH, StockSource::FromRemainingStock);
+    let cuts = cutting_moves(&arm.moves);
+    let floor = -A_DEPTH - FRESH_MATERIAL_THRESHOLD_MM;
+    let highest = cuts
+        .iter()
+        .map(|m| m.target.z)
+        .fold(f64::NEG_INFINITY, f64::max);
+    eprintln!(
+        "same outline: {} cutting moves, highest z {highest:.3}, finding {:?}",
+        cuts.len(),
+        arm.finding
+    );
+    assert!(!cuts.is_empty(), "the rest pocket must cut below A's floor");
+    for m in &cuts {
+        assert!(
+            m.target.z < floor,
+            "a cut at z = {} lies at or above A's floor {floor}",
+            m.target.z
+        );
+    }
+    let finding = arm.finding.expect("a rest pocket records its level clip");
+    assert_eq!(finding.planned_levels, ladder(B_DEPTH).len());
+    assert_eq!(
+        finding.skipped_levels,
+        ladder(A_DEPTH).len(),
+        "every level A already cut must be skipped"
+    );
+    assert_eq!(finding.fallback, None);
+}
+
+/// 3. Shifted outline: above A's floor every cut lies near the material A
+///    left inside B, and the strip outside A is cut at every level.
+#[test]
+fn a_shifted_rest_pocket_cuts_only_the_strip_above_the_prior_floor() {
+    let arm = run(SHIFT, B_DEPTH, StockSource::FromRemainingStock);
+    let cuts = cutting_moves(&arm.moves);
+    eprintln!(
+        "shifted: {} cutting moves, finding {:?}",
+        cuts.len(),
+        arm.finding
+    );
+
+    // The material A left inside B: B minus A's footprint, the square with
+    // corners rounded to the tool radius. Sampled on a quarter cell.
+    let step = CELL_MM / 4.0;
+    let inner = HALF - TOOL_R;
+    let mut left = Vec::new();
+    let nx = ((2.0 * HALF) / step).round() as usize;
+    for i in 0..=nx {
+        for j in 0..=nx {
+            let q = P2::new(-HALF + SHIFT + i as f64 * step, -HALF + j as f64 * step);
+            let dx = (q.x.abs() - inner).max(0.0);
+            let dy = (q.y.abs() - inner).max(0.0);
+            if dx.hypot(dy) > TOOL_R {
+                left.push(q);
+            }
+        }
+    }
+    let bound = TOOL_R + 2.0 * CELL_MM;
+    let mut worst: f64 = 0.0;
+    for z in ladder(A_DEPTH) {
+        for p in cuts_at(&cuts, z) {
+            let d = left
+                .iter()
+                .map(|q| (q.x - p.x).hypot(q.y - p.y))
+                .fold(f64::INFINITY, f64::min);
+            worst = worst.max(d);
+            assert!(
+                d <= bound,
+                "a cut at ({:.2}, {:.2}, {z}) lies {d:.2} mm from the material A left; \
+                 the bound is {bound} mm",
+                p.x,
+                p.y
+            );
+        }
+    }
+    eprintln!("shifted: worst distance above A's floor {worst:.3} mm (bound {bound})");
+
+    // The strip x ∈ [HALF, HALF + SHIFT] is outside A. The tool centre fits
+    // there from x = HALF + R on, so a cut that far in is a strip cut.
+    for z in ladder(B_DEPTH) {
+        assert!(
+            cuts_at(&cuts, z).iter().any(|p| p.x >= HALF + TOOL_R),
+            "the strip outside A must be cut at level {z}"
+        );
+    }
+    let finding = arm.finding.expect("a rest pocket records its level clip");
+    assert_eq!(
+        finding.skipped_levels, 0,
+        "the strip holds material at every level"
+    );
+    assert!(
+        finding.clipped_levels >= ladder(A_DEPTH).len(),
+        "every level above A's floor must be clipped; got {finding:?}"
+    );
+}
+
+/// 4. Rest B to A's own depth has nothing to cut: an empty result, which
+///    the empty-generation gate accepts for a rest operation.
+#[test]
+fn a_rest_pocket_with_nothing_left_is_an_empty_result() {
+    let arm = run(0.0, A_DEPTH, StockSource::FromRemainingStock);
+    let cuts = cutting_moves(&arm.moves);
+    assert!(
+        cuts.is_empty(),
+        "nothing stands above A's floor; got {} cutting moves",
+        cuts.len()
+    );
+    let finding = arm.finding.expect("a rest pocket records its level clip");
+    assert_eq!(finding.skipped_levels, finding.planned_levels);
+}
+
+/// 5. No undercut: rest B leaves the same stock as fresh B.
+#[test]
+fn a_rest_pocket_leaves_the_same_stock_as_a_fresh_pocket() {
+    for shift in [0.0, SHIFT] {
+        let fresh = run(shift, B_DEPTH, StockSource::Fresh);
+        let rest = run(shift, B_DEPTH, StockSource::FromRemainingStock);
+        let (a, b) = (&fresh.final_stock.z_grid, &rest.final_stock.z_grid);
+        assert_eq!((a.rows, a.cols), (b.rows, b.cols), "one grid shape");
+        // Judge only the cells B's tool covers completely: centre inside B's
+        // footprint (the square with corners rounded to R) by one cell. The
+        // simulator blends a cell a tool covers in part, and it blends it
+        // again on each pass over the same path. A fresh B re-runs A's
+        // paths, so the part-covered cells at the footprint edge read lower
+        // after it with no material removed. That is a simulator artefact,
+        // not an undercut.
+        let inner = HALF - TOOL_R;
+        let mut worst: f32 = 0.0;
+        let mut worst_at = (0, 0);
+        let mut judged = 0_usize;
+        let mut worst_outside: f32 = 0.0;
+        for r in 0..a.rows {
+            for c in 0..a.cols {
+                let (x, y) = a.cell_to_world(r, c);
+                let dx = ((x - shift).abs() - inner).max(0.0);
+                let dy = (y.abs() - inner).max(0.0);
+                let covered = dx.hypot(dy) <= TOOL_R - CELL_MM;
+                let ta = a.top_z_at(r, c).unwrap_or(f32::NEG_INFINITY);
+                let tb = b.top_z_at(r, c).unwrap_or(f32::NEG_INFINITY);
+                let d = (ta - tb).abs();
+                if !covered {
+                    worst_outside = worst_outside.max(d);
+                    continue;
+                }
+                judged += 1;
+                if d > worst {
+                    worst = d;
+                    worst_at = (r, c);
+                }
+            }
+        }
+        eprintln!(
+            "shift {shift}: worst top difference {worst:.4} mm at {worst_at:?} over {judged} \
+             covered cells; {worst_outside:.4} mm outside them (fresh moves {}, rest moves {})",
+            fresh.moves.len(),
+            rest.moves.len()
+        );
+        assert!(
+            judged > 0,
+            "shift {shift}: the judged set must not be empty"
+        );
+        assert!(
+            f64::from(worst) <= FRESH_MATERIAL_THRESHOLD_MM,
+            "shift {shift}: the rest pocket left {worst} mm more or less than the fresh \
+             pocket at cell {worst_at:?}"
+        );
+        assert!(
+            rest.moves.len() < fresh.moves.len(),
+            "shift {shift}: the rest pocket must skip work the fresh pocket does"
+        );
+    }
+}
+
+/// 2z, 5z. The Zigzag pattern of Pocket takes the same clip: on A's outline
+///    it cuts only below A's floor, and it leaves the stock a fresh Zigzag
+///    pocket leaves on both outlines.
+#[test]
+fn a_rest_zigzag_pocket_cuts_only_below_the_prior_floor_and_leaves_the_same_stock() {
+    let arm = run_with(
+        0.0,
+        B_DEPTH,
+        StockSource::FromRemainingStock,
+        PocketPattern::Zigzag,
+    );
+    let cuts = cutting_moves(&arm.moves);
+    let floor = -A_DEPTH - FRESH_MATERIAL_THRESHOLD_MM;
+    assert!(!cuts.is_empty(), "the rest zigzag must cut below A's floor");
+    assert!(
+        cuts.iter().all(|m| m.target.z < floor),
+        "a rest zigzag cut lies at or above A's floor"
+    );
+    for shift in [0.0, SHIFT] {
+        let fresh = run_with(shift, B_DEPTH, StockSource::Fresh, PocketPattern::Zigzag);
+        let rest = run_with(
+            shift,
+            B_DEPTH,
+            StockSource::FromRemainingStock,
+            PocketPattern::Zigzag,
+        );
+        let worst = worst_covered_difference(&fresh.final_stock, &rest.final_stock, shift);
+        eprintln!("zigzag shift {shift}: worst top difference {worst:.4} mm");
+        assert!(
+            f64::from(worst) <= FRESH_MATERIAL_THRESHOLD_MM,
+            "zigzag shift {shift}: the rest pocket left {worst} mm more or less than the \
+             fresh pocket"
+        );
+        assert!(rest.moves.len() < fresh.moves.len());
+    }
+}
+
+/// The largest top difference over the cells B's tool covers completely
+/// (see claim 5 for why the part-covered cells are not judged).
+fn worst_covered_difference(fresh: &TriDexelStock, rest: &TriDexelStock, shift: f64) -> f32 {
+    let (a, b) = (&fresh.z_grid, &rest.z_grid);
+    assert_eq!((a.rows, a.cols), (b.rows, b.cols), "one grid shape");
+    let inner = HALF - TOOL_R;
+    let mut worst: f32 = 0.0;
+    let mut judged = 0_usize;
+    for r in 0..a.rows {
+        for c in 0..a.cols {
+            let (x, y) = a.cell_to_world(r, c);
+            let dx = ((x - shift).abs() - inner).max(0.0);
+            let dy = (y.abs() - inner).max(0.0);
+            if dx.hypot(dy) > TOOL_R - CELL_MM {
+                continue;
+            }
+            judged += 1;
+            let ta = a.top_z_at(r, c).unwrap_or(f32::NEG_INFINITY);
+            let tb = b.top_z_at(r, c).unwrap_or(f32::NEG_INFINITY);
+            worst = worst.max((ta - tb).abs());
+        }
+    }
+    assert!(judged > 0, "the judged set must not be empty");
+    worst
+}
+
+/// 6. The chain wedge (fixed). A rest pocket that the clip makes empty must
+///    not block the rest pocket after it.
+///
+/// Before the fix, `PhantomPriorStockScan` treated "generated empty" like
+/// "not generated": the empty rest op took the group's one phantom
+/// snapshot, and the rest op after it was refused for want of a snapshot,
+/// at every simulation. Now both simulation builders carve an empty result
+/// with no change, so it keeps its own snapshot and passes the stock on.
+#[test]
+fn an_empty_rest_pocket_does_not_block_the_rest_pocket_after_it() {
+    chain_cuts_only_below_the_floor(&[(0, A_DEPTH), (0, B_DEPTH)], false);
+}
+
+/// 6b. Two empty rest pockets in a row before the rest pocket C.
+#[test]
+fn two_empty_rest_pockets_do_not_block_the_rest_pocket_after_them() {
+    chain_cuts_only_below_the_floor(&[(0, A_DEPTH), (0, A_DEPTH), (0, B_DEPTH)], false);
+}
+
+/// 6c. The chain crosses a setup: the empty rest pocket is last in setup 1
+///     and the rest pocket C is first in setup 2 (S0 carries the stock).
+#[test]
+fn an_empty_rest_pocket_last_in_a_setup_does_not_block_the_next_setup() {
+    chain_cuts_only_below_the_floor(&[(0, A_DEPTH), (1, B_DEPTH)], true);
+}
+
+/// Fresh A in setup 0, then the rest pockets `rests` as `(setup, depth)`.
+/// Every rest pocket but the last is at A's depth and must be empty; the
+/// last is deeper and must cut, and only below A's floor. Each rest pocket
+/// is generated after a simulation of the ones before it, as the plan does.
+fn chain_cuts_only_below_the_floor(rests: &[(usize, f64)], second_setup: bool) {
+    let mut builder = ProjectSessionBuilder::new().stock(stock());
+    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
+    if second_setup {
+        let _ = builder.add_setup("Setup 2".to_owned(), FaceUp::Top);
+    }
+    let _ = builder
+        .add_toolpath(0, toolpath_config("A", pocket(A_DEPTH), tool_id, model))
+        .expect("add A");
+    let mut indices = Vec::new();
+    for (k, &(setup, depth)) in rests.iter().enumerate() {
+        let mut rest = toolpath_config(&format!("Rest {k}"), pocket(depth), tool_id, model);
+        rest.stock_source = StockSource::FromRemainingStock;
+        indices.push(
+            builder
+                .add_toolpath(setup, rest)
+                .expect("add a rest pocket"),
+        );
+    }
+    let mut session = builder.build();
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
+    let cancel = AtomicBool::new(false);
+    generate(&mut session, 0);
+    let last = indices.len() - 1;
+    for (k, &index) in indices.iter().enumerate() {
+        simulate(&mut session);
+        let outcome = session.generate_toolpath(index, &cancel);
+        assert!(
+            outcome.is_ok(),
+            "rest pocket {k} must generate after the empty rest pockets before it; got: {:?}",
+            outcome.err().map(|e| e.to_string())
+        );
+        let result = session.get_result(index).expect("a rest result");
+        let cuts = cutting_moves(&result.toolpath().moves);
+        if k < last {
+            assert!(
+                cuts.is_empty(),
+                "precondition: rest pocket {k} has nothing to cut"
+            );
+        } else {
+            assert!(
+                !cuts.is_empty(),
+                "the last rest pocket has material below A's floor"
+            );
+            assert!(
+                cuts.iter()
+                    .all(|m| m.target.z < -A_DEPTH - FRESH_MATERIAL_THRESHOLD_MM),
+                "the last rest pocket cuts only below A's floor"
+            );
+        }
+    }
+    // The chain is stable: a second round regenerates every rest pocket.
+    for &index in &indices {
+        simulate(&mut session);
+        assert!(
+            session.generate_toolpath(index, &cancel).is_ok(),
+            "a second round must regenerate rest pocket index {index}"
+        );
+    }
+}

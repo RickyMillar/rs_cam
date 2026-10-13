@@ -11,9 +11,10 @@ use crate::compute::config::ResolvedHeights;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
-use super::findings::record_truncated_core_only;
+use super::findings::{record_rest_levels, record_truncated_core_only};
 use super::record_offset_library_failures;
 use super::shared::{generated_with_depth_run_spans, require_polygons, with_depth_run_annotation};
+use super::standing_material::LevelRegion;
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
 
 /// Rest-machining family adapter. Requires `prev_tool_radius` in the
@@ -311,6 +312,9 @@ pub(crate) fn generate_profile(
 /// additionally polls per offset ring via `pocket_toolpath_with_cancel`
 /// (planning/finishing_stack_review_2026-07.md S.5 — pocket's own
 /// unbounded `loop {}`).
+///
+/// G-RESTLEVELS: with rest stock, each level cuts only where material still
+/// stands (`standing_material::regions_per_level`).
 pub(crate) fn generate_pocket(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
@@ -336,12 +340,25 @@ pub(crate) fn generate_pocket(
     for poly in polys {
         // G2: the 2D geometry — tool compensation plus the whole
         // `OffsetRingSet` cascade for Contour, the wall inset plus scan lines
-        // for Zigzag — is Z-independent and is computed ONCE per polygon here.
-        // The per-level closures below stamp Z and nothing else. The pattern
-        // match is loop-invariant too, so it is hoisted with the geometry.
+        // for Zigzag — is Z-independent and is computed ONCE per distinct
+        // region here. The per-level closures below stamp Z and pick the
+        // region of the level, and do nothing else.
         if ctx.cancel.load(Ordering::SeqCst) {
             return Err(OperationError::Cancelled);
         }
+        // G-RESTLEVELS: with rest stock, each level cuts only the part of
+        // the outline where material still stands. A fresh operation gets
+        // `Whole` at every level, so its output is unchanged.
+        let plan = super::standing_material::regions_per_level(
+            ctx.initial_stock,
+            poly,
+            &levels,
+            tool_radius,
+            &cancel_fn,
+        )
+        .map_err(|_e| OperationError::Cancelled)?;
+        record_rest_levels(ctx.findings, plan.finding);
+        let whole = std::slice::from_ref(poly);
         let tp = match cfg.pattern {
             crate::compute::operation_configs::PocketPattern::Contour => {
                 let base = crate::ops::pocket::PocketParams {
@@ -353,29 +370,70 @@ pub(crate) fn generate_pocket(
                     safe_z,
                     climb: cfg.climb,
                 };
-                let (tp, report) =
-                    crate::ops::pocket::pocket_toolpath_at_levels_reported_with_cancel(
-                        poly, &levels, &base, &cancel_fn,
-                    )
-                    .map_err(|_e| OperationError::Cancelled)?;
-                offset_failures.set(offset_failures.get() + report.offset_failures);
-                // Checkpoint C, Q3 (F-10): a cascade stopped by a bound
-                // leaves material, and that is exactly what
-                // `truncated_core_mm2` already means — "region interior a
-                // ring cascade left UNCUT because it hit a cap before
-                // collapsing". Recorded on the existing channel rather
-                // than a new one, so it reaches narrate, the diagnostics
-                // list and MCP with no extra plumbing.
-                //
-                // G2: the cascade now runs once per polygon rather than once
-                // per level, so this area is no longer multiplied by the level
-                // count either — it is the standing area of ONE cascade, which
-                // is what "material this pocket will not clear" always meant.
-                if let Some(standing) = report.truncated_core_mm2 {
-                    truncated_by_bound
-                        .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
-                }
-                tp
+                // One cascade per distinct region. The reports sum once per
+                // cascade, never once per level.
+                let cascade = |shape: &[crate::polygon::Polygon2]| {
+                    let mut contours = Vec::new();
+                    for piece in shape {
+                        let (rings, report) =
+                            crate::ops::pocket::pocket_contours_reported_with_cancel(
+                                piece,
+                                tool_radius,
+                                cfg.stepover,
+                                &cancel_fn,
+                            )
+                            .map_err(|_e| OperationError::Cancelled)?;
+                        offset_failures.set(offset_failures.get() + report.offset_failures);
+                        // Checkpoint C, Q3 (F-10): a cascade stopped by a
+                        // bound leaves material, and that is exactly what
+                        // `truncated_core_mm2` already means — "region
+                        // interior a ring cascade left UNCUT because it hit a
+                        // cap before collapsing". Recorded on the existing
+                        // channel, so it reaches narrate, the diagnostics
+                        // list and MCP with no extra plumbing. It is the
+                        // standing area of ONE cascade (G2), never multiplied
+                        // by the level count.
+                        if let Some(standing) = report.truncated_core_mm2 {
+                            truncated_by_bound
+                                .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
+                        }
+                        contours.extend(rings);
+                    }
+                    Ok::<_, OperationError>(contours)
+                };
+                let whole_rings = if plan.needs_whole() {
+                    cascade(whole)?
+                } else {
+                    Vec::new()
+                };
+                let region_rings = plan
+                    .regions
+                    .iter()
+                    .map(|region| cascade(region))
+                    .collect::<Result<Vec<_>, _>>()?;
+                crate::ops::depth::toolpath_at_levels_with_cancel(
+                    &levels,
+                    safe_z,
+                    |z| {
+                        let rings = match plan.region_at(&levels, z) {
+                            LevelRegion::Whole => &whole_rings,
+                            LevelRegion::Clipped(i) => match region_rings.get(i) {
+                                Some(rings) => rings,
+                                None => &whole_rings,
+                            },
+                            LevelRegion::Empty => return Ok(Toolpath::new()),
+                        };
+                        Ok(crate::ops::pocket::pocket_contours_to_toolpath(
+                            rings,
+                            &crate::ops::pocket::PocketParams {
+                                cut_depth: z,
+                                ..base
+                            },
+                        ))
+                    },
+                    &cancel_fn,
+                )
+                .map_err(|_e| OperationError::Cancelled)?
             }
             crate::compute::operation_configs::PocketPattern::Zigzag => {
                 let base = crate::ops::zigzag::ZigzagParams {
@@ -387,19 +445,40 @@ pub(crate) fn generate_pocket(
                     safe_z,
                     angle: cfg.angle,
                 };
-                let (lines, failures) = crate::ops::zigzag::zigzag_lines_reported(
-                    poly,
-                    tool_radius,
-                    cfg.stepover,
-                    cfg.angle,
-                );
-                offset_failures.set(offset_failures.get() + failures);
+                let scan = |shape: &[crate::polygon::Polygon2]| {
+                    let mut lines = Vec::new();
+                    for piece in shape {
+                        let (piece_lines, failures) = crate::ops::zigzag::zigzag_lines_reported(
+                            piece,
+                            tool_radius,
+                            cfg.stepover,
+                            cfg.angle,
+                        );
+                        offset_failures.set(offset_failures.get() + failures);
+                        lines.extend(piece_lines);
+                    }
+                    lines
+                };
+                let whole_lines = if plan.needs_whole() {
+                    scan(whole)
+                } else {
+                    Vec::new()
+                };
+                let region_lines: Vec<_> = plan.regions.iter().map(|r| scan(r)).collect();
                 crate::ops::depth::toolpath_at_levels_with_cancel(
                     &levels,
                     safe_z,
                     |z| {
+                        let lines = match plan.region_at(&levels, z) {
+                            LevelRegion::Whole => &whole_lines,
+                            LevelRegion::Clipped(i) => match region_lines.get(i) {
+                                Some(lines) => lines,
+                                None => &whole_lines,
+                            },
+                            LevelRegion::Empty => return Ok(Toolpath::new()),
+                        };
                         Ok(crate::ops::zigzag::lines_to_toolpath(
-                            &lines,
+                            lines,
                             &crate::ops::zigzag::ZigzagParams {
                                 cut_depth: z,
                                 ..base

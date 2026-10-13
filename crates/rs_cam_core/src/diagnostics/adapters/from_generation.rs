@@ -50,7 +50,52 @@ pub fn diagnostics_from_generation(
     out.extend(waterline_ladder(toolpath_id, stats));
     out.extend(inert_claims_dial(toolpath_id, stats));
     out.extend(region_cap_truncated(toolpath_id, stats));
+    out.extend(rest_levels_fallback(toolpath_id, stats));
     out
+}
+
+/// G-RESTLEVELS: a 2.5D rest operation fell back to the whole outline at
+/// every level. `Caution`: the toolpath is safe, because a fallback cuts
+/// more, but it cuts air the operator asked to skip. Silent when no
+/// fallback occurred, and silent when the operation read no stock.
+fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    use crate::compute::toolpath_stats::RestLevelsFallback;
+    let Some(fallback) = stats.rest_levels.and_then(|f| f.fallback) else {
+        return Vec::new();
+    };
+    let cause = match fallback {
+        RestLevelsFallback::StockOffOutline => {
+            "the XY box of the machined stock does not overlap the outline, so the \
+             stock and the outline are probably in different frames"
+                .to_owned()
+        }
+        RestLevelsFallback::RegionCap { total_before_cap } => format!(
+            "the standing material split into {total_before_cap} islands, more than \
+             the region cap"
+        ),
+        RestLevelsFallback::WindowTooLarge { cells, limit } => format!(
+            "the outline needs a window of {cells} stock cells, more than the limit \
+             of {limit}"
+        ),
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_REST_LEVELS_FALLBACK),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "This rest operation cut its whole outline at every level, because \
+             {cause}. The remaining stock did not remove the air cuts. [Recorded \
+             at generation. Report-only: no gate consumes this.]"
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// F3: the `MAX_REST_REGIONS` cap truncated this operation's rest-region

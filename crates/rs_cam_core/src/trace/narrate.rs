@@ -326,6 +326,11 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    there are the actionable half, and they are a defect
             //    report about the decomposition rather than about the cut.
             monotone_cells: _,
+            //  - rest_levels (G-RESTLEVELS): a statement about the levels
+            //    the planner did NOT emit. Narration walks the emitted
+            //    moves, and a fallback is a diagnostic notice
+            //    (`geom.rest_levels_fallback`).
+            rest_levels: _,
             relink,
             pencil_link,
         } = stats;

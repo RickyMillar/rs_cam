@@ -64,9 +64,20 @@ const CELL_MM: f64 = 1.0;
 const OTHER_CELL_MM: f64 = 2.0;
 
 fn pocket_op() -> OperationConfig {
+    pocket_to(3.0)
+}
+
+/// G-RESTLEVELS: rest pocket `k` goes 1 mm deeper than the one before it.
+/// A rest pocket at its predecessor's depth now cuts nothing (correctly),
+/// and the claims here need a rest result with moves to vary.
+fn rest_op(k: usize) -> OperationConfig {
+    pocket_to(3.0 + (k + 1) as f64)
+}
+
+fn pocket_to(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth: 3.0,
+        depth,
         depth_per_pass: 3.0,
         ..PocketConfig::default()
     })
@@ -85,7 +96,7 @@ fn chain(rest_count: usize) -> ProjectSession {
     let tool_id = session.tools()[0].id.0;
     let model_id = session.models()[0].id;
     for k in 0..rest_count {
-        let mut rest = toolpath_config(&format!("Rest {k}"), pocket_op(), tool_id, model_id);
+        let mut rest = toolpath_config(&format!("Rest {k}"), rest_op(k), tool_id, model_id);
         rest.stock_source = StockSource::FromRemainingStock;
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {

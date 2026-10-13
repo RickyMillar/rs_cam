@@ -199,16 +199,12 @@ impl<B: ComputeBackend> AppController<B> {
                 // toolpath into the rest snapshot while core held another.
                 let rt = self.state.gui.toolpath_rt.get(&tc.id);
                 let result = self.state.session.get_result(tp_idx);
-                // G-STICKYEMPTY: `result.is_some()` is the RIGHT answer here
-                // and the wrong one in core's `ProjectSession::run_simulation`
-                // — the difference is that this builder pushes every
-                // result-bearing toolpath, filtering none, so even a
-                // zero-move entry reaches `prior_stocks.insert(entry.id, ..)`
-                // in the simulator. Core's builder drops entries below
-                // `MIN_SIMULATED_MOVES` and must therefore answer with
-                // `contributes_simulated_motion`. If a short-toolpath filter
-                // is ever added HERE, this call has to change with it; see
-                // that function's doc for the failure it prevents.
+                // G-STICKYEMPTY / G-RESTLEVELS: "a result exists" is the
+                // answer of BOTH builders. Each carves every enabled result,
+                // an empty one included (with no change), so an empty op gets
+                // its own `prior_stocks` snapshot and never takes the phantom
+                // slot the rest op after it needs. See
+                // `contributes_simulated_motion`.
                 phantom_scan.visit(
                     toolpaths.len(),
                     tc.enabled,

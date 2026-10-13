@@ -2065,6 +2065,8 @@ fn fake_result_with_regions(
             retract_trips: None,
             // Nor a monotone-cell decomposition (C2).
             monotone_cells: None,
+            // Nor a rest-stock level clip (G-RESTLEVELS).
+            rest_levels: None,
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,

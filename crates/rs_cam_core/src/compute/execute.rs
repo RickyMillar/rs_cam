@@ -203,6 +203,10 @@ pub struct GenerationFindings {
     /// `monotone_cell_decomposition` is off, or the op emitted no Shallow
     /// region). See [`crate::compute::toolpath_stats::ToolpathStats::monotone_cells`].
     pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
+    /// G-RESTLEVELS: what the rest-stock level clip of a 2.5D operation
+    /// did. `None` = the operation read no machined stock. See
+    /// [`crate::compute::toolpath_stats::RestLevelsFinding`].
+    pub rest_levels: Option<crate::compute::toolpath_stats::RestLevelsFinding>,
 }
 
 impl std::fmt::Display for OperationError {
@@ -486,6 +490,7 @@ mod findings;
 mod finish_3d;
 mod finish_raster;
 mod shared;
+mod standing_material;
 
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_rest,

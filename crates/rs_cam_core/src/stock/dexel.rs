@@ -406,6 +406,27 @@ pub struct DexelGrid {
     pub has_added_material: bool,
 }
 
+/// G-RESTLEVELS: a rectangle of cells on the lattice of a [`DexelGrid`].
+///
+/// `row0` and `col0` are grid indices of the first cell. They can be
+/// negative, and the window can extend past the grid. The cells are
+/// row-major: `rows` along V, `cols` along U.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatticeWindow {
+    pub row0: isize,
+    pub col0: isize,
+    pub rows: usize,
+    pub cols: usize,
+}
+
+impl LatticeWindow {
+    /// The number of cells in the window.
+    #[must_use]
+    pub const fn cell_count(&self) -> usize {
+        self.rows * self.cols
+    }
+}
+
 impl Clone for DexelGrid {
     fn clone(&self) -> Self {
         Self {
@@ -573,6 +594,62 @@ impl DexelGrid {
     pub fn has_material_above(&self, row: usize, col: usize, z_floor: f32) -> bool {
         let ray = &self.rays[row * self.cols + col];
         ray.iter().any(|seg| seg.exit > z_floor)
+    }
+
+    /// G-RESTLEVELS: the window of this grid's lattice that covers the
+    /// planar box `[u_min, v_min, u_max, v_max]`, grown by `pad_cells` on
+    /// every side.
+    ///
+    /// The window keeps the lattice of the grid, so each window cell is one
+    /// grid cell. It can extend past the grid.
+    #[must_use]
+    pub fn lattice_window(&self, bbox_uv: [f64; 4], pad_cells: usize) -> LatticeWindow {
+        let [u_min, v_min, u_max, v_max] = bbox_uv;
+        let cell = self.cell_size;
+        let pad = pad_cells as isize;
+        let col0 = ((u_min - self.origin_u) / cell).floor() as isize - pad;
+        let row0 = ((v_min - self.origin_v) / cell).floor() as isize - pad;
+        let col1 = ((u_max - self.origin_u) / cell).ceil() as isize + pad;
+        let row1 = ((v_max - self.origin_v) / cell).ceil() as isize + pad;
+        LatticeWindow {
+            row0,
+            col0,
+            rows: (row1 - row0 + 1).max(0) as usize,
+            cols: (col1 - col0 + 1).max(0) as usize,
+        }
+    }
+
+    /// The planar centre of the window cell (`row`, `col`).
+    #[inline]
+    #[must_use]
+    pub fn window_cell_centre(&self, window: &LatticeWindow, row: usize, col: usize) -> (f64, f64) {
+        (
+            self.origin_u + (window.col0 + col as isize) as f64 * self.cell_size,
+            self.origin_v + (window.row0 + row as isize) as f64 * self.cell_size,
+        )
+    }
+
+    /// G-RESTLEVELS: for each cell of `window`, row-major, does material
+    /// stand above `z_floor`? This is [`Self::has_material_above`] over a
+    /// window.
+    ///
+    /// A cell off the grid counts as material. The caller then cuts that
+    /// cell and never skips it, because the grid holds no answer there.
+    #[must_use]
+    pub fn material_above_mask(&self, window: &LatticeWindow, z_floor: f32) -> Vec<bool> {
+        let mut mask = Vec::with_capacity(window.rows * window.cols);
+        for r in 0..window.rows {
+            let row = window.row0 + r as isize;
+            for c in 0..window.cols {
+                let col = window.col0 + c as isize;
+                let on_grid = row >= 0
+                    && col >= 0
+                    && (row as usize) < self.rows
+                    && (col as usize) < self.cols;
+                mask.push(!on_grid || self.has_material_above(row as usize, col as usize, z_floor));
+            }
+        }
+        mask
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

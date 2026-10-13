@@ -379,3 +379,17 @@ pub(super) fn record_derived_stepover(
 ) {
     cell.borrow_mut().derived_stepovers.push(finding);
 }
+
+/// Merge one outline's rest-stock level clip into the findings (G-RESTLEVELS).
+/// `None` is a no-op: the outline read no machined stock.
+pub(super) fn record_rest_levels(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: Option<crate::compute::toolpath_stats::RestLevelsFinding>,
+) {
+    let Some(finding) = finding else { return };
+    let mut findings = cell.borrow_mut();
+    match findings.rest_levels.as_mut() {
+        Some(sum) => sum.merge(finding),
+        None => findings.rest_levels = Some(finding),
+    }
+}

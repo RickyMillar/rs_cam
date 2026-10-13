@@ -364,6 +364,12 @@ pub struct ToolpathStats {
     /// `get_diagnostics`) and the CLI's `tp_*.json` — because the five
     /// counters only mean anything together.
     pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
+    /// G-RESTLEVELS: what the rest-stock level clip of a 2.5D operation
+    /// did. `None` = the operation read no machined stock, so no level was
+    /// tested. See [`RestLevelsFinding`].
+    ///
+    /// Report-only: no gate consumes it. A fallback is a `Caution`.
+    pub rest_levels: Option<RestLevelsFinding>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///
@@ -700,6 +706,52 @@ impl BoundaryClipDroppedFinding {
 /// operator asked for a cut at or below the bed) and `delivered_levels < 2`
 /// (the ladder has nothing to cut between top and bottom — the empty gate
 /// cannot see this, because `Waterline` is a feature-selective exemption).
+/// G-RESTLEVELS: what the rest-stock level clip of a 2.5D operation did.
+///
+/// An operation with `StockSource::FromRemainingStock` tests each Z level of
+/// its ladder against the machined stock. A level with no material in the
+/// reach of the tool is skipped. A level with material in part of the
+/// outline cuts only that part. The counters sum over every outline of the
+/// operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RestLevelsFinding {
+    /// Levels of the design ladder, summed over the outlines.
+    pub planned_levels: usize,
+    /// Levels skipped because no material stands in the reach of the tool.
+    pub skipped_levels: usize,
+    /// Levels cut on a part of the outline only.
+    pub clipped_levels: usize,
+    /// Why the clip cut the whole outline at every level, if it did. `None`
+    /// = no fallback.
+    pub fallback: Option<RestLevelsFallback>,
+}
+
+/// G-RESTLEVELS: why the rest-stock level clip fell back to the whole
+/// outline. Each fallback cuts MORE, never less.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestLevelsFallback {
+    /// The XY box of the machined stock does not overlap the outline. The
+    /// stock and the outline are probably in different frames.
+    StockOffOutline,
+    /// The region extraction hit
+    /// [`crate::geometry::region_mask::MAX_REST_REGIONS`].
+    RegionCap { total_before_cap: usize },
+    /// The outline is too large for the window of the stock grid.
+    WindowTooLarge { cells: usize, limit: usize },
+}
+
+impl RestLevelsFinding {
+    /// Add the counters of `other` to `self`. The first fallback stays.
+    pub fn merge(&mut self, other: Self) {
+        self.planned_levels += other.planned_levels;
+        self.skipped_levels += other.skipped_levels;
+        self.clipped_levels += other.clipped_levels;
+        if self.fallback.is_none() {
+            self.fallback = other.fallback;
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterlineLadderFinding {
     /// The resolved `top_z` (mm) the ladder started from.

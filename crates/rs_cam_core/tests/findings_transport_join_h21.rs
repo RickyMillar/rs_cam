@@ -44,8 +44,8 @@ use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding,
     DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
-    InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats, WaterlineLadderFinding,
-    ZeroRemovalFinding,
+    InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding, TipFloatFinding,
+    ToolpathStats, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
@@ -257,6 +257,16 @@ fn every_finding_recorded() -> GenerationFindings {
             ceiling_refused: 1,
             slower_than_retract: 0,
         }),
+        // G-RESTLEVELS. A clip that FELL BACK, so a dropped channel reads
+        // as `None` rather than coincidentally matching a clean one.
+        rest_levels: Some(RestLevelsFinding {
+            planned_levels: 41,
+            skipped_levels: 37,
+            clipped_levels: 2,
+            fallback: Some(RestLevelsFallback::RegionCap {
+                total_before_cap: 65,
+            }),
+        }),
     }
 }
 
@@ -301,6 +311,7 @@ fn every_recorded_finding_survives_the_single_join() {
         relink,
         pencil_link,
         monotone_cells,
+        rest_levels,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -350,6 +361,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(relink, findings.relink);
     assert_eq!(pencil_link, findings.pencil_link);
     assert_eq!(monotone_cells, findings.monotone_cells);
+    assert_eq!(rest_levels, findings.rest_levels);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -428,6 +440,10 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
         "Phase O: a generation that ran no intra-region relink has measured \
          nothing — `Some(default)` here would claim every junction was \
          considered and none declined"
+    );
+    assert_eq!(
+        stats.rest_levels, None,
+        "G-RESTLEVELS: a generation that read no machined stock tested no level"
     );
     assert_eq!(
         stats.pencil_link, None,
