@@ -251,8 +251,8 @@ const CHAMFER_PARAMS: &[ParamDef] = &[
          angle.",
     ),
     ParamDef::required("tip_offset", "f64").with_help(
-        "Distance from V-bit tip to prevent wear. Increases cut depth \
-         slightly.",
+        "Distance (mm) the V-bit tip runs outside the edge, so the tip \
+         does not cut. Increases cut depth slightly.",
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),

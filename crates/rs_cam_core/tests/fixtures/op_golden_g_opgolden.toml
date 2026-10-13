@@ -69,11 +69,11 @@ move_count = 16
 rapid_count = 4
 linear_count = 10
 arc_count = 2
-cutting_length_mm = 146.689
+cutting_length_mm = 141.032
 rapid_length_mm = 21.928
-bbox_min = [-22.0, -13.1, -1.1]
-bbox_max = [21.1, 13.1, 10.0]
-moves_hash = "c1296c937828f015"
+bbox_min = [-22.0, -12.1, -1.1]
+bbox_max = [20.1, 12.1, 10.0]
+moves_hash = "cac9a06e46fbab09"
 
 ["drill/fresh"]
 outcome = "ok"
