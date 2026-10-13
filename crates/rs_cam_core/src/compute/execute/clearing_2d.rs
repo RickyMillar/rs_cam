@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -550,7 +551,24 @@ pub(crate) fn generate_adaptive(
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
     let mut all_annotations = Vec::new();
-    for poly in polys {
+    // G-ADAPTPIECES (D2): the planner plans one piece of the machinable
+    // inset, so an outline whose inset splits is planned piece by piece.
+    // Each piece goes to full depth before the next, as each outline does.
+    let piece_outlines: Vec<Vec<Polygon2>> = polys
+        .iter()
+        .map(|poly| crate::adaptive::inset_piece_outlines(poly, ctx.tool_def.radius()))
+        .collect();
+    let outlines = polys
+        .iter()
+        .zip(&piece_outlines)
+        .flat_map(|(poly, pieces)| {
+            if pieces.is_empty() {
+                std::slice::from_ref(poly)
+            } else {
+                pieces.as_slice()
+            }
+        });
+    for poly in outlines {
         for (level_i, &z) in levels.iter().enumerate() {
             let params = crate::adaptive::AdaptiveParams {
                 tool_radius: ctx.tool_def.radius(),
