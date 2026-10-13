@@ -53,6 +53,7 @@ Sequential, one editor each. Order by risk.
 | W1.4 | D3 Inlay plug in the workpiece | prove with a sim sentry; write the split proposal (R2); implement after the ruling | sentry: the female op cuts nothing outside the female region |
 | W1.5 | D11 GUI prior-op check stops at the setup | walk core `carve_order_before` | viz test: rest op first in setup 3 names the setup-2 op |
 | W1.6 | D9 red schema test | make `diameter` consistent with the schema (serde default or unexposed decision) | the red test turns green |
+| W1.2b | D2 in Adaptive3d slices (same planner, still plans only `machinable_vec[0]`) | reproduce on a mesh with a split slice; fix in the planner or the 3D adapter | sentry + G-OPGOLDEN |
 | W1.7 | R3: retire the Rest op | delete the op on every surface (core, GUI, MCP, CLI, catalog, docs); state the load break | G-OPGOLDEN loses its Rest cases on purpose; build + clippy clean |
 | W1.1b | R1 follow-up: links are not scored against the stock | a simulation check that flags a fed link whose tool passes through remaining stock | sentry: a link forced below the stock top is flagged |
 
@@ -134,7 +135,7 @@ and W4, from what they measure. It is not scheduled now.
 | Wave | State |
 |---|---|
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
-| W1 | not started |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE (2D Adaptive pieces) |
 | W2–W6 | not started |
 
 ## Backlog (not scheduled)
