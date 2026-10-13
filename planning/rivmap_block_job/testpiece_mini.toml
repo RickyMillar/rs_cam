@@ -753,7 +753,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 0.736
-depth = 14.0
+depth = 1.0
 depth_per_pass = 0.5
 feed_rate = 1888.0
 plunge_rate = 372.0
@@ -797,7 +797,7 @@ mode = "auto"
 
 [setups.toolpaths.heights.top_z]
 mode = "manual"
-value = 15.5
+value = 2.5
 
 [setups.toolpaths.heights.bottom_z]
 mode = "auto"
