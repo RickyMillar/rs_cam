@@ -133,6 +133,6 @@ The lead brings each ruling with a recommendation and evidence.
 
 | Wave | State |
 |---|---|
-| W0 | not started |
+| W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
 | W1 | not started |
 | W2–W6 | not started |
