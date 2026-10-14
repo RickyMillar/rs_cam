@@ -347,7 +347,7 @@ pub struct ProjectDiagnostics {
     /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
     /// The measure every shipped threshold is tuned against — the GUI's 40%
     /// banner, the CLI's 40% verdict, and
-    /// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`].
+    /// [`crate::compute::catalog::Capabilities::air_cut_high_threshold_pct`].
     /// `None` when the evidence has no cut trace.
     pub air_cut_pct_of_total_runtime: Option<f64>,
     /// Air-cut time ÷ **cutting runtime (rapids excluded)** × 100 — always

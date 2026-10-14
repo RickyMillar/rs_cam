@@ -19,6 +19,8 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - The `narrate` Z ladder is NOMINAL, not achieved. "Did it cut too deep?" is
   answered by the emitted G-code against the mesh, not by this record.
 - A span survives a relink. A relink that drops spans is a defect.
+- The narration reads an op's DOC basis, air-cut hint, air-cut bar and relink dial from
+  `OperationType::capabilities()` (W2.4). Do not add a `match` on the op type here.
 
 ## Sentries
 

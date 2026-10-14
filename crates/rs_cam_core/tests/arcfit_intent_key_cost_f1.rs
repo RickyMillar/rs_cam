@@ -158,7 +158,7 @@ fn full_dressups() -> DressupConfig {
 fn adaptive3d_full_chain() -> OperationTransformCapabilities {
     OperationTransformCapabilities {
         planner_applies_segment_merge: false,
-        ..OperationType::Adaptive3d.transform_capabilities()
+        ..OperationType::Adaptive3d.capabilities().transform
     }
 }
 
@@ -453,7 +453,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         face_fixture(),
         &full_dressups(),
         1500.0,
-        OperationType::Face.transform_capabilities(),
+        OperationType::Face.capabilities().transform,
         &Expect {
             out: (80, 13),
             census: (118, 20, 0, 0),
@@ -467,7 +467,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         finish_passes([8.0, 9.0, 10.0, 11.0]),
         &DressupConfig::for_role(UiProcessRole::Finish),
         1000.0,
-        OperationType::Scallop.transform_capabilities(),
+        OperationType::Scallop.capabilities().transform,
         &Expect {
             // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): arcs 8 -> 16, census
             // joins 180 -> 362. The move COUNT is unchanged at 32: these
@@ -494,7 +494,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         finish_passes([2.0, 2.0, 2.0, 2.0]),
         &DressupConfig::for_role(UiProcessRole::Finish),
         1000.0,
-        OperationType::Scallop.transform_capabilities(),
+        OperationType::Scallop.capabilities().transform,
         &Expect {
             // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): (32, 8) -> (76, 44),
             // census (180, 8, 0, 0) -> (1084, 12, 0, 0). The largest move on

@@ -301,7 +301,8 @@ pub(super) fn draw_linking_params(
     // out so it does not claim an effect compute never applies.
     let reorder_ok = entry
         .operation
-        .transform_capabilities()
+        .capabilities()
+        .transform
         .allows_rapid_reorder;
     // G10 Q6 and D2: the helix radius resolves against the tool (the rule
     // 0.3 x D, or the operator value, capped at the flat bottom).

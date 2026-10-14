@@ -441,7 +441,7 @@ fn the_layout_still_measures_its_text_f2() {
 /// # The defect
 ///
 /// The diagram drew a `DANGER` red floor at `resolved.bottom_z` on every
-/// operation. `OperationType::honors_pinned_bottom_z`
+/// operation. `Capabilities::honors_pinned_bottom_z`
 /// (`rs_cam_core::compute::catalog`) says three of the twenty-four read that
 /// dial. On the other twenty-one the panel printed "Bottom: Not used by this
 /// operation. …" and the diagram under it drew a red floor: two surfaces
@@ -472,7 +472,7 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     for &op_type in OperationType::ALL {
         let drawn = draw_in(&ctx, &solid_ctx(), op_type);
         let reds = drawn.segment_count(tokens::DANGER);
-        if op_type.honors_pinned_bottom_z() {
+        if op_type.capabilities().honors_pinned_bottom_z {
             honoured += 1;
             assert!(
                 reds >= 1,

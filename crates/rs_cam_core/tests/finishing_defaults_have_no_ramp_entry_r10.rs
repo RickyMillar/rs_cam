@@ -159,7 +159,7 @@ fn the_roughing_family_is_unmoved() {
 /// is a flat end mill plunging into fresh stock, which G-RAMPTERRAIN
 /// restored the ramps to avoid. The role decides, through
 /// `OperationType::ramp_fold_lap_cap`, and the dressup door reads the
-/// same answer off `transform_capabilities()`.
+/// same answer off `capabilities().transform`.
 #[test]
 fn the_lap_cap_reaches_the_finishing_roles_only() {
     use rs_cam_core::dressup::RAMP_FOLD_MAX_LAPS;
@@ -181,9 +181,9 @@ fn the_lap_cap_reaches_the_finishing_roles_only() {
             "R10: ramp_fold_lap_cap({op:?}) with role {role:?}"
         );
         assert_eq!(
-            op.transform_capabilities().ramp_fold_lap_cap,
+            op.capabilities().transform.ramp_fold_lap_cap,
             expected,
-            "R10: the dressup door reads the cap off transform_capabilities({op:?})"
+            "R10: the dressup door reads the cap off capabilities().transform ({op:?})"
         );
     }
     assert!(finishing >= 10, "population: {finishing} finishing ops");

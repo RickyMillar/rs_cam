@@ -578,7 +578,7 @@ pub struct SimulationCutSummary {
 ///
 /// | surface | denominator |
 /// |---|---|
-/// | `ProjectDiagnostics::air_cut_pct_of_total_runtime`, the GUI banner + "% of total runtime" chips, the `>40%` verdict rule, `OperationType::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
+/// | `ProjectDiagnostics::air_cut_pct_of_total_runtime`, the GUI banner + "% of total runtime" chips, the `>40%` verdict rule, `Capabilities::air_cut_high_threshold_pct` | **total runtime** (cutting + rapids) |
 /// | the MCP `narrate_toolpath` air-cut line, and `CLAUDE.md`'s metric caveats | **cutting runtime** (rapids excluded) |
 ///
 /// On a retract-heavy op the two differ by a large factor: total runtime is
@@ -603,7 +603,7 @@ pub struct SimulationCutSummary {
 ///
 /// **Thresholds follow the total-runtime measure.** Every shipped threshold
 /// — the GUI's 40%, the CLI's 40%, and every per-operation value in
-/// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`] —
+/// [`crate::compute::catalog::Capabilities::air_cut_high_threshold_pct`] —
 /// was tuned against [`Self::air_cut_pct_of_total_runtime`] and keeps using
 /// it. This trait changed no number; it named them.
 ///

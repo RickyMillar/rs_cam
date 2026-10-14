@@ -16,7 +16,6 @@ use crate::trace::transform_provenance::ReconcileSet;
 use crate::toolpath::Toolpath;
 
 use super::drilling::drill_holes_for_config;
-use super::findings::record_derived_stepover;
 use super::finish_3d::adaptive3d_effective_stock_to_leave;
 use super::*;
 
@@ -36,7 +35,7 @@ fn stepover_finding(
     }
 }
 
-/// C8, red-first against the pre-wave code: `record_derived_stepover`
+/// C8, red-first against the pre-wave code: the derived-stepover writer
 /// returned early when the slot was occupied, so the SECOND derivation
 /// — PR-7's generic rest-analysis post-pass — was discarded with no
 /// trace. This asserts both survive, in the order they fired, each
@@ -49,14 +48,12 @@ fn two_derivations_on_one_toolpath_are_both_recorded() {
         "empty means nothing derived — the 'not measured' state"
     );
 
-    record_derived_stepover(
-        &cell,
-        stepover_finding("UnifiedFinish crease/pencil claims", 0.20),
-    );
-    record_derived_stepover(
-        &cell,
-        stepover_finding("generic rest analysis routing", 0.35),
-    );
+    cell.borrow_mut().record(&stepover_finding(
+        "UnifiedFinish crease/pencil claims",
+        0.20,
+    ));
+    cell.borrow_mut()
+        .record(&stepover_finding("generic rest analysis routing", 0.35));
 
     let findings = cell.into_inner();
     assert_eq!(
@@ -1453,7 +1450,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
             feed_opt_stock: Some(&mut stock),
             cutter: Some(&cutter),
             entry_surface: None,
-            transform_capabilities: OperationType::Pocket.transform_capabilities(),
+            transform_capabilities: OperationType::Pocket.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: Some(&semantic_root),
             entry_containment: None,
@@ -1499,7 +1496,7 @@ fn apply_dressups_preserves_moves() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::DropCutter.transform_capabilities(),
+            transform_capabilities: OperationType::DropCutter.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

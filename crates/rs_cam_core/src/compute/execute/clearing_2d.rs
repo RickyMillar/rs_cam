@@ -10,8 +10,7 @@ use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
-use super::findings::{record_rest_levels, record_truncated_core_only};
-use super::record_offset_library_failures;
+use super::OffsetFailures;
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
 use super::standing_material::LevelRegion;
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
@@ -31,12 +30,11 @@ pub(crate) fn generate_zigzag(
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let mut combined = Toolpath::new();
-    // Checkpoint C: a plain `Cell` accumulator, local to this generate and
-    // captured by the per-level closure. Deliberately not a thread-local
-    // collector (`CAVALIER_SHAPE_FAILURE.md` §6 D-1 option C, declined):
-    // the count is threaded, visible in the signatures it passes through,
-    // and testable without a global.
-    let offset_failures = std::cell::Cell::new(0usize);
+    // Checkpoint C: this op measures its offsets, so it records a zero
+    // before its first call (W2.3). Each kernel count is recorded where
+    // the kernel returns it. Deliberately not a thread-local collector
+    // (`CAVALIER_SHAPE_FAILURE.md` §6 D-1 option C, declined).
+    ctx.record(&OffsetFailures(0));
     for poly in polys {
         // G2: the wall inset and the scan-line build are Z-independent, so
         // they run ONCE per polygon. The per-level closure stamps Z only.
@@ -59,7 +57,7 @@ pub(crate) fn generate_zigzag(
         };
         let (lines, failures) =
             crate::ops::zigzag::zigzag_lines_reported(poly, tool_radius, cfg.stepover, cfg.angle);
-        offset_failures.set(offset_failures.get() + failures);
+        ctx.record(&OffsetFailures(failures));
         let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
@@ -76,7 +74,6 @@ pub(crate) fn generate_zigzag(
         )?;
         combined.moves.extend(tp.moves);
     }
-    record_offset_library_failures(ctx.findings, offset_failures.get());
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
@@ -99,8 +96,8 @@ pub(crate) fn generate_trace(
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
-    let offset_failures = std::cell::Cell::new(0usize);
+    // Checkpoint C: see `generate_zigzag` for the measured zero.
+    ctx.record(&OffsetFailures(0));
     for poly in polys {
         let params = crate::ops::trace_path::TraceParams {
             tool_radius: ctx.tool_def.radius(),
@@ -121,7 +118,7 @@ pub(crate) fn generate_trace(
         }
         let (rings, failures) =
             crate::ops::trace_path::trace_compensated_polygons_reported(poly, &params);
-        offset_failures.set(offset_failures.get() + failures);
+        ctx.record(&OffsetFailures(failures));
         let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
@@ -134,7 +131,6 @@ pub(crate) fn generate_trace(
         )?;
         combined.moves.extend(tp.moves);
     }
-    record_offset_library_failures(ctx.findings, offset_failures.get());
     let generated = generated_with_depth_run_spans(combined, &levels);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_trace_spans(&generated.spans, &generated.toolpath, sem);
@@ -171,8 +167,8 @@ pub(crate) fn generate_profile(
     let plunge_rate = op.plunge_rate();
     let cancel_fn = ctx.cancel_fn();
     let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
-    let offset_failures = std::cell::Cell::new(0usize);
+    // Checkpoint C: see `generate_zigzag` for the measured zero.
+    ctx.record(&OffsetFailures(0));
     for poly in polys {
         // G2: the compensation offset that produces the tool-centre path is
         // Z-independent, so it runs ONCE per polygon. Tabs stay inside the
@@ -193,7 +189,7 @@ pub(crate) fn generate_profile(
                 == crate::compute::operation_configs::CompensationType::InControl,
         };
         let (contour, failures) = crate::ops::profile::profile_path_reported(poly, &base);
-        offset_failures.set(offset_failures.get() + failures);
+        ctx.record(&OffsetFailures(failures));
         let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
             &levels,
             safe_z,
@@ -226,7 +222,6 @@ pub(crate) fn generate_profile(
         )?;
         combined.moves.extend(tp.moves);
     }
-    record_offset_library_failures(ctx.findings, offset_failures.get());
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
@@ -256,15 +251,11 @@ pub(crate) fn generate_pocket(
     let plunge_rate = op.plunge_rate();
     let cancel_fn = ctx.cancel_fn();
     let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for why this is a local `Cell`.
-    // Pocket is the family this channel was built for — F-12 — because its
-    // cascade's only exit is a collapsed ring and a contained panic looks
-    // exactly like one.
-    let offset_failures = std::cell::Cell::new(0usize);
-    // Checkpoint C, Q3: standing area left by a cascade that hit a bound.
-    // `None` = no bound fired anywhere, which is the `truncated_core_mm2`
-    // "not measured" reading and must not be coerced to a zero.
-    let truncated_by_bound: std::cell::Cell<Option<f64>> = std::cell::Cell::new(None);
+    // Checkpoint C: see `generate_zigzag` for the measured zero. Pocket is
+    // the family this channel was built for — F-12 — because its cascade's
+    // only exit is a collapsed ring and a contained panic looks exactly
+    // like one.
+    ctx.record(&OffsetFailures(0));
     for poly in polys {
         // G2: the 2D geometry — tool compensation plus the whole
         // `OffsetRingSet` cascade for Contour, the wall inset plus scan lines
@@ -284,7 +275,7 @@ pub(crate) fn generate_pocket(
             tool_radius,
             &cancel_fn,
         )?;
-        record_rest_levels(ctx.findings, plan.finding);
+        ctx.record(&plan.finding);
         let whole = std::slice::from_ref(poly);
         let tp = match cfg.pattern {
             crate::compute::operation_configs::PocketPattern::Contour => {
@@ -309,20 +300,13 @@ pub(crate) fn generate_pocket(
                                 cfg.stepover,
                                 &cancel_fn,
                             )?;
-                        offset_failures.set(offset_failures.get() + report.offset_failures);
-                        // Checkpoint C, Q3 (F-10): a cascade stopped by a
-                        // bound leaves material, and that is exactly what
-                        // `truncated_core_mm2` already means — "region
-                        // interior a ring cascade left UNCUT because it hit a
-                        // cap before collapsing". Recorded on the existing
-                        // channel, so it reaches narrate, the diagnostics
-                        // list and MCP with no extra plumbing. It is the
-                        // standing area of ONE cascade (G2), never multiplied
-                        // by the level count.
-                        if let Some(standing) = report.truncated_core_mm2 {
-                            truncated_by_bound
-                                .set(Some(truncated_by_bound.get().unwrap_or(0.0) + standing));
-                        }
+                        // The offset failures, and (Checkpoint C, Q3, F-10)
+                        // the standing area when a bound stopped the
+                        // cascade: material this pocket leaves, on the
+                        // existing `truncated_core_mm2` channel. It is the
+                        // area of ONE cascade (G2), never multiplied by the
+                        // level count.
+                        ctx.record(&report);
                         contours.extend(rings);
                     }
                     Ok::<_, OperationError>(contours)
@@ -379,7 +363,7 @@ pub(crate) fn generate_pocket(
                             cfg.stepover,
                             cfg.angle,
                         );
-                        offset_failures.set(offset_failures.get() + failures);
+                        ctx.record(&OffsetFailures(failures));
                         lines.extend(piece_lines);
                     }
                     lines
@@ -415,10 +399,6 @@ pub(crate) fn generate_pocket(
             }
         };
         combined.moves.extend(tp.moves);
-    }
-    record_offset_library_failures(ctx.findings, offset_failures.get());
-    if let Some(standing) = truncated_by_bound.get() {
-        record_truncated_core_only(ctx.findings, standing);
     }
     Ok(with_depth_run_annotation(
         generated_with_depth_run_spans(combined, &levels),

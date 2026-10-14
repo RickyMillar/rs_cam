@@ -584,7 +584,7 @@ fn operation_type_serde_repr_pinned() {
 #[test]
 fn operation_transform_capabilities_are_explicit() {
     for &op_type in OperationType::ALL {
-        let caps = op_type.transform_capabilities();
+        let caps = op_type.capabilities().transform;
         assert!(
             !(caps.allows_global_rapid_reorder && caps.requires_depth_order),
             "{op_type:?} cannot globally reorder while requiring depth order"
@@ -596,21 +596,24 @@ fn operation_transform_capabilities_are_explicit() {
     }
     assert!(
         OperationType::Adaptive3d
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .requires_depth_order
     );
     assert!(
         OperationType::DropCutter
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_global_rapid_reorder
     );
     assert!(
         OperationType::ProjectCurve
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_global_rapid_reorder
     );
 
-    let face = OperationType::Face.transform_capabilities();
+    let face = OperationType::Face.capabilities().transform;
     assert!(
         !face.allows_barriered_rapid_reorder(),
         "Face must veto barriered rapid-order permutation"
@@ -624,7 +627,7 @@ fn operation_transform_capabilities_are_explicit() {
 
     // Adaptive3d plans each run against the stock its earlier runs left.
     // A rapid-order permutation breaks its entries (rivmap100, 2026-09-25).
-    let a3d = OperationType::Adaptive3d.transform_capabilities();
+    let a3d = OperationType::Adaptive3d.capabilities().transform;
     assert!(
         !a3d.allows_barriered_rapid_reorder(),
         "Adaptive3d must veto barriered rapid-order permutation"
@@ -636,7 +639,7 @@ fn operation_transform_capabilities_are_explicit() {
 
     // The 2D adaptive planner admits a long keep-down link only through a
     // corridor its earlier runs cleared (G-ADAPTORDER, 2026-09-26).
-    let adaptive = OperationType::Adaptive.transform_capabilities();
+    let adaptive = OperationType::Adaptive.capabilities().transform;
     assert!(
         !adaptive.allows_barriered_rapid_reorder(),
         "2D Adaptive must veto barriered rapid-order permutation"
@@ -648,13 +651,14 @@ fn operation_transform_capabilities_are_explicit() {
     // Pocket shares the plain 2.5D capability row: no order veto.
     assert!(
         OperationType::Pocket
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_barriered_rapid_reorder()
     );
 
     // Face's veto is narrower than the shared non-link capability: Inlay
     // remains eligible for barriered reordering while retaining no links.
-    let inlay = OperationType::Inlay.transform_capabilities();
+    let inlay = OperationType::Inlay.capabilities().transform;
     assert!(inlay.allows_barriered_rapid_reorder());
     assert!(!inlay.allows_unbarriered_rapid_reorder());
     assert!(!inlay.allows_link_moves);
@@ -678,7 +682,7 @@ fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
         continuous: false,
         ..ScallopConfig::default()
     });
-    let discrete_caps = discrete.transform_capabilities();
+    let discrete_caps = discrete.capabilities().transform;
     assert!(
         discrete_caps.allows_global_rapid_reorder,
         "discrete-ring Scallop should allow global rapid reorder \
@@ -694,7 +698,7 @@ fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
         continuous: true,
         ..ScallopConfig::default()
     });
-    let continuous_caps = continuous.transform_capabilities();
+    let continuous_caps = continuous.capabilities().transform;
     assert!(
         !continuous_caps.allows_global_rapid_reorder,
         "continuous (spiral) Scallop must stay reorder-blocked — it's \
@@ -705,7 +709,7 @@ fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
     // The op-type-only fallback (no config in hand) must stay the
     // conservative answer — it is what continuous Scallop falls
     // through to, and the worst case for callers with no config.
-    let fallback = OperationType::Scallop.transform_capabilities();
+    let fallback = OperationType::Scallop.capabilities().transform;
     assert!(!fallback.allows_global_rapid_reorder);
     assert!(!fallback.allows_link_moves);
 }
@@ -713,12 +717,16 @@ fn scallop_config_transform_capabilities_dispatch_splits_reorder_from_links() {
 #[test]
 fn air_cut_threshold_suppresses_drill_kinds() {
     assert!(
-        OperationType::Drill.air_cut_high_threshold_pct().is_none(),
+        OperationType::Drill
+            .capabilities()
+            .air_cut_high_threshold_pct
+            .is_none(),
         "Drill should suppress air-cut metric (dexel can't measure Z-only)"
     );
     assert!(
         OperationType::AlignmentPinDrill
-            .air_cut_high_threshold_pct()
+            .capabilities()
+            .air_cut_high_threshold_pct
             .is_none(),
         "AlignmentPinDrill should suppress air-cut metric"
     );
@@ -727,7 +735,8 @@ fn air_cut_threshold_suppresses_drill_kinds() {
 #[test]
 fn air_cut_threshold_permissive_for_project_curve() {
     let t = OperationType::ProjectCurve
-        .air_cut_high_threshold_pct()
+        .capabilities()
+        .air_cut_high_threshold_pct
         .expect("ProjectCurve should have an air-cut threshold");
     // W5B-F4: the band must stay the most permissive in the table (the op
     // IS sparse by construction) without becoming unreachable. Post-flip
@@ -760,7 +769,8 @@ fn air_cut_threshold_band_for_finish_ops() {
         OperationType::RadialFinish,
     ] {
         let t = op
-            .air_cut_high_threshold_pct()
+            .capabilities()
+            .air_cut_high_threshold_pct
             .unwrap_or_else(|| panic!("{op:?} should have an air-cut threshold"));
         // W5B-F4: the band must clear the measured defect-free cluster
         // (34.3–42.5 on clean geometry with the correct tool) and still
@@ -784,7 +794,8 @@ fn air_cut_threshold_band_for_clearing_ops() {
         OperationType::Zigzag,
     ] {
         let t = op
-            .air_cut_high_threshold_pct()
+            .capabilities()
+            .air_cut_high_threshold_pct
             .unwrap_or_else(|| panic!("{op:?} should have an air-cut threshold"));
         assert!(
             (35.0..=45.0).contains(&t),
@@ -799,7 +810,7 @@ fn air_cut_threshold_exhaustive_for_all_ops() {
     // We can't enforce this at compile time (the method returns Option),
     // so this test ensures someone touched every variant deliberately.
     for &op in OperationType::ALL {
-        let _ = op.air_cut_high_threshold_pct();
+        let _ = op.capabilities().air_cut_high_threshold_pct;
     }
 }
 

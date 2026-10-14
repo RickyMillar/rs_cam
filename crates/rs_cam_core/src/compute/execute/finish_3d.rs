@@ -7,12 +7,6 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
 use crate::tool::MillingCutter;
 
-use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
-use super::findings::{
-    record_claims_reference, record_clipped_band, record_derived_stepover, record_dropped_band,
-    record_inert_claims_dial, record_monotone_cells, record_pencil_link, record_ramp_reach_clamp,
-    record_relink_totals, record_tip_float, record_truncated_core, record_zero_removal,
-};
 use super::shared::{
     generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
@@ -245,18 +239,10 @@ pub(crate) fn generate_pencil(
             ctx.debug_ctx,
             &ctx.cancel_fn(),
         )?;
-    // Wave D1: pencil is a centreline op, so it always MEASURES float — even
-    // when the answer is zero. That is the whole point: a silent pass and a
-    // pass that proved the tool reached the floor must not look alike.
-    if let Some(float) = report.tip_float {
-        record_tip_float(ctx.findings, float);
-    }
-    // G-LINKVISIBLE: the generator sets this exactly when the emitter ran,
-    // so pass its `Option` through. `None` reaches the stats channel as "not
-    // measured" — no centreline, so no junction decision was ever taken.
-    if let Some(link) = report.link {
-        record_pencil_link(ctx.findings, link);
-    }
+    // Wave D1: the tip float (a centreline op always MEASURES it, zero
+    // included) and G-LINKVISIBLE: the link report, `Some` exactly when the
+    // emitter ran.
+    ctx.record(&report);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_pencil(&annotations, &tp, sem);
     }
@@ -311,7 +297,7 @@ pub(crate) fn generate_unified_finish(
     // F4: the claims dials are read from here down. Report — do not refuse,
     // do not start applying — when the operator dialled a rest-territory
     // number that this configuration never applies.
-    record_inert_claims_dial(ctx.findings, cfg);
+    ctx.record(&crate::compute::toolpath_stats::InertClaimsDialFinding::of_config(cfg));
 
     let claims_cfg = cfg.pencil_claims.then(|| {
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease
@@ -342,13 +328,10 @@ pub(crate) fn generate_unified_finish(
             cfg.claims_reference,
             territory_stock.is_some(),
         );
-        record_claims_reference(
-            ctx.findings,
-            crate::compute::toolpath_stats::ClaimsReferenceFinding {
-                resolution,
-                territory_clip_requested: cfg.territory_clip,
-            },
-        );
+        ctx.record(&crate::compute::toolpath_stats::ClaimsReferenceFinding {
+            resolution,
+            territory_clip_requested: cfg.territory_clip,
+        });
         // Detector tuning mirrors `attach_generic_rest_analysis`: use the
         // configured `rest_analysis` cell/depth/margin when present, else
         // the detector's own defaults. `min_cut_length` has no
@@ -445,24 +428,11 @@ pub(crate) fn generate_unified_finish(
             link_ceiling,
             &ctx.cancel_fn(),
         )?;
-    // Report-only, and only when the pass actually ran — `None` on the
-    // stats side means "not measured", never "nothing retracted".
-    if cfg.intra_region_hookup_mm > 0.0 {
-        record_relink_totals(ctx.findings, report.relink);
-    }
-    // C2: same rule — the generator already decided whether anything was
-    // measured, so pass its `Option` through rather than re-deriving the
-    // question from the config (a dial that is ON but met no Shallow region
-    // measured nothing).
-    if let Some(totals) = report.monotone_cells {
-        record_monotone_cells(ctx.findings, totals);
-    }
-    record_truncated_core(
-        ctx.findings,
-        report.uncut_core_mm2,
-        report.untouched_mm2,
-        report.standing_mm2,
-    );
+    // W2.3: the whole report in one record — the link totals and the C2
+    // cells only when their pass ran, the cascade residual, the dropped and
+    // clipped bands, the crease tip float and the derived stepovers (see
+    // the `UnifiedFinishReport` impl in `findings.rs`).
+    ctx.record(&report);
     // A4: the pass has just been planned against a reference stock, and this
     // is the only point where the emitted geometry and that reference are
     // both in scope. Gated on the reference having RESOLVED to a real
@@ -475,60 +445,8 @@ pub(crate) fn generate_unified_finish(
         )
         && let Some(stock) = cfg.territory_stock
     {
-        record_zero_removal(ctx.findings, &tp, stock, ctx.tool_def);
-    }
-    // Wave D1: an unmachined band is a generation-time finding with no home
-    // on the toolpath — the whole reason `GenerationFindings` exists.
-    record_dropped_band(
-        ctx.findings,
-        crate::finish::unified_finish::dropped_band_finding(&report),
-    );
-    // C8: the quiet sibling — bands the heights SHORTENED but did not erase.
-    record_clipped_band(
-        ctx.findings,
-        crate::finish::unified_finish::clipped_band_finding(&report),
-    );
-    // Wave D1: the crease node's centrelines are pencil centrelines and
-    // float for the same reasons. `None` when claims never ran.
-    if let Some(float) = report.tip_float {
-        record_tip_float(ctx.findings, float);
-    }
-    // Honest raster (Track B fix, 2026-09-01): one entry per Shallow region
-    // whose raster stepover was derated by cos(theta_max). The operator's
-    // `raster_stepover` dial is not rewritten, so this audit trail is the
-    // only surface the derived value appears on.
-    for d in &report.shallow_slope_derates {
-        record_derived_stepover(
-            ctx.findings,
-            crate::compute::toolpath_stats::DerivedStepoverFinding {
-                site: "UnifiedFinish shallow raster slope derate",
-                stepover_mm: d.derated_stepover_mm,
-                // Not a depth-keyed derivation: the derate is slope-keyed.
-                reference_depth_mm: 0.0,
-                reference_depth_basis: SHALLOW_SLOPE_DERATE_BASIS,
-                envelope_rule_mm: d.configured_stepover_mm,
-                slope_derate: Some(crate::compute::toolpath_stats::SlopeDerateDetail {
-                    region_index: d.region_index,
-                    slope_max_deg: d.slope_max_deg,
-                }),
-            },
-        );
-    }
-    // PR-6a (H2.3): the crease/pencil fan's stepover is derived from the
-    // canonical reach policy, not from any dial the operator can see. `None`
-    // when the claims pipeline never ran, so "not derived" stays distinct
-    // from "derived and unchanged".
-    if let Some(claims) = report.claims {
-        record_derived_stepover(
-            ctx.findings,
-            crate::compute::toolpath_stats::DerivedStepoverFinding {
-                site: "UnifiedFinish crease/pencil claims",
-                stepover_mm: claims.offset_stepover_mm,
-                reference_depth_mm: claims.offset_stepover_reference_depth_mm,
-                reference_depth_basis: crate::finish::unified_finish::CLAIMS_STEPOVER_DEPTH_BASIS,
-                envelope_rule_mm: claims.envelope_rule_stepover_mm,
-                slope_derate: None,
-            },
+        ctx.record(
+            &crate::compute::toolpath_stats::ZeroRemovalFinding::measure(&tp, stock, ctx.tool_def),
         );
     }
     if let Some(sem) = ctx.semantic_ctx {
@@ -636,7 +554,7 @@ pub(crate) fn generate_ramp_finish(
     // PR-8b: unconditional, including when the clamp was inert — this is the
     // only adapter that runs a ramp descent, so `None` downstream means "no
     // descent ran" and never "a descent ran and I did not look".
-    record_ramp_reach_clamp(ctx.findings, reach_clamp);
+    ctx.record(&reach_clamp);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
     }

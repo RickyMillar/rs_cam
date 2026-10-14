@@ -525,7 +525,7 @@ impl DepthBeyondStock {
 ///
 /// * The operations that read `ResolvedHeights::bottom_z` as their floor —
 ///   `Adaptive3d`, `UnifiedFinish`, `Waterline`
-///   ([`crate::compute::catalog::OperationType::honors_pinned_bottom_z`]).
+///   ([`crate::compute::catalog::Capabilities::honors_pinned_bottom_z`]).
 ///   Their floor CAN be a pinned Bottom Z, and this adapter's snapshot
 ///   carries no pin FLAG: [`ResolvedHeights`] holds five numbers and no
 ///   record of which of them the operator set, whichever constructor built
@@ -545,7 +545,7 @@ pub fn depth_beyond_stock_applies(op: &OperationConfig) -> bool {
     // already excludes them. It is kept because it states the REASON they
     // cannot be answered for, which the `Explicit` check does not: their
     // floor can be a pinned Bottom Z, and this snapshot carries no pin flag.
-    if op.op_type().honors_pinned_bottom_z() {
+    if op.op_type().capabilities().honors_pinned_bottom_z {
         return false;
     }
     if matches!(op.op_type(), ProjectCurve | AlignmentPinDrill) {

@@ -17,7 +17,6 @@ use crate::trace::semantic_trace::{
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
-use super::findings::{record_derived_stepover, record_region_cap};
 use super::{GeneratedToolpath, GenerationFindings};
 
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
@@ -88,17 +87,16 @@ pub(super) fn attach_generic_rest_analysis(
     // set. Only when the policy sized it — an explicitly pinned stepover is
     // the operator's own number and needs no notice.
     if cfg.offset_stepover_mm.is_none() {
-        record_derived_stepover(
-            findings,
-            crate::compute::toolpath_stats::DerivedStepoverFinding {
+        findings
+            .borrow_mut()
+            .record(&crate::compute::toolpath_stats::DerivedStepoverFinding {
                 site: "generic rest analysis routing",
                 stepover_mm: offset_stepover_mm,
                 reference_depth_mm: cfg.min_valley_depth,
                 reference_depth_basis: GENERIC_REST_STEPOVER_DEPTH_BASIS,
                 envelope_rule_mm: tool_def.envelope_radius_mm() * 0.5,
                 slope_derate: None,
-            },
-        );
+            });
     }
     let rf = crate::surface::rest_field::detect_rest_valleys(
         mesh, index, tool_def, reference, &rf_params,
@@ -107,7 +105,7 @@ pub(super) fn attach_generic_rest_analysis(
     // consumer will be confined to, and the MAX_REST_REGIONS cap can have
     // silently dropped some of them. Record the pre-cap count alongside —
     // always, so `Some` with nothing truncated reads as measured-clean.
-    record_region_cap(findings, rf.region_cap);
+    findings.borrow_mut().record(&rf.region_cap);
     // The region set is the tier-map / derived-boundary planning surface,
     // and no headless output carries its polygons — this line is the one
     // place the numbers are observable off the GUI (multitool Phase T).

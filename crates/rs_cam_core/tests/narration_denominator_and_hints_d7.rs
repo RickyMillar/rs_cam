@@ -10,7 +10,7 @@
 //!   it comparing against a flat 50 that no gate used, so the ⚠ and the gate
 //!   could still disagree in both directions on the same toolpath. The marker
 //!   now reads the narrated op's OWN band from
-//!   `OperationType::air_cut_high_threshold_pct`, falling back to 50 only when
+//!   `Capabilities::air_cut_high_threshold_pct`, falling back to 50 only when
 //!   there is no band to read.
 //! - **D8 / R-5**: `UnifiedFinish` was missing from the finish-op hint arm.
 //! - **R-13**: ops with no commanded axial step were told there was no

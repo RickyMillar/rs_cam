@@ -313,7 +313,8 @@ pub struct ExecutionContext<'a> {
     /// Write-only sink for generation-time findings (see
     /// [`GenerationFindings`]). A `Cell` rather than a return value so an
     /// adapter can report one without changing the `GenerateFn` signature
-    /// every family shares.
+    /// every family shares. An adapter writes it only through
+    /// [`Self::record`] (W2.3).
     pub findings: &'a std::cell::RefCell<GenerationFindings>,
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
@@ -435,6 +436,13 @@ impl<'a> ExecutionContext<'a> {
         self.cancel.load(Ordering::SeqCst)
     }
 
+    /// W2.3: THE door an adapter records a kernel's report through. The
+    /// report's [`findings::RecordFindings`] impl writes every field it
+    /// carries, so the adapter picks out none of them.
+    pub(crate) fn record<R: findings::RecordFindings + ?Sized>(&self, report: &R) {
+        self.findings.borrow_mut().record(report);
+    }
+
     pub(crate) fn new(
         findings: &'a std::cell::RefCell<GenerationFindings>,
         tool_def: &'a ToolDefinition,
@@ -543,15 +551,14 @@ pub use drilling::{
     stale_drill_picks_refusal,
 };
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
-pub use findings::record_boundary_clip_dropped;
-pub(crate) use findings::record_offset_library_failures;
+pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{
     generate_adaptive3d, generate_horizontal_finish, generate_pencil, generate_radial_finish,
     generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
 pub use prologue::{MeshInput, Prepared};
-pub use shared::{LinkCeilingNeed, link_ceiling_for, link_ceiling_need};
+pub use shared::{LinkCeilingNeed, link_ceiling_for};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
 /// annotations.

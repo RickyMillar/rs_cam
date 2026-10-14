@@ -284,7 +284,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
             feed_opt_stock: /* feed_opt_stock */ None,
             cutter: /* cutter */ None,
             entry_surface: None,
-            transform_capabilities: op.transform_capabilities(),
+            transform_capabilities: op.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -297,9 +297,9 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
 /// Like [`dressup`], but takes explicit `OperationTransformCapabilities`
 /// instead of deriving them from `OperationType`. Needed for the Scallop
 /// tests below: Scallop's real capabilities are CONFIG-aware
-/// (`OperationConfig::Scallop(cfg).transform_capabilities()`, fix-family
+/// (`OperationConfig::Scallop(cfg).capabilities().transform`, fix-family
 /// Phase 1b), not the static per-op-type table `dressup()`'s
-/// `op.transform_capabilities()` reads — `OperationType::Scallop`'s answer
+/// `op.capabilities().transform` reads — `OperationType::Scallop`'s answer
 /// stays pinned conservative regardless of `cfg.continuous`.
 fn dressup_with_caps(
     tp: Toolpath,
@@ -534,7 +534,7 @@ fn assert_link_moves_neutral(
     // `trace_link_moves_preserves_material_state` had been doing since it
     // was written. Refuse to pretend.
     assert!(
-        op.transform_capabilities().allows_link_moves,
+        op.capabilities().transform.allows_link_moves,
         "{op:?}: allows_link_moves is FALSE, so this fixture cannot exercise \
          link moves at all — the comparison below would be two identical \
          toolpaths. Either this op should permit links, or it does not belong \
@@ -670,7 +670,8 @@ fn face_link_moves_are_forbidden_after_measured_gouge() {
     // geometry is in scope.
     assert!(
         !OperationType::Face
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_link_moves,
         "Face permits link moves again — it gouged 9.21mm when last measured. \
          Re-enable only with a fresh neutrality measurement, not on inspection."
@@ -685,7 +686,8 @@ fn trace_link_moves_are_forbidden_so_the_old_test_was_vacuous() {
     // matched — green forever, testing nothing. Assert the real property.
     assert!(
         !OperationType::Trace
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_link_moves,
         "Trace now permits link moves — it needs a REAL neutrality or gouge \
          test, not the vacuous clone comparison this replaced"
@@ -706,7 +708,8 @@ fn vcarve_link_moves_are_forbidden_after_measured_gouge() {
     // geometry is in scope.
     assert!(
         !OperationType::VCarve
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_link_moves,
         "VCarve permits link moves again — it gouged 5.78mm when last measured. \
          Re-enable only with a fresh neutrality measurement, not on inspection."
@@ -727,7 +730,8 @@ fn inlay_link_moves_are_forbidden_after_measured_gouge() {
     // geometry is in scope.
     assert!(
         !OperationType::Inlay
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_link_moves,
         "Inlay permits link moves again — it gouged 8.21mm when last measured. \
          Re-enable only with a fresh neutrality measurement, not on inspection."
@@ -1332,7 +1336,8 @@ fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
         continuous: false,
         ..ScallopConfig::default()
     })
-    .transform_capabilities();
+    .capabilities()
+    .transform;
     assert!(
         shipped.allows_global_rapid_reorder,
         "discrete Scallop should allow global rapid reorder — rings are \
@@ -1553,10 +1558,11 @@ fn scallop_continuous_capability_still_blocks_reorder() {
         continuous: true,
         ..ScallopConfig::default()
     })
-    .transform_capabilities();
+    .capabilities()
+    .transform;
     assert!(
         caps.continuous_path_required,
-        "OperationConfig::Scallop(continuous: true).transform_capabilities() \
+        "OperationConfig::Scallop(continuous: true).capabilities().transform \
          must still require a continuous path — the helical stay-down chain \
          (scallop.rs:812-912) must stay protected from reordering/linking. \
          If this fails, the catalog.rs config-aware match arm is over-broad."
@@ -1734,7 +1740,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     );
 
     // The shipped capability, not a hand-built one.
-    let caps = OperationType::UnifiedFinish.transform_capabilities();
+    let caps = OperationType::UnifiedFinish.capabilities().transform;
     assert!(
         caps.allows_barriered_rapid_reorder(),
         "UnifiedFinish must allow the BARRIERED reorder — it is stitched from \
@@ -1966,7 +1972,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
         barriers.len()
     );
 
-    let caps = OperationType::SteepShallow.transform_capabilities();
+    let caps = OperationType::SteepShallow.capabilities().transform;
     assert!(
         caps.allows_barriered_rapid_reorder(),
         "SteepShallow must allow the BARRIERED reorder"
@@ -2100,7 +2106,7 @@ fn drop_cutter_capability_reorder_is_material_neutral() {
     let raw = drop_cutter_raster(&mesh, &index, &cutter);
     assert!(!raw.moves.is_empty(), "fixture must produce a raster path");
 
-    let caps = OperationType::DropCutter.transform_capabilities();
+    let caps = OperationType::DropCutter.capabilities().transform;
     assert!(
         caps.allows_unbarriered_rapid_reorder(),
         "DropCutter is expected to permit the unbarriered global reorder — \

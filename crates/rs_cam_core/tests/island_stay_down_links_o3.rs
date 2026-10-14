@@ -177,11 +177,14 @@ fn intra_region_links_clear_standing_stock_g_linkload() {
     // healthy (CLAUDE.md). If the cascade stops fragmenting this region the
     // assertion below becomes vacuous, and that must fail loudly here rather
     // than quietly pass forever.
+    let relink = report
+        .relink
+        .expect("the intra-region link pass runs on this fixture");
     assert!(
-        report.relink.surface_links > 0,
+        relink.surface_links > 0,
         "fixture no longer produces intra-region surface links, so the \
          ceiling assertion would be vacuous: {:?}",
-        report.relink
+        relink
     );
 
     let legs = horizontal_link_legs(&tp);
@@ -189,7 +192,7 @@ fn intra_region_links_clear_standing_stock_g_linkload() {
         !legs.is_empty(),
         "surface links were reported but no fed Linking move travels in XY: \
          {:?}",
-        report.relink
+        relink
     );
 
     let floor = STOCK_TOP_Z + rs_cam_core::toolpath::PLUNGE_CLEARANCE_MM - 1e-6;
@@ -270,11 +273,13 @@ fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
         );
     }
     assert_eq!(
-        legacy_report.relink.ceiling_above_safe_z, 0,
+        legacy_report.relink.map_or(0, |r| r.ceiling_above_safe_z),
+        0,
         "structurally impossible without a ceiling"
     );
     assert_eq!(
-        extended_report.relink.ceiling_above_safe_z, 0,
+        extended_report.relink.map_or(0, |r| r.ceiling_above_safe_z),
+        0,
         "structurally impossible without a ceiling"
     );
 }

@@ -1,0 +1,280 @@
+//! What an operation can do and how each consumer must treat it (W2.4).
+//!
+//! Every registry row states one [`Capabilities`] value, so a new operation
+//! does not compile until it states each field. The row is the static
+//! answer for the op kind. `OperationConfig::capabilities` starts from the
+//! row and overrides the fields that read the config (Scallop's
+//! `continuous`, a surface op's `stock_to_leave`, the feeds hints).
+//!
+//! Before W2.4 these answers were `match` lists outside the registry:
+//! six in `catalog.rs`, one in `execute/shared.rs`, two in
+//! `feeds/predict.rs` (one ended `_ => {}`, so a new op failed open), one
+//! in `feeds/suggest/axial_envelope.rs` and three in `trace/narrate.rs`.
+//! A consumer now reads the field. A consumer that maps a class to its own
+//! numbers or words matches on the class enum, which is exhaustive.
+
+use super::{FeedsHints, OperationTransformCapabilities};
+use crate::compute::execute::LinkCeilingNeed;
+
+/// One operation's capabilities. See the module doc.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Capabilities {
+    /// The order and link safety of the dressups. The row holds the value
+    /// without the R10 lap cap; `OperationType::capabilities` adds the cap
+    /// from the process role (`OperationType::ramp_fold_lap_cap`).
+    pub transform: OperationTransformCapabilities,
+    /// The air-cut percentage of TOTAL runtime above which a per-toolpath
+    /// warning fires. `None`: the metric does not apply (drill kinematics:
+    /// the dexel stock cannot see Z-only moves).
+    ///
+    /// Recalibrated 2026-08-21 (W5B-F4) against the swept stamping kernel.
+    /// The evidence and the rejected alternatives are in
+    /// `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md`.
+    /// The denominator is TOTAL runtime (cutting + rapids), never
+    /// `air_cut_pct_of_cutting_time` (`MEASUREMENT_DOMAINS.md` LH-1).
+    pub air_cut_high_threshold_pct: Option<f64>,
+    /// A pinned Bottom Z on the Heights tab reaches the EMITTED motion
+    /// (F1.19). Only three operations read `ResolvedHeights::bottom_z`:
+    /// Adaptive3d (`z_floor`), UnifiedFinish (the band ladder) and
+    /// Waterline (the level ladder). Every other operation anchors its floor
+    /// at `top_z` minus its own depth dial, or rides the mesh, so a pinned
+    /// bottom changes nothing it emits.
+    ///
+    /// This states what the generator does. It is not a recommendation.
+    pub honors_pinned_bottom_z: bool,
+    /// The entry-move surface probe (G-RAMPTERRAIN, design amendment 1).
+    pub entry_probe: EntryProbe,
+    /// When the op's links need a link ceiling (ruling R1).
+    pub link_ceiling: LinkCeilingNeed,
+    /// The hints the feeds calculator must respect. The row holds
+    /// [`FeedsHints::NONE`]; the hint values are config values, so
+    /// `OperationConfig::capabilities` fills them.
+    pub feeds_hints: FeedsHints,
+    /// How Suggest's move-count predictor models this op.
+    pub move_count: MoveCountModel,
+    /// What the narration compares an axial-DOC sample against when the
+    /// op has no commanded depth per pass.
+    pub doc_basis: DocBasis,
+    /// The air-cut hint the narration adds to its air-cut line.
+    pub air_cut_hint: AirCutHint,
+    /// The config field of the hookup dial that tunes this op's finishing
+    /// link stage (G-LINKVISIBLE), or `None` when the op has none.
+    pub relink_dial: Option<&'static str>,
+    /// The class of axial envelope Suggest builds for this op.
+    pub axial_envelope: AxialEnvelope,
+}
+
+/// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster
+/// read 34.3–42.5 % (DropCutter 34.3, SpiralFinish 40.5, Waterline 40.5,
+/// Scallop 41.6, RampFinish 42.5); 45 clears it by about 2.5 pp and still
+/// flags SteepShallow (78) and RadialFinish (82). The old 30 fired on eight
+/// of nine clean family members. Judgement on a cluster of nine, not a
+/// derived constant.
+pub const AIR_CUT_BAR_SURFACE_FINISH_PCT: f64 = 45.0;
+
+/// The air-cut bar of Project Curve. Rivers and curves are small features
+/// in big stock, so rapids dominate. Post-flip readings were 15.97 and
+/// 10.90 on wanaka and 13.2–28.7 on an isolated river; 60 is about 2x the
+/// highest. Loose on purpose: Project Curve is the one op that did not
+/// settle under the swept kernel (−15.6 pp across two cell sizes, DECISION
+/// §4.b).
+pub const AIR_CUT_BAR_PROJECT_CURVE_PCT: f64 = 60.0;
+
+/// The air-cut bar of 2.5D clearing, 3D rough and the 2D contour ops:
+/// boundary overshoot and Z-level transitions make 40 % the high-water
+/// mark.
+pub const AIR_CUT_BAR_CLEARING_PCT: f64 = 40.0;
+
+/// The entry-move surface probe of an operation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EntryProbe {
+    /// A prism op: its passes go BELOW the model surface (a pocket cut into
+    /// a block), so a mesh-surface floor would destroy its ramp entries.
+    /// It keeps the audited 2D blind-leg behaviour (A0 finding 4).
+    ///
+    /// Adaptive3d is a prism op here on purpose: its dressup entries are
+    /// stripped (`FORCE_NO_ENTRY`), and its planner builds its own probe
+    /// with `params.stock_to_leave`.
+    Prism,
+    /// A SURFACE-RIDING op: its own cuts never go below the drop-cutter CL
+    /// surface plus `leave_mm`, so an entry leg must not either. The row
+    /// holds `0.0`; an op with a `stock_to_leave` dial gets that value from
+    /// `OperationConfig::capabilities`.
+    Surface { leave_mm: f64 },
+}
+
+impl EntryProbe {
+    /// The leave allowance the probe protects, or `None` for a prism op.
+    pub fn leave_mm(self) -> Option<f64> {
+        match self {
+            Self::Prism => None,
+            Self::Surface { leave_mm } => Some(leave_mm),
+        }
+    }
+}
+
+/// How `feeds::predict::predict_move_count` models an op's move count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveCountModel {
+    /// The input geometry (curve length, perimeter, hole count) sets the
+    /// move count, not the bbox and stepover. No gate (`0`).
+    FeatureDriven,
+    /// No envelope model is written for this op. No gate (`0`). Before
+    /// W2.4 UnifiedFinish reached this answer through a `_` arm.
+    NotModelled,
+    /// Passes along Y at the stepover, samples along X.
+    Raster,
+    /// Area fill at a narrow WOC per Z level, times the Z levels.
+    Adaptive3d,
+    /// One Z level of area fill at a narrow WOC.
+    Adaptive2d,
+    /// One full stepover x stepover cell per move.
+    PocketCell,
+}
+
+/// What the narration names as the depth basis of an op with no commanded
+/// depth per pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocBasis {
+    /// The op has a depth per pass, or the narration has no special words
+    /// for it.
+    DepthPerPass,
+    /// The op follows the MODEL SURFACE (H4 wave 15), so it has no
+    /// depth per pass to compare against.
+    SurfaceHeights,
+    /// The op follows the curve at a fixed surface offset.
+    CurveOnSurface,
+    /// The op advances by peck depth.
+    PeckDepth,
+    /// The op cuts to a target V-bit depth.
+    VBitDepth,
+}
+
+/// The hint the narration adds to an air-cut line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AirCutHint {
+    /// No special hint.
+    NoHint,
+    /// A roughing op: boundary and stepover tuning, or stale stock.
+    Roughing,
+    /// A finishing op: surface terrain dominates the figure.
+    SurfaceFinish,
+    /// A curve-following op: rapids and approaches dominate the figure.
+    CurveFollowing,
+}
+
+/// The axial envelope Suggest builds (`feeds/suggest/axial_envelope.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AxialEnvelope {
+    /// No envelope: 2D pocket, contour and drill ops, and the finish ops
+    /// with no stepover basis. The other invariant passes cover them.
+    NotApplied,
+    /// A 3D rough: rough deflection limit, WOC = the stepover.
+    Roughing3d,
+    /// A V-bit groove: rough limit, WOC = half the groove width at the
+    /// op's imposed axial depth.
+    VBitGroove,
+    /// A curve projected on the surface: rough limit, a fixed WOC.
+    CurveRough,
+    /// A 3D finish: finish limit and the default scallop target.
+    Finish3d,
+}
+
+// ── The transform classes the rows name ─────────────────────────────────
+
+/// XY-independent ops: TSP can reorder by proximity safely, and links are
+/// allowed. Drill and the pin drill finish each hole (the peck cycle is
+/// inside the hole) before the next, so the visit order changes no
+/// material state. Project Curve emits each mesh-contact chain as its own
+/// rapid→plunge→cut→retract unit with no order between chains (audited
+/// fix-family Phase 1). Drop Cutter rows are independent too.
+pub const TRANSFORM_XY_INDEPENDENT: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(true, false, false, true);
+
+/// Face: its one-way rows and depth barriers encode the machining
+/// sequence. It vetoes every rapid-order permutation and keeps the other
+/// dressups; it is not continuous and takes no straight link.
+pub const TRANSFORM_FACE: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, false, false, false).without_rapid_reorder();
+
+/// V-bit ops (VCarve, Inlay, Inlay Plug): link moves gouged even WITH the
+/// swept-corridor check (2026-08-03: Inlay 8.21 mm, VCarve 5.78 mm, all
+/// deeper; pinned by the `*_link_moves_*` sentries). The cut WIDTH of a
+/// V-bit depends on depth, so "the tip passed within the radius at this
+/// Z" does not prove the corridor is clear to the width a bridge needs.
+/// No links; rapid-order eligibility stays.
+pub const TRANSFORM_V_WIDTH: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, false, false, false);
+
+/// Ordered ops that may take links: Horizontal Finish (the generator sorts
+/// regions high to low Z to avoid collisions, `horizontal_finish.rs`, so
+/// TSP would override that safety order), Chamfer, Pencil, Radial Finish.
+pub const TRANSFORM_ORDERED_LINKABLE: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, false, false, true);
+
+/// Depth-stepping ops (Pocket, Profile, Zigzag, Waterline, Trace): depth
+/// order is the constraint, not continuity.
+pub const TRANSFORM_DEPTH_ORDER: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, true, false, false);
+
+/// 2D Adaptive: the planner clears one material grid per level in the
+/// order it emits its runs, and admits a keep-down link only when the grid
+/// that EARLIER runs left holds it to the pass load
+/// (`adaptive/path.rs`, `feed_link_within_pass_load`). The rapid-order pass
+/// moves whole keep-down chains and can put a chain before the run that
+/// cleared its corridor. Measured (G-ADAPTORDER, 2026-09-26, 120 x 80
+/// pocket, six islands, 6 mm, 2 levels): the six links over 6 x R cut
+/// 61.7 mm^3 in the planner order and 349.3 mm^3 reordered. The planner
+/// stamps each re-entry's helix hole as cut (G-ADAPTPASSLOAD), so the
+/// helix finishes its floor flat; it emits the path it walked, so the
+/// dressup merge does not move its cuts.
+pub const TRANSFORM_ADAPTIVE_2D: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, true, false, false)
+        .without_rapid_reorder()
+        .with_helix_floor_lap()
+        .with_stock_aware_plunge()
+        .with_planner_segment_merge();
+
+/// Adaptive3d plans every run against its own dexel stock, in the order it
+/// emits them. Each entry's rapid floor and helix start, each keep-down
+/// proof and each ring's engagement assume the runs before it have cut. A
+/// rapid-order permutation breaks all of these, also inside one depth pass,
+/// and drops each planner rapid floor. Measured on rivmap100 (2026-09-25):
+/// the reorder fed the tool from 14.0 to 7.78 mm through standing stock
+/// (448 entry samples over twice the median bite, peak 6.08 mm); with the
+/// order kept, 0 samples, peak 1.61 mm. The planner also applies the
+/// segment merge before it stamps each cut (G-PLANSIMGAP: a merge after it
+/// left up to 2.34 mm of material the planner held as cut).
+pub const TRANSFORM_ADAPTIVE_3D: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, true, false, false)
+        .without_rapid_reorder()
+        .with_planner_segment_merge();
+
+/// Ops stitched from independent nodes. `generate_unified_finish` emits a
+/// `RapidOrderBarrier` at every node start (and per Z inside waterline
+/// nodes), so the barriered TSP reorders runs WITHIN a node while the
+/// router's cross-node order, costed against the machine envelope, stays
+/// as routed. Links stay forbidden: `apply_link_moves` cannot see the 3D
+/// surface between two fragments, which is why the op builds its own via
+/// `surface_link::build_surface_link`. Steep/Shallow is the same shape one
+/// level simpler: the two halves and the steep Z levels are barriered.
+pub const TRANSFORM_BARRIERED_NODES: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, false, false, false);
+
+/// Continuous traces (Scallop, Ramp Finish, Spiral Finish): helical or
+/// spiral paths whose passes are not retract-separated.
+pub const TRANSFORM_CONTINUOUS: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(false, false, true, false);
+
+/// Discrete-ring Scallop (`ScallopConfig::continuous == false`, the
+/// default): rings are radial offsets of ONE finishing pass to the same
+/// final surface, with no order between them, so global reorder by
+/// proximity is safe (cutting distance byte-identical, 2437.8 mm, rapid
+/// travel −27 %). Link moves stay forbidden: `apply_link_moves` bridges
+/// with a straight feed that ploughs through material on a 3D surface
+/// (measured 9.7 mm over-cut). See `tests/capability_link_moves_safety.rs`.
+///
+/// This value carries NO R10 lap cap, as the per-instance override did
+/// before W2.4. The static Scallop row (continuous) gets the finishing cap.
+pub const TRANSFORM_DISCRETE_SCALLOP: OperationTransformCapabilities =
+    OperationTransformCapabilities::new(true, false, false, false);

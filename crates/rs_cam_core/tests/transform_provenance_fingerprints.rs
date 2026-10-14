@@ -173,7 +173,7 @@ fn three_pass() -> AnnotatedToolpath {
 fn full_chain_capabilities() -> OperationTransformCapabilities {
     OperationTransformCapabilities {
         planner_applies_segment_merge: false,
-        ..OperationType::Adaptive3d.transform_capabilities()
+        ..OperationType::Adaptive3d.capabilities().transform
     }
 }
 
@@ -492,7 +492,7 @@ fn face_full_chain_fingerprint() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::Face.transform_capabilities(),
+            transform_capabilities: OperationType::Face.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

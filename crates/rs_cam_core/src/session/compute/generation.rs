@@ -1012,9 +1012,8 @@ impl ProjectSession {
                 ),
             ));
         }
-        crate::compute::execute::record_boundary_clip_dropped(
-            findings,
-            crate::compute::toolpath_stats::BoundaryClipDroppedFinding {
+        findings.record(
+            &crate::compute::toolpath_stats::BoundaryClipDroppedFinding {
                 containment,
                 tool_diameter_mm: tool_diameter,
                 source_region_count,

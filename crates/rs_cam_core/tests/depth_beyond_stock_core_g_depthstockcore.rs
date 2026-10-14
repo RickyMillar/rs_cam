@@ -226,7 +226,9 @@ fn the_operations_this_rule_cannot_answer_for_abstain() {
         assert!(depth_beyond_stock(&op, &h).is_none(), "{name}");
     }
     assert!(
-        OperationType::Adaptive3d.honors_pinned_bottom_z(),
+        OperationType::Adaptive3d
+            .capabilities()
+            .honors_pinned_bottom_z,
         "Adaptive3d abstains BECAUSE the pin is its floor; if that stops \
          being true the reason for abstaining changes"
     );

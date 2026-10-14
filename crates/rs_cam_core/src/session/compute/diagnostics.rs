@@ -100,7 +100,12 @@ pub(super) fn air_cut_offenders_for_toolpaths(
         if !tc.enabled {
             continue;
         }
-        let Some(threshold) = tc.operation.op_type().air_cut_high_threshold_pct() else {
+        let Some(threshold) = tc
+            .operation
+            .op_type()
+            .capabilities()
+            .air_cut_high_threshold_pct
+        else {
             continue;
         };
         // Checkpoint D Q2: the metric this gate reads may not be a
@@ -813,7 +818,7 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .filter(|tc| {
-                crate::compute::execute::link_ceiling_need(tc.operation.op_type())
+                tc.operation.capabilities().link_ceiling
                     == crate::compute::execute::LinkCeilingNeed::WithRemainingStock
                     && !rest_driven.contains(&tc.id)
             })
@@ -1015,7 +1020,7 @@ impl ProjectSession {
         // threshold (the old `>40%`) fires falsely on projects that contain
         // even one sparse-pattern op like ProjectCurve, where 80–95% air-cut
         // is intrinsic. Per-TP thresholds live on `OperationType`
-        // (see `OperationType::air_cut_high_threshold_pct`).
+        // (see `Capabilities::air_cut_high_threshold_pct`).
         // P1 — see planning/P1_AIR_CUT_THRESHOLDS_RCA.md.
         //
         // Checkpoint D Q2 (2026-08-04): before comparing anything against a

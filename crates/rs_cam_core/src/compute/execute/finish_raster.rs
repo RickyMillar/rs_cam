@@ -11,7 +11,6 @@ use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
-use super::findings::{record_relink_totals, record_truncated_core, record_waterline_ladder};
 use super::shared::{
     generated_with_cut_run_spans, generated_with_depth_run_spans, generated_with_spans,
     op_link_ceiling, with_depth_run_annotation,
@@ -205,19 +204,10 @@ pub(crate) fn generate_scallop(
             &ctx.cancel_fn(),
         )?
     };
-    record_truncated_core(
-        ctx.findings,
-        scallop_report.uncut_core_mm2,
-        scallop_report.untouched_mm2,
-        scallop_report.standing_mm2,
-    );
-    // G-LINKVISIBLE: the generator already decided whether the stage ran, so
-    // pass its `Option` straight through rather than re-deriving the
-    // question from the config here — a hookup above zero on a `continuous`
+    // The cascade residual, and the link totals when the stage ran. The
+    // generator decided that, so a hookup above zero on a `continuous`
     // pass, or one whose cascade produced no ring, measured nothing.
-    if let Some(totals) = scallop_report.relink {
-        record_relink_totals(ctx.findings, totals);
-    }
+    ctx.record(&scallop_report);
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_scallop(
             &annotations,
@@ -379,7 +369,7 @@ pub(crate) fn generate_drop_cutter(
                 tp,
                 "drop_cutter",
             );
-            record_relink_totals(ctx.findings, totals);
+            ctx.record(&totals);
             tp
         }
     };
@@ -431,19 +421,16 @@ pub(crate) fn generate_waterline(
         cfg.z_step,
         ctx.stock_bbox.min.z,
     );
-    record_waterline_ladder(
-        ctx.findings,
-        crate::compute::toolpath_stats::WaterlineLadderFinding {
-            requested_top_z_mm: ctx.heights.top_z,
-            requested_bottom_z_mm: ctx.heights.bottom_z,
-            stock_bottom_z_mm: ctx.stock_bbox.min.z,
-            z_step_mm: cfg.z_step,
-            planned_levels: ladder.planned_levels,
-            nudged_levels: ladder.nudged_levels,
-            dropped_below_stock: ladder.dropped_below_stock,
-            delivered_levels: ladder.levels.len(),
-        },
-    );
+    ctx.record(&crate::compute::toolpath_stats::WaterlineLadderFinding {
+        requested_top_z_mm: ctx.heights.top_z,
+        requested_bottom_z_mm: ctx.heights.bottom_z,
+        stock_bottom_z_mm: ctx.stock_bbox.min.z,
+        z_step_mm: cfg.z_step,
+        planned_levels: ladder.planned_levels,
+        nudged_levels: ladder.nudged_levels,
+        dropped_below_stock: ladder.dropped_below_stock,
+        delivered_levels: ladder.levels.len(),
+    });
     let tp = crate::ops::waterline::waterline_toolpath_at_levels(
         m,
         idx,
@@ -485,7 +472,7 @@ pub(crate) fn generate_waterline(
                 tp,
                 "waterline",
             );
-            record_relink_totals(ctx.findings, totals);
+            ctx.record(&totals);
             tp
         }
     };

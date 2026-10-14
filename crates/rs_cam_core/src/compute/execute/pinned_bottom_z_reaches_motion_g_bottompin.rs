@@ -29,7 +29,7 @@
 //! 2. The branch the pin WOULD reach exists and does honour the pin — so the
 //!    claim is about which caller wins, not about dead code.
 //! 3. Every operation whose `cutting_levels` ladder is non-empty declares
-//!    `honors_pinned_bottom_z() == false`, so the declaration cannot drift
+//!    `capabilities().honors_pinned_bottom_z == false`, so the declaration cannot drift
 //!    away from the ladder that decides.
 //!
 //! Moved in-crate in WP12 because the loose entry is crate-private. The lint
@@ -174,7 +174,7 @@ fn a_pinned_bottom_z_does_not_move_a_pocket_floor() {
          {PINNED_BOTTOM_Z}"
     );
     assert!(
-        !OperationType::Pocket.honors_pinned_bottom_z(),
+        !OperationType::Pocket.capabilities().honors_pinned_bottom_z,
         "the declaration must agree with the motion just measured"
     );
 }
@@ -207,7 +207,7 @@ fn no_operation_with_a_pre_computed_ladder_claims_to_honour_the_pin() {
         }
         with_ladder.push(op_type);
         assert!(
-            !op_type.honors_pinned_bottom_z(),
+            !op_type.capabilities().honors_pinned_bottom_z,
             "{op_type:?} hands `execute_operation` a non-empty ladder, so \
              `effective_levels` returns it and the pin cannot reach the cut — \
              the declaration must say false"
@@ -231,7 +231,7 @@ fn exactly_three_operations_honour_a_pinned_bottom_z() {
     let honouring: Vec<OperationType> = OperationType::ALL
         .iter()
         .copied()
-        .filter(|t| t.honors_pinned_bottom_z())
+        .filter(|t| t.capabilities().honors_pinned_bottom_z)
         .collect();
     let mut names: Vec<String> = honouring.iter().map(|t| format!("{t:?}")).collect();
     names.sort();

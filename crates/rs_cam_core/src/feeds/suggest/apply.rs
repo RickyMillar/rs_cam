@@ -1009,13 +1009,13 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
 ///
 /// Thin tuple adapter over the registry-layer
-/// [`OperationConfig::feeds_hints`] accessor (Phase 1, architectural
+/// [`Capabilities::feeds_hints`] accessor (Phase 1, architectural
 /// refactor T3) — the per-op decision table lives there as an exhaustive
 /// match; the old `_ => (None, None, None)` wildcard is gone.
 pub fn operation_feeds_hints(
     operation: &OperationConfig,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    let hints = operation.feeds_hints();
+    let hints = operation.capabilities().feeds_hints;
     (
         hints.axial_depth_mm,
         hints.radial_width_mm,

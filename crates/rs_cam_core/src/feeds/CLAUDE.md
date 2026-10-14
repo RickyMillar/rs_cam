@@ -3,13 +3,13 @@
 The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry point is `feeds::suggest`.
 
 ## Files
-- `mod.rs`, `tests.rs` — the calculator and its unit tests.
-- `suggest.rs` + `suggest/` — the Suggest model and read doors; children `apply.rs` (write-back
+- `mod.rs`, `tests.rs` — the calculator and its unit tests. `suggest.rs` + `suggest/` — the Suggest model and read doors; children `apply.rs` (write-back
   funnel, previews, defaults), `invariants.rs` (clamps, back-offs), `aggressiveness.rs` (pass 6b,
   the dial), `axial_envelope.rs`, `adaptive_entry.rs`, `tests.rs`.
 - `geometry.rs`, `geometry_class.rs`, `cutter_constraints.rs`, `force.rs`, `predict.rs`,
   `efficiency.rs`, `operating_point.rs` — effective diameter, chip thinning, the DOC scale, the axial
-  envelope, force, deflection, efficiency, and spindle power at the shipped operating point.
+  envelope, force, deflection, efficiency, and spindle power at the shipped operating point. The move-count model, the
+  axial-envelope class and the feeds hints are registry capabilities (W2.4): read `capabilities()`, add no op `match`.
 - `vendor_lut.rs`, `vendor_lookup.rs`, `vendor_normalize.rs` — vendor table, lookup, type mapping. `ramp.rs` — G6 ramp: `RampBasis`, the entry θ, `resolve_ramp_feed`, the G10 `entry_notes`. `plunge.rs` — G10: `PlungeBasis`, `resolve_plunge`.
 - `extrapolation.rs` + `extrapolation/{size,hardness,family,drill,plunge}.rs` — `SizeLaw` (G1 size claim, form A/B/C or refusal),
   `hardness_basis` (G2 Janka + soft/hard cap), `family_basis` (G3 `FAMILY_RULES`), `drill_basis` (G6 `DRILL_RULES`) run in `build_result`; `plunge_rule` (G10 `PLUNGE_RULES`).

@@ -69,7 +69,8 @@ pub(super) fn with_depth_run_annotation(
     generated
 }
 
-/// When an op's links need a [`LinkCeiling`] (ruling R1, W1.1).
+/// When an op's links need a [`LinkCeiling`] (ruling R1, W1.1). Each op
+/// states it in its registry row (`Capabilities::link_ceiling`, W2.4).
 ///
 /// A link ceiling lifts a fed link clear of material that stands above the
 /// mesh. The remaining stock gives that material when the op has a
@@ -88,37 +89,6 @@ pub enum LinkCeilingNeed {
     /// The op makes no link through `relink_fragments` or the pencil link.
     /// Adaptive3d keeps its own corridor ceiling, out of R1's scope.
     NoLink,
-}
-
-/// Each op's [`LinkCeilingNeed`]. The match is exhaustive on purpose: a new
-/// operation does not compile until it states its need.
-pub const fn link_ceiling_need(op: OperationType) -> LinkCeilingNeed {
-    match op {
-        OperationType::ProjectCurve => LinkCeilingNeed::Always,
-        OperationType::DropCutter
-        | OperationType::Waterline
-        | OperationType::Pencil
-        | OperationType::Scallop
-        | OperationType::UnifiedFinish => LinkCeilingNeed::WithRemainingStock,
-        OperationType::Face
-        | OperationType::Pocket
-        | OperationType::Profile
-        | OperationType::Adaptive
-        | OperationType::VCarve
-        | OperationType::Inlay
-        | OperationType::InlayPlug
-        | OperationType::Zigzag
-        | OperationType::Trace
-        | OperationType::Drill
-        | OperationType::Chamfer
-        | OperationType::Adaptive3d
-        | OperationType::SteepShallow
-        | OperationType::RampFinish
-        | OperationType::SpiralFinish
-        | OperationType::RadialFinish
-        | OperationType::HorizontalFinish
-        | OperationType::AlignmentPinDrill => LinkCeilingNeed::NoLink,
-    }
 }
 
 /// THE link-ceiling builder (ruling R1, W1.1). Every op that links calls it,
@@ -140,7 +110,7 @@ pub fn link_ceiling_for<'a>(
     stock_top_z: f64,
     heights_top_z: f64,
 ) -> Option<LinkCeiling<'a>> {
-    let build = match link_ceiling_need(op) {
+    let build = match op.capabilities().link_ceiling {
         LinkCeilingNeed::Always => true,
         LinkCeilingNeed::WithRemainingStock => stock.is_some(),
         LinkCeilingNeed::NoLink => false,

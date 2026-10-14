@@ -609,6 +609,11 @@ pub struct OpRegistryEntry {
     pub dressup_policy: DressupPolicy,
     /// The three per-op policies CMP-07 moved off `matches!` lists.
     pub policy: OpPolicy,
+    /// W2.4: what the op can do and how each consumer must treat it. Read
+    /// it through `OperationType::capabilities` (the row) or
+    /// `OperationConfig::capabilities` (the row plus the config's own
+    /// values).
+    pub capabilities: super::Capabilities,
     /// The family adapter `execute_operation_annotated` dispatches to.
     ///
     /// CMP-01: this was `Option<GenerateFn>` and `execute.rs` carried a
