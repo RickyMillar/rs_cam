@@ -968,14 +968,15 @@ pub(in crate::ui::properties) fn draw_steep_shallow_diagram(ui: &mut egui::Ui, t
 
 // ── Inlay Cross-Section Diagram ─────────────────────────────────────────
 
-/// Draw a cross-section showing male/female inlay pocket mating.
-/// Draw an assembly cross-section: female pocket in material with male plug
-/// hovering above, about to drop in (flipped). Shows how the V-angles match.
+/// Draw an assembly cross-section: the female pocket in the material with
+/// the male plug above it, turned face down. The plug walls follow the
+/// pocket walls; the plug face is `pocket_depth - glue_gap` below the design
+/// edge (the start depth). `glue_gap` is `None` on the Inlay op, which does
+/// not own the gap; the diagram then shows no gap label.
 pub(in crate::ui::properties) fn draw_inlay_diagram(
     ui: &mut egui::Ui,
     pocket_depth: f64,
-    glue_gap: f64,
-    flat_depth: f64,
+    glue_gap: Option<f64>,
 ) {
     let desired_size = egui::vec2(ui.available_width().min(260.0), 120.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
@@ -992,15 +993,16 @@ pub(in crate::ui::properties) fn draw_inlay_diagram(
     let mat_color = crate::ui::tokens::DIAGRAM_DIM;
 
     let cx = rect.center().x;
-    let total_depth = pocket_depth.max(flat_depth).max(1.0);
+    let start_depth = (pocket_depth - glue_gap.unwrap_or(0.0)).max(0.0);
+    let total_depth = pocket_depth.max(1.0);
     let scale = (rect.height() * 0.3) / total_depth as f32;
     let half_w = 40.0;
 
     // Surface line divides upper (air + plug) from lower (material + pocket)
     let surface_y = rect.center().y + 4.0;
     let pocket_d = pocket_depth as f32 * scale;
-    let flat_d = flat_depth as f32 * scale;
-    let gap_px = (glue_gap as f32 * scale).max(2.0);
+    let flat_d = start_depth as f32 * scale;
+    let gap_px = (glue_gap.unwrap_or(0.0) as f32 * scale).max(2.0);
 
     // Material block (below surface)
     painter.rect_filled(
@@ -1090,13 +1092,15 @@ pub(in crate::ui::properties) fn draw_inlay_diagram(
     ));
 
     // Glue gap annotation
-    painter.text(
-        egui::pos2(cx - half_w - 4.0, (plug_bottom + surface_y) / 2.0),
-        egui::Align2::RIGHT_CENTER,
-        format!("gap {glue_gap:.2}"),
-        egui::FontId::proportional(7.0),
-        dim_color,
-    );
+    if let Some(gap) = glue_gap {
+        painter.text(
+            egui::pos2(cx - half_w - 4.0, (plug_bottom + surface_y) / 2.0),
+            egui::Align2::RIGHT_CENTER,
+            format!("gap {gap:.2}"),
+            egui::FontId::proportional(7.0),
+            dim_color,
+        );
+    }
 
     // Depth annotations on right
     let dim_x = rect.right() - 30.0;

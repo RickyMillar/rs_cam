@@ -231,7 +231,6 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             OperationConfig::Inlay(InlayConfig {
                 pocket_depth: DEPTH_MM,
                 stepover,
-                flat_tool_radius: tool_d * 0.5,
                 ..InlayConfig::default()
             }),
             ToolKind::VBit,

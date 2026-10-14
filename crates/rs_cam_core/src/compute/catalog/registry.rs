@@ -169,20 +169,69 @@ const REST_PARAMS: &[ParamDef] = &[
 ];
 
 const INLAY_PARAMS: &[ParamDef] = &[
-    ParamDef::required("pocket_depth", "f64")
-        .with_help("Depth of the inlay pocket measured from stock surface."),
-    ParamDef::required("glue_gap", "f64")
-        .with_help("Gap between male/female inlay pieces for glue. 0.05-0.15mm."),
-    ParamDef::required("flat_depth", "f64")
-        .with_help("Depth for flat-bottom clearing in the inlay pocket. 0 = V-only."),
-    ParamDef::required("boundary_offset", "f64")
-        .with_help("Offset from the design boundary for the inlay cut. Adjusts fit."),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
+    ParamDef::required("pocket_depth", "f64").with_help(
+        "Depth of the inlay pocket below the stock top. This op cuts only the \
+         V walls. Add a Pocket with a flat end mill for the floor: the same \
+         depth, a machining boundary of Model Outline on this design, \
+         containment Inside, offset minus pocket_depth x tan(half the V \
+         angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket \
+         first. CAUTION: where the floor is narrower than the end mill plus \
+         that inset, the Inside clip collapses and the Pocket cuts the whole \
+         design and the V walls; read boundary_clip_dropped. Use the same \
+         pocket_depth on the Inlay Plug op.",
     ),
-    ParamDef::required("flat_tool_radius", "f64")
-        .with_help("Radius of the flat endmill used to clear the pocket floor."),
+    ParamDef::required("floor_overlap", "f64").with_help(
+        "Width of the floor band beyond the wall foot that the V-bit also \
+         cuts at the pocket depth. It removes the strip and the corners \
+         that the clipped floor Pocket leaves. Use at least the floor \
+         Pocket's stepover plus its tool radius.",
+    ),
+    ParamDef::required("floor_ridge", "f64").with_help(
+        "Largest ridge the V-bit may leave on the floor band. The ring pitch \
+         is 2 x floor_ridge x tan(half the V angle). Keep it below the glue \
+         gap of the plug; the default is half the default gap.",
+    ),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between scan lines over the wall band. The walls do not \
+         depend on it: the first floor ring cuts the whole wall.",
+    ),
+    ParamDef::required("feed_rate", "f64"),
+    ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
+    ParamDef::required("tolerance", "f64").with_help(
+        "Geometric tolerance for path approximation. Smaller = more accurate, \
+         slower.",
+    ),
+    ParamDef::optional("spindle_rpm", "option<u32>"),
+];
+
+const INLAY_PLUG_PARAMS: &[ParamDef] = &[
+    ParamDef::required("pocket_depth", "f64").with_help(
+        "Depth of the female pocket that this plug fits. Copy it from the \
+         Inlay op. The plug face sits pocket_depth - glue_gap below the \
+         design edge (the start depth).",
+    ),
+    ParamDef::required("glue_gap", "f64").with_help(
+        "Vertical gap between the plug face and the pocket floor, for the \
+         glue. The walls touch. 0.05-0.15 mm.",
+    ),
+    ParamDef::required("proud_height", "f64").with_help(
+        "Height that the plug stands above the workpiece after it is seated. \
+         The background is cut to start depth + proud height. Saw or plane \
+         this layer off after the glue sets.",
+    ),
+    ParamDef::required("outer_margin", "f64").with_help(
+        "Width of the flat background ring beyond the wall foot. The V-bit \
+         clears the design box grown by proud_height x tan(half the V \
+         angle) + outer_margin. The board outside stays at full height: \
+         saw the plug free inside the ring, or clear the rest with a Face.",
+    ),
+    ParamDef::required("depth_per_pass", "f64")
+        .with_help("Max depth per pass of the V-bit through the background."),
+    ParamDef::required("stepover", "f64").with_help(
+        "Distance between scan lines. The walls are exact at any stepover; \
+         only the background shows ridges.",
+    ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
     ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
@@ -894,8 +943,8 @@ pub(super) static REG_REST: OpRegistryEntry = OpRegistryEntry {
 pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Inlay,
     spec: OperationSpec {
-        label: "Inlay",
-        description: "V-bit pocket and plug for inlay work",
+        label: "Inlay pocket (V walls)",
+        description: "V walls of an inlay pocket; a flat Pocket clears the floor",
         family: OperationFamily::TwoPointFiveD,
         geometry: GeometryRequirement::Polygons,
         default_auto_regen: true,
@@ -910,9 +959,47 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
     },
-    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    // G-INLAYSPLIT: a run starts on the design outline at almost zero
+    // depth. A lead arc or an entry there takes the V-bit outside the
+    // design (measured: 2 089 cells, 0.2-0.8 mm outside, 0.067 mm deep
+    // with the Finish-role lead-in).
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with inlay V walls: a lead or an entry at the design \
+         outline cuts outside the design.",
+    ),
     policy: OpPolicy::MILLING,
     generate: crate::compute::execute::generate_inlay,
+};
+
+pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::InlayPlug,
+    spec: OperationSpec {
+        label: "Inlay plug (male)",
+        description: "Mirrored V-bit plug for an inlay pocket, on its own board",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Polygons,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Trace,
+        ui_process_role: UiProcessRole::Finish,
+        feeds_family: FeedsOperationFamily::Trace,
+        feeds_pass_role: PassRole::Finish,
+        feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
+    },
+    param_defs: INLAY_PLUG_PARAMS,
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::VBit],
+        supports_v_bit: true,
+    },
+    // G-INLAYSPLIT: a run starts on the design outline at almost zero
+    // depth. A lead arc or an entry there takes the V-bit outside the
+    // design (measured: 2 089 cells, 0.2-0.8 mm outside, 0.067 mm deep
+    // with the Finish-role lead-in).
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with inlay V walls: a lead or an entry at the design \
+         outline cuts outside the design.",
+    ),
+    policy: OpPolicy::MILLING,
+    generate: crate::compute::execute::generate_inlay_plug,
 };
 
 pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {

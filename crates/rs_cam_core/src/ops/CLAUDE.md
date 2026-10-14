@@ -27,14 +27,14 @@ module is reached through `compute::execute_operation_annotated`.
   (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.
-- `ops/trace_path.rs` is the follow-path OPERATION and `trace/` holds the
-  toolpath records. The two read alike and are not the same; do not confuse
-  them.
+- `ops/trace_path.rs` is the follow-path OPERATION; `trace/` holds the
+  toolpath records. Do not confuse them.
+- `inlay.rs` (R2): `Inlay` = pocket V walls only; `InlayPlug` = mirrored plug,
+  own project, start depth `pocket_depth − glue_gap` (module doc derives it).
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test drill_op_step3 --test drill_flip_removal_g_drillflip`
-- `cargo test -p rs_cam_core -q --test a_drill_hole_is_cut_once_g_drilltwice`
-- `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore`
+- `cargo test -p rs_cam_core -q --test drill_op_step3 --test drill_flip_removal_g_drillflip --test a_drill_hole_is_cut_once_g_drilltwice`
 - `cargo test -p rs_cam_core -q --test project_curve_depth_sign --test chamfer_bevel_sits_on_the_edge_g_chamferside` (G-CHAMFERSIDE: the chamfer bevel on the sim stock)
-- `cargo test -p rs_cam_core -q --test waterline_auto_ladder_is_model_top_to_bottom_r3 --test waterline_respects_a_vertical_wall_r9`
+- `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore --test waterline_auto_ladder_is_model_top_to_bottom_r3 --test waterline_respects_a_vertical_wall_r9`
+- `cargo test -p rs_cam_core -q --test inlay_pocket_and_plug_fit_g_inlaysplit` (G-INLAYSPLIT, about 7 s: walls only, mirror, fit at 60° and 90°, floor recipe)

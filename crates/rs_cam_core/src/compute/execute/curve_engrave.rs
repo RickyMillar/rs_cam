@@ -22,8 +22,8 @@ use super::shared::{
 };
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
 
-/// Inlay family adapter (female + male halves concatenated with a
-/// retract between; V-bit refusal preserved verbatim). Cancellable: the
+/// Inlay adapter: the V walls of the female pocket only (ruling R2). The
+/// plug is [`generate_inlay_plug`], in its own project. Cancellable: the
 /// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
 /// `cancellable_families_honour_a_preset_cancel_flag`).
 pub(crate) fn generate_inlay(
@@ -35,19 +35,18 @@ pub(crate) fn generate_inlay(
     let ha = vbit_half_angle(ctx.tool_cfg, "Inlay")?;
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
-    let mut female_out = Toolpath::new();
-    let mut male_out = Toolpath::new();
+    let mut out = Toolpath::new();
     for poly in polys {
-        let r = crate::ops::inlay::inlay_toolpaths_with_cancel(
+        let tp = crate::ops::inlay::inlay_pocket_toolpath_with_cancel(
             poly,
-            &crate::ops::inlay::InlayParams {
+            &crate::ops::inlay::InlayPocketParams {
                 half_angle: ha,
                 pocket_depth: cfg.pocket_depth,
-                glue_gap: cfg.glue_gap,
-                flat_depth: cfg.flat_depth,
-                boundary_offset: cfg.boundary_offset,
+                floor_overlap: cfg.floor_overlap,
+                floor_ridge: cfg.floor_ridge,
+                // `ToolConfig` holds no tip flat for a V-bit: a sharp tip.
+                tip_flat: 0.0,
                 stepover: cfg.stepover,
-                flat_tool_radius: cfg.flat_tool_radius,
                 feed_rate: op.feed_rate(),
                 plunge_rate: op.plunge_rate(),
                 safe_z,
@@ -57,16 +56,55 @@ pub(crate) fn generate_inlay(
             &cancel_fn,
         )
         .map_err(|_e| OperationError::Cancelled)?;
-        female_out.moves.extend(r.female.moves);
-        male_out.moves.extend(r.male.moves);
-    }
-    let mut out = female_out;
-    if !male_out.moves.is_empty() {
-        out.final_retract(safe_z);
-        out.moves.extend(male_out.moves);
+        out.moves.extend(tp.moves);
     }
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(out, "Inlay run"),
+        ctx.semantic_ctx,
+    ))
+}
+
+/// Inlay plug adapter: the mirrored male plug of the whole design, on the
+/// plug board of its own project (ruling R2). All polygons go to the
+/// kernel at once, so one polygon is never cut as the background of
+/// another. Refuses a glue gap that is not smaller than the pocket depth.
+/// Cancellable as [`generate_inlay`].
+pub(crate) fn generate_inlay_plug(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let cfg = config_guard!(op, InlayPlug, "generate_inlay_plug");
+    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
+    let ha = vbit_half_angle(ctx.tool_cfg, "InlayPlug")?;
+    if cfg.start_depth() <= 0.0 {
+        return Err(OperationError::Other(format!(
+            "InlayPlug: glue_gap {} mm must be smaller than pocket_depth {} mm",
+            cfg.glue_gap, cfg.pocket_depth
+        )));
+    }
+    let safe_z = ctx.heights.retract_z;
+    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
+    let out = crate::ops::inlay::inlay_plug_toolpath_with_cancel(
+        polys,
+        &crate::ops::inlay::InlayPlugParams {
+            half_angle: ha,
+            pocket_depth: cfg.pocket_depth,
+            glue_gap: cfg.glue_gap,
+            proud_height: cfg.proud_height,
+            outer_margin: cfg.outer_margin,
+            depth_per_pass: cfg.depth_per_pass,
+            stepover: cfg.stepover,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z,
+            tolerance: cfg.tolerance,
+            top_z: ctx.heights.top_z,
+        },
+        &cancel_fn,
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
+    Ok(with_depth_run_annotation(
+        generated_with_cut_run_spans(out, "Inlay plug run"),
         ctx.semantic_ctx,
     ))
 }
@@ -152,7 +190,7 @@ pub(crate) fn generate_chamfer(
 }
 
 /// R2.5: the V-Bit-only tool-geometry guard duplicated 3× (Inlay, VCarve,
-/// Chamfer) — resolve the half-angle or refuse with the operation name.
+/// Chamfer; the inlay plug uses it too) — resolve the half-angle or refuse with the operation name.
 fn vbit_half_angle(tool_cfg: &ToolConfig, op_name: &str) -> Result<f64, OperationError> {
     match tool_cfg.tool_type {
         ToolType::VBit => Ok((tool_cfg.included_angle / 2.0).to_radians()),

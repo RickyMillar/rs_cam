@@ -149,15 +149,27 @@ moves_hash = "b2fc52a34625a126"
 
 ["inlay/fresh"]
 outcome = "ok"
-move_count = 28038
-rapid_count = 322
-linear_count = 27646
-arc_count = 70
-cutting_length_mm = 3189.536
-rapid_length_mm = 3927.708
-bbox_min = [-22.95, -13.95, -3.0]
-bbox_max = [22.95, 14.05, 10.0]
-moves_hash = "21a76e5991055c65"
+move_count = 605
+rapid_count = 266
+linear_count = 339
+arc_count = 0
+cutting_length_mm = 4802.734
+rapid_length_mm = 2451.896
+bbox_min = [-19.95, -11.95, -3.0]
+bbox_max = [19.95, 11.05, 10.0]
+moves_hash = "ff7a247ad9989a33"
+
+["inlay_plug/fresh"]
+outcome = "ok"
+move_count = 1912
+rapid_count = 720
+linear_count = 1192
+arc_count = 0
+cutting_length_mm = 5465.961
+rapid_length_mm = 9021.961
+bbox_min = [-26.0, -18.0, -5.9]
+bbox_max = [26.0, 18.0, 10.0]
+moves_hash = "aa2061f206e3642b"
 
 ["pencil/fresh"]
 outcome = "ok"

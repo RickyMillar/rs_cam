@@ -1,702 +1,621 @@
-//! Inlay operations — generate male and female V-carve toolpaths for wood inlays.
+//! Inlay operations: the V walls of the female pocket and the male plug.
 //!
-//! An inlay consists of two mating pieces:
-//! - **Female pocket**: A standard V-carve into the workpiece, with optional
-//!   flat-bottom clearing where the V reaches max depth.
-//! - **Male plug**: An inverted V-carve that mirrors the female pocket's geometry,
-//!   creating a plug that fits precisely into the female pocket when glued.
+//! An inlay has two parts that are cut on two boards:
 //!
-//! The V-bit angle must match for both operations. A `glue_gap` parameter accounts
-//! for the adhesive layer between mating surfaces.
+//! - **The pocket (female)**, cut into the workpiece by the `Inlay` op. The
+//!   op cuts only the V walls with the V-bit. A normal Pocket with a flat end
+//!   mill clears the floor (ruling R2,
+//!   `planning/op_architecture_2026-10-14/PLAN.md`).
+//! - **The plug (male)**, cut into a second board by the `InlayPlug` op, in
+//!   its own project. The plug is the mirrored design. The operator turns
+//!   the plug board face down and glues the plug into the pocket.
+//!
+//! # The geometry (one V-bit, both parts)
+//!
+//! Let the V-bit have the included angle `2α`. The flank of the bit makes
+//! the angle `α` with the vertical. A horizontal step `h` along the flank
+//! therefore comes with a vertical step `h / tan α`, and a vertical step `v`
+//! comes with a horizontal step `v · tan α`.
+//!
+//! **The pocket.** Let `d` be the distance of a point inside the design
+//! from the design outline. The bit tip at `d` and at the depth `d / tan α`
+//! puts the flank exactly through the outline at the stock top. So the
+//! pocket wall at the depth `t` lies `t · tan α` inside the outline. The
+//! wall stops at the pocket depth `D`. The floor is the design inset by
+//! `D · tan α`.
+//!
+//! **The plug.** Let `e` be the signed distance of a point from the
+//! mirrored outline, positive outside the design. Let `u` be the depth below
+//! the plug board top. The plug op cuts the surface
+//! `u(e) = S + e / tan α`, clamped to `0 ≤ u ≤ S + F`, where `S` is the
+//! start depth and `F` is the height that the plug stands proud of the
+//! workpiece. The plug face (`u = 0`) is the mirrored design inset by
+//! `S · tan α`.
+//!
+//! **The fit.** Turn the plug face down and mirror it back. The plug face
+//! sits at the pocket depth `t = S`, and a plug point at the depth `u` sits
+//! at `t = S − u`. A plug wall point at `e` then has `t = −e / tan α`, so it
+//! lies `t · tan α` inside the outline at the depth `t`. That is the pocket
+//! wall: the two walls are the same surface and are parallel at every V
+//! angle. The plug face is at `S` and the pocket floor is at `D`, so the
+//! vertical gap is `D − S`. The plug op therefore sets
+//! `S = D − glue_gap` ([`plug_start_depth`]). The glue gap is a vertical
+//! length and never meets `tan α`.
+//!
+//! Before ruling R2 the male pass shifted its depth by
+//! `glue_gap / tan² α`. That is `glue_gap` only for a 90° bit (`tan 45° = 1`)
+//! and three times `glue_gap` for a 60° bit.
 
 use crate::geo::{P2, P3};
 use crate::geometry::edge_distance::EdgeDistanceField;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::ops::pocket::{PocketParams, pocket_toolpath_with_cancel};
-use crate::ops::vcarve::{SCAN_CHUNK, VCarveParams, vcarve_toolpath_with_cancel};
+use crate::ops::depth::{LadderMode, z_ladder};
+use crate::ops::vcarve::SCAN_CHUNK;
 use crate::ops::zigzag::zigzag_lines;
-use crate::polygon::{Polygon2, offset_polygon};
-use crate::toolpath::Toolpath;
+use crate::polygon::Polygon2;
+use crate::toolpath::{MoveIntent, Toolpath};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// Parameters for inlay operations.
-pub struct InlayParams {
-    /// V-bit half-angle in radians (must match tool geometry).
+/// Parameters of the female pocket walls (`Inlay`).
+pub struct InlayPocketParams {
+    /// V-bit half-angle `α` in radians.
     pub half_angle: f64,
-    /// Female pocket depth (mm). The V-carve will reach this depth at wide areas.
+    /// Pocket depth `D` below the stock top (mm).
     pub pocket_depth: f64,
-    /// Gap between mating surfaces for glue (mm). Default: 0.1.
-    pub glue_gap: f64,
-    /// Additional depth below start surface for the male plug (mm).
-    /// Controls how much extra material the plug extends below the inlay face.
-    pub flat_depth: f64,
-    /// Extra margin around the plug boundary (mm).
-    pub boundary_offset: f64,
-    /// Scan line spacing for both V-carve and flat clearing (mm).
+    /// Width (mm) of the band beyond the wall foot that the V-bit also cuts
+    /// at the pocket depth. The band removes the strip and the corner
+    /// material that the clipped floor Pocket leaves at the wall foot.
+    pub floor_overlap: f64,
+    /// Largest ridge (mm) that the V-bit may leave on the floor band. It
+    /// sets the ring pitch ([`floor_ring_pitch`]).
+    pub floor_ridge: f64,
+    /// Width (mm) of the flat on the V-bit tip; 0 for a sharp bit.
+    pub tip_flat: f64,
+    /// Scan line spacing (mm) over the wall band.
     pub stepover: f64,
-    /// Tool radius for flat area clearing (mm). Use 0 to skip flat clearing.
-    pub flat_tool_radius: f64,
-    /// Feed rate for cutting moves (mm/min).
+    /// Feed rate (mm/min).
     pub feed_rate: f64,
     /// Plunge rate (mm/min).
     pub plunge_rate: f64,
     /// Safe Z for rapid moves (mm).
     pub safe_z: f64,
-    /// Tolerance for scan line sampling (mm).
+    /// Sample spacing along a scan line (mm).
     pub tolerance: f64,
-    /// Stock-top Z in the emission frame (F-028 / S.2). Both the female
-    /// pocket and male plug cut relative to `top_z - depth`, not world
-    /// Z=0. Callers should pass `heights.top_z` from the resolved height
-    /// stack.
+    /// Stock-top Z in the emission frame (F-028 / S.2).
     pub top_z: f64,
 }
 
-/// Result of an inlay operation: female pocket + male plug toolpaths.
-pub struct InlayResult {
-    /// Female pocket toolpath (cut into the workpiece).
-    pub female: Toolpath,
-    /// Male plug toolpath (cut from the plug stock).
-    pub male: Toolpath,
+/// Parameters of the male plug (`InlayPlug`).
+pub struct InlayPlugParams {
+    /// V-bit half-angle `α` in radians. Use the bit of the pocket.
+    pub half_angle: f64,
+    /// Depth `D` of the female pocket that the plug fits (mm).
+    pub pocket_depth: f64,
+    /// Vertical gap (mm) between the plug face and the pocket floor.
+    pub glue_gap: f64,
+    /// Height `F` (mm) that the plug stands proud of the workpiece top after
+    /// it is seated. The background around the plug is cut to `S + F`.
+    pub proud_height: f64,
+    /// Width (mm) of the flat background ring beyond the wall foot.
+    pub outer_margin: f64,
+    /// Maximum depth of one pass (mm).
+    pub depth_per_pass: f64,
+    /// Scan line spacing (mm).
+    pub stepover: f64,
+    /// Feed rate (mm/min).
+    pub feed_rate: f64,
+    /// Plunge rate (mm/min).
+    pub plunge_rate: f64,
+    /// Safe Z for rapid moves (mm).
+    pub safe_z: f64,
+    /// Sample spacing along a scan line (mm).
+    pub tolerance: f64,
+    /// Stock-top Z of the plug board in the emission frame.
+    pub top_z: f64,
 }
 
-/// Generate the female pocket toolpath.
+/// The plug start depth `S = D − glue_gap` (see the module doc).
+#[must_use]
+pub fn plug_start_depth(pocket_depth: f64, glue_gap: f64) -> f64 {
+    pocket_depth - glue_gap
+}
+
+/// The horizontal inset (mm) of the pocket floor from the design outline:
+/// `pocket_depth · tan(half_angle)`. The floor Pocket uses this number as a
+/// negative boundary offset.
+#[must_use]
+pub fn floor_inset(pocket_depth: f64, half_angle: f64) -> f64 {
+    pocket_depth * half_angle.tan()
+}
+
+/// The pitch (mm) of the floor rings for a ridge of at most `ridge` mm.
 ///
-/// This is a standard V-carve of the design polygon, optionally followed by
-/// flat-bottom clearing where the V-carve reaches max_depth.
-///
-/// Cancellable: polls via [`vcarve_toolpath_with_cancel`] (per scan line)
-/// and [`pocket_toolpath_with_cancel`] (per offset ring in the flat-clearing
-/// pass), planning/finishing_stack_review_2026-07.md S.5.
-fn female_toolpath_with_cancel(
-    polygon: &Polygon2,
-    params: &InlayParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    let mut tp = Toolpath::new();
+/// Two passes of a sharp V-bit at the same depth, `s` apart, leave a ridge
+/// between them. Each flank rises `h` over a horizontal run `h · tan α`, and
+/// the two flanks meet halfway, so `s = 2 h tan α`, that is
+/// `h = s / (2 tan α)`. A bit with a tip flat of width `w` cuts the flat
+/// first: `h = (s − w) / (2 tan α)` for `s > w`, and no ridge for `s <= w`.
+/// So `s = 2 h tan α + w`. The pitch is never below 0.01 mm.
+#[must_use]
+pub fn floor_ring_pitch(ridge: f64, half_angle: f64, tip_flat: f64) -> f64 {
+    (2.0 * ridge.max(0.0) * half_angle.tan() + tip_flat.max(0.0)).max(0.01)
+}
 
-    // Step 1: V-carve the design
-    let vcarve_params = VCarveParams {
-        half_angle: params.half_angle,
-        max_depth: params.pocket_depth,
-        stepover: params.stepover,
-        feed_rate: params.feed_rate,
-        plunge_rate: params.plunge_rate,
-        safe_z: params.safe_z,
-        tolerance: params.tolerance,
-        top_z: params.top_z,
-    };
-    let vcarve_tp = vcarve_toolpath_with_cancel(polygon, &vcarve_params, cancel)?;
-    tp.moves.extend(vcarve_tp.moves);
-
-    // Step 2: Flat area clearing where V-carve hits max_depth
-    // The flat region is the polygon inset by max_depth * tan(half_angle)
-    if params.flat_tool_radius > 0.0 && params.pocket_depth > 0.0 {
-        let inset_dist = params.pocket_depth * params.half_angle.tan();
-        let inset_polygons = offset_polygon(polygon, -inset_dist);
-
-        for inset_poly in &inset_polygons {
-            if inset_poly.exterior.len() < 3 {
-                continue;
-            }
-            let pocket_params = PocketParams {
-                tool_radius: params.flat_tool_radius,
-                stepover: params.stepover,
-                cut_depth: params.top_z - params.pocket_depth,
-                feed_rate: params.feed_rate,
-                plunge_rate: params.plunge_rate,
-                safe_z: params.safe_z,
-                climb: false,
-            };
-            let flat_tp = pocket_toolpath_with_cancel(inset_poly, &pocket_params, cancel)?;
-            tp.moves.extend(flat_tp.moves);
+/// Mirror a design about the vertical centre line of its whole bounding box
+/// in X: `x' = x_min + x_max − x`. The plug board turns face down about
+/// this line, so the mirrored plug fits the pocket. The mirror reverses the
+/// winding; this function reverses each ring again to keep it.
+#[must_use]
+pub fn mirror_design(polygons: &[Polygon2]) -> Vec<Polygon2> {
+    let mut x_min = f64::INFINITY;
+    let mut x_max = f64::NEG_INFINITY;
+    for poly in polygons {
+        for p in &poly.exterior {
+            x_min = x_min.min(p.x);
+            x_max = x_max.max(p.x);
         }
     }
-
-    Ok(tp)
+    let sum = x_min + x_max;
+    let flip =
+        |ring: &[P2]| -> Vec<P2> { ring.iter().rev().map(|p| P2::new(sum - p.x, p.y)).collect() };
+    polygons
+        .iter()
+        .map(|poly| {
+            Polygon2::with_holes(
+                flip(&poly.exterior),
+                poly.holes.iter().map(|h| flip(h)).collect(),
+            )
+        })
+        .collect()
 }
 
-/// Generate the male plug toolpath.
+/// One sampled scan line: runs of points that the bit cuts. A point that
+/// the bit does not cut splits the line.
+type Runs = Vec<Vec<P3>>;
+
+/// Sample a scan line. `depth_at(p)` gives the cut depth below the stock
+/// top, or `None` where the bit does not cut.
+fn sample_line(
+    line: &[P2; 2],
+    sample_step: f64,
+    depth_at: &(dyn Fn(P2) -> Option<f64> + Sync),
+    top_z: f64,
+) -> Runs {
+    #[allow(clippy::indexing_slicing)]
+    // SAFETY: `line` is a fixed-size [P2; 2] array.
+    let (a, b) = (line[0], line[1]);
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-10 {
+        return Vec::new();
+    }
+    let n = (len / sample_step).ceil() as usize;
+    let mut runs: Runs = Vec::new();
+    let mut current: Vec<P3> = Vec::new();
+    for i in 0..=n {
+        let t = i as f64 / n.max(1) as f64;
+        let p = P2::new(a.x + t * dx, a.y + t * dy);
+        match depth_at(p) {
+            Some(depth) => current.push(P3::new(p.x, p.y, top_z - depth)),
+            None => {
+                if !current.is_empty() {
+                    runs.push(std::mem::take(&mut current));
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        runs.push(current);
+    }
+    runs.into_iter().map(drop_collinear).collect()
+}
+
+/// Drop each interior sample whose Z is the mean of its two neighbours.
 ///
-/// The male plug is an inverted V-carve: the design boundary becomes a ridge,
-/// and the depth increases as you move away from the boundary (outward) to
-/// create a shape that mates with the female pocket.
+/// The samples of a run are equally spaced on one straight scan line, so a
+/// zero second difference in Z means the three points are collinear in 3D.
+/// A chain of such points is one straight segment, so the run keeps its
+/// exact shape (to 1e-9 mm) with fewer moves: a flat floor and a wall along
+/// a straight edge each become one segment.
+fn drop_collinear(run: Vec<P3>) -> Vec<P3> {
+    if run.len() < 3 {
+        return run;
+    }
+    let mut out = Vec::with_capacity(run.len());
+    for (i, p) in run.iter().enumerate() {
+        let keep = match (i.checked_sub(1).and_then(|j| run.get(j)), run.get(i + 1)) {
+            (Some(a), Some(b)) => (a.z - 2.0 * p.z + b.z).abs() > 1e-9,
+            _ => true,
+        };
+        if keep {
+            out.push(*p);
+        }
+    }
+    out
+}
+
+/// Sample a batch of lines, in parallel when the `parallel` feature is on.
+/// Order is kept, so the output is the same either way.
+fn sample_batch(
+    batch: &[[P2; 2]],
+    sample_step: f64,
+    depth_at: &(dyn Fn(P2) -> Option<f64> + Sync),
+    top_z: f64,
+) -> Vec<Runs> {
+    #[cfg(feature = "parallel")]
+    {
+        batch
+            .par_iter()
+            .map(|line| sample_line(line, sample_step, depth_at, top_z))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        batch
+            .iter()
+            .map(|line| sample_line(line, sample_step, depth_at, top_z))
+            .collect()
+    }
+}
+
+/// Emit every run of every sampled line. Polls `cancel` once per
+/// [`SCAN_CHUNK`] lines, the V-carve cadence (G9).
+#[allow(clippy::too_many_arguments)]
+fn emit_scan(
+    tp: &mut Toolpath,
+    lines: &[[P2; 2]],
+    sample_step: f64,
+    depth_at: &(dyn Fn(P2) -> Option<f64> + Sync),
+    top_z: f64,
+    safe_z: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    for batch in lines.chunks(SCAN_CHUNK) {
+        check_cancel(cancel)?;
+        for runs in sample_batch(batch, sample_step, depth_at, top_z) {
+            for run in runs {
+                tp.emit_path_segment_with_intent(
+                    &run,
+                    safe_z,
+                    feed_rate,
+                    plunge_rate,
+                    MoveIntent::FinishingCut,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The female pocket walls of one design polygon.
 ///
-/// An outer boundary rectangle is created around the design, and the annular
-/// region between the design and the boundary is carved with inverted depth.
+/// Two parts, both with the V-bit:
 ///
-/// Cancellable: checks `cancel` as its very first statement, then polls
-/// once per [`SCAN_CHUNK`]-line batch of the distance-field sampling loop
-/// (planning/finishing_stack_review_2026-07.md S.5), mirroring
-/// `vcarve_toolpath_with_cancel`'s cadence for the same kind of loop —
-/// including G9's move of that poll from per-line to per-batch so the
-/// batch can be sampled across the rayon pool.
-fn male_toolpath_with_cancel(
+/// 1. The wall band: scan lines at `stepover` over the design. The bit
+///    cuts each point whose distance `d` from the outline is at most
+///    `D · tan α`, at the depth `d / tan α`. This part also carves a
+///    feature too narrow to reach the pocket depth.
+/// 2. The floor band: closed rings at the pocket depth, on the outline
+///    inset by `D · tan α + k · p` for `k = 0, 1, …` up to
+///    `D · tan α + floor_overlap`, where `p` is [`floor_ring_pitch`]. The
+///    first ring runs along the wall foot, so its flank cuts the whole wall
+///    in one continuous pass. The rings leave floor ridges of at most
+///    `floor_ridge`.
+///
+/// The op cuts nothing outside the design and no floor beyond the band.
+///
+/// Cancellable: checks `cancel` first, then once per [`SCAN_CHUNK`] lines
+/// and once per ring.
+pub fn inlay_pocket_toolpath_with_cancel(
     polygon: &Polygon2,
-    params: &InlayParams,
+    params: &InlayPocketParams,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
     let mut tp = Toolpath::new();
     let tan_half = params.half_angle.tan();
-
-    if tan_half < 1e-10 {
+    if tan_half < 1e-10 || params.pocket_depth <= 0.0 {
         return Ok(tp);
     }
+    let foot = floor_inset(params.pocket_depth, params.half_angle);
+    let scan_inset = params.tolerance.min(0.05);
+    let lines = zigzag_lines(polygon, scan_inset, params.stepover, 0.0);
+    let field = EdgeDistanceField::from_polygon(polygon);
+    let depth_at = move |p: P2| -> Option<f64> {
+        let d = field.distance(&p);
+        (d <= foot).then_some(d / tan_half)
+    };
+    emit_scan(
+        &mut tp,
+        &lines,
+        params.tolerance.max(0.05),
+        &depth_at,
+        params.top_z,
+        params.safe_z,
+        params.feed_rate,
+        params.plunge_rate,
+        cancel,
+    )?;
 
-    // Compute the bounding box of the design with margin
-    let (x_min, y_min, x_max, y_max) = polygon_bounds(polygon);
-    let margin = params.pocket_depth * tan_half + params.boundary_offset;
+    let overlap = params.floor_overlap.max(0.0);
+    let pitch = floor_ring_pitch(params.floor_ridge, params.half_angle, params.tip_flat);
+    let rings = (overlap / pitch).ceil() as usize;
+    let z = params.top_z - params.pocket_depth;
+    // The arc-carrying offset, flattened once to the op tolerance: a plain
+    // `offset_polygon` turns the join arc at a reflex corner into its
+    // chord, and a full-depth V on that chord gouges the wall (measured:
+    // 0.879 mm on the L of G-INLAYSPLIT).
+    let shape = crate::polygon::OffsetRingSet::from_polygon(polygon);
+    let flatten = crate::polygon::FlattenPolicy::from_chord_tolerance(params.tolerance);
+    for k in 0..=rings {
+        check_cancel(cancel)?;
+        let inset = foot + (k as f64 * pitch).min(overlap);
+        // A POSITIVE offset distance is inward.
+        for piece in shape.offset(inset).to_polygons(flatten) {
+            for ring in std::iter::once(&piece.exterior).chain(piece.holes.iter()) {
+                let Some(first) = ring.first() else {
+                    continue;
+                };
+                let mut pts: Vec<P3> = ring.iter().map(|p| P3::new(p.x, p.y, z)).collect();
+                pts.push(P3::new(first.x, first.y, z));
+                tp.emit_path_segment_with_intent(
+                    &pts,
+                    params.safe_z,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    MoveIntent::FinishingCut,
+                );
+            }
+        }
+    }
+    Ok(tp)
+}
 
-    // Outer boundary: rectangle around the design
-    let outer = Polygon2::rectangle(
+/// Uncancellable [`inlay_pocket_toolpath_with_cancel`].
+pub fn inlay_pocket_toolpath(polygon: &Polygon2, params: &InlayPocketParams) -> Toolpath {
+    crate::interrupt::run_uncancellable(|cancel| {
+        inlay_pocket_toolpath_with_cancel(polygon, params, cancel)
+    })
+}
+
+/// The male plug of a whole design (all its polygons at once).
+///
+/// The op mirrors the design ([`mirror_design`]) and cuts the surface
+/// `u(e) = clamp(S + e / tan α, 0, S + F)` (see the module doc) over the
+/// design bounding box grown by `F · tan α + outer_margin`. The V-bit cuts
+/// the background too, in passes of at most `depth_per_pass`. The board
+/// outside that rectangle stays at the plug face height; the operator saws
+/// the plug free inside the flat background ring.
+///
+/// All polygons share one distance field, so one polygon is never cut as
+/// the background of another.
+///
+/// Cancellable: checks `cancel` first, then once per [`SCAN_CHUNK`] lines.
+pub fn inlay_plug_toolpath_with_cancel(
+    polygons: &[Polygon2],
+    params: &InlayPlugParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    check_cancel(cancel)?;
+    let mut tp = Toolpath::new();
+    let tan_half = params.half_angle.tan();
+    let start = plug_start_depth(params.pocket_depth, params.glue_gap);
+    let total = start + params.proud_height.max(0.0);
+    if tan_half < 1e-10 || polygons.is_empty() || start <= 0.0 || total <= 0.0 {
+        return Ok(tp);
+    }
+    let mirrored = mirror_design(polygons);
+
+    // One field over every ring of every polygon.
+    let mut rings: Vec<Vec<P2>> = Vec::new();
+    let (mut x_min, mut y_min) = (f64::INFINITY, f64::INFINITY);
+    let (mut x_max, mut y_max) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for poly in &mirrored {
+        for p in &poly.exterior {
+            x_min = x_min.min(p.x);
+            y_min = y_min.min(p.y);
+            x_max = x_max.max(p.x);
+            y_max = y_max.max(p.y);
+        }
+        rings.push(poly.exterior.clone());
+        rings.extend(poly.holes.iter().cloned());
+    }
+    let Some((first, rest)) = rings.split_first() else {
+        return Ok(tp);
+    };
+    let field = EdgeDistanceField::from_rings(first, rest);
+
+    let margin = params.proud_height.max(0.0) * tan_half + params.outer_margin.max(0.0);
+    let region = Polygon2::rectangle(
         x_min - margin,
         y_min - margin,
         x_max + margin,
         y_max + margin,
     );
+    let lines = zigzag_lines(&region, 0.0, params.stepover, 0.0);
 
-    // The male carving region is the outer boundary with the design as a hole
-    // (inverted from the female where we carve inside the design)
-    let mut holes = vec![polygon.exterior.clone()];
-    holes.extend(polygon.holes.iter().cloned());
-    let male_region = Polygon2::with_holes(outer.exterior, holes);
-
-    // Generate scan lines across the male region
-    let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);
-    let sample_step = params.tolerance.max(0.05);
-
-    // Apply glue gap: offset the design boundary inward slightly
-    // This makes the male plug slightly smaller than the female pocket
-    let gap_offset = params.glue_gap / tan_half;
-
-    // G9: index the DESIGN boundary once (not the outer stock rectangle the
-    // scan lines run over) instead of walking every design edge per sample.
-    let field = EdgeDistanceField::from_rings(&polygon.exterior, &polygon.holes);
-
-    for batch in scan_lines.chunks(SCAN_CHUNK) {
-        check_cancel(cancel)?;
-        let sampled = sample_male_chunk(batch, &field, sample_step, tan_half, gap_offset, params);
-        for points in sampled {
-            if points.is_empty() {
-                continue;
-            }
-            tp.emit_path_segment_with_intent(
-                &points,
-                params.safe_z,
-                params.feed_rate,
-                params.plunge_rate,
-                crate::toolpath::MoveIntent::FinishingCut,
-            );
+    let plateau_inset = start * tan_half;
+    let surface = |p: P2| -> Option<f64> {
+        let dist = field.distance(&p);
+        let inside = mirrored.iter().any(|poly| poly.contains_point(&p));
+        let e = if inside { -dist } else { dist };
+        if e <= -plateau_inset {
+            return None; // the plug face: never cut
         }
-    }
+        Some((start + e / tan_half).clamp(0.0, total))
+    };
 
+    let step = if params.depth_per_pass > 0.0 {
+        params.depth_per_pass
+    } else {
+        total
+    };
+    // A point is cut on the first level that goes below its surface depth
+    // and on each later level until its surface is reached. A point whose
+    // surface an earlier level reached is not cut again.
+    let mut prev_depth = 0.0_f64;
+    for level in z_ladder(0.0, -total, step, LadderMode::EvenRedistributed) {
+        let level_depth = -level;
+        let above = prev_depth;
+        let depth_at = |p: P2| -> Option<f64> {
+            surface(p)
+                .filter(|u| *u > above)
+                .map(|u| u.min(level_depth))
+        };
+        emit_scan(
+            &mut tp,
+            &lines,
+            params.tolerance.max(0.05),
+            &depth_at,
+            params.top_z,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+            cancel,
+        )?;
+        prev_depth = level_depth;
+    }
     Ok(tp)
 }
 
-/// Sample one male-plug scan line. Empty for a degenerate line (the pre-G9
-/// `continue`).
-fn sample_male_line(
-    line: &[P2; 2],
-    field: &EdgeDistanceField,
-    sample_step: f64,
-    tan_half: f64,
-    gap_offset: f64,
-    params: &InlayParams,
-) -> Vec<P3> {
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: `line` is a fixed-size [P2; 2] array.
-    let (dx, dy) = (line[1].x - line[0].x, line[1].y - line[0].y);
-    let len = (dx * dx + dy * dy).sqrt();
-    if len < 1e-10 {
-        return Vec::new();
-    }
-
-    let n_samples = (len / sample_step).ceil() as usize;
-    let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
-
-    for i in 0..=n_samples {
-        let t = i as f64 / n_samples.max(1) as f64;
-        #[allow(clippy::indexing_slicing)]
-        // SAFETY: `line` is a fixed-size [P2; 2] array.
-        let (x, y) = (line[0].x + t * dx, line[0].y + t * dy);
-
-        // Distance to the design boundary (not the outer boundary)
-        let dist = field.distance(&P2::new(x, y));
-
-        // Male depth: increases with distance from design boundary
-        // At the boundary: depth = glue_gap_depth (flush with slight gap)
-        // Moving outward: depth increases linearly
-        let depth =
-            ((dist - gap_offset) / tan_half + params.flat_depth).clamp(0.0, params.pocket_depth);
-
-        points.push(P3::new(x, y, params.top_z - depth));
-    }
-
-    points
-}
-
-/// Sample a batch of male-plug scan lines, in parallel when the `parallel`
-/// feature is on. Order is preserved, so emission is byte-identical either
-/// way.
-fn sample_male_chunk(
-    chunk: &[[P2; 2]],
-    field: &EdgeDistanceField,
-    sample_step: f64,
-    tan_half: f64,
-    gap_offset: f64,
-    params: &InlayParams,
-) -> Vec<Vec<P3>> {
-    #[cfg(feature = "parallel")]
-    {
-        chunk
-            .par_iter()
-            .map(|line| sample_male_line(line, field, sample_step, tan_half, gap_offset, params))
-            .collect()
-    }
-    #[cfg(not(feature = "parallel"))]
-    {
-        chunk
-            .iter()
-            .map(|line| sample_male_line(line, field, sample_step, tan_half, gap_offset, params))
-            .collect()
-    }
-}
-
-/// Get the XY bounding box of a polygon.
-fn polygon_bounds(polygon: &Polygon2) -> (f64, f64, f64, f64) {
-    let mut x_min = f64::INFINITY;
-    let mut y_min = f64::INFINITY;
-    let mut x_max = f64::NEG_INFINITY;
-    let mut y_max = f64::NEG_INFINITY;
-
-    for p in &polygon.exterior {
-        x_min = x_min.min(p.x);
-        y_min = y_min.min(p.y);
-        x_max = x_max.max(p.x);
-        y_max = y_max.max(p.y);
-    }
-
-    (x_min, y_min, x_max, y_max)
-}
-
-/// Generate both female and male inlay toolpaths.
-///
-/// The female pocket is cut into the workpiece, and the male plug is cut from
-/// a separate piece of stock. When the plug is glued into the pocket and the
-/// top sanded flush, the inlay design is revealed.
-pub fn inlay_toolpaths(polygon: &Polygon2, params: &InlayParams) -> InlayResult {
+/// Uncancellable [`inlay_plug_toolpath_with_cancel`].
+pub fn inlay_plug_toolpath(polygons: &[Polygon2], params: &InlayPlugParams) -> Toolpath {
     crate::interrupt::run_uncancellable(|cancel| {
-        inlay_toolpaths_with_cancel(polygon, params, cancel)
+        inlay_plug_toolpath_with_cancel(polygons, params, cancel)
     })
-}
-
-/// Cancellable variant of [`inlay_toolpaths`]
-/// (planning/finishing_stack_review_2026-07.md S.5).
-pub fn inlay_toolpaths_with_cancel(
-    polygon: &Polygon2,
-    params: &InlayParams,
-    cancel: &dyn CancelCheck,
-) -> Result<InlayResult, Cancelled> {
-    let female = female_toolpath_with_cancel(polygon, params, cancel)?;
-    let male = male_toolpath_with_cancel(polygon, params, cancel)?;
-    Ok(InlayResult { female, male })
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::toolpath::MoveType;
     use std::f64::consts::FRAC_PI_4;
 
-    fn circle_polygon(radius: f64, n_pts: usize) -> Polygon2 {
-        let pts: Vec<P2> = (0..n_pts)
-            .map(|i| {
-                let angle = 2.0 * std::f64::consts::PI * i as f64 / n_pts as f64;
-                P2::new(radius * angle.cos(), radius * angle.sin())
-            })
-            .collect();
-        Polygon2::new(pts)
-    }
-
-    fn square_polygon(size: f64) -> Polygon2 {
+    fn square(size: f64) -> Polygon2 {
         let h = size / 2.0;
         Polygon2::rectangle(-h, -h, h, h)
     }
 
-    /// The pre-G9 male-plug body, verbatim except that the per-sample
-    /// distance comes from the field's **linear** scan (the old
-    /// `point_to_polygon_boundary`) and the lines are walked serially.
-    fn naive_male(polygon: &Polygon2, params: &InlayParams) -> Toolpath {
-        let mut tp = Toolpath::new();
-        let tan_half = params.half_angle.tan();
-        if tan_half < 1e-10 {
-            return tp;
-        }
-        let (x_min, y_min, x_max, y_max) = polygon_bounds(polygon);
-        let margin = params.pocket_depth * tan_half + params.boundary_offset;
-        let outer = Polygon2::rectangle(
-            x_min - margin,
-            y_min - margin,
-            x_max + margin,
-            y_max + margin,
-        );
-        let mut holes = vec![polygon.exterior.clone()];
-        holes.extend(polygon.holes.iter().cloned());
-        let male_region = Polygon2::with_holes(outer.exterior, holes);
-        let scan_lines = zigzag_lines(&male_region, 0.05, params.stepover, 0.0);
-        let sample_step = params.tolerance.max(0.05);
-        let gap_offset = params.glue_gap / tan_half;
-        let field = EdgeDistanceField::from_rings(&polygon.exterior, &polygon.holes);
-
-        for line in &scan_lines {
-            let dx = line[1].x - line[0].x;
-            let dy = line[1].y - line[0].y;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 1e-10 {
-                continue;
-            }
-            let n_samples = (len / sample_step).ceil() as usize;
-            let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
-            for i in 0..=n_samples {
-                let t = i as f64 / n_samples.max(1) as f64;
-                let x = line[0].x + t * dx;
-                let y = line[0].y + t * dy;
-                let dist = field.distance_linear(&P2::new(x, y));
-                let depth = ((dist - gap_offset) / tan_half + params.flat_depth)
-                    .clamp(0.0, params.pocket_depth);
-                points.push(P3::new(x, y, params.top_z - depth));
-            }
-            if points.is_empty() {
-                continue;
-            }
-            tp.emit_path_segment_with_intent(
-                &points,
-                params.safe_z,
-                params.feed_rate,
-                params.plunge_rate,
-                crate::toolpath::MoveIntent::FinishingCut,
-            );
-        }
-        tp
-    }
-
-    /// **G9 equivalence sentry, inlay side.** The male plug's depth is a
-    /// clamped function of the same boundary distance, so an index error
-    /// shows up as a wrong plug that still mates "about right" — exactly the
-    /// kind of defect a move-count check would miss. Raw bits.
-    #[test]
-    fn inlay_male_indexed_field_is_bit_identical_to_linear_scan() {
-        let mut poly = square_polygon(40.0);
-        // Star-ish holes so ties and near-ties are dense.
-        for (cx, cy) in [(-8.0, -8.0), (9.0, 4.0), (0.0, 12.0)] {
-            poly.holes.push(
-                (0..64)
-                    .map(|i| {
-                        let t = -std::f64::consts::TAU * i as f64 / 64.0;
-                        let r = if i % 2 == 0 { 4.0 } else { 2.0 };
-                        P2::new(cx + r * t.cos(), cy + r * t.sin())
-                    })
-                    .collect(),
-            );
-        }
-
-        for (tolerance, glue_gap, flat_depth) in
-            [(0.05, 0.1, 0.5), (0.3, 0.0, 0.0), (0.1, 0.4, 1.25)]
-        {
-            let params = InlayParams {
-                tolerance,
-                glue_gap,
-                flat_depth,
-                ..default_params()
-            };
-            let indexed = male_toolpath_with_cancel(&poly, &params, &(|| false)).unwrap();
-            let linear = naive_male(&poly, &params);
-            assert!(!indexed.moves.is_empty(), "vacuous fixture");
-            let bits = |tp: &Toolpath| -> Vec<(u64, u64, u64)> {
-                tp.moves
-                    .iter()
-                    .map(|m| {
-                        (
-                            m.target.x.to_bits(),
-                            m.target.y.to_bits(),
-                            m.target.z.to_bits(),
-                        )
-                    })
-                    .collect()
-            };
-            assert_eq!(
-                bits(&indexed),
-                bits(&linear),
-                "male plug diverged at tolerance={tolerance} glue_gap={glue_gap}"
-            );
-        }
-    }
-
-    fn default_params() -> InlayParams {
-        InlayParams {
-            half_angle: FRAC_PI_4, // 90° V-bit
+    fn pocket_params() -> InlayPocketParams {
+        InlayPocketParams {
+            half_angle: FRAC_PI_4,
             pocket_depth: 3.0,
-            glue_gap: 0.1,
-            flat_depth: 0.5,
-            boundary_offset: 2.0,
-            stepover: 1.0,
-            flat_tool_radius: 0.0, // no flat clearing by default
+            floor_overlap: 1.0,
+            floor_ridge: 0.05,
+            tip_flat: 0.0,
+            stepover: 0.5,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
             safe_z: 10.0,
-            tolerance: 0.2,
+            tolerance: 0.1,
             top_z: 0.0,
         }
     }
 
-    #[test]
-    fn test_circle_inlay_female() {
-        let circle = circle_polygon(10.0, 32);
-        let params = default_params();
-        let result = inlay_toolpaths(&circle, &params);
-
-        assert!(
-            !result.female.moves.is_empty(),
-            "Female toolpath should have moves"
-        );
-        assert!(
-            result.female.total_cutting_distance() > 10.0,
-            "Female should have significant cutting"
-        );
-    }
-
-    #[test]
-    fn test_circle_inlay_male() {
-        let circle = circle_polygon(10.0, 32);
-        let params = default_params();
-        let result = inlay_toolpaths(&circle, &params);
-
-        assert!(
-            !result.male.moves.is_empty(),
-            "Male toolpath should have moves"
-        );
-        assert!(
-            result.male.total_cutting_distance() > 10.0,
-            "Male should have significant cutting"
-        );
-    }
-
-    #[test]
-    fn test_female_depth_bounded() {
-        let sq = square_polygon(20.0);
-        let params = InlayParams {
+    fn plug_params() -> InlayPlugParams {
+        InlayPlugParams {
+            half_angle: FRAC_PI_4,
             pocket_depth: 3.0,
-            ..default_params()
-        };
-        let result = inlay_toolpaths(&sq, &params);
-
-        // Female V-carve should not exceed pocket_depth
-        for m in &result.female.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                assert!(
-                    m.target.z >= -params.pocket_depth - 0.1,
-                    "Female depth {} exceeds pocket_depth {}",
-                    m.target.z,
-                    params.pocket_depth
-                );
-            }
+            glue_gap: 0.2,
+            proud_height: 2.0,
+            outer_margin: 2.0,
+            depth_per_pass: 1.5,
+            stepover: 0.5,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            safe_z: 10.0,
+            tolerance: 0.1,
+            top_z: 0.0,
         }
     }
 
-    #[test]
-    fn test_male_depth_bounded() {
-        let sq = square_polygon(20.0);
-        let params = default_params();
-        let result = inlay_toolpaths(&sq, &params);
-
-        // Male plug should not exceed pocket_depth
-        for m in &result.male.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                assert!(
-                    m.target.z >= -params.pocket_depth - 0.1,
-                    "Male depth {} exceeds pocket_depth {}",
-                    m.target.z,
-                    params.pocket_depth
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_letter_o_with_island() {
-        // Letter "O" — outer ring with inner hole
-        let outer = circle_polygon(15.0, 32);
-        let inner = circle_polygon(8.0, 32);
-        let poly = Polygon2::with_holes(outer.exterior, vec![inner.exterior]);
-
-        let params = default_params();
-        let result = inlay_toolpaths(&poly, &params);
-
-        assert!(
-            !result.female.moves.is_empty(),
-            "Letter O female should have moves"
-        );
-        assert!(
-            !result.male.moves.is_empty(),
-            "Letter O male should have moves"
-        );
-    }
-
-    #[test]
-    fn test_male_region_respects_holes() {
-        // Letter "O" — outer ring with inner hole.
-        // Male depths near the inner hole boundary should be shallow (near zero)
-        // because the hole boundary is an obstacle. Without hole support, the male
-        // region would treat the interior as open space and cut too deep near the hole.
-        let outer = circle_polygon(15.0, 32);
-        let inner = circle_polygon(8.0, 32);
-        let poly = Polygon2::with_holes(outer.exterior, vec![inner.exterior]);
-
-        let params = default_params();
-        let result = inlay_toolpaths(&poly, &params);
-
-        // The male toolpath should have moves
-        assert!(
-            !result.male.moves.is_empty(),
-            "Male toolpath for letter O should have moves"
-        );
-
-        // Verify that some male cuts are shallow (near the hole boundary).
-        // Points right outside the inner circle (~8mm from center) should be
-        // close to the hole boundary, producing shallow depths.
-        let has_shallow_cuts = result.male.moves.iter().any(|m| {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                m.target.z > -0.5 && m.target.z < 0.0
-            } else {
-                false
-            }
-        });
-        assert!(
-            has_shallow_cuts,
-            "Male toolpath should have shallow cuts near hole boundary"
-        );
-    }
-
-    #[test]
-    fn test_flat_clearing_adds_moves() {
-        let sq = square_polygon(20.0);
-        let params_no_flat = InlayParams {
-            flat_tool_radius: 0.0,
-            ..default_params()
-        };
-        let params_with_flat = InlayParams {
-            flat_tool_radius: 3.0,
-            ..default_params()
-        };
-
-        let result_no = inlay_toolpaths(&sq, &params_no_flat);
-        let result_with = inlay_toolpaths(&sq, &params_with_flat);
-
-        // With flat clearing, female should have more moves
-        assert!(
-            result_with.female.moves.len() >= result_no.female.moves.len(),
-            "Flat clearing should add moves: without={}, with={}",
-            result_no.female.moves.len(),
-            result_with.female.moves.len()
-        );
-    }
-
-    #[test]
-    fn test_glue_gap_affects_male_depth() {
-        let sq = square_polygon(20.0);
-
-        let params_no_gap = InlayParams {
-            glue_gap: 0.0,
-            ..default_params()
-        };
-        let params_with_gap = InlayParams {
-            glue_gap: 0.5,
-            ..default_params()
-        };
-
-        let result_no = inlay_toolpaths(&sq, &params_no_gap);
-        let result_with = inlay_toolpaths(&sq, &params_with_gap);
-
-        // Both should produce toolpaths
-        assert!(!result_no.male.moves.is_empty());
-        assert!(!result_with.male.moves.is_empty());
-
-        // With glue gap, male cuts should generally be shallower near boundary
-        // (the gap pushes the depth profile outward)
-    }
-
-    #[test]
-    fn test_inlay_cuts_relative_to_stock_top_s2() {
-        // S.2 / F-028: female pocket + male plug must cut relative to
-        // `top_z`, not world Z=0.
-        let sq = square_polygon(20.0);
-        let params = InlayParams {
-            pocket_depth: 3.0,
-            top_z: 5.0,
-            ..default_params()
-        };
-        let result = inlay_toolpaths(&sq, &params);
-
-        for m in &result.female.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                assert!(
-                    m.target.z >= params.top_z - params.pocket_depth - 0.1,
-                    "Female depth {} should not exceed top_z - pocket_depth {}",
-                    m.target.z,
-                    params.top_z - params.pocket_depth
-                );
-                assert!(
-                    m.target.z <= params.top_z + 0.1,
-                    "Female depth {} should not exceed top_z {}",
-                    m.target.z,
-                    params.top_z
-                );
-            }
-        }
-
-        for m in &result.male.moves {
-            if let crate::toolpath::MoveType::Linear { .. } = m.move_type {
-                assert!(
-                    m.target.z >= params.top_z - params.pocket_depth - 0.1,
-                    "Male depth {} should not exceed top_z - pocket_depth {}",
-                    m.target.z,
-                    params.top_z - params.pocket_depth
-                );
-                assert!(
-                    m.target.z <= params.top_z + 0.1,
-                    "Male depth {} should not exceed top_z {}",
-                    m.target.z,
-                    params.top_z
-                );
-            }
-        }
-
-        // Confirm depths are NOT anchored at world Z=0 (i.e. the shift
-        // actually reached emission) by checking at least one cutting
-        // move sits above 0 (top_z=5.0, pocket_depth=3.0 -> range [2, 5]).
-        let any_above_zero = result
-            .female
-            .moves
+    fn cuts(tp: &Toolpath) -> Vec<P3> {
+        tp.moves
             .iter()
-            .chain(result.male.moves.iter())
-            .any(|m| {
-                matches!(m.move_type, crate::toolpath::MoveType::Linear { .. }) && m.target.z > 0.0
-            });
-        assert!(
-            any_above_zero,
-            "Expected at least one cutting move above world Z=0 with top_z=5.0"
-        );
+            .filter(|m| matches!(m.move_type, MoveType::Linear { .. }) && m.target.z < 9.0)
+            .map(|m| m.target)
+            .collect()
     }
 
     #[test]
-    fn test_polygon_bounds() {
-        let sq = square_polygon(20.0);
-        let (x_min, y_min, x_max, y_max) = polygon_bounds(&sq);
-        assert!((x_min - (-10.0)).abs() < 0.1);
-        assert!((y_min - (-10.0)).abs() < 0.1);
-        assert!((x_max - 10.0).abs() < 0.1);
-        assert!((y_max - 10.0).abs() < 0.1);
+    fn the_pocket_walls_stay_in_the_band_and_reach_the_pocket_depth() {
+        let sq = square(40.0);
+        let p = pocket_params();
+        let tp = inlay_pocket_toolpath(&sq, &p);
+        let pts = cuts(&tp);
+        assert!(!pts.is_empty());
+        let band = floor_inset(p.pocket_depth, p.half_angle) + p.floor_overlap;
+        for q in &pts {
+            let d = sq.distance_to_boundary(&P2::new(q.x, q.y));
+            assert!(
+                d <= band + 1e-6,
+                "a cut at d = {d} lies beyond the band {band}"
+            );
+            assert!(q.z >= -p.pocket_depth - 1e-9);
+        }
+        assert!(pts.iter().any(|q| (q.z + p.pocket_depth).abs() < 1e-9));
+        // The centre of the floor stays uncut.
+        assert!(!pts.iter().any(|q| q.x.abs() < 5.0 && q.y.abs() < 5.0));
+    }
+
+    #[test]
+    fn the_pocket_cuts_relative_to_the_stock_top() {
+        let p = InlayPocketParams {
+            top_z: 5.0,
+            ..pocket_params()
+        };
+        let pts = cuts(&inlay_pocket_toolpath(&square(20.0), &p));
+        assert!(pts.iter().all(|q| q.z <= 5.0 + 1e-9 && q.z >= 2.0 - 1e-9));
+    }
+
+    #[test]
+    fn the_plug_never_cuts_its_face_and_stops_at_its_full_depth() {
+        let p = plug_params();
+        let sq = square(20.0);
+        let pts = cuts(&inlay_plug_toolpath(std::slice::from_ref(&sq), &p));
+        assert!(!pts.is_empty());
+        let start = plug_start_depth(p.pocket_depth, p.glue_gap);
+        let total = start + p.proud_height;
+        let inset = start * p.half_angle.tan();
+        for q in &pts {
+            let xy = P2::new(q.x, q.y);
+            let inside = sq.contains_point(&xy);
+            let d = sq.distance_to_boundary(&xy);
+            assert!(
+                !(inside && d > inset + 1e-6),
+                "a cut on the plug face at {xy:?}"
+            );
+            assert!(q.z >= -total - 1e-9);
+        }
+        assert!(pts.iter().any(|q| (q.z + total).abs() < 1e-9));
+    }
+
+    #[test]
+    fn the_mirror_keeps_the_winding_and_flips_x_about_the_box_centre() {
+        let l = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(30.0, 0.0),
+            P2::new(30.0, 10.0),
+            P2::new(10.0, 10.0),
+            P2::new(10.0, 30.0),
+            P2::new(0.0, 30.0),
+        ]);
+        let m = mirror_design(std::slice::from_ref(&l)).pop().unwrap();
+        assert!(m.signed_area() > 0.0);
+        assert!((m.signed_area() - l.signed_area()).abs() < 1e-9);
+        // The foot (x in 10..30, y < 10) moves to x in 0..20.
+        assert!(m.contains_point(&P2::new(5.0, 5.0)));
+        assert!(m.contains_point(&P2::new(25.0, 20.0)));
+        assert!(!m.contains_point(&P2::new(5.0, 20.0)));
+    }
+
+    #[test]
+    fn the_start_depth_is_the_pocket_depth_less_the_glue_gap() {
+        assert!((plug_start_depth(3.0, 0.2) - 2.8).abs() < 1e-12);
     }
 }

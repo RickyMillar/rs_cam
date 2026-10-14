@@ -709,7 +709,8 @@ pub fn predict_move_count(
         | OperationType::Pencil
         | OperationType::Face
         | OperationType::RampFinish
-        | OperationType::Inlay => return 0,
+        | OperationType::Inlay
+        | OperationType::InlayPlug => return 0,
         _ => {}
     }
 

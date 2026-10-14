@@ -42,7 +42,7 @@ use rs_cam_core::{
     ops::chamfer::ChamferParams,
     ops::drill::{DrillCycle, DrillParams},
     ops::face::{FaceDirection, FaceParams},
-    ops::inlay::InlayParams,
+    ops::inlay::{InlayPlugParams, InlayPocketParams},
     ops::pocket::PocketParams,
     ops::profile::{ProfileParams, ProfileSide},
     ops::project_curve::ProjectCurveParams,
@@ -2162,15 +2162,31 @@ fn sweep_horizontal_finish_stepover() {
 // INLAY SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
 
-fn default_inlay_params() -> InlayParams {
-    InlayParams {
+fn default_inlay_params() -> InlayPocketParams {
+    InlayPocketParams {
+        half_angle: std::f64::consts::FRAC_PI_4,
+        pocket_depth: 3.0,
+        floor_overlap: 1.0,
+        floor_ridge: 0.05,
+        tip_flat: 0.0,
+        stepover: 1.0,
+        feed_rate: 800.0,
+        plunge_rate: 400.0,
+        safe_z: 10.0,
+        tolerance: 0.05,
+        top_z: 0.0,
+    }
+}
+
+fn default_inlay_plug_params() -> InlayPlugParams {
+    InlayPlugParams {
         half_angle: std::f64::consts::FRAC_PI_4,
         pocket_depth: 3.0,
         glue_gap: 0.1,
-        flat_depth: 0.5,
-        boundary_offset: 0.0,
+        proud_height: 3.0,
+        outer_margin: 3.0,
+        depth_per_pass: 1.5,
         stepover: 1.0,
-        flat_tool_radius: 3.175,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,
@@ -2193,8 +2209,7 @@ fn sweep_inlay_pocket_depth() {
             if let Some(v) = ov {
                 p.pocket_depth = v.as_f64().unwrap();
             }
-            // Use the female toolpath for fingerprinting
-            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_pocket_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -2209,23 +2224,25 @@ fn sweep_inlay_pocket_depth() {
 fn sweep_inlay_glue_gap() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "inlay",
+        "inlay_plug",
         "glue_gap",
         serde_json::json!(0.1),
         &[serde_json::json!(0.0), serde_json::json!(0.5)],
         |ov| {
-            let mut p = default_inlay_params();
+            let mut p = default_inlay_plug_params();
             if let Some(v) = ov {
                 p.glue_gap = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_plug_toolpath(std::slice::from_ref(&poly), &p)
         },
     );
-    // Glue gap primarily affects the male plug, not the female pocket.
-    // The female fingerprint may not change. This is a valid finding —
-    // a future test should also fingerprint the male toolpath.
-    let dir = output_dir().join("inlay").join("glue_gap");
-    assert!(dir.join("sweep_result.json").exists());
+    // Ruling R2: the glue gap belongs to the plug. It moves the start
+    // depth, so the deepest plug cut moves with it.
+    for v in &result.variants {
+        let ctx = format!("inlay_plug glue_gap={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "min_z", &ctx);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

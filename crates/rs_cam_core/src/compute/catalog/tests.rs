@@ -7,7 +7,7 @@ use crate::feeds::CutterKind;
 
 #[test]
 fn operation_catalog_is_exhaustive_and_consistent() {
-    assert_eq!(OperationType::ALL.len(), 24);
+    assert_eq!(OperationType::ALL.len(), 25);
     for &op_type in OperationType::ALL {
         let config = OperationConfig::new_default(op_type);
         assert_eq!(config.op_type(), op_type);
@@ -213,7 +213,7 @@ fn every_alias_names_a_field_of_its_own_operation() {
 /// Phase 1 wildcard kill (architectural refactor T3, re-baselined
 /// typed in T7): tool constraints are an explicit per-entry
 /// registry field, now a `&[CutterKind]` list. This pins (a) the
-/// five restricted ops exactly (VCarve/Inlay/Chamfer on V-bit;
+/// restricted ops exactly (VCarve/Inlay/InlayPlug/Chamfer on V-bit;
 /// Scallop/UnifiedFinish on ball-tip), (b) that the 19 previously-
 /// wildcard-defaulted ops still resolve to the named `ANY_TOOL`
 /// policy, and (c) that `to_schema()` materializes the EXACT
@@ -228,7 +228,10 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
         let tc = op_type.registry_entry().tool_constraints;
         let schema = tc.to_schema();
         match op_type {
-            OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
+            OperationType::VCarve
+            | OperationType::Inlay
+            | OperationType::InlayPlug
+            | OperationType::Chamfer => {
                 assert_eq!(tc.required_kinds, [CutterKind::VBit], "{op_type:?}");
                 assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                 assert!(tc.supports_v_bit, "{op_type:?}");
@@ -351,7 +354,7 @@ fn drill_kinematics_set_is_pinned() {
 /// agrees with the operation's own declared depth semantics.
 ///
 /// The exhaustiveness half is the compiler's: the match named every
-/// variant when the `_ => vec![]` wildcard went, so a 25th operation does
+/// variant when the `_ => vec![]` wildcard went, so a 26th operation does
 /// not compile until it decides. This test carries the consistency half —
 /// an operation produces depth-stepped levels EXACTLY when it declares an
 /// explicit total depth AND a per-pass step. An op that declares both and
@@ -555,6 +558,7 @@ fn operation_type_serde_repr_pinned() {
         ("v_carve", OperationType::VCarve),
         ("rest", OperationType::Rest),
         ("inlay", OperationType::Inlay),
+        ("inlay_plug", OperationType::InlayPlug),
         ("zigzag", OperationType::Zigzag),
         ("trace", OperationType::Trace),
         ("drill", OperationType::Drill),

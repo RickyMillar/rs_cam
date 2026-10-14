@@ -9,8 +9,8 @@ use super::{
 use crate::state::job::{ToolConfig, ToolId, ToolType};
 #[cfg(test)]
 use crate::state::toolpath::{
-    FaceConfig, FaceDirection, InlayConfig, OperationConfig, ProfileConfig, RestConfig,
-    ZigzagConfig,
+    FaceConfig, FaceDirection, InlayConfig, InlayPlugConfig, OperationConfig, ProfileConfig,
+    RestConfig, ZigzagConfig,
 };
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
@@ -580,43 +580,49 @@ mod tests {
         );
     }
 
-    // --- Task A10: Inlay female and male are separated ---
+    // --- Ruling R2 (W1.4): Inlay cuts the pocket walls only; the plug is
+    // its own op. This replaces Task A10, which pinned the plug section
+    // inside the Inlay output. ---
 
     #[test]
-    fn inlay_output_contains_female_and_male_sections() {
+    fn inlay_output_is_the_pocket_walls_only() {
         let cfg = InlayConfig::default();
         let mut spec = polygon_spec(OperationConfig::Inlay(cfg), ToolType::VBit);
-        spec.polygons = Some(vec![Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0)]);
-        let (tp, safe_z) = generated(spec);
+        let square = Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0);
+        spec.polygons = Some(vec![square.clone()]);
+        let (tp, _) = generated(spec);
 
-        assert!(!tp.moves.is_empty(), "Inlay should produce moves");
-
-        // Find retract-to-safe-z moves that separate sections. The female
-        // and male toolpaths should be separated by a retract to safe_z.
-        let retract_indices: Vec<usize> = tp
-            .moves
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.move_type == MoveType::Rapid && (m.target.z - safe_z).abs() < 0.01)
-            .map(|(i, _)| i)
-            .collect();
-
-        // There should be multiple retract moves (at least the separator
-        // between female and male plus retracts within each section)
-        assert!(
-            retract_indices.len() >= 2,
-            "Should have retract separators between female and male sections"
-        );
-
-        // Find cutting moves below Z=0 (both female and male cut below the surface)
-        let cutting_moves: Vec<_> = tp
+        let cutting: Vec<_> = tp
             .moves
             .iter()
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }) && m.target.z < -0.01)
             .collect();
+        assert!(!cutting.is_empty(), "Inlay should cut below the stock top");
+        for m in cutting {
+            let p = rs_cam_core::geo::P2::new(m.target.x, m.target.y);
+            assert!(
+                square.contains_point(&p) || square.distance_to_boundary(&p) < 1e-6,
+                "the Inlay cut at {p:?} lies outside the design: the plug is back in the pocket op"
+            );
+        }
+    }
+
+    #[test]
+    fn inlay_plug_cuts_the_background_around_the_design() {
+        let cfg = InlayPlugConfig::default();
+        let mut spec = polygon_spec(OperationConfig::InlayPlug(cfg), ToolType::VBit);
+        let square = Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0);
+        spec.polygons = Some(vec![square.clone()]);
+        let (tp, _) = generated(spec);
+
+        let outside = tp.moves.iter().any(|m| {
+            matches!(m.move_type, MoveType::Linear { .. })
+                && m.target.z < -0.01
+                && !square.contains_point(&rs_cam_core::geo::P2::new(m.target.x, m.target.y))
+        });
         assert!(
-            !cutting_moves.is_empty(),
-            "Should have cutting moves below stock surface"
+            outside,
+            "the plug op should cut the background outside the design"
         );
     }
 

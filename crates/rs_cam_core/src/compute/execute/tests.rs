@@ -483,6 +483,17 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
             expected_label_fragments: vec!["Inlay run"],
         },
         SpanCoverageCase {
+            name: "InlayPlug",
+            op: OperationConfig::new_default(OperationType::InlayPlug),
+            tool_type: ToolType::VBit,
+            mesh: None,
+            polygons: Some(PolygonFixture::Standard),
+            prev_tool_radius: None,
+            expected_kinds: region_expected.clone(),
+            forbidden_kinds: Vec::new(),
+            expected_label_fragments: vec!["Inlay plug run"],
+        },
+        SpanCoverageCase {
             name: "Zigzag",
             op: OperationConfig::new_default(OperationType::Zigzag),
             tool_type: ToolType::EndMill,
@@ -1169,6 +1180,13 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
         (
             "Inlay",
             OperationConfig::new_default(OperationType::Inlay),
+            ToolType::VBit,
+            false,
+            true,
+        ),
+        (
+            "InlayPlug",
+            OperationConfig::new_default(OperationType::InlayPlug),
             ToolType::VBit,
             false,
             true,

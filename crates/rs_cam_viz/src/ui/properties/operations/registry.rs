@@ -14,7 +14,7 @@
 //!
 //! Core solved the same problem once. `for_each_op!` generates
 //! `OperationType`, `ALL`, `category()`, `name()` and the rest from one
-//! 24-row list, and `registry_entry()` will not compile without a row. That
+//! 25-row list, and `registry_entry()` will not compile without a row. That
 //! macro is not exported, so the viz side states its own table — and
 //! `operations_registry` holds it against `OperationType::ALL`, the way
 //! `overlays_registry` holds the overlay list.
@@ -35,13 +35,14 @@ use super::validate::{DepthBeyondStock, ThroughCut};
 use super::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
     draw_chamfer_params, draw_drill_params, draw_dropcutter_params, draw_face_params,
-    draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_outline_diagram,
-    draw_pencil_diagram, draw_pencil_params, draw_pocket_params, draw_point_set_diagram,
-    draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
-    draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
-    draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
-    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
-    draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
+    draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_inlay_plug_params,
+    draw_outline_diagram, draw_pencil_diagram, draw_pencil_params, draw_pocket_params,
+    draw_point_set_diagram, draw_profile_params, draw_project_curve_params, draw_radial_diagram,
+    draw_radial_finish_params, draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params,
+    draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
+    draw_steep_shallow_diagram, draw_steep_shallow_params, draw_stepover_diagram,
+    draw_trace_params, draw_unified_finish_params, draw_vcarve_params, draw_waterline_params,
+    draw_zigzag_params,
 };
 use crate::state::job::{ModelId, ToolId};
 use crate::state::toolpath::{OperationConfig, OperationType, ProfileSide, StockSource};
@@ -233,6 +234,9 @@ editor!(ed_inlay, Inlay, |ui, cfg, cx| draw_inlay_params(
     cx.pills,
     cx.depth_caution
 ));
+editor!(ed_inlay_plug, InlayPlug, |ui, cfg, cx| {
+    draw_inlay_plug_params(ui, cfg, cx.pills, cx.depth_caution);
+});
 editor!(ed_zigzag, Zigzag, |ui, cfg, cx| draw_zigzag_params(
     ui,
     cfg,
@@ -395,7 +399,13 @@ fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) {
 
 fn dia_inlay(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::Inlay(cfg) = op {
-        draw_inlay_diagram(ui, cfg.pocket_depth, cfg.glue_gap, cfg.flat_depth);
+        draw_inlay_diagram(ui, cfg.pocket_depth, None);
+    }
+}
+
+fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) {
+    if let OperationConfig::InlayPlug(cfg) = op {
+        draw_inlay_diagram(ui, cfg.pocket_depth, Some(cfg.glue_gap));
     }
 }
 
@@ -502,6 +512,12 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::Inlay,
         draw: ed_inlay,
         diagram: OpDiagram::Draw(dia_inlay),
+        validate: Some(val_needs_v_bit),
+    },
+    OpUiRow {
+        op: OperationType::InlayPlug,
+        draw: ed_inlay_plug,
+        diagram: OpDiagram::Draw(dia_inlay_plug),
         validate: Some(val_needs_v_bit),
     },
     OpUiRow {

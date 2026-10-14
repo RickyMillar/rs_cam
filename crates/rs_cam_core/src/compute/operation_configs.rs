@@ -562,14 +562,28 @@ impl Default for RestConfig {
     }
 }
 
+/// The default glue gap (mm) of an inlay: the vertical gap between the plug
+/// face and the pocket floor. The value is the default that the Inlay op
+/// shipped with before ruling R2; its help text gave the range
+/// 0.05-0.15 mm.
+pub const INLAY_GLUE_GAP_DEFAULT_MM: f64 = 0.1;
+
+/// The female pocket of an inlay: the V walls only (ruling R2). A normal
+/// Pocket with a flat end mill clears the floor. See `ops::inlay` for the
+/// geometry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InlayConfig {
+    /// Pocket depth below the stock top (mm).
     pub pocket_depth: f64,
-    pub glue_gap: f64,
-    pub flat_depth: f64,
-    pub boundary_offset: f64,
+    /// Width (mm) of the band beyond the wall foot that the V-bit also cuts
+    /// at the pocket depth.
+    pub floor_overlap: f64,
+    /// Largest ridge (mm) the V-bit may leave on the floor band. The ring
+    /// pitch follows from it and the bit angle (`ops::inlay::floor_ring_pitch`).
+    pub floor_ridge: f64,
+    /// Scan line spacing (mm) over the wall band. The walls do not depend
+    /// on it; the first floor ring cuts the whole wall.
     pub stepover: f64,
-    pub flat_tool_radius: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
@@ -584,17 +598,96 @@ pub struct InlayConfig {
 
 impl Default for InlayConfig {
     fn default() -> Self {
+        // The floor Pocket is clipped to the floor with `Inside`
+        // containment, so its outermost kept pass leaves a strip narrower
+        // than one Pocket stepover `s` at the wall foot. A floor corner
+        // leaves material at most one cutter radius `r` beyond the foot.
+        // The Pocket stepover help text gives `s >= 40 %` of the diameter,
+        // so `r <= 1.25 s`. The band is therefore `s + 1.25 s`, read from
+        // the Pocket default stepover.
+        let pocket_stepover = PocketConfig::default().stepover;
         Self {
             pocket_depth: 3.0,
-            glue_gap: 0.1,
-            flat_depth: 0.5,
-            boundary_offset: 0.0,
+            floor_overlap: pocket_stepover * (1.0 + 1.0 / (2.0 * 0.4)),
+            // Half the default glue gap: a floor ridge then leaves at least
+            // half the gap free under the plug face.
+            floor_ridge: 0.5 * INLAY_GLUE_GAP_DEFAULT_MM,
+            // The Inlay stepover before ruling R2. It sets only the wall
+            // band scan, which carries the load and the narrow features.
             stepover: 1.0,
-            flat_tool_radius: 3.175,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             ramp_feed_rate: None,
             tolerance: 0.05,
+            spindle_rpm: None,
+        }
+    }
+}
+
+/// The male plug of an inlay (ruling R2). It runs in its own project, on
+/// the plug board. See `ops::inlay` for the geometry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InlayPlugConfig {
+    /// Depth of the female pocket that the plug fits (mm). Copy it from the
+    /// Inlay op.
+    pub pocket_depth: f64,
+    /// Vertical gap (mm) between the plug face and the pocket floor.
+    pub glue_gap: f64,
+    /// Height (mm) that the plug stands proud of the workpiece after it is
+    /// seated.
+    pub proud_height: f64,
+    /// Width (mm) of the flat background ring beyond the wall foot.
+    pub outer_margin: f64,
+    pub depth_per_pass: f64,
+    pub stepover: f64,
+    pub feed_rate: f64,
+    pub plunge_rate: f64,
+    /// Feed (mm/min) of a helix or ramp entry through material. `None`
+    /// uses the plunge feed (the behaviour before the field). A straight
+    /// feed through air and a straight plunge peck keep their own feeds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ramp_feed_rate: Option<f64>,
+    pub tolerance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spindle_rpm: Option<u32>,
+}
+
+impl InlayPlugConfig {
+    /// The plug start depth `pocket_depth - glue_gap` (mm).
+    #[must_use]
+    pub fn start_depth(&self) -> f64 {
+        crate::ops::inlay::plug_start_depth(self.pocket_depth, self.glue_gap)
+    }
+
+    /// The deepest cut below the plug board top: start depth plus proud
+    /// height (mm).
+    #[must_use]
+    pub fn total_cut_depth(&self) -> f64 {
+        self.start_depth() + self.proud_height
+    }
+}
+
+impl Default for InlayPlugConfig {
+    fn default() -> Self {
+        let pocket = InlayConfig::default();
+        Self {
+            pocket_depth: pocket.pocket_depth,
+            glue_gap: INLAY_GLUE_GAP_DEFAULT_MM,
+            // An operator choice, not a measured constant: one pocket depth
+            // of waste above the joint for the saw cut and the planing.
+            proud_height: pocket.pocket_depth,
+            // An operator choice: a flat ring as wide as the proud height,
+            // where the operator saws the plug free.
+            outer_margin: pocket.pocket_depth,
+            depth_per_pass: PocketConfig::default().depth_per_pass,
+            // Only the background (waste) shows ridges; the walls are exact
+            // at any stepover. The value is the stepover of the Inlay op
+            // before ruling R2.
+            stepover: 1.0,
+            feed_rate: pocket.feed_rate,
+            plunge_rate: pocket.plunge_rate,
+            ramp_feed_rate: None,
+            tolerance: pocket.tolerance,
             spindle_rpm: None,
         }
     }
@@ -2083,10 +2176,14 @@ impl Default for ProjectCurveConfig {
 /// A separate macro because a `macro_rules!` body cannot take an
 /// expression written at the call site that names `self` — hygiene keeps
 /// the two `self`s apart. A FORM plus a field name carries the same
-/// information and reads as a declaration.
+/// information and reads as a declaration. `ExplicitFrom(method)` names a
+/// method for a depth that no single field holds (the inlay plug).
 macro_rules! depth_semantics_form {
     ($s:ident, Explicit($f:ident)) => {
         DepthSemantics::Explicit($s.$f)
+    };
+    ($s:ident, ExplicitFrom($m:ident)) => {
+        DepthSemantics::Explicit($s.$m())
     };
     ($s:ident, DerivedStockTop($f:ident)) => {
         DepthSemantics::DerivedStockTop($s.$f.abs())
@@ -2123,7 +2220,7 @@ macro_rules! depth_semantics_form {
 ///   `Option<f64>` field. The two differ only in where the `Option` sits.
 /// - `extra { ... }` — verbatim trait methods, for a config whose
 ///   accessor is not a plain field read. One config uses it.
-/// - `depth_semantics:` one of the three forms above. Required, last, and
+/// - `depth_semantics:` one of the four forms above. Required, last, and
 ///   with no trailing comma.
 macro_rules! impl_operation_params {
     (
@@ -2270,6 +2367,14 @@ impl_operation_params!(InlayConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_semantics: Explicit(pocket_depth)
+});
+
+impl_operation_params!(InlayPlugConfig {
+    plunge_rate: plunge_rate,
+    ramp_feed_rate: ramp_feed_rate,
+    stepover: stepover,
+    depth_per_pass: depth_per_pass,
+    depth_semantics: ExplicitFrom(total_cut_depth)
 });
 
 impl_operation_params!(ZigzagConfig {

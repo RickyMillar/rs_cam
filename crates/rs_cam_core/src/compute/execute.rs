@@ -497,7 +497,7 @@ pub(crate) use clearing_2d::{
     generate_trace, generate_zigzag,
 };
 pub(crate) use curve_engrave::{
-    generate_chamfer, generate_inlay, generate_project_curve, generate_vcarve,
+    generate_chamfer, generate_inlay, generate_inlay_plug, generate_project_curve, generate_vcarve,
 };
 use dressup_apply::attach_generic_rest_analysis;
 pub use dressup_apply::{DRESSUP_PIPELINE, DressupContext, DressupStage, apply_dressups};
