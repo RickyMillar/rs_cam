@@ -355,8 +355,12 @@ fn get_operation_schema_drill_has_drill_specific_fields() {
     assert!(names.contains("retract_z"));
 }
 
+/// The read (`params_value_including_nulls`) and the schema name the same
+/// fields, except a driver-set field (D9): the read shows its value, the
+/// schema does not offer it, and the setter refuses it.
 #[test]
 fn operation_schema_params_match_params_with_nulls_for_every_op() {
+    let mut driver_set_read = 0;
     for &op_type in crate::compute::catalog::OperationType::ALL {
         let op = OperationConfig::new_default(op_type);
         let params = op.params_value_including_nulls();
@@ -367,10 +371,50 @@ fn operation_schema_params_match_params_with_nulls_for_every_op() {
             .iter()
             .map(|param| param.name.as_str())
             .collect();
-        let param_names: std::collections::HashSet<_> =
+        let mut param_names: std::collections::HashSet<_> =
             param_obj.keys().map(String::as_str).collect();
+        param_names.retain(|name| {
+            let driver_set = crate::compute::catalog::driver_set_field(op_type, name).is_some();
+            driver_set_read += usize::from(driver_set);
+            !driver_set
+        });
         assert_eq!(schema_names, param_names, "schema mismatch for {op_type:?}");
     }
+    // Non-vacuity: the pin-drill diameter is required, so the read always
+    // holds it.
+    assert!(driver_set_read >= 1, "no driver-set field was read");
+}
+
+/// D9: the setter refuses a driver-set field with its reason, and the
+/// config keeps its value.
+#[test]
+fn set_toolpath_param_refuses_the_pin_drill_diameter_d9() {
+    use crate::compute::catalog::OperationType;
+    let mut s = make_session();
+    let mut tc = make_tc(s.tools()[0].id.0);
+    tc.operation = OperationConfig::new_default(OperationType::AlignmentPinDrill);
+    let _ = s.add_toolpath(0, tc).unwrap();
+    let before = s.toolpath_configs()[0]
+        .operation
+        .params_value_including_nulls()["diameter"]
+        .clone();
+    let err = s
+        .set_toolpath_param(0, "diameter", json!(12.0))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("not settable"), "got: {err}");
+    assert!(
+        err.contains("pin door"),
+        "the refusal states the reason: {err}"
+    );
+    assert_eq!(
+        s.toolpath_configs()[0]
+            .operation
+            .params_value_including_nulls()["diameter"],
+        before
+    );
+    let schema = OperationConfig::schema_for_type(OperationType::AlignmentPinDrill);
+    assert!(!schema.params.iter().any(|p| p.name == "diameter"));
 }
 
 #[test]

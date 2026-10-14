@@ -37,4 +37,4 @@ module is reached through `compute::execute_operation_annotated`.
 - `cargo test -p rs_cam_core -q --test drill_op_step3 --test drill_flip_removal_g_drillflip --test a_drill_hole_is_cut_once_g_drilltwice`
 - `cargo test -p rs_cam_core -q --test project_curve_depth_sign --test chamfer_bevel_sits_on_the_edge_g_chamferside` (G-CHAMFERSIDE: the chamfer bevel on the sim stock)
 - `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore --test waterline_auto_ladder_is_model_top_to_bottom_r3 --test waterline_respects_a_vertical_wall_r9`
-- `cargo test -p rs_cam_core -q --test inlay_pocket_and_plug_fit_g_inlaysplit` (G-INLAYSPLIT, about 7 s: walls only, mirror, fit at 60° and 90°, floor recipe)
+- `cargo test -p rs_cam_core -q --test inlay_pocket_and_plug_fit_g_inlaysplit --test vcarve_cuts_nothing_outside_the_outline_g_vcarvelead` (G-INLAYSPLIT, about 7 s: walls only, mirror, fit at 60° and 90°, floor recipe; G-VCARVELEAD, about 7 s: no lead, nothing cut outside the outline)

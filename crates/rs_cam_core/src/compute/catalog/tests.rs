@@ -60,29 +60,10 @@ fn operation_catalog_is_exhaustive_and_consistent() {
 /// right order of magnitude, or it is measuring nothing.
 #[test]
 fn param_defs_cover_every_config_field() {
-    /// One entry per field that exists and is deliberately NOT settable
-    /// through `set_toolpath_param`. Every entry carries its reason.
-    /// Adding a row here is a decision; the absence of a row is a defect.
-    const UNEXPOSED: &[(&str, &str)] = &[
-        (
-            "selected_holes",
-            "driver-set: the DXF/model drill picker writes the picked target list, on \
-             DrillConfig and AlignmentPinDrillConfig alike",
-        ),
-        (
-            "selected_layers",
-            "driver-set: the layer-select route writes this beside the picked list",
-        ),
-        (
-            "diameter",
-            "driver-set: the pin door keeps one AlignmentPinDrill op per pin diameter \
-             and writes the diameter it drills (R1); an edit would make the op drill nothing",
-        ),
-        (
-            "setup_z_flipped",
-            "driver-set: the setup transform stamps this, not the operator",
-        ),
-    ];
+    // One row per field that exists and is deliberately NOT settable
+    // through `set_toolpath_param`: the production table
+    // `DRIVER_SET_FIELDS` (D9), which the setter reads too. Adding a row
+    // there is a decision; the absence of a row is a defect.
 
     const CONFIG_SRC: &str = include_str!("../operation_configs.rs");
 
@@ -111,7 +92,7 @@ fn param_defs_cover_every_config_field() {
             .collect()
     }
 
-    let mut unexposed_seen: Vec<&str> = Vec::new();
+    let mut unexposed_seen: Vec<(OperationType, &str)> = Vec::new();
     let mut field_total = 0;
     let mut def_total = 0;
 
@@ -132,13 +113,13 @@ fn param_defs_cover_every_config_field() {
                 continue;
             }
             assert!(
-                UNEXPOSED.iter().any(|(name, _)| name == field),
+                driver_set_field(op_type, field).is_some(),
                 "{op_type:?}: `{struct_name}::{field}` is in no `param_defs` array, so no \
                  agent can set it and `get_operation_schema` does not mention it. Publish \
-                 it as a `ParamDef`, or add it to this test's UNEXPOSED list with the \
-                 reason it is driver-set."
+                 it as a `ParamDef`, or add it to `DRIVER_SET_FIELDS` with this operation \
+                 and the reason it is driver-set."
             );
-            unexposed_seen.push(field);
+            unexposed_seen.push((op_type, *field));
         }
 
         // The other direction, as far as it can honestly go: a def must
@@ -168,11 +149,15 @@ fn param_defs_cover_every_config_field() {
 
     // Non-vacuity on the allow-list itself: an entry nobody hits is a
     // stale exemption, and a stale exemption hides the next real one.
-    for (name, _) in UNEXPOSED {
-        assert!(
-            unexposed_seen.contains(name),
-            "the UNEXPOSED entry `{name}` matches no config field any more. Delete the row."
-        );
+    for field in DRIVER_SET_FIELDS {
+        for &op_type in field.ops {
+            assert!(
+                unexposed_seen.contains(&(op_type, field.name)),
+                "the DRIVER_SET_FIELDS row `{}` names {op_type:?}, and that config has no \
+                 unpublished field of that name any more. Delete it from the row.",
+                field.name
+            );
+        }
     }
 }
 

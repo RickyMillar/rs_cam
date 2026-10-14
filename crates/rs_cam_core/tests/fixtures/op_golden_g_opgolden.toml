@@ -413,15 +413,15 @@ moves_hash = "7f926f67c185799a"
 
 ["v_carve/fresh"]
 outcome = "ok"
-move_count = 38685
-rapid_count = 191
-linear_count = 38447
-arc_count = 47
-cutting_length_mm = 2475.167
-rapid_length_mm = 1022.836
-bbox_min = [-21.95, -13.45, -5.0]
-bbox_max = [21.95, 13.05, 10.0]
-moves_hash = "45156abeaad17071"
+move_count = 38544
+rapid_count = 144
+linear_count = 38400
+arc_count = 0
+cutting_length_mm = 2168.845
+rapid_length_mm = 889.9
+bbox_min = [-19.95, -11.95, -5.0]
+bbox_max = [19.95, 11.55, 10.0]
+moves_hash = "4c52863ee0d4e036"
 
 ["waterline/fresh"]
 outcome = "ok"

@@ -298,6 +298,19 @@ impl ProjectSession {
                 tc.debug_options.enabled = v;
             }
             _ => {
+                // D9: a driver-set field is in the config, and its own
+                // driver writes it. The schema does not offer it, so the
+                // setter refuses it with the reason.
+                if let Some(field) =
+                    crate::compute::catalog::driver_set_field(tc.operation.op_type(), param)
+                {
+                    return Err(SessionError::InvalidParam(format!(
+                        "'{param}' is not settable for {} operation: {}. The value was NOT \
+                         applied.",
+                        tc.operation.label(),
+                        field.reason
+                    )));
+                }
                 // Config-specific param: serialize -> merge -> deserialize
                 let target_type = tc.operation.param_type_name(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {

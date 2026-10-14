@@ -15,9 +15,9 @@ mod registry;
 mod schema;
 
 pub use schema::{
-    DressupPolicy, EntryStylePolicy, Kinematics, OpPolicy, OpRegistryEntry, OperationParamSchema,
-    OperationSchema, ParamDef, ParamHint, ParamRange, TOOLPATH_PARAM_DEFS, ToolConstraints,
-    ToolConstraintsDef,
+    DRIVER_SET_FIELDS, DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpPolicy,
+    OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamRange,
+    TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef, driver_set_field,
 };
 
 use registry::{

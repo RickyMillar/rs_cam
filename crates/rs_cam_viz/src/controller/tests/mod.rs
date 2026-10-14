@@ -24,6 +24,7 @@ mod mcp_cancel;
 mod model_relink;
 mod planner;
 mod post_mirror;
+mod prior_stock_blocker_crosses_setups_d11;
 mod rapid_collision_verdict_g_rapidframe;
 mod rest_cascade_parity_g_restres;
 mod rest_dependency;
@@ -605,6 +606,9 @@ struct RestChainBackend {
     pub sim_resolutions: Vec<f64>,
     /// When set, this toolpath always fails to generate.
     poison: Option<ToolpathId>,
+    /// When set, every result carries real cutting motion. An empty result
+    /// carves nothing, so the snapshot rule (3) never sees it (D11).
+    result_moves: bool,
 }
 
 impl RestChainBackend {
@@ -615,6 +619,7 @@ impl RestChainBackend {
             sim_requests: Vec::new(),
             sim_resolutions: Vec::new(),
             poison: None,
+            result_moves: false,
         }
     }
 }
@@ -631,9 +636,15 @@ impl ComputeBackend for RestChainBackend {
                 "synthetic hard failure".to_owned(),
             ))
         } else {
+            let mut toolpath = Toolpath::new();
+            if self.result_moves {
+                toolpath.rapid_to(P3::new(1.0, 1.0, 12.0));
+                toolpath.feed_to(P3::new(1.0, 1.0, 9.0), 500.0);
+                toolpath.feed_to(P3::new(9.0, 1.0, 9.0), 500.0);
+            }
             Ok(ToolpathResult {
                 annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    Toolpath::new(),
+                    toolpath,
                 )),
                 stats: Default::default(),
                 debug_trace: None,

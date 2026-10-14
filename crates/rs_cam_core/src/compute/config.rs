@@ -1664,9 +1664,16 @@ mod tests {
                 // Task 2): role-default Ramp entries carved diagonal
                 // trenches across the wanaka terrain on a fresh MCP-added
                 // op — same failure mode as DropCutter's documented one.
+                // Inlay and InlayPlug joined 2026-10-14 (W1.4,
+                // G-INLAYSPLIT) and VCarve the same day (W1.4b,
+                // G-VCARVELEAD): each run starts on the design outline at
+                // zero depth, and a lead there cuts outside the design.
                 OperationType::ProjectCurve
                 | OperationType::DropCutter
-                | OperationType::UnifiedFinish => {
+                | OperationType::UnifiedFinish
+                | OperationType::Inlay
+                | OperationType::InlayPlug
+                | OperationType::VCarve => {
                     assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
                 }

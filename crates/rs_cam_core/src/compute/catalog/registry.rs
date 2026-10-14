@@ -914,7 +914,16 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
     },
-    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    // G-VCARVELEAD (W1.4b): every scan-line run starts and ends on the
+    // design outline at zero depth (depth = distance to the outline /
+    // tan(half angle)), so the V-bit needs no lead and no entry: it starts
+    // at the surface. A lead arc there takes the V-bit outside the design
+    // (measured: 238 cells, up to 0.75 mm outside, 0.060 mm deep with the
+    // Finish-role lead-in). Same rule as Inlay.
+    dressup_policy: DressupPolicy::strip_all(
+        "Incompatible with V-carve: each run starts on the design outline at \
+         zero depth, so a lead or an entry there cuts outside the design.",
+    ),
     policy: OpPolicy::MILLING,
     generate: crate::compute::execute::generate_vcarve,
 };
