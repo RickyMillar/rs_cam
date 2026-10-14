@@ -138,12 +138,12 @@ and W4, from what they measure. It is not scheduled now.
 | Wave | State |
 |---|---|
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
-| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE |
 | W2–W6 | not started |
 
 ## Backlog (not scheduled)
 
-- B1: shank and holder radius in the link ceiling; pencil link search uses the
+- B1: shank and holder radius in the link ceiling (W1.1b evidence: pencil on remaining stock, 21 links cut 0.50 mm = the rough's leave at the mesh edge); pencil link search uses the
   tip radius, not the envelope (R1 research).
 - B2: a second board in one project (would join the Inlay pocket and plug).
 - B3: D5 GUI ranges read `ParamDef.range` (can land before W5).
