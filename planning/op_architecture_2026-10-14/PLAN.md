@@ -57,7 +57,6 @@ Sequential, one editor each. Order by risk.
 | W1.2b | D2 in Adaptive3d slices (same planner, still plans only `machinable_vec[0]`) | reproduce on a mesh with a split slice; fix in the planner or the 3D adapter | sentry + G-OPGOLDEN |
 | W1.3b | Operator 2026-10-14: Chamfer on inside edges too (pocket walls and holes) | a side setting on Chamfer (outside / inside), or chamfer every edge of the outline including holes; same bevel rule | sentry: inside bevel width and depth on a pocket and a hole |
 | W1.4b | VCarve's Finish lead-in cuts 238 cells up to 0.75 mm outside the outline (found in W1.4) | strip or contain the lead on VCarve as on Inlay | sentry: no cell outside the outline |
-| W1.2c | Found in W1.2b: AgentSearch and ContourSpiral leave ~990 of 1272 wall-band cells (0.5–3.5 mm from the walls) standing against 415 for ContourParallel; the 3D region is already in tool-centre space and the planner insets it by R again (double inset) | measure, then remove the second inset for 3D callers | sentry on the wall band |
 | W1.7 | R3: retire the Rest op | delete the op on every surface (core, GUI, MCP, CLI, catalog, docs); state the load break | G-OPGOLDEN loses its Rest cases on purpose; build + clippy clean |
 | W1.1b | R1 follow-up: links are not scored against the stock | a simulation check that flags a fed link whose tool passes through remaining stock | sentry: a link forced below the stock top is flagged |
 
@@ -148,3 +147,4 @@ and W4, from what they measure. It is not scheduled now.
   tip radius, not the envelope (R1 research).
 - B2: a second board in one project (would join the Inlay pocket and plug).
 - B3: D5 GUI ranges read `ParamDef.range` (can land before W5).
+- B4 (was W1.2c): AgentSearch and ContourSpiral leave ~2.4x more wall-band wood than ContourParallel (double inset in tool-centre space). Operator 2026-10-14: ContourParallel is the 3D Rough strategy in use; the others are known to be rough. Revisit with W6 (Volumetric shape).
