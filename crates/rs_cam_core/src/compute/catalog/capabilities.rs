@@ -70,6 +70,9 @@ pub struct Capabilities<P = EntryProbe> {
     pub relink_dial: Option<&'static str>,
     /// The class of axial envelope Suggest builds for this op.
     pub axial_envelope: AxialEnvelope,
+    /// How the op uses the remaining stock when its stock source is
+    /// `FromRemainingStock` (W3.4, AUDIT.md "Rest is not one thing").
+    pub rest_use: RestUse,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -91,8 +94,44 @@ impl<P> Capabilities<P> {
             air_cut_hint: self.air_cut_hint,
             relink_dial: self.relink_dial,
             axial_envelope: self.axial_envelope,
+            rest_use: self.rest_use,
         }
     }
+}
+
+/// How an operation uses the remaining stock (W3.4, AUDIT.md "Rest is not
+/// one thing"). A rest pass reads the machined stock; each kind says what
+/// the op does with it. The Layered runner (`compute/execute/layered.rs`)
+/// acts on the three `Level*` kinds of a Layered op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestUse {
+    /// The op ignores the remaining stock: a rest pass cuts what a fresh
+    /// pass cuts.
+    None,
+    /// An area op clips its INPUT region to the standing material at each
+    /// level, and skips a level with no material (G-RESTLEVELS). The op
+    /// insets the clipped region by the tool radius again. Pocket, Zigzag,
+    /// Face (on the facing rectangle).
+    LevelClip,
+    /// A contour op skips a level when no material stands in the reach
+    /// band of its tool-centre path. It never clips the outline, because a
+    /// clipped outline cuts a new wall. Profile, Trace.
+    LevelSkip,
+    /// The per-level material mask seeds the planner's grid, so the
+    /// planner does not clear a cell that a prior op cleared. 2D Adaptive.
+    LevelMask,
+    /// Each hole starts at the remaining stock top over the hole, not at
+    /// the stock box top (D8). Drill.
+    StockColumn,
+    /// The planner owns the stock: it plans each run against its own
+    /// dexel stock, seeded from the remaining stock. 3D Rough.
+    Planner,
+    /// The remaining stock is the rest reference of the op's claims or
+    /// detectors (W2.1 `StockReference`). Pencil, Unified Finish.
+    Reference,
+    /// The remaining stock only builds the link ceiling of the op's links
+    /// (ruling R1). The cut paths do not read it.
+    LinkSafetyOnly,
 }
 
 /// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster

@@ -18,6 +18,13 @@
 //! clips its INPUT polygon, never the emitted path. The design
 //! ladder stays as it is: a skipped level is removed, and no level moves.
 //!
+//! W3.4 adds two more reads of the same stock:
+//!
+//! - [`levels_in_reach`] (`RestUse::LevelSkip`, Profile and Trace): a
+//!   level is `Whole` or `Empty`, never clipped;
+//! - [`column_top`] (`RestUse::StockColumn`, Drill, D8): the highest
+//!   material over one point.
+//!
 //! # The geometry
 //!
 //! - A cell counts only when its centre is inside the FOOTPRINT of the tool
@@ -44,6 +51,7 @@
 
 use crate::compute::toolpath_stats::{RestLevelsFallback, RestLevelsFinding};
 use crate::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
+use crate::geo::P2;
 use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::region_polygons_from_mask_reported;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -102,6 +110,19 @@ impl LevelPlan {
     }
 }
 
+/// What a cell off the stock grid holds, for [`regions_per_level`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OffGrid {
+    /// The grid holds no answer there, so the cell counts as material and
+    /// is cut (Pocket, Zigzag: an outline can reach past the stock box).
+    Material,
+    /// The outline grows the stock box on purpose, so a cell off the grid
+    /// is air (Face: the facing rectangle is the stock box grown by
+    /// `stock_offset`). Such a cell is outside the reach mask, so a level
+    /// with all the stock standing still cuts the whole rectangle.
+    Air,
+}
+
 /// The largest window, per axis, as a multiple of the grid span plus its
 /// pad. An outline more than twice the span of the stock on an axis is not
 /// a rest pocket on this stock; the clip then falls back to `Whole`.
@@ -122,6 +143,7 @@ pub(crate) fn regions_per_level(
     outline: &Polygon2,
     levels: &[f64],
     tool_radius: f64,
+    off_grid: OffGrid,
     cancel: &dyn CancelCheck,
 ) -> Result<LevelPlan, Cancelled> {
     let Some(stock) = stock else {
@@ -157,7 +179,17 @@ pub(crate) fn regions_per_level(
         ));
     }
 
-    let reach = footprint_mask(stock, &window, outline, tool_radius);
+    let mut reach = footprint_mask(stock, &window, outline, tool_radius);
+    if off_grid == OffGrid::Air {
+        for (i, r) in reach.iter_mut().enumerate() {
+            let (row, col) = (i / window.cols, i % window.cols);
+            let row = window.row0 + row as isize;
+            let col = window.col0 + col as isize;
+            let on_grid =
+                row >= 0 && col >= 0 && (row as usize) < grid.rows && (col as usize) < grid.cols;
+            *r = *r && on_grid;
+        }
+    }
     let reach_count = reach.iter().filter(|&&r| r).count();
     if reach_count == 0 {
         // The footprint holds no cell centre: the grid cannot see this
@@ -252,6 +284,233 @@ pub(crate) fn regions_per_level(
         fallback: None,
     });
     Ok(plan)
+}
+
+/// `RestUse::LevelSkip` (W3.4): which levels of a contour op still have
+/// material in the reach of the tool. Each level is `Whole` or `Empty`; a
+/// contour op never cuts a clipped outline, because a clipped outline cuts
+/// a new wall.
+///
+/// `paths` are the closed tool-centre rings of the op, in the frame of the
+/// stock. `half_width` is the tool radius when the path is the tool
+/// centre, and twice the radius when the controller offsets the path (the
+/// band then covers both sides). The reach band is every window cell whose
+/// centre lies within `half_width - cell / 2` of a ring: the footprint
+/// rule of [`regions_per_level`], for the same reason. The simulator
+/// blends a cell that a tool covers only in part, so the cells along the
+/// wall that the contour cuts keep part of their top. A band of
+/// `half_width + cell` holds those wall cells, and a contour beside a
+/// standing wall then never skips a level (G-RESTLEVELS, the Profile
+/// case: 0 skipped levels of 7). A level is skipped only when no band
+/// cell holds material above `z + FRESH_MATERIAL_THRESHOLD_MM`.
+///
+/// `stock == None` (a fresh operation) gives `Whole` at every level and no
+/// finding. The fallbacks of [`regions_per_level`] apply: a stock off the
+/// paths and a window too large give `Whole` at every level.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires. The function polls once per level.
+pub(crate) fn levels_in_reach(
+    stock: Option<&TriDexelStock>,
+    paths: &[Vec<P2>],
+    levels: &[f64],
+    half_width: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<LevelPlan, Cancelled> {
+    let Some(stock) = stock else {
+        return Ok(LevelPlan::whole(levels.len(), None));
+    };
+    let unread = || {
+        LevelPlan::whole(
+            levels.len(),
+            Some(RestLevelsFinding {
+                planned_levels: levels.len(),
+                skipped_levels: 0,
+                clipped_levels: 0,
+                fallback: None,
+            }),
+        )
+    };
+    let Some([px_min, py_min, px_max, py_max]) = paths_bbox(paths) else {
+        // No path: the op emits nothing at any level.
+        return Ok(unread());
+    };
+    let grid = &stock.z_grid;
+    let cell = grid.cell_size;
+    let band = (half_width - 0.5 * cell).max(0.0);
+    let sb = &stock.stock_bbox;
+    let overlaps = sb.min.x <= px_max + band
+        && sb.max.x >= px_min - band
+        && sb.min.y <= py_max + band
+        && sb.max.y >= py_min - band;
+    if !overlaps {
+        return Ok(LevelPlan::fallback(
+            levels.len(),
+            RestLevelsFallback::StockOffOutline,
+        ));
+    }
+    let pad_cells = (band / cell).ceil() as usize + 2;
+    let window = grid.lattice_window([px_min, py_min, px_max, py_max], pad_cells);
+    let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
+        * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
+    if window.cell_count() > limit {
+        return Ok(LevelPlan::fallback(
+            levels.len(),
+            RestLevelsFallback::WindowTooLarge {
+                cells: window.cell_count(),
+                limit,
+            },
+        ));
+    }
+    let reach = band_mask(grid, &window, paths, band);
+    if !reach.contains(&true) {
+        // No cell centre lies in the band: the grid cannot see the paths.
+        // Cut every level rather than skip a level on no evidence.
+        return Ok(unread());
+    }
+
+    let mut plan = LevelPlan {
+        levels: Vec::with_capacity(levels.len()),
+        regions: Vec::new(),
+        finding: None,
+    };
+    for &z in levels {
+        check_cancel(cancel)?;
+        let floor = (z + FRESH_MATERIAL_THRESHOLD_MM) as f32;
+        let material = grid.material_above_mask(&window, floor);
+        let stands = material.iter().zip(&reach).any(|(&m, &r)| m && r);
+        plan.levels.push(if stands {
+            LevelRegion::Whole
+        } else {
+            LevelRegion::Empty
+        });
+    }
+    plan.finding = Some(RestLevelsFinding {
+        planned_levels: levels.len(),
+        skipped_levels: plan
+            .levels
+            .iter()
+            .filter(|l| **l == LevelRegion::Empty)
+            .count(),
+        clipped_levels: 0,
+        fallback: None,
+    });
+    Ok(plan)
+}
+
+/// What the stock column over one point holds (`RestUse::StockColumn`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ColumnTop {
+    /// No grid cell centre lies in the reach of the point: the grid holds
+    /// no answer there.
+    NoEvidence,
+    /// No material stands in the reach of the point.
+    Empty,
+    /// The highest material top (mm) in the reach of the point.
+    Top(f64),
+}
+
+/// D8: the highest material top in the reach of `xy`: every grid cell
+/// whose centre lies within `reach + cell` of `xy`. A drill reads it as
+/// the top of its hole and rapids down to just above it, so `reach` is
+/// the tool radius. The extra cell takes in each cell the disc of the tool
+/// covers in part, so no material in the disc stands above the result.
+/// This is the safe side for a rapid; [`levels_in_reach`] takes the other
+/// side, because a skipped level makes no motion.
+pub(crate) fn column_top(stock: &TriDexelStock, xy: P2, reach: f64) -> ColumnTop {
+    let grid = &stock.z_grid;
+    let cell = grid.cell_size;
+    let band = reach + cell;
+    let pad_cells = (band / cell).ceil() as usize + 1;
+    let window = grid.lattice_window([xy.x, xy.y, xy.x, xy.y], pad_cells);
+    let mut seen = false;
+    let mut top: Option<f32> = None;
+    for r in 0..window.rows {
+        for c in 0..window.cols {
+            let row = window.row0 + r as isize;
+            let col = window.col0 + c as isize;
+            if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+                continue;
+            }
+            let (x, y) = grid.window_cell_centre(&window, r, c);
+            if (x - xy.x).hypot(y - xy.y) > band {
+                continue;
+            }
+            seen = true;
+            if let Some(t) = grid.top_z_at(row as usize, col as usize) {
+                top = Some(top.map_or(t, |prev| prev.max(t)));
+            }
+        }
+    }
+    match (seen, top) {
+        (false, _) => ColumnTop::NoEvidence,
+        (true, None) => ColumnTop::Empty,
+        (true, Some(t)) => ColumnTop::Top(f64::from(t)),
+    }
+}
+
+/// The XY box of every point of `paths`, or `None` when they hold no point.
+fn paths_bbox(paths: &[Vec<P2>]) -> Option<[f64; 4]> {
+    let mut points = paths.iter().flatten();
+    let first = points.next()?;
+    Some(points.fold(
+        [first.x, first.y, first.x, first.y],
+        |[x0, y0, x1, y1], p| [x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y)],
+    ))
+}
+
+/// The window cells whose centre lies within `band` of a closed ring of
+/// `paths`. Row-major, like the material mask. Each segment marks only the
+/// cells of its own box grown by `band`, so the cost follows the path
+/// length, not the window area times the segment count.
+fn band_mask(
+    grid: &crate::stock::dexel::DexelGrid,
+    window: &LatticeWindow,
+    paths: &[Vec<P2>],
+    band: f64,
+) -> Vec<bool> {
+    let cell = grid.cell_size;
+    let mut mask = vec![false; window.cell_count()];
+    let to_index =
+        |u: f64, origin: f64, first: isize| ((u - origin) / cell).floor() as isize - first;
+    for ring in paths {
+        let n = ring.len();
+        for i in 0..n {
+            let (Some(&a), Some(&b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+                continue;
+            };
+            let c0 = to_index(a.x.min(b.x) - band, grid.origin_u, window.col0).max(0);
+            let c1 = (to_index(a.x.max(b.x) + band, grid.origin_u, window.col0) + 1)
+                .min(window.cols as isize - 1);
+            let r0 = to_index(a.y.min(b.y) - band, grid.origin_v, window.row0).max(0);
+            let r1 = (to_index(a.y.max(b.y) + band, grid.origin_v, window.row0) + 1)
+                .min(window.rows as isize - 1);
+            for r in r0..=r1 {
+                for c in c0..=c1 {
+                    let (x, y) = grid.window_cell_centre(window, r as usize, c as usize);
+                    if point_segment_distance(P2::new(x, y), a, b) <= band
+                        && let Some(m) = mask.get_mut(r as usize * window.cols + c as usize)
+                    {
+                        *m = true;
+                    }
+                }
+            }
+        }
+    }
+    mask
+}
+
+/// The distance from `p` to the segment `a`-`b`.
+fn point_segment_distance(p: P2, a: P2, b: P2) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 {
+        (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (p.x - (a.x + t * dx)).hypot(p.y - (a.y + t * dy))
 }
 
 /// The window cells whose centre lies inside the footprint of the tool in

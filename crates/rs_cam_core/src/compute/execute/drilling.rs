@@ -37,12 +37,18 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 /// emitted toolpath actually drills, so a caller that transforms one and
 /// not the other has published two different sets of coordinates for one
 /// operation.
+///
+/// `initial_stock` is the stock the generator was seeded with (`None` on a
+/// fresh pass). A Drill reads it through [`drill_hole_columns`], as
+/// `generate_drill` does, so both views name the same hole tops (D8).
+#[allow(clippy::too_many_arguments)] // SAFETY: each argument is one generator input this view must mirror
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
     drill_targets: &[DrillTarget],
     tool_def: &ToolDefinition,
     tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     material: crate::material::Material,
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
 ) -> Option<crate::ops::drill_op::DrillOp> {
@@ -61,16 +67,8 @@ pub fn build_drill_op_for_config(
             } else {
                 HoleSource::ModelDerived
             };
-            let top_z = stock_bbox.max.z;
-            let bottom_z = top_z - cfg.depth;
-            let holes = hole_xys
-                .into_iter()
-                .map(|xy| DrillHole {
-                    xy,
-                    top_z,
-                    bottom_z,
-                })
-                .collect();
+            let holes =
+                drill_hole_columns(cfg, &hole_xys, stock_bbox, initial_stock, tool_def.radius());
             Some(DrillOp {
                 holes,
                 hole_source,
@@ -81,10 +79,6 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
-                // Same expression `generate_drill` passes to
-                // `DrillParams::retract_z`, so the summary models the
-                // cycle this op emits (R-2).
-                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
@@ -100,12 +94,17 @@ pub fn build_drill_op_for_config(
             let top_z = stock_bbox.max.z;
             let bottom_z = stock_bbox.min.z - cfg.spoilboard_penetration;
             let cycle = cfg.drill_cycle(top_z - bottom_z);
+            // Same expression `generate_alignment_pin_drill` passes to
+            // `DrillParams::retract_z`, so the summary models the cycle
+            // this op emits (R-2).
+            let retract_z = crate::compute::config::effective_safe_z(cfg.retract_z, top_z);
             let holes = hole_xys
                 .iter()
                 .map(|&xy| DrillHole {
                     xy,
                     top_z,
                     bottom_z,
+                    retract_z,
                 })
                 .collect();
             Some(DrillOp {
@@ -118,7 +117,6 @@ pub fn build_drill_op_for_config(
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
-                retract_z_mm: crate::compute::config::effective_safe_z(cfg.retract_z, top_z),
             })
         }
         _ => None,
@@ -450,6 +448,89 @@ pub(super) fn drill_holes_for_config(
     ))
 }
 
+/// The hole tops a Drill cuts: D8 (W3.4, `RestUse::StockColumn`).
+///
+/// On fresh stock (`initial_stock == None`) every hole runs from the stock
+/// box top to `box top - depth`, with the R-plane
+/// `effective_safe_z(cfg.retract_z, box top)`, as before W3.4.
+///
+/// On the remaining stock the top of each hole is the highest material in
+/// the reach of the tool over the hole (`standing_material::column_top`
+/// with the tool radius), capped at the box top. A hole in a cleared pocket
+/// then starts at the pocket floor, not in the air above it. The bottom
+/// stays at `box top - depth`: the depth dial names the design bottom of
+/// the hole. The R-plane keeps the clearance it has above the box top on
+/// fresh stock, so the first peck starts that clearance above the floor.
+///
+/// A hole whose column holds no material down to its bottom has nothing
+/// to cut and is dropped. A hole that the grid cannot see keeps the box
+/// top (no evidence, so no change). The stock is read only when the W2.1
+/// guard (`StockReference::resolve`) finds it in the frame of the holes.
+fn drill_hole_columns(
+    cfg: &crate::compute::operation_configs::DrillConfig,
+    hole_xys: &[[f64; 2]],
+    stock_bbox: &BoundingBox3,
+    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    tool_radius: f64,
+) -> Vec<crate::ops::drill_op::DrillHole> {
+    use super::standing_material::{ColumnTop, column_top};
+    use crate::ops::drill_op::DrillHole;
+
+    if hole_xys.is_empty() {
+        return Vec::new();
+    }
+    let box_top = stock_bbox.max.z;
+    let bottom_z = box_top - cfg.depth;
+    let clearance = crate::compute::config::effective_safe_z(cfg.retract_z, box_top) - box_top;
+    let holes_bbox = hole_xys.iter().fold(
+        BoundingBox3 {
+            min: crate::geo::P3::new(f64::INFINITY, f64::INFINITY, bottom_z),
+            max: crate::geo::P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, box_top),
+        },
+        |mut b, &[x, y]| {
+            b.min.x = b.min.x.min(x);
+            b.min.y = b.min.y.min(y);
+            b.max.x = b.max.x.max(x);
+            b.max.y = b.max.y.max(y);
+            b
+        },
+    );
+    let stock =
+        crate::surface::stock_reference::StockReference::resolve(initial_stock, &holes_bbox)
+            .stock();
+    let mut dropped = 0_usize;
+    let holes: Vec<DrillHole> = hole_xys
+        .iter()
+        .filter_map(|&xy| {
+            let top_z = match stock
+                .map(|s| column_top(s, crate::geo::P2::new(xy[0], xy[1]), tool_radius))
+            {
+                None | Some(ColumnTop::NoEvidence) => box_top,
+                Some(ColumnTop::Top(t)) => t.min(box_top),
+                Some(ColumnTop::Empty) => bottom_z,
+            };
+            if top_z <= bottom_z {
+                dropped += 1;
+                return None;
+            }
+            Some(DrillHole {
+                xy,
+                top_z,
+                bottom_z,
+                retract_z: top_z + clearance,
+            })
+        })
+        .collect();
+    if dropped > 0 {
+        tracing::info!(
+            holes = holes.len(),
+            dropped,
+            "drill: dropped holes with no remaining stock above their bottom"
+        );
+    }
+    holes
+}
+
 /// Drill family adapter (holes from the model's drill targets or picks).
 pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
@@ -460,17 +541,23 @@ pub(crate) fn generate_drill(
     // Checkpoint C, Q3 (F-4): a drill cycle is short, so the only cancel
     // poll is the dispatch prologue's (W2.2), ahead of any work. The drill
     // kernel has no poll of its own.
-    let holes = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
-    let cycle = cfg.cycle.to_core(cfg);
-    let params = crate::ops::drill::DrillParams {
-        depth: cfg.depth,
-        top_z: ctx.stock_bbox.max.z,
-        cycle,
-        feed_rate: op.feed_rate(),
-        safe_z: ctx.heights.retract_z,
-        retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
-    };
-    let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath(&holes, &params));
+    let hole_xys = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
+    // D8 (W3.4, `RestUse::StockColumn`): each hole starts at the remaining
+    // stock top over it. `build_drill_op_for_config` reads the same
+    // columns.
+    let holes = drill_hole_columns(
+        cfg,
+        &hole_xys,
+        ctx.stock_bbox,
+        ctx.initial_stock,
+        ctx.tool_def.radius(),
+    );
+    let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath_at_holes(
+        &holes,
+        cfg.cycle.to_core(cfg),
+        op.feed_rate(),
+        ctx.heights.retract_z,
+    ));
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_drill_spans(&generated.spans, &generated.toolpath, sem);
     }

@@ -82,36 +82,71 @@ pub struct DrillParams {
 
 /// Generate a drill toolpath for a list of hole positions (XY coordinates).
 ///
-/// Each hole is drilled according to the cycle in `params`. The holes are
-/// visited in the order given — the caller is responsible for any
-/// optimization of visit order.
+/// Each hole is drilled according to the cycle in `params`, from the one
+/// R-plane `params.retract_z` down to `params.top_z - params.depth`. The
+/// holes are visited in the order given — the caller is responsible for
+/// any optimization of visit order.
 pub fn drill_toolpath(holes: &[[f64; 2]], params: &DrillParams) -> Toolpath {
+    let bottom_z = params.top_z - params.depth;
+    let columns: Vec<crate::ops::drill_op::DrillHole> = holes
+        .iter()
+        .map(|&xy| crate::ops::drill_op::DrillHole {
+            xy,
+            top_z: params.top_z,
+            bottom_z,
+            retract_z: params.retract_z,
+        })
+        .collect();
+    drill_toolpath_at_holes(&columns, params.cycle, params.feed_rate, params.safe_z)
+}
+
+/// Generate a drill toolpath for holes that each carry their own R-plane
+/// and bottom (D8: a hole in a cleared pocket starts at the pocket floor).
+/// `hole.top_z` does not reach the moves: the cycle rapids to
+/// `hole.retract_z` and feeds from there to `hole.bottom_z`.
+pub fn drill_toolpath_at_holes(
+    holes: &[crate::ops::drill_op::DrillHole],
+    cycle: DrillCycle,
+    feed_rate: f64,
+    safe_z: f64,
+) -> Toolpath {
     let mut tp = Toolpath::new();
 
-    for &[x, y] in holes {
+    for hole in holes {
+        let [x, y] = hole.xy;
+        let retract_z = hole.retract_z;
+        let bottom_z = hole.bottom_z;
         // 1. Rapid to safe_z (vertical move if not already there)
-        tp.rapid_to_with_intent(P3::new(x, y, params.safe_z), MoveIntent::Linking);
+        tp.rapid_to_with_intent(P3::new(x, y, safe_z), MoveIntent::Linking);
         // 2. Rapid down to retract_z (R-plane)
-        tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Linking);
+        tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Linking);
 
-        let bottom_z = params.top_z - params.depth;
-
-        match params.cycle {
+        match cycle {
             DrillCycle::Simple | DrillCycle::Dwell(_) => {
                 // Feed to full depth, then rapid out.
                 // (Dwell timing is a post-processor feature — the motion is identical.)
-                tp.feed_to_with_intent(
-                    P3::new(x, y, bottom_z),
-                    params.feed_rate,
-                    MoveIntent::Drilling,
-                );
-                tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
+                tp.feed_to_with_intent(P3::new(x, y, bottom_z), feed_rate, MoveIntent::Drilling);
+                tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Retract);
             }
             DrillCycle::Peck(peck_depth) => {
-                drill_peck_full_retract(&mut tp, x, y, params, peck_depth, bottom_z);
+                drill_peck_full_retract(
+                    &mut tp,
+                    [x, y],
+                    retract_z,
+                    feed_rate,
+                    peck_depth,
+                    bottom_z,
+                );
             }
             DrillCycle::ChipBreak(peck_depth, retract_amount) => {
-                drill_chip_break(&mut tp, x, y, params, peck_depth, retract_amount, bottom_z);
+                drill_chip_break(
+                    &mut tp,
+                    [x, y],
+                    retract_z,
+                    feed_rate,
+                    (peck_depth, retract_amount),
+                    bottom_z,
+                );
             }
         }
     }
@@ -201,26 +236,22 @@ pub fn fed_descents(cycle: DrillCycle, bottom_z: f64, retract_z: f64) -> Vec<Fed
 /// to previous depth + clearance, repeat.
 fn drill_peck_full_retract(
     tp: &mut Toolpath,
-    x: f64,
-    y: f64,
-    params: &DrillParams,
+    [x, y]: [f64; 2],
+    retract_z: f64,
+    feed_rate: f64,
     peck_depth: f64,
     bottom_z: f64,
 ) {
     // Feed targets come from the shared schedule (R-2) so the metrics
     // cannot describe a different cycle than this emits. The rapids
     // between them stay here — they are emission, not schedule.
-    let descents = fed_descents(DrillCycle::Peck(peck_depth), bottom_z, params.retract_z);
+    let descents = fed_descents(DrillCycle::Peck(peck_depth), bottom_z, retract_z);
     let last = descents.len().saturating_sub(1);
     for (i, descent) in descents.iter().enumerate() {
-        tp.feed_to_with_intent(
-            P3::new(x, y, descent.to_z),
-            params.feed_rate,
-            MoveIntent::Drilling,
-        );
+        tp.feed_to_with_intent(P3::new(x, y, descent.to_z), feed_rate, MoveIntent::Drilling);
         // Retract fully to the R-plane after every peck, including the
         // last one.
-        tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
+        tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Retract);
         if i < last {
             // Rapid back to just above the previous cut depth.
             tp.rapid_to_with_intent(
@@ -235,11 +266,10 @@ fn drill_peck_full_retract(
 /// feed back, repeat.
 fn drill_chip_break(
     tp: &mut Toolpath,
-    x: f64,
-    y: f64,
-    params: &DrillParams,
-    peck_depth: f64,
-    retract_amount: f64,
+    [x, y]: [f64; 2],
+    retract_z: f64,
+    feed_rate: f64,
+    (peck_depth, retract_amount): (f64, f64),
     bottom_z: f64,
 ) {
     // Same shared schedule as G83 (R-2); only the retract between
@@ -247,22 +277,18 @@ fn drill_chip_break(
     let descents = fed_descents(
         DrillCycle::ChipBreak(peck_depth, retract_amount),
         bottom_z,
-        params.retract_z,
+        retract_z,
     );
     let last = descents.len().saturating_sub(1);
     for (i, descent) in descents.iter().enumerate() {
-        tp.feed_to_with_intent(
-            P3::new(x, y, descent.to_z),
-            params.feed_rate,
-            MoveIntent::Drilling,
-        );
+        tp.feed_to_with_intent(P3::new(x, y, descent.to_z), feed_rate, MoveIntent::Drilling);
         if i < last {
             tp.rapid_to_with_intent(
                 P3::new(x, y, descent.to_z + retract_amount),
                 MoveIntent::Retract,
             );
         } else {
-            tp.rapid_to_with_intent(P3::new(x, y, params.retract_z), MoveIntent::Retract);
+            tp.rapid_to_with_intent(P3::new(x, y, retract_z), MoveIntent::Retract);
         }
     }
 }

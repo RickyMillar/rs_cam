@@ -50,6 +50,7 @@ fn op(cycle: DrillCycle, diameter: f64, depth: f64, feed: f64) -> DrillOp {
             xy: [0.0, 0.0],
             top_z: 0.0,
             bottom_z: -depth,
+            retract_z: R_PLANE_ABOVE_STOCK_MM,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::StandardTwist,
@@ -62,7 +63,6 @@ fn op(cycle: DrillCycle, diameter: f64, depth: f64, feed: f64) -> DrillOp {
         // R-2: the R-plane every shipped drill op gets. Before the fix
         // `DrillOp` had no such field and the metrics modelled a cycle
         // starting at the material surface.
-        retract_z_mm: R_PLANE_ABOVE_STOCK_MM,
     }
 }
 

@@ -2,12 +2,13 @@
 //! adaptive.
 //!
 //! Every adapter here steps a 2D region down a ladder of Z levels. Pocket
-//! (W3.1), Zigzag, Trace and Profile (W3.2) run on the Layered runner
-//! (`layered.rs`): each writes `prepare` (the Z-independent geometry of a
-//! region) and `emit_level` (that geometry at one Z). Face and 2D Adaptive
-//! move to it in W3.3 and W3.4. Split out of `compute/execute.rs` (P4).
+//! (W3.1), Zigzag, Trace, Profile (W3.2) and Face (W3.3) run on the Layered
+//! runner (`layered.rs`): each writes `prepare` (the Z-independent geometry
+//! of a region) and `emit_level` (that geometry at one Z). Each reads its
+//! rest rule from its capabilities (`Capabilities::rest_use`, W3.4). 2D
+//! Adaptive keeps its own ladder. Split out of `compute/execute.rs` (P4).
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, RestUse};
 use crate::compute::operation_configs::{
     CompensationType, PocketConfig, PocketPattern, ProfileConfig, RegionOrdering, TraceConfig,
 };
@@ -18,8 +19,9 @@ use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, RestUse, effective_levels, run_layered};
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, ReachBand, effective_levels, run_layered};
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
+use super::standing_material::OffGrid;
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
 /// The feeds and heights every Layered adapter here stamps into its moves.
@@ -56,8 +58,7 @@ pub(crate) fn generate_zigzag(
         angle: cfg.angle,
         depth_per_pass: cfg.depth_per_pass,
         region_ordering: cfg.region_ordering,
-        // W3.4 gives the Zigzag op its rest rule.
-        rest_use: RestUse::None,
+        rest_use: op.capabilities().rest_use,
         feeds: LayerFeeds::new(ctx, op),
     };
     run_layered(&raster, ctx, prepared)
@@ -76,6 +77,7 @@ pub(crate) fn generate_trace(
     let feeds = LayerFeeds::new(ctx, op);
     let pass = TracePass {
         cfg,
+        rest_use: op.capabilities().rest_use,
         params: crate::ops::trace_path::TraceParams {
             tool_radius: feeds.tool_radius,
             depth: cfg.depth,
@@ -108,6 +110,7 @@ pub(crate) fn generate_profile(
     let feeds = LayerFeeds::new(ctx, op);
     let pass = ProfilePass {
         cfg,
+        rest_use: op.capabilities().rest_use,
         base: crate::ops::profile::ProfileParams {
             tool_radius: feeds.tool_radius,
             side: cfg.side,
@@ -135,15 +138,24 @@ pub(crate) fn generate_pocket(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pocket, "generate_pocket");
     let feeds = LayerFeeds::new(ctx, op);
+    let rest_use = op.capabilities().rest_use;
     match cfg.pattern {
-        PocketPattern::Contour => run_layered(&PocketContour { cfg, feeds }, ctx, prepared),
+        PocketPattern::Contour => run_layered(
+            &PocketContour {
+                cfg,
+                rest_use,
+                feeds,
+            },
+            ctx,
+            prepared,
+        ),
         PocketPattern::Zigzag => run_layered(
             &ZigzagRaster {
                 stepover: cfg.stepover,
                 angle: cfg.angle,
                 depth_per_pass: cfg.depth_per_pass,
                 region_ordering: cfg.region_ordering,
-                rest_use: RestUse::LevelClip,
+                rest_use,
                 feeds,
             },
             ctx,
@@ -156,6 +168,7 @@ pub(crate) fn generate_pocket(
 /// region.
 struct PocketContour<'a> {
     cfg: &'a PocketConfig,
+    rest_use: RestUse,
     feeds: LayerFeeds,
 }
 
@@ -176,7 +189,7 @@ impl LayeredOp for PocketContour<'_> {
     }
 
     fn rest_use(&self) -> RestUse {
-        RestUse::LevelClip
+        self.rest_use
     }
 
     fn prepare(
@@ -285,6 +298,7 @@ impl LayeredOp for ZigzagRaster {
 /// level.
 struct TracePass<'a> {
     cfg: &'a TraceConfig,
+    rest_use: RestUse,
     params: crate::ops::trace_path::TraceParams,
 }
 
@@ -301,8 +315,20 @@ impl LayeredOp for TracePass<'_> {
     }
 
     fn rest_use(&self) -> RestUse {
-        // W3.4 gives Trace its rest rule.
-        RestUse::None
+        self.rest_use
+    }
+
+    /// The compensated rings are the tool centre, so the tool reaches one
+    /// radius from them.
+    fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
+        ReachBand {
+            rings: geometry
+                .iter()
+                .flat_map(|poly| std::iter::once(&poly.exterior).chain(&poly.holes))
+                .cloned()
+                .collect(),
+            half_width: tool_radius,
+        }
     }
 
     /// The cutter compensation: one offset per piece, never one per level.
@@ -347,6 +373,7 @@ impl LayeredOp for TracePass<'_> {
 /// level, with tabs at the final Z.
 struct ProfilePass<'a> {
     cfg: &'a ProfileConfig,
+    rest_use: RestUse,
     /// The params of every level; `emit_level` sets `cut_depth`.
     base: crate::ops::profile::ProfileParams,
 }
@@ -364,8 +391,22 @@ impl LayeredOp for ProfilePass<'_> {
     }
 
     fn rest_use(&self) -> RestUse {
-        // W3.4 gives Profile its rest rule.
-        RestUse::None
+        self.rest_use
+    }
+
+    /// A computed contour is the tool centre: the tool reaches one radius
+    /// from it. With the controller compensation the contour is the
+    /// outline itself, and the controller puts the tool centre one radius
+    /// to one side, so the band is two radii wide on each side.
+    fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
+        ReachBand {
+            rings: geometry.clone(),
+            half_width: if self.base.compensate_in_controller {
+                2.0 * tool_radius
+            } else {
+                tool_radius
+            },
+        }
     }
 
     /// The side offset (or the outline itself when the controller
@@ -410,38 +451,107 @@ impl LayeredOp for ProfilePass<'_> {
     }
 }
 
-/// Face family adapter. Cancellable: the cooperative cancel closure is
-/// built by `ctx.cancel_fn()` (pinned by
+/// Face family adapter (W3.3): [`FacePass`] on the Layered runner. The one
+/// outline is the facing rectangle of the stock, and the ladder is the one
+/// Face ladder (`ops::face::face_levels`), so the depth-run spans now snap
+/// to real levels (D7). The runner polls the cancel per level (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+///
+/// F-028: the ladder anchors at `heights.top_z`, which under Auto follows
+/// `ctx.stock_top_z`. An identity setup lands at the world stock top and a
+/// non-identity setup at the local stock top, both in the frame the
+/// toolpath is stamped into.
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
-    _prepared: &Prepared<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Face, "generate_face");
-    // F-028: face anchors its depth stepping at `heights.top_z`
-    // (which under Auto follows `ctx.stock_top_z` after F-028 — so
-    // identity setups land at world stock top and non-identity
-    // setups at local stock top, both consistent with the frame
-    // the toolpath gets stamped into).
-    let params = crate::ops::face::FaceParams {
-        tool_radius: ctx.tool_def.radius(),
-        stepover: cfg.stepover,
-        depth: cfg.depth,
-        depth_per_pass: cfg.depth_per_pass,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-        stock_offset: cfg.stock_offset,
-        direction: cfg.direction,
-        stock_top_z: ctx.heights.top_z,
+    let pass = FacePass {
+        cfg,
+        rest_use: op.capabilities().rest_use,
+        rect: crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset),
+        feeds: LayerFeeds::new(ctx, op),
     };
-    let cancel_fn = ctx.cancel_fn();
-    let tp = crate::ops::face::face_toolpath_with_cancel(ctx.stock_bbox, &params, &cancel_fn)?;
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(tp, &[]),
-        ctx.semantic_ctx,
-    ))
+    run_layered(&pass, ctx, prepared)
+}
+
+/// The Face op: the scan rows of the facing rectangle (or of its rest
+/// pieces), cut at each level of the Face ladder.
+struct FacePass<'a> {
+    cfg: &'a crate::compute::operation_configs::FaceConfig,
+    rest_use: RestUse,
+    /// The facing rectangle: the stock XY bounds grown by `stock_offset`.
+    rect: Polygon2,
+    feeds: LayerFeeds,
+}
+
+impl LayeredOp for FacePass<'_> {
+    type Geometry = Vec<[P2; 2]>;
+    type Report = OffsetFailures;
+
+    fn depth_per_pass(&self) -> f64 {
+        self.cfg.depth_per_pass
+    }
+
+    /// One outline, so the order changes nothing.
+    fn region_ordering(&self) -> RegionOrdering {
+        RegionOrdering::ByArea
+    }
+
+    fn rest_use(&self) -> RestUse {
+        self.rest_use
+    }
+
+    /// The facing rectangle grows the stock box by `stock_offset`; the
+    /// grid covers the stock box, so a cell off it is air.
+    fn off_grid(&self) -> OffGrid {
+        OffGrid::Air
+    }
+
+    fn outlines<'p>(
+        &'p self,
+        _prepared: &Prepared<'p>,
+    ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError> {
+        Ok(std::borrow::Cow::Borrowed(std::slice::from_ref(&self.rect)))
+    }
+
+    /// The Face ladder of the config, from `heights.top_z`. Face does not
+    /// read `cutting_levels`: its ladder was always its own depth dial
+    /// from the stock top.
+    fn ladder(&self, ctx: &ExecutionContext<'_>) -> Vec<f64> {
+        crate::ops::face::face_levels(ctx.heights.top_z, self.cfg.depth, self.cfg.depth_per_pass)
+    }
+
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let (lines, failures) = crate::ops::face::face_scan_lines_reported(
+            region,
+            layer.tool_radius,
+            self.cfg.stepover,
+            self.cfg.direction,
+        );
+        Ok((lines, OffsetFailures(failures)))
+    }
+
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        let feeds = &self.feeds;
+        crate::ops::zigzag::lines_to_toolpath(
+            geometry,
+            &crate::ops::zigzag::ZigzagParams {
+                tool_radius: feeds.tool_radius,
+                stepover: self.cfg.stepover,
+                cut_depth: level.z,
+                feed_rate: feeds.feed_rate,
+                plunge_rate: feeds.plunge_rate,
+                safe_z: feeds.safe_z,
+                angle: crate::ops::face::FACE_ANGLE,
+            },
+        )
+    }
 }
 
 /// Adaptive (2D) family adapter. Cancellable; per-level annotation

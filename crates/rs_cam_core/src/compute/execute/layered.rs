@@ -11,7 +11,8 @@
 //!
 //! - the ladder ([`LayeredOp::ladder`]);
 //! - the rest step per level, as the op's [`RestUse`] states it
-//!   ([`RestUse::LevelClip`] reads `standing_material::regions_per_level`);
+//!   ([`RestUse::LevelClip`] reads `standing_material::regions_per_level`,
+//!   [`RestUse::LevelSkip`] reads `standing_material::levels_in_reach`);
 //! - one `prepare` per distinct region (the whole outline and each clipped
 //!   region) of an outline, never one per level. Region-first prepares one
 //!   outline at a time and drops its geometry after its last level, so peak
@@ -49,8 +50,12 @@
 //! no-op when the tool already stands at `safe_z`, which is where every
 //! Layered emitter ends.
 
+use std::borrow::Cow;
+
+use crate::compute::catalog::RestUse;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::operation_configs::RegionOrdering;
+use crate::geo::P2;
 use crate::interrupt::{CancelCheck, check_cancel};
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
@@ -59,7 +64,9 @@ use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::findings::RecordFindings;
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
-use super::standing_material::{LevelPlan, LevelRegion, regions_per_level};
+use super::standing_material::{
+    LevelPlan, LevelRegion, OffGrid, levels_in_reach, regions_per_level,
+};
 use super::{ExecutionContext, GeneratedToolpath, OffsetFailures, OperationError, Prepared};
 
 /// One level of the ladder, as [`LayeredOp::emit_level`] gets it.
@@ -81,16 +88,16 @@ pub(crate) struct LevelInfo {
 /// It is the tolerance of the Profile adapter before W3.2.
 const FINAL_Z_EPS_MM: f64 = 1e-9;
 
-/// How a Layered op uses the remaining stock (AUDIT.md, "Rest is not one
-/// thing"). W3.4 adds the other kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RestUse {
-    /// The op ignores the stock: it cuts the whole outline at every level.
-    /// Zigzag, Trace and Profile until W3.4 gives them their rest rules.
-    None,
-    /// The op clips its INPUT region to the standing material per level
-    /// (G-RESTLEVELS). An area op only: a clipped outline has new walls.
-    LevelClip,
+/// The tool-centre rings of one prepared region and the half-width (mm)
+/// of the band the tool reaches around them. [`RestUse::LevelSkip`] reads
+/// it ([`LayeredOp::reach_band`]).
+pub(crate) struct ReachBand {
+    /// The closed tool-centre rings.
+    pub rings: Vec<Vec<P2>>,
+    /// The distance (mm) from a ring to the edge of the cut: the tool
+    /// radius for a tool-centre ring, twice the radius when the controller
+    /// offsets the ring.
+    pub half_width: f64,
 }
 
 /// What [`LayeredOp::prepare`] gets besides the region.
@@ -114,8 +121,29 @@ pub(crate) trait LayeredOp {
     /// The order in which the runner visits outlines and levels.
     fn region_ordering(&self) -> RegionOrdering;
 
-    /// How the op uses the remaining stock.
+    /// How the op uses the remaining stock. The adapter reads it from the
+    /// op's capabilities (`OperationConfig::capabilities().rest_use`), so
+    /// the GUI, MCP and the runner read one answer. The runner acts on
+    /// `None`, `LevelClip` and `LevelSkip`; a Layered op declares no other
+    /// kind.
     fn rest_use(&self) -> RestUse;
+
+    /// What a cell off the stock grid holds for [`RestUse::LevelClip`].
+    /// The default counts it as material. Face overrides it: its outline
+    /// grows the stock box on purpose.
+    fn off_grid(&self) -> OffGrid {
+        OffGrid::Material
+    }
+
+    /// The reach band of `geometry` for [`RestUse::LevelSkip`]. The default
+    /// holds no ring, and the runner then cuts every level. A `LevelSkip`
+    /// op overrides it.
+    fn reach_band(&self, _geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
+        ReachBand {
+            rings: Vec::new(),
+            half_width: tool_radius,
+        }
+    }
 
     /// The Z-independent geometry of `region`. `region` is the whole outline
     /// or the pieces of one clipped region; the op treats each piece alike.
@@ -128,6 +156,20 @@ pub(crate) trait LayeredOp {
     /// The cut of `geometry` at one level. An empty toolpath is a level
     /// with nothing to cut; the runner skips it.
     fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath;
+
+    /// The outlines the runner steps, one region each. The default is the
+    /// checked polygons of the op. Face overrides it: its one outline is
+    /// the facing rectangle of the stock (W3.3).
+    ///
+    /// # Errors
+    ///
+    /// The prologue's geometry mismatch when the op has no polygons.
+    fn outlines<'p>(
+        &'p self,
+        prepared: &Prepared<'p>,
+    ) -> Result<Cow<'p, [Polygon2]>, OperationError> {
+        prepared.polygons().map(Cow::Borrowed)
+    }
 
     /// The Z ladder, top first. The default is the 2.5D ladder of the
     /// heights and [`Self::depth_per_pass`]. The catalogue's
@@ -176,7 +218,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let outlines = prepared.polygons()?;
+    let outlines = op.outlines(prepared)?;
     let levels = op.ladder(ctx);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
@@ -195,7 +237,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // is dropped after its last level. Peak memory does not grow with
         // the outline count.
         RegionOrdering::ByArea => {
-            for outline in outlines {
+            for outline in outlines.iter() {
                 let layers = prepare_outline(op, ctx, &layer, outline, &levels)?;
                 let mut emitted = false;
                 for i in 0..levels.len() {
@@ -215,7 +257,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // is prepared before the first level.
         RegionOrdering::Global => {
             let mut layers = Vec::with_capacity(outlines.len());
-            for outline in outlines {
+            for outline in outlines.iter() {
                 layers.push(prepare_outline(op, ctx, &layer, outline, &levels)?);
             }
             for i in 0..levels.len() {
@@ -271,22 +313,48 @@ fn prepare_outline<O: LayeredOp>(
     if ctx.is_cancelled() {
         return Err(OperationError::Cancelled);
     }
-    let plan = match op.rest_use() {
-        RestUse::None => LevelPlan::whole(levels.len(), None),
-        RestUse::LevelClip => regions_per_level(
-            ctx.initial_stock,
-            outline,
-            levels,
-            layer.tool_radius,
-            layer.cancel,
-        )?,
-    };
-    ctx.record(&plan.finding);
     let prepare = |region: &[Polygon2]| {
         let (geometry, report) = op.prepare(region, layer)?;
         ctx.record(&report);
         Ok::<_, OperationError>(geometry)
     };
+    let plan = match op.rest_use() {
+        RestUse::LevelClip => regions_per_level(
+            ctx.initial_stock,
+            outline,
+            levels,
+            layer.tool_radius,
+            op.off_grid(),
+            layer.cancel,
+        )?,
+        // W3.4: the skip reads the prepared tool-centre rings, so the whole
+        // outline is prepared first. The plan holds `Whole` or `Empty` only.
+        RestUse::LevelSkip => {
+            let whole = prepare(std::slice::from_ref(outline))?;
+            let band = op.reach_band(&whole, layer.tool_radius);
+            let plan = levels_in_reach(
+                ctx.initial_stock,
+                &band.rings,
+                levels,
+                band.half_width,
+                layer.cancel,
+            )?;
+            ctx.record(&plan.finding);
+            return Ok(OutlineLayers {
+                plan,
+                whole: Some(whole),
+                clipped: Vec::new(),
+            });
+        }
+        // A Layered op declares no other kind; it cuts the whole outline.
+        RestUse::None
+        | RestUse::LevelMask
+        | RestUse::StockColumn
+        | RestUse::Planner
+        | RestUse::Reference
+        | RestUse::LinkSafetyOnly => LevelPlan::whole(levels.len(), None),
+    };
+    ctx.record(&plan.finding);
     let whole = if plan.needs_whole() {
         Some(prepare(std::slice::from_ref(outline))?)
     } else {

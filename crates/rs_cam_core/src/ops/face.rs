@@ -6,8 +6,8 @@
 
 use crate::geo::BoundingBox3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::ops::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
-use crate::ops::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines};
+use crate::ops::depth::{DepthStepping, toolpath_at_levels_with_cancel};
+use crate::ops::zigzag::{ZigzagParams, lines_to_toolpath};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
@@ -65,15 +65,66 @@ pub struct FaceParams {
 ///
 /// `OneWay` normalisation lives here too: it only permutes endpoints within
 /// each row, so it is Z-independent by the same argument.
-fn face_scan_lines(
-    polygon: &Polygon2,
-    params: &FaceParams,
-    angle: f64,
-) -> Vec<[crate::geo::P2; 2]> {
-    let lines = zigzag_lines(polygon, params.tool_radius, params.stepover, angle);
-    match params.direction {
-        FaceDirection::OneWay => normalise_oneway(lines, angle),
+fn face_scan_lines(polygon: &Polygon2, params: &FaceParams) -> Vec<[crate::geo::P2; 2]> {
+    face_scan_lines_reported(
+        std::slice::from_ref(polygon),
+        params.tool_radius,
+        params.stepover,
+        params.direction,
+    )
+    .0
+}
+
+/// The scan rows of every piece of a facing region, and the count of
+/// failed offsets (Checkpoint C). The Layered Face (W3.3) calls it with the
+/// whole facing rectangle, or with the pieces of a rest clip
+/// (G-RESTLEVELS). `OneWay` normalises the rows of all pieces to the
+/// direction of the first row, so one region cuts in one direction.
+pub(crate) fn face_scan_lines_reported(
+    pieces: &[Polygon2],
+    tool_radius: f64,
+    stepover: f64,
+    direction: FaceDirection,
+) -> (Vec<[crate::geo::P2; 2]>, usize) {
+    let mut lines = Vec::new();
+    let mut failures = 0;
+    for piece in pieces {
+        let (piece_lines, piece_failures) =
+            crate::ops::zigzag::zigzag_lines_reported(piece, tool_radius, stepover, FACE_ANGLE);
+        failures += piece_failures;
+        lines.extend(piece_lines);
+    }
+    let lines = match direction {
+        FaceDirection::OneWay => normalise_oneway(lines, FACE_ANGLE),
         FaceDirection::Zigzag => lines,
+    };
+    (lines, failures)
+}
+
+/// The scan angle (degrees) of every face pass.
+pub(crate) const FACE_ANGLE: f64 = 0.0;
+
+/// The facing rectangle: the XY bounds of `bounds`, grown by `stock_offset`
+/// on each side.
+pub(crate) fn face_rectangle(bounds: &BoundingBox3, stock_offset: f64) -> Polygon2 {
+    Polygon2::rectangle(
+        bounds.min.x - stock_offset,
+        bounds.min.y - stock_offset,
+        bounds.max.x + stock_offset,
+        bounds.max.y + stock_offset,
+    )
+}
+
+/// THE Z ladder of a face pass, top first. `depth <= 0` is one pass at the
+/// stock top. Otherwise the 2.5D ladder (`EvenRedistributed`) from
+/// `stock_top_z` down to `stock_top_z - depth`, with no spring pass. The
+/// kernel, the Layered Face adapter and the catalogue's `cutting_levels`
+/// all read this function.
+pub fn face_levels(stock_top_z: f64, depth: f64, depth_per_pass: f64) -> Vec<f64> {
+    if depth <= 0.0 {
+        vec![stock_top_z]
+    } else {
+        DepthStepping::new(stock_top_z, stock_top_z - depth, depth_per_pass).all_levels()
     }
 }
 
@@ -139,59 +190,28 @@ pub fn face_toolpath_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
-    // Build the facing rectangle from XY bounds + stock_offset
-    let rect = Polygon2::rectangle(
-        bounds.min.x - params.stock_offset,
-        bounds.min.y - params.stock_offset,
-        bounds.max.x + params.stock_offset,
-        bounds.max.y + params.stock_offset,
-    );
-
+    let rect = face_rectangle(bounds, params.stock_offset);
     // G2 hoist: the scan rows (inset + slicing + any OneWay normalisation)
     // are XY-only, so they are built ONCE here rather than once per Z level.
-    // `FACE_ANGLE` is what both branches passed as `ZigzagParams::angle`.
-    const FACE_ANGLE: f64 = 0.0;
-    let lines = face_scan_lines(&rect, params, FACE_ANGLE);
-
-    if params.depth <= 0.0 {
-        // Single pass at the stock top (F-028: was hardcoded Z=0)
-        let zp = ZigzagParams {
-            tool_radius: params.tool_radius,
-            stepover: params.stepover,
-            cut_depth: params.stock_top_z,
-            feed_rate: params.feed_rate,
-            plunge_rate: params.plunge_rate,
-            safe_z: params.safe_z,
-            angle: FACE_ANGLE,
-        };
-        Ok(lines_to_toolpath(&lines, &zp))
-    } else {
-        // Multi-pass depth stepping anchored at `stock_top_z` (F-028).
-        let stepping = DepthStepping {
-            start_z: params.stock_top_z,
-            final_z: params.stock_top_z - params.depth,
-            max_step_down: params.depth_per_pass,
-            finishing_passes: 0,
-        };
-
-        depth_stepped_toolpath_with_cancel(
-            &stepping,
-            params.safe_z,
-            |z| {
-                let zp = ZigzagParams {
-                    tool_radius: params.tool_radius,
-                    stepover: params.stepover,
-                    cut_depth: z,
-                    feed_rate: params.feed_rate,
-                    plunge_rate: params.plunge_rate,
-                    safe_z: params.safe_z,
-                    angle: FACE_ANGLE,
-                };
-                Ok(lines_to_toolpath(&lines, &zp))
-            },
-            cancel,
-        )
-    }
+    let lines = face_scan_lines(&rect, params);
+    let levels = face_levels(params.stock_top_z, params.depth, params.depth_per_pass);
+    toolpath_at_levels_with_cancel(
+        &levels,
+        params.safe_z,
+        |z| {
+            let zp = ZigzagParams {
+                tool_radius: params.tool_radius,
+                stepover: params.stepover,
+                cut_depth: z,
+                feed_rate: params.feed_rate,
+                plunge_rate: params.plunge_rate,
+                safe_z: params.safe_z,
+                angle: FACE_ANGLE,
+            };
+            Ok(lines_to_toolpath(&lines, &zp))
+        },
+        cancel,
+    )
 }
 
 #[cfg(test)]
@@ -199,6 +219,8 @@ pub fn face_toolpath_with_cancel(
 mod tests {
     use super::*;
     use crate::geo::P3;
+    use crate::ops::depth::depth_stepped_toolpath_with_cancel;
+    use crate::ops::zigzag::zigzag_lines;
     use crate::toolpath::MoveType;
 
     fn stock_100x100() -> BoundingBox3 {

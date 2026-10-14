@@ -11,7 +11,7 @@ use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole
 
 use super::capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, MoveCountModel,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, MoveCountModel, RestUse,
     TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D, TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS,
     TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE, TRANSFORM_ORDERED_LINKABLE, TRANSFORM_V_WIDTH,
     TRANSFORM_XY_INDEPENDENT,
@@ -844,6 +844,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelClip,
     },
     generate: crate::compute::execute::generate_face,
 };
@@ -878,6 +879,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelClip,
     },
     generate: crate::compute::execute::generate_pocket,
 };
@@ -912,6 +914,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelSkip,
     },
     generate: crate::compute::execute::generate_profile,
 };
@@ -949,6 +952,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::Roughing,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelMask,
     },
     generate: crate::compute::execute::generate_adaptive,
 };
@@ -995,6 +999,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::CurveFollowing,
         relink_dial: None,
         axial_envelope: AxialEnvelope::VBitGroove,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_vcarve,
 };
@@ -1039,6 +1044,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_inlay,
 };
@@ -1083,6 +1089,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_inlay_plug,
 };
@@ -1117,6 +1124,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelClip,
     },
     generate: crate::compute::execute::generate_zigzag,
 };
@@ -1152,6 +1160,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::CurveFollowing,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::LevelSkip,
     },
     generate: crate::compute::execute::generate_trace,
 };
@@ -1189,6 +1198,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::StockColumn,
     },
     generate: crate::compute::execute::generate_drill,
 };
@@ -1226,6 +1236,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_chamfer,
 };
@@ -1266,6 +1277,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: Some("hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::LinkSafetyOnly,
     },
     generate: crate::compute::execute::generate_drop_cutter,
 };
@@ -1306,6 +1318,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::Roughing,
         relink_dial: None,
         axial_envelope: AxialEnvelope::Roughing3d,
+        rest_use: RestUse::Planner,
     },
     generate: crate::compute::execute::generate_adaptive3d,
 };
@@ -1340,6 +1353,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: Some("hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::LinkSafetyOnly,
     },
     generate: crate::compute::execute::generate_waterline,
 };
@@ -1379,6 +1393,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::Reference,
     },
     generate: crate::compute::execute::generate_pencil,
 };
@@ -1416,6 +1431,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: Some("intra_pass_hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::LinkSafetyOnly,
     },
     generate: crate::compute::execute::generate_scallop,
 };
@@ -1468,6 +1484,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: Some("intra_region_hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::Reference,
     },
     generate: crate::compute::execute::generate_unified_finish,
 };
@@ -1502,6 +1519,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_steep_shallow,
 };
@@ -1536,6 +1554,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_ramp_finish,
 };
@@ -1577,6 +1596,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_spiral_finish,
 };
@@ -1611,6 +1631,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_radial_finish,
 };
@@ -1652,6 +1673,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: None,
         axial_envelope: AxialEnvelope::Finish3d,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_horizontal_finish,
 };
@@ -1690,6 +1712,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::CurveFollowing,
         relink_dial: None,
         axial_envelope: AxialEnvelope::CurveRough,
+        rest_use: RestUse::LinkSafetyOnly,
     },
     generate: crate::compute::execute::generate_project_curve,
 };
@@ -1731,6 +1754,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
+        rest_use: RestUse::None,
     },
     generate: crate::compute::execute::generate_alignment_pin_drill,
 };

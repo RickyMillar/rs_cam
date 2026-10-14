@@ -89,6 +89,7 @@ fn drill(
             xy,
             top_z,
             bottom_z,
+            retract_z: STOCK_Z + 5.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: profile,
@@ -98,7 +99,6 @@ fn drill(
         spindle_rpm: 18_000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: STOCK_Z + 5.0,
     }
 }
 

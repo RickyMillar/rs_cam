@@ -158,11 +158,13 @@ fn drill_entry() -> SimToolpathEntry {
                 xy: [30.0, 20.0],
                 top_z: STOCK_Z,
                 bottom_z: STOCK_Z - 12.0,
+                retract_z: STOCK_Z + 5.0,
             },
             DrillHole {
                 xy: [70.0, 60.0],
                 top_z: STOCK_Z,
                 bottom_z: STOCK_Z - 12.0,
+                retract_z: STOCK_Z + 5.0,
             },
         ],
         hole_source: HoleSource::ModelDerived,
@@ -173,7 +175,6 @@ fn drill_entry() -> SimToolpathEntry {
         spindle_rpm: 18_000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: STOCK_Z + 5.0,
     };
 
     SimToolpathEntry {

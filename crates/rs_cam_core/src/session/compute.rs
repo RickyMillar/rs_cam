@@ -1034,6 +1034,7 @@ impl JobPhases<'_, '_> {
             &self.inputs.tool_def,
             &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
+            self.gen_initial_stock,
             self.context.material.clone(),
             self.inputs.setup_transform.as_ref(),
         );

@@ -1177,9 +1177,15 @@ pub fn group_drill_op_to_global(
             transform,
             stock_min,
         );
+        let g_r = group_point_to_global(
+            P3::new(hole.xy[0], hole.xy[1], hole.retract_z),
+            transform,
+            stock_min,
+        );
         hole.xy = [g_top.x, g_top.y];
         hole.top_z = g_top.z;
         hole.bottom_z = g_bot.z;
+        hole.retract_z = g_r.z;
     }
     out
 }

@@ -3,8 +3,7 @@
 ## Files
 
 - `execute.rs`/`execute/` — the dispatch (`execute_operation_annotated`), `prologue.rs` (W2.2), `findings.rs`
-  (W2.3), `standing_material.rs` (G-RESTLEVELS), `layered.rs` (W3.0); `catalog.rs` — the registry, `catalog/capabilities.rs` (W2.4);
-  `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
+  (W2.3), `standing_material.rs` (G-RESTLEVELS), `layered.rs` (W3.0); `catalog.rs` — the registry, `catalog/capabilities.rs` (W2.4); `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
   (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
   `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources, P10 setup notes), `spans.rs`, `validate.rs`, `generated_empty.rs`.
@@ -19,9 +18,10 @@
   dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
 - W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`.
-- W3: a Layered op (Pocket, Zigzag, Trace, Profile) writes `LayeredOp::prepare` + `emit_level`; hooks `ladder`, `annotate`. `run_layered`
-  owns the ladder, `RestUse`, one prepare per region, `region_ordering` (R4: `ByArea` default), cancel per level, the spans.
-  `LevelInfo::is_final` is true at the final Z, each spring pass too (Profile tabs). Zigzag op and Pocket share `ZigzagRaster`.
+- W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face) writes `prepare` + `emit_level`; hooks `outlines`, `ladder`, `annotate`, `reach_band`, `off_grid`.
+  `run_layered` owns the ladder, rest rule, one prepare per region, `region_ordering` (R4), cancel per level, spans. `LevelInfo::is_final`: final Z, spring passes too.
+- W3.4: rest rule = `Capabilities::rest_use`. `LevelClip` clips the input; `LevelSkip` only skips (a clipped contour cuts a new wall); Drill
+  `StockColumn` lowers each hole top and R-plane (D8). 2D Adaptive `LevelMask`: declared only. Zigzag op and Pocket share `ZigzagRaster`.
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field
   beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()`

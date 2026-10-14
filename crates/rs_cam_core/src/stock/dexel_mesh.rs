@@ -576,6 +576,7 @@ mod tests {
                 xy: [20.0, 15.0],
                 top_z: 25.5,
                 bottom_z: 25.5 - 31.8,
+                retract_z: 30.5,
             }],
             hole_source: HoleSource::ModelDerived,
             tool_profile: ToolProfile::Flat,
@@ -585,7 +586,6 @@ mod tests {
             spindle_rpm: 18_000,
             flute_count: 2,
             material: crate::material::Material::default(),
-            retract_z_mm: 30.5,
         }
     }
 

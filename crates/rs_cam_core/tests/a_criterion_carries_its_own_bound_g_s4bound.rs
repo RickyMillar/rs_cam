@@ -180,6 +180,7 @@ fn drill_op() -> DrillOp {
             xy: [0.0, 0.0],
             top_z: 0.0,
             bottom_z: -12.0,
+            retract_z: 5.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::StandardTwist,
@@ -189,7 +190,6 @@ fn drill_op() -> DrillOp {
         spindle_rpm: 6_000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: 5.0,
     }
 }
 

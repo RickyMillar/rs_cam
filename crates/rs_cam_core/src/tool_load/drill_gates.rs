@@ -422,6 +422,7 @@ mod tests {
                 xy: [0.0, 0.0],
                 top_z: 0.0,
                 bottom_z: -depth,
+                retract_z: 0.0,
             }],
             hole_source: HoleSource::ModelDerived,
             tool_profile: ToolProfile::StandardTwist,
@@ -437,7 +438,6 @@ mod tests {
             // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
             // 5 mm by default); `drill_evidence_wording_d3.rs` is the
             // sentry that pins the emitter-matching case.
-            retract_z_mm: 0.0,
         }
     }
 
