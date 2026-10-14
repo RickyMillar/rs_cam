@@ -20,6 +20,8 @@ Turns a `Toolpath` into bytes. The entry point is
   do not re-derive it here.
 - A post-processor is data, not code. Add a `PostDefinition` row, not a
   branch in the emitter.
+- W2.5: every session door fills `GcodePhase::feeds` from the slot it emits
+  (`FeedStage::statement`). The line follows the label. It states, never refuses.
 
 ## Sentries
 

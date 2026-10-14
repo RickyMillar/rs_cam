@@ -708,6 +708,7 @@ M3 S{spindle_rpm}
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -727,6 +728,7 @@ M3 S{spindle_rpm}
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -915,6 +917,7 @@ M3 S{spindle_rpm}
             drill: Some(PhaseDrill {
                 cycle: DrillCycle::Simple,
             }),
+            feeds: None,
         };
         let program = program_builder::build_phased_with(
             &[phase],
@@ -953,6 +956,7 @@ M3 S{spindle_rpm}
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         };
         let program = program_builder::build_phased(std::slice::from_ref(&phase));
         let hal = emit_program(&program, post::grblhal());

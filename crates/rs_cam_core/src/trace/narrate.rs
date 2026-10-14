@@ -193,6 +193,10 @@ pub struct ToolpathNarrationContext<'a> {
     /// names — the two reports do not have the same shape and must not be
     /// read as if they did.
     pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
+    /// W2.5 (D10): the feed stage of the move list this narration
+    /// describes. `None` = the caller did not say; narration then writes
+    /// no feeds line.
+    pub feed_stage: Option<crate::session::FeedStage>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -509,6 +513,9 @@ pub fn narrate_toolpath_with_context(
         cutting_distance,
         rapid_distance
     ));
+    if let Some(stage) = context.feed_stage {
+        output.push_str(&format!("{}\n\n", stage.statement()));
+    }
 
     if let Some(trace) = semantic_trace {
         let depth_items = trace
@@ -2274,6 +2281,7 @@ mod tests {
             relink: None,
             // Nor a pencil link stage (G-LINKVISIBLE): not measured.
             pencil_link: None,
+            feed_stage: None,
         };
 
         let report = narrate_toolpath_with_context(

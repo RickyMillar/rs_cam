@@ -17,8 +17,8 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, MoveCountModel,
-    TRANSFORM_DISCRETE_SCALLOP,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
+    RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
 };
 
 pub use schema::{
@@ -610,7 +610,7 @@ impl OperationType {
     /// transform gets the R10 lap cap of the process role here. A caller
     /// with an [`OperationConfig`] in hand calls
     /// [`OperationConfig::capabilities`], which also reads the config.
-    pub fn capabilities(self) -> Capabilities {
+    pub fn capabilities(self) -> RowCapabilities {
         let row = self.registry_entry().capabilities;
         Capabilities {
             transform: row
@@ -740,8 +740,10 @@ impl OperationConfig {
     /// only a field that reads this config. The match names every variant,
     /// so a new operation states its overrides, even when it has none.
     pub fn capabilities(&self) -> Capabilities {
-        let row = self.op_type().capabilities();
-        let leave = |leave_mm: f64| EntryProbe::Surface { leave_mm };
+        let row = self
+            .op_type()
+            .capabilities()
+            .with_entry_probe(self.entry_probe());
         match self {
             // Discrete-ring Scallop takes global reorder and no links; see
             // `TRANSFORM_DISCRETE_SCALLOP`. Continuous Scallop keeps the row.
@@ -751,7 +753,6 @@ impl OperationConfig {
                 } else {
                     TRANSFORM_DISCRETE_SCALLOP
                 },
-                entry_probe: leave(c.stock_to_leave),
                 feeds_hints: FeedsHints {
                     target_scallop_mm: Some(c.scallop_height),
                     ..FeedsHints::NONE
@@ -759,7 +760,6 @@ impl OperationConfig {
                 ..row
             },
             OperationConfig::UnifiedFinish(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
                 feeds_hints: FeedsHints {
                     target_scallop_mm: Some(c.scallop_height),
                     ..FeedsHints::NONE
@@ -784,7 +784,6 @@ impl OperationConfig {
                 ..row
             },
             OperationConfig::SteepShallow(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
                 feeds_hints: FeedsHints {
                     axial_depth_mm: Some(c.z_step),
                     ..FeedsHints::NONE
@@ -799,31 +798,19 @@ impl OperationConfig {
                 ..row
             },
             OperationConfig::RampFinish(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
                 feeds_hints: FeedsHints {
                     axial_depth_mm: Some(c.max_stepdown),
                     ..FeedsHints::NONE
                 },
                 ..row
             },
-            OperationConfig::Pencil(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
-                ..row
-            },
-            OperationConfig::SpiralFinish(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
-                ..row
-            },
-            OperationConfig::RadialFinish(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
-                ..row
-            },
-            OperationConfig::HorizontalFinish(c) => Capabilities {
-                entry_probe: leave(c.stock_to_leave),
-                ..row
-            },
-            // No field of these configs changes a capability.
-            OperationConfig::Face(_)
+            // No field of these configs changes a capability beyond the
+            // entry probe, which `entry_probe` resolved above.
+            OperationConfig::Pencil(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
             | OperationConfig::Adaptive(_)
@@ -836,6 +823,53 @@ impl OperationConfig {
             | OperationConfig::Adaptive3d(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_) => row,
+        }
+    }
+
+    /// The row's [`EntryProbeRule`], resolved against this config.
+    fn entry_probe(&self) -> EntryProbe {
+        match self.op_type().capabilities().entry_probe {
+            EntryProbeRule::Prism => EntryProbe::Prism,
+            EntryProbeRule::SurfaceFixed { leave_mm } => EntryProbe::Surface { leave_mm },
+            EntryProbeRule::SurfaceFromConfig => match self.stock_to_leave_dial() {
+                Some(leave_mm) => EntryProbe::Surface { leave_mm },
+                // Not reached: `every_op_states_its_capabilities_w2_4`
+                // proves that every `SurfaceFromConfig` row has a dial. The
+                // CL surface is the side that cannot gouge the part.
+                None => EntryProbe::Surface { leave_mm: 0.0 },
+            },
+        }
+    }
+
+    /// The config's `stock_to_leave` dial, or `None` when the op has none.
+    /// The match names every variant, so a new op states whether it has
+    /// the dial.
+    pub fn stock_to_leave_dial(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Pencil(c) => Some(c.stock_to_leave),
+            OperationConfig::Scallop(c) => Some(c.stock_to_leave),
+            OperationConfig::UnifiedFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::SteepShallow(c) => Some(c.stock_to_leave),
+            OperationConfig::RampFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::SpiralFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::RadialFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::HorizontalFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
         }
     }
 

@@ -682,6 +682,7 @@ fn plunging_result(feed: f64) -> rs_cam_core::session::ToolpathComputeResult {
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,
+        provenance: rs_cam_core::session::ResultProvenance::Dressed,
     }
 }
 

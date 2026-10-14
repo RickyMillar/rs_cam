@@ -102,6 +102,7 @@ fn core_result() -> ToolpathComputeResult {
         stats: Default::default(),
         debug_trace: None,
         semantic_trace: None,
+        provenance: rs_cam_core::session::ResultProvenance::Dressed,
     }
 }
 

@@ -346,7 +346,7 @@ impl ProjectSession {
         // published runtimes do not.
         self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
-        self.simulation = Some(result);
+        self.store_simulation(result);
         // SAFETY: we just assigned Some
         #[allow(clippy::unwrap_used)]
         Ok(self.simulation.as_ref().unwrap())
@@ -532,6 +532,11 @@ impl ProjectSession {
             .map(|(idx, tc)| (idx, tc.id))
             .collect();
 
+        // W2.5 (D10): every caller stores this run next, so the rewritten
+        // results name the run number that store gives it.
+        let modulated = crate::session::ResultProvenance::Modulated {
+            simulation_run: self.next_simulation_run(),
+        };
         for (idx, toolpath_id) in candidate_indices {
             // Banded: the vendor envelope. Point (A2): the printed value,
             // a cap with no floor. Bandless (no row, or values that fail
@@ -613,6 +618,7 @@ impl ProjectSession {
             };
             if let Some(slot) = self.results.get_mut(&idx) {
                 slot.op_data = new_op_data;
+                slot.provenance = modulated;
             }
         }
 

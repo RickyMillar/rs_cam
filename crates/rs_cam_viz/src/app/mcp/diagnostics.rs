@@ -134,6 +134,18 @@ impl RsCamApp {
             ..Default::default()
         };
         context.absorb_stats(&result.stats);
+        // W2.5 (D10): the feed stage of the list narrated here. The GUI
+        // narrates the worker copy; the modulation pass writes only the
+        // session slot, so that copy carries the planned feeds unless it is
+        // the slot's own list.
+        let stored = state.session.get_result(index);
+        let narrated_is_stored = stored
+            .is_some_and(|stored| std::sync::Arc::ptr_eq(stored.annotated(), &result.annotated));
+        let stored_stage = stored.map(|stored| state.session.feed_stage_of(stored.provenance));
+        context.feed_stage = Some(match stored_stage {
+            Some(stage) if narrated_is_stored => stage,
+            _ => rs_cam_core::session::FeedStage::Planned,
+        });
 
         let mut narration = rs_cam_core::trace::narrate::narrate_toolpath_with_context(
             result.annotated.as_ref(),
@@ -164,6 +176,15 @@ impl RsCamApp {
         {
             narration.push_str("\n\n");
             narration.push_str(&sentence);
+        }
+        if let Some(stage) = stored_stage
+            && !narrated_is_stored
+            && stage != rs_cam_core::session::FeedStage::Planned
+        {
+            narration.push_str(&format!(
+                "\n\nExport emits the stored result, not this generated copy: {}",
+                stage.statement()
+            ));
         }
         narration
     }

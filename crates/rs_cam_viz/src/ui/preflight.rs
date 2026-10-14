@@ -70,6 +70,26 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     &mut still_open,
                 );
             }
+            // W2.5 (D10): an op whose stored feeds were modulated from a
+            // simulation the session no longer holds. A caution, never a
+            // block; the export door reports the same lines.
+            for caution in crate::io::export::feeds_cautions(
+                &state.session,
+                0..state.session.toolpath_configs().len(),
+            ) {
+                check_card(
+                    ui,
+                    CheckStatus::Warning,
+                    "Feeds from an earlier simulation",
+                    &caution,
+                    "Simulation",
+                    Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
+                        crate::state::Workspace::Simulation,
+                    ))),
+                    events,
+                    &mut still_open,
+                );
+            }
             let ungenerated_blocks = blocking.iter().any(|b| !b.waived_by_operator);
             let any_edited_since = blocking
                 .iter()

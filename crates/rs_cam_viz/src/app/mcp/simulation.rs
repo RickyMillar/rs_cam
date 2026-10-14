@@ -58,6 +58,18 @@ impl RsCamApp {
                     "why": f.resolution.why(),
                 })),
             "stale": rt.is_some_and(|r| r.stale_since.is_some()),
+            // W2.5 (D10): the feed stage of the stored result, the one
+            // export emits. `null` when the toolpath has no stored result.
+            "feeds": state
+                .session
+                .find_toolpath_config_by_id(toolpath_id)
+                .and_then(|(index, _)| state.session.feed_stage(index))
+                .map(|stage| serde_json::json!({
+                    "stage": stage.badge(),
+                    "simulation_run": stage.simulation_run(),
+                    "superseded": stage.is_superseded(),
+                    "statement": stage.statement(),
+                })),
         })
     }
 

@@ -1048,6 +1048,7 @@ impl JobPhases<'_, '_> {
             stats,
             debug_trace: Some(debug_trace),
             semantic_trace: Some(Arc::new(semantic_trace)),
+            provenance: super::ResultProvenance::Dressed,
         })
     }
 }

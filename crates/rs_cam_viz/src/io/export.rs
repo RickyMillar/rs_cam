@@ -6,7 +6,7 @@ use rs_cam_core::gcode::{
     arrange_phases_by_setup, export_gcode_multi_setup_with_overlay_checked,
     export_gcode_phases_with_overlay_checked, replace_rapids_with_feed,
 };
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{FeedStage, ProjectSession};
 
 /// A finished G-code export and what the machine-safety pass found in it.
 ///
@@ -19,6 +19,56 @@ pub struct ExportedGcode {
     /// What the machine-safety pass found, in emission order. Empty is a
     /// clean pass.
     pub machine_safety: Vec<Finding>,
+    /// W2.5 (D10): one line per emitted toolpath whose feeds came from a
+    /// simulation the session no longer holds ([`feeds_cautions`]). A
+    /// caution, not a refusal.
+    pub feeds_cautions: Vec<String>,
+}
+
+/// One toolpath an export emits: its index, its motion in the export
+/// datum, and the feed stage of that motion (W2.5, D10).
+struct EmittedToolpath<'a> {
+    index: usize,
+    toolpath: std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>,
+    feeds: FeedStage,
+}
+
+/// W2.5 (D10): the caution line of each toolpath in `indices` whose
+/// session result was modulated from a simulation the session no longer
+/// holds. The export door and the pre-flight modal read this one list.
+/// A viz-store fallback emits planned feeds, so it adds no line.
+pub fn feeds_cautions(
+    session: &ProjectSession,
+    indices: impl Iterator<Item = usize>,
+) -> Vec<String> {
+    indices
+        .filter_map(|idx| {
+            let tc = session.toolpath_configs().get(idx)?;
+            if !tc.enabled {
+                return None;
+            }
+            let feeds = session.feed_stage(idx)?;
+            feeds
+                .is_superseded()
+                .then(|| format!("'{}': {}", tc.name, feeds.statement()))
+        })
+        .collect()
+}
+
+/// The text an export reply appends for [`feeds_cautions`]; `None` when
+/// there is none.
+pub fn feeds_caution_report(cautions: &[String]) -> Option<String> {
+    if cautions.is_empty() {
+        return None;
+    }
+    let mut report = format!(
+        "Feeds caution: {} toolpath(s) emit feeds modulated from an earlier simulation.",
+        cautions.len()
+    );
+    for caution in cautions {
+        report.push_str(&format!("\n  {caution}"));
+    }
+    Some(report)
 }
 
 /// Run the machine-safety pass over freshly emitted G-code. Log the
@@ -138,6 +188,20 @@ pub fn export_success_text(header: String, findings: &[Finding]) -> String {
     match machine_safety_report(findings) {
         Some(report) => format!("{header}\n{report}"),
         None => header,
+    }
+}
+
+/// The reply an export surface gives an agent: [`export_success_text`],
+/// then the [`feeds_caution_report`] when there is one (W2.5, D10).
+pub fn export_reply_text(
+    header: String,
+    findings: &[Finding],
+    feeds_cautions: &[String],
+) -> String {
+    let text = export_success_text(header, findings);
+    match feeds_caution_report(feeds_cautions) {
+        Some(report) => format!("{text}\n{report}"),
+        None => text,
     }
 }
 
@@ -270,10 +334,7 @@ fn emitted_toolpaths<'a>(
     gui: &'a GuiState,
     indices: impl Iterator<Item = usize>,
     stale: StaleResultPolicy,
-) -> Result<
-    Vec<(usize, std::borrow::Cow<'a, rs_cam_core::toolpath::Toolpath>)>,
-    crate::error::VizError,
-> {
+) -> Result<Vec<EmittedToolpath<'a>>, crate::error::VizError> {
     let indices: Vec<usize> = indices.collect();
     let blockers: Vec<BlockingToolpath> =
         blocking_toolpaths(session, gui, indices.iter().copied(), stale)
@@ -292,12 +353,13 @@ fn emitted_toolpaths<'a>(
             if !tc.enabled {
                 return None;
             }
-            let toolpath = emitted_result_toolpath(session, gui, idx, tc, stale)?;
+            let (toolpath, feeds) = emitted_result_toolpath(session, gui, idx, tc, stale)?;
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(session, idx);
-            Some((
-                idx,
-                rs_cam_core::gcode::toolpath_in_export_datum(toolpath, shift),
-            ))
+            Some(EmittedToolpath {
+                index: idx,
+                toolpath: rs_cam_core::gcode::toolpath_in_export_datum(toolpath, shift),
+                feeds,
+            })
         })
         .collect())
 }
@@ -306,6 +368,10 @@ fn emitted_toolpaths<'a>(
 /// store the feed-modulation post-pass writes (see the G-MODEXPORT note
 /// on [`emitted_toolpaths`]) — and the viz store only when the operator
 /// has accepted the previous geometry for this export.
+///
+/// The second value is the feed stage of what it returns (W2.5, D10):
+/// the session slot's tag, or `Planned` for the viz-store copy, which no
+/// modulation pass writes.
 ///
 /// `None` means the toolpath has nothing this export is allowed to emit.
 /// Under [`StaleResultPolicy::Refuse`] that includes an edited operation
@@ -320,14 +386,17 @@ fn emitted_result_toolpath<'a>(
     idx: usize,
     tc: &rs_cam_core::session::ToolpathConfig,
     stale: StaleResultPolicy,
-) -> Option<&'a rs_cam_core::toolpath::Toolpath> {
+) -> Option<(&'a rs_cam_core::toolpath::Toolpath, FeedStage)> {
     if let Some(result) = session.get_result(idx) {
-        return Some(result.toolpath());
+        return Some((result.toolpath(), session.feed_stage_of(result.provenance)));
     }
     if !stale.accepts_previous_geometry() {
         return None;
     }
-    Some(gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath())
+    Some((
+        gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath(),
+        FeedStage::Planned,
+    ))
 }
 
 /// An ENABLED toolpath inside an export scope whose result is not the
@@ -443,6 +512,7 @@ fn gcode_phase_for_session_toolpath<'a>(
     gui: &'a GuiState,
     tc: &'a rs_cam_core::session::ToolpathConfig,
     toolpath: &'a rs_cam_core::toolpath::Toolpath,
+    feeds: FeedStage,
 ) -> Option<GcodePhase<'a>> {
     let tool = session.tools().iter().find(|t| t.id.0 == tc.tool_id);
 
@@ -464,6 +534,7 @@ fn gcode_phase_for_session_toolpath<'a>(
         coolant: tc.coolant,
         controller_compensation: rs_cam_core::gcode::controller_compensation_for(tc),
         drill: rs_cam_core::gcode::phase_drill_for(tc),
+        feeds: Some(feeds.statement()),
     })
 }
 
@@ -535,9 +606,9 @@ pub fn export_gcode_from_session_reporting(
     // This door used to emit every phase in one run, so setup 2 cut on the
     // unflipped part with no stop.
     let arranged = arrange_phases_by_setup(session, |idx| {
-        let (_, tp) = emitted.iter().find(|(i, _)| *i == idx)?;
+        let emitted = emitted.iter().find(|e| e.index == idx)?;
         let tc = session.toolpath_configs().get(idx)?;
-        gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+        gcode_phase_for_session_toolpath(session, gui, tc, emitted.toolpath.as_ref(), emitted.feeds)
     });
 
     if arranged.phases().is_empty() {
@@ -563,7 +634,7 @@ pub fn export_gcode_from_session_reporting(
     }
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
+    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|e| e.index));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -572,6 +643,7 @@ pub fn export_gcode_from_session_reporting(
     Ok(ExportedGcode {
         gcode,
         machine_safety,
+        feeds_cautions: feeds_cautions(session, emitted.iter().map(|e| e.index)),
     })
 }
 
@@ -612,6 +684,8 @@ pub struct SetupFile {
     pub gcode: String,
     /// What the machine-safety pass found in this file (EDG-06).
     pub machine_safety: Vec<Finding>,
+    /// W2.5: the feeds cautions of this file ([`feeds_cautions`]).
+    pub feeds_cautions: Vec<String>,
 }
 
 /// The "one file per setup" export: one [`SetupFile`] per setup that has
@@ -681,6 +755,7 @@ pub fn export_per_setup_files(
             setup_id,
             name,
             machine_safety: exported.machine_safety,
+            feeds_cautions: exported.feeds_cautions,
         })
         .collect())
 }
@@ -830,17 +905,23 @@ pub fn export_single_toolpath_from_session(
     // The `first()` fallback is unreachable after that `?` and keeps the
     // same sentence.
     let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index), gui.stale_export)?;
-    let (_, emitted_toolpath) = emitted.first().ok_or_else(|| {
+    let emitted = emitted.first().ok_or_else(|| {
         let freshness = freshness_at(session, gui, tp_index).unwrap_or(FreshnessState::NoResult);
         crate::error::VizError::Export(blocking_toolpath_message(&tc.name, &freshness))
     })?;
-    let phase = gcode_phase_for_session_toolpath(session, gui, tc, emitted_toolpath.as_ref())
-        .ok_or_else(|| {
-            crate::error::VizError::Export(format!(
-                "Toolpath '{}' has no computed result — generate it first",
-                tc.name
-            ))
-        })?;
+    let phase = gcode_phase_for_session_toolpath(
+        session,
+        gui,
+        tc,
+        emitted.toolpath.as_ref(),
+        emitted.feeds,
+    )
+    .ok_or_else(|| {
+        crate::error::VizError::Export(format!(
+            "Toolpath '{}' has no computed result — generate it first",
+            tc.name
+        ))
+    })?;
 
     let mut gcode = export_gcode_phases_with_overlay_checked(
         std::slice::from_ref(&phase),
@@ -916,9 +997,9 @@ pub fn export_setup_gcode_from_session_reporting(
     let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied(), stale)?;
     let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
-        .filter_map(|(idx, tp)| {
-            let tc = session.toolpath_configs().get(*idx)?;
-            gcode_phase_for_session_toolpath(session, gui, tc, tp.as_ref())
+        .filter_map(|e| {
+            let tc = session.toolpath_configs().get(e.index)?;
+            gcode_phase_for_session_toolpath(session, gui, tc, e.toolpath.as_ref(), e.feeds)
         })
         .collect();
 
@@ -938,7 +1019,7 @@ pub fn export_setup_gcode_from_session_reporting(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
+    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|e| e.index));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -947,5 +1028,6 @@ pub fn export_setup_gcode_from_session_reporting(
     Ok(ExportedGcode {
         gcode,
         machine_safety,
+        feeds_cautions: feeds_cautions(session, emitted.iter().map(|e| e.index)),
     })
 }

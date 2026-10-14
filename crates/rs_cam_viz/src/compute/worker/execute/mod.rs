@@ -206,6 +206,7 @@ pub(super) fn run_compute_with_phase_tracker(
                 stats,
                 debug_trace,
                 semantic_trace,
+                provenance: _,
             } = computed;
             let debug_trace = debug_trace.map(Arc::new);
             // CMP-23: core already hands this back as an `Arc` so the S5

@@ -17,8 +17,14 @@ use super::{FeedsHints, OperationTransformCapabilities};
 use crate::compute::execute::LinkCeilingNeed;
 
 /// One operation's capabilities. See the module doc.
+///
+/// `P` is the type of [`Self::entry_probe`]. A registry row holds
+/// [`EntryProbeRule`] ([`RowCapabilities`]): the row states a RULE for the
+/// leave, never a placeholder number. `OperationConfig::capabilities`
+/// resolves the rule against the config and returns the default `P`,
+/// [`EntryProbe`], which holds the real leave.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Capabilities {
+pub struct Capabilities<P = EntryProbe> {
     /// The order and link safety of the dressups. The row holds the value
     /// without the R10 lap cap; `OperationType::capabilities` adds the cap
     /// from the process role (`OperationType::ramp_fold_lap_cap`).
@@ -43,7 +49,9 @@ pub struct Capabilities {
     /// This states what the generator does. It is not a recommendation.
     pub honors_pinned_bottom_z: bool,
     /// The entry-move surface probe (G-RAMPTERRAIN, design amendment 1).
-    pub entry_probe: EntryProbe,
+    /// A row holds the rule ([`EntryProbeRule`]); a config's capabilities
+    /// hold the resolved probe ([`EntryProbe`]).
+    pub entry_probe: P,
     /// When the op's links need a link ceiling (ruling R1).
     pub link_ceiling: LinkCeilingNeed,
     /// The hints the feeds calculator must respect. The row holds
@@ -62,6 +70,29 @@ pub struct Capabilities {
     pub relink_dial: Option<&'static str>,
     /// The class of axial envelope Suggest builds for this op.
     pub axial_envelope: AxialEnvelope,
+}
+
+/// The capabilities a registry row states: the entry probe is a rule.
+pub type RowCapabilities = Capabilities<EntryProbeRule>;
+
+impl<P> Capabilities<P> {
+    /// The same capabilities with `entry_probe` in place of this one. The
+    /// body names every field, so a new field cannot be dropped here.
+    pub fn with_entry_probe<Q>(self, entry_probe: Q) -> Capabilities<Q> {
+        Capabilities {
+            transform: self.transform,
+            air_cut_high_threshold_pct: self.air_cut_high_threshold_pct,
+            honors_pinned_bottom_z: self.honors_pinned_bottom_z,
+            entry_probe,
+            link_ceiling: self.link_ceiling,
+            feeds_hints: self.feeds_hints,
+            move_count: self.move_count,
+            doc_basis: self.doc_basis,
+            air_cut_hint: self.air_cut_hint,
+            relink_dial: self.relink_dial,
+            axial_envelope: self.axial_envelope,
+        }
+    }
 }
 
 /// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster
@@ -85,7 +116,22 @@ pub const AIR_CUT_BAR_PROJECT_CURVE_PCT: f64 = 60.0;
 /// mark.
 pub const AIR_CUT_BAR_CLEARING_PCT: f64 = 40.0;
 
-/// The entry-move surface probe of an operation.
+/// The entry-probe rule a registry row states. It holds no placeholder:
+/// an op whose leave is a config dial says so, and
+/// `OperationConfig::capabilities` reads the dial.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EntryProbeRule {
+    /// A prism op. See [`EntryProbe::Prism`].
+    Prism,
+    /// A surface-riding op with no leave dial. Its cuts ride the CL
+    /// surface plus this fixed leave (Drop Cutter and Waterline: `0.0`).
+    SurfaceFixed { leave_mm: f64 },
+    /// A surface-riding op whose leave is its config's `stock_to_leave`.
+    SurfaceFromConfig,
+}
+
+/// The entry-move surface probe of an operation, resolved against its
+/// config.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EntryProbe {
     /// A prism op: its passes go BELOW the model surface (a pocket cut into
@@ -97,9 +143,9 @@ pub enum EntryProbe {
     /// with `params.stock_to_leave`.
     Prism,
     /// A SURFACE-RIDING op: its own cuts never go below the drop-cutter CL
-    /// surface plus `leave_mm`, so an entry leg must not either. The row
-    /// holds `0.0`; an op with a `stock_to_leave` dial gets that value from
-    /// `OperationConfig::capabilities`.
+    /// surface plus `leave_mm`, so an entry leg must not either. The
+    /// value is the row's fixed leave or the config's `stock_to_leave`
+    /// ([`EntryProbeRule`]).
     Surface { leave_mm: f64 },
 }
 

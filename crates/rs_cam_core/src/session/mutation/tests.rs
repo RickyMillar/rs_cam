@@ -73,6 +73,7 @@ fn fake_result() -> ToolpathComputeResult {
         stats: ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,
+        provenance: crate::session::ResultProvenance::Dressed,
     }
 }
 

@@ -613,7 +613,7 @@ pub struct OpRegistryEntry {
     /// it through `OperationType::capabilities` (the row) or
     /// `OperationConfig::capabilities` (the row plus the config's own
     /// values).
-    pub capabilities: super::Capabilities,
+    pub capabilities: super::RowCapabilities,
     /// The family adapter `execute_operation_annotated` dispatches to.
     ///
     /// CMP-01: this was `Option<GenerateFn>` and `execute.rs` carried a

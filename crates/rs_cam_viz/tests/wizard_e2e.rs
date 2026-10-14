@@ -92,6 +92,7 @@ fn seed_generated_result(
                 stats: Default::default(),
                 debug_trace: None,
                 semantic_trace: None,
+                provenance: rs_cam_core::session::ResultProvenance::Dressed,
             }),
         }))
         .expect("seed the core result");
@@ -394,6 +395,7 @@ fn default_wizard_state_does_not_mutate_export() {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             })
         })
         .collect();

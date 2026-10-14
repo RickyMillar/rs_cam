@@ -209,6 +209,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                             stats: Default::default(),
                             debug_trace: None,
                             semantic_trace: None,
+                            provenance: rs_cam_core::session::ResultProvenance::Dressed,
                         }),
                     },
                 ))

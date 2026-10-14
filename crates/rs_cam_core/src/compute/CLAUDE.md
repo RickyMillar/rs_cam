@@ -18,8 +18,8 @@
 - A new operation needs a catalogue row and a config variant. The row's `generate` field IS the
   dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
-- W2.4: the row states `Capabilities`; a consumer reads `capabilities()`, never a `match` on the op
-  type. W2.3: a kernel report reaches `GenerationFindings` only through `ctx.record` (`RecordFindings`).
+- W2.4: the row states `RowCapabilities` (an `EntryProbeRule`, no placeholder leave); a consumer reads
+  `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a kernel report reaches `GenerationFindings` only through `ctx.record` (`RecordFindings`).
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field
   beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()`

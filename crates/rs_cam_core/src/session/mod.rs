@@ -27,6 +27,7 @@ mod pins;
 pub mod project_file;
 mod reach;
 mod rest_stock;
+mod result_provenance;
 mod save;
 mod stock_change_report;
 
@@ -80,6 +81,7 @@ pub use multitool::{
 pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
+pub use result_provenance::{FeedStage, ResultProvenance};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
 pub use mutation::polygons_bbox;
@@ -1012,6 +1014,10 @@ pub struct ToolpathComputeResult {
     /// `EntryKey` keys this by `Weak` identity; a fresh `Arc::new(t.clone())`
     /// per request build made the memo miss on every session ladder round.
     pub semantic_trace: Option<Arc<ToolpathSemanticTrace>>,
+    /// W2.5 (D10): the feed stage the slot holds. Generation stores
+    /// `Dressed`; the modulation pass sets `Modulated` when it rewrites the
+    /// feeds. A pass that changes no feed keeps the tag the slot had.
+    pub provenance: ResultProvenance,
 }
 
 impl ToolpathComputeResult {
@@ -1412,6 +1418,10 @@ pub struct ProjectSession {
     /// edits move it twice. NOT persisted: a load builds a session with no
     /// simulation, and no in-flight run can outlive the process.
     pub(crate) simulation_epoch: u64,
+    /// How many simulations the session has stored (W2.5). Bumped by
+    /// `store_simulation` and by nothing else. A modulated result names
+    /// the run it read; see [`Self::simulation_run`]. NOT persisted.
+    pub(crate) simulation_runs: u64,
     /// For each [`SimulationDropCause`] (by slot), the value of
     /// [`Self::simulation_epoch`] just after the last drop with that cause;
     /// 0 when no drop had that cause. A run submitted at epoch `e` was
@@ -1464,6 +1474,7 @@ impl ProjectSession {
             toolpath_revision: HashMap::new(),
             next_revision: 0,
             simulation_epoch: 0,
+            simulation_runs: 0,
             simulation_drop_epochs: [0; SimulationDropCause::COUNT],
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
@@ -2572,6 +2583,7 @@ mod tests {
                 stats: crate::compute::toolpath_stats::ToolpathStats::default(),
                 debug_trace: None,
                 semantic_trace: None,
+                provenance: crate::session::ResultProvenance::Dressed,
             },
         );
         assert!(
