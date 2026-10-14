@@ -40,13 +40,9 @@ fn the_real_dump_selects_grblhal_and_does_not_clamp_s() {
 
     let mut session = ProjectSessionBuilder::new().build();
     assert_eq!(session.post_config().format, PostFormat::Grbl);
-    let mut kinematics = imp.kinematics;
-    kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
     let _effects = session
         .apply(Command::ImportMachineSettings(ImportMachineSettingsArgs {
-            kinematics: Box::new(kinematics),
-            max_feed_mm_min: imp.max_feed_mm_min,
-            controller: Some(Box::new(imp.controller)),
+            import: Box::new(imp),
         }))
         .expect("the import applies");
 

@@ -386,7 +386,7 @@ impl ProjectSession {
         context.absorb_stats(&result.stats);
         // W2.5 (D10): this narration reads the stored result, the one
         // export emits.
-        context.feed_stage = Some(self.feed_stage_of(result.provenance));
+        context.feed_stage = Some(self.feed_stage_of(index, &result.provenance));
 
         Ok(crate::trace::narrate::narrate_toolpath_with_context(
             result.annotated(),

@@ -273,6 +273,7 @@ fn drill(profile: ToolProfile) -> DrillOp {
             xy: [20.0, 15.0],
             top_z: TOP,
             bottom_z: 8.0,
+            retract_z: TOP,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: profile,
@@ -282,7 +283,6 @@ fn drill(profile: ToolProfile) -> DrillOp {
         spindle_rpm: 18_000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: TOP,
     }
 }
 

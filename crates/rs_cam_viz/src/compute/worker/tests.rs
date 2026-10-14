@@ -2010,6 +2010,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             xy: [5.0, 5.0],
             top_z: 10.0,
             bottom_z: 4.0,
+            retract_z: 15.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::Flat,
@@ -2021,7 +2022,6 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         // R-2 (c4ef696) added this field; these two fixtures were missed and
         // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
         // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
-        retract_z_mm: 15.0,
         material: Material::default(),
     });
 
@@ -2112,6 +2112,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             xy: [5.0, 5.0],
             top_z: 10.0,
             bottom_z: 4.0,
+            retract_z: 15.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::Flat,
@@ -2123,7 +2124,6 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         // R-2 (c4ef696) added this field; these two fixtures were missed and
         // left `rs_cam_viz`'s test target uncompilable at HEAD. `stock_top +
         // SAFE_Z_CLEARANCE_MM` is the documented default (10.0 + 5.0).
-        retract_z_mm: 15.0,
         material: Material::default(),
     });
 

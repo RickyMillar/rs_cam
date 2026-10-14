@@ -18,7 +18,7 @@ mod schema;
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
-    RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
+    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
 };
 
 pub use schema::{
@@ -1213,13 +1213,9 @@ impl OperationConfig {
             // The plug kernel walks the same `z_ladder` arm over the same
             // total (`ops::inlay::inlay_plug_toolpath_with_cancel`).
             Self::InlayPlug(cfg) => uniform(cfg.total_cut_depth(), cfg.depth_per_pass),
-            Self::Face(cfg) => {
-                if cfg.depth <= 0.0 {
-                    vec![top_z]
-                } else {
-                    uniform(cfg.depth, cfg.depth_per_pass)
-                }
-            }
+            // The one Face ladder (W3.3): the kernel and the Layered Face
+            // read the same function.
+            Self::Face(cfg) => crate::ops::face::face_levels(top_z, cfg.depth, cfg.depth_per_pass),
             // No standard depth stepping. The 3D ops drive their own Z
             // ladder from the surface; VCarve, Chamfer and Inlay derive Z
             // from the cutter geometry; the two drilling ops are Z-only.

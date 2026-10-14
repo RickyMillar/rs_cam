@@ -44,6 +44,7 @@ fn flat_drill(diameter_mm: f64, xy: [f64; 2], top_z: f64, bottom_z: f64) -> Dril
             xy,
             top_z,
             bottom_z,
+            retract_z: 0.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::Flat,
@@ -59,7 +60,6 @@ fn flat_drill(diameter_mm: f64, xy: [f64; 2], top_z: f64, bottom_z: f64) -> Dril
         // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
         // 5 mm by default); `drill_evidence_wording_d3.rs` is the
         // sentry that pins the emitter-matching case.
-        retract_z_mm: 0.0,
     }
 }
 

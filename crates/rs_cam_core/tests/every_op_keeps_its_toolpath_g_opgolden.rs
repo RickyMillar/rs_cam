@@ -81,7 +81,7 @@ use common::session::{mesh_model, pinned_heights, polygon_model, toolpath_config
 use rayon::prelude::*;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::alignment_pins::AlignmentPin;
-use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
+use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{
     AlignmentPinDrillConfig, DrillCycleType, PocketConfig, PocketPattern,
@@ -205,12 +205,22 @@ fn drill_simple_cycle(op: &mut OperationConfig) {
 }
 
 /// The ops whose adapter reads the remaining stock today
-/// (`ctx.initial_stock` in `compute/execute/`): Pocket and 2D Adaptive
-/// (`clearing_2d.rs`), Adaptive3d, Pencil and Unified Finish
-/// (`finish_3d.rs`), the raster link stage of Drop Cutter, Scallop and
-/// Waterline (`finish_raster.rs`), and Project Curve (`curve_engrave.rs`).
+/// (`ctx.initial_stock` in `compute/execute/`): Pocket, Zigzag, Profile,
+/// Trace, Face and 2D Adaptive (`clearing_2d.rs`, the Layered rest rules
+/// of W3.4), Chamfer (`curve_engrave.rs`, the Layered level skip of W3.5),
+/// Drill (`drilling.rs`, the stock column of D8), Adaptive3d,
+/// Pencil and Unified Finish (`finish_3d.rs`), the raster link stage of
+/// Drop Cutter, Scallop and Waterline (`finish_raster.rs`), and Project
+/// Curve (`curve_engrave.rs`). Each is an op whose `Capabilities::rest_use`
+/// is not `RestUse::None`.
 const REST_READERS: &[OperationType] = &[
     OperationType::Pocket,
+    OperationType::Zigzag,
+    OperationType::Profile,
+    OperationType::Trace,
+    OperationType::Face,
+    OperationType::Chamfer,
+    OperationType::Drill,
     OperationType::Adaptive,
     OperationType::Adaptive3d,
     OperationType::Pencil,
@@ -686,6 +696,18 @@ fn every_op_keeps_its_toolpath() {
         .collect();
     let registered: BTreeSet<&str> = OperationType::ALL.iter().map(|op| op.kind_str()).collect();
     assert_eq!(covered, registered, "every registered op has a fresh arm");
+
+    // W3.4: an op with a rest rule has a rest arm, and no other op has one.
+    let with_rest_rule: BTreeSet<&str> = OperationType::ALL
+        .iter()
+        .filter(|op| op.capabilities().rest_use != RestUse::None)
+        .map(|op| op.kind_str())
+        .collect();
+    let rest_arms: BTreeSet<&str> = REST_READERS.iter().map(|op| op.kind_str()).collect();
+    assert_eq!(
+        rest_arms, with_rest_rule,
+        "the rest arms are the ops whose capabilities state a rest rule"
+    );
 
     let actual: BTreeMap<String, Golden> = cases
         .par_iter()

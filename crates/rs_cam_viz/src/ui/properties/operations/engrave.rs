@@ -48,6 +48,7 @@ pub(in crate::ui::properties) fn draw_trace_params(
             0.1,
             0.1..=20.0,
         );
+        super::boundary_2d::region_ordering_row(ui, "trace_ord", &mut cfg.region_ordering);
     });
 }
 

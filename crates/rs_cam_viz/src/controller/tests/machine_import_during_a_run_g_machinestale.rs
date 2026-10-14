@@ -100,17 +100,19 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
     controller.drain_compute_results();
 }
 
-/// The MCP `import_machine_settings` arm, without the GRBL parse: the core
-/// row, then `mark_edited`. The arm mirrors nothing into the view.
+/// The MCP `import_machine_settings` arm: the core row, then
+/// `mark_edited`. The arm mirrors nothing into the view.
+///
+/// The dump states controller facts only. B7: a dump that moves the link
+/// envelope also drops the link stage results, and this file measures the
+/// simulation drop alone.
 fn import_machine_settings_as_mcp_does(controller: &mut AppController<ScriptedBackend>) {
-    let kinematics = MachineKinematics::default();
+    let import = MachineKinematics::from_grbl_settings("$30=24000\n$341=4\n");
     let _effects = controller
         .state
         .session
         .apply(Command::ImportMachineSettings(ImportMachineSettingsArgs {
-            kinematics: Box::new(kinematics),
-            max_feed_mm_min: Some(4321.0),
-            controller: None,
+            import: Box::new(import),
         }))
         .expect("the import row applies");
     controller.state.gui.mark_edited();

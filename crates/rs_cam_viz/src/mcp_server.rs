@@ -1722,7 +1722,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "import_machine_settings",
-        description = "Import a GRBL `$$` settings dump onto the live machine profile (headless equivalent of the GUI Machine panel's '$$' import). Parses `$N=value` lines — `$11`→junction deviation, `$120/$121/$122`→per-axis acceleration, `$110/$111`→max feed — tolerating grblHAL `(description)` comments, CRLF, and unrelated settings. Sets the machine's kinematics + max feed, opting the cycle-time model into the acceleration-aware path, and breaks any machine-library link. Returns a JSON summary of what was applied. Verify afterwards with inspect_machine."
+        description = "Import a GRBL `$$` settings dump onto the live machine profile (headless equivalent of the GUI Machine panel's '$$' import). Parses `$N=value` lines — `$11`→junction deviation, `$120/$121/$122`→per-axis acceleration, `$110/$111`→max feed — tolerating grblHAL `(description)` comments, CRLF, and unrelated settings. Writes only the settings the dump states; every other machine field (firmware, spindle plugin, jerk, unstated `$` values) keeps its value. Opts the cycle-time model into the acceleration-aware path and breaks any machine-library link. Returns a JSON summary of what was applied. Verify afterwards with inspect_machine."
     )]
     async fn import_machine_settings(
         &self,

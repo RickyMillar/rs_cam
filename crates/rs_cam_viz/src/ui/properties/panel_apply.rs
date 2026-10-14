@@ -403,28 +403,21 @@ pub(super) fn apply_machine_kinematics(
     }
 }
 
-/// Write what a GRBL `$$` dump carries, through
+/// Write what a GRBL `$$` dump states, through
 /// `Command::ImportMachineSettings`.
 ///
-/// A dump carries one field more than the kinematics block — the travel
-/// rate — so the two rows carry two payloads (plan section 15 ruling 6).
-/// `None` means the dump published no travel rate, and the machine keeps
-/// the one it has.
+/// B6: the row writes only the stated fields; every other machine field
+/// keeps its value.
 ///
-/// G10: `controller` carries the firmware and the `$30..$394` facts. A
-/// dump that names grblHAL also moves the post dialect, so the view's
-/// post mirror is rebuilt from the session here.
+/// G10: a dump that names grblHAL also moves the post dialect, so the
+/// view's post mirror is rebuilt from the session here.
 pub(super) fn apply_machine_import(
     state: &mut AppState,
-    kinematics: rs_cam_core::machine::kinematics::MachineKinematics,
-    max_feed_mm_min: Option<f64>,
-    controller: Option<rs_cam_core::machine::ControllerSettings>,
+    import: rs_cam_core::machine::kinematics::GrblImport,
 ) {
     use rs_cam_core::session::{Command, ImportMachineSettingsArgs};
     let command = Command::ImportMachineSettings(ImportMachineSettingsArgs {
-        kinematics: Box::new(kinematics),
-        max_feed_mm_min,
-        controller: controller.map(Box::new),
+        import: Box::new(import),
     });
     if apply_panel_command(state, command) {
         state.gui.post = state.session.post_config().clone();

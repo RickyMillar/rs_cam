@@ -194,6 +194,7 @@ fn drill_cylinder_seam_is_gone_where_the_grid_resolves_the_hole() {
             xy: [10.0, 10.0],
             top_z: 10.0,
             bottom_z: 0.0,
+            retract_z: 0.0,
         }],
         hole_source: HoleSource::ModelDerived,
         tool_profile: ToolProfile::Flat,
@@ -203,7 +204,6 @@ fn drill_cylinder_seam_is_gone_where_the_grid_resolves_the_hole() {
         spindle_rpm: 8000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: 0.0,
     };
     stock.apply_drill_op(&drill, StockCutDirection::FromTop);
     let mut mesh = dexel_stock_to_mesh(&stock);

@@ -463,7 +463,6 @@ fn drill_op(holes: Vec<DrillHole>) -> DrillOp {
         spindle_rpm: 18_000,
         flute_count: 2,
         material: Material::default(),
-        retract_z_mm: 0.0,
     }
 }
 
@@ -478,11 +477,13 @@ fn the_drill_trio_states_its_hole_population() {
             xy: [0.0, 0.0],
             top_z: 0.0,
             bottom_z: 0.0,
+            retract_z: 0.0,
         },
         DrillHole {
             xy: [10.0, 0.0],
             top_z: 0.0,
             bottom_z: 0.0,
+            retract_z: 0.0,
         },
     ]);
     let samples = emit_drill_samples(TP, &zero_depth);
@@ -506,6 +507,7 @@ fn the_drill_trio_states_its_hole_population() {
         xy: [0.0, 0.0],
         top_z: 0.0,
         bottom_z: -18.0,
+        retract_z: 0.0,
     }]);
     let rs = emit_drill_samples(TP, &real);
     let rsum = build_drill_toolpath_summary(TP, &real, &rs);
@@ -527,6 +529,7 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
         xy: [0.0, 0.0],
         top_z: 0.0,
         bottom_z: 0.0,
+        retract_z: 0.0,
     }]);
     let samples = emit_drill_samples(TP, &zero_depth);
     let summary = build_drill_toolpath_summary(TP, &zero_depth, &samples);

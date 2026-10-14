@@ -41,6 +41,21 @@ pub struct DrillHole {
     pub xy: [f64; 2],
     pub top_z: f64,
     pub bottom_z: f64,
+    /// The R-plane of this hole (same frame as `top_z`): the height the
+    /// tool rapids down to and starts FEEDING from, once per peck.
+    ///
+    /// R-2 (2026-08-04). On fresh stock this is `effective_safe_z(cfg.
+    /// retract_z, stock_top)` = `max(raw, stock_top + SAFE_Z_CLEARANCE_MM)`;
+    /// `SAFE_Z_CLEARANCE_MM` is 5.0 and the `DrillConfig` default
+    /// `retract_z` is 2.0, so it is `stock_top + 5.0` on any default
+    /// project. The emitter roots its peck grid here (the Fanuc G83
+    /// convention), so every metric derived from a hole starts here too.
+    ///
+    /// D8 (W3.4): a Drill on the remaining stock starts each hole at the
+    /// remaining stock top over the hole, and the R-plane keeps the same
+    /// clearance above that top. So the R-plane is a field of the hole,
+    /// not of the op.
+    pub retract_z: f64,
 }
 
 /// Where hole positions originate, controlling regenerate behavior and
@@ -131,19 +146,6 @@ pub struct DrillOp {
     /// time; consumed by drill-specific gates (chip welding, peck
     /// adequacy) in PR2.
     pub material: Material,
-    /// The R-plane (setup-local Z): the height the tool rapids down to
-    /// and starts FEEDING from, once per peck.
-    ///
-    /// R-2 (2026-08-04). This is `effective_safe_z(cfg.retract_z,
-    /// stock_top)` = `max(raw, stock_top + SAFE_Z_CLEARANCE_MM)`, and
-    /// since `SAFE_Z_CLEARANCE_MM` is 5.0 while the `DrillConfig`
-    /// default `retract_z` is 2.0, it is `stock_top + 5.0` on any
-    /// default project. The emitter has always rooted its peck grid
-    /// here — that is the Fanuc G83 convention and it is correct — but
-    /// `DrillOp` did not carry it, so every metric derived from this
-    /// struct modelled a cycle starting at the material surface and
-    /// silently dropped the approach feed and every re-entry.
-    pub retract_z_mm: f64,
 }
 
 /// Dual-representation payload of a [`ToolpathComputeResult`].

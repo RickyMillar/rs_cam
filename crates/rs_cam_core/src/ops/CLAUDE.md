@@ -6,12 +6,12 @@ module is reached through `compute::execute_operation_annotated`.
 ## Files
 
 - `mod.rs`, `depth.rs`, `adaptive_shared.rs` — facade, depth stepping, shared
-  adaptive helpers.
-- `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs` — the 2.5D clearing family
-  (a rest pass is a remaining-stock Pocket, R3). `waterline.rs` — constant-Z contours.
+  adaptive helpers. `waterline.rs` — constant-Z contours.
+- `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
+  R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). `face::face_levels` = the ONE Face ladder.
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
-- `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs`
-  — the engraving and curve family.
+- `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs` — the engraving
+  and curve family. Chamfer: Z-free tip rings + one level from the tool angle (W3.5, Layered).
 
 ## Invariants
 
@@ -19,8 +19,8 @@ module is reached through `compute::execute_operation_annotated`.
   `Waterline`. Query `OperationType::honors_pinned_bottom_z()` before you assume.
 - An explicit-depth operation diagnoses a cut below the stock bottom. Another
   depth semantic abstains; it does not pass.
-- Drill removal uses the supplied `StockCutDirection`. Never infer the
-  direction from the order of a hole's Z pair.
+- Drill removal uses the supplied `StockCutDirection`, never the order of a hole's Z
+  pair. The R-plane is per hole (`DrillHole::retract_z`, D8); emitter and metrics read it.
 - The drill metrics live in `drill_metrics.rs` and reach the report as
   `drill_summaries`; the gates that read them live in `tool_load/`.
 - `depth.rs` holds the crate's ONE Z-ladder, `z_ladder`, with two named arms

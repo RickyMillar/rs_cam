@@ -388,7 +388,10 @@ fn emitted_result_toolpath<'a>(
     stale: StaleResultPolicy,
 ) -> Option<(&'a rs_cam_core::toolpath::Toolpath, FeedStage)> {
     if let Some(result) = session.get_result(idx) {
-        return Some((result.toolpath(), session.feed_stage_of(result.provenance)));
+        return Some((
+            result.toolpath(),
+            session.feed_stage_of(idx, &result.provenance),
+        ));
     }
     if !stale.accepts_previous_geometry() {
         return None;

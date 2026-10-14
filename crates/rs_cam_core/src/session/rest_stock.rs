@@ -329,10 +329,41 @@ impl ProjectSession {
     /// snapshot would carve.
     #[must_use]
     pub fn expected_source(&self, consumer: ToolpathId) -> Option<SourceStock> {
+        let waits = self.carve_order_before(consumer).into_iter().any(|index| {
+            self.toolpath_configs
+                .get(index)
+                .is_some_and(|tc| tc.enabled && !self.results.contains_key(&index))
+        });
+        if waits {
+            return None;
+        }
+        self.carved_sources(&HashSet::from([consumer]), &[])
+            .remove(&consumer)
+    }
+
+    /// The record of the stock a simulation of the project as it stands
+    /// carves before each of `consumers`, in one walk.
+    ///
+    /// The walk of `carve_order_before`, with each setup's enabled stock
+    /// changes (S2) before its own rows. An enabled toolpath with no result
+    /// is not in a record: the simulator does not carve it. Nor is a
+    /// toolpath in `skipped`, the `SimulationOptions::skip_ids` of the run
+    /// the record describes. Each carved toolpath is hashed once, whatever
+    /// the number of consumers.
+    ///
+    /// The feed modulation pass (B5) records one per modulated toolpath.
+    pub(crate) fn carved_sources(
+        &self,
+        consumers: &HashSet<ToolpathId>,
+        skipped: &[ToolpathId],
+    ) -> std::collections::HashMap<ToolpathId, SourceStock> {
+        let cell_mm = self.simulation_resolution_mm();
+        let mut out = std::collections::HashMap::new();
         let mut after = Vec::new();
-        // The walk of `carve_order_before`, with each setup's enabled stock
-        // changes (S2) before its own rows.
-        'setups: for setup in &self.setups {
+        for setup in &self.setups {
+            if out.len() == consumers.len() {
+                break;
+            }
             for change in setup.stock_changes.iter().filter(|c| c.enabled) {
                 after.push(SourceEntry::StockChange(
                     crate::compute::source_stock::StockChangeEntry {
@@ -343,23 +374,29 @@ impl ProjectSession {
                 ));
             }
             for &index in &setup.toolpath_indices {
-                let tc = self.toolpath_configs.get(index)?;
-                if tc.id == consumer {
-                    break 'setups;
+                let Some(tc) = self.toolpath_configs.get(index) else {
+                    continue;
+                };
+                if consumers.contains(&tc.id) {
+                    let _ = out.insert(
+                        tc.id,
+                        SourceStock {
+                            cell_mm,
+                            after: after.clone(),
+                        },
+                    );
                 }
-                if !tc.enabled {
+                if !tc.enabled || skipped.contains(&tc.id) {
                     continue;
                 }
-                let result = self.results.get(&index)?;
                 // G-RESTLEVELS: both builders carve an empty result too (with
                 // no change), so the record lists it.
-                after.push(SourceEntry::of(tc.id, result.annotated()));
+                if let Some(result) = self.results.get(&index) {
+                    after.push(SourceEntry::of(tc.id, result.annotated()));
+                }
             }
         }
-        Some(SourceStock {
-            cell_mm: self.simulation_resolution_mm(),
-            after,
-        })
+        out
     }
 
     /// Every ENABLED stock change the simulator applies before `consumer`
@@ -494,7 +531,7 @@ impl ProjectSession {
     /// feed modulation after each simulation, an equal regenerate) would
     /// otherwise be hashed on every command and on every frame the card
     /// reads an edge state.
-    fn refresh_source_pointers(&mut self) {
+    pub(super) fn refresh_source_pointers(&mut self) {
         let current: std::collections::HashMap<
             ToolpathId,
             std::sync::Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
@@ -518,6 +555,12 @@ impl ProjectSession {
         };
         for result in self.results.values_mut() {
             if let Some(source) = result.stats.source_stock.as_mut() {
+                refresh(source);
+            }
+            // B5: the stock record of a modulated slot.
+            if let crate::session::ResultProvenance::Modulated { source, .. } =
+                &mut result.provenance
+            {
                 refresh(source);
             }
         }

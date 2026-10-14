@@ -256,8 +256,10 @@ pub struct OperationDef {
     pub entry_3d: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detect_flat_areas: Option<bool>,
-    /// Region order for 3D Rough: `global` (the default) or `by_area`.
-    /// Another value is refused, not read as `global` (F7).
+    /// Region order: `global` (level-first) or `by_area` (region-first).
+    /// The default is `global` for 3D Rough and `by_area` for Pocket and
+    /// Profile (R4).
+    /// Another value is refused, not read as a default (F7).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<String>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
@@ -1302,6 +1304,21 @@ fn execute_op_via_session(
     })
 }
 
+/// The `region_ordering` token of `op.order_by`, or `default` when the job
+/// names none. F7: an unknown value is refused. It was read as `global` in
+/// silence, so a typo ran the other order with no message. The tokens are
+/// the `region_ordering` tokens of the GUI and MCP.
+fn region_ordering(op: &OperationDef, default: &'static str) -> Result<&'static str> {
+    Ok(match op.order_by.as_deref() {
+        None => default,
+        Some("global") => "global",
+        Some("by_area") => "by_area",
+        Some(other) => {
+            bail!("order_by = \"{other}\" is not a region order. Use \"global\" or \"by_area\".")
+        }
+    })
+}
+
 /// Map the flat job-file fields onto registry param names, preserving
 /// the pre-T9 router's per-op defaults verbatim.
 fn job_params_for(
@@ -1333,6 +1350,8 @@ fn job_params_for(
             p.push(("climb", json!(op.climb.unwrap_or(false))));
             p.push(("angle", json!(op.angle.unwrap_or(0.0))));
             p.push(("pattern", json!(op.pattern.as_deref().unwrap_or("contour"))));
+            // R4: a Layered op is region-first by default.
+            p.push(("region_ordering", json!(region_ordering(op, "by_area")?)));
         }
         OperationType::Profile => {
             p.push((
@@ -1349,6 +1368,8 @@ fn job_params_for(
             p.push(("tab_count", json!(op.tabs.unwrap_or(0))));
             p.push(("tab_width", json!(op.tab_width.unwrap_or(5.0))));
             p.push(("tab_height", json!(op.tab_height.unwrap_or(2.0))));
+            // R4: a Layered op is region-first by default.
+            p.push(("region_ordering", json!(region_ordering(op, "by_area")?)));
         }
         OperationType::Adaptive => {
             p.push((
@@ -1409,17 +1430,7 @@ fn job_params_for(
                 }
                 _ => p.push(("entry_style", json!("plunge"))),
             }
-            // F7: an unknown value is refused. It was read as `global` in
-            // silence, so a typo ran the other order with no message. The
-            // tokens are the `region_ordering` tokens of the GUI and MCP.
-            let ordering = match op.order_by.as_deref() {
-                None | Some("global") => "global",
-                Some("by_area") => "by_area",
-                Some(other) => bail!(
-                    "order_by = \"{other}\" is not a region order. Use \"global\" or \"by_area\"."
-                ),
-            };
-            p.push(("region_ordering", json!(ordering)));
+            p.push(("region_ordering", json!(region_ordering(op, "global")?)));
             let strategy = match op.strategy.as_deref().unwrap_or("contour") {
                 "adaptive" => "adaptive",
                 "agent" | "agent_search" => "agent_search",
@@ -1694,6 +1705,25 @@ mod tests {
     /// value and the two tokens. It was read as `global` in silence.
     #[test]
     fn an_unknown_order_by_is_refused() {
+        // R4: a Pocket or Profile job with no `order_by` is region-first.
+        for (token, op_type) in [
+            ("pocket", OperationType::Pocket),
+            ("profile", OperationType::Profile),
+        ] {
+            let def: OperationDef = toml::from_str(&format!(
+                "type = \"{token}\"\ninput = \"m.dxf\"\ntool = \"a\"\ndepth = 3.0\n"
+            ))
+            .unwrap();
+            let params = job_params_for(&def, op_type, None).unwrap();
+            assert_eq!(
+                params
+                    .iter()
+                    .find(|(k, _)| *k == "region_ordering")
+                    .map(|(_, v)| v.clone()),
+                Some(serde_json::json!("by_area")),
+                "{token}"
+            );
+        }
         for (value, expected) in [("global", "global"), ("by_area", "by_area")] {
             let op: OperationDef = toml::from_str(&format!(
                 "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"

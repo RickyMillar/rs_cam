@@ -140,7 +140,8 @@ and W4, from what they measure. It is not scheduled now.
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
 | W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE e72f4ccb; W1.3b DONE. W1 DONE; live check passed (mini: no change); merged to master |
 | W2 | DONE: 6fddd518, eabeb43f, e614ee9a, 66a81d77, 7d19ea6d; live check passed (mini: no change); merged to master |
-| W3–W6 | not started |
+| W3 | W3.0/W3.1 86692c56, W3.2 b6c83a81, W3.3/W3.4 29183d95, W3.5 Chamfer (Waterline moved to W6: needs fallible emit_level with cancel + per-level stock, and a link hook); B5-B7 7f820c42; live check passed (mini 2675 s vs 2673 s, only Face front changed, B8); merged to master; open: 2D Adaptive shared-mask ruling |
+| W4–W6 | not started |
 
 ## Backlog (not scheduled)
 
@@ -149,3 +150,7 @@ and W4, from what they measure. It is not scheduled now.
 - B2: a second board in one project (would join the Inlay pocket and plug).
 - B3: D5 GUI ranges read `ParamDef.range` (can land before W5).
 - B4 (was W1.2c): AgentSearch and ContourSpiral leave ~2.4x more wall-band wood than ContourParallel (double inset in tool-centre space). Operator 2026-10-14: ContourParallel is the 3D Rough strategy in use; the others are known to be rough. Revisit with W6 (Volumetric shape).
+- B5 (W2.5 follow-up, found 2026-10-15): the feed-stage caution compares the modulating simulation run with the LATEST run, so generate_all (one prefix simulation per op) makes every modulated op read 'from an earlier simulation' although nothing it depends on changed. Compare against whether the op's own carve-order prefix changed (the SourceStock / prefix digest), not the run counter.
+- B6: import_machine_settings replaced the whole controller block with what the dump held (firmware grbl_hal -> unknown, the H-100 VFD plugin, the tool-change probe distance lost). An import must only overwrite the fields the dump states.
+- B7: a machine kinematics change leaves every toolpath current, but the link stage reads accel (link vs retract). Decide whether linking ops go stale on a machine edit.
+- B8 (W3 live check 2026-10-15): the rest Face 'Face front to T' on testpiece_mini grew from 782 to 792 moves; its rows now reach x -2.9 / 67.2 where they reached -1.0 / 66.0 (the clipped region seems to get the stock offset again inside the Face kernel). All extra motion is in air outside the stock; +2 s. Check and fix the double extension.

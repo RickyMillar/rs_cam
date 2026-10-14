@@ -1570,23 +1570,17 @@ pub struct SetMachineKinematicsArgs {
 
 /// The arguments of the `import_machine_settings` command.
 ///
-/// A GRBL `$$` dump carries one field more than
-/// [`SetMachineKinematicsArgs`] — the travel rate — so the two rows
-/// carry two payloads (§15 ruling 6). The parse belongs to the surface,
-/// which also decides whether the dump was recognised at all.
+/// A GRBL `$$` dump carries more than [`SetMachineKinematicsArgs`] — the
+/// travel rate and the controller facts — so the two rows carry two
+/// payloads (§15 ruling 6). The parse belongs to the surface, which also
+/// decides whether the dump was recognised at all.
 #[derive(Debug, Clone)]
 pub struct ImportMachineSettingsArgs {
-    /// The kinematics block the dump describes.
-    pub kinematics: Box<crate::machine::kinematics::MachineKinematics>,
-    /// The travel rate the dump published, in millimetres per minute.
-    /// `None` means the dump published none, and the machine keeps the
-    /// rate it has.
-    pub max_feed_mm_min: Option<f64>,
-    /// G10: the controller facts the dump carried. `None` keeps the
-    /// machine's own. When the firmware is known, the project's post
-    /// dialect follows it in the same command: the profile selects the
-    /// dialect.
-    pub controller: Option<Box<crate::machine::ControllerSettings>>,
+    /// The facts the dump stated. The row writes only these; every other
+    /// machine field keeps its value (B6). When the firmware is known,
+    /// the project's post dialect follows it in the same command: the
+    /// profile selects the dialect.
+    pub import: Box<crate::machine::kinematics::GrblImport>,
 }
 
 /// The arguments of the `set_spindle_strategy` command.
@@ -2475,11 +2469,7 @@ impl ProjectSession {
             Command::SetMachineKinematics(args) => {
                 Ok(self.set_machine_kinematics(*args.kinematics))
             }
-            Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(
-                *args.kinematics,
-                args.max_feed_mm_min,
-                args.controller.map(|c| *c),
-            )),
+            Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(&args.import)),
             Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
             Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
             Command::SetRestAnalysisConfig(args) => {

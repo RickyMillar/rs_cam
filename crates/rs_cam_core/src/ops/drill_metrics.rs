@@ -271,11 +271,11 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
             continue;
         }
         // R-2: the emitter's own schedule, rooted at the R-plane. A
-        // `retract_z_mm` below `top_z` (never produced by
+        // `retract_z` below `top_z` (never produced by
         // `effective_safe_z`, but a hand-built `DrillOp` can express
         // it) degrades to starting at the surface rather than
         // inventing negative air.
-        let entry_z = drill_op.retract_z_mm.max(hole.top_z);
+        let entry_z = hole.retract_z.max(hole.top_z);
         let descents = crate::ops::drill::fed_descents(drill_op.cycle, hole.bottom_z, entry_z);
         let n = descents.len();
         for (i, descent) in descents.iter().enumerate() {
@@ -443,6 +443,7 @@ mod tests {
                 xy: [0.0, 0.0],
                 top_z: 0.0,
                 bottom_z: -depth,
+                retract_z: 0.0,
             }],
             hole_source: HoleSource::ModelDerived,
             tool_profile: ToolProfile::StandardTwist,
@@ -458,7 +459,6 @@ mod tests {
             // `effective_safe_z(cfg.retract_z, stock_top)` (= stock top +
             // 5 mm by default); `drill_evidence_wording_d3.rs` is the
             // sentry that pins the emitter-matching case.
-            retract_z_mm: 0.0,
         }
     }
 
@@ -475,7 +475,7 @@ mod tests {
     }
 
     /// R-2 re-pin. 12 mm depth, 5 mm peck, fixture rooted at the
-    /// surface (`retract_z_mm: 0.0`) so the only change from the old
+    /// surface (`retract_z: 0.0`) so the only change from the old
     /// expectation is the one R-2 is about.
     ///
     /// Before: this asserted fed descents of 5, 5, 2 — the *modelled*
