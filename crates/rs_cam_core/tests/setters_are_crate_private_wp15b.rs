@@ -76,9 +76,13 @@
 //!   `adopt_model_geometry` (`crates/rs_cam_viz/src/controller/io.rs`).
 //!   Three lines there read `self.adopt_model_geometry(…)`, and that
 //!   receiver is a `Controller`, not a session.
-//! - `self.controller` — `crates/rs_cam_viz/src/app/input.rs` reads
+//! - a receiver whose trailing identifier is `controller` —
+//!   `crates/rs_cam_viz/src/app/input.rs` reads
 //!   `self.controller.set_setup_pause_message(…)`, the same collision one
-//!   layer out.
+//!   layer out. The viz `Controller` also declares its own
+//!   `set_pin_part_models` (`crates/rs_cam_viz/src/controller/events/pins.rs`,
+//!   2bc278e5), and `controller/tests/undo.rs` calls it on a local
+//!   `controller`. A `Controller` is never a session.
 //! - a receiver whose trailing identifier ends in `builder` —
 //!   [`rs_cam_core::session::ProjectSessionBuilder`] publishes four
 //!   ALLOCATING methods that carry the setter names on purpose:
@@ -467,7 +471,7 @@ fn trailing_identifier(text: &str) -> &str {
 /// The module doc states all three cases and what each one costs.
 fn is_excluded_receiver(receiver: &str) -> bool {
     let tail = trailing_identifier(receiver);
-    if tail == "self" || receiver.ends_with("self.controller") {
+    if tail == "self" || tail == "controller" {
         return true;
     }
     tail.ends_with("builder")

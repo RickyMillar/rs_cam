@@ -194,7 +194,13 @@ fn sample_controller() -> AppController<ScriptedBackend> {
 /// The shared fixture body, generic over the backend so tests that need a
 /// result-echoing double (A/M11's fixpoint chain) get the same project.
 fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    // A ball nose: every toolpath in this fixture is a Scallop, and since
+    // W2.2 (eabeb43f) the controller's submit validation refuses a Scallop
+    // on an end mill with the core registry's tool refusal.
+    // The name keeps the "Ball " prefix free for the planner ladder that
+    // `planner_controller` adds and `tick_ball_tools` ticks.
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    tool.name = "Sample tool".to_owned();
     // Every caller hands in a controller straight from `with_backend`, so the
     // builder replaces an empty session.
     let mut builder = ProjectSessionBuilder::new().tool(tool);

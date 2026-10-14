@@ -1024,7 +1024,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "operation_type": {
-          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"rest\")",
+          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"drill\")",
           "type": "string"
         }
       },
