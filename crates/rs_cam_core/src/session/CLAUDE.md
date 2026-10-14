@@ -22,8 +22,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
   bumps `simulation_epoch` and records the cause. `AdoptResult` refuses a
   stale revision, `AdoptSimulation` a stale epoch. `store_simulation` is the one
-  store; it numbers the run. W2.5: a slot is `Dressed` until the modulation pass
-  rewrites it (`Modulated { simulation_run }`); every export reads `feed_stage`.
+  store; it numbers the run. W2.5: a slot is `Dressed` until modulation rewrites it (`Modulated
+  { simulation_run, source }`, B5: current while `source` is); every export reads `feed_stage`.
 - ONE stored `simulation_resolution` sets every cell. `try_with_effects`
   drops a rest result whose `SourceStock` no longer matches (G-RESTRES).
 - There are no public `*_mut` hatches. `setups_mut` stays `#[cfg(test)]`.

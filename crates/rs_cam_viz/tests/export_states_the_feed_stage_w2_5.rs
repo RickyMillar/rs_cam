@@ -13,11 +13,17 @@
 //! 2. simulate with modulation on: the slot is `Modulated` from run 1; the
 //!    header names run 1; the export reports no caution;
 //! 3. simulate again with modulation off: the slot still holds run 1's
-//!    feeds, the session holds run 2; the header and the export report
-//!    both say so, and the export does not refuse;
-//! 4. an edit that drops the simulation: the header says no simulation
-//!    is current;
-//! 5. an edit that drops the result, exported under
+//!    feeds, the session holds run 2, and nothing the modulation read has
+//!    changed. The header names run 1 with no stale clause (B5: the run
+//!    counter does not decide currency);
+//! 4. a new simulation resolution drops the simulation, and the stock the
+//!    modulation read is now at another cell: the header says no
+//!    simulation is current;
+//! 5. simulate again with modulation off: the header and the export report
+//!    both say run 1 is not the current run 3, and the export does not
+//!    refuse;
+//! 6. a machine edit keeps the result: a Pocket has no link stage (B7);
+//! 7. an edit that drops the result, exported under
 //!    `AcceptPreviousGeometry`: the worker copy carries planned feeds, and
 //!    the header says "as planned".
 //!
@@ -49,7 +55,8 @@ use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     Command, FeedStage, InvalidateToolArgs, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    SetMachineArgs, SimulationOptions, ToolpathConfig,
+    SetMachineArgs, SetSimulationResolutionArgs, SimulationOptions, SimulationResolution,
+    ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 use rs_cam_viz::io::export::{ExportedGcode, export_gcode_from_session_reporting};
@@ -60,7 +67,7 @@ use rs_cam_viz::state::toolpath::ToolpathResult;
 const PLANNED: &str = "(feeds: as planned, not modulated)";
 const FROM_RUN_1: &str = "(feeds: modulated from simulation run 1)";
 const RUN_1_NOT_CURRENT: &str =
-    "(feeds: modulated from simulation run 1; the current simulation is run 2)";
+    "(feeds: modulated from simulation run 1; the current simulation is run 3)";
 const NO_SIMULATION: &str = "(feeds: modulated from simulation run 1; no simulation is current)";
 
 const PERMISSIVE: ToolLoadExportPolicy = ToolLoadExportPolicy {
@@ -269,14 +276,45 @@ fn every_export_states_the_feed_stage_it_emits() {
     assert!(exported.feeds_cautions.is_empty());
 
     // 3. Simulated again with modulation off: the slot keeps run 1's
-    // feeds and the session holds run 2. Stated, not refused.
+    // feeds and the session holds run 2. Nothing the modulation read has
+    // changed, so run 1's feeds are current (B5).
     simulate(&mut session, false);
     assert_eq!(session.simulation_run(), Some(2));
     assert_eq!(
         session.feed_stage(0),
+        Some(FeedStage::ModulatedCurrent { simulation_run: 1 })
+    );
+    assert_eq!(feeds_line(&core_gcode(&session)), FROM_RUN_1);
+    let exported = viz_export(&session, &gui, StaleResultPolicy::Refuse);
+    assert_eq!(feeds_line(&exported.gcode), FROM_RUN_1);
+    assert!(exported.feeds_cautions.is_empty());
+
+    // 4. A new simulation resolution drops the simulation and keeps the
+    // fresh-stock result. The stock run 1 carved is at another cell now.
+    let cell = session.simulation_resolution_mm() * 2.0;
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(cell),
+            },
+        ))
+        .expect("a positive cell");
+    assert!(session.get_result(0).is_some(), "the edit keeps the result");
+    assert_eq!(session.simulation_run(), None);
+    assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
+    assert_eq!(
+        feeds_line(&viz_export(&session, &gui, StaleResultPolicy::Refuse).gcode),
+        NO_SIMULATION
+    );
+
+    // 5. Simulated again with modulation off: run 3. Stated, not refused.
+    simulate(&mut session, false);
+    assert_eq!(session.simulation_run(), Some(3));
+    assert_eq!(
+        session.feed_stage(0),
         Some(FeedStage::ModulatedSuperseded {
             simulation_run: 1,
-            current_run: Some(2),
+            current_run: Some(3),
         })
     );
     assert_eq!(feeds_line(&core_gcode(&session)), RUN_1_NOT_CURRENT);
@@ -285,7 +323,7 @@ fn every_export_states_the_feed_stage_it_emits() {
     assert_eq!(
         exported.feeds_cautions,
         vec![
-            "'Pocket': feeds: modulated from simulation run 1; the current simulation is run 2"
+            "'Pocket': feeds: modulated from simulation run 1; the current simulation is run 3"
                 .to_owned()
         ]
     );
@@ -301,23 +339,21 @@ fn every_export_states_the_feed_stage_it_emits() {
         "the MCP reply carries the caution: {reply}"
     );
 
-    // 4. A machine edit drops the simulation and keeps the result.
+    // 6. A machine edit drops the simulation and keeps the result: a
+    // Pocket has no link stage, so it reads no machine at generation (B7).
     let mut machine = session.machine().clone();
     machine.max_feed_mm_min += 1.0;
-    let _ = session
+    let effects = session
         .apply(Command::SetMachine(SetMachineArgs {
             machine: Box::new(machine),
         }))
         .expect("the machine row refuses nothing");
+    assert!(effects.stale.is_empty(), "no result goes stale");
     assert!(session.get_result(0).is_some(), "the edit keeps the result");
     assert_eq!(session.simulation_run(), None);
     assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
-    assert_eq!(
-        feeds_line(&viz_export(&session, &gui, StaleResultPolicy::Refuse).gcode),
-        NO_SIMULATION
-    );
 
-    // 5. A tool edit drops the result. The accepted previous geometry is
+    // 7. A tool edit drops the result. The accepted previous geometry is
     // the worker copy, which no modulation wrote.
     let tool_id = session.tools()[0].id.0;
     let _ = session

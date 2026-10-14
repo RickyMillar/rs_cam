@@ -18,11 +18,25 @@
 //! has stored. The modulation pass runs on a run that the caller stores
 //! next (core: `run_simulation_memoized`; GUI: the live-epoch adopt), so it
 //! tags with [`ProjectSession::next_simulation_run`].
+//!
+//! # When modulated feeds are current (B5)
+//!
+//! The run number names the run. It does not decide currency: `generate_all`
+//! stores one prefix simulation per rest operation, so the latest run moves
+//! past the run that modulated an operation while nothing that operation
+//! depends on changes. The modulation of one toolpath reads its own moves
+//! and the stock that the simulation carved before it. The tag therefore
+//! also records that stock as a [`SourceStock`], the record a rest result
+//! keeps (`session/rest_stock.rs`). The feeds are current while the record
+//! is current ([`ProjectSession::source_is_current`]). A regenerate of the
+//! toolpath itself stores a new `Dressed` slot, so the own moves need no
+//! record.
 
 use super::ProjectSession;
+use crate::compute::source_stock::SourceStock;
 
 /// The feed stage of a stored toolpath result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ResultProvenance {
     /// The generated and dressed path: the planned feeds.
     Dressed,
@@ -31,6 +45,9 @@ pub enum ResultProvenance {
     Modulated {
         /// The [`ProjectSession::simulation_run`] the modulation read.
         simulation_run: u64,
+        /// The stock the simulation carved before this toolpath. The
+        /// feeds are current while this record is current.
+        source: SourceStock,
     },
 }
 
@@ -39,12 +56,13 @@ pub enum ResultProvenance {
 pub enum FeedStage {
     /// The planned feeds. No modulation wrote this result.
     Planned,
-    /// Modulated from the simulation the session holds now.
+    /// Modulated, and nothing the modulation read has changed since.
     ModulatedCurrent {
         /// The simulation run the modulation read.
         simulation_run: u64,
     },
-    /// Modulated from a simulation the session no longer holds.
+    /// Modulated, and the stock the simulation carved before the toolpath
+    /// has changed since.
     ModulatedSuperseded {
         /// The simulation run the modulation read.
         simulation_run: u64,
@@ -97,8 +115,8 @@ impl FeedStage {
         }
     }
 
-    /// True when the feeds came from a simulation the session no longer
-    /// holds. An export states it as a caution; it does not refuse.
+    /// True when the stock the modulation read has changed since. An export
+    /// states it as a caution; it does not refuse.
     pub fn is_superseded(&self) -> bool {
         matches!(self, Self::ModulatedSuperseded { .. })
     }
@@ -125,18 +143,29 @@ impl ProjectSession {
         self.simulation = Some(result);
     }
 
-    /// Read `provenance` against the simulation the session holds now.
-    pub fn feed_stage_of(&self, provenance: ResultProvenance) -> FeedStage {
+    /// Read the `provenance` of toolpath `index`'s result against the
+    /// project as it stands.
+    ///
+    /// Modulated feeds are current while the stock record of the tag is
+    /// current (module doc, B5). The run counter does not decide it.
+    pub fn feed_stage_of(&self, index: usize, provenance: &ResultProvenance) -> FeedStage {
         match provenance {
             ResultProvenance::Dressed => FeedStage::Planned,
-            ResultProvenance::Modulated { simulation_run } => {
-                let current_run = self.simulation_run();
-                if current_run == Some(simulation_run) {
+            ResultProvenance::Modulated {
+                simulation_run,
+                source,
+            } => {
+                let simulation_run = *simulation_run;
+                let current = self
+                    .toolpath_configs
+                    .get(index)
+                    .is_some_and(|tc| self.source_is_current(tc.id, source).is_ok());
+                if current {
                     FeedStage::ModulatedCurrent { simulation_run }
                 } else {
                     FeedStage::ModulatedSuperseded {
                         simulation_run,
-                        current_run,
+                        current_run: self.simulation_run(),
                     }
                 }
             }
@@ -148,6 +177,6 @@ impl ProjectSession {
     pub fn feed_stage(&self, index: usize) -> Option<FeedStage> {
         self.results
             .get(&index)
-            .map(|result| self.feed_stage_of(result.provenance))
+            .map(|result| self.feed_stage_of(index, &result.provenance))
     }
 }

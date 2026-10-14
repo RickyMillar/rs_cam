@@ -425,7 +425,7 @@ pub(super) fn draw_grbl_import(
         } else {
             ui.add_space(4.0);
             ui.label(egui::RichText::new("Will apply:").small().strong());
-            if let Some(a) = imp.kinematics.acceleration_xyz_mm_s2 {
+            if let Some(a) = imp.acceleration_xyz_mm_s2 {
                 ui.label(
                     egui::RichText::new(format!(
                         "\u{2022} Accel X/Y/Z = {:.0}/{:.0}/{:.0} mm/s\u{b2}",
@@ -434,13 +434,12 @@ pub(super) fn draw_grbl_import(
                     .small(),
                 );
             }
-            ui.label(
-                egui::RichText::new(format!(
-                    "\u{2022} Junction dev ($11) = {:.3} mm",
-                    imp.kinematics.junction_deviation_mm
-                ))
-                .small(),
-            );
+            if let Some(jd) = imp.junction_deviation_mm {
+                ui.label(
+                    egui::RichText::new(format!("\u{2022} Junction dev ($11) = {jd:.3} mm"))
+                        .small(),
+                );
+            }
             if let Some(r) = imp.max_rate_xyz_mm_min {
                 ui.label(
                     egui::RichText::new(format!(
@@ -533,25 +532,13 @@ pub(super) fn draw_grbl_import(
             }
 
             if ui.button("Apply import").clicked() {
-                let max_feed = imp.max_feed_mm_min;
-                // The parser reports the per-axis rates on the import,
-                // not inside `kinematics` — land them here (P1).
-                let mut kinematics = imp.kinematics;
-                kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
-                // The draft follows the write, so the panel does not
-                // put the pre-import numbers back on the next commit.
-                draft.kinematics = Some(kinematics);
-                if let Some(mf) = max_feed {
-                    draft.max_feed_mm_min = mf;
-                }
-                // The import is its own row: a GRBL dump carries the
-                // travel rate as well as the block, and the row drops
-                // the library link because the numbers are inline now.
-                let controller = imp.has_controller_facts().then(|| imp.controller.clone());
-                if let Some(c) = &controller {
-                    draft.controller = Some(c.clone());
-                }
-                apply_machine_import(state, kinematics, max_feed, controller);
+                // B6: the draft takes the same merge the core row applies,
+                // so the panel does not put the pre-import numbers back on
+                // the next commit. Only the stated fields change. The
+                // import is its own row, and the row drops the library
+                // link because the numbers are inline now.
+                imp.apply_to(draft);
+                apply_machine_import(state, imp);
                 edit.changed = true;
                 state.panels.grbl.clear();
                 state.panels.grbl.status = "Imported $$ settings".to_owned();

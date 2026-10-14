@@ -533,10 +533,17 @@ impl ProjectSession {
             .collect();
 
         // W2.5 (D10): every caller stores this run next, so the rewritten
-        // results name the run number that store gives it.
-        let modulated = crate::session::ResultProvenance::Modulated {
-            simulation_run: self.next_simulation_run(),
-        };
+        // results name the run number that store gives it. B5: each tag
+        // also records the stock the simulation carved before its
+        // toolpath. The records are built before the loop swaps a slot.
+        let simulation_run = self.next_simulation_run();
+        let mut sources = self.carved_sources(
+            &candidate_indices
+                .iter()
+                .map(|&(_, id)| id)
+                .collect::<std::collections::HashSet<_>>(),
+            &opts.skip_ids,
+        );
         for (idx, toolpath_id) in candidate_indices {
             // Banded: the vendor envelope. Point (A2): the printed value,
             // a cap with no floor. Bandless (no row, or values that fail
@@ -616,11 +623,18 @@ impl ProjectSession {
                     crate::ops::drill_op::OpData::DrillOp(Arc::clone(drill), new_arc)
                 }
             };
+            let source = sources.remove(&toolpath_id).unwrap_or_default();
             if let Some(slot) = self.results.get_mut(&idx) {
                 slot.op_data = new_op_data;
-                slot.provenance = modulated;
+                slot.provenance = crate::session::ResultProvenance::Modulated {
+                    simulation_run,
+                    source,
+                };
             }
         }
+        // The swaps above give new `Arc`s with the same moves. Point every
+        // record at them, so a read does not hash each frame.
+        self.refresh_source_pointers();
 
         // F-036b1 sequencing fix: F-034's `apply_kinematics_cycle_time`
         // runs INSIDE `run_simulation` (before modulation), so the

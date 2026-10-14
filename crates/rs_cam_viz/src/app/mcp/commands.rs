@@ -1333,12 +1333,10 @@ impl RsCamApp {
         }
 
         let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
-        // The parser reports the per-axis rates on the import, not inside
-        // `kinematics` — land them on the machine model here (P1).
-        let mut kinematics = imp.kinematics;
-        kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
 
-        let per_axis = match imp.kinematics.acceleration_xyz_mm_s2 {
+        // B6: the reply lists what the dump STATED; `null` is a field the
+        // dump did not carry, and the machine keeps its own value there.
+        let per_axis = match imp.acceleration_xyz_mm_s2 {
             Some([ax, ay, az]) => serde_json::json!([ax, ay, az]),
             None => serde_json::Value::Null,
         };
@@ -1349,9 +1347,9 @@ impl RsCamApp {
         before.number = Some(prev_max_feed);
         before.extra = serde_json::json!({
             "acceleration_xyz_mm_s2": per_axis,
-            "acceleration_mm_s2": imp.kinematics.acceleration_mm_s2,
+            "acceleration_mm_s2": imp.acceleration_mm_s2,
             "max_rate_xyz_mm_min": per_axis_rate,
-            "junction_deviation_mm": imp.kinematics.junction_deviation_mm,
+            "junction_deviation_mm": imp.junction_deviation_mm,
             "arc_tolerance_mm": imp.arc_tolerance_mm,
             "max_spindle_rpm": imp.max_spindle_rpm,
             "ignored_settings": imp.ignored_count,
@@ -1371,11 +1369,7 @@ impl RsCamApp {
         });
         CorePlan::Apply(
             Command::ImportMachineSettings(rs_cam_core::session::ImportMachineSettingsArgs {
-                kinematics: Box::new(kinematics),
-                max_feed_mm_min: imp.max_feed_mm_min,
-                controller: imp
-                    .has_controller_facts()
-                    .then(|| Box::new(imp.controller.clone())),
+                import: Box::new(imp),
             }),
             Box::new(before),
         )

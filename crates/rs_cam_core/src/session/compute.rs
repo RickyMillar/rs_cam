@@ -2247,16 +2247,10 @@ impl ProjectSession {
             })
             .and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
 
-        // P1 W4a: the pencil family's emit-time surface-link-vs-retract
-        // decision costs candidates against the real machine envelope —
-        // same accessor pattern `apply_adaptive_feed_modulation` uses
-        // (`effective_kinematics` never `None`; `cutting_feed_ceiling_mm_min`
-        // for the cutting-feed cap, `max_feed_mm_min` for the travel rate).
-        let link_kinematics = Some(crate::machine::kinematics::LinkKinematics {
-            kinematics: self.machine.effective_kinematics(),
-            max_feed_mm_min: self.machine.cutting_feed_ceiling_mm_min().max(1.0),
-            rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
-        });
+        // P1 W4a: the link stage's surface-link-vs-retract decision costs
+        // candidates against the real machine envelope. The one builder;
+        // a machine edit compares it to find the results it stales (B7).
+        let link_kinematics = Some(self.machine.link_kinematics());
 
         // The POST-generation clip's own region set, for the three sources
         // that resolve to a set of disjoint regions. The monolith resolved

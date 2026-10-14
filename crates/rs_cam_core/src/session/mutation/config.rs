@@ -552,18 +552,47 @@ impl ProjectSession {
     /// The door of the `SetMachine` command row (§19 ruling 2), which
     /// serves the MCP library snapshot and the GUI machine panel alike.
     ///
-    /// It invalidates exactly as [`Self::invalidate_machine`] does: it
-    /// clears the simulation and drops no toolpath result, because a
-    /// machine edit moves no geometry. **This is a behaviour change.**
+    /// It clears the simulation, as [`Self::invalidate_machine`] does.
+    /// **This is a behaviour change.**
     /// Before WP4 the method wrote the field and invalidated nothing, so
     /// a stale simulation survived a profile swap; every caller then had
     /// to remember a separate invalidation call.
+    ///
+    /// B7: a profile that moves the link envelope also drops the results
+    /// whose generation read it ([`Self::drop_link_readers_if_moved`]).
     #[instrument(skip(self, machine))]
     pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
+            let before = session.machine.link_kinematics();
             session.machine = machine;
             session.drop_simulation(SimulationDropCause::Machine);
+            session.drop_link_readers_if_moved(&before);
         })
+    }
+
+    /// B7: drop the result of every toolpath whose generation read the
+    /// link envelope, when the machine edit moved that envelope.
+    ///
+    /// The link stage costs each link against a retract with
+    /// `MachineProfile::link_kinematics`, so its emitted links can move
+    /// with the envelope. `Capabilities::reads_link_kinematics` names those
+    /// operations. Every other operation reads the machine at simulation
+    /// time only and keeps its result. A change that leaves the envelope
+    /// equal (the name, the spindle, the power) drops nothing.
+    fn drop_link_readers_if_moved(&mut self, before: &crate::machine::kinematics::LinkKinematics) {
+        if self.machine.link_kinematics() == *before {
+            return;
+        }
+        let readers: Vec<usize> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.operation.capabilities().reads_link_kinematics())
+            .map(|(index, _)| index)
+            .collect();
+        if !readers.is_empty() {
+            self.drop_results_and_their_dependents(&readers);
+        }
     }
 
     /// Write the machine's kinematics block.
@@ -580,18 +609,25 @@ impl ProjectSession {
         kinematics: crate::machine::kinematics::MachineKinematics,
     ) -> Effects {
         self.with_effects(None, move |session| {
+            let before = session.machine.link_kinematics();
             session.machine.kinematics = Some(kinematics);
             session.drop_simulation(SimulationDropCause::Machine);
+            session.drop_link_readers_if_moved(&before);
         })
     }
 
-    /// Write the machine fields a GRBL `$$` dump carries.
+    /// Write the machine fields a GRBL `$$` dump states.
     ///
     /// The door of the `ImportMachineSettings` command row. A dump
-    /// carries one more field than [`Self::set_machine_kinematics`] —
-    /// the travel rate — so the two rows carry two payloads (§15 ruling
-    /// 6). `max_feed_mm_min` of `None` means the dump published no
-    /// travel rate, and the machine keeps the one it has.
+    /// carries more than [`Self::set_machine_kinematics`] — the travel
+    /// rate and the controller facts — so the two rows carry two payloads
+    /// (§15 ruling 6).
+    ///
+    /// B6: the import writes only the fields the dump states
+    /// ([`GrblImport::apply_to`](crate::machine::kinematics::GrblImport::apply_to)).
+    /// Every other field keeps its value: a bare `$$` dump keeps the
+    /// firmware, the spindle plugin and the probe distance an earlier
+    /// `$I` import gave.
     ///
     /// The parse belongs to the caller
     /// (`MachineKinematics::from_grbl_settings`), which also decides
@@ -601,25 +637,19 @@ impl ProjectSession {
     /// dialect, so the machine profile, not a separate project choice,
     /// selects the dialect. The dialect is read at emit time and drops
     /// nothing more than the machine change already does.
-    #[instrument(skip(self, kinematics, controller))]
+    #[instrument(skip(self, import))]
     pub(crate) fn import_machine_settings(
         &mut self,
-        kinematics: crate::machine::kinematics::MachineKinematics,
-        max_feed_mm_min: Option<f64>,
-        controller: Option<crate::machine::ControllerSettings>,
+        import: &crate::machine::kinematics::GrblImport,
     ) -> Effects {
         self.with_effects(None, move |session| {
-            session.machine.kinematics = Some(kinematics);
-            if let Some(max_feed) = max_feed_mm_min {
-                session.machine.max_feed_mm_min = max_feed;
-            }
-            if let Some(controller) = controller {
-                if let Some(format) = controller.firmware.post_format() {
-                    session.post.format = format;
-                }
-                session.machine.controller = Some(controller);
+            let before = session.machine.link_kinematics();
+            import.apply_to(&mut session.machine);
+            if let Some(format) = import.controller.firmware.post_format() {
+                session.post.format = format;
             }
             session.drop_simulation(SimulationDropCause::Machine);
+            session.drop_link_readers_if_moved(&before);
         })
     }
 

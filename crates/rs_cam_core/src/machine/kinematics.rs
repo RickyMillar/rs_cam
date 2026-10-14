@@ -169,20 +169,23 @@ impl Default for MachineKinematics {
 /// Result of parsing a GRBL / grblHAL `$$` settings dump
 /// ([`MachineKinematics::from_grbl_settings`]).
 ///
-/// Fields the dump doesn't carry are left `None` / defaulted — the
-/// caller (GUI / MCP) decides which to apply onto the live
-/// `MachineProfile`. `kinematics` is always populated (absent settings
-/// fall back to [`MachineKinematics::default`]).
+/// Every field is a fact the dump STATED, or `None` when the dump did not
+/// carry it. [`Self::apply_to`] writes the stated facts onto a machine
+/// profile and keeps every other field (B6).
 ///
 /// Stays `pub`: `MachineKinematics::from_grbl_settings` returns it, so a
 /// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrblImport {
-    /// Kinematics built from `$11` (junction deviation) and
-    /// `$120/$121/$122` (per-axis acceleration). When all three axis
-    /// accels are present they populate `acceleration_xyz_mm_s2` and the
-    /// scalar `acceleration_mm_s2` is set to their mean.
-    pub kinematics: MachineKinematics,
+    /// Junction deviation (`$11`, mm).
+    pub junction_deviation_mm: Option<f64>,
+    /// Per-axis acceleration `[X, Y, Z]` (mm/s²) from `$120/$121/$122`.
+    /// `Some` only when the dump carries all three.
+    pub acceleration_xyz_mm_s2: Option<[f64; 3]>,
+    /// The isotropic acceleration (mm/s²): the mean of the three axes, or,
+    /// when the dump carries only part of the triple, the first one it
+    /// carries (best effort).
+    pub acceleration_mm_s2: Option<f64>,
     /// Travel/max-rate cap (mm/min) for the XY plane — the larger of
     /// `$110`/`$111` — suitable for `MachineProfile::max_feed_mm_min`.
     pub max_feed_mm_min: Option<f64>,
@@ -191,10 +194,8 @@ pub struct GrblImport {
     /// isn't throttled to the plunge rate).
     pub max_z_feed_mm_min: Option<f64>,
     /// Per-axis maximum rates `[X, Y, Z]` (mm/min) from `$110/$111/$112`.
-    /// `Some` only when the dump carries all three, mirroring how
-    /// `kinematics.acceleration_xyz_mm_s2` needs all of `$120/$121/$122`.
-    /// The apply site (GUI machine panel, MCP `import_machine_settings`)
-    /// copies this onto `MachineKinematics::max_rate_xyz_mm_min`.
+    /// `Some` only when the dump carries all three, like
+    /// [`Self::acceleration_xyz_mm_s2`].
     pub max_rate_xyz_mm_min: Option<[f64; 3]>,
     /// Arc tolerance (`$12`, mm) — feeds the post / arc-fit advice.
     pub arc_tolerance_mm: Option<f64>,
@@ -205,7 +206,7 @@ pub struct GrblImport {
     pub ignored_count: usize,
     /// G10: the controller facts the export reads: the firmware (from the
     /// welcome line or `$I`), `$30 $31 $32 $340 $341 $342 $394`, and the
-    /// mist output (from `$I`). The apply site stores it on
+    /// mist output (from `$I`). [`Self::apply_to`] merges them into
     /// `MachineProfile::controller`.
     pub controller: crate::machine::ControllerSettings,
 }
@@ -220,13 +221,54 @@ impl GrblImport {
     /// setting the import uses. The GUI panel and MCP
     /// `import_machine_settings` ask this one question.
     pub fn is_recognized(&self) -> bool {
-        self.kinematics.acceleration_xyz_mm_s2.is_some()
+        self.junction_deviation_mm.is_some()
+            || self.acceleration_mm_s2.is_some()
             || self.max_feed_mm_min.is_some()
             || self.arc_tolerance_mm.is_some()
             || self.max_spindle_rpm.is_some()
-            || (self.kinematics.junction_deviation_mm - default_junction_deviation_mm()).abs()
-                > 1e-12
             || self.has_controller_facts()
+    }
+
+    /// Write the facts the dump stated onto `machine` (B6).
+    ///
+    /// Only a stated field changes. A dump that states a kinematics
+    /// setting writes into the machine's own block (the default block when
+    /// it has none), so it does not reset the jerk limit or the
+    /// junction-velocity clamp, which no `$$` setting carries. A dump that
+    /// states none leaves the block as it is. The controller facts merge through
+    /// [`crate::machine::ControllerSettings::merge_stated`].
+    ///
+    /// The GUI machine panel and the `ImportMachineSettings` command row
+    /// both call it, so the draft and the session cannot differ.
+    pub fn apply_to(&self, machine: &mut crate::machine::MachineProfile) {
+        let states_kinematics = self.junction_deviation_mm.is_some()
+            || self.acceleration_mm_s2.is_some()
+            || self.max_rate_xyz_mm_min.is_some();
+        if states_kinematics {
+            let mut kinematics = machine.kinematics.unwrap_or_default();
+            if let Some(jd) = self.junction_deviation_mm {
+                kinematics.junction_deviation_mm = jd;
+            }
+            if let Some(xyz) = self.acceleration_xyz_mm_s2 {
+                kinematics.acceleration_xyz_mm_s2 = Some(xyz);
+            }
+            if let Some(a) = self.acceleration_mm_s2 {
+                kinematics.acceleration_mm_s2 = a;
+            }
+            if let Some(rates) = self.max_rate_xyz_mm_min {
+                kinematics.max_rate_xyz_mm_min = Some(rates);
+            }
+            machine.kinematics = Some(kinematics);
+        }
+        if let Some(max_feed) = self.max_feed_mm_min {
+            machine.max_feed_mm_min = max_feed;
+        }
+        if self.has_controller_facts() {
+            machine
+                .controller
+                .get_or_insert_with(Default::default)
+                .merge_stated(&self.controller);
+        }
     }
 }
 
@@ -420,22 +462,20 @@ impl MachineKinematics {
         ];
         let ignored_count = map.keys().filter(|k| !KNOWN.contains(k)).count();
 
-        let mut kinematics = MachineKinematics::default();
-        if let Some(&jd) = map.get(&11) {
-            kinematics.junction_deviation_mm = jd;
-        }
         let (ax, ay, az) = (
             map.get(&120).copied(),
             map.get(&121).copied(),
             map.get(&122).copied(),
         );
-        if let (Some(ax), Some(ay), Some(az)) = (ax, ay, az) {
-            kinematics.acceleration_xyz_mm_s2 = Some([ax, ay, az]);
-            kinematics.acceleration_mm_s2 = (ax + ay + az) / 3.0;
-        } else if let Some(a) = ax.or(ay).or(az) {
-            // Partial axis set — best effort scalar, no per-axis array.
-            kinematics.acceleration_mm_s2 = a;
-        }
+        let acceleration_xyz_mm_s2 = match (ax, ay, az) {
+            (Some(ax), Some(ay), Some(az)) => Some([ax, ay, az]),
+            _ => None,
+        };
+        // A partial axis set gives a best-effort scalar and no array.
+        let acceleration_mm_s2 = match acceleration_xyz_mm_s2 {
+            Some([ax, ay, az]) => Some((ax + ay + az) / 3.0),
+            None => ax.or(ay).or(az),
+        };
 
         let (rx, ry, rz) = (
             map.get(&110).copied(),
@@ -475,7 +515,9 @@ impl MachineKinematics {
         };
 
         GrblImport {
-            kinematics,
+            junction_deviation_mm: map.get(&11).copied(),
+            acceleration_xyz_mm_s2,
+            acceleration_mm_s2,
             max_feed_mm_min,
             max_z_feed_mm_min: rz,
             max_rate_xyz_mm_min,
@@ -718,7 +760,7 @@ pub fn move_kinematics(
 /// cost link candidates with the F-034 integrator at emit time.
 /// Owned (`MachineKinematics` is a small copyable config) so the
 /// `ExecutionContext` doesn't grow another lifetime.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LinkKinematics {
     pub kinematics: MachineKinematics,
     pub max_feed_mm_min: f64,
@@ -1944,13 +1986,13 @@ mod tests {
              $30=24000\r\n$110=10000.000\r\n$111=10000.000\r\n$112=1000.000\r\n\
              $120=500.000\r\n$121=500.000\r\n$122=270.000\r\n$100=40.000\r\n";
         let imp = MachineKinematics::from_grbl_settings(dump);
-        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
-        assert_eq!(
-            imp.kinematics.acceleration_xyz_mm_s2,
-            Some([500.0, 500.0, 270.0])
-        );
+        assert!((imp.junction_deviation_mm.expect("$11 stated") - 0.020).abs() < 1e-9);
+        assert_eq!(imp.acceleration_xyz_mm_s2, Some([500.0, 500.0, 270.0]));
         // Scalar fallback = mean of the three axis accels.
-        assert!((imp.kinematics.acceleration_mm_s2 - (500.0 + 500.0 + 270.0) / 3.0).abs() < 1e-9);
+        assert!(
+            (imp.acceleration_mm_s2.expect("the mean") - (500.0 + 500.0 + 270.0) / 3.0).abs()
+                < 1e-9
+        );
         assert_eq!(imp.max_feed_mm_min, Some(10000.0));
         assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
         assert_eq!(imp.max_rate_xyz_mm_min, Some([10000.0, 10000.0, 1000.0]));
@@ -2007,11 +2049,8 @@ $110=10000.000\n$111=10000.000\n$112=1000.000\n\
 $120=500.000\n$121=500.000\n$122=270.000\n\
 $130=845.000\n$131=850.000\n$132=95.000\n";
         let imp = MachineKinematics::from_grbl_settings(dump);
-        assert_eq!(
-            imp.kinematics.acceleration_xyz_mm_s2,
-            Some([500.0, 500.0, 270.0])
-        );
-        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
+        assert_eq!(imp.acceleration_xyz_mm_s2, Some([500.0, 500.0, 270.0]));
+        assert!((imp.junction_deviation_mm.expect("$11 stated") - 0.020).abs() < 1e-9);
         assert_eq!(imp.max_feed_mm_min, Some(10000.0));
         assert_eq!(imp.max_z_feed_mm_min, Some(1000.0));
         assert_eq!(imp.max_rate_xyz_mm_min, Some([10000.0, 10000.0, 1000.0]));
@@ -2021,12 +2060,12 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         // The canonical preset must equal what importing this dump produces
         // (per-axis accel + rates + δ) — keeps preset and parser from drifting.
         let preset = MachineKinematics::shapeoko_xxl_ricky_tuned();
-        assert_eq!(
-            preset.acceleration_xyz_mm_s2,
-            imp.kinematics.acceleration_xyz_mm_s2
-        );
+        assert_eq!(preset.acceleration_xyz_mm_s2, imp.acceleration_xyz_mm_s2);
         assert_eq!(preset.max_rate_xyz_mm_min, imp.max_rate_xyz_mm_min);
-        assert!((preset.junction_deviation_mm - imp.kinematics.junction_deviation_mm).abs() < 1e-9);
+        assert!(
+            (preset.junction_deviation_mm - imp.junction_deviation_mm.expect("$11 stated")).abs()
+                < 1e-9
+        );
     }
 
     /// G10: the REAL controller output (the operator's BTT Scylla with an
@@ -2062,11 +2101,8 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         assert!(c.waits_for_spindle());
         assert!(!c.ignores_m6());
         // Kinematics from the same dump.
-        assert!((imp.kinematics.junction_deviation_mm - 0.020).abs() < 1e-9);
-        assert_eq!(
-            imp.kinematics.acceleration_xyz_mm_s2,
-            Some([500.0, 500.0, 270.0])
-        );
+        assert!((imp.junction_deviation_mm.expect("$11 stated") - 0.020).abs() < 1e-9);
+        assert_eq!(imp.acceleration_xyz_mm_s2, Some([500.0, 500.0, 270.0]));
         assert_eq!(imp.max_rate_xyz_mm_min, Some([10_000.0, 10_000.0, 1_000.0]));
         assert!(imp.is_recognized());
 
@@ -2104,11 +2140,12 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
 
     #[test]
     fn from_grbl_settings_partial_and_garbage_are_tolerated() {
-        // Only $11 present; no axis accels → no per-axis array, default
-        // scalar retained; everything else None.
+        // Only $11 present; no axis accels → no per-axis array, no
+        // scalar; everything else None.
         let imp = MachineKinematics::from_grbl_settings("garbage\n$11=0.015\nM201 X9\n");
-        assert!((imp.kinematics.junction_deviation_mm - 0.015).abs() < 1e-9);
-        assert_eq!(imp.kinematics.acceleration_xyz_mm_s2, None);
+        assert!((imp.junction_deviation_mm.expect("$11 stated") - 0.015).abs() < 1e-9);
+        assert_eq!(imp.acceleration_xyz_mm_s2, None);
+        assert_eq!(imp.acceleration_mm_s2, None);
         assert_eq!(imp.max_feed_mm_min, None);
         assert_eq!(imp.arc_tolerance_mm, None);
     }

@@ -79,6 +79,22 @@ pub struct Capabilities<P = EntryProbe> {
 pub type RowCapabilities = Capabilities<EntryProbeRule>;
 
 impl<P> Capabilities<P> {
+    /// True when the op's GENERATION reads the machine (B7).
+    ///
+    /// An op with a link stage (`relink_fragments` or the pencil link)
+    /// costs each link against a retract with
+    /// `MachineProfile::link_kinematics`, so a machine edit that moves
+    /// that envelope can move its emitted links. [`LinkCeilingNeed::NoLink`]
+    /// states that the op makes no such link. Every other op reads the
+    /// machine at simulation time only, and a machine edit keeps its
+    /// result.
+    pub fn reads_link_kinematics(&self) -> bool {
+        match self.link_ceiling {
+            LinkCeilingNeed::Always | LinkCeilingNeed::WithRemainingStock => true,
+            LinkCeilingNeed::NoLink => false,
+        }
+    }
+
     /// The same capabilities with `entry_probe` in place of this one. The
     /// body names every field, so a new field cannot be dropped here.
     pub fn with_entry_probe<Q>(self, entry_probe: Q) -> Capabilities<Q> {

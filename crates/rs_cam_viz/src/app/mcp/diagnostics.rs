@@ -141,7 +141,8 @@ impl RsCamApp {
         let stored = state.session.get_result(index);
         let narrated_is_stored = stored
             .is_some_and(|stored| std::sync::Arc::ptr_eq(stored.annotated(), &result.annotated));
-        let stored_stage = stored.map(|stored| state.session.feed_stage_of(stored.provenance));
+        let stored_stage =
+            stored.map(|stored| state.session.feed_stage_of(index, &stored.provenance));
         context.feed_stage = Some(match stored_stage {
             Some(stage) if narrated_is_stored => stage,
             _ => rs_cam_core::session::FeedStage::Planned,

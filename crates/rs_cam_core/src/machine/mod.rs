@@ -354,6 +354,51 @@ impl ControllerSettings {
         }
     }
 
+    /// Write onto `self` every fact `stated` holds (B6).
+    ///
+    /// An import overwrites only what the dump states. A `None` field and
+    /// an `Unknown` firmware state nothing, so `self` keeps its value: a
+    /// bare `$$` dump does not erase the firmware, the spindle plugin or
+    /// the tool-change probe distance an earlier `$I` import gave.
+    pub fn merge_stated(&mut self, stated: &ControllerSettings) {
+        // Name every field, so a new field cannot be left out here.
+        let ControllerSettings {
+            firmware,
+            rpm_max,
+            rpm_min,
+            mode,
+            spindle_at_speed_tolerance_pct,
+            tool_change_mode,
+            tool_change_probing_distance_mm,
+            spindle_on_delay_s,
+            mist_output,
+            spindle_drive,
+        } = stated;
+        if *firmware != ControllerFirmware::Unknown {
+            self.firmware = *firmware;
+        }
+        fn keep<T: Clone>(slot: &mut Option<T>, stated: &Option<T>) {
+            if let Some(value) = stated {
+                *slot = Some(value.clone());
+            }
+        }
+        keep(&mut self.rpm_max, rpm_max);
+        keep(&mut self.rpm_min, rpm_min);
+        keep(&mut self.mode, mode);
+        keep(
+            &mut self.spindle_at_speed_tolerance_pct,
+            spindle_at_speed_tolerance_pct,
+        );
+        keep(&mut self.tool_change_mode, tool_change_mode);
+        keep(
+            &mut self.tool_change_probing_distance_mm,
+            tool_change_probing_distance_mm,
+        );
+        keep(&mut self.spindle_on_delay_s, spindle_on_delay_s);
+        keep(&mut self.mist_output, mist_output);
+        keep(&mut self.spindle_drive, spindle_drive);
+    }
+
     /// True when `$341=4`: the board ignores M6.
     pub fn ignores_m6(&self) -> bool {
         self.tool_change_mode == Some(TOOL_CHANGE_MODE_IGNORE)
@@ -414,6 +459,21 @@ impl MachineProfile {
     pub fn effective_kinematics(&self) -> MachineKinematics {
         self.kinematics
             .unwrap_or_else(MachineKinematics::generic_wood_router)
+    }
+
+    /// The machine envelope a link stage costs a link against a retract
+    /// with (P1 W4a). The one builder: generation reads it, and a machine
+    /// edit compares it before and after to find the results it stales
+    /// (B7).
+    ///
+    /// It reads [`Self::effective_kinematics`], the cutting-feed ceiling
+    /// and the travel rate. A change of any of the three can move a link.
+    pub fn link_kinematics(&self) -> kinematics::LinkKinematics {
+        kinematics::LinkKinematics {
+            kinematics: self.effective_kinematics(),
+            max_feed_mm_min: self.cutting_feed_ceiling_mm_min().max(1.0),
+            rapid_feed_mm_min: self.max_feed_mm_min.max(1.0),
+        }
     }
 
     /// Conservative generic wood router defaults.
