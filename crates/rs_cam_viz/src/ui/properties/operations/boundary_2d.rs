@@ -2,7 +2,8 @@ use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{
     AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, InlayPlugConfig,
-    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, VCarveConfig, ZigzagConfig,
+    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, RegionOrdering, VCarveConfig,
+    ZigzagConfig,
 };
 
 use super::super::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
@@ -119,6 +120,21 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         );
         ui.label("Climb:");
         ui.checkbox(&mut cfg.climb, "");
+        ui.end_row();
+        // R4: region-first (By Area) is the default of a Layered op.
+        ui.label("Ordering:");
+        egui::ComboBox::from_id_salt("pocket_ord")
+            .truncate()
+            .selected_text(match cfg.region_ordering {
+                RegionOrdering::Global => "Global",
+                RegionOrdering::ByArea => "By Area",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area")
+                    .on_hover_text("Cut each outline to full depth before the next.");
+                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global")
+                    .on_hover_text("Cut every outline at one depth before the next depth.");
+            });
         ui.end_row();
         if cfg.pattern == PocketPattern::Zigzag {
             dv(

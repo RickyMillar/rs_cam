@@ -68,6 +68,11 @@ const POCKET_PARAMS: &[ParamDef] = &[
         .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::required("finishing_passes", "usize"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    ParamDef::required("region_ordering", "enum:global|by_area").with_help(
+        "by_area (the default): each outline goes to full depth before the \
+         next. global: each depth level cuts every outline before the next \
+         level.",
+    ),
 ];
 
 const PROFILE_PARAMS: &[ParamDef] = &[

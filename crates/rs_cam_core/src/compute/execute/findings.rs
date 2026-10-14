@@ -47,6 +47,16 @@ impl<T: RecordFindings> RecordFindings for Option<T> {
     }
 }
 
+/// Each report of the list, in order. A Layered prepare that runs one
+/// kernel per piece of a region returns one report per piece.
+impl<T: RecordFindings> RecordFindings for Vec<T> {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        for report in self {
+            report.record_into(findings);
+        }
+    }
+}
+
 /// How many 2D offset calls came back with a
 /// [`crate::polygon::OffsetFailure`] (Checkpoint C, Q1 / D-2).
 ///

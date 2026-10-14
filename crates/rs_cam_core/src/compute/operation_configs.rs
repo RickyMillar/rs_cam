@@ -46,11 +46,23 @@ pub enum Adaptive3dEntryStyle {
     Ramp,
 }
 
+/// The order in which an op visits its regions and its Z levels.
+///
+/// 3D Rough (`Adaptive3dConfig`) defaults to `Global`. A Layered 2.5D op
+/// (Pocket) defaults to `ByArea` (ruling R4, W3.0); there a region is one
+/// input outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegionOrdering {
+    /// Level-first: each Z level visits every region before the op descends.
     Global,
+    /// Region-first: each region goes to full depth before the next.
     ByArea,
+}
+
+/// The default order of a Layered 2.5D op: region-first (ruling R4).
+pub(crate) fn default_layered_region_ordering() -> RegionOrdering {
+    RegionOrdering::ByArea
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,6 +390,10 @@ pub struct PocketConfig {
     pub finishing_passes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Region-first (`ByArea`, the default) or level-first (`Global`)
+    /// (ruling R4). The Layered runner reads it.
+    #[serde(default = "default_layered_region_ordering")]
+    pub region_ordering: RegionOrdering,
 }
 
 impl Default for PocketConfig {
@@ -394,6 +410,7 @@ impl Default for PocketConfig {
             angle: 0.0,
             finishing_passes: 0,
             spindle_rpm: None,
+            region_ordering: default_layered_region_ordering(),
         }
     }
 }

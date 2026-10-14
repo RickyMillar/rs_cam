@@ -14,7 +14,8 @@
 //! - [`LevelRegion::Empty`]: no material in the reach of the tool, skip the level;
 //! - [`LevelRegion::Clipped`]: cut only the outline ∩ (material ⊕ reach margin).
 //!
-//! The caller clips its INPUT polygon, never the emitted path. The design
+//! The Layered runner (`layered.rs`, `RestUse::LevelClip`) calls it and
+//! clips its INPUT polygon, never the emitted path. The design
 //! ladder stays as it is: a skipped level is removed, and no level moves.
 //!
 //! # The geometry
@@ -73,7 +74,9 @@ pub(crate) struct LevelPlan {
 }
 
 impl LevelPlan {
-    fn whole(level_count: usize, finding: Option<RestLevelsFinding>) -> Self {
+    /// `Whole` at every level. `finding` is `None` when the operation read
+    /// no machined stock.
+    pub(super) fn whole(level_count: usize, finding: Option<RestLevelsFinding>) -> Self {
         Self {
             levels: vec![LevelRegion::Whole; level_count],
             regions: Vec::new(),
@@ -91,16 +94,6 @@ impl LevelPlan {
                 fallback: Some(fallback),
             }),
         )
-    }
-
-    /// The region of the level `z`, which must be an entry of `levels`.
-    /// A `z` that is not in the ladder gets `Whole`, the safe answer.
-    pub(crate) fn region_at(&self, levels: &[f64], z: f64) -> LevelRegion {
-        levels
-            .iter()
-            .position(|l| l.to_bits() == z.to_bits())
-            .and_then(|i| self.levels.get(i).copied())
-            .unwrap_or(LevelRegion::Whole)
     }
 
     /// True when at least one level cuts the whole outline.

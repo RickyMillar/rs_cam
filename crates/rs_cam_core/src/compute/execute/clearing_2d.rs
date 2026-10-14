@@ -2,17 +2,20 @@
 //! adaptive.
 //!
 //! Every adapter here steps a 2D region down a ladder of Z levels, so they
-//! share `effective_levels`. Split out of `compute/execute.rs` (P4).
+//! share `layered::effective_levels`. Pocket runs on the Layered runner
+//! (W3.1); the others move to it in W3.2 and W3.3. Split out of
+//! `compute/execute.rs` (P4).
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::ResolvedHeights;
+use crate::compute::operation_configs::{PocketConfig, PocketPattern, RegionOrdering};
+use crate::geo::P2;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
 use super::OffsetFailures;
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, RestUse, effective_levels, run_layered};
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
-use super::standing_material::LevelRegion;
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
 /// Zigzag family adapter. Cancellable: the cooperative cancel closure is
@@ -228,182 +231,154 @@ pub(crate) fn generate_profile(
     ))
 }
 
-/// Pocket family adapter (contour / zigzag pattern per config). Cancellable:
-/// the cooperative cancel closure is built by `ctx.cancel_fn()` (pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`). The Contour pattern
-/// additionally polls per offset ring via `pocket_toolpath_with_cancel`
-/// (planning/finishing_stack_review_2026-07.md S.5 — pocket's own
-/// unbounded `loop {}`).
-///
-/// G-RESTLEVELS: with rest stock, each level cuts only where material still
-/// stands (`standing_material::regions_per_level`).
+/// Pocket family adapter (W3.1): the Contour or the Zigzag pattern on the
+/// Layered runner (`layered.rs`). The runner owns the ladder, the rest clip
+/// per level (G-RESTLEVELS, `RestUse::LevelClip`), one prepare per distinct
+/// region, the region order, the cancel poll per level and the spans. The
+/// Contour cascade also polls per offset ring (S.5: pocket's own unbounded
+/// `loop {}`).
 pub(crate) fn generate_pocket(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pocket, "generate_pocket");
-    let polys = prepared.polygons()?;
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
-    let tool_radius = ctx.tool_def.radius();
-    let safe_z = ctx.heights.retract_z;
-    let feed_rate = op.feed_rate();
-    let plunge_rate = op.plunge_rate();
-    let cancel_fn = ctx.cancel_fn();
-    let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for the measured zero. Pocket is
-    // the family this channel was built for — F-12 — because its cascade's
-    // only exit is a collapsed ring and a contained panic looks exactly
-    // like one.
-    ctx.record(&OffsetFailures(0));
-    for poly in polys {
-        // G2: the 2D geometry — tool compensation plus the whole
-        // `OffsetRingSet` cascade for Contour, the wall inset plus scan lines
-        // for Zigzag — is Z-independent and is computed ONCE per distinct
-        // region here. The per-level closures below stamp Z and pick the
-        // region of the level, and do nothing else.
-        if ctx.is_cancelled() {
-            return Err(OperationError::Cancelled);
-        }
-        // G-RESTLEVELS: with rest stock, each level cuts only the part of
-        // the outline where material still stands. A fresh operation gets
-        // `Whole` at every level, so its output is unchanged.
-        let plan = super::standing_material::regions_per_level(
-            ctx.initial_stock,
-            poly,
-            &levels,
-            tool_radius,
-            &cancel_fn,
-        )?;
-        ctx.record(&plan.finding);
-        let whole = std::slice::from_ref(poly);
-        let tp = match cfg.pattern {
-            crate::compute::operation_configs::PocketPattern::Contour => {
-                let base = crate::ops::pocket::PocketParams {
-                    tool_radius,
-                    stepover: cfg.stepover,
-                    cut_depth: 0.0,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    climb: cfg.climb,
-                };
-                // One cascade per distinct region. The reports sum once per
-                // cascade, never once per level.
-                let cascade = |shape: &[crate::polygon::Polygon2]| {
-                    let mut contours = Vec::new();
-                    for piece in shape {
-                        let (rings, report) =
-                            crate::ops::pocket::pocket_contours_reported_with_cancel(
-                                piece,
-                                tool_radius,
-                                cfg.stepover,
-                                &cancel_fn,
-                            )?;
-                        // The offset failures, and (Checkpoint C, Q3, F-10)
-                        // the standing area when a bound stopped the
-                        // cascade: material this pocket leaves, on the
-                        // existing `truncated_core_mm2` channel. It is the
-                        // area of ONE cascade (G2), never multiplied by the
-                        // level count.
-                        ctx.record(&report);
-                        contours.extend(rings);
-                    }
-                    Ok::<_, OperationError>(contours)
-                };
-                let whole_rings = if plan.needs_whole() {
-                    cascade(whole)?
-                } else {
-                    Vec::new()
-                };
-                let region_rings = plan
-                    .regions
-                    .iter()
-                    .map(|region| cascade(region))
-                    .collect::<Result<Vec<_>, _>>()?;
-                crate::ops::depth::toolpath_at_levels_with_cancel(
-                    &levels,
-                    safe_z,
-                    |z| {
-                        let rings = match plan.region_at(&levels, z) {
-                            LevelRegion::Whole => &whole_rings,
-                            LevelRegion::Clipped(i) => match region_rings.get(i) {
-                                Some(rings) => rings,
-                                None => &whole_rings,
-                            },
-                            LevelRegion::Empty => return Ok(Toolpath::new()),
-                        };
-                        Ok(crate::ops::pocket::pocket_contours_to_toolpath(
-                            rings,
-                            &crate::ops::pocket::PocketParams {
-                                cut_depth: z,
-                                ..base
-                            },
-                        ))
-                    },
-                    &cancel_fn,
-                )?
-            }
-            crate::compute::operation_configs::PocketPattern::Zigzag => {
-                let base = crate::ops::zigzag::ZigzagParams {
-                    tool_radius,
-                    stepover: cfg.stepover,
-                    cut_depth: 0.0,
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    angle: cfg.angle,
-                };
-                let scan = |shape: &[crate::polygon::Polygon2]| {
-                    let mut lines = Vec::new();
-                    for piece in shape {
-                        let (piece_lines, failures) = crate::ops::zigzag::zigzag_lines_reported(
-                            piece,
-                            tool_radius,
-                            cfg.stepover,
-                            cfg.angle,
-                        );
-                        ctx.record(&OffsetFailures(failures));
-                        lines.extend(piece_lines);
-                    }
-                    lines
-                };
-                let whole_lines = if plan.needs_whole() {
-                    scan(whole)
-                } else {
-                    Vec::new()
-                };
-                let region_lines: Vec<_> = plan.regions.iter().map(|r| scan(r)).collect();
-                crate::ops::depth::toolpath_at_levels_with_cancel(
-                    &levels,
-                    safe_z,
-                    |z| {
-                        let lines = match plan.region_at(&levels, z) {
-                            LevelRegion::Whole => &whole_lines,
-                            LevelRegion::Clipped(i) => match region_lines.get(i) {
-                                Some(lines) => lines,
-                                None => &whole_lines,
-                            },
-                            LevelRegion::Empty => return Ok(Toolpath::new()),
-                        };
-                        Ok(crate::ops::zigzag::lines_to_toolpath(
-                            lines,
-                            &crate::ops::zigzag::ZigzagParams {
-                                cut_depth: z,
-                                ..base
-                            },
-                        ))
-                    },
-                    &cancel_fn,
-                )?
-            }
-        };
-        combined.moves.extend(tp.moves);
+    let pass = PocketPass {
+        cfg,
+        tool_radius: ctx.tool_def.radius(),
+        safe_z: ctx.heights.retract_z,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+    };
+    match cfg.pattern {
+        PocketPattern::Contour => run_layered(&PocketContour(pass), ctx, prepared),
+        PocketPattern::Zigzag => run_layered(&PocketZigzag(pass), ctx, prepared),
     }
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(combined, &levels),
-        ctx.semantic_ctx,
-    ))
+}
+
+/// The dials both Pocket patterns read.
+struct PocketPass<'a> {
+    cfg: &'a PocketConfig,
+    tool_radius: f64,
+    safe_z: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+}
+
+/// The Contour pattern: the `OffsetRingSet` cascade of each region.
+struct PocketContour<'a>(PocketPass<'a>);
+
+/// The Zigzag pattern: the wall inset and the scan lines of each region.
+struct PocketZigzag<'a>(PocketPass<'a>);
+
+impl LayeredOp for PocketContour<'_> {
+    type Geometry = Vec<Vec<P2>>;
+    /// One report per piece. Each cascade adds its offset failures and,
+    /// when a bound stopped it (Checkpoint C, Q3, F-10), the area it
+    /// leaves standing. The runner records it once per region, never once
+    /// per level.
+    type Report = Vec<crate::ops::pocket::PocketCascadeReport>;
+
+    fn depth_per_pass(&self) -> f64 {
+        self.0.cfg.depth_per_pass
+    }
+
+    fn region_ordering(&self) -> RegionOrdering {
+        self.0.cfg.region_ordering
+    }
+
+    fn rest_use(&self) -> RestUse {
+        RestUse::LevelClip
+    }
+
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let mut contours = Vec::new();
+        let mut reports = Vec::with_capacity(region.len());
+        for piece in region {
+            let (rings, report) = crate::ops::pocket::pocket_contours_reported_with_cancel(
+                piece,
+                layer.tool_radius,
+                self.0.cfg.stepover,
+                layer.cancel,
+            )?;
+            reports.push(report);
+            contours.extend(rings);
+        }
+        Ok((contours, reports))
+    }
+
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        let pass = &self.0;
+        crate::ops::pocket::pocket_contours_to_toolpath(
+            geometry,
+            &crate::ops::pocket::PocketParams {
+                tool_radius: pass.tool_radius,
+                stepover: pass.cfg.stepover,
+                cut_depth: level.z,
+                feed_rate: pass.feed_rate,
+                plunge_rate: pass.plunge_rate,
+                safe_z: pass.safe_z,
+                climb: pass.cfg.climb,
+            },
+        )
+    }
+}
+
+impl LayeredOp for PocketZigzag<'_> {
+    type Geometry = Vec<[P2; 2]>;
+    type Report = OffsetFailures;
+
+    fn depth_per_pass(&self) -> f64 {
+        self.0.cfg.depth_per_pass
+    }
+
+    fn region_ordering(&self) -> RegionOrdering {
+        self.0.cfg.region_ordering
+    }
+
+    fn rest_use(&self) -> RestUse {
+        RestUse::LevelClip
+    }
+
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let mut lines = Vec::new();
+        let mut failures = 0;
+        for piece in region {
+            let (piece_lines, piece_failures) = crate::ops::zigzag::zigzag_lines_reported(
+                piece,
+                layer.tool_radius,
+                self.0.cfg.stepover,
+                self.0.cfg.angle,
+            );
+            failures += piece_failures;
+            lines.extend(piece_lines);
+        }
+        Ok((lines, OffsetFailures(failures)))
+    }
+
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        let pass = &self.0;
+        crate::ops::zigzag::lines_to_toolpath(
+            geometry,
+            &crate::ops::zigzag::ZigzagParams {
+                tool_radius: pass.tool_radius,
+                stepover: pass.cfg.stepover,
+                cut_depth: level.z,
+                feed_rate: pass.feed_rate,
+                plunge_rate: pass.plunge_rate,
+                safe_z: pass.safe_z,
+                angle: pass.cfg.angle,
+            },
+        )
+    }
 }
 
 /// Face family adapter. Cancellable: the cooperative cancel closure is
@@ -531,24 +506,6 @@ pub(crate) fn generate_adaptive(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
     ))
-}
-
-/// Compute effective depth levels from pre-computed cutting_levels or DepthStepping.
-fn effective_levels(
-    cutting_levels: &[f64],
-    heights: &ResolvedHeights,
-    depth_per_pass: f64,
-) -> Vec<f64> {
-    if !cutting_levels.is_empty() {
-        cutting_levels.to_vec()
-    } else {
-        let stepping = crate::ops::depth::DepthStepping::new(
-            heights.top_z,
-            heights.top_z - heights.depth(),
-            depth_per_pass,
-        );
-        stepping.all_levels()
-    }
 }
 
 // ── Moved-in-crate sentries (WP12) ────────────────────────────────────

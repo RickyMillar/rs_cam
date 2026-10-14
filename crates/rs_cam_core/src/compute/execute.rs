@@ -530,6 +530,7 @@ mod drilling;
 mod findings;
 mod finish_3d;
 mod finish_raster;
+mod layered;
 mod prologue;
 mod shared;
 mod standing_material;
