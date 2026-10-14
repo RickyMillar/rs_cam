@@ -149,3 +149,6 @@ and W4, from what they measure. It is not scheduled now.
 - B2: a second board in one project (would join the Inlay pocket and plug).
 - B3: D5 GUI ranges read `ParamDef.range` (can land before W5).
 - B4 (was W1.2c): AgentSearch and ContourSpiral leave ~2.4x more wall-band wood than ContourParallel (double inset in tool-centre space). Operator 2026-10-14: ContourParallel is the 3D Rough strategy in use; the others are known to be rough. Revisit with W6 (Volumetric shape).
+- B5 (W2.5 follow-up, found 2026-10-15): the feed-stage caution compares the modulating simulation run with the LATEST run, so generate_all (one prefix simulation per op) makes every modulated op read 'from an earlier simulation' although nothing it depends on changed. Compare against whether the op's own carve-order prefix changed (the SourceStock / prefix digest), not the run counter.
+- B6: import_machine_settings replaced the whole controller block with what the dump held (firmware grbl_hal -> unknown, the H-100 VFD plugin, the tool-change probe distance lost). An import must only overwrite the fields the dump states.
+- B7: a machine kinematics change leaves every toolpath current, but the link stage reads accel (link vs retract). Decide whether linking ops go stale on a machine edit.

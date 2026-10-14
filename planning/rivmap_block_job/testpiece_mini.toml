@@ -41,8 +41,8 @@ spindle_strategy = "match_chart"
 controller_waits_for_spindle = true
 
 [job.machine]
-name = "Shapeoko XXL (1.5 kW VFD, $$ 2026-05-26)"
-max_feed_mm_min = 10000.0
+name = "Shapeoko Pro XXL (Scylla grblHAL, H100 1.5 kW VFD, $$ 2026-10-15)"
+max_feed_mm_min = 15000.0
 max_shank_mm = 7.0
 aggressiveness = 0.85
 
@@ -69,18 +69,18 @@ adaptive_doc_factor = 2.0
 adaptive_woc_factor = 0.25
 
 [job.machine.kinematics]
-acceleration_mm_s2 = 423.333333333
+acceleration_mm_s2 = 983.3333333333334
 acceleration_xyz_mm_s2 = [
-    500.0,
-    500.0,
-    270.0,
+    1200.0,
+    1200.0,
+    550.0,
 ]
 max_rate_xyz_mm_min = [
-    10000.0,
-    10000.0,
-    1000.0,
+    15000.0,
+    15000.0,
+    2500.0,
 ]
-junction_deviation_mm = 0.02
+junction_deviation_mm = 0.1
 
 [job.machine.controller]
 firmware = "grbl_hal"
