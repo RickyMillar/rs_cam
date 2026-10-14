@@ -230,8 +230,8 @@ fn generate_all_gives_the_setup_3_rest_op_its_snapshot_d11() {
     }
 }
 
-/// The live cause of 2026-10-14, reproduced. OPEN: the fix belongs to the
-/// generation plan, not to this file, so the test is ignored until it lands.
+/// The live cause of 2026-10-14, reproduced (W1.5b). Red with the old plan
+/// rule, which read `has_snapshot` alone.
 ///
 /// 1. Run 1: `Middle` (setup 2) fails. The plan simulates before
 ///    `Front rest`; its snapshot and its result record only `Scallop`.
@@ -243,7 +243,6 @@ fn generate_all_gives_the_setup_3_rest_op_its_snapshot_d11() {
 ///    The Generate step of `Front rest` then submits against a snapshot that
 ///    is no longer current, and the op blocks on `Middle`.
 #[test]
-#[ignore = "D11 follow-up: generation_plan::plan reads has_snapshot at plan time"]
 fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
     let (mut controller, [_, middle, rest]) = three_setups(FaceUp::Top, false);
     controller.compute.poison = Some(middle);

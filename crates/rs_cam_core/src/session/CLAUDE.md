@@ -17,8 +17,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - A command returns `Effects`. `Effects.stale` is the stale set.
 - An edit invalidates the result chain to fixpoint: `invalidate_output_dependents_of_set`;
   an S2 stock change, from its setup on: `drop_stock_change_dependents`.
-- `dependencies::edges` (rules) and `generation_plan` (order): no surface
-  re-derives either. The pure `walk_output_dependents` touches no simulation.
+- `dependencies::edges` (rules), `generation_plan` (order; a row that gains a result in the
+  plan stales the snapshots below it, W1.5b): no surface re-derives either. `walk_output_dependents` is pure.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
   bumps `simulation_epoch` and records the cause. `AdoptResult` refuses a
   stale revision, `AdoptSimulation` a stale epoch.
@@ -37,4 +37,4 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 `adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`,
 `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`,
 `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
-`stock_changes_stale_from_their_setup_on_s2`.
+`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`.

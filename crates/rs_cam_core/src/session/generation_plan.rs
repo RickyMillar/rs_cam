@@ -59,6 +59,30 @@
 //! A Simulate step sits before a rest operation whose snapshot is missing OR
 //! stale: at another cell, or carved from toolpaths the project no longer
 //! holds (`ProjectSession::snapshot_is_current`, G-RESTSTALE).
+//!
+//! # A snapshot is current FOR THE PLAN only when nothing above it moves
+//!
+//! Rule (3) of `ProjectSession::source_is_current` skips an enabled row
+//! that holds no result. So a snapshot taken while an upstream row had no
+//! result reads current. The plan cannot keep that answer: the row gains a
+//! result inside the plan, and the rest operation then refuses (W1.5b, seen
+//! live on 2026-10-14).
+//!
+//! The walk therefore keeps the set of rows that gain a NEW result inside
+//! the plan. A row is in the set when it is in scope and:
+//!
+//! - it holds no result now; or
+//! - it starts from the remaining stock and a row earlier in carve order is
+//!   in the set (rule (2) or (3) then drops its result); or
+//! - an edge of it names a row in the set (an adopt walks the Regions and
+//!   PrevTool dependents and drops their results).
+//!
+//! A rest operation gets a Simulate step when its snapshot is not current,
+//! or when a row of the set comes after the last Simulate step. A row with
+//! a result that the driver regenerates gets the same moves (the GUI skips
+//! it; the CLI regenerates it to equal moves), so it moves no snapshot. A
+//! row out of scope gains no result in the plan, so it adds no Simulate
+//! step.
 
 use std::collections::BTreeSet;
 
@@ -124,7 +148,12 @@ pub fn plan(session: &ProjectSession, scope: Scope) -> Vec<Step> {
         Scope::Ancestors(toolpath_id) => Some(ancestors(session, toolpath_id)),
     };
 
+    let all_edges = edges(session);
     let mut steps: Vec<Step> = Vec::new();
+    // The rows that gain a new result inside this plan (module doc).
+    let mut gains_result: BTreeSet<ToolpathId> = BTreeSet::new();
+    // A row of `gains_result` comes after the last Simulate step.
+    let mut moved_since_simulate = false;
     for setup in session.list_setups() {
         for &index in &setup.toolpath_indices {
             let Some(tc) = session.toolpath_configs().get(index) else {
@@ -136,16 +165,28 @@ pub fn plan(session: &ProjectSession, scope: Scope) -> Vec<Step> {
             if admitted.as_ref().is_some_and(|set| !set.contains(&tc.id)) {
                 continue;
             }
-            if tc.stock_source == StockSource::FromRemainingStock && !has_snapshot(session, tc.id) {
+            let is_rest = tc.stock_source == StockSource::FromRemainingStock;
+            // Every row in the set sits earlier in carve order: the walk IS
+            // the carve order.
+            let upstream_moves = !gains_result.is_empty();
+            if is_rest && (moved_since_simulate || !has_snapshot(session, tc.id)) {
                 steps.push(Step::Simulate {
                     setup: SetupId(setup.id),
                     upto: tc.id,
                 });
+                moved_since_simulate = false;
             }
             steps.push(Step::Generate {
                 toolpath: tc.id,
                 index,
             });
+            let source_moves = all_edges.iter().any(|edge| {
+                edge.from == tc.id && edge.on.is_some_and(|on| gains_result.contains(&on))
+            });
+            if session.get_result(index).is_none() || (is_rest && upstream_moves) || source_moves {
+                let _ = gains_result.insert(tc.id);
+                moved_since_simulate = true;
+            }
         }
     }
     steps
