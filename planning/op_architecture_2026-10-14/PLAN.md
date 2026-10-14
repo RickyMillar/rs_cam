@@ -52,6 +52,7 @@ Sequential, one editor each. Order by risk.
 | W1.3 | D4 Chamfer side | simulate first; fix only if confirmed | sentry: chamfer width and side measured on the sim stock |
 | W1.4 | D3 Inlay plug in the workpiece | prove with a sim sentry; write the split proposal (R2); implement after the ruling | sentry: the female op cuts nothing outside the female region |
 | W1.5 | D11 GUI prior-op check stops at the setup | walk core `carve_order_before` | viz test: rest op first in setup 3 names the setup-2 op |
+| W1.5b | The live generate_all refusal (2026-10-14): `generation_plan.rs:~139` reads `has_snapshot` once when the plan is built; `source_is_current` skips an upstream op with no result, so a stale snapshot reads current and the plan puts no Simulate step before the rest op | the plan must schedule a Simulate before a rest op whose upstream ops are generated inside the same plan | the ignored test `a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11` turns green |
 | W1.6 | D9 red schema test | make `diameter` consistent with the schema (serde default or unexposed decision) | the red test turns green |
 | W1.2b | D2 in Adaptive3d slices (same planner, still plans only `machinable_vec[0]`) | reproduce on a mesh with a split slice; fix in the planner or the 3D adapter | sentry + G-OPGOLDEN |
 | W1.3b | Operator 2026-10-14: Chamfer on inside edges too (pocket walls and holes) | a side setting on Chamfer (outside / inside), or chamfer every edge of the outline including holes; same bevel rule | sentry: inside bevel width and depth on a pocket and a hole |
@@ -137,7 +138,7 @@ and W4, from what they measure. It is not scheduled now.
 | Wave | State |
 |---|---|
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
-| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 (FM1 bless pending) |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb |
 | W2–W6 | not started |
 
 ## Backlog (not scheduled)
