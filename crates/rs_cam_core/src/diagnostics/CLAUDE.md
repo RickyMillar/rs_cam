@@ -9,11 +9,9 @@ One typed finding model for every upstream source. The entry point is
 - `diagnose.rs` — the orchestrator.
 - `ids.rs` — the stable rule identifiers.
 - `evidence.rs`, `fix.rs` — the evidence payloads and the auto-fix payloads.
-- `supersession.rs` — the reducer that drops a pre-simulation hint when a
-  measured answer arrives.
-- `adapters/` — one adapter per source: feeds, generation findings, model
-  references, preconditions, project diagnostics, stale defaults, static
-  checks, tool load.
+- `supersession.rs` — the reducer that drops a pre-simulation hint for a measured answer.
+- `adapters/` — one adapter per source: feeds, generation findings, model references,
+  preconditions, project diagnostics, stale defaults, static checks, tool load.
 - `tests.rs` — the unit tests.
 
 ## Invariants
@@ -24,7 +22,8 @@ One typed finding model for every upstream source. The entry point is
 - A new rule needs an identifier in `ids.rs`. Do not raise a finding with an
   ad-hoc string.
 - An adapter converts. It does not compute a verdict. The verdict belongs to
-  the source layer.
+  the source layer. Example: the tool-kind finding reads
+  `OperationType::tool_refusal`, the generator's own refusal (W2.2).
 
 ## Sentries
 
@@ -33,6 +32,7 @@ One typed finding model for every upstream source. The entry point is
 - `cargo test -p rs_cam_core -q --test drill_evidence_wording_d3`
 - `cargo test -p rs_cam_core -q --test region_cap_honesty_f3`
 - `cargo test -p rs_cam_core -q --test gate_population_vacuity_xvac`
+- `cargo test -p rs_cam_core -q --lib the_static_check_and_the_generator_refuse_the_same_tools`
 
 ## Do not
 

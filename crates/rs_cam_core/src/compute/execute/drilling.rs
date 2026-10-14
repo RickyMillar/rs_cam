@@ -6,8 +6,6 @@
 //! `generate_drill` / `generate_alignment_pin_drill`. Split out of
 //! `compute/execute.rs` (P4).
 
-use std::sync::atomic::Ordering;
-
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
@@ -15,7 +13,7 @@ use crate::io::dxf_input::DrillTarget;
 use crate::tool::{MillingCutter, ToolDefinition};
 
 use super::shared::generated_with_drill_spans;
-use super::{ExecutionContext, GeneratedToolpath, OperationError};
+use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
 /// Build the [`crate::ops::drill_op::DrillOp`] for a drilling-cycle operation,
 /// re-resolving hole positions from the same inputs the toolpath
@@ -455,17 +453,13 @@ pub(super) fn drill_holes_for_config(
 /// Drill family adapter (holes from the model's drill targets or picks).
 pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
+    _prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Drill, "generate_drill");
-    // Checkpoint C, Q3: drill is cancellable now. It never touched
-    // `ctx.cancel` at all (F-4). A drill cycle is short, so the check is at
-    // the entry point rather than per hole — the point is that a pre-set flag
-    // must short-circuit before any work, which is the same contract every
-    // other cancellable family's first statement provides.
-    if ctx.cancel.load(Ordering::SeqCst) {
-        return Err(OperationError::Cancelled);
-    }
+    // Checkpoint C, Q3 (F-4): a drill cycle is short, so the only cancel
+    // poll is the dispatch prologue's (W2.2), ahead of any work. The drill
+    // kernel has no poll of its own.
     let holes = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
     let cycle = cfg.cycle.to_core(cfg);
     let params = crate::ops::drill::DrillParams {
@@ -486,19 +480,15 @@ pub(crate) fn generate_drill(
 /// Alignment-pin drill family adapter (holes from the stock snapshot).
 ///
 /// Cancellable since 2026-08-14 (O-CANC). Like `generate_drill`, the
-/// cycle is short, so the poll is at the entry point rather than per
-/// hole — but it is the FIRST statement, ahead of the empty-holes
-/// refusal, for the same reason rest's is ahead of its prev-tool
-/// precondition: a pre-set flag on a pin-drill op with no pins must
-/// report "cancelled", not "No alignment pin positions defined". Pinned
-/// by `cancellable_families_honour_a_preset_cancel_flag`.
+/// cycle is short, so the only poll is the dispatch prologue's (W2.2). It
+/// runs ahead of the empty-holes refusal, so a pre-set flag on a pin-drill
+/// op with no pins reports "cancelled", not "No alignment pin positions
+/// defined". Pinned by `cancellable_families_honour_a_preset_cancel_flag`.
 pub(crate) fn generate_alignment_pin_drill(
     ctx: &ExecutionContext<'_>,
+    _prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
-    if ctx.cancel.load(Ordering::SeqCst) {
-        return Err(OperationError::Cancelled);
-    }
     let cfg = config_guard!(op, AlignmentPinDrill, "generate_alignment_pin_drill");
     // Stock alignment pins plus any extra targets picked from the model —
     // two sources in two different frames, reconciled in one place so this

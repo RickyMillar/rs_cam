@@ -3,8 +3,6 @@
 //!
 //! Split out of `compute/execute.rs` (P4).
 
-use std::sync::atomic::Ordering;
-
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
 use crate::tool::MillingCutter;
@@ -16,10 +14,9 @@ use super::findings::{
     record_relink_totals, record_tip_float, record_truncated_core, record_zero_removal,
 };
 use super::shared::{
-    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, require_index,
-    require_mesh, with_depth_run_annotation,
+    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
-use super::{ExecutionContext, GeneratedToolpath, OperationError};
+use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
 /// Read the single leave-stock scalar the adaptive3d planner consumes.
 ///
@@ -47,11 +44,14 @@ pub(super) fn adaptive3d_effective_stock_to_leave(
 /// `spans_from_adaptive3d_annotations` + annotate_adaptive3d.
 pub(crate) fn generate_adaptive3d(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -186,10 +186,9 @@ pub(crate) fn generate_adaptive3d(
         idx,
         ctx.tool_def,
         &params,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
+        &ctx.cancel_fn(),
         ctx.debug_ctx,
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+    )?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, sem);
     }
@@ -206,28 +205,18 @@ pub(crate) fn generate_adaptive3d(
 }
 
 /// Pencil family adapter (labeled-event spans + annotate_pencil).
-/// Cancellable: the cooperative cancel closure is rebuilt from
-/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
+/// Cancellable: the cooperative cancel closure is built by
+/// `ctx.cancel_fn()` (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_pencil(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pencil, "generate_pencil");
-    // Feeds matrix R1 (2026-09-23): the registry row carries Scallop's tool
-    // rule, and the generator refuses on the same predicate Suggest reads.
-    // Membership pinned by
-    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
-    if !OperationType::Pencil
-        .registry_entry()
-        .tool_constraints
-        .allows(ctx.tool_cfg.tool_type.cutter_kind())
-    {
-        return Err(OperationError::InvalidTool(
-            "Pencil requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
-        ));
-    }
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = crate::finish::pencil::PencilParams {
         // R1: the link lift's fallback top comes from the one builder.
         // `None` on fresh stock, where the lift never runs.
@@ -254,9 +243,8 @@ pub(crate) fn generate_pencil(
             // the RestDepth detector prefers it as the rest reference.
             ctx.initial_stock,
             ctx.debug_ctx,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+            &ctx.cancel_fn(),
+        )?;
     // Wave D1: pencil is a centreline op, so it always MEASURES float — even
     // when the answer is zero. That is the whole point: a silent pass and a
     // pass that proved the tool reached the floor must not look alike.
@@ -289,7 +277,7 @@ pub(crate) fn generate_pencil(
 
 /// UnifiedFinish family adapter (P2.c orchestrator —
 /// `planning/unified_finish_planner_design.md`). Mirrors `generate_scallop`
-/// closely: ball-tip refusal, mesh/index guards, inherited-dial params
+/// closely: the prologue's ball-tip and mesh checks, inherited-dial params
 /// build, the P2.b `FinishPlannerParams::for_tool` base with the op's three
 /// new dials (`steep_threshold_deg` / `waterline_threshold_deg` /
 /// `overlap_mm`) overridden on top (one-new-dial rule — everything else
@@ -299,22 +287,14 @@ pub(crate) fn generate_pencil(
 /// mid-steep band is itself a scallop pass).
 pub(crate) fn generate_unified_finish(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, UnifiedFinish, "generate_unified_finish");
-    // Membership pinned by
-    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
-    if !OperationType::UnifiedFinish
-        .registry_entry()
-        .tool_constraints
-        .allows(ctx.tool_cfg.tool_type.cutter_kind())
-    {
-        return Err(OperationError::InvalidTool(
-            "Unified Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
-        ));
-    }
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -463,9 +443,8 @@ pub(crate) fn generate_unified_finish(
             claims_cfg.as_ref(),
             ctx.debug_ctx,
             link_ceiling,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+            &ctx.cancel_fn(),
+        )?;
     // Report-only, and only when the pass actually ran — `None` on the
     // stats side means "not measured", never "nothing retracted".
     if cfg.intra_region_hookup_mm > 0.0 {
@@ -590,15 +569,18 @@ pub(crate) fn generate_unified_finish(
 }
 
 /// SteepShallow family adapter. Cancellable: the cooperative cancel
-/// closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -610,9 +592,8 @@ pub(crate) fn generate_steep_shallow(
         ctx.tool_def,
         &params,
         ctx.boundary_regions,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+        &ctx.cancel_fn(),
+    )?;
     // Two concatenated passes, not one continuous trace: barriers keep the
     // halves in their emitted order and keep the steep half's Z ladder,
     // which is what lets `UnifiedFinish`-style intra-node reordering apply
@@ -625,15 +606,18 @@ pub(crate) fn generate_steep_shallow(
 }
 
 /// RampFinish family adapter (labeled-event spans + annotate_ramp_finish).
-/// Cancellable: the cooperative cancel closure is rebuilt from
-/// `ctx.cancel` (pinned by `cancellable_families_honour_a_preset_cancel_flag`).
+/// Cancellable: the cooperative cancel closure is built by
+/// `ctx.cancel_fn()` (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_ramp_finish(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -647,9 +631,8 @@ pub(crate) fn generate_ramp_finish(
             &params,
             ctx.debug_ctx,
             ctx.boundary_regions,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+            &ctx.cancel_fn(),
+        )?;
     // PR-8b: unconditional, including when the clamp was inert — this is the
     // only adapter that runs a ramp descent, so `None` downstream means "no
     // descent ran" and never "a descent ran and I did not look".
@@ -671,27 +654,17 @@ pub(crate) fn generate_ramp_finish(
 /// the family annotate fn is `annotate_spiral_finish` — both part of
 /// the contract. Cancellable: the cooperative cancel closure is rebuilt
 /// from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_spiral_finish(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
-    // Feeds matrix R1 (2026-09-23): the registry row carries Scallop's tool
-    // rule, and the generator refuses on the same predicate Suggest reads.
-    // Membership pinned by
-    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
-    if !OperationType::SpiralFinish
-        .registry_entry()
-        .tool_constraints
-        .allows(ctx.tool_cfg.tool_type.cutter_kind())
-    {
-        return Err(OperationError::InvalidTool(
-            "Spiral Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
-        ));
-    }
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -705,9 +678,8 @@ pub(crate) fn generate_spiral_finish(
             &params,
             ctx.debug_ctx,
             ctx.boundary_regions,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+            &ctx.cancel_fn(),
+        )?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, sem);
     }
@@ -721,10 +693,11 @@ pub(crate) fn generate_spiral_finish(
 }
 
 /// RadialFinish family adapter. Cancellable: the cooperative cancel
-/// closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_radial_finish(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
@@ -750,8 +723,10 @@ pub(crate) fn generate_radial_finish(
             )));
         }
     }
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -763,9 +738,8 @@ pub(crate) fn generate_radial_finish(
         ctx.tool_def,
         &params,
         ctx.boundary_regions,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+        &ctx.cancel_fn(),
+    )?;
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(tp, "Radial ray"),
         ctx.semantic_ctx,
@@ -773,15 +747,18 @@ pub(crate) fn generate_radial_finish(
 }
 
 /// HorizontalFinish family adapter. Cancellable: the cooperative
-/// cancel closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// cancel closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_horizontal_finish(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -793,9 +770,8 @@ pub(crate) fn generate_horizontal_finish(
         ctx.tool_def,
         &params,
         ctx.boundary_regions,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+        &ctx.cancel_fn(),
+    )?;
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(tp, "Horizontal slice"),
         ctx.semantic_ctx,

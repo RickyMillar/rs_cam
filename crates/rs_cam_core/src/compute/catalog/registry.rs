@@ -1026,7 +1026,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
                       circles in SVG drawings (pick targets in the viewport or by layer; \
                       refuses when there are none)",
         family: OperationFamily::TwoPointFiveD,
-        geometry: GeometryRequirement::Polygons,
+        geometry: GeometryRequirement::DrillTargets,
         default_auto_regen: true,
         ui_family: UiOperationFamily::Pocket,
         ui_process_role: UiProcessRole::Roughing,
@@ -1156,9 +1156,8 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
     param_defs: PENCIL_PARAMS,
-    // Feeds matrix R1 (2026-09-23): the static check calls a flat end mill
-    // on Pencil Critical ("require a ball nose tool for correct surface
-    // contact"); the row now says so, and Suggest refuses on it.
+    // Feeds matrix R1 (2026-09-23): a ball-tip rule. Since W2.2 the
+    // generator prologue, the static check and Suggest all refuse on it.
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,

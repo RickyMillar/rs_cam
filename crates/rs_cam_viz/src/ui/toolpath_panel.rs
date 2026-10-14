@@ -1173,7 +1173,7 @@ fn add_op_menu_item(
     let spec = op.spec();
     let available = match spec.geometry {
         GeometryRequirement::Stock => true,
-        GeometryRequirement::Polygons => has_polygons,
+        GeometryRequirement::Polygons | GeometryRequirement::DrillTargets => has_polygons,
         GeometryRequirement::Mesh => has_mesh,
         GeometryRequirement::Both => has_polygons && has_mesh,
     };
@@ -1190,7 +1190,9 @@ fn add_op_menu_item(
         }
     } else {
         let reason = match spec.geometry {
-            GeometryRequirement::Polygons => "Requires 2D geometry (SVG/DXF)",
+            GeometryRequirement::Polygons | GeometryRequirement::DrillTargets => {
+                "Requires 2D geometry (SVG/DXF)"
+            }
             GeometryRequirement::Mesh => "Requires 3D mesh (STL/STEP)",
             GeometryRequirement::Both => "Requires both 2D curves and 3D mesh",
             GeometryRequirement::Stock => "",

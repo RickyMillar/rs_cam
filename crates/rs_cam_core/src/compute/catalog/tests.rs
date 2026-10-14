@@ -260,8 +260,8 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
 }
 
 /// T7 PR C reconciliation pin: the registry `allows()` predicate —
-/// which the Scallop runtime refusal in
-/// `execute_operation_annotated` now reads — agrees with the
+/// which the generation prologue reads for every operation (W2.2,
+/// `compute/execute/prologue.rs`) — agrees with the
 /// pre-Phase-3 `ToolType::has_ball_tip()` check for Scallop, and
 /// matches the constraint semantics for every (op, cutter) cell.
 #[test]
@@ -280,8 +280,7 @@ fn tool_constraints_allows_matches_runtime_refusal_semantics() {
             "{tool_type:?} vs Scallop"
         );
         // UnifiedFinish: same ball-tip refusal as Scallop (registration
-        // checklist decision — mirrors Scallop's runtime refusal in
-        // `generate_unified_finish`).
+        // checklist decision; the prologue refuses on it).
         assert_eq!(
             OperationType::UnifiedFinish
                 .registry_entry()
@@ -291,8 +290,8 @@ fn tool_constraints_allows_matches_runtime_refusal_semantics() {
             "{tool_type:?} vs UnifiedFinish"
         );
         // Pencil and SpiralFinish: the same ball-tip rule since feeds
-        // matrix R1 (2026-09-23); `generate_pencil` and
-        // `generate_spiral_finish` refuse on it, as Suggest does.
+        // matrix R1 (2026-09-23); the prologue refuses on it, as Suggest
+        // does.
         for op in [OperationType::Pencil, OperationType::SpiralFinish] {
             assert_eq!(
                 op.registry_entry().tool_constraints.allows(kind),

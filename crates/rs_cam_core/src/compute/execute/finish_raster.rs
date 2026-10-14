@@ -3,8 +3,6 @@
 //! All three relink their fragments through the shared finishing link stage
 //! before they return. Split out of `compute/execute.rs` (P4).
 
-use std::sync::atomic::Ordering;
-
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -16,9 +14,9 @@ use crate::trace::transform_provenance::ReconcileSet;
 use super::findings::{record_relink_totals, record_truncated_core, record_waterline_ladder};
 use super::shared::{
     generated_with_cut_run_spans, generated_with_depth_run_spans, generated_with_spans,
-    op_link_ceiling, require_index, require_mesh, with_depth_run_annotation,
+    op_link_ceiling, with_depth_run_annotation,
 };
-use super::{ExecutionContext, GeneratedToolpath, OperationError};
+use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
 /// Curve chaining for `project_curve` — the op's air is COUNT-bound.
 ///
@@ -151,28 +149,20 @@ fn relink_in_adapter(
 }
 
 /// Scallop family adapter (labeled-event spans + annotate_scallop).
-/// The ball-tip refusal reads the registry constraint list (T7 PR C)
-/// so refusal and published schema cannot drift. Cancellable: the
-/// cooperative cancel closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// The dispatch prologue refuses a tool the registry row does not admit
+/// (W2.2), so the refusal and the published schema cannot drift. Cancellable: the
+/// cooperative cancel closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_scallop(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Scallop, "generate_scallop");
-    // Membership pinned by
-    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
-    if !OperationType::Scallop
-        .registry_entry()
-        .tool_constraints
-        .allows(ctx.tool_cfg.tool_type.cutter_kind())
-    {
-        return Err(OperationError::InvalidTool(
-            "Scallop requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
-        ));
-    }
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = cfg.params(
         OpMotion {
             feed_rate: op.feed_rate(),
@@ -197,9 +187,8 @@ pub(crate) fn generate_scallop(
             &params,
             ctx.debug_ctx,
             ctx.boundary_regions,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?
+            &ctx.cancel_fn(),
+        )?
     } else {
         // The offset-cascade contour scallop IS the op §2 of the linking spec
         // measured: breadth-first ring order, no reorder, no loop rotation
@@ -213,9 +202,8 @@ pub(crate) fn generate_scallop(
             ctx.debug_ctx,
             ctx.boundary_regions,
             stage.as_ref(),
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-        )
-        .map_err(|_e| OperationError::Cancelled)?
+            &ctx.cancel_fn(),
+        )?
     };
     record_truncated_core(
         ctx.findings,
@@ -248,15 +236,18 @@ pub(crate) fn generate_scallop(
 }
 
 /// DropCutter family adapter. Cancellable: the cooperative cancel
-/// closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_drop_cutter(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
     // should only tip-track the mesh surface — anything lower is either
     // a non-contact clamp or the tool's taper forcing the tip below
@@ -273,9 +264,8 @@ pub(crate) fn generate_drop_cutter(
         cfg.stepover,
         0.0,
         effective_min_z,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+        &ctx.cancel_fn(),
+    )?;
     // Drop grid points whose vertical ray misses every triangle
     // in the mesh. `point_drop_cutter` marks `contacted = true`
     // whenever the cutter (which has radius) touches ANY nearby
@@ -400,15 +390,18 @@ pub(crate) fn generate_drop_cutter(
 }
 
 /// Waterline family adapter. Cancellable: the cooperative cancel
-/// closure is rebuilt from `ctx.cancel` (pinned by
-/// `cancellable_families_honour_a_preset_cancel_flag`).
+/// closure is built by `ctx.cancel_fn()` (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_waterline(
     ctx: &ExecutionContext<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Waterline, "generate_waterline");
-    let m = require_mesh(ctx.mesh, op.op_type().name())?;
-    let idx = require_index(ctx.index, op.op_type().name())?;
+    let MeshInput {
+        mesh: m,
+        index: idx,
+    } = prepared.mesh()?;
     let params = crate::ops::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),
@@ -458,9 +451,8 @@ pub(crate) fn generate_waterline(
         &ladder.levels,
         &params,
         ctx.boundary_regions,
-        &(|| ctx.cancel.load(Ordering::SeqCst)),
-    )
-    .map_err(|_e| OperationError::Cancelled)?;
+        &ctx.cancel_fn(),
+    )?;
     // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
     // family's fingerprint does not move.
     //

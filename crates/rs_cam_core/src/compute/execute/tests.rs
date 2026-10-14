@@ -737,34 +737,35 @@ fn invalid_tool_for_vcarve() {
     );
 }
 
+/// W2.2: the prologue order is cancel, then geometry, then tool. Before
+/// W2.2 the four ball-tip adapters checked the tool before the mesh and
+/// the V-bit adapters checked the polygons first; the prologue gives every
+/// operation the geometry-first order. The wrong tool on a mesh is
+/// `every_tool_refusal_is_the_registry_rows_through_the_dispatch`.
 #[test]
-fn invalid_tool_for_scallop() {
+fn scallop_without_a_mesh_refuses_the_mesh_before_the_tool() {
     let op = OperationConfig::new_default(OperationType::Scallop);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill); // not ball nose
     let heights = test_heights();
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
 
-    // Scallop requires a mesh, but the tool check happens before mesh access
     let findings = std::cell::RefCell::new(GenerationFindings::default());
-    let ctx = ExecutionContext {
-        ..ExecutionContext::new(
-            &findings,
-            &tool_def,
-            &tool_cfg,
-            &heights,
-            &[],
-            &bbox,
-            &cancel,
-        )
-    };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
-
-    assert!(result.is_err());
-    let err = result.unwrap_err();
+    let ctx = ExecutionContext::new(
+        &findings,
+        &tool_def,
+        &tool_cfg,
+        &heights,
+        &[],
+        &bbox,
+        &cancel,
+    );
+    let err = execute_operation_annotated(&ctx, &op)
+        .map(|generated| generated.toolpath)
+        .unwrap_err();
     assert!(
-        matches!(err, OperationError::InvalidTool(_)),
-        "Expected InvalidTool, got: {err:?}"
+        matches!(err, OperationError::MissingGeometry(_)),
+        "Expected MissingGeometry, got: {err:?}"
     );
 }
 
@@ -974,258 +975,120 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
     }
 }
 
-/// Phase 5 (T11) cancellation net — written BEFORE the adapter
-/// cutover per plan §Phase-5 task 6. Originally exactly four of the 23
-/// arms cooperatively polled `cancel`: Adaptive, DropCutter, Adaptive3d,
-/// Waterline. The 2026-07 mesh-finish incident (a fine-stepover
-/// generation hung the GUI for two hours because none of the 3D
-/// finishing families polled cancel) extended coverage to the seven
-/// dense-heightmap/dense-loop finish families: Pencil, Scallop,
-/// SteepShallow, RampFinish, SpiralFinish, RadialFinish,
-/// HorizontalFinish — 11 of 23 arms total. The flat-2D S.5 fix
-/// (planning/finishing_stack_review_2026-07.md — "Zero of 10 flat 2D
-/// ops can be cancelled") extended coverage again to Pocket, Profile,
-/// Zigzag, Trace, Face, ProjectCurve, VCarve, Inlay — 19 of 23 arms
-/// total. A `GenerateFn` adapter that forgets to rebuild the
-/// `|| cancel.load(Ordering::SeqCst)` closure silently makes the op
-/// uncancellable — no compile error, invisible to fast unit tests.
-/// This pins the contract: with `cancel` pre-set, each of those
-/// families must return `Err(OperationError::Cancelled)` rather than
-/// running to completion.
+/// The kind of the tool a W2.2 test hands an operation: an end mill when the
+/// row admits one, else the first kind the row requires. Read off the
+/// registry row, so no test carries a hand list of tool rules.
+fn admitted_kind(op_type: OperationType) -> crate::feeds::CutterKind {
+    let tc = op_type.registry_entry().tool_constraints;
+    if tc.allows(crate::feeds::CutterKind::Flat) {
+        return crate::feeds::CutterKind::Flat;
+    }
+    *tc.required_kinds
+        .first()
+        .unwrap_or_else(|| panic!("{op_type:?} refuses the end mill and requires no kind"))
+}
+
+/// A default config, with three dials made coarse so a generator that
+/// ignores the flag still ends in test time.
+fn quick_config(op_type: OperationType) -> OperationConfig {
+    op_with_updates(op_type, |op| match op {
+        OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass = 4.0,
+        OperationConfig::DropCutter(cfg) => {
+            cfg.stepover = 2.0;
+            cfg.min_z = -5.0;
+        }
+        OperationConfig::Waterline(cfg) => {
+            cfg.z_step = 2.0;
+            cfg.sampling = 1.0;
+        }
+        _ => {}
+    })
+}
+
+/// O-CANC / W2.2: the dispatch prologue reads the cancel flag BEFORE any
+/// refusal. For every registered operation, with the flag pre-set, NO
+/// geometry and a tool the row refuses (when it refuses any), the dispatch
+/// must report `Cancelled` — never "requires a 3D mesh", never a tool
+/// refusal, never a drill-target refusal. Generated from
+/// `OperationType::ALL`, so a 25th operation is covered with no edit here.
+///
+/// That a GENERATOR polls the flag during its own work is a different
+/// claim: `every_generator_polls_a_preset_cancel_flag_past_the_prologue`.
 #[test]
 fn cancellable_families_honour_a_preset_cancel_flag() {
     let heights = test_heights();
     let bbox = test_stock_bbox();
-    let standard_polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
-    let hemisphere_mesh = make_test_hemisphere(25.0, 16);
-    let hemisphere_index = SpatialIndex::build_auto(&hemisphere_mesh);
-
-    let adaptive3d = op_with_updates(OperationType::Adaptive3d, |op| {
-        let OperationConfig::Adaptive3d(cfg) = op else {
-            unreachable!("default op kind mismatch");
-        };
-        cfg.depth_per_pass = 4.0;
-    });
-    let drop_cutter = op_with_updates(OperationType::DropCutter, |op| {
-        let OperationConfig::DropCutter(cfg) = op else {
-            unreachable!("default op kind mismatch");
-        };
-        cfg.stepover = 2.0;
-        cfg.min_z = -5.0;
-    });
-    let waterline = op_with_updates(OperationType::Waterline, |op| {
-        let OperationConfig::Waterline(cfg) = op else {
-            unreachable!("default op kind mismatch");
-        };
-        cfg.z_step = 2.0;
-        cfg.sampling = 1.0;
-    });
-
-    // (name, op, tool, needs_mesh, needs_polygons)
-    let cases: Vec<(&str, OperationConfig, ToolType, bool, bool)> = vec![
-        (
-            "Adaptive",
-            OperationConfig::new_default(OperationType::Adaptive),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        ("DropCutter", drop_cutter, ToolType::BallNose, true, false),
-        ("Adaptive3d", adaptive3d, ToolType::EndMill, true, false),
-        ("Waterline", waterline, ToolType::BallNose, true, false),
-        // Mesh-finish families (2026-07 hang fix): cancel is checked as
-        // the very first statement of each `*_with_cancel` entry point,
-        // so a pre-set flag must short-circuit before any real work
-        // regardless of default params/mesh shape.
-        (
-            "Pencil",
-            OperationConfig::new_default(OperationType::Pencil),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "Scallop",
-            OperationConfig::new_default(OperationType::Scallop),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "SteepShallow",
-            OperationConfig::new_default(OperationType::SteepShallow),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "RampFinish",
-            OperationConfig::new_default(OperationType::RampFinish),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "SpiralFinish",
-            OperationConfig::new_default(OperationType::SpiralFinish),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "RadialFinish",
-            OperationConfig::new_default(OperationType::RadialFinish),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "HorizontalFinish",
-            OperationConfig::new_default(OperationType::HorizontalFinish),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        // Flat-2D families (S.5 fix, planning/finishing_stack_review_2026-07.md):
-        // cancel is checked as the very first statement of every
-        // `*_with_cancel` entry point (and of the shared
-        // `depth::toolpath_at_levels_with_cancel` choke point pocket/
-        // profile/zigzag/trace/face route through), so a pre-set flag
-        // short-circuits regardless of default params/polygon shape.
-        (
-            "Pocket",
-            OperationConfig::new_default(OperationType::Pocket),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        (
-            "Profile",
-            OperationConfig::new_default(OperationType::Profile),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        (
-            "Zigzag",
-            OperationConfig::new_default(OperationType::Zigzag),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        (
-            "Trace",
-            OperationConfig::new_default(OperationType::Trace),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        (
-            "Face",
-            OperationConfig::new_default(OperationType::Face),
-            ToolType::EndMill,
-            false,
-            false,
-        ),
-        (
-            "ProjectCurve",
-            OperationConfig::new_default(OperationType::ProjectCurve),
-            ToolType::EndMill,
-            true,
-            true,
-        ),
-        (
-            "VCarve",
-            OperationConfig::new_default(OperationType::VCarve),
-            ToolType::VBit,
-            false,
-            true,
-        ),
-        (
-            "Inlay",
-            OperationConfig::new_default(OperationType::Inlay),
-            ToolType::VBit,
-            false,
-            true,
-        ),
-        (
-            "InlayPlug",
-            OperationConfig::new_default(OperationType::InlayPlug),
-            ToolType::VBit,
-            false,
-            true,
-        ),
-        // Checkpoint C, Q3 (F-4). Added in the same commit that made it
-        // cancellable — the doc on `ExecutionContext` says the coverage
-        // claim goes stale otherwise, and this is what keeps it honest.
-        (
-            "Drill",
-            OperationConfig::new_default(OperationType::Drill),
-            ToolType::EndMill,
-            false,
-            true,
-        ),
-        // O-CANC (2026-08-14) — the last two registry families, plus
-        // UnifiedFinish, which was cancellable all along and simply
-        // never enumerated here (see `ExecutionContext`'s doc for why
-        // that made the coverage count wrong in BOTH terms).
-        // AlignmentPinDrill and Chamfer both poll as their first
-        // statement, ahead of their own preconditions — the pin op's
-        // default config has no holes and Chamfer's tool here is a
-        // V-bit, so a check placed after those guards would report
-        // MissingGeometry / InvalidTool instead of Cancelled and this
-        // case would fail.
-        (
-            "UnifiedFinish",
-            OperationConfig::new_default(OperationType::UnifiedFinish),
-            ToolType::BallNose,
-            true,
-            false,
-        ),
-        (
-            "AlignmentPinDrill",
-            OperationConfig::new_default(OperationType::AlignmentPinDrill),
-            ToolType::EndMill,
-            false,
-            false,
-        ),
-        (
-            "Chamfer",
-            OperationConfig::new_default(OperationType::Chamfer),
-            ToolType::VBit,
-            false,
-            true,
-        ),
-    ];
-
-    // The coverage claim on `ExecutionContext` is no longer a
-    // hand-written count. Assert the case list IS the registry, so a
-    // new family either polls the flag or turns this red.
-    let covered: std::collections::BTreeSet<String> =
-        cases.iter().map(|(name, ..)| (*name).to_owned()).collect();
-    let registered: std::collections::BTreeSet<String> = OperationType::ALL
-        .iter()
-        .map(|op| format!("{op:?}"))
-        .collect();
-    assert_eq!(
-        covered,
-        registered,
-        "every registered operation family must appear in this list. Missing \
-         from the list: {:?}. In the list but not registered: {:?}",
-        registered.difference(&covered).collect::<Vec<_>>(),
-        covered.difference(&registered).collect::<Vec<_>>(),
-    );
-
-    for (name, op, tool_type, needs_mesh, needs_polygons) in cases {
-        let (tool_def, tool_cfg) = make_tool(tool_type);
+    for &op_type in OperationType::ALL {
+        let op = OperationConfig::new_default(op_type);
+        let refused = crate::feeds::CutterKind::ALL
+            .iter()
+            .copied()
+            .find(|&k| op_type.tool_refusal(k).is_some());
+        let kind = refused.unwrap_or(crate::feeds::CutterKind::Flat);
+        let (tool_def, tool_cfg) = make_tool(kind.tool_type());
         let cutting_levels = op.cutting_levels(heights.top_z);
-        let cancel = AtomicBool::new(true); // pre-set: cancel before any work
+        let cancel = AtomicBool::new(true);
+        let findings = std::cell::RefCell::new(GenerationFindings::default());
+        let ctx = ExecutionContext::new(
+            &findings,
+            &tool_def,
+            &tool_cfg,
+            &heights,
+            &cutting_levels,
+            &bbox,
+            &cancel,
+        );
+        match execute_operation_annotated(&ctx, &op) {
+            Err(OperationError::Cancelled) => {}
+            Ok(generated) => panic!(
+                "{op_type:?}: a pre-set cancel was ignored; generation ran to \
+                 completion ({} moves).",
+                generated.toolpath.moves.len()
+            ),
+            Err(other) => {
+                panic!("{op_type:?}: expected Cancelled ahead of every refusal, got: {other:?}")
+            }
+        }
+    }
+}
 
+/// Phase 5 (T11) cancellation net, past the prologue. The 2026-07
+/// mesh-finish incident: a fine-stepover generation hung the GUI for two
+/// hours because its adapter never built the cancel closure. The dispatch
+/// prologue (W2.2) checks the flag once, before the adapter; it cannot see
+/// a generator that ignores the flag DURING its work. So this test calls
+/// each row's `generate` directly, past the prologue, with the flag
+/// pre-set and the inputs the row requires. The generator must return
+/// `Cancelled` rather than run to completion.
+///
+/// Generated from `OperationType::ALL`. The one exemption is a registry
+/// fact, not a hand list: a `Kinematics::DrillZOnly` row (Drill, Pin
+/// Drill) runs a short cycle whose only poll is the prologue's.
+#[test]
+fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
+    let heights = test_heights();
+    let bbox = test_stock_bbox();
+    let polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+    let mesh = make_test_hemisphere(25.0, 16);
+    let index = SpatialIndex::build_auto(&mesh);
+
+    let mut polled = 0;
+    let mut drill_cycles = 0;
+    for &op_type in OperationType::ALL {
+        let entry = op_type.registry_entry();
+        if entry.policy.kinematics == crate::compute::catalog::Kinematics::DrillZOnly {
+            drill_cycles += 1;
+            continue;
+        }
+        let op = quick_config(op_type);
+        let (tool_def, tool_cfg) = make_tool(admitted_kind(op_type).tool_type());
+        let cutting_levels = op.cutting_levels(heights.top_z);
+        let cancel = AtomicBool::new(true);
         let findings = std::cell::RefCell::new(GenerationFindings::default());
         let ctx = ExecutionContext {
-            mesh: needs_mesh.then_some(&hemisphere_mesh),
-            index: needs_mesh.then_some(&hemisphere_index),
-            polygons: needs_polygons.then_some(standard_polygons.as_slice()),
+            mesh: Some(&mesh),
+            index: Some(&index),
+            polygons: Some(polygons.as_slice()),
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,
@@ -1236,17 +1099,148 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
                 &cancel,
             )
         };
-        let result = execute_operation_annotated(&ctx, &op);
-
-        match result {
-            Err(OperationError::Cancelled) => {}
+        let prepared = prologue::check_inputs(&ctx, &op)
+            .unwrap_or_else(|e| panic!("{op_type:?}: the prologue refused its own inputs: {e}"));
+        match (entry.generate)(&ctx, &prepared, &op) {
+            Err(OperationError::Cancelled) => polled += 1,
             Ok(generated) => panic!(
-                "{name}: pre-set cancel was ignored — generation ran to \
-                 completion ({} moves). The cancel closure is no longer \
-                 wired through this family's generator.",
+                "{op_type:?}: pre-set cancel was ignored past the prologue; the \
+                 generator ran to completion ({} moves). Its kernel no longer \
+                 receives `ctx.cancel_fn()`.",
                 generated.toolpath.moves.len()
             ),
-            Err(other) => panic!("{name}: expected OperationError::Cancelled, got: {other:?}"),
+            Err(other) => panic!("{op_type:?}: expected Cancelled, got: {other:?}"),
+        }
+    }
+    assert_eq!(polled + drill_cycles, OperationType::ALL.len());
+    assert!(polled > drill_cycles, "the exemption swallowed the test");
+}
+
+/// W2.2: every operation whose registry row requires a tool kind refuses
+/// each other kind through the real dispatch, with the registry's text
+/// (`OperationType::tool_refusal`), and admits each kind the row allows.
+/// Generated from `OperationType::ALL` x `CutterKind::ALL`: no hand list.
+#[test]
+fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
+    let heights = test_heights();
+    let bbox = test_stock_bbox();
+    let polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+    let mesh = make_test_hemisphere(25.0, 16);
+    let index = SpatialIndex::build_auto(&mesh);
+
+    let mut restricted = 0;
+    for &op_type in OperationType::ALL {
+        let tc = op_type.registry_entry().tool_constraints;
+        let op = OperationConfig::new_default(op_type);
+        let mut refused_here = 0;
+        for &kind in crate::feeds::CutterKind::ALL {
+            let (tool_def, tool_cfg) = make_tool(kind.tool_type());
+            let cutting_levels = op.cutting_levels(heights.top_z);
+            let cancel = AtomicBool::new(false);
+            let findings = std::cell::RefCell::new(GenerationFindings::default());
+            let ctx = ExecutionContext {
+                mesh: Some(&mesh),
+                index: Some(&index),
+                polygons: Some(polygons.as_slice()),
+                ..ExecutionContext::new(
+                    &findings,
+                    &tool_def,
+                    &tool_cfg,
+                    &heights,
+                    &cutting_levels,
+                    &bbox,
+                    &cancel,
+                )
+            };
+            if tc.allows(kind) {
+                // Admitted: the prologue passes. The generation itself is
+                // not run here; G-OPGOLDEN owns its output.
+                assert!(
+                    prologue::check_inputs(&ctx, &op).is_ok(),
+                    "{op_type:?} refused {kind:?}, which its row admits"
+                );
+                continue;
+            }
+            refused_here += 1;
+            let expected = op_type
+                .tool_refusal(kind)
+                .unwrap_or_else(|| panic!("{op_type:?} x {kind:?}: no registry text"));
+            match execute_operation_annotated(&ctx, &op) {
+                Err(OperationError::InvalidTool(text)) => {
+                    assert_eq!(text, expected, "{op_type:?} x {kind:?}");
+                }
+                Ok(_) => panic!("{op_type:?} generated with {kind:?}, which its row refuses"),
+                Err(other) => panic!("{op_type:?} x {kind:?}: expected InvalidTool, got {other:?}"),
+            }
+        }
+        if !tc.required_kinds.is_empty() {
+            assert!(
+                refused_here > 0,
+                "{op_type:?} requires kinds but refuses none"
+            );
+            restricted += 1;
+        }
+    }
+    assert!(
+        restricted > 0,
+        "no row requires a tool kind; the test proves nothing"
+    );
+}
+
+/// W2.2: the static diagnostic and the generator refuse the SAME tools,
+/// with the SAME text — both read `OperationType::tool_refusal`. Before
+/// W2.2 the diagnostic carried its own list (an end mill on Scallop,
+/// Unified Finish or Pencil) and missed Spiral Finish, the bull nose, the
+/// V-bit and the four V-bit operations.
+#[test]
+fn the_static_check_and_the_generator_refuse_the_same_tools() {
+    let heights = test_heights();
+    let bbox = test_stock_bbox();
+    let polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
+    let mesh = make_test_hemisphere(25.0, 16);
+    let index = SpatialIndex::build_auto(&mesh);
+
+    for &op_type in OperationType::ALL {
+        let op = OperationConfig::new_default(op_type);
+        for &kind in crate::feeds::CutterKind::ALL {
+            let (tool_def, tool_cfg) = make_tool(kind.tool_type());
+            let diagnostic: Vec<String> =
+                crate::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks(
+                    crate::ids::ToolpathId(0),
+                    &op,
+                    &tool_cfg,
+                    None,
+                )
+                .into_iter()
+                .filter(|d| d.id.as_str() == crate::diagnostics::ids::COMPAT_TOOL_KIND_REFUSED)
+                .map(|d| d.message)
+                .collect();
+
+            let cutting_levels = op.cutting_levels(heights.top_z);
+            let cancel = AtomicBool::new(false);
+            let findings = std::cell::RefCell::new(GenerationFindings::default());
+            let ctx = ExecutionContext {
+                mesh: Some(&mesh),
+                index: Some(&index),
+                polygons: Some(polygons.as_slice()),
+                ..ExecutionContext::new(
+                    &findings,
+                    &tool_def,
+                    &tool_cfg,
+                    &heights,
+                    &cutting_levels,
+                    &bbox,
+                    &cancel,
+                )
+            };
+            // The prologue is the generator's tool gate; a refusal stops the
+            // dispatch there, so this is what generation returns.
+            let generator: Vec<String> = match prologue::check_inputs(&ctx, &op) {
+                Err(OperationError::InvalidTool(text)) => vec![text],
+                Ok(_) => vec![],
+                Err(other) => panic!("{op_type:?} x {kind:?}: {other:?}"),
+            };
+            assert_eq!(diagnostic, generator, "{op_type:?} x {kind:?}");
         }
     }
 }

@@ -9,7 +9,7 @@
 //! viz test prose that records the removal. Nothing in `rs_cam_viz` or
 //! `rs_cam_cli` calls this module.
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
@@ -246,6 +246,14 @@ impl From<crate::budget::StopReason> for OperationError {
     }
 }
 
+/// W2.2: a kernel's `Cancelled` is the operation's `Cancelled`, so an
+/// adapter writes `?` and no `map_err` of its own.
+impl From<crate::interrupt::Cancelled> for OperationError {
+    fn from(_: crate::interrupt::Cancelled) -> Self {
+        Self::Cancelled
+    }
+}
+
 impl From<String> for OperationError {
     fn from(s: String) -> Self {
         Self::Other(s)
@@ -264,9 +272,9 @@ impl From<String> for OperationError {
 /// it — nothing stops a `GenerateFn` from ignoring the field entirely (that
 /// was exactly the 2026-07 incident: a fine-stepover mesh-finish generation
 /// hung the GUI for two hours because its adapter never rebuilt the
-/// `|| cancel.load(Ordering::SeqCst)` closure). The only families with a
-/// verified guarantee are the ones exercised by
-/// `cancellable_families_honour_a_preset_cancel_flag`: Adaptive, DropCutter,
+/// `|| cancel.load(Ordering::SeqCst)` closure). The families with a
+/// verified generator poll are the ones exercised by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`: Adaptive, DropCutter,
 /// Adaptive3d, Waterline, Pencil, Scallop, SteepShallow, RampFinish,
 /// SpiralFinish, RadialFinish, HorizontalFinish (the 2026-07 mesh-finish
 /// fix's 11), plus Pocket, Profile, Zigzag, Trace, Face, ProjectCurve,
@@ -275,7 +283,19 @@ impl From<String> for OperationError {
 /// Q3, 2026-08-05 — W4's F-4 measured it ignoring a pre-set flag entirely:
 /// `generate_drill` never read `ctx.cancel`), plus UnifiedFinish, plus AlignmentPinDrill and
 /// Chamfer (O-CANC, 2026-08-14 — neither was in the 2D campaign's nine,
-/// so W4's evidence never reached them).
+/// so W4's evidence never reached them). Since W2.2 the two drill cycles
+/// (`Kinematics::DrillZOnly`) have no poll of their own: the cycle is
+/// short, and the prologue's poll is their only one, so that test exempts
+/// them by that row field.
+///
+/// W2.2: the dispatch prologue (`execute/prologue.rs`) now checks the flag
+/// before any refusal and before the row's `generate`. So through
+/// [`execute_operation_annotated`] a pre-set flag reports `Cancelled` for
+/// every operation; `cancellable_families_honour_a_preset_cancel_flag`
+/// proves that order with absent geometry and a refused tool. The claim
+/// that each GENERATOR polls the flag is a different claim, and
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue` proves
+/// it: it calls each row's `generate` directly, past the prologue.
 ///
 /// **24 of 24 registered families**, and the denominator is the
 /// correction. This paragraph read "21 of 23" until 2026-08-14: the 21
@@ -403,6 +423,18 @@ impl<'a> ExecutionContext<'a> {
     /// session's generation path and the advisor's candidate probe build
     /// from — so a caller cannot forget a field and cannot pass two in the
     /// wrong order.
+    /// W2.2: THE cancel closure every adapter hands its kernel. It was
+    /// `|| ctx.cancel.load(Ordering::SeqCst)`, written by hand in each one.
+    pub(crate) fn cancel_fn(&self) -> impl Fn() -> bool + Send + Sync + 'a {
+        let cancel = self.cancel;
+        move || cancel.load(Ordering::SeqCst)
+    }
+
+    /// One read of the cancel flag, for a poll between units of work.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+    }
+
     pub(crate) fn new(
         findings: &'a std::cell::RefCell<GenerationFindings>,
         tool_def: &'a ToolDefinition,
@@ -441,14 +473,19 @@ impl<'a> ExecutionContext<'a> {
 }
 
 /// A family adapter: generate the toolpath (with spans + annotations)
-/// for one operation family. Registered on `OpRegistryEntry.generate`
-/// per family as the Phase-5 cutover proves each one; unmigrated
-/// families fall back to the exhaustive match in
-/// [`execute_operation_annotated`]. An adapter must reproduce its
-/// family's span helper AND annotate fn — wrong/empty spans simulate
-/// fine and are only caught by span-aware tests, not the compiler.
-pub type GenerateFn =
-    fn(&ExecutionContext<'_>, &OperationConfig) -> Result<GeneratedToolpath, OperationError>;
+/// for one operation family. Registered on `OpRegistryEntry.generate`.
+/// An adapter must reproduce its family's span helper AND annotate fn —
+/// wrong/empty spans simulate fine and are only caught by span-aware
+/// tests, not the compiler.
+///
+/// W2.2: the adapter runs after the prologue (`execute/prologue.rs`). The
+/// flag was clear, the row's geometry is present and the row's tool
+/// constraint admits the tool. [`Prepared`] carries the checked geometry.
+pub type GenerateFn = fn(
+    &ExecutionContext<'_>,
+    &Prepared<'_>,
+    &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError>;
 
 /// R2.3: the config-guard boilerplate duplicated 23× across every family
 /// adapter (`let OperationConfig::X(cfg) = op else { return Err(refusal) }`).
@@ -485,6 +522,7 @@ mod drilling;
 mod findings;
 mod finish_3d;
 mod finish_raster;
+mod prologue;
 mod shared;
 mod standing_material;
 
@@ -512,6 +550,7 @@ pub(crate) use finish_3d::{
     generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
+pub use prologue::{MeshInput, Prepared};
 pub use shared::{LinkCeilingNeed, link_ceiling_for, link_ceiling_need};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
@@ -546,7 +585,11 @@ pub(crate) fn execute_operation_annotated(
     // is `OperationType::registry_entry`, which is exhaustive: a new
     // variant does not compile until it names a row, and a row cannot be
     // written without an adapter.
-    let mut generated = (op.op_type().registry_entry().generate)(ctx, op)?;
+    //
+    // W2.2: the prologue runs first — cancel, then the row's geometry, then
+    // the row's tool constraint. The adapter reads the checked inputs.
+    let prepared = prologue::prepare(ctx, op)?;
+    let mut generated = (op.op_type().registry_entry().generate)(ctx, &prepared, op)?;
 
     // P2.5: op-agnostic rest analysis. Precedence — an op that already
     // attached its own rest artifacts (pencil's `RestDepth` detector arm,

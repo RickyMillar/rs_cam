@@ -327,7 +327,9 @@ pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference";
 pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial";
 
 // ── Tool / operation compatibility ───────────────────────────────────
-pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
+/// W2.2: the operation's registry row refuses the tool kind
+/// (`tool_constraints`). The message is the generator's refusal text.
+pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused";
 pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing";
 /// A Project Curve set to Point projection. The tool tip follows the
 /// surface Z under the curve and the tool body is not tested against the
@@ -458,7 +460,7 @@ pub const ALL: &[&str] = &[
     GEOM_REGION_CAP_TRUNCATED,
     GEOM_REST_LEVELS_FALLBACK,
     CONFIG_INERT_CLAIMS_DIAL,
-    COMPAT_END_MILL_SCALLOP_PENCIL,
+    COMPAT_TOOL_KIND_REFUSED,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
     COMPAT_PROJECT_CURVE_POINT_PROJECTION,
     TOOL_NAME_SIZE_MISMATCH,

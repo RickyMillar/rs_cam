@@ -195,26 +195,22 @@ fn tool_op_compat_checks(
         });
     }
 
-    // End mill on Scallop/UnifiedFinish/Pencil → required ball geometry.
-    if matches!(tool_type, ToolType::EndMill)
-        && matches!(
-            op,
-            OperationConfig::Scallop(_)
-                | OperationConfig::UnifiedFinish(_)
-                | OperationConfig::Pencil(_)
-        )
-    {
+    // W2.2: a tool the registry row refuses → the generator's own refusal
+    // text. The row's `tool_constraints` is the one source: the dispatch
+    // prologue refuses on the same `OperationType::tool_refusal`, so this
+    // finding fires exactly when generation would refuse. It replaced a
+    // hand list (end mill on Scallop, Unified Finish or Pencil) that missed
+    // Spiral Finish, the bull nose, the V-bit and the four V-bit operations.
+    if let Some(text) = op.op_type().tool_refusal(tool_type.cutter_kind()) {
         out.push(Diagnostic {
-            id: DiagnosticId::from(ids::COMPAT_END_MILL_SCALLOP_PENCIL),
+            id: DiagnosticId::from(ids::COMPAT_TOOL_KIND_REFUSED),
             scope: scope.clone(),
             category: Category::ToolLoad,
             severity: Severity::Critical,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
-            message:
-                "Scallop, Unified Finish, and Pencil operations require a ball nose tool for correct surface contact."
-                    .to_owned(),
+            message: text,
             evidence: None,
             fix: None,
             supersedes: vec![],

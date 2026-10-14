@@ -36,9 +36,20 @@ pub enum OperationFamily {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryRequirement {
+    /// The stock only. No model geometry.
     Stock,
+    /// A 2D drawing whose outlines the operation cuts. The generation
+    /// prologue refuses an absent or empty outline list.
     Polygons,
+    /// A 2D drawing whose drill targets (DXF points, circle and arc
+    /// centres) the operation reads, not its outlines (W2.2). A drawing of
+    /// points only has no outline, so the prologue does not ask for one;
+    /// the drill adapter refuses on its own target count
+    /// (`drill_targets_refusal`).
+    DrillTargets,
+    /// A 3D mesh and its spatial index.
     Mesh,
+    /// A 2D drawing and a 3D mesh.
     Both,
 }
 
@@ -427,6 +438,20 @@ impl OperationType {
 
     pub const fn spec(self) -> OperationSpec {
         self.registry_entry().spec
+    }
+
+    /// W2.2: the registry's refusal of a tool of this kind, or `None` when
+    /// the row's `tool_constraints` admit it. The generation prologue, the
+    /// static diagnostic and the GUI validation all read this one text.
+    pub fn tool_refusal(self, kind: crate::feeds::CutterKind) -> Option<String> {
+        self.registry_entry()
+            .tool_constraints
+            .refusal(self.spec().label, kind)
+    }
+
+    /// The geometry the operation reads, from its registry row.
+    pub fn geometry_requirement(self) -> GeometryRequirement {
+        self.spec().geometry
     }
 
     /// Phase 1 registry accessor (architectural refactor 2026-06-06):
