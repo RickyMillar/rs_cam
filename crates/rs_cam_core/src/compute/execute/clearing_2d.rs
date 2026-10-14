@@ -1,234 +1,125 @@
 //! The 2.5D clearing family: zigzag, trace, profile, pocket, face and
 //! adaptive.
 //!
-//! Every adapter here steps a 2D region down a ladder of Z levels, so they
-//! share `layered::effective_levels`. Pocket runs on the Layered runner
-//! (W3.1); the others move to it in W3.2 and W3.3. Split out of
-//! `compute/execute.rs` (P4).
+//! Every adapter here steps a 2D region down a ladder of Z levels. Pocket
+//! (W3.1), Zigzag, Trace and Profile (W3.2) run on the Layered runner
+//! (`layered.rs`): each writes `prepare` (the Z-independent geometry of a
+//! region) and `emit_level` (that geometry at one Z). Face and 2D Adaptive
+//! move to it in W3.3 and W3.4. Split out of `compute/execute.rs` (P4).
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::operation_configs::{PocketConfig, PocketPattern, RegionOrdering};
+use crate::compute::operation_configs::{
+    CompensationType, PocketConfig, PocketPattern, ProfileConfig, RegionOrdering, TraceConfig,
+};
 use crate::geo::P2;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
 use super::layered::{LayerCtx, LayeredOp, LevelInfo, RestUse, effective_levels, run_layered};
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
-/// Zigzag family adapter. Cancellable: the cooperative cancel closure is
-/// built by `ctx.cancel_fn()` (pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// The feeds and heights every Layered adapter here stamps into its moves.
+#[derive(Clone, Copy)]
+struct LayerFeeds {
+    tool_radius: f64,
+    safe_z: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+}
+
+impl LayerFeeds {
+    fn new(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> Self {
+        Self {
+            tool_radius: ctx.tool_def.radius(),
+            safe_z: ctx.heights.retract_z,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+        }
+    }
+}
+
+/// Zigzag family adapter (W3.2): [`ZigzagRaster`] on the Layered runner,
+/// the kernel of the Zigzag Pocket. The runner polls the cancel per level
+/// (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_zigzag(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Zigzag, "generate_zigzag");
-    let polys = prepared.polygons()?;
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
-    let tool_radius = ctx.tool_def.radius();
-    let safe_z = ctx.heights.retract_z;
-    let cancel_fn = ctx.cancel_fn();
-    let mut combined = Toolpath::new();
-    // Checkpoint C: this op measures its offsets, so it records a zero
-    // before its first call (W2.3). Each kernel count is recorded where
-    // the kernel returns it. Deliberately not a thread-local collector
-    // (`CAVALIER_SHAPE_FAILURE.md` §6 D-1 option C, declined).
-    ctx.record(&OffsetFailures(0));
-    for poly in polys {
-        // G2: the wall inset and the scan-line build are Z-independent, so
-        // they run ONCE per polygon. The per-level closure stamps Z only.
-        //
-        // This is also where the documented `offset_library_failures` x L
-        // over-count goes away: the wall inset is now made once per polygon,
-        // so the channel counts one failure per failing offset CALL, which is
-        // what its own doc always claimed it counted.
-        if ctx.is_cancelled() {
-            return Err(OperationError::Cancelled);
-        }
-        let base = crate::ops::zigzag::ZigzagParams {
-            tool_radius,
-            stepover: cfg.stepover,
-            cut_depth: 0.0,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-            safe_z,
-            angle: cfg.angle,
-        };
-        let (lines, failures) =
-            crate::ops::zigzag::zigzag_lines_reported(poly, tool_radius, cfg.stepover, cfg.angle);
-        ctx.record(&OffsetFailures(failures));
-        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
-            &levels,
-            safe_z,
-            |z| {
-                Ok(crate::ops::zigzag::lines_to_toolpath(
-                    &lines,
-                    &crate::ops::zigzag::ZigzagParams {
-                        cut_depth: z,
-                        ..base
-                    },
-                ))
-            },
-            &cancel_fn,
-        )?;
-        combined.moves.extend(tp.moves);
-    }
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(combined, &levels),
-        ctx.semantic_ctx,
-    ))
+    let raster = ZigzagRaster {
+        stepover: cfg.stepover,
+        angle: cfg.angle,
+        depth_per_pass: cfg.depth_per_pass,
+        region_ordering: cfg.region_ordering,
+        // W3.4 gives the Zigzag op its rest rule.
+        rest_use: RestUse::None,
+        feeds: LayerFeeds::new(ctx, op),
+    };
+    run_layered(&raster, ctx, prepared)
 }
 
-/// Trace family adapter. NOTE: trace uses `annotate_trace_spans`, not
-/// the generic depth-run annotator — the per-family annotate fn is
-/// part of the contract (plan §Phase-5 task 1). Cancellable: the
-/// cooperative cancel closure is built by `ctx.cancel_fn()` (pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// Trace family adapter (W3.2): [`TracePass`] on the Layered runner. Trace
+/// keeps its own semantic annotation, `annotate_trace_spans`, through the
+/// [`LayeredOp::annotate`] hook. The runner polls the cancel per level
+/// (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_trace(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Trace, "generate_trace");
-    let polys = prepared.polygons()?;
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
-    let safe_z = ctx.heights.retract_z;
-    let cancel_fn = ctx.cancel_fn();
-    let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for the measured zero.
-    ctx.record(&OffsetFailures(0));
-    for poly in polys {
-        let params = crate::ops::trace_path::TraceParams {
-            tool_radius: ctx.tool_def.radius(),
+    let feeds = LayerFeeds::new(ctx, op);
+    let pass = TracePass {
+        cfg,
+        params: crate::ops::trace_path::TraceParams {
+            tool_radius: feeds.tool_radius,
             depth: cfg.depth,
             depth_per_pass: cfg.depth_per_pass,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-            safe_z,
+            feed_rate: feeds.feed_rate,
+            plunge_rate: feeds.plunge_rate,
+            safe_z: feeds.safe_z,
             compensation: cfg.compensation,
             top_z: ctx.heights.top_z,
-        };
-        // G2: the cutter-compensation offset is Z-independent, so it runs ONCE
-        // per polygon instead of once per Z level. The per-level closure stamps
-        // Z only — and the failure count is now one per offset CALL rather than
-        // one per call x level.
-        if ctx.is_cancelled() {
-            return Err(OperationError::Cancelled);
-        }
-        let (rings, failures) =
-            crate::ops::trace_path::trace_compensated_polygons_reported(poly, &params);
-        ctx.record(&OffsetFailures(failures));
-        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
-            &levels,
-            safe_z,
-            |z| {
-                Ok(crate::ops::trace_path::trace_polygons_at_z(
-                    &rings, z, &params,
-                ))
-            },
-            &cancel_fn,
-        )?;
-        combined.moves.extend(tp.moves);
-    }
-    let generated = generated_with_depth_run_spans(combined, &levels);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_trace_spans(&generated.spans, &generated.toolpath, sem);
-    }
-    Ok(generated)
+        },
+    };
+    run_layered(&pass, ctx, prepared)
 }
 
-/// Profile family adapter (per-level passes; tabs on the final level).
-/// Cancellable: the cooperative cancel closure is built by
-/// `ctx.cancel_fn()` (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// Profile family adapter (W3.2): [`ProfilePass`] on the Layered runner.
+/// The side and the climb direction act in `prepare` and `emit_level`; the
+/// tabs go on each level at the final Z ([`LevelInfo::is_final`]). The
+/// runner polls the cancel per level (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 ///
-/// Migrated onto the shared `toolpath_at_levels_with_cancel` choke point
-/// (planning/finishing_stack_review_2026-07.md S.5). The old manual
-/// `level_idx > 0 && !combined.moves.is_empty()` retract guard is
-/// equivalent to the helper's unconditional `i > 0` retract: every
-/// per-level pass already ends with its own retract-to-`safe_z` (via
-/// `profile_toolpath`'s emitter), so `Toolpath::final_retract` is always a
-/// no-op there regardless of which guard is used — byte-identical output.
+/// Each Profile pass ends with its own retract to `safe_z`
+/// (`Toolpath::emit_closed_contour_with_intent`), so the runner's retract
+/// between levels is a no-op here, as it was in the hand-written ladder.
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
-    let polys = prepared.polygons()?;
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
-    let final_z = levels
-        .last()
-        .copied()
-        .unwrap_or(ctx.heights.top_z - cfg.depth);
-    let tool_radius = ctx.tool_def.radius();
-    let safe_z = ctx.heights.retract_z;
-    let feed_rate = op.feed_rate();
-    let plunge_rate = op.plunge_rate();
-    let cancel_fn = ctx.cancel_fn();
-    let mut combined = Toolpath::new();
-    // Checkpoint C: see `generate_zigzag` for the measured zero.
-    ctx.record(&OffsetFailures(0));
-    for poly in polys {
-        // G2: the compensation offset that produces the tool-centre path is
-        // Z-independent, so it runs ONCE per polygon. Tabs stay inside the
-        // closure — they are applied to the FINAL level only, which is the one
-        // genuinely per-level thing this family does.
-        if ctx.is_cancelled() {
-            return Err(OperationError::Cancelled);
-        }
-        let base = crate::ops::profile::ProfileParams {
-            tool_radius,
+    let feeds = LayerFeeds::new(ctx, op);
+    let pass = ProfilePass {
+        cfg,
+        base: crate::ops::profile::ProfileParams {
+            tool_radius: feeds.tool_radius,
             side: cfg.side,
             cut_depth: 0.0,
-            feed_rate,
-            plunge_rate,
-            safe_z,
+            feed_rate: feeds.feed_rate,
+            plunge_rate: feeds.plunge_rate,
+            safe_z: feeds.safe_z,
             climb: cfg.climb,
-            compensate_in_controller: cfg.compensation
-                == crate::compute::operation_configs::CompensationType::InControl,
-        };
-        let (contour, failures) = crate::ops::profile::profile_path_reported(poly, &base);
-        ctx.record(&OffsetFailures(failures));
-        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
-            &levels,
-            safe_z,
-            |z| {
-                let pass_tp = match &contour {
-                    Some(pts) => crate::ops::profile::profile_path_to_toolpath(
-                        pts,
-                        &crate::ops::profile::ProfileParams {
-                            cut_depth: z,
-                            ..base
-                        },
-                    ),
-                    None => Toolpath::new(),
-                };
-                if pass_tp.moves.is_empty() {
-                    return Ok(pass_tp);
-                }
-                let is_final = (z - final_z).abs() < 1e-9;
-                if cfg.tab_count > 0 && is_final {
-                    Ok(crate::dressup::apply_tabs(
-                        pass_tp,
-                        &crate::dressup::even_tabs(cfg.tab_count, cfg.tab_width, cfg.tab_height),
-                        z,
-                    ))
-                } else {
-                    Ok(pass_tp)
-                }
-            },
-            &cancel_fn,
-        )?;
-        combined.moves.extend(tp.moves);
-    }
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(combined, &levels),
-        ctx.semantic_ctx,
-    ))
+            compensate_in_controller: cfg.compensation == CompensationType::InControl,
+        },
+    };
+    run_layered(&pass, ctx, prepared)
 }
 
 /// Pocket family adapter (W3.1): the Contour or the Zigzag pattern on the
@@ -243,33 +134,30 @@ pub(crate) fn generate_pocket(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pocket, "generate_pocket");
-    let pass = PocketPass {
-        cfg,
-        tool_radius: ctx.tool_def.radius(),
-        safe_z: ctx.heights.retract_z,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-    };
+    let feeds = LayerFeeds::new(ctx, op);
     match cfg.pattern {
-        PocketPattern::Contour => run_layered(&PocketContour(pass), ctx, prepared),
-        PocketPattern::Zigzag => run_layered(&PocketZigzag(pass), ctx, prepared),
+        PocketPattern::Contour => run_layered(&PocketContour { cfg, feeds }, ctx, prepared),
+        PocketPattern::Zigzag => run_layered(
+            &ZigzagRaster {
+                stepover: cfg.stepover,
+                angle: cfg.angle,
+                depth_per_pass: cfg.depth_per_pass,
+                region_ordering: cfg.region_ordering,
+                rest_use: RestUse::LevelClip,
+                feeds,
+            },
+            ctx,
+            prepared,
+        ),
     }
 }
 
-/// The dials both Pocket patterns read.
-struct PocketPass<'a> {
+/// The Contour pattern of Pocket: the `OffsetRingSet` cascade of each
+/// region.
+struct PocketContour<'a> {
     cfg: &'a PocketConfig,
-    tool_radius: f64,
-    safe_z: f64,
-    feed_rate: f64,
-    plunge_rate: f64,
+    feeds: LayerFeeds,
 }
-
-/// The Contour pattern: the `OffsetRingSet` cascade of each region.
-struct PocketContour<'a>(PocketPass<'a>);
-
-/// The Zigzag pattern: the wall inset and the scan lines of each region.
-struct PocketZigzag<'a>(PocketPass<'a>);
 
 impl LayeredOp for PocketContour<'_> {
     type Geometry = Vec<Vec<P2>>;
@@ -280,11 +168,11 @@ impl LayeredOp for PocketContour<'_> {
     type Report = Vec<crate::ops::pocket::PocketCascadeReport>;
 
     fn depth_per_pass(&self) -> f64 {
-        self.0.cfg.depth_per_pass
+        self.cfg.depth_per_pass
     }
 
     fn region_ordering(&self) -> RegionOrdering {
-        self.0.cfg.region_ordering
+        self.cfg.region_ordering
     }
 
     fn rest_use(&self) -> RestUse {
@@ -302,7 +190,7 @@ impl LayeredOp for PocketContour<'_> {
             let (rings, report) = crate::ops::pocket::pocket_contours_reported_with_cancel(
                 piece,
                 layer.tool_radius,
-                self.0.cfg.stepover,
+                self.cfg.stepover,
                 layer.cancel,
             )?;
             reports.push(report);
@@ -312,36 +200,48 @@ impl LayeredOp for PocketContour<'_> {
     }
 
     fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
-        let pass = &self.0;
+        let feeds = &self.feeds;
         crate::ops::pocket::pocket_contours_to_toolpath(
             geometry,
             &crate::ops::pocket::PocketParams {
-                tool_radius: pass.tool_radius,
-                stepover: pass.cfg.stepover,
+                tool_radius: feeds.tool_radius,
+                stepover: self.cfg.stepover,
                 cut_depth: level.z,
-                feed_rate: pass.feed_rate,
-                plunge_rate: pass.plunge_rate,
-                safe_z: pass.safe_z,
-                climb: pass.cfg.climb,
+                feed_rate: feeds.feed_rate,
+                plunge_rate: feeds.plunge_rate,
+                safe_z: feeds.safe_z,
+                climb: self.cfg.climb,
             },
         )
     }
 }
 
-impl LayeredOp for PocketZigzag<'_> {
+/// The zigzag raster: the wall inset and the scan lines of each region.
+/// ONE kernel for the Zigzag op and the Zigzag pattern of Pocket; each
+/// adapter fills the dials from its own config.
+struct ZigzagRaster {
+    stepover: f64,
+    angle: f64,
+    depth_per_pass: f64,
+    region_ordering: RegionOrdering,
+    rest_use: RestUse,
+    feeds: LayerFeeds,
+}
+
+impl LayeredOp for ZigzagRaster {
     type Geometry = Vec<[P2; 2]>;
     type Report = OffsetFailures;
 
     fn depth_per_pass(&self) -> f64 {
-        self.0.cfg.depth_per_pass
+        self.depth_per_pass
     }
 
     fn region_ordering(&self) -> RegionOrdering {
-        self.0.cfg.region_ordering
+        self.region_ordering
     }
 
     fn rest_use(&self) -> RestUse {
-        RestUse::LevelClip
+        self.rest_use
     }
 
     fn prepare(
@@ -355,8 +255,8 @@ impl LayeredOp for PocketZigzag<'_> {
             let (piece_lines, piece_failures) = crate::ops::zigzag::zigzag_lines_reported(
                 piece,
                 layer.tool_radius,
-                self.0.cfg.stepover,
-                self.0.cfg.angle,
+                self.stepover,
+                self.angle,
             );
             failures += piece_failures;
             lines.extend(piece_lines);
@@ -365,19 +265,148 @@ impl LayeredOp for PocketZigzag<'_> {
     }
 
     fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
-        let pass = &self.0;
+        let feeds = &self.feeds;
         crate::ops::zigzag::lines_to_toolpath(
             geometry,
             &crate::ops::zigzag::ZigzagParams {
-                tool_radius: pass.tool_radius,
-                stepover: pass.cfg.stepover,
+                tool_radius: feeds.tool_radius,
+                stepover: self.stepover,
                 cut_depth: level.z,
-                feed_rate: pass.feed_rate,
-                plunge_rate: pass.plunge_rate,
-                safe_z: pass.safe_z,
-                angle: pass.cfg.angle,
+                feed_rate: feeds.feed_rate,
+                plunge_rate: feeds.plunge_rate,
+                safe_z: feeds.safe_z,
+                angle: self.angle,
             },
         )
+    }
+}
+
+/// The Trace op: the compensated rings of each region, traced at each
+/// level.
+struct TracePass<'a> {
+    cfg: &'a TraceConfig,
+    params: crate::ops::trace_path::TraceParams,
+}
+
+impl LayeredOp for TracePass<'_> {
+    type Geometry = Vec<Polygon2>;
+    type Report = OffsetFailures;
+
+    fn depth_per_pass(&self) -> f64 {
+        self.cfg.depth_per_pass
+    }
+
+    fn region_ordering(&self) -> RegionOrdering {
+        self.cfg.region_ordering
+    }
+
+    fn rest_use(&self) -> RestUse {
+        // W3.4 gives Trace its rest rule.
+        RestUse::None
+    }
+
+    /// The cutter compensation: one offset per piece, never one per level.
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        _layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let mut rings = Vec::new();
+        let mut failures = 0;
+        for piece in region {
+            let (piece_rings, piece_failures) =
+                crate::ops::trace_path::trace_compensated_polygons_reported(piece, &self.params);
+            failures += piece_failures;
+            rings.extend(piece_rings);
+        }
+        Ok((rings, OffsetFailures(failures)))
+    }
+
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        crate::ops::trace_path::trace_polygons_at_z(geometry, level.z, &self.params)
+    }
+
+    /// One region, and the depth runs inside it as chains (C8).
+    fn annotate(
+        &self,
+        generated: GeneratedToolpath,
+        semantic_ctx: Option<&ToolpathSemanticContext>,
+    ) -> GeneratedToolpath {
+        if let Some(sem) = semantic_ctx {
+            crate::compute::annotate::annotate_trace_spans(
+                &generated.spans,
+                &generated.toolpath,
+                sem,
+            );
+        }
+        generated
+    }
+}
+
+/// The Profile op: the tool-centre contour of each region, cut at each
+/// level, with tabs at the final Z.
+struct ProfilePass<'a> {
+    cfg: &'a ProfileConfig,
+    /// The params of every level; `emit_level` sets `cut_depth`.
+    base: crate::ops::profile::ProfileParams,
+}
+
+impl LayeredOp for ProfilePass<'_> {
+    type Geometry = Vec<Vec<P2>>;
+    type Report = OffsetFailures;
+
+    fn depth_per_pass(&self) -> f64 {
+        self.cfg.depth_per_pass
+    }
+
+    fn region_ordering(&self) -> RegionOrdering {
+        self.cfg.region_ordering
+    }
+
+    fn rest_use(&self) -> RestUse {
+        // W3.4 gives Profile its rest rule.
+        RestUse::None
+    }
+
+    /// The side offset (or the outline itself when the controller
+    /// compensates): one contour per piece. A piece whose offset collapses
+    /// gives no contour.
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        _layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let mut contours = Vec::new();
+        let mut failures = 0;
+        for piece in region {
+            let (contour, piece_failures) =
+                crate::ops::profile::profile_path_reported(piece, &self.base);
+            failures += piece_failures;
+            contours.extend(contour);
+        }
+        Ok((contours, OffsetFailures(failures)))
+    }
+
+    /// Each contour at `level.z`, climb or conventional. On a level at the
+    /// final Z each contour gets its own evenly spaced tabs.
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        let params = crate::ops::profile::ProfileParams {
+            cut_depth: level.z,
+            ..self.base
+        };
+        let tabs = (self.cfg.tab_count > 0 && level.is_final).then(|| {
+            crate::dressup::even_tabs(self.cfg.tab_count, self.cfg.tab_width, self.cfg.tab_height)
+        });
+        let mut tp = Toolpath::new();
+        for contour in geometry {
+            let pass = crate::ops::profile::profile_path_to_toolpath(contour, &params);
+            let pass = match &tabs {
+                Some(tabs) => crate::dressup::apply_tabs(pass, tabs, level.z),
+                None => pass,
+            };
+            tp.moves.extend(pass.moves);
+        }
+        tp
     }
 }
 

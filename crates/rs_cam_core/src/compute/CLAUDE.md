@@ -19,8 +19,9 @@
   dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
 - W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`.
-- W3.0: a Layered op (Pocket) writes `LayeredOp::prepare` + `emit_level`. `run_layered` owns the ladder, the `RestUse`
-  step, one prepare per region, `region_ordering` (R4: `ByArea` region-first default), cancel per level and the spans.
+- W3: a Layered op (Pocket, Zigzag, Trace, Profile) writes `LayeredOp::prepare` + `emit_level`; hooks `ladder`, `annotate`. `run_layered`
+  owns the ladder, `RestUse`, one prepare per region, `region_ordering` (R4: `ByArea` default), cancel per level, the spans.
+  `LevelInfo::is_final` is true at the final Z, each spring pass too (Profile tabs). Zigzag op and Pocket share `ZigzagRaster`.
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field
   beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()`

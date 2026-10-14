@@ -49,8 +49,8 @@ pub enum Adaptive3dEntryStyle {
 /// The order in which an op visits its regions and its Z levels.
 ///
 /// 3D Rough (`Adaptive3dConfig`) defaults to `Global`. A Layered 2.5D op
-/// (Pocket) defaults to `ByArea` (ruling R4, W3.0); there a region is one
-/// input outline.
+/// (Pocket, Zigzag, Trace, Profile) defaults to `ByArea` (ruling R4, W3.0);
+/// there a region is one input outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegionOrdering {
@@ -204,6 +204,10 @@ pub struct TraceConfig {
     pub compensation: TraceCompensation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Region-first (`ByArea`, the default) or level-first (`Global`)
+    /// (ruling R4). The Layered runner reads it.
+    #[serde(default = "default_layered_region_ordering")]
+    pub region_ordering: RegionOrdering,
 }
 
 impl Default for TraceConfig {
@@ -216,6 +220,7 @@ impl Default for TraceConfig {
             ramp_feed_rate: None,
             compensation: TraceCompensation::None,
             spindle_rpm: None,
+            region_ordering: default_layered_region_ordering(),
         }
     }
 }
@@ -435,6 +440,10 @@ pub struct ProfileConfig {
     pub compensation: CompensationType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Region-first (`ByArea`, the default) or level-first (`Global`)
+    /// (ruling R4). The Layered runner reads it.
+    #[serde(default = "default_layered_region_ordering")]
+    pub region_ordering: RegionOrdering,
 }
 
 impl Default for ProfileConfig {
@@ -453,6 +462,7 @@ impl Default for ProfileConfig {
             finishing_passes: 0,
             compensation: CompensationType::InComputer,
             spindle_rpm: None,
+            region_ordering: default_layered_region_ordering(),
         }
     }
 }
@@ -696,6 +706,10 @@ pub struct ZigzagConfig {
     pub angle: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// Region-first (`ByArea`, the default) or level-first (`Global`)
+    /// (ruling R4). The Layered runner reads it.
+    #[serde(default = "default_layered_region_ordering")]
+    pub region_ordering: RegionOrdering,
 }
 
 impl Default for ZigzagConfig {
@@ -709,6 +723,7 @@ impl Default for ZigzagConfig {
             ramp_feed_rate: None,
             angle: 0.0,
             spindle_rpm: None,
+            region_ordering: default_layered_region_ordering(),
         }
     }
 }

@@ -68,12 +68,17 @@ const POCKET_PARAMS: &[ParamDef] = &[
         .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::required("finishing_passes", "usize"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    LAYERED_REGION_ORDERING,
+];
+
+/// The region order of a Layered 2.5D op (ruling R4): Pocket, Zigzag,
+/// Trace and Profile share the one definition.
+const LAYERED_REGION_ORDERING: ParamDef =
     ParamDef::required("region_ordering", "enum:global|by_area").with_help(
         "by_area (the default): each outline goes to full depth before the \
-         next. global: each depth level cuts every outline before the next \
-         level.",
-    ),
-];
+     next. global: each depth level cuts every outline before the next \
+     level.",
+    );
 
 const PROFILE_PARAMS: &[ParamDef] = &[
     // G-SCHEMAENUM: `on` was never a `ProfileSide` and the generator has no
@@ -98,6 +103,7 @@ const PROFILE_PARAMS: &[ParamDef] = &[
     ParamDef::required("finishing_passes", "usize"),
     ParamDef::required("compensation", "enum:in_computer|in_control"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    LAYERED_REGION_ORDERING,
 ];
 
 const ADAPTIVE_PARAMS: &[ParamDef] = &[
@@ -248,6 +254,7 @@ const ZIGZAG_PARAMS: &[ParamDef] = &[
     ParamDef::required("angle", "f64")
         .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    LAYERED_REGION_ORDERING,
 ];
 
 const TRACE_PARAMS: &[ParamDef] = &[
@@ -262,6 +269,7 @@ const TRACE_PARAMS: &[ParamDef] = &[
     // G-SCHEMAENUM: the variant is `none`, not `center`.
     ParamDef::required("compensation", "enum:none|left|right"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    LAYERED_REGION_ORDERING,
 ];
 
 const DRILL_PARAMS: &[ParamDef] = &[

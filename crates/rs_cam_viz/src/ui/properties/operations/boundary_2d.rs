@@ -121,21 +121,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         ui.label("Climb:");
         ui.checkbox(&mut cfg.climb, "");
         ui.end_row();
-        // R4: region-first (By Area) is the default of a Layered op.
-        ui.label("Ordering:");
-        egui::ComboBox::from_id_salt("pocket_ord")
-            .truncate()
-            .selected_text(match cfg.region_ordering {
-                RegionOrdering::Global => "Global",
-                RegionOrdering::ByArea => "By Area",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area")
-                    .on_hover_text("Cut each outline to full depth before the next.");
-                ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global")
-                    .on_hover_text("Cut every outline at one depth before the next depth.");
-            });
-        ui.end_row();
+        region_ordering_row(ui, "pocket_ord", &mut cfg.region_ordering);
         if cfg.pattern == PocketPattern::Zigzag {
             dv(
                 ui,
@@ -166,6 +152,29 @@ fn finishing_passes_row(ui: &mut egui::Ui, passes: &mut usize) {
     {
         *passes = fp.max(0) as usize;
     }
+    ui.end_row();
+}
+
+/// The "Ordering" row of a Layered 2.5D op (ruling R4): Pocket, Zigzag,
+/// Trace and Profile. Region-first (By Area) is the default.
+pub(in crate::ui::properties) fn region_ordering_row(
+    ui: &mut egui::Ui,
+    salt: &str,
+    ordering: &mut RegionOrdering,
+) {
+    ui.label("Ordering:");
+    egui::ComboBox::from_id_salt(salt)
+        .truncate()
+        .selected_text(match ordering {
+            RegionOrdering::Global => "Global",
+            RegionOrdering::ByArea => "By Area",
+        })
+        .show_ui(ui, |ui| {
+            ui.selectable_value(ordering, RegionOrdering::ByArea, "By Area")
+                .on_hover_text("Cut each outline to full depth before the next.");
+            ui.selectable_value(ordering, RegionOrdering::Global, "Global")
+                .on_hover_text("Cut every outline at one depth before the next depth.");
+        });
     ui.end_row();
 }
 
@@ -219,6 +228,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
         ui.label("Climb:");
         ui.checkbox(&mut cfg.climb, "");
         ui.end_row();
+        region_ordering_row(ui, "prof_ord", &mut cfg.region_ordering);
     });
     ui.add_space(8.0);
     // G-THROUGHCUT: a through cut with no tabs opens the Tabs disclosure by
@@ -616,5 +626,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             1.0,
             0.0..=360.0,
         );
+        region_ordering_row(ui, "zigzag_ord", &mut cfg.region_ordering);
     });
 }

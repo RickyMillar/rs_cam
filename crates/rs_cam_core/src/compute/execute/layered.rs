@@ -21,7 +21,8 @@
 //! - a cancel poll at each level, and the skip of an empty level;
 //! - the findings: the measured zero of the offset channel, the rest-level
 //!   finding and each prepare report, through the W2.3 record door;
-//! - the depth-run spans and their annotation.
+//! - the depth-run spans. The op's [`LayeredOp::annotate`] hook reads
+//!   them into the semantic trace (the default reads each run as a region).
 //!
 //! # The region order (R4)
 //!
@@ -54,6 +55,7 @@ use crate::interrupt::{CancelCheck, check_cancel};
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::findings::RecordFindings;
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
@@ -67,18 +69,24 @@ pub(crate) struct LevelInfo {
     pub z: f64,
     /// The position of the level in the ladder, from 0 at the top.
     pub index: usize,
-    /// True for the last (deepest) level of the ladder.
+    /// True for each level at the final Z of the ladder: the deepest level
+    /// and each spring pass (`finishing_passes`) that repeats its Z.
+    /// Profile puts its tabs on these levels. A spring pass without the
+    /// tabs would cut the tabs away.
     pub is_final: bool,
 }
+
+/// The Z tolerance (mm) of [`LevelInfo::is_final`]. A spring pass is an
+/// exact copy of the final Z, so the tolerance only absorbs float noise.
+/// It is the tolerance of the Profile adapter before W3.2.
+const FINAL_Z_EPS_MM: f64 = 1e-9;
 
 /// How a Layered op uses the remaining stock (AUDIT.md, "Rest is not one
 /// thing"). W3.4 adds the other kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestUse {
     /// The op ignores the stock: it cuts the whole outline at every level.
-    // SAFETY: no production op states it before W3.2 (Trace, Profile);
-    // the runner's unit test uses it.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Zigzag, Trace and Profile until W3.4 gives them their rest rules.
     None,
     /// The op clips its INPUT region to the standing material per level
     /// (G-RESTLEVELS). An area op only: a clipped outline has new walls.
@@ -122,9 +130,22 @@ pub(crate) trait LayeredOp {
     fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath;
 
     /// The Z ladder, top first. The default is the 2.5D ladder of the
-    /// heights and [`Self::depth_per_pass`].
+    /// heights and [`Self::depth_per_pass`]. The catalogue's
+    /// `cutting_levels` already hold the spring passes of an op that has
+    /// them (Pocket, Profile).
     fn ladder(&self, ctx: &ExecutionContext<'_>) -> Vec<f64> {
         effective_levels(ctx.cutting_levels, ctx.heights, self.depth_per_pass())
+    }
+
+    /// The semantic annotation of the finished toolpath. The default reads
+    /// the depth-run spans as regions. Trace overrides it: its runs are
+    /// chains inside one region.
+    fn annotate(
+        &self,
+        generated: GeneratedToolpath,
+        semantic_ctx: Option<&ToolpathSemanticContext>,
+    ) -> GeneratedToolpath {
+        with_depth_run_annotation(generated, semantic_ctx)
     }
 }
 
@@ -212,7 +233,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
         }
     }
 
-    Ok(with_depth_run_annotation(
+    Ok(op.annotate(
         generated_with_depth_run_spans(combined, &levels),
         ctx.semantic_ctx,
     ))
@@ -227,12 +248,13 @@ fn emit_at<O: LayeredOp>(
 ) -> Option<Toolpath> {
     let z = *levels.get(i)?;
     let geometry = layers.geometry_at(i)?;
+    let final_z = *levels.last()?;
     let piece = op.emit_level(
         geometry,
         LevelInfo {
             z,
             index: i,
-            is_final: i + 1 == levels.len(),
+            is_final: (z - final_z).abs() < FINAL_Z_EPS_MM,
         },
     );
     (!piece.moves.is_empty()).then_some(piece)
