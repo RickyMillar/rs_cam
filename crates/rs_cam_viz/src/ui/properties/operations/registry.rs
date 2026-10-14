@@ -319,8 +319,14 @@ fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) {
     }
 }
 
-fn dia_chamfer(_op: &OperationConfig, ui: &mut egui::Ui) {
-    draw_outline_diagram(ui, "Chamfer (edge contour)", None);
+fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) {
+    if let OperationConfig::Chamfer(cfg) = op {
+        let side = match cfg.side {
+            ProfileSide::Outside => "Outside",
+            ProfileSide::Inside => "Inside",
+        };
+        draw_outline_diagram(ui, &format!("Chamfer ({side})"), Some(side));
+    }
 }
 
 fn dia_trace(op: &OperationConfig, ui: &mut egui::Ui) {

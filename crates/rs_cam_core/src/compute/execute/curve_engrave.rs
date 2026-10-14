@@ -175,6 +175,7 @@ pub(crate) fn generate_chamfer(
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
             tool_half_angle: ha,
+            side: cfg.side,
             feed_rate: op.feed_rate(),
             plunge_rate: op.plunge_rate(),
             safe_z,

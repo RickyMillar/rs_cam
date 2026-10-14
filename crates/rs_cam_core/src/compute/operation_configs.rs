@@ -329,6 +329,10 @@ impl Default for AlignmentPinDrillConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChamferConfig {
+    /// Where the material is (W1.3b): `Outside` chamfers a part, `Inside`
+    /// chamfers a pocket or a hole. Every ring of the outline is chamfered
+    /// into the material; `ops/chamfer.rs` states the rule for hole rings.
+    pub side: ProfileSide,
     pub chamfer_width: f64,
     pub tip_offset: f64,
     pub feed_rate: f64,
@@ -345,6 +349,7 @@ pub struct ChamferConfig {
 impl Default for ChamferConfig {
     fn default() -> Self {
         Self {
+            side: ProfileSide::Outside,
             chamfer_width: 1.0,
             tip_offset: 0.1,
             feed_rate: 800.0,

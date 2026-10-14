@@ -622,6 +622,7 @@ fn flat_cases() -> Vec<FlatCase> {
             "2D contour",
             || {
                 OperationConfig::Chamfer(ChamferConfig {
+                    side: ProfileSide::Outside,
                     ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,

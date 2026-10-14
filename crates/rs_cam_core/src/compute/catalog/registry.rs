@@ -272,13 +272,21 @@ const DRILL_PARAMS: &[ParamDef] = &[
 ];
 
 const CHAMFER_PARAMS: &[ParamDef] = &[
+    ParamDef::required_desc(
+        "side",
+        "enum:outside|inside",
+        "Where the material is. Outside: the outline is a part; its outer \
+         edge and the edges of its holes are chamfered. Inside: the outline \
+         is a pocket or a hole; its walls are chamfered. The bevel always \
+         goes into the material.",
+    ),
     ParamDef::required("chamfer_width", "f64").with_help(
         "Width of the chamfer on the face (mm). Depth computed from tool \
          angle.",
     ),
     ParamDef::required("tip_offset", "f64").with_help(
-        "Distance (mm) the V-bit tip runs outside the edge, so the tip \
-         does not cut. Increases cut depth slightly.",
+        "Distance (mm) the V-bit tip runs off the edge into the air, so the \
+         tip does not cut. Increases cut depth slightly.",
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
