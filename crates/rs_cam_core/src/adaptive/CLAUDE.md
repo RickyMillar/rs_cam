@@ -20,7 +20,7 @@
 - Exempt: opt-in slot lines, the steps out of a straight plunge. Adaptive3d
   keeps the historical rule (byte parity). Run order is part of the plan
   (no rapid reorder); a `Rapid` retracts Z-only before XY travel.
-- The planner plans one inset piece; the adapter splits (D2, `mod.rs`).
+- The planner plans one inset piece; both adapters split (D2, `mod.rs`).
 
 ## Sentries
 

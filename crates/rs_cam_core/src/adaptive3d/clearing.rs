@@ -2178,6 +2178,210 @@ struct RegionClearPlan<'a> {
     region_total: usize,
 }
 
+/// The outlines the 2D planner plans for one region: each smoothed
+/// polygon of the region, split into one outline per piece of its inset
+/// by the tool radius (G-ADAPT3DPIECES, D2).
+fn planner_outlines(
+    region_polygon: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+) -> Vec<crate::polygon::Polygon2> {
+    // Simplify the per-region polygon to smooth the marching-squares
+    // staircase pattern before the 2D adaptive runs. Two-step:
+    //   1. Inward offset by SIMPLIFY_INSET so the simplified result
+    //      stays inside the original — guarantees we never remove
+    //      more stock than the original polygon allows.
+    //   2. Douglas-Peucker on each contour with SIMPLIFY_TOLERANCE,
+    //      collapsing stair-step vertices into straight lines.
+    // Stock left at the boundary is bounded by SIMPLIFY_INSET +
+    // SIMPLIFY_TOLERANCE ≈ 0.6 mm — well within typical 0.5–1 mm
+    // radial-stock-to-leave allowances for a roughing pass.
+    const SIMPLIFY_INSET: f64 = 0.3;
+    const SIMPLIFY_TOLERANCE: f64 = 0.3;
+    let smoothed_polygons: Vec<crate::polygon::Polygon2> = if !matches!(
+        params_2d.cleanup_strategy,
+        crate::adaptive::CleanupStrategy::Legacy
+    ) {
+        let inset = crate::polygon::offset_polygon(region_polygon, SIMPLIFY_INSET);
+        inset
+            .into_iter()
+            .map(|mut poly| {
+                poly.exterior =
+                    crate::adaptive::path::simplify_path(&poly.exterior, SIMPLIFY_TOLERANCE);
+                poly.holes = poly
+                    .holes
+                    .into_iter()
+                    .map(|h| crate::adaptive::path::simplify_path(&h, SIMPLIFY_TOLERANCE))
+                    .filter(|h| h.len() >= 3)
+                    .collect();
+                // `exterior` replaced — see the mutation contract on
+                // `Polygon2`.
+                poly.invalidate_bbox();
+                poly
+            })
+            .filter(|p| p.exterior.len() >= 3)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    // G-ADAPT3DPIECES (D2): every smoothed polygon is planned, not only
+    // the first, and each one whose inset by the tool radius splits is
+    // planned piece by piece (`adaptive::inset_piece_outlines`, the one
+    // split the 2D adapter also uses). One polygon of one piece gives the
+    // polygon itself, so an unsplit region plans exactly as before.
+    let polygons = if smoothed_polygons.is_empty() {
+        vec![region_polygon.clone()]
+    } else {
+        smoothed_polygons
+    };
+    polygons
+        .into_iter()
+        .flat_map(|poly| {
+            let pieces = crate::adaptive::inset_piece_outlines(&poly, params_2d.tool_radius);
+            if pieces.is_empty() {
+                vec![poly]
+            } else {
+                pieces
+            }
+        })
+        .collect()
+}
+
+/// Plan one outline: the 2D adaptive walk, its residue cleanup and the
+/// F-038 short-group filter. It appends the spiral's predicted engagement
+/// to `slice_eng_2d`.
+// SAFETY: the arguments are the per-region state of `clear_one_region`,
+// passed through unchanged.
+#[allow(clippy::too_many_arguments)]
+fn plan_one_outline(
+    ctx: &ClearZLevelContext<'_>,
+    params_2d: &crate::adaptive::AdaptiveParams,
+    polygon_for_adaptive: &crate::polygon::Polygon2,
+    debug: Option<&ToolpathDebugContext>,
+    (z_level, region_idx): (f64, usize),
+    dropped_short_regions: &mut usize,
+    slice_eng_2d: &mut Vec<(P2, f64)>,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<crate::adaptive::AdaptiveSegment>, Cancelled> {
+    // Stage 4 — collect the contour-spiral's per-point predicted
+    // leading-arc engagement for this slice (empty for non-spiral
+    // strategies). Keyed by 2D position below so it survives the
+    // residue-cleanup segment reshuffling, then lifted to 3D and
+    // appended to the per-toolpath planner-engagement sampler.
+    let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
+        polygon_for_adaptive,
+        params_2d,
+        cancel,
+        debug,
+        Some(slice_eng_2d),
+    )?;
+    // For non-Legacy cleanup strategies, run the same cleanup
+    // post-process the 2D top-level entry point runs. adaptive3d
+    // calls `adaptive_segments_with_debug` directly (not the
+    // toolpath-level entry), so without this step the new
+    // strategies (helical entry + narrow-exit + cap-pass-1) exit
+    // early and leave residue uncleared — the cleanup catches it
+    // with boundary walks + contour-parallel offsets + mop
+    // patches.
+    let segs_2d_raw = match params_2d.cleanup_strategy {
+        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw,
+        crate::adaptive::CleanupStrategy::ResidueMop
+        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
+            crate::adaptive::path::apply_residue_mop_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                &segs_2d_raw,
+            )
+        }
+        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
+            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                &segs_2d_raw,
+            )
+        }
+    };
+
+    // F-038: filter out tiny entry-plunge → cut groups before emission.
+    //
+    // The 2D adaptive emits its output as a sequence of segments shaped
+    // like:
+    //
+    //   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
+    //
+    // Each `Rapid` is the start of a new "pass" — downstream this becomes
+    // a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
+    // models the planner emits many of these passes, and a significant
+    // fraction cut < 5 mm of material before the next retract. On the
+    // Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
+    // of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
+    // overhead per 100 ms or less of real cutting.
+    //
+    // Group segments by Rapid boundary; if a group's total Cut XY length
+    // is below `min_region_cut_length_mm`, drop the whole group (the
+    // entry Rapid + its Cuts). The cutter never visits that micro-area;
+    // material is left for finishing passes (which is fine — these
+    // micro-bridges are below roughing resolution).
+    //
+    // Always keep the very first group (it provides the region's initial
+    // tool position). Always keep the last group's residual Marker/Link
+    // segments so the per-region debug spans stay coherent.
+    let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
+        let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
+        let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+        for s in segs_2d_raw {
+            if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
+            current.push(s);
+        }
+        if !current.is_empty() {
+            groups.push(current);
+        }
+        let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+        let mut dropped_groups: usize = 0;
+        let group_total = groups.len();
+        for (gi, group) in groups.into_iter().enumerate() {
+            let mut cut_len = 0.0_f64;
+            for seg in &group {
+                if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                    cut_len += crate::geo::polyline_length_2d(path_2d);
+                }
+            }
+            // Always keep the first group — it sets up the region's
+            // starting position. Drop interior + trailing groups
+            // below threshold; the trailing group on terrain runs
+            // is usually a sub-tool residual the finishing pass
+            // will cover anyway.
+            let _ = group_total;
+            let drop = gi > 0
+                && cut_len < ctx.min_region_cut_length_mm
+                && group
+                    .iter()
+                    .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
+            if drop {
+                dropped_groups += 1;
+                continue;
+            }
+            kept_segs.extend(group);
+        }
+        if dropped_groups > 0 {
+            debug!(
+                z = z_level,
+                region = region_idx + 1,
+                dropped_groups,
+                group_total,
+                threshold_mm = ctx.min_region_cut_length_mm,
+                "F-038: dropped short cut groups inside 2D adaptive output"
+            );
+            *dropped_short_regions += dropped_groups;
+        }
+        kept_segs
+    } else {
+        segs_2d_raw
+    };
+    Ok(segs_2d)
+}
+
 /// Stage 2 — clear ONE region: the cut-length forecast, the perimeter
 /// sweep, the 2D adaptive walk and the residual cleanup, each lifted to 3D
 /// and stamped into the planner's dexel state.
@@ -2400,64 +2604,23 @@ fn clear_one_region(
         }
     }
 
-    // Simplify the per-region polygon to smooth the marching-squares
-    // staircase pattern before the 2D adaptive runs. Two-step:
-    //   1. Inward offset by SIMPLIFY_INSET so the simplified result
-    //      stays inside the original — guarantees we never remove
-    //      more stock than the original polygon allows.
-    //   2. Douglas-Peucker on each contour with SIMPLIFY_TOLERANCE,
-    //      collapsing stair-step vertices into straight lines.
-    // Stock left at the boundary is bounded by SIMPLIFY_INSET +
-    // SIMPLIFY_TOLERANCE ≈ 0.6 mm — well within typical 0.5–1 mm
-    // radial-stock-to-leave allowances for a roughing pass.
-    const SIMPLIFY_INSET: f64 = 0.3;
-    const SIMPLIFY_TOLERANCE: f64 = 0.3;
-    let smoothed_polygons = if !matches!(
-        params_2d.cleanup_strategy,
-        crate::adaptive::CleanupStrategy::Legacy
-    ) {
-        let inset = crate::polygon::offset_polygon(region_polygon, SIMPLIFY_INSET);
-        inset
-            .into_iter()
-            .map(|mut poly| {
-                poly.exterior =
-                    crate::adaptive::path::simplify_path(&poly.exterior, SIMPLIFY_TOLERANCE);
-                poly.holes = poly
-                    .holes
-                    .into_iter()
-                    .map(|h| crate::adaptive::path::simplify_path(&h, SIMPLIFY_TOLERANCE))
-                    .filter(|h| h.len() >= 3)
-                    .collect();
-                // `exterior` replaced — see the mutation contract on
-                // `Polygon2`.
-                poly.invalidate_bbox();
-                poly
-            })
-            .filter(|p| p.exterior.len() >= 3)
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    let polygon_for_adaptive: &crate::polygon::Polygon2 = if smoothed_polygons.is_empty() {
-        region_polygon
-    } else {
-        #[allow(clippy::indexing_slicing)] // checked non-empty above
-        &smoothed_polygons[0]
-    };
-
-    // Stage 4 — collect the contour-spiral's per-point predicted
-    // leading-arc engagement for this slice (empty for non-spiral
-    // strategies). Keyed by 2D position below so it survives the
-    // residue-cleanup segment reshuffling, then lifted to 3D and
-    // appended to the per-toolpath planner-engagement sampler.
+    // G-ADAPT3DPIECES (D2): the planner plans one piece of the inset of
+    // the polygon it gets, so the region is planned outline by outline.
     let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
-    let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
-        polygon_for_adaptive,
-        params_2d,
-        cancel,
-        region_scope.as_ref().map(|s| s.context()).as_ref(),
-        Some(&mut slice_eng_2d),
-    )?;
+    let mut segs_2d: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+    let piece_debug = region_scope.as_ref().map(|s| s.context());
+    for outline in planner_outlines(region_polygon, params_2d) {
+        segs_2d.extend(plan_one_outline(
+            ctx,
+            params_2d,
+            &outline,
+            piece_debug.as_ref(),
+            (z_level, region_idx),
+            dropped_short_regions,
+            &mut slice_eng_2d,
+            cancel,
+        )?);
+    }
     // Spatial lookup: quantised 2D position → predicted engagement.
     // Positions are exact f64 from the spiral's own emit, so a
     // fixed-point key reproduces them without float-equality hazard.
@@ -2465,112 +2628,6 @@ fn clear_one_region(
         .iter()
         .map(|(p, e)| ((quantize_coord(p.x), quantize_coord(p.y)), *e))
         .collect();
-
-    // For non-Legacy cleanup strategies, run the same cleanup
-    // post-process the 2D top-level entry point runs. adaptive3d
-    // calls `adaptive_segments_with_debug` directly (not the
-    // toolpath-level entry), so without this step the new
-    // strategies (helical entry + narrow-exit + cap-pass-1) exit
-    // early and leave residue uncleared — the cleanup catches it
-    // with boundary walks + contour-parallel offsets + mop
-    // patches.
-    let segs_2d_raw = match params_2d.cleanup_strategy {
-        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw,
-        crate::adaptive::CleanupStrategy::ResidueMop
-        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
-            crate::adaptive::path::apply_residue_mop_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
-        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
-            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
-    };
-
-    // F-038: filter out tiny entry-plunge → cut groups before emission.
-    //
-    // The 2D adaptive emits its output as a sequence of segments shaped
-    // like:
-    //
-    //   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
-    //
-    // Each `Rapid` is the start of a new "pass" — downstream this becomes
-    // a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
-    // models the planner emits many of these passes, and a significant
-    // fraction cut < 5 mm of material before the next retract. On the
-    // Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
-    // of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
-    // overhead per 100 ms or less of real cutting.
-    //
-    // Group segments by Rapid boundary; if a group's total Cut XY length
-    // is below `min_region_cut_length_mm`, drop the whole group (the
-    // entry Rapid + its Cuts). The cutter never visits that micro-area;
-    // material is left for finishing passes (which is fine — these
-    // micro-bridges are below roughing resolution).
-    //
-    // Always keep the very first group (it provides the region's initial
-    // tool position). Always keep the last group's residual Marker/Link
-    // segments so the per-region debug spans stay coherent.
-    let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
-        let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
-        let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        for s in segs_2d_raw {
-            if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
-                groups.push(std::mem::take(&mut current));
-            }
-            current.push(s);
-        }
-        if !current.is_empty() {
-            groups.push(current);
-        }
-        let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        let mut dropped_groups: usize = 0;
-        let group_total = groups.len();
-        for (gi, group) in groups.into_iter().enumerate() {
-            let mut cut_len = 0.0_f64;
-            for seg in &group {
-                if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                    cut_len += crate::geo::polyline_length_2d(path_2d);
-                }
-            }
-            // Always keep the first group — it sets up the region's
-            // starting position. Drop interior + trailing groups
-            // below threshold; the trailing group on terrain runs
-            // is usually a sub-tool residual the finishing pass
-            // will cover anyway.
-            let _ = group_total;
-            let drop = gi > 0
-                && cut_len < ctx.min_region_cut_length_mm
-                && group
-                    .iter()
-                    .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
-            if drop {
-                dropped_groups += 1;
-                continue;
-            }
-            kept_segs.extend(group);
-        }
-        if dropped_groups > 0 {
-            debug!(
-                z = z_level,
-                region = region_idx + 1,
-                dropped_groups,
-                group_total,
-                threshold_mm = ctx.min_region_cut_length_mm,
-                "F-038: dropped short cut groups inside 2D adaptive output"
-            );
-            *dropped_short_regions += dropped_groups;
-        }
-        kept_segs
-    } else {
-        segs_2d_raw
-    };
 
     for seg in segs_2d {
         match seg {

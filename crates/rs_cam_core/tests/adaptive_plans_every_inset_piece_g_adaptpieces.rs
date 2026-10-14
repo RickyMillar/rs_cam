@@ -9,7 +9,7 @@
 //! stayed (`planning/op_architecture_2026-10-14/AUDIT.md`, D2).
 //!
 //! The planner still plans one piece by design (it is shared with the
-//! Adaptive3d slices, which keep byte parity). The fix is in the 2D adapter
+//! Adaptive3d slices, which split the same way: G-ADAPT3DPIECES). The fix is in the 2D adapter
 //! (`compute/execute/clearing_2d.rs`): `adaptive::inset_piece_outlines`
 //! gives one outline for each piece, and the adapter plans each to full
 //! depth in turn.

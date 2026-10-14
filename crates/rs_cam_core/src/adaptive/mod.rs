@@ -344,7 +344,9 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
 /// The outline of each piece of the machinable region of `outline`
 /// (G-ADAPTPIECES, D2). The planner plans one piece of the inset by
 /// `tool_radius`; when that inset splits (a neck narrower than the tool),
-/// the 2D adapter plans each returned outline in turn. Each outline is the
+/// the caller plans each returned outline in turn. Both adapters use it:
+/// the 2D adapter (`clearing_2d.rs`) and the Adaptive3d slice
+/// (`adaptive3d/clearing.rs::planner_outlines`, G-ADAPT3DPIECES). Each outline is the
 /// piece grown back by the tool radius (the area a cutter centre in the
 /// piece reaches), clipped to `outline`, so its own inset is that piece.
 ///
