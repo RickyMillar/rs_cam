@@ -54,6 +54,7 @@ Sequential, one editor each. Order by risk.
 | W1.5 | D11 GUI prior-op check stops at the setup | walk core `carve_order_before` | viz test: rest op first in setup 3 names the setup-2 op |
 | W1.6 | D9 red schema test | make `diameter` consistent with the schema (serde default or unexposed decision) | the red test turns green |
 | W1.2b | D2 in Adaptive3d slices (same planner, still plans only `machinable_vec[0]`) | reproduce on a mesh with a split slice; fix in the planner or the 3D adapter | sentry + G-OPGOLDEN |
+| W1.4b | VCarve's Finish lead-in cuts 238 cells up to 0.75 mm outside the outline (found in W1.4) | strip or contain the lead on VCarve as on Inlay | sentry: no cell outside the outline |
 | W1.7 | R3: retire the Rest op | delete the op on every surface (core, GUI, MCP, CLI, catalog, docs); state the load break | G-OPGOLDEN loses its Rest cases on purpose; build + clippy clean |
 | W1.1b | R1 follow-up: links are not scored against the stock | a simulation check that flags a fed link whose tool passes through remaining stock | sentry: a link forced below the stock top is flagged |
 
@@ -135,7 +136,7 @@ and W4, from what they measure. It is not scheduled now.
 | Wave | State |
 |---|---|
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
-| W1 | W1.1 DONE 877c93e5; W1.2 DONE (2D Adaptive pieces) |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 (FM1 bless pending) |
 | W2–W6 | not started |
 
 ## Backlog (not scheduled)
