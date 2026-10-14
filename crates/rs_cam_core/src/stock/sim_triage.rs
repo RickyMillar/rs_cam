@@ -311,7 +311,7 @@ impl SimulationTriage {
     /// know which toolpaths are rest-driven use
     /// [`Self::build_with_rest_context`]; the session does.
     pub fn build(inputs: &TriageInputs<'_>) -> Self {
-        Self::build_with_rest_context(inputs, &BTreeSet::new())
+        Self::build_with_rest_context(inputs, &BTreeSet::new(), &BTreeSet::new())
     }
 
     /// [`Self::build`] plus the set of rest-driven toolpath ids
@@ -320,9 +320,17 @@ impl SimulationTriage {
     /// `project.entry_load` (G-ENTRYLOAD) is graded only on these: an entry
     /// carving rest material is the defect class the id names, while a
     /// fresh-stock entry plunge is planned motion.
+    ///
+    /// `links_on_mesh` is the set of toolpaths whose links were planned on
+    /// the mesh with no stock reading: a finishing op
+    /// (`LinkCeilingNeed::WithRemainingStock`) that is not rest-driven. Its
+    /// links ride the mesh through the same stock its passes cut, so
+    /// `project.link_cuts_stock` (G-LINKPLOUGH) does not grade them. See
+    /// [`link_cut_observation`].
     pub fn build_with_rest_context(
         inputs: &TriageInputs<'_>,
         rest_driven: &BTreeSet<ToolpathId>,
+        links_on_mesh: &BTreeSet<ToolpathId>,
     ) -> Self {
         let mut safety = Vec::new();
         let mut actions = Vec::new();
@@ -421,6 +429,7 @@ impl SimulationTriage {
         // R-12 (census §6.4) — the actionable half of "Rivers B4".
         // G-ENTRYLOAD — the same pass's ENTRY motion, graded against its own
         // envelope because the load gates decline to look at it.
+        // G-LINKPLOUGH — the same pass's fed LINKS, graded against the stock.
         for tp in &inputs.trace.toolpath_summaries {
             if tp.metrics_not_applicable {
                 continue;
@@ -438,6 +447,24 @@ impl SimulationTriage {
             }
             if rest_driven.contains(&tp.toolpath_id)
                 && let Some(f) = entry_load_finding(inputs.trace, tp.toolpath_id)
+            {
+                actions.push(f);
+            }
+            // G-LINKPLOUGH: see `link_cut_observation` for the scope.
+            if !links_on_mesh.contains(&tp.toolpath_id)
+                && let Some(f) = link_cut_finding(
+                    inputs.trace,
+                    tp.toolpath_id,
+                    inputs
+                        .toolpath_names
+                        .get(&tp.toolpath_id)
+                        .map(String::as_str),
+                    inputs
+                        .commanded_depth_per_pass_mm
+                        .get(&tp.toolpath_id)
+                        .copied(),
+                    inputs.measurability.cell_mm,
+                )
             {
                 actions.push(f);
             }
@@ -638,8 +665,26 @@ fn standing_material_population(
                 && crate::tool_load::locality::is_steady_state_for_gate(s, None)
         })
         .collect();
-    let reference = match commanded_step.filter(|s| s.is_finite() && *s > 0.0) {
-        Some(step_mm) => (!population.is_empty()).then_some(BiteReference::Commanded {
+    let reference = if population.is_empty() {
+        None
+    } else {
+        bite_reference(&population, commanded_step, cell_mm)
+    };
+    (population, reference)
+}
+
+/// The bite reference of a population: the commanded arm when the op has a
+/// step, else the population's own median removed height. On the own-median
+/// arm the result is `None` when the population is empty or its median is
+/// zero; the commanded arm does not read the population. The ONE
+/// definition: the standing-material rule and the link rule both read it.
+fn bite_reference(
+    population: &[&crate::stock::simulation_cut::SimulationCutSample],
+    commanded_step: Option<f64>,
+    cell_mm: Option<f64>,
+) -> Option<BiteReference> {
+    match commanded_step.filter(|s| s.is_finite() && *s > 0.0) {
+        Some(step_mm) => Some(BiteReference::Commanded {
             step_mm,
             tolerance_mm: commanded_tolerance_mm(cell_mm),
         }),
@@ -652,8 +697,7 @@ fn standing_material_population(
                 .filter(|m| *m > 0.0)
                 .map(|median_mm| BiteReference::OwnMedian { median_mm })
         }
-    };
-    (population, reference)
+    }
 }
 
 /// Report a pass that cuts through material deeper than it was planned to
@@ -920,8 +964,11 @@ impl EntryLoadObservation {
 /// plunge-kinematics samples and `plunge_descent_mm` is zeroed on every other
 /// kind (`dexel_stock::simulation::apply_subsegment_metrics`), so reading one
 /// of them is reading half the entries. Reading the axial axis alone is the
-/// specific mistake G-ENTRYLOAD is named after.
-fn entry_bite_mm(s: &crate::stock::simulation_cut::SimulationCutSample) -> f64 {
+/// specific mistake G-ENTRYLOAD is named after. The entry rule and the link
+/// rule (G-LINKPLOUGH) both read this one helper: a vertical fed link, such
+/// as the descent of a 3D Rough stay-down link, carries its removal on the
+/// plunge axis.
+fn removed_height_mm(s: &crate::stock::simulation_cut::SimulationCutSample) -> f64 {
     s.axial_engagement_mm.max(s.plunge_descent_mm).max(0.0)
 }
 
@@ -965,7 +1012,7 @@ pub fn entry_load_observation(
     {
         if is_entry_intent(s) {
             entry_samples += 1;
-            let bite = entry_bite_mm(s);
+            let bite = removed_height_mm(s);
             if peak.is_none_or(|p| bite > p) {
                 peak = Some(bite);
                 worst = Some(s);
@@ -1005,7 +1052,7 @@ pub fn entry_load_observation(
             s.toolpath_id == toolpath_id
                 && s.is_cutting
                 && is_entry_intent(s)
-                && entry_bite_mm(s) > bar
+                && removed_height_mm(s) > bar
         })
         .count();
     obs
@@ -1086,6 +1133,296 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
             wasted_runtime_s: 0.0,
             min_radial_engagement: 0.0,
             sample_count: obs.over_threshold_samples,
+        },
+    })
+}
+
+// ── G-LINKPLOUGH (W1.1b, 2026-10-14) ──────────────────────────────────────
+//
+// A link is a short FED move between two cut runs (`MoveIntent::Linking`).
+// The planner means it to travel in air or on ground the op already cut. No
+// check read a fed link against the stock: the rapid check reads rapids
+// only, and the holder check reads the holder against the MODEL. A link that
+// ploughed through standing stock was silent. This rule reads the link
+// samples of the cut trace that the simulator already writes.
+
+/// The noise floor of the link rule, in mm: a link sample that removes this
+/// much or less is not a cut.
+///
+/// `FRESH_MATERIAL_THRESHOLD_MM` is the dexel engine's own floor for "fresh
+/// material exists above the cutter" (a near-flush cell under it is float
+/// noise). The engine reads a column at its cell centre. A link that rides a
+/// surface the pass cut sees that surface one cell off in XY, and on a slope
+/// up to 45 degrees one cell in XY is at most one cell in Z. So the floor is
+/// that threshold plus one cell ([`commanded_tolerance_mm`], the tolerance
+/// the standing-material rule adds for the same quantisation).
+#[must_use]
+pub fn link_cut_noise_floor_mm(cell_mm: Option<f64>) -> f64 {
+    crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM + commanded_tolerance_mm(cell_mm)
+}
+
+/// Removed height (mm) OVER the bar at which a link finding escalates from
+/// `Caution` to `Critical`.
+///
+/// The same millimetre as [`ENTRY_LOAD_SEVERE_PEAK_MM`], for the same
+/// reason: the only tool figure this module has is the ENVELOPE diameter,
+/// which overstates a tapered tip, so a tool fraction would go quiet on the
+/// small tips that break. The case transfers: an entry runs at the ramp feed,
+/// which is at or under the cut feed (`entry_feed_rate()`), and a link runs at
+/// the cut feed itself. So one millimetre of unplanned axial engagement is at
+/// least as severe on a link as on an entry. The rule reads the EXCESS over
+/// the bar, so a stepped op is Critical only at its own step plus one cell
+/// plus one millimetre.
+pub(crate) const LINK_CUT_SEVERE_EXCESS_MM: f64 = ENTRY_LOAD_SEVERE_PEAK_MM;
+
+/// What the link rule measured on one toolpath. It is published whether or
+/// not the rule fires, so "no fed link" and "the links were clean" never read
+/// as the same thing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct LinkCutObservation {
+    /// Fed samples whose generator intent is `Linking`. **The population.**
+    /// Rapid samples are not in it: a rapid through stock is the rapid
+    /// collision check's channel.
+    pub link_samples: usize,
+    /// Steady-state cutting samples that are not links and removed material:
+    /// the pass's own bites, the population of the own-median reference.
+    pub body_samples: usize,
+    /// [`link_cut_noise_floor_mm`] for this trace's cell.
+    pub noise_floor_mm: f64,
+    /// The pass's own reference bar (mm): the commanded step plus one cell,
+    /// or 3x the own median bite. `None` when the op has no step and the
+    /// body has fewer than [`STANDING_MATERIAL_MIN_SAMPLES`] bites.
+    pub pass_bar_mm: Option<f64>,
+    /// True when `pass_bar_mm` is the commanded arm.
+    pub pass_bar_is_commanded: bool,
+    /// `max(noise_floor_mm, pass_bar_mm)`. `None` when not measured.
+    pub bar_mm: Option<f64>,
+    /// Peak removed height (mm) over the link samples,
+    /// `max(axial_engagement_mm, plunge_descent_mm)`. `None` = no link
+    /// samples, never 0.0.
+    pub peak_removed_mm: Option<f64>,
+    /// Link samples over the bar.
+    pub over_bar_samples: usize,
+    /// Distinct link moves with a sample over the bar.
+    pub over_bar_moves: usize,
+    pub worst_position: Option<[f64; 3]>,
+    pub worst_move_index: Option<usize>,
+    pub worst_sample_index: Option<usize>,
+}
+
+impl LinkCutObservation {
+    /// True when the rule has a population and a bar. False means "not
+    /// measured", never "clean".
+    pub fn is_measured(&self) -> bool {
+        self.link_samples > 0 && self.bar_mm.is_some()
+    }
+
+    /// True when a measured link sample removes more than the bar.
+    pub fn exceeds(&self) -> bool {
+        self.is_measured() && self.over_bar_samples > 0
+    }
+}
+
+/// True when the generator tagged this sample's move as a link.
+fn is_link_intent(s: &crate::stock::simulation_cut::SimulationCutSample) -> bool {
+    s.source_intent == Some(crate::toolpath::MoveIntent::Linking)
+}
+
+/// Measure one toolpath's fed links against the stock they cross.
+///
+/// # The population
+///
+/// The FED samples (`is_cutting`) whose source intent is `Linking`. The
+/// bite is [`removed_height_mm`], on both removal axes. The rule does NOT
+/// filter transit samples: a link sample is a transit sample by
+/// definition, and what the simulator removes there is exactly what this
+/// rule reports. The load gates drop it because it is not a steady-state
+/// load, not because the removal is false.
+///
+/// # The bar
+///
+/// The bar is the larger of two numbers:
+///
+/// - [`link_cut_noise_floor_mm`]: a link that rides the cut surface removes
+///   no more than this.
+/// - The pass's own bite ([`bite_reference`], the standing-material
+///   reference): the commanded step plus one cell for a stepped op, else 3x
+///   the median bite of the pass's non-link cutting samples. A link that
+///   takes no more than the pass itself is not reported, for two reasons.
+///   A 2D Adaptive keep-down link is RULED to cut within the pass load
+///   (G-ADAPTLINKLOAD), and a 3D Rough link is read against its own step.
+///
+/// # The scope
+///
+/// `project.entry_load` reads only rest-driven toolpaths, because a
+/// fresh-stock entry descends through stock the generator planned for. A
+/// link is different: the generator plans most links in air or on cut
+/// ground on fresh stock too. Project Curve always builds a ceiling, and
+/// the G-LINKCEIL defect (a pinned `top_z` put every fed link inside the
+/// stock) was a fresh-stock case. So the triage grades every toolpath
+/// except one class, the `links_on_mesh` set of
+/// [`SimulationTriage::build_with_rest_context`]: a finishing op
+/// (`LinkCeilingNeed::WithRemainingStock`) that is not rest-driven builds
+/// no ceiling by design. Its links ride the mesh through the same stock its
+/// passes cut, so the whole op meets raw stock, and the link is not the
+/// defect. Measured on the G-LINKPLOUGH corrugated plate on fresh stock:
+/// the raster links removed up to 5.03 mm against a 3.29 mm pass bar, and
+/// the pencil links up to 4.99 mm.
+#[must_use]
+pub fn link_cut_observation(
+    trace: &SimulationCutTrace,
+    toolpath_id: ToolpathId,
+    commanded_step: Option<f64>,
+    cell_mm: Option<f64>,
+) -> LinkCutObservation {
+    let mut obs = LinkCutObservation {
+        noise_floor_mm: link_cut_noise_floor_mm(cell_mm),
+        ..LinkCutObservation::default()
+    };
+    let mut links: Vec<&crate::stock::simulation_cut::SimulationCutSample> = Vec::new();
+    let mut body: Vec<&crate::stock::simulation_cut::SimulationCutSample> = Vec::new();
+    for s in trace
+        .samples
+        .iter()
+        .filter(|s| s.toolpath_id == toolpath_id && s.is_cutting)
+    {
+        if is_link_intent(s) {
+            links.push(s);
+        } else if s.axial_engagement_mm > 0.0
+            && crate::tool_load::locality::is_steady_state_for_gate(s, None)
+        {
+            body.push(s);
+        }
+    }
+    obs.link_samples = links.len();
+    obs.body_samples = body.len();
+    let worst = links
+        .iter()
+        .copied()
+        .max_by(|a, b| removed_height_mm(a).total_cmp(&removed_height_mm(b)));
+    obs.peak_removed_mm = worst.map(removed_height_mm);
+    obs.worst_position = worst.map(|s| s.position);
+    obs.worst_move_index = worst.map(|s| s.move_index);
+    obs.worst_sample_index = worst.map(|s| s.sample_index);
+
+    let commanded = commanded_step.is_some_and(|s| s.is_finite() && s > 0.0);
+    let reference = if commanded || body.len() >= STANDING_MATERIAL_MIN_SAMPLES {
+        bite_reference(&body, commanded_step, cell_mm)
+    } else {
+        None
+    };
+    let Some(reference) = reference else {
+        return obs;
+    };
+    let pass_bar = reference.bar_mm();
+    let bar = pass_bar.max(obs.noise_floor_mm);
+    obs.pass_bar_mm = Some(pass_bar);
+    obs.pass_bar_is_commanded = matches!(reference, BiteReference::Commanded { .. });
+    obs.bar_mm = Some(bar);
+    let over: Vec<&crate::stock::simulation_cut::SimulationCutSample> = links
+        .iter()
+        .copied()
+        .filter(|s| removed_height_mm(s) > bar)
+        .collect();
+    obs.over_bar_samples = over.len();
+    obs.over_bar_moves = over
+        .iter()
+        .map(|s| s.move_index)
+        .collect::<BTreeSet<usize>>()
+        .len();
+    obs
+}
+
+/// Report a toolpath whose fed LINK cuts stock it was planned to cross in
+/// air or on cut ground (G-LINKPLOUGH). See [`link_cut_observation`] for
+/// the population and the bar, and [`LINK_CUT_SEVERE_EXCESS_MM`] for the
+/// severity.
+///
+/// Fires only on a measured reading; an op with no fed link is absent from
+/// the list, never reported clean.
+fn link_cut_finding(
+    trace: &SimulationCutTrace,
+    toolpath_id: ToolpathId,
+    toolpath_name: Option<&str>,
+    commanded_step: Option<f64>,
+    cell_mm: Option<f64>,
+) -> Option<Finding> {
+    let obs = link_cut_observation(trace, toolpath_id, commanded_step, cell_mm);
+    if !obs.exceeds() {
+        return None;
+    }
+    let peak = obs.peak_removed_mm?;
+    let bar = obs.bar_mm?;
+    let position = obs.worst_position.unwrap_or_default();
+    let move_index = obs.worst_move_index.unwrap_or_default();
+    let sample_index = obs.worst_sample_index.unwrap_or_default();
+    let severity = if peak - bar >= LINK_CUT_SEVERE_EXCESS_MM {
+        Severity::Critical
+    } else {
+        Severity::Caution
+    };
+    let reference = match (obs.pass_bar_mm, obs.pass_bar_is_commanded) {
+        (Some(pass), true) if pass >= obs.noise_floor_mm => {
+            format!("this pass's commanded depth per pass plus one cell, {pass:.2} mm")
+        }
+        (Some(pass), false) if pass >= obs.noise_floor_mm => {
+            format!("3x this pass's own median bite, {pass:.2} mm")
+        }
+        _ => format!(
+            "the {:.2} mm noise floor of a link on cut ground",
+            obs.noise_floor_mm
+        ),
+    };
+    let name = toolpath_name.map_or_else(String::new, |n| format!("\"{n}\": "));
+    Some(Finding {
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_LINK_CUTS_STOCK),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_LINK_CUTS_STOCK),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::ToolLoad,
+            severity,
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: format!(
+                "{name}a fed link cuts stock it was planned to cross in air or on cut ground: \
+                 link move {move_index} removes {peak:.2} mm at ({:.1}, {:.1}, {:.2}). \
+                 {} of {} link samples on {} link moves remove more than {bar:.2} mm \
+                 ({reference}).",
+                position[0],
+                position[1],
+                position[2],
+                obs.over_bar_samples,
+                obs.link_samples,
+                obs.over_bar_moves,
+            ),
+            evidence: Some(DiagnosticEvidence::SampleRange {
+                toolpath_id,
+                sample_start: sample_index,
+                sample_end: sample_index,
+                observed: peak,
+                threshold: Some(bar),
+                unit: "mm".to_owned(),
+                locality: Default::default(),
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: obs.over_bar_samples,
+        worst: WorstEvidence {
+            position,
+            move_index,
+            duration_s: 0.0,
+            wasted_runtime_s: 0.0,
+            min_radial_engagement: 0.0,
+            sample_count: obs.over_bar_samples,
         },
     })
 }
@@ -1970,6 +2307,7 @@ mod tests {
         let t = SimulationTriage::build_with_rest_context(
             &inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()),
             &rest,
+            &BTreeSet::new(),
         );
         let f = t
             .actions

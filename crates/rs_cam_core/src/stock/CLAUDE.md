@@ -34,6 +34,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`,
   `--test measurability_abstention_r8`, `--test narration_denominator_and_hints_d7`,
   `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
-  `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`
+  `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`,
+  `--test a_link_through_stock_is_flagged_g_linkplough` (`link_cuts_stock`; `links_on_mesh` is out)
 - `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test
   rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes to keep.

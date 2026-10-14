@@ -120,6 +120,13 @@ pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_ma
 /// `plunge_descent_mm`, which the crosses-standing rule above does not read.
 /// See [`crate::stock::sim_triage::entry_load_observation`].
 pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
+/// G-LINKPLOUGH (W1.1b, 2026-10-14). A fed LINK (`MoveIntent::Linking`)
+/// removes stock the planner meant it to cross in air or on cut ground, more
+/// than the pass itself takes. Before this rule nothing read a fed link
+/// against the stock: the rapid check reads rapids only and the holder check
+/// reads the model only. See
+/// [`crate::stock::sim_triage::link_cut_observation`].
+pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
 /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
 /// descent in the EMITTED motion runs faster in Z than the operation's own
 /// `plunge_rate`. Measured by [`crate::machine::kinematic_utilization`] on the stored
@@ -414,6 +421,7 @@ pub const ALL: &[&str] = &[
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
     PROJECT_ENTRY_LOAD,
+    PROJECT_LINK_CUTS_STOCK,
     PROJECT_PLUNGE_CLASS_LOAD,
     PROJECT_KINEMATIC_UTILIZATION,
     FEEDS_FEED_CLAMPED,
