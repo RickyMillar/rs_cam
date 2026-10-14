@@ -366,6 +366,9 @@ pub(crate) struct ToolpathPanelInputs {
     /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
     /// which cannot say "generated, then edited".
     pub freshness: crate::state::freshness::FreshnessState,
+    /// W2.5 (D10): the feed stage of the stored result, the one export
+    /// emits. `None` when the toolpath has no stored result.
+    pub feed_stage: Option<rs_cam_core::session::FeedStage>,
 }
 
 impl ToolpathPanelInputs {
@@ -585,6 +588,9 @@ pub(crate) fn toolpath_panel_inputs(
         .find_toolpath_config_by_id(id)
         .and_then(|(index, _)| crate::state::freshness::freshness_at(session, gui, index))
         .unwrap_or(crate::state::freshness::FreshnessState::NoResult);
+    let feed_stage = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(index, _)| session.feed_stage(index));
     ToolpathPanelInputs {
         tools,
         models,
@@ -609,6 +615,7 @@ pub(crate) fn toolpath_panel_inputs(
         drill_targets,
         reach: reach_summary,
         freshness: freshness_for_tp,
+        feed_stage,
     }
 }
 

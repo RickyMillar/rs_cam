@@ -4,7 +4,7 @@
 //!
 //! # Why this exists
 //!
-//! Every shipped air-cut bar — `OperationType::air_cut_high_threshold_pct`,
+//! Every shipped air-cut bar — `Capabilities::air_cut_high_threshold_pct`,
 //! the GUI's banner (**20 %** when this harness was written; **40 %** since
 //! the recalibration this harness produced the evidence for), the CLI's 40 %
 //! verdict — was fitted against the
@@ -129,7 +129,7 @@ struct Row {
     move_count: usize,
     metrics_not_applicable: bool,
     /// The op-kind band this row would be judged against, read (never
-    /// written) from `OperationType::air_cut_high_threshold_pct`.
+    /// written) from `Capabilities::air_cut_high_threshold_pct`.
     threshold_pct: Option<f64>,
     /// Whether the air-cut metric ABSTAINS for this row. A gate handed a
     /// `NotMeasurable` metric does not fire, so a row that abstains needs no
@@ -232,7 +232,7 @@ fn measure(family: &'static str, mut session: ProjectSession, cell_mm: f64) -> R
             rs_cam_core::stock::sim_measurability::SimMetric::AirCut,
         )
         .abstains();
-    let threshold_pct = op.air_cut_high_threshold_pct();
+    let threshold_pct = op.capabilities().air_cut_high_threshold_pct;
     let air_pct_of_total = summary.air_cut_pct_of_total_runtime();
     let fires = !abstains && threshold_pct.is_some_and(|t| air_pct_of_total > t);
 

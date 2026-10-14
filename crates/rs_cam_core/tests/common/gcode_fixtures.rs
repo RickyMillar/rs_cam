@@ -204,6 +204,7 @@ pub fn f5_two_tool_changes(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
         GcodePhase {
             toolpath: &tp2,
@@ -219,6 +220,7 @@ pub fn f5_two_tool_changes(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
     ];
     phased(&phases, post, overlay)
@@ -344,6 +346,7 @@ pub fn f12_tool_change_at_z_zero(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
         GcodePhase {
             toolpath: &tp2,
@@ -359,6 +362,7 @@ pub fn f12_tool_change_at_z_zero(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
     ];
     phased(&phases, post, overlay)
@@ -403,6 +407,7 @@ pub fn f13_climb_vs_conventional(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
         GcodePhase {
             toolpath: &tp_climb,
@@ -418,6 +423,7 @@ pub fn f13_climb_vs_conventional(
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         },
     ];
     phased(&phases, post, overlay)
@@ -453,6 +459,7 @@ pub fn f14_multi_line_pause_message(
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         },
@@ -476,6 +483,7 @@ pub fn f14_multi_line_pause_message(
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         },
@@ -509,6 +517,7 @@ pub fn f15_embedded_newline_snippets(
         coolant: CoolantMode::Off,
         controller_compensation: None,
         drill: None,
+        feeds: None,
     }];
     phased(&phases, post, overlay)
 }
@@ -544,6 +553,7 @@ pub fn f16_comp_round_trip(
         // program_builder.
         controller_compensation: Some(rs_cam_core::gcode::ControllerCompensation::Left),
         drill: None,
+        feeds: None,
     }];
     phased(&phases, post, overlay)
 }
@@ -580,6 +590,7 @@ pub fn f6_two_setups(
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         },
@@ -599,6 +610,7 @@ pub fn f6_two_setups(
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         },
@@ -624,6 +636,7 @@ fn drill_phase<'a>(
         coolant,
         controller_compensation: None,
         drill: Some(PhaseDrill { cycle }),
+        feeds: None,
     }
 }
 
@@ -731,6 +744,7 @@ pub fn f18_grblhal_options(
         coolant: CoolantMode::Off,
         controller_compensation: None,
         drill: None,
+        feeds: None,
     });
     phased(&phases, post, &overlay)
 }

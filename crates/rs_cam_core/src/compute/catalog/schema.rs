@@ -416,15 +416,41 @@ impl ToolConstraintsDef {
     };
 
     /// Whether a cutter of this shape class may run the operation.
-    /// THE reconciliation point with runtime refusals (e.g. the
-    /// Scallop ball-tip check in `execute_operation_annotated`): the
-    /// refusal reads this predicate, so the registry list and the
+    /// THE reconciliation point with runtime refusals: the generation
+    /// prologue (W2.2, `compute/execute/prologue.rs`) refuses on this
+    /// predicate for every operation, so the registry list and the
     /// runtime gate cannot drift.
     pub fn allows(&self, kind: CutterKind) -> bool {
         if !self.supports_v_bit && kind == CutterKind::VBit {
             return false;
         }
         self.required_kinds.is_empty() || self.required_kinds.contains(&kind)
+    }
+
+    /// W2.2: THE tool refusal text, or `None` when [`Self::allows`] admits
+    /// the kind. Three readers use it: the generation prologue
+    /// (`compute/execute/prologue.rs`), the static diagnostic
+    /// (`diagnostics/adapters/from_static_checks.rs`) and the GUI
+    /// validation. So the three cannot word the same refusal differently.
+    pub fn refusal(&self, op_label: &str, kind: CutterKind) -> Option<String> {
+        if self.allows(kind) {
+            return None;
+        }
+        let names: Vec<&str> = self
+            .required_kinds
+            .iter()
+            .map(|k| k.tool_type().label())
+            .collect();
+        Some(match names.split_last() {
+            Some((last, init)) if !init.is_empty() => {
+                format!("{op_label} requires a {} or {last} tool", init.join(", "))
+            }
+            Some((last, _)) => format!("{op_label} requires a {last} tool"),
+            None => format!(
+                "{op_label} does not accept a {} tool",
+                kind.tool_type().label()
+            ),
+        })
     }
 
     /// Materialize the serde-facing [`ToolConstraints`].
@@ -583,6 +609,11 @@ pub struct OpRegistryEntry {
     pub dressup_policy: DressupPolicy,
     /// The three per-op policies CMP-07 moved off `matches!` lists.
     pub policy: OpPolicy,
+    /// W2.4: what the op can do and how each consumer must treat it. Read
+    /// it through `OperationType::capabilities` (the row) or
+    /// `OperationConfig::capabilities` (the row plus the config's own
+    /// values).
+    pub capabilities: super::RowCapabilities,
     /// The family adapter `execute_operation_annotated` dispatches to.
     ///
     /// CMP-01: this was `Option<GenerateFn>` and `execute.rs` carried a

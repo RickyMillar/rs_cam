@@ -11,8 +11,15 @@ use super::operation_configs::{
     UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
+mod capabilities;
 mod registry;
 mod schema;
+
+pub use capabilities::{
+    AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
+    RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
+};
 
 pub use schema::{
     DRIVER_SET_FIELDS, DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpPolicy,
@@ -36,9 +43,20 @@ pub enum OperationFamily {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryRequirement {
+    /// The stock only. No model geometry.
     Stock,
+    /// A 2D drawing whose outlines the operation cuts. The generation
+    /// prologue refuses an absent or empty outline list.
     Polygons,
+    /// A 2D drawing whose drill targets (DXF points, circle and arc
+    /// centres) the operation reads, not its outlines (W2.2). A drawing of
+    /// points only has no outline, so the prologue does not ask for one;
+    /// the drill adapter refuses on its own target count
+    /// (`drill_targets_refusal`).
+    DrillTargets,
+    /// A 3D mesh and its spatial index.
     Mesh,
+    /// A 2D drawing and a 3D mesh.
     Both,
 }
 
@@ -429,6 +447,20 @@ impl OperationType {
         self.registry_entry().spec
     }
 
+    /// W2.2: the registry's refusal of a tool of this kind, or `None` when
+    /// the row's `tool_constraints` admit it. The generation prologue, the
+    /// static diagnostic and the GUI validation all read this one text.
+    pub fn tool_refusal(self, kind: crate::feeds::CutterKind) -> Option<String> {
+        self.registry_entry()
+            .tool_constraints
+            .refusal(self.spec().label, kind)
+    }
+
+    /// The geometry the operation reads, from its registry row.
+    pub fn geometry_requirement(self) -> GeometryRequirement {
+        self.spec().geometry
+    }
+
     /// Phase 1 registry accessor (architectural refactor 2026-06-06):
     /// THE single place to ask "what is this operation?". Exhaustive
     /// match — adding an `OperationType` variant does not compile until
@@ -574,249 +606,17 @@ impl OperationType {
         }
     }
 
-    pub fn transform_capabilities(self) -> OperationTransformCapabilities {
-        self.transform_capabilities_without_lap_cap()
-            .with_ramp_fold_lap_cap(self.ramp_fold_lap_cap())
-    }
-
-    /// The order and link capabilities alone; `transform_capabilities`
-    /// adds the R10 lap cap on top.
-    fn transform_capabilities_without_lap_cap(self) -> OperationTransformCapabilities {
-        use OperationType::{
-            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
-            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
-            VCarve, Waterline, Zigzag,
-        };
-
-        match self {
-            // XY-independent ops: TSP can reorder by proximity safely.
-            // Drill/AlignmentPinDrill: each hole is fully completed (peck cycle is intra-hole) before
-            // moving to the next, so XY visit order has no material-state effect.
-            // ProjectCurve: the generator (project_curve.rs) emits each contiguous
-            // mesh-contact chain as its own independent rapid→plunge→cut→retract
-            // unit — a chain flushes on any gap over air or a mesh hole, with no
-            // depth-order or safety-order dependency between chains — so TSP can
-            // freely reorder them by proximity too (audited fix-family Phase 1).
-            DropCutter | Drill | AlignmentPinDrill | ProjectCurve => {
-                OperationTransformCapabilities::new(true, false, false, true)
-            }
-            // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
-            // (horizontal_finish.rs:170 "machine top shelves first to avoid collisions"); TSP
-            // would override that safety ordering.
-            // Face's one-way rows and generated depth barriers encode the
-            // machining sequence. It must veto every rapid-order permutation,
-            // while retaining other dressups; it is neither continuous nor
-            // eligible for straight link moves.
-            Face => OperationTransformCapabilities::new(false, false, false, false)
-                .without_rapid_reorder(),
-            // Measured gouging under link moves even WITH the swept-corridor
-            // check in `dressup::apply_link_moves` (2026-08-03): Inlay 8.21mm,
-            // VCarve 5.78mm — all strictly DEEPER (110/103 columns, zero
-            // columns left proud), pinned by the `*_link_moves_*` sentries.
-            // The corridor check is necessary but not sufficient here: VCarve
-            // and Inlay's female pass are V-bit paths whose cut WIDTH depends
-            // on depth, so "the tip passed within tool_radius at this Z" does
-            // not imply the corridor was cleared to the width the bridge
-            // needs. Until the check models depth-dependent width (or link
-            // decisions move into the generators, where geometry is in scope),
-            // these forbid links but retain rapid-order eligibility. The
-            // inlay plug cuts with the same depth-dependent V width.
-            Inlay | InlayPlug | VCarve => {
-                OperationTransformCapabilities::new(false, false, false, false)
-            }
-            HorizontalFinish | Chamfer | Pencil | RadialFinish => {
-                OperationTransformCapabilities::new(false, false, false, true)
-            }
-            // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
-            Pocket | Profile | Zigzag | Waterline | Trace => {
-                OperationTransformCapabilities::new(false, true, false, false)
-            }
-            // The 2D adaptive planner clears one material grid per level, in
-            // the order it emits its runs, and admits a keep-down link only
-            // when the grid EARLIER runs left holds it to the pass load
-            // (`adaptive/path.rs`, `feed_link_within_pass_load`). The rapid-order pass
-            // splits only at rapids, so it moves whole keep-down chains and
-            // can put a chain before the run that cleared its link corridor.
-            // Measured (G-ADAPTORDER, 2026-09-26, 120 x 80 pocket with six
-            // islands, 6 mm, 2 levels): the six links over 6 x R cut
-            // 61.7 mm^3 in the planner order and 349.3 mm^3 reordered
-            // (18 -> 122 samples in material, peak radial 0.30 -> 0.64).
-            // The 2D planner stamps each re-entry's helix hole as cut
-            // (G-ADAPTPASSLOAD), so the helix finishes its floor flat; it
-            // emits the path it walked, so the dressup merge does not move its
-            // cuts (see `planner_applies_segment_merge`).
-            Adaptive => OperationTransformCapabilities::new(false, true, false, false)
-                .without_rapid_reorder()
-                .with_helix_floor_lap()
-                .with_stock_aware_plunge()
-                .with_planner_segment_merge(),
-            // Adaptive3d plans every run against its own dexel stock, in the
-            // order it emits them. Each entry's rapid floor and helix start,
-            // each keep-down proof and each ring's engagement assume that the
-            // runs before it have cut. A rapid-order permutation breaks all
-            // of these, also inside one depth pass. The rapid-order pass also
-            // rebuilds the framing rapids, so it drops each planner rapid
-            // floor. Measured on rivmap100 (2026-09-25, helix entry at
-            // (9.5, 41.5)): the planner read the column at 7.47 mm after a
-            // ring at x = 9.75 had cut it, but the reorder put that ring
-            // 2 700 moves later. The tool fed straight down from 14.0 to
-            // 7.78 mm through standing stock (to 12.0), and 448 entry
-            // samples took more than twice the median bite (peak 6.08 mm).
-            // With the order kept: 0 samples, peak 1.61 mm.
-            // The planner also applies the segment merge before it stamps
-            // each cut (G-PLANSIMGAP): the merge after the planner left up
-            // to 2.34 mm of material that the planner stock held as cut
-            // (rivmap100, 2026-09-25).
-            Adaptive3d => OperationTransformCapabilities::new(false, true, false, false)
-                .without_rapid_reorder()
-                .with_planner_segment_merge(),
-            // UnifiedFinish is stitched from independently generated region
-            // nodes, not one continuous trace. `generate_unified_finish`
-            // emits a `RapidOrderBarrier` at every node start (plus per-Z
-            // barriers inside waterline nodes), so the barriered TSP can
-            // reorder runs WITHIN a node while the router's cross-node
-            // sequence — costed against the machine envelope, and carrying
-            // the surface links — stays exactly as routed. Links stay
-            // forbidden: `apply_link_moves` has no view of the 3D surface
-            // between two fragment endpoints, which is why the op builds its
-            // own via `surface_link::build_surface_link`.
-            // SteepShallow is the same shape one level simpler: a Z-laddered
-            // waterline pass over steep territory concatenated with a raster
-            // over shallow territory. `generate_steep_shallow` barriers the
-            // two halves and the steep half's Z levels, so the TSP reorders
-            // within a half and never across one.
-            UnifiedFinish | SteepShallow => {
-                OperationTransformCapabilities::new(false, false, false, false)
-            }
-            // Genuinely continuous traces: helical/spiral paths whose passes
-            // are not retract-separated, single-tool-down runs.
-            Scallop | RampFinish | SpiralFinish => {
-                OperationTransformCapabilities::new(false, false, true, false)
-            }
-        }
-    }
-
-    /// Op-kind air-cut percentage band above which a per-toolpath warning
-    /// should fire. `None` means "metric not applicable" (drill kinematics
-    /// — dexel can't measure Z-only moves; see `planning/P1_AIR_CUT_THRESHOLDS_RCA.md`).
-    ///
-    /// Originally calibrated from `WANAKA_ASSESSMENT_2026-05-19.md`
-    /// expectation bands; **recalibrated 2026-08-21 (W5B-F4)** against the
-    /// swept stamping kernel that became the `StampDispatch::Auto` resolution
-    /// at `34d8917a`. The pre-flip readings these bands were fitted to were
-    /// largely a simulation-cell artifact (one unchanged toolpath read 0.31 %
-    /// at cell 0.25 and 89.61 % at cell 1.0); the evidence table, the flip
-    /// list and the rejected alternatives are in
-    /// `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md`.
-    ///
-    /// Returning `Some(threshold)` means: a TP whose
-    /// [`crate::stock::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime`]
-    /// exceeds `threshold` is a real signal.
-    ///
-    /// **The denominator is TOTAL runtime (cutting + rapids)** — these bands
-    /// were tuned against that measure and must not be compared against
-    /// `air_cut_pct_of_cutting_time`, which is always larger and would fire
-    /// these thresholds spuriously (`MEASUREMENT_DOMAINS.md` LH-1).
-    pub fn air_cut_high_threshold_pct(self) -> Option<f64> {
-        use OperationType::{
-            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
-            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
-            VCarve, Waterline, Zigzag,
-        };
-        match self {
-            // Drill kinematics: dexel polygon-to-material init can't see Z-only
-            // moves, so air-cut % is unusable. Suppress entirely (Priority 4).
-            Drill | AlignmentPinDrill => None,
-            // ProjectCurve is inherently sparse: rivers/curves are tiny features
-            // in big stock; rapids dominate by construction. The old 97 cited
-            // "Wanaka TPs read 78–92% at-baseline" — post-flip the same project's
-            // project-curve ops read 15.97 and 10.90, and an isolated river reads
-            // 13.2–28.7, so 97 had become unreachable (a dead gate reads as
-            // exoneration on `get_diagnostics`). 60 is ~2x the highest post-flip
-            // reading; deliberately loose because ProjectCurve is the ONE op that
-            // did not stabilise under swept (−15.6 pp across two cell sizes,
-            // DECISION §4.b), and a tight band on an unstable measure is the
-            // defect this review keeps finding.
-            ProjectCurve => Some(60.0),
-            // 3D finish ops: close-contact passes expected. The old 30 fired on
-            // EIGHT of the nine family members measured on clean, defect-free
-            // geometry with the correct tool — a bar that fires on essentially
-            // every well-formed instance distinguishes nothing. The defect-free
-            // cluster sits at 34.3–42.5 (DropCutter 34.3, SpiralFinish 40.5,
-            // Waterline 40.5, Scallop 41.6, RampFinish 42.5); 45 clears it by
-            // ~2.5 pp and still flags the two genuine outliers — SteepShallow 78
-            // and RadialFinish 82 — by 1.7–1.8x. Judgement on a cluster of nine,
-            // not a derived constant (DECISION §5.1).
-            DropCutter | Scallop | UnifiedFinish | Waterline | Pencil | HorizontalFinish
-            | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(45.0),
-            // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
-            // make 40% the high-water mark.
-            Pocket | Face | Adaptive | Zigzag | Adaptive3d => Some(40.0),
-            // 2D contour-style ops.
-            Profile | Chamfer | Inlay | InlayPlug | VCarve | Trace => Some(40.0),
-        }
-    }
-
-    /// Whether a pinned Bottom Z on the Heights tab reaches this operation's
-    /// EMITTED motion (F1.19).
-    ///
-    /// Three of the twenty-four operations read
-    /// [`crate::compute::config::ResolvedHeights::bottom_z`] when they
-    /// generate. The three sites are in `compute/execute.rs`:
-    ///
-    /// * `Adaptive3d` — `z_floor: heights.bottom_pinned.then_some(heights.bottom_z)`
-    /// * `UnifiedFinish` — hands `heights.bottom_z` to the band ladder
-    /// * `Waterline` — `waterline_z_levels(heights.top_z, heights.bottom_z, z_step)`
-    ///
-    /// Every other operation anchors its floor at `heights.top_z` minus its
-    /// OWN depth dial, and a pinned bottom changes nothing it emits. For the
-    /// six depth-stepping 2.5D operations (and the inlay plug, whose kernel
-    /// walks the same ladder from its own dials) the mechanism is
-    /// [`OperationConfig::cutting_levels`], which takes `top_z` and nothing
-    /// else: `session/compute.rs` builds the ladder before generation, and
-    /// `execute.rs`'s `effective_levels` returns that ladder whenever it is
-    /// non-empty — which it always is for those six. The `else` branch of
-    /// `effective_levels` is the one place a pinned bottom WOULD reach a 2.5D
-    /// ladder, through `ResolvedHeights::depth()`, and it is unreachable from
-    /// all six of its callers.
-    ///
-    /// This states what the generator does. It is not a recommendation. An
-    /// operator who pins Bottom Z on a pocket sets a dial that moves no
-    /// motion, and a surface that cautions on that number describes a cut the
-    /// machine does not make — which is why F1.18's caution predicate reads
-    /// the operation's own depth and never the pin.
-    ///
-    /// The repo has ruled this way before, in the other direction: adaptive3d
-    /// "deliberately ignores a pinned top" because roughing must start at the
-    /// real material top (`compute/config.rs`, `ResolvedHeights::top_pinned`).
-    /// A family declaring one pin inert is established practice here.
-    pub fn honors_pinned_bottom_z(self) -> bool {
-        use OperationType::{
-            Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
-            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
-            VCarve, Waterline, Zigzag,
-        };
-        match self {
-            // The three that read heights.bottom_z.
-            Adaptive3d | UnifiedFinish | Waterline => true,
-            // Depth-stepping family: the floor is `top_z - cfg.depth`, carried
-            // in the pre-computed `cutting_levels` ladder.
-            Pocket | Profile | Adaptive | Zigzag | Trace | Face => false,
-            // Top-anchored own-depth ops that do not step: VCarve max_depth,
-            // Inlay pocket_depth, the inlay plug's start depth plus proud
-            // height, Chamfer width, Drill depth, and the pin drill's
-            // spoilboard allowance.
-            VCarve | Inlay | InlayPlug | Chamfer | Drill | AlignmentPinDrill => false,
-            // Surface-riding finish ops: the mesh is the floor. They read
-            // `heights.retract_z` only.
-            DropCutter | Scallop | Pencil | HorizontalFinish | SteepShallow | RampFinish
-            | SpiralFinish | RadialFinish => false,
-            // ProjectCurve drops its depth below the mesh surface it projects
-            // onto, not below the stock top, and reads `fallback_top_z`.
-            ProjectCurve => false,
+    /// W2.4: the op kind's capabilities, from its registry row. The row's
+    /// transform gets the R10 lap cap of the process role here. A caller
+    /// with an [`OperationConfig`] in hand calls
+    /// [`OperationConfig::capabilities`], which also reads the config.
+    pub fn capabilities(self) -> RowCapabilities {
+        let row = self.registry_entry().capabilities;
+        Capabilities {
+            transform: row
+                .transform
+                .with_ramp_fold_lap_cap(self.ramp_fold_lap_cap()),
+            ..row
         }
     }
 }
@@ -935,27 +735,125 @@ pub enum OperationConfig {
 }
 
 impl OperationConfig {
-    /// Whether the entry-move surface probe applies to this operation,
-    /// and the leave allowance it must protect (G-RAMPTERRAIN,
-    /// `planning/entry_moves_2026-09-03/`, design amendment 1).
-    ///
-    /// `Some(leave)` marks a SURFACE-RIDING operation: its own cut
-    /// moves never go below `drop-cutter CL + leave`, so an entry leg
-    /// must not either — the probe floor enforces exactly that.
-    ///
-    /// `None` marks a prism operation: its passes legitimately descend
-    /// BELOW the model surface (a pocket cut into a block), so a
-    /// mesh-surface floor would silently destroy its ramp entries.
-    /// These keep the audited 2D blind-leg behaviour (A0 finding 4).
-    ///
-    /// Adaptive3d is `None` here on purpose: its dressup-door entries
-    /// are stripped (`FORCE_NO_ENTRY`), and its planner door builds
-    /// its own probe with `params.stock_to_leave`.
-    ///
-    /// Every variant is named — no wildcard arm — so a new operation
-    /// must classify itself.
-    pub fn entry_probe_leave(&self) -> Option<f64> {
+    /// W2.4: this operation's capabilities. The registry row
+    /// ([`OperationType::capabilities`]) is the default; an arm overrides
+    /// only a field that reads this config. The match names every variant,
+    /// so a new operation states its overrides, even when it has none.
+    pub fn capabilities(&self) -> Capabilities {
+        let row = self
+            .op_type()
+            .capabilities()
+            .with_entry_probe(self.entry_probe());
         match self {
+            // Discrete-ring Scallop takes global reorder and no links; see
+            // `TRANSFORM_DISCRETE_SCALLOP`. Continuous Scallop keeps the row.
+            OperationConfig::Scallop(c) => Capabilities {
+                transform: if c.continuous {
+                    row.transform
+                } else {
+                    TRANSFORM_DISCRETE_SCALLOP
+                },
+                feeds_hints: FeedsHints {
+                    target_scallop_mm: Some(c.scallop_height),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            OperationConfig::UnifiedFinish(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    target_scallop_mm: Some(c.scallop_height),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            // DropCutter (the "3D Finish" raster) can derive its stepover
+            // from a scallop target the way Scallop does. `None` keeps the
+            // `ae_factor x diameter` stepover.
+            OperationConfig::DropCutter(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    target_scallop_mm: c.scallop_height,
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            OperationConfig::Waterline(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    axial_depth_mm: Some(c.z_step),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            OperationConfig::SteepShallow(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    axial_depth_mm: Some(c.z_step),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            OperationConfig::VCarve(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    axial_depth_mm: Some(c.max_depth),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            OperationConfig::RampFinish(c) => Capabilities {
+                feeds_hints: FeedsHints {
+                    axial_depth_mm: Some(c.max_stepdown),
+                    ..FeedsHints::NONE
+                },
+                ..row
+            },
+            // No field of these configs changes a capability beyond the
+            // entry probe, which `entry_probe` resolved above.
+            OperationConfig::Pencil(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => row,
+        }
+    }
+
+    /// The row's [`EntryProbeRule`], resolved against this config.
+    fn entry_probe(&self) -> EntryProbe {
+        match self.op_type().capabilities().entry_probe {
+            EntryProbeRule::Prism => EntryProbe::Prism,
+            EntryProbeRule::SurfaceFixed { leave_mm } => EntryProbe::Surface { leave_mm },
+            EntryProbeRule::SurfaceFromConfig => match self.stock_to_leave_dial() {
+                Some(leave_mm) => EntryProbe::Surface { leave_mm },
+                // Not reached: `every_op_states_its_capabilities_w2_4`
+                // proves that every `SurfaceFromConfig` row has a dial. The
+                // CL surface is the side that cannot gouge the part.
+                None => EntryProbe::Surface { leave_mm: 0.0 },
+            },
+        }
+    }
+
+    /// The config's `stock_to_leave` dial, or `None` when the op has none.
+    /// The match names every variant, so a new op states whether it has
+    /// the dial.
+    pub fn stock_to_leave_dial(&self) -> Option<f64> {
+        match self {
+            OperationConfig::Pencil(c) => Some(c.stock_to_leave),
+            OperationConfig::Scallop(c) => Some(c.stock_to_leave),
+            OperationConfig::UnifiedFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::SteepShallow(c) => Some(c.stock_to_leave),
+            OperationConfig::RampFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::SpiralFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::RadialFinish(c) => Some(c.stock_to_leave),
+            OperationConfig::HorizontalFinish(c) => Some(c.stock_to_leave),
             OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
@@ -967,19 +865,11 @@ impl OperationConfig {
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_) => None,
-            // Surface-riding: no leave dial, floor is the CL surface.
-            OperationConfig::DropCutter(_) | OperationConfig::Waterline(_) => Some(0.0),
-            OperationConfig::Pencil(c) => Some(c.stock_to_leave),
-            OperationConfig::Scallop(c) => Some(c.stock_to_leave),
-            OperationConfig::UnifiedFinish(c) => Some(c.stock_to_leave),
-            OperationConfig::SteepShallow(c) => Some(c.stock_to_leave),
-            OperationConfig::RampFinish(c) => Some(c.stock_to_leave),
-            OperationConfig::SpiralFinish(c) => Some(c.stock_to_leave),
-            OperationConfig::RadialFinish(c) => Some(c.stock_to_leave),
-            OperationConfig::HorizontalFinish(c) => Some(c.stock_to_leave),
         }
     }
 
@@ -1006,90 +896,6 @@ impl OperationConfig {
     pub fn feeds_style(&self) -> (FeedsOperationFamily, PassRole) {
         let spec = self.spec();
         (spec.feeds_family, spec.feeds_pass_role)
-    }
-
-    /// CONFIG-aware transform capabilities — **the entry point production
-    /// code should call** (both current call sites already do:
-    /// `session/compute.rs`'s `tc.operation.transform_capabilities()` and
-    /// `rs_cam_viz`'s `worker/helpers.rs`'s `req.operation.transform_capabilities()`
-    /// go through this method, not [`OperationType::transform_capabilities`]).
-    ///
-    /// [`OperationType::transform_capabilities`] is a *static per-op-type*
-    /// table: it has no way to see per-instance config, so it must answer
-    /// for the worst case a given op type can produce. That conservatism is
-    /// correct as a fallback for callers with no `OperationConfig` in hand,
-    /// but it is provably too strict for ops whose safe-transform
-    /// classification depends on a config field.
-    ///
-    /// Scallop is the first such op (fix-family Phase 1b). Its op-type
-    /// table entry stays pinned at the conservative
-    /// `(false, false, true, false)` — continuous-path-required — because
-    /// `ScallopConfig::continuous` (`operation_configs.rs:820`, default
-    /// `false` at `operation_configs.rs:836`) controls which of two
-    /// structurally different emitters `scallop.rs` runs:
-    ///
-    /// - `continuous: false` (**the default**) takes the discrete-ring
-    ///   branch (`scallop.rs:913-975`): every ring is split into
-    ///   `keep_point`-contiguous runs and each run gets its own
-    ///   rapid→plunge→cut→retract (`scallop.rs:953-975`). Rings are radial
-    ///   offsets of ONE finishing pass down to the same final surface — no
-    ///   ring depends on another ring's material state, there is no depth
-    ///   order, and no generator-imposed safety order (contrast
-    ///   `HorizontalFinish`, which sorts high-to-low for collision
-    ///   avoidance). That is structurally identical to the "XY-independent,
-    ///   TSP can reorder by proximity safely" bucket `DropCutter` /
-    ///   `Drill` / `ProjectCurve` already sit in above.
-    ///
-    ///   **RE-ENABLED (fix-family Phase 1c).** The earlier revert reasoning
-    ///   was sound about ring INDEPENDENCE but attributed the measured
-    ///   GOUGE to the wrong knob. The sentry
-    ///   `scallop_discrete_capability_currently_blocked_reorder_gouges`
-    ///   measured a real over-cut when reorder was enabled: 146 dexel
-    ///   columns cut DEEPER vs 20 shallower, net −128.9 mm of extra
-    ///   material removed, worst column 9.33 mm over-cut — while rapid
-    ///   travel fell 33.5 % (3263 → 2169 mm). That gouge was produced by
-    ///   `apply_link_moves` bridging retract→rapid→plunge triples with a
-    ///   straight feed that plows laterally through material, NOT by the
-    ///   reorder itself: holding link moves off and varying only
-    ///   `optimize_rapid_order`, cutting distance is byte-identical
-    ///   (2437.8mm → 2437.8mm, only rapids change) while rapid travel still
-    ///   drops ~27%. `OperationTransformCapabilities` used to have no way
-    ///   to express "reorder yes, link moves no" — `allows_link_moves()`,
-    ///   `allows_barriered_rapid_reorder()`, and
-    ///   `allows_unbarriered_rapid_reorder()` all hung off the same two
-    ///   booleans. Now that `allows_link_moves` is its own field (fix-family
-    ///   Phase 1c), discrete Scallop can state the true, narrower
-    ///   capability below: global rapid reorder allowed, link moves
-    ///   forbidden. See
-    ///   `crates/rs_cam_core/tests/capability_link_moves_safety.rs` for the
-    ///   measurement backing both halves of that split.
-    /// - `continuous: true` takes the spiral branch (`scallop.rs:812-912`):
-    ///   rings are stitched into one helical stay-down path with
-    ///   ring-to-ring cutting-feed connectors (`scallop.rs:874-903`).
-    ///   Reordering or link-inserting into that sequence would corrupt the
-    ///   single continuous cut, so this falls through to the op-type
-    ///   default, which stays `(false, false, true, false)`.
-    ///
-    /// This method is the intended extension point for any future
-    /// config-dependent op: add a match arm here rather than trying to
-    /// force more nuance into the static [`OperationType`] table (which by
-    /// design only sees the op kind, not its parameters).
-    pub fn transform_capabilities(&self) -> OperationTransformCapabilities {
-        match self {
-            // Discrete-ring Scallop: rings are radial offsets of one
-            // finishing pass to the same final surface, independent of each
-            // other, so global reorder-by-proximity is safe (measured
-            // cutting-distance-preserving above). Link moves stay forbidden
-            // — `apply_link_moves` bridges with a straight feed that can
-            // plow through material on a 3D surface (measured 9.7mm
-            // over-cut); see the doc comment above.
-            OperationConfig::Scallop(cfg) if !cfg.continuous => {
-                OperationTransformCapabilities::new(true, false, false, false)
-            }
-            // Everything else (including continuous Scallop) falls through
-            // to the conservative op-type default.
-            _ => self.op_type().transform_capabilities(),
-        }
     }
 
     pub fn is_3d(&self) -> bool {
@@ -1345,11 +1151,10 @@ fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {
     op_type.registry_entry().tool_constraints.to_schema()
 }
 
-/// Operation-specific hints handed to the feeds calculator (registry
-/// companion to [`OpRegistryEntry`]). Hints depend on live config values
-/// (z-step, scallop target, …), so this is an accessor on
-/// [`OperationConfig`] rather than static registry data — see
-/// [`OperationConfig::feeds_hints`].
+/// Operation-specific hints handed to the feeds calculator. Hints are
+/// config values (z-step, scallop target, …), so the registry row holds
+/// [`FeedsHints::NONE`] and [`OperationConfig::capabilities`] fills
+/// [`Capabilities::feeds_hints`] from the config (W2.4).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FeedsHints {
     /// Operation-imposed axial depth (mm) the calculator must respect
@@ -1371,68 +1176,6 @@ impl FeedsHints {
         radial_width_mm: None,
         target_scallop_mm: None,
     };
-}
-
-impl OperationConfig {
-    /// Extract this operation's feeds-calculator hints. Exhaustive match
-    /// — adding an operation does not compile until it decides its hints
-    /// (the pre-registry `_ => (None, None, None)` wildcard in
-    /// `feeds::suggest::operation_feeds_hints` is gone; that function now
-    /// delegates here).
-    pub fn feeds_hints(&self) -> FeedsHints {
-        match self {
-            OperationConfig::Scallop(cfg) => FeedsHints {
-                target_scallop_mm: Some(cfg.scallop_height),
-                ..FeedsHints::NONE
-            },
-            OperationConfig::UnifiedFinish(cfg) => FeedsHints {
-                target_scallop_mm: Some(cfg.scallop_height),
-                ..FeedsHints::NONE
-            },
-            // DropCutter (the "3D Finish" parallel-raster op) optionally
-            // derives stepover from a scallop target the same way Scallop
-            // does. `None` keeps the legacy `ae_factor × diameter` stepover.
-            OperationConfig::DropCutter(cfg) => FeedsHints {
-                target_scallop_mm: cfg.scallop_height,
-                ..FeedsHints::NONE
-            },
-            OperationConfig::Waterline(cfg) => FeedsHints {
-                axial_depth_mm: Some(cfg.z_step),
-                ..FeedsHints::NONE
-            },
-            OperationConfig::SteepShallow(cfg) => FeedsHints {
-                axial_depth_mm: Some(cfg.z_step),
-                ..FeedsHints::NONE
-            },
-            OperationConfig::VCarve(cfg) => FeedsHints {
-                axial_depth_mm: Some(cfg.max_depth),
-                ..FeedsHints::NONE
-            },
-            OperationConfig::RampFinish(cfg) => FeedsHints {
-                axial_depth_mm: Some(cfg.max_stepdown),
-                ..FeedsHints::NONE
-            },
-            // Explicit no-hint decisions — the calculator falls back to
-            // LUT / diameter-factor defaults for these:
-            OperationConfig::Face(_)
-            | OperationConfig::Pocket(_)
-            | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
-            | OperationConfig::Inlay(_)
-            | OperationConfig::InlayPlug(_)
-            | OperationConfig::Zigzag(_)
-            | OperationConfig::Trace(_)
-            | OperationConfig::Drill(_)
-            | OperationConfig::Chamfer(_)
-            | OperationConfig::Adaptive3d(_)
-            | OperationConfig::Pencil(_)
-            | OperationConfig::SpiralFinish(_)
-            | OperationConfig::RadialFinish(_)
-            | OperationConfig::HorizontalFinish(_)
-            | OperationConfig::ProjectCurve(_)
-            | OperationConfig::AlignmentPinDrill(_) => FeedsHints::NONE,
-        }
-    }
 }
 
 impl OperationConfig {

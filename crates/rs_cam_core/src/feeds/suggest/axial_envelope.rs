@@ -6,7 +6,7 @@
 //! Split out of `feeds/suggest.rs` by P4; every item is unchanged apart from
 //! its visibility and the `use` lines.
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{AxialEnvelope, OperationConfig};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{OperationFamily as FeedsOperationFamily, ToolGeometryHint};
 use crate::material::Material;
@@ -123,7 +123,8 @@ fn axial_binding_str(
 /// SAME envelope Suggest's pass 0 enforces, with per-op radial-WOC /
 /// finish-target / deflection-limit derivation in exactly one place.
 ///
-/// Routing (mirrors planning §5):
+/// Routing (mirrors planning §5). W2.4: the registry row states each op's
+/// class (`Capabilities::axial_envelope`):
 /// - `Adaptive3d` — rough limit, radial WOC = stepover (default 0.4·D).
 /// - `VCarve` — rough limit, radial WOC = ½ engaged width at
 ///   `max_depth` ([`crate::feeds::geometry::vbit_width_at_depth`]).
@@ -157,8 +158,11 @@ pub(crate) fn axial_envelope_for_operation(
         0.0
     };
 
-    match operation {
-        OperationConfig::Adaptive3d(_) => {
+    // W2.4: the registry row states the class; the WOC heuristics below
+    // stay here.
+    match operation.capabilities().axial_envelope {
+        AxialEnvelope::NotApplied => None,
+        AxialEnvelope::Roughing3d => {
             let radial_woc = radial.unwrap_or(tool.diameter * 0.4).max(1.0e-3);
             Some(cutter_axial_constraints(
                 &tool_def,
@@ -170,21 +174,26 @@ pub(crate) fn axial_envelope_for_operation(
                 Some(DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
             ))
         }
-        OperationConfig::VCarve(cfg) => {
+        AxialEnvelope::VBitGroove => {
             // V-bit radial WOC at the commanded depth is the engaged
             // width along the surface — `vbit_width_at_depth`. We use
             // half the engaged width as the lateral WOC for the force
-            // model (triangular groove averages ½ width).
+            // model (triangular groove averages ½ width). The commanded
+            // depth is the op's imposed axial depth (VCarve: `max_depth`).
             let geometry = tool_def.to_geometry_hint();
-            let radial_woc = match geometry {
-                ToolGeometryHint::VBit {
-                    included_angle,
-                    tip_diameter,
-                } => {
+            let depth = operation.capabilities().feeds_hints.axial_depth_mm;
+            let radial_woc = match (geometry, depth) {
+                (
+                    ToolGeometryHint::VBit {
+                        included_angle,
+                        tip_diameter,
+                    },
+                    Some(depth),
+                ) => {
                     let w = crate::feeds::geometry::vbit_width_at_depth(
                         included_angle,
                         tip_diameter,
-                        cfg.max_depth,
+                        depth,
                     )
                     .unwrap_or(tool.diameter * 0.2);
                     (w * 0.5).max(1.0e-3)
@@ -201,7 +210,7 @@ pub(crate) fn axial_envelope_for_operation(
                 Some(DEFAULT_ROUGH_DEFLECTION_LIMIT_UM),
             ))
         }
-        OperationConfig::ProjectCurve(_) => {
+        AxialEnvelope::CurveRough => {
             let radial_woc = (tool.diameter * 0.2).max(1.0e-3);
             Some(cutter_axial_constraints(
                 &tool_def,
@@ -214,14 +223,7 @@ pub(crate) fn axial_envelope_for_operation(
             ))
         }
         // Finish-3D family — finish deflection limit + scallop target.
-        OperationConfig::Scallop(_)
-        | OperationConfig::UnifiedFinish(_)
-        | OperationConfig::DropCutter(_)
-        | OperationConfig::Waterline(_)
-        | OperationConfig::SteepShallow(_)
-        | OperationConfig::SpiralFinish(_)
-        | OperationConfig::RadialFinish(_)
-        | OperationConfig::HorizontalFinish(_) => {
+        AxialEnvelope::Finish3d => {
             let radial_woc = radial.unwrap_or(tool.diameter * 0.15).max(1.0e-3);
             Some(cutter_axial_constraints(
                 &tool_def,
@@ -233,10 +235,6 @@ pub(crate) fn axial_envelope_for_operation(
                 Some(DEFAULT_FINISH_DEFLECTION_LIMIT_UM),
             ))
         }
-        // Non-axial-envelope ops (2D pocket, contour, drill, etc.) —
-        // the envelope adds nothing the existing passes don't already
-        // cover (rigidity / cutting-length / deflection backoff).
-        _ => None,
     }
 }
 

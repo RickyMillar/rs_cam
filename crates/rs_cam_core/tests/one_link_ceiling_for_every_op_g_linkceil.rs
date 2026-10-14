@@ -51,7 +51,7 @@ use common::session::{polygon_model, stock_over, toolpath_config};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{HeightContext, HeightMode, HeightsConfig};
-use rs_cam_core::compute::execute::{LinkCeilingNeed, link_ceiling_for, link_ceiling_need};
+use rs_cam_core::compute::execute::{LinkCeilingNeed, link_ceiling_for};
 use rs_cam_core::compute::operation_configs::ProjectCurveConfig;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
@@ -302,7 +302,7 @@ fn a_finishing_op_on_fresh_stock_builds_no_ceiling() {
     let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM));
     for &op in OperationType::ALL {
         let ceiling = link_ceiling_for(op, None, &tool, STOCK_Z, PINNED_TOP_Z);
-        match link_ceiling_need(op) {
+        match op.capabilities().link_ceiling {
             LinkCeilingNeed::Always => {
                 let c = ceiling.unwrap_or_else(|| panic!("{op:?} needs a fresh-stock ceiling"));
                 assert!(c.stock.is_none());
@@ -314,7 +314,7 @@ fn a_finishing_op_on_fresh_stock_builds_no_ceiling() {
         }
     }
     assert_eq!(
-        link_ceiling_need(OperationType::ProjectCurve),
+        OperationType::ProjectCurve.capabilities().link_ceiling,
         LinkCeilingNeed::Always
     );
     for op in [
@@ -325,7 +325,7 @@ fn a_finishing_op_on_fresh_stock_builds_no_ceiling() {
         OperationType::UnifiedFinish,
     ] {
         assert_eq!(
-            link_ceiling_need(op),
+            op.capabilities().link_ceiling,
             LinkCeilingNeed::WithRemainingStock,
             "{op:?}"
         );

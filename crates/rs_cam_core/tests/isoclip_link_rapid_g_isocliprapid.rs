@@ -341,7 +341,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             feed_opt_stock: None,
             cutter: Some(&cutter),
             entry_surface: None,
-            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            transform_capabilities: OperationType::Scallop.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

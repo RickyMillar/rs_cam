@@ -74,7 +74,7 @@
 //! carries [`DeflectionCaveat::FluteReliefUnmodeled`] — read the figure as
 //! a floor, not a bound.
 
-use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::catalog::{MoveCountModel, OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily};
 use crate::machine::MachineProfile;
@@ -310,7 +310,7 @@ pub fn predict_peak_deflection_um(
     // Drill ops: Z-only kinematics, no continuous radial engagement —
     // the cantilever-deflection model doesn't apply. Mirrors the
     // `NotApplicableForOp` refusal in `tool_load::deflection::evaluate`.
-    if feeds_family == FeedsOperationFamily::Drill || op_type == OperationType::Drill {
+    if feeds_family == FeedsOperationFamily::Drill || op_type.is_drill_kinematics() {
         tracing::debug!(reason = "drill_not_applicable", "predictor abstains");
         return Err(DeflectionUnmodeled::NotApplicableForOp(op_type));
     }
@@ -668,6 +668,11 @@ pub struct DeflectionPrediction {
 ///   `0` — these are feature-driven (polygon perimeter, curve segments,
 ///   hole positions); their move count doesn't scale with stepover ×
 ///   bbox in a useful way.
+/// - **UnifiedFinish**: `0` — no model is written for it
+///   (`MoveCountModel::NotModelled`).
+///
+/// W2.4: each op's model is a field of its registry row
+/// (`Capabilities::move_count`), so a new op states it.
 ///
 /// Returns `0` when `model_bbox` is `None`, the op is skipped, or any
 /// input is non-finite / non-positive. The caller (back-off loop) treats
@@ -693,25 +698,16 @@ pub fn predict_move_count(
         return 0;
     }
 
-    let op_type = operation.op_type();
-
-    // Feature-driven ops: move count is dominated by the input geometry
-    // (curve length, polygon perimeter, hole count) rather than the
-    // bbox × stepover envelope. Return 0 → caller skips gating.
-    match op_type {
-        OperationType::VCarve
-        | OperationType::ProjectCurve
-        | OperationType::Drill
-        | OperationType::AlignmentPinDrill
-        | OperationType::Trace
-        | OperationType::Profile
-        | OperationType::Chamfer
-        | OperationType::Pencil
-        | OperationType::Face
-        | OperationType::RampFinish
-        | OperationType::Inlay
-        | OperationType::InlayPlug => return 0,
-        _ => {}
+    // W2.4: the registry row states the model. Feature-driven ops: the
+    // input geometry (curve length, polygon perimeter, hole count) sets the
+    // move count, not the bbox x stepover envelope, so return 0 and the
+    // caller skips the gate. An op with no model returns 0 the same way.
+    let model = operation.capabilities().move_count;
+    if matches!(
+        model,
+        MoveCountModel::FeatureDriven | MoveCountModel::NotModelled
+    ) {
+        return 0;
     }
 
     // Resolve stepover. Most envelope-driven ops carry it; for the few
@@ -724,22 +720,16 @@ pub fn predict_move_count(
         return 0;
     }
 
-    let moves_f = match op_type {
+    let moves_f = match model {
+        MoveCountModel::FeatureDriven | MoveCountModel::NotModelled => return 0,
         // Parallel-raster family: passes along Y, samples along X.
-        OperationType::DropCutter
-        | OperationType::Scallop
-        | OperationType::HorizontalFinish
-        | OperationType::SteepShallow
-        | OperationType::Waterline
-        | OperationType::SpiralFinish
-        | OperationType::RadialFinish
-        | OperationType::Zigzag => {
+        MoveCountModel::Raster => {
             let passes = dy / stepover;
             let moves_per_pass = dx / (diameter * PREDICTOR_RASTER_SAMPLE_DENSITY);
             passes * moves_per_pass
         }
         // Adaptive 3D: per-Z-level area-fill × number of Z levels.
-        OperationType::Adaptive3d => {
+        MoveCountModel::Adaptive3d => {
             let woc = diameter * PREDICTOR_ADAPTIVE_WOC_FRACTION;
             let area_per_pass = stepover * woc;
             if area_per_pass <= 0.0 {
@@ -754,7 +744,7 @@ pub fn predict_move_count(
             passes_per_z * z_levels
         }
         // Adaptive 2D: single Z level worth of area-fill at narrow WOC.
-        OperationType::Adaptive => {
+        MoveCountModel::Adaptive2d => {
             let woc = diameter * PREDICTOR_ADAPTIVE_WOC_FRACTION;
             let area_per_pass = stepover * woc;
             if area_per_pass <= 0.0 {
@@ -764,16 +754,13 @@ pub fn predict_move_count(
         }
         // Pocket: bbox area / (stepover × stepover) — full cell at the
         // suggested stepover, no adaptive narrow-WOC discount.
-        OperationType::Pocket => {
+        MoveCountModel::PocketCell => {
             let cell = stepover * stepover;
             if cell <= 0.0 {
                 return 0;
             }
             (dx * dy) / cell
         }
-        // Skipped above, but kept here for the match's exhaustiveness
-        // discipline (any new op type defaults to "no envelope gate").
-        _ => return 0,
     };
 
     if !moves_f.is_finite() || moves_f <= 0.0 {

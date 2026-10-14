@@ -907,8 +907,11 @@ impl super::RsCamApp {
                 // plainly as one in file 1.
                 let mut machine_safety: Vec<rs_cam_core::export::gcode_validator::Finding> =
                     Vec::new();
+                // W2.5 (D10): the feeds cautions of every file, the same way.
+                let mut feeds_cautions: Vec<String> = Vec::new();
                 for (i, file) in files.into_iter().enumerate() {
                     machine_safety.extend(file.machine_safety);
+                    feeds_cautions.extend(file.feeds_cautions);
                     let safe_name: String = file
                         .name
                         .chars()
@@ -924,12 +927,13 @@ impl super::RsCamApp {
                     }
                     written.push(out_path.display().to_string());
                 }
-                return text(crate::io::export::export_success_text(
+                return text(crate::io::export::export_reply_text(
                     format!(
                         "Exported {total} per-setup G-code files:\n{}",
                         written.join("\n")
                     ),
                     &machine_safety,
+                    &feeds_cautions,
                 ));
             }
         }
@@ -950,9 +954,10 @@ impl super::RsCamApp {
             Err(e) => return text(format!("Export failed: {e}")),
         };
         match std::fs::write(Path::new(path), &exported.gcode) {
-            Ok(()) => text(crate::io::export::export_success_text(
+            Ok(()) => text(crate::io::export::export_reply_text(
                 format!("G-code exported to {path}"),
                 &exported.machine_safety,
+                &exported.feeds_cautions,
             )),
             Err(e) => text(format!("Export failed: {e}")),
         }

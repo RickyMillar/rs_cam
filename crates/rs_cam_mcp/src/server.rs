@@ -1904,6 +1904,9 @@ pub fn build_info() -> serde_json::Value {
             // `pin_report`, and `inspect_stock` carries `pin_report`.
             "alignment_pin_set_tools",
             "alignment_pin_report",
+            // W2.5 (D10): `get_toolpath_params` `runtime.feeds`, the
+            // narration feeds line and the export feeds caution.
+            "result_feed_stage",
         ],
     })
 }
@@ -1986,6 +1989,7 @@ mod tests {
             "stock_change_cut_as",
             "alignment_pin_set_tools",
             "alignment_pin_report",
+            "result_feed_stage",
         ] {
             assert!(
                 features.contains(&flag),

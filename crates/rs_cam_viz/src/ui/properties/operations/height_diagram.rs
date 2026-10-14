@@ -189,7 +189,7 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 /// # F-6 / ruling R33 (2026-09-14): the diagram agrees with the panel
 ///
 /// The diagram drew a `DANGER` red floor at `resolved.bottom_z` on every
-/// operation. `OperationType::honors_pinned_bottom_z` says three of the
+/// operation. `Capabilities::honors_pinned_bottom_z` says three of the
 /// twenty-four read that dial, so on the other twenty-one the panel printed
 /// "Bottom: Not used by this operation. …" and the diagram under it drew a
 /// red floor. Two surfaces gave opposite answers about where the cut stops,
@@ -235,7 +235,7 @@ pub fn draw_height_diagram(
     // The inert run names the state and carries NO value: this diagram
     // pictures cut limits, and an inert pin is not one. See the ruling in
     // this function's doc comment before changing the text.
-    let bottom_drives_the_cut = op_type.honors_pinned_bottom_z();
+    let bottom_drives_the_cut = op_type.capabilities().honors_pinned_bottom_z;
     let (bottom_color, bottom_text) = if bottom_drives_the_cut {
         (tokens::DANGER, format!("BZ {:.1}", resolved.bottom_z))
     } else {

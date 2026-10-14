@@ -153,6 +153,11 @@ pub struct GcodePhase<'a> {
     /// operation. The builder writes the G82 dwell from it, and the native
     /// G81/G82/G83 cycles when the export asks for them.
     pub drill: Option<PhaseDrill>,
+    /// W2.5 (D10): the feed-stage line the builder writes as a comment
+    /// after the label, from
+    /// [`FeedStage::statement`](crate::session::FeedStage::statement).
+    /// Every session door fills it; `None` writes no line.
+    pub feeds: Option<String>,
 }
 
 /// G7: what the emitter needs to know about a drill phase.
@@ -443,6 +448,11 @@ pub fn export_gcode_checked(
                 post_gcode: tc.post_gcode.as_deref(),
                 controller_compensation: controller_compensation_for(tc),
                 drill: phase_drill_for(tc),
+                // W2.5 (D10): this door emits the session slot, so the
+                // slot's tag names the feeds.
+                feeds: project
+                    .feed_stage(*idx)
+                    .map(|provenance| provenance.statement()),
             };
             Some((*idx, phase))
         })
@@ -1753,6 +1763,7 @@ mod tests {
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1768,6 +1779,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
 
@@ -1810,6 +1822,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -1829,6 +1842,7 @@ mod tests {
                     coolant: CoolantMode::Flood,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -1986,6 +2000,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -1997,6 +2012,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -2032,6 +2048,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2043,6 +2060,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -2090,6 +2108,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2101,6 +2120,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -2146,6 +2166,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -2161,6 +2182,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 }],
                 pause_message: None,
             },
@@ -2193,6 +2215,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2233,6 +2256,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         }];
@@ -2264,6 +2288,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2300,6 +2325,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2315,6 +2341,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         // LinuxCNC's post implements M6 natively, so its tool_change
@@ -2370,6 +2397,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2385,6 +2413,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::grbl());
@@ -2429,6 +2458,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2444,6 +2474,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         let gcode = emit_gcode_phased(&phases, post::linuxcnc());
@@ -2479,6 +2510,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2494,6 +2526,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
 
@@ -2528,6 +2561,7 @@ mod tests {
             coolant: CoolantMode::Mist,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2558,6 +2592,7 @@ mod tests {
             coolant: CoolantMode::Flood,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2580,6 +2615,7 @@ mod tests {
             coolant: CoolantMode::Both,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2603,6 +2639,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let gcode = emit_gcode_phased(&phases, post::grbl());
 
@@ -2634,6 +2671,7 @@ mod tests {
                 coolant: CoolantMode::Flood,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -2649,6 +2687,7 @@ mod tests {
                 coolant: CoolantMode::Mist,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
         // LinuxCNC: M6-style tool change AND native M7 mist (Grbl's post
@@ -2934,6 +2973,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let report = exceeds_only_report();
 
@@ -2975,6 +3015,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }],
             pause_message: None,
         }];
@@ -3020,6 +3061,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }];
         let overlay = WizardOverlay {
             units_override: Some(Units::Inch),
@@ -3083,6 +3125,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
             GcodePhase {
                 toolpath: &tp2,
@@ -3098,6 +3141,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             },
         ];
 
@@ -3149,6 +3193,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: Some(ControllerCompensation::Right),
             drill: None,
+            feeds: None,
         };
         let policy = ToolLoadExportPolicy::default();
         for post_def in [post::grbl(), post::grblhal()] {

@@ -934,6 +934,9 @@ fn job_phase(phase: &OpResult) -> GcodePhase<'_> {
         coolant: phase.coolant,
         controller_compensation: None,
         drill: phase.drill,
+        // W2.5 (D10): a job file generates and emits; no simulation
+        // modulates its feeds.
+        feeds: Some(rs_cam_core::session::FeedStage::Planned.statement()),
     }
 }
 

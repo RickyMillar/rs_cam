@@ -560,7 +560,7 @@ pub fn apply_entry(
 /// (G-ISOCLIPENTRY, 2026-09-09).
 ///
 /// `Some` on a `FromRemainingStock` operation whose
-/// [`crate::compute::catalog::OperationConfig::entry_probe_leave`] says it
+/// [`crate::compute::catalog::Capabilities::entry_probe`] says it
 /// rides the model surface; `None` everywhere else, which reproduces the
 /// pre-fix emission move for move.
 ///

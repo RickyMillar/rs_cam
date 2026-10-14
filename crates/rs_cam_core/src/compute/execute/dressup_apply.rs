@@ -17,7 +17,6 @@ use crate::trace::semantic_trace::{
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
-use super::findings::{record_derived_stepover, record_region_cap};
 use super::{GeneratedToolpath, GenerationFindings};
 
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
@@ -25,12 +24,12 @@ use super::{GeneratedToolpath, GenerationFindings};
 /// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
 /// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
 /// no centerline toolpath is emitted, only the analysis artifacts. Reference
-/// resolution order mirrors `rest_depth_arm`: prefer the actual machined
-/// stock (when its XY frame overlaps the mesh), else the configured real
+/// resolution: prefer the actual machined stock (when the shared W2.1 guard
+/// accepts it), else the configured real
 /// reference tool (`reference_tool_cfg`, resolved upstream from
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else a self-referenced bare-surface
-/// probe.
+/// probe. Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
 #[allow(clippy::too_many_arguments)] // post-generation attach point; every
 // argument is a distinct upstream source (geometry, tool, reference, stock,
 // dials, findings sink)
@@ -88,17 +87,16 @@ pub(super) fn attach_generic_rest_analysis(
     // set. Only when the policy sized it — an explicitly pinned stepover is
     // the operator's own number and needs no notice.
     if cfg.offset_stepover_mm.is_none() {
-        record_derived_stepover(
-            findings,
-            crate::compute::toolpath_stats::DerivedStepoverFinding {
+        findings
+            .borrow_mut()
+            .record(&crate::compute::toolpath_stats::DerivedStepoverFinding {
                 site: "generic rest analysis routing",
                 stepover_mm: offset_stepover_mm,
                 reference_depth_mm: cfg.min_valley_depth,
                 reference_depth_basis: GENERIC_REST_STEPOVER_DEPTH_BASIS,
                 envelope_rule_mm: tool_def.envelope_radius_mm() * 0.5,
                 slope_derate: None,
-            },
-        );
+            });
     }
     let rf = crate::surface::rest_field::detect_rest_valleys(
         mesh, index, tool_def, reference, &rf_params,
@@ -107,7 +105,7 @@ pub(super) fn attach_generic_rest_analysis(
     // consumer will be confined to, and the MAX_REST_REGIONS cap can have
     // silently dropped some of them. Record the pre-cap count alongside —
     // always, so `Some` with nothing truncated reads as measured-clean.
-    record_region_cap(findings, rf.region_cap);
+    findings.borrow_mut().record(&rf.region_cap);
     // The region set is the tier-map / derived-boundary planning surface,
     // and no headless output carries its polygons — this line is the one
     // place the numbers are observable off the GUI (multitool Phase T).
@@ -139,23 +137,21 @@ const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth
 pub(super) const SHALLOW_SLOPE_DERATE_BASIS: &str =
     "slope-keyed — cos(theta_max) of the region's covered cells, not a depth";
 
-/// Resolve the rest-depth reference (P2.5 chain): the actual machined
-/// stock (when present and its XY bbox overlaps `mesh`) → a configured
-/// real reference tool → a self-referenced bare-surface probe. Shared by
-/// the generic post-generation pass above (`attach_generic_rest_analysis`)
-/// and `generate_unified_finish`'s in-op claims pipeline (v3 S1) — same
-/// chain, same priority order, one implementation.
+/// Resolve the rest-depth reference (P2.5 chain): the machined stock when
+/// the shared guard (`surface::stock_reference::StockReference::resolve`,
+/// W2.1) accepts it → a configured real reference tool → a self-referenced
+/// bare-surface probe. The guard is the one the unified finish claims and
+/// the pencil `RestDepth` detector also call; the tool tier after it is this
+/// pass's own dial.
 fn resolve_rest_reference<'a>(
     mesh: &TriangleMesh,
     reference_tool: Option<&'a dyn MillingCutter>,
     initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     probe_ball: &'a crate::tool::BallEndmill,
 ) -> crate::surface::rest_field::RestReference<'a> {
-    let stock_ref = initial_stock.filter(|stock| {
-        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
-        sb.min.x <= mb.max.x && sb.max.x >= mb.min.x && sb.min.y <= mb.max.y && sb.max.y >= mb.min.y
-    });
-    if let Some(stock) = stock_ref {
+    if let Some(stock) =
+        crate::surface::stock_reference::StockReference::resolve(initial_stock, &mesh.bbox).stock()
+    {
         crate::surface::rest_field::RestReference::Stock(stock)
     } else if let Some(tool) = reference_tool {
         crate::surface::rest_field::RestReference::Cutter {

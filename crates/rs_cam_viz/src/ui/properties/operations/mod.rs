@@ -249,7 +249,7 @@ fn find_nearest_reference(z: f64, ctx: &HeightContext) -> HeightReference {
 /// `Some(note)` names the dial that really sets the floor.
 ///
 /// The core half measured the fact and declared it as
-/// [`rs_cam_core::compute::catalog::OperationType::honors_pinned_bottom_z`]:
+/// [`rs_cam_core::compute::catalog::Capabilities::honors_pinned_bottom_z`]:
 /// three of the twenty-four operations read `heights.bottom_z`, and on the
 /// other twenty-one a pinned bottom reaches no emitted motion. This match
 /// carries its own arm per operation because each family names a DIFFERENT
@@ -277,7 +277,7 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
 
     // One arm per operation. The `match` is exhaustive, so a new operation
     // cannot be added to the catalog without an answer here, and the sentry
-    // ties every answer to `honors_pinned_bottom_z()`.
+    // ties every answer to `capabilities().honors_pinned_bottom_z`.
     match op_type {
         // The three that read `heights.bottom_z`. No note.
         Op::Adaptive3d | Op::UnifiedFinish | Op::Waterline => None,

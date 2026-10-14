@@ -801,7 +801,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
             feed_opt_stock: None,
             cutter: Some(&tool_def as &dyn MillingCutter),
             entry_surface: None,
-            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

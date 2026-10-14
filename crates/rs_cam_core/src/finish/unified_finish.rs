@@ -1064,9 +1064,10 @@ pub struct UnifiedFinishReport {
     /// `DerivedRestRegions` source shape). `None` when claims didn't run.
     pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
     /// Intra-region stay-down linking totals, summed over every region
-    /// (`UnifiedFinishParams::intra_region_hookup_mm`). All zero when the
-    /// pass is disabled.
-    pub relink: RelinkTotals,
+    /// (`UnifiedFinishParams::intra_region_hookup_mm`). `None` when the
+    /// pass is disabled (hookup `0.0`): the pass did not run, so nothing
+    /// was measured. `Some` with zero counters is a pass that ran.
+    pub relink: Option<RelinkTotals>,
     /// Region-interior area (mm²) left UNCUT by a mid-steep scallop ring
     /// cascade that hit `max_rings` before collapsing, summed over every
     /// mid-steep region. `0.0` when every cascade collapsed normally.
@@ -1903,6 +1904,9 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         rest_grid: claims_rest_grid,
         rest_regions: claims_rest_regions,
         tip_float: claims_tip_float,
+        // W2.3: `Some` exactly when the intra-region link pass runs, so the
+        // findings door records it only then.
+        relink: (params.intra_region_hookup_mm > 0.0).then(RelinkTotals::default),
         ..UnifiedFinishReport::default()
     };
     let mut region_paths: Vec<RegionPath> = Vec::new();
@@ -2341,7 +2345,9 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 cutter,
                 &rp,
             );
-            report.relink.add(&rep);
+            if let Some(totals) = report.relink.as_mut() {
+                totals.add(&rep);
+            }
             // C1: this band's ring annotations are the index-carrying
             // channel this site owns; declared, not hand-remapped.
             let mut anns = anns;
@@ -2613,17 +2619,17 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         });
     }
 
-    if params.intra_region_hookup_mm > 0.0 {
+    if let Some(relink) = report.relink {
         tracing::info!(
-            fragments = report.relink.fragments,
-            surface_links = report.relink.surface_links,
-            retract_links = report.relink.retract_links,
-            too_far = report.relink.too_far,
-            off_surface = report.relink.off_surface,
-            outside_boundary = report.relink.outside_boundary,
-            slower_than_retract = report.relink.slower_than_retract,
-            ceiling_above_safe_z = report.relink.ceiling_above_safe_z,
-            link_rate = report.relink.link_rate().unwrap_or(0.0),
+            fragments = relink.fragments,
+            surface_links = relink.surface_links,
+            retract_links = relink.retract_links,
+            too_far = relink.too_far,
+            off_surface = relink.off_surface,
+            outside_boundary = relink.outside_boundary,
+            slower_than_retract = relink.slower_than_retract,
+            ceiling_above_safe_z = relink.ceiling_above_safe_z,
+            link_rate = relink.link_rate().unwrap_or(0.0),
             "unified_finish: intra-region stay-down linking"
         );
     }

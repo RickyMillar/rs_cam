@@ -2392,7 +2392,7 @@ impl ProjectSession {
                 // `Some`, so it reads false whether or not the session
                 // held a simulation already.
                 Ok(self.with_effects(None, move |session| {
-                    session.simulation = Some(*result);
+                    session.store_simulation(*result);
                 }))
             }
             // ── WP4: the MCP mutation section ────────────────────

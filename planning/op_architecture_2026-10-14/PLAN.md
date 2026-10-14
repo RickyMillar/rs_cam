@@ -138,8 +138,9 @@ and W4, from what they measure. It is not scheduled now.
 | Wave | State |
 |---|---|
 | W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
-| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE e72f4ccb; W1.3b DONE. W1 code complete; live check + merge next |
-| W2–W6 | not started |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE e72f4ccb; W1.3b DONE. W1 DONE; live check passed (mini: no change); merged to master |
+| W2 | DONE: 6fddd518, eabeb43f, e614ee9a, 66a81d77, 7d19ea6d; live check passed (mini: no change); merged to master |
+| W3–W6 | not started |
 
 ## Backlog (not scheduled)
 

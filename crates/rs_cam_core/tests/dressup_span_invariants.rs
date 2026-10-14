@@ -143,7 +143,7 @@ fn run_full_pipeline(
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: op.transform_capabilities(),
+            transform_capabilities: op.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -187,7 +187,7 @@ fn synthetic_three_pass() -> AnnotatedToolpath {
 
 #[test]
 fn synthetic_three_pass_preserves_invariants_across_all_combos() {
-    let cap = OperationType::Adaptive3d.transform_capabilities();
+    let cap = OperationType::Adaptive3d.capabilities().transform;
     for (label, cfg) in dressup_combos() {
         let input = synthetic_three_pass();
         let n_in = input.toolpath.moves.len();
@@ -229,7 +229,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     // Phase 3d / #53 invariant generalized to apply_dressups: even when
     // link_moves is enabled, no LinkBridge span may end up straddling a
     // depth-pass barrier in the output.
-    let cap = OperationType::Adaptive3d.transform_capabilities();
+    let cap = OperationType::Adaptive3d.capabilities().transform;
     let input = synthetic_three_pass();
     let cfg = DressupConfig {
         link_moves: Some(LinkDressupParams {
@@ -290,7 +290,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     // If the input is flagged spans_valid=false, the pipeline must not
     // suddenly claim the output is valid. (It may still succeed structurally —
     // check_invariants just verifies shape, not freshness.)
-    let cap = OperationType::Adaptive3d.transform_capabilities();
+    let cap = OperationType::Adaptive3d.capabilities().transform;
     let mut input = synthetic_three_pass();
     input.spans_valid = false;
     let cfg = DressupConfig {
@@ -439,7 +439,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::Face.transform_capabilities(),
+            transform_capabilities: OperationType::Face.capabilities().transform,
             debug_ctx: Some(&root),
             semantic_ctx: None,
             entry_containment: None,
@@ -515,7 +515,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::Pocket.transform_capabilities(),
+            transform_capabilities: OperationType::Pocket.capabilities().transform,
             debug_ctx: Some(&root),
             semantic_ctx: None,
             entry_containment: None,

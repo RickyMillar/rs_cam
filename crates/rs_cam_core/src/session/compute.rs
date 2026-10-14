@@ -1048,6 +1048,7 @@ impl JobPhases<'_, '_> {
             stats,
             debug_trace: Some(debug_trace),
             semantic_trace: Some(Arc::new(semantic_trace)),
+            provenance: super::ResultProvenance::Dressed,
         })
     }
 }
@@ -2334,12 +2335,12 @@ impl ProjectSession {
             dressups: tc.dressups.clone(),
             rest_analysis: tc.rest_analysis.clone(),
             debug_options: tc.debug_options,
-            entry_probe_leave: tc.operation.entry_probe_leave(),
+            entry_probe_leave: tc.operation.capabilities().entry_probe.leave_mm(),
             feed_rate: tc.operation.feed_rate(),
             plunge_rate: tc.operation.plunge_rate(),
             // G-RAMPCLAMP: the entry never runs faster than the cut feed.
             ramp_feed_rate: tc.operation.entry_feed_rate(),
-            transform_capabilities: tc.operation.transform_capabilities(),
+            transform_capabilities: tc.operation.capabilities().transform,
             prior_stock,
             source_stock,
             link_kinematics,

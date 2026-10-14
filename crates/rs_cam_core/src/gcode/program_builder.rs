@@ -62,6 +62,13 @@ fn push_rapid(
     *prev_pos = Some((x, y, z));
 }
 
+/// W2.5 (D10): write the phase's feed-stage line after its label.
+fn push_feeds_comment(program: &mut Program, phase: &GcodePhase<'_>) {
+    if let Some(feeds) = &phase.feeds {
+        program.push(Statement::Comment(feeds.clone()));
+    }
+}
+
 /// Build a `Program` for a single toolpath.
 pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
     let mut program = Program::new();
@@ -175,6 +182,7 @@ pub fn build_phased_with(phases: &[GcodePhase<'_>], options: BuildOptions) -> Pr
 
     for (idx, phase) in phases.iter().enumerate() {
         program.push(Statement::Comment(phase.label.to_owned()));
+        push_feeds_comment(&mut program, phase);
 
         // Tool change: emit the post's tool-change block if the tool
         // *identity* (config id) changed (skip first phase). Display
@@ -303,6 +311,7 @@ pub fn build_multi_setup_with(
 
         for phase in &setup.phases {
             program.push(Statement::Comment(phase.label.to_owned()));
+            push_feeds_comment(&mut program, phase);
 
             // Tool change (no idx>0 guard in multi-setup; the legacy
             // emitter relied on `current_tool` already matching the very
@@ -840,6 +849,7 @@ mod tests {
                     coolant: CoolantMode::Mist,
                     controller_compensation: Some(ControllerCompensation::Left),
                     drill: None,
+                    feeds: None,
                 },
                 GcodePhase {
                     toolpath: &tp2,
@@ -855,6 +865,7 @@ mod tests {
                     coolant: CoolantMode::Off,
                     controller_compensation: None,
                     drill: None,
+                    feeds: None,
                 },
             ]
         };
@@ -876,6 +887,7 @@ mod tests {
                         coolant: CoolantMode::Off,
                         controller_compensation: None,
                         drill: None,
+                        feeds: None,
                     }],
                     pause_message: None,
                 },
@@ -895,6 +907,7 @@ mod tests {
                         coolant: CoolantMode::Flood,
                         controller_compensation: None,
                         drill: None,
+                        feeds: None,
                     }],
                     pause_message: None,
                 },
@@ -939,6 +952,7 @@ mod tests {
                 coolant: CoolantMode::Off,
                 controller_compensation: None,
                 drill: None,
+                feeds: None,
             }]
         };
 
@@ -1010,6 +1024,7 @@ mod tests {
             coolant: CoolantMode::Off,
             controller_compensation: None,
             drill: None,
+            feeds: None,
         }
     }
 

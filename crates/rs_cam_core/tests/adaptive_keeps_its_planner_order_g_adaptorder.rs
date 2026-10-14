@@ -210,7 +210,8 @@ fn adaptive_keeps_the_planner_order_with_rapid_order_on() {
     // The GUI greys the rapid-order box out from this flag.
     assert!(
         !rs_cam_core::compute::catalog::OperationType::Adaptive
-            .transform_capabilities()
+            .capabilities()
+            .transform
             .allows_rapid_reorder,
         "2D Adaptive must refuse the rapid-order pass"
     );

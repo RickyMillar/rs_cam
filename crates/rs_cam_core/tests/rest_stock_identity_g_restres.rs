@@ -180,6 +180,7 @@ fn adopt_other_output(session: &mut ProjectSession, index: usize) {
         stats: held.stats.clone(),
         debug_trace: None,
         semantic_trace: None,
+        provenance: rs_cam_core::session::ResultProvenance::Dressed,
     };
     let revision = session.toolpath_revision(index);
     let _ = session

@@ -40,7 +40,7 @@ pub(crate) const LARGE_ARC_RADIUS_MULTIPLIER: f64 = 30.0;
 ///
 /// **This is no longer the marker's threshold.** W5B-F4 (P8, 2026-08-21): the
 /// marker reads the narrated op's OWN band from
-/// [`crate::compute::catalog::OperationType::air_cut_high_threshold_pct`], so
+/// [`crate::compute::catalog::Capabilities::air_cut_high_threshold_pct`], so
 /// the ⚠ agrees with the gate that would actually fire — which is what the D7
 /// ruling said the marker was for, and what a flat 50 could not deliver
 /// (it warned on a clean `ProjectCurve` at 55 and stayed silent on a
@@ -193,6 +193,10 @@ pub struct ToolpathNarrationContext<'a> {
     /// names — the two reports do not have the same shape and must not be
     /// read as if they did.
     pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
+    /// W2.5 (D10): the feed stage of the move list this narration
+    /// describes. `None` = the caller did not say; narration then writes
+    /// no feeds line.
+    pub feed_stage: Option<crate::session::FeedStage>,
 }
 
 /// Is this toolpath a drill cycle, for the purposes of
@@ -509,6 +513,9 @@ pub fn narrate_toolpath_with_context(
         cutting_distance,
         rapid_distance
     ));
+    if let Some(stage) = context.feed_stage {
+        output.push_str(&format!("{}\n\n", stage.statement()));
+    }
 
     if let Some(trace) = semantic_trace {
         let depth_items = trace
@@ -1377,24 +1384,6 @@ fn append_retract_trips(
     }
 }
 
-/// Which hookup dial tunes this operation's link stage.
-///
-/// Four families write [`crate::compute::toolpath_stats::ToolpathStats::relink`] and
-/// each spells its dial differently, so naming one of them unconditionally —
-/// which this narration did until G-LINKVISIBLE — sends three quarters of
-/// its readers to a field their operation does not have. `None` when the op
-/// kind is not in scope: the narration then lists all three spellings rather
-/// than guess.
-fn relink_dial_for(kind: Option<crate::compute::catalog::OperationType>) -> Option<&'static str> {
-    use crate::compute::catalog::OperationType;
-    match kind? {
-        OperationType::UnifiedFinish => Some("intra_region_hookup_mm"),
-        OperationType::Scallop => Some("intra_pass_hookup_mm"),
-        OperationType::DropCutter | OperationType::Waterline => Some("hookup_mm"),
-        _ => None,
-    }
-}
-
 /// Phase O / G-LINKVISIBLE: what the finishing link stage did, and why it
 /// declined what it declined.
 ///
@@ -1415,7 +1404,13 @@ fn append_relink_totals(
     let Some(r) = relink else {
         return;
     };
-    let lever = relink_dial_for(kind).map_or_else(
+    // Which hookup dial tunes this op's link stage. Four families write
+    // `ToolpathStats::relink` and each spells its dial differently, so one
+    // name for all sends three quarters of the readers to a field their op
+    // does not have. The registry row states the dial
+    // (`Capabilities::relink_dial`, W2.4). With no kind in scope the line
+    // lists all three spellings rather than guess.
+    let lever = kind.and_then(|k| k.capabilities().relink_dial).map_or_else(
         || {
             "the operation's own hookup dial (`intra_region_hookup_mm`, \
              `intra_pass_hookup_mm` or `hookup_mm`)"
@@ -1849,42 +1844,37 @@ fn append_peak_doc_anomaly(
         .unwrap_or("unknown move");
     let threshold_text = context.depth_per_pass_mm.map_or_else(
         || {
-            use crate::compute::catalog::OperationType;
-            match context.operation_kind {
-                // H4 wave 15 — every op in this arm follows the MODEL
+            use crate::compute::catalog::DocBasis;
+            // W2.4: the registry row states the basis
+            // (`Capabilities::doc_basis`).
+            match context.operation_kind.map(|k| k.capabilities().doc_basis) {
+                // H4 wave 15 — every op of this class follows the MODEL
                 // SURFACE, so it has no depth-per-pass to compare against.
-                // Only `DropCutter` was listed, which is why the live
+                // Only `DropCutter` was listed once, which is why the live
                 // validation of 2026-07-30 read a `UnifiedFinish`'s
                 // 1.86 mm peak against a 0.3 mm `z_step` and filed it as a
                 // "~6x" anomaly (CONCERN 3). `z_step` is the waterline
                 // band's Z stepping, not a commanded DOC for the raster
                 // and scallop bands that produced the sample; the ratio
                 // had no denominator.
-                Some(
-                    OperationType::DropCutter
-                    | OperationType::Waterline
-                    | OperationType::Pencil
-                    | OperationType::Scallop
-                    | OperationType::UnifiedFinish
-                    | OperationType::SteepShallow
-                    | OperationType::RampFinish
-                    | OperationType::SpiralFinish
-                    | OperationType::RadialFinish
-                    | OperationType::HorizontalFinish,
-                ) => "this op follows surface heights — no commanded DOC".to_owned(),
-                Some(OperationType::ProjectCurve) => {
+                Some(DocBasis::SurfaceHeights) => {
+                    "this op follows surface heights — no commanded DOC".to_owned()
+                }
+                Some(DocBasis::CurveOnSurface) => {
                     "this op follows the curve at a fixed surface offset — no commanded DOC"
                         .to_owned()
                 }
-                Some(OperationType::Drill | OperationType::AlignmentPinDrill) => {
+                Some(DocBasis::PeckDepth) => {
                     "this op advances by peck depth — no continuous DOC".to_owned()
                 }
-                Some(OperationType::VCarve) => {
+                Some(DocBasis::VBitDepth) => {
                     "this op cuts to a target V-bit depth — no commanded DOC".to_owned()
                 }
                 // Generic phrasing for every other kind (and for callers
                 // that did not supply a kind).
-                _ => "commanded depth_per_pass is unknown".to_owned(),
+                Some(DocBasis::DepthPerPass) | None => {
+                    "commanded depth_per_pass is unknown".to_owned()
+                }
             }
         },
         |depth| format!("commanded depth_per_pass = {:.2}mm", depth),
@@ -2078,7 +2068,7 @@ fn append_air_cut_anomaly(
     // D7 (census §3.5), ruled at Checkpoint D D-5: the marker follows the
     // TOTAL-RUNTIME reading, like every other air-cut threshold in the
     // workspace — the GUI's 40%, the CLI's 40%, and every per-operation band
-    // in `OperationType::air_cut_high_threshold_pct`. This line prints both
+    // in `Capabilities::air_cut_high_threshold_pct`. This line prints both
     // numbers and used to set its ⚠ from the un-thresholded one, so a
     // retract-heavy op could carry a warning marker that no shipped gate
     // agreed with. The line still REPORTS the cutting-time reading, which is
@@ -2116,7 +2106,7 @@ fn append_air_cut_anomaly(
     // have flipped ℹ → ⚠ — P8 alone would have ADDED warnings.
     let air_cut_bar = context
         .operation_kind
-        .and_then(crate::compute::catalog::OperationType::air_cut_high_threshold_pct)
+        .and_then(|kind| kind.capabilities().air_cut_high_threshold_pct)
         .unwrap_or(AIR_CUT_WARNING_FALLBACK_PERCENT);
     let marker = if air_pct_of_total > air_cut_bar {
         "⚠"
@@ -2124,36 +2114,28 @@ fn append_air_cut_anomaly(
         "ℹ"
     };
     let hint = {
-        use crate::compute::catalog::OperationType;
-        match context.operation_kind {
-            Some(OperationType::Adaptive3d | OperationType::Adaptive) => {
+        use crate::compute::catalog::AirCutHint;
+        // W2.4: the registry row states the hint (`Capabilities::air_cut_hint`).
+        // R-5 (census §3.5 D8): `UnifiedFinish` once missed the finishing
+        // hint here while it sat in the 3D-finish air-cut band; one row
+        // field now gives both.
+        match context
+            .operation_kind
+            .map(|k| k.capabilities().air_cut_hint)
+        {
+            Some(AirCutHint::Roughing) => {
                 " High values on roughing ops usually mean boundary/stepover tuning or stale remaining-stock assumptions."
             }
-            Some(
-                OperationType::DropCutter
-                | OperationType::Scallop
-                | OperationType::Waterline
-                | OperationType::Pencil
-                | OperationType::SteepShallow
-                | OperationType::RampFinish
-                | OperationType::SpiralFinish
-                | OperationType::RadialFinish
-                | OperationType::HorizontalFinish
-                // R-5 (census §3.5 D8): `UnifiedFinish` is in the 3D-finish
-                // air-cut band in `catalog.rs` but was missing here, so the
-                // one op most likely to post a high reading got the empty
-                // hint.
-                | OperationType::UnifiedFinish,
-            ) => {
+            Some(AirCutHint::SurfaceFinish) => {
                 " For finishing ops, air-cut% is dominated by surface terrain — relative comparison across runs is more useful than the absolute number."
             }
-            Some(OperationType::ProjectCurve | OperationType::VCarve | OperationType::Trace) => {
+            Some(AirCutHint::CurveFollowing) => {
                 " Curve-following ops cut along a single path; air-cut% mostly reflects rapids and approach segments rather than wasted cutting."
             }
             // No specialised hint for the remaining kinds (Face, Pocket,
             // Profile, Zigzag, Inlay, Chamfer, Drill, AlignmentPinDrill)
             // or for callers without a kind.
-            _ => "",
+            Some(AirCutHint::NoHint) | None => "",
         }
     };
     anomalies.push(format!(
@@ -2299,6 +2281,7 @@ mod tests {
             relink: None,
             // Nor a pencil link stage (G-LINKVISIBLE): not measured.
             pencil_link: None,
+            feed_stage: None,
         };
 
         let report = narrate_toolpath_with_context(

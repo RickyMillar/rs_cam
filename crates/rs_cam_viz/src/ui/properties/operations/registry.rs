@@ -168,6 +168,11 @@ pub(in crate::ui::properties) fn op_errors(
     cx: &OpValidateCtx<'_>,
     errs: &mut Vec<String>,
 ) {
+    // W2.2: the tool kind is checked for every operation, from the core
+    // registry row, with the text the generator refuses with.
+    if let Some(text) = op.op_type().tool_refusal(cx.tool.tool_type.cutter_kind()) {
+        errs.push(text);
+    }
     if let Some(check) = row(op.op_type()).validate {
         check(op, cx, errs);
     }
@@ -428,12 +433,6 @@ fn val_stepover_under_diameter(
     }
 }
 
-fn val_needs_v_bit(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
-    if cx.tool.tool_type != crate::state::job::ToolType::VBit {
-        errs.push(format!("{} requires a V-Bit tool", op.op_type().name()));
-    }
-}
-
 fn val_drill(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
     let OperationConfig::Drill(c) = op else {
         return;
@@ -476,19 +475,19 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::VCarve,
         draw: ed_vcarve,
         diagram: OpDiagram::Stepover,
-        validate: Some(val_needs_v_bit),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::Inlay,
         draw: ed_inlay,
         diagram: OpDiagram::Draw(dia_inlay),
-        validate: Some(val_needs_v_bit),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::InlayPlug,
         draw: ed_inlay_plug,
         diagram: OpDiagram::Draw(dia_inlay_plug),
-        validate: Some(val_needs_v_bit),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::Zigzag,
@@ -512,7 +511,7 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::Chamfer,
         draw: ed_chamfer,
         diagram: OpDiagram::Draw(dia_chamfer),
-        validate: Some(val_needs_v_bit),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::DropCutter,

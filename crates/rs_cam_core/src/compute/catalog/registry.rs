@@ -5,15 +5,23 @@
 //! `OperationType::registry_entry` is the only reader of the `REG_*`
 //! statics, so they carry `pub(super)`.
 
+use crate::compute::execute::LinkCeilingNeed;
 use crate::feeds::support::MILLING_FORMULA_SOURCE;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
 
+use super::capabilities::{
+    AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, MoveCountModel,
+    TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D, TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS,
+    TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE, TRANSFORM_ORDERED_LINKABLE, TRANSFORM_V_WIDTH,
+    TRANSFORM_XY_INDEPENDENT,
+};
 use super::schema::{
     DressupPolicy, Kinematics, OpPolicy, OpRegistryEntry, ParamDef, ParamRange, ToolConstraintsDef,
 };
 use super::{
-    GeometryRequirement, OperationFamily, OperationSpec, OperationType, UiOperationFamily,
-    UiProcessRole,
+    FeedsHints, GeometryRequirement, OperationFamily, OperationSpec, OperationType,
+    UiOperationFamily, UiProcessRole,
 };
 
 /// The help of `ramp_feed_rate`, the same on every operation that has an
@@ -811,6 +819,19 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_FACE,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_face,
 };
 
@@ -832,6 +853,19 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_DEPTH_ORDER,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::PocketCell,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_pocket,
 };
 
@@ -853,6 +887,19 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_DEPTH_ORDER,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_profile,
 };
 
@@ -877,6 +924,19 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     // operator Ramp is never upgraded afterwards.
     dressup_policy: DressupPolicy::DEFAULT_HELIX,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_ADAPTIVE_2D,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Adaptive2d,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::Roughing,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_adaptive,
 };
 
@@ -910,6 +970,19 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
          zero depth, so a lead or an entry there cuts outside the design.",
     ),
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_V_WIDTH,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::VBitDepth,
+        air_cut_hint: AirCutHint::CurveFollowing,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::VBitGroove,
+    },
     generate: crate::compute::execute::generate_vcarve,
 };
 
@@ -941,6 +1014,19 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
          outline cuts outside the design.",
     ),
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_V_WIDTH,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_inlay,
 };
 
@@ -972,6 +1058,19 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
          outline cuts outside the design.",
     ),
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_V_WIDTH,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_inlay_plug,
 };
 
@@ -993,6 +1092,19 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_DEPTH_ORDER,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_zigzag,
 };
 
@@ -1015,6 +1127,19 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — single-pass engraving: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_DEPTH_ORDER,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::CurveFollowing,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_trace,
 };
 
@@ -1026,7 +1151,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
                       circles in SVG drawings (pick targets in the viewport or by layer; \
                       refuses when there are none)",
         family: OperationFamily::TwoPointFiveD,
-        geometry: GeometryRequirement::Polygons,
+        geometry: GeometryRequirement::DrillTargets,
         default_auto_regen: true,
         ui_family: UiOperationFamily::Pocket,
         ui_process_role: UiProcessRole::Roughing,
@@ -1039,6 +1164,19 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     policy: OpPolicy::DRILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_XY_INDEPENDENT,
+        air_cut_high_threshold_pct: None,
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::PeckDepth,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_drill,
 };
 
@@ -1063,6 +1201,19 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_ORDERED_LINKABLE,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_chamfer,
 };
 
@@ -1090,6 +1241,19 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
     ),
     policy: OpPolicy::LATERAL_RASTER,
+    capabilities: Capabilities {
+        transform: TRANSFORM_XY_INDEPENDENT,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFixed { leave_mm: 0.0 },
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: Some("hookup_mm"),
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_drop_cutter,
 };
 
@@ -1117,6 +1281,19 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     // Users who want a Helix entry set it at the planner level.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_ADAPTIVE_3D,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        honors_pinned_bottom_z: true,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Adaptive3d,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::Roughing,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::Roughing3d,
+    },
     generate: crate::compute::execute::generate_adaptive3d,
 };
 
@@ -1138,6 +1315,19 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::FEATURE_SELECTIVE,
+    capabilities: Capabilities {
+        transform: TRANSFORM_DEPTH_ORDER,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: true,
+        entry_probe: EntryProbeRule::SurfaceFixed { leave_mm: 0.0 },
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: Some("hookup_mm"),
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_waterline,
 };
 
@@ -1156,15 +1346,27 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
     param_defs: PENCIL_PARAMS,
-    // Feeds matrix R1 (2026-09-23): the static check calls a flat end mill
-    // on Pencil Critical ("require a ball nose tool for correct surface
-    // contact"); the row now says so, and Suggest refuses on it.
+    // Feeds matrix R1 (2026-09-23): a ball-tip rule. Since W2.2 the
+    // generator prologue, the static check and Suggest all refuse on it.
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::FEATURE_SELECTIVE,
+    capabilities: Capabilities {
+        transform: TRANSFORM_ORDERED_LINKABLE,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_pencil,
 };
 
@@ -1189,6 +1391,19 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_CONTINUOUS,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: Some("intra_pass_hookup_mm"),
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_scallop,
 };
 
@@ -1228,6 +1443,19 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         "Incompatible with Unified Finish: ramp/lead/link dressups would carve diagonal trenches across the mesh surface; the op emits its own surface-safe entries and links.",
     ),
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_BARRIERED_NODES,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: true,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::NotModelled,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: Some("intra_region_hookup_mm"),
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_unified_finish,
 };
 
@@ -1249,6 +1477,19 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::LATERAL_RASTER,
+    capabilities: Capabilities {
+        transform: TRANSFORM_BARRIERED_NODES,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_steep_shallow,
 };
 
@@ -1270,6 +1511,19 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_CONTINUOUS,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_ramp_finish,
 };
 
@@ -1298,6 +1552,19 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::LATERAL_RASTER,
+    capabilities: Capabilities {
+        transform: TRANSFORM_CONTINUOUS,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_spiral_finish,
 };
 
@@ -1319,6 +1586,19 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_ORDERED_LINKABLE,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_radial_finish,
 };
 
@@ -1347,6 +1627,19 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         kinematics: Kinematics::Milling,
         empty_is_feature_selective: true,
     },
+    capabilities: Capabilities {
+        transform: TRANSFORM_ORDERED_LINKABLE,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::SurfaceFromConfig,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::Raster,
+        doc_basis: DocBasis::SurfaceHeights,
+        air_cut_hint: AirCutHint::SurfaceFinish,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::Finish3d,
+    },
     generate: crate::compute::execute::generate_horizontal_finish,
 };
 
@@ -1372,6 +1665,19 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
     ),
     policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_XY_INDEPENDENT,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_PROJECT_CURVE_PCT),
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::Always,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::CurveOnSurface,
+        air_cut_hint: AirCutHint::CurveFollowing,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::CurveRough,
+    },
     generate: crate::compute::execute::generate_project_curve,
 };
 
@@ -1400,5 +1706,18 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     // warned on the product's own default.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     policy: OpPolicy::DRILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_XY_INDEPENDENT,
+        air_cut_high_threshold_pct: None,
+        honors_pinned_bottom_z: false,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::PeckDepth,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+    },
     generate: crate::compute::execute::generate_alignment_pin_drill,
 };

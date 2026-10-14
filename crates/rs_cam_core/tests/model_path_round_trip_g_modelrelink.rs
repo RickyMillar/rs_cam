@@ -270,6 +270,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             stats: Default::default(),
             debug_trace: None,
             semantic_trace: None,
+            provenance: rs_cam_core::session::ResultProvenance::Dressed,
         }
     }
 

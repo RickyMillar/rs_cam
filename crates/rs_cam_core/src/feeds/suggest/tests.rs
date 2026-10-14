@@ -2513,7 +2513,7 @@ fn clearing_strategy_recommendation_skips() {
 /// PRE-Phase-1 coverage net (architectural refactor T1): every
 /// operation's feeds hints must be an *explicit decision*. The
 /// implementation now lives in the registry-layer
-/// [`OperationConfig::feeds_hints`] exhaustive match (T3 replaced
+/// [`Capabilities::feeds_hints`] exhaustive match (T3 replaced
 /// the old `_ => (None, None, None)` wildcard here); this net stays
 /// as the independent baseline guarding both the table and the tuple
 /// adapter.

@@ -300,6 +300,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
                     stats: Default::default(),
                     debug_trace: None,
                     semantic_trace: None,
+                    provenance: rs_cam_core::session::ResultProvenance::Dressed,
                 }),
             }))
             .expect("the fixture revision is current");

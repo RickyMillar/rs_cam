@@ -211,6 +211,7 @@ fn controller_save_open_and_export_smoke() {
                 stats: Default::default(),
                 debug_trace: None,
                 semantic_trace: None,
+                provenance: rs_cam_core::session::ResultProvenance::Dressed,
             }),
         }))
         .expect("seed the core result");

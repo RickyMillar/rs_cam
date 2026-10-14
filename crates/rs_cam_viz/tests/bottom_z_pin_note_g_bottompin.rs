@@ -58,7 +58,7 @@ fn every_operation_annotates_the_bottom_row_unless_it_honours_the_pin() {
     for &op in OperationType::ALL {
         walked += 1;
         let note = bottom_z_pin_note(op);
-        let honours = op.honors_pinned_bottom_z();
+        let honours = op.capabilities().honors_pinned_bottom_z;
         assert_eq!(
             note.is_some(),
             !honours,

@@ -540,6 +540,7 @@ fn set_toolpath_param_invalidates_result() {
             stats: ToolpathStats::default(),
             debug_trace: None,
             semantic_trace: None,
+            provenance: crate::session::ResultProvenance::Dressed,
         },
     );
     let _ = s.set_toolpath_param(0, "feed_rate", json!(1000.0)).unwrap();
@@ -666,6 +667,7 @@ fn set_tool_param_invalidates_toolpath_results() {
             stats: ToolpathStats::default(),
             debug_trace: None,
             semantic_trace: None,
+            provenance: crate::session::ResultProvenance::Dressed,
         },
     );
 
@@ -853,6 +855,7 @@ fn empty_result() -> ToolpathComputeResult {
         stats: ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,
+        provenance: crate::session::ResultProvenance::Dressed,
     }
 }
 
@@ -2136,6 +2139,7 @@ fn fake_result_with_regions(
         },
         debug_trace: None,
         semantic_trace: None,
+        provenance: crate::session::ResultProvenance::Dressed,
     }
 }
 

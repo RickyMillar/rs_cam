@@ -200,6 +200,18 @@ pub(super) fn draw_toolpath_panel(
                 "The move count of the current generation."
             });
         }
+        // W2.5 (D10): one word for the feed stage of the stored result,
+        // the one export emits. The hover is the sentence the G-code
+        // header prints.
+        if let Some(stage) = inputs.feed_stage {
+            let colour = if stage.is_superseded() {
+                crate::ui::tokens::CAUTION
+            } else {
+                crate::ui::tokens::TEXT_FAINT
+            };
+            ui.label(egui::RichText::new(stage.badge()).small().color(colour))
+                .on_hover_text(stage.statement());
+        }
     });
     if !validation_errors.is_empty() {
         for err in &validation_errors {

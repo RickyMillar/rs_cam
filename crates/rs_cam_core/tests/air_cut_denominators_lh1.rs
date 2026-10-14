@@ -7,7 +7,7 @@
 //!
 //! - **total runtime** (cutting + rapids) in `ProjectDiagnostics`, the GUI
 //!   banner and chips, the CLI verdict, and every
-//!   `OperationType::air_cut_high_threshold_pct` band;
+//!   `Capabilities::air_cut_high_threshold_pct` band;
 //! - **cutting runtime** (rapids excluded) in the MCP `narrate_toolpath`
 //!   line and in `CLAUDE.md`'s metric caveats.
 //!
@@ -211,6 +211,7 @@ fn narration_air_cut_line_names_its_denominators() {
         // G-LINKVISIBLE — this fixture runs no pencil, so its link stage is
         // NOT MEASURED.
         pencil_link: None,
+        feed_stage: None,
         // Checkpoint C — the 2D failure contract's two report-only slots.
         offset_library_failures: None,
         boundary_clip_dropped: None,
