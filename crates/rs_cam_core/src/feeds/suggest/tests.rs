@@ -2551,7 +2551,6 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
             OperationConfig::Pocket(_) => (None, None, None),
             OperationConfig::Profile(_) => (None, None, None),
             OperationConfig::Adaptive(_) => (None, None, None),
-            OperationConfig::Rest(_) => (None, None, None),
             OperationConfig::Inlay(_) => (None, None, None),
             OperationConfig::InlayPlug(_) => (None, None, None),
             OperationConfig::Zigzag(_) => (None, None, None),

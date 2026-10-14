@@ -12,8 +12,7 @@ mod validate;
 // Re-export all draw_*_params functions so callers don't need to change imports.
 pub(super) use boundary_2d::{
     draw_adaptive_params, draw_face_params, draw_inlay_params, draw_inlay_plug_params,
-    draw_pocket_params, draw_profile_params, draw_rest_params, draw_vcarve_params,
-    draw_zigzag_params,
+    draw_pocket_params, draw_profile_params, draw_vcarve_params, draw_zigzag_params,
 };
 pub(super) use drill::{draw_alignment_pin_drill_params, draw_drill_params};
 pub(super) use engrave::{draw_chamfer_params, draw_trace_params};
@@ -286,7 +285,6 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
         Op::Pocket => Some(DEPTH),
         Op::Profile => Some(DEPTH),
         Op::Adaptive => Some(DEPTH),
-        Op::Rest => Some(DEPTH),
         Op::Zigzag => Some(DEPTH),
         Op::Trace => Some(DEPTH),
         Op::Drill => Some(DEPTH),
@@ -719,98 +717,6 @@ mod tests {
         assert!(
             !errs.iter().any(|e| e.contains("drill targets")),
             "a pick is a hole source: {errs:?}"
-        );
-    }
-
-    #[test]
-    fn validate_rest_requires_earlier_matching_operation() {
-        let mut builder = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
-            .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
-            .model(session_polygon_model(4));
-
-        // Add the rest toolpath config to the session (no prior roughing)
-        let mut rest_op = OperationConfig::Rest(Default::default());
-        if let OperationConfig::Rest(cfg) = &mut rest_op {
-            cfg.prev_tool_id = Some(ToolId(1));
-        }
-        let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = builder
-            .add_toolpath(0, rest_config)
-            .expect("add_toolpath reports the new toolpath index");
-        let session = builder.build();
-
-        // Build entry with the session-assigned ID
-        // SAFETY: rest_idx bounded by add_toolpath return
-        #[allow(clippy::indexing_slicing)]
-        let rest_id = session.toolpath_configs()[rest_idx].id;
-        let mut rest = ToolpathEntry::for_operation(
-            rest_id,
-            "Rest".to_owned(),
-            ToolId(2),
-            ModelId(4),
-            OperationType::Rest,
-        );
-        if let OperationConfig::Rest(cfg) = &mut rest.operation {
-            cfg.prev_tool_id = Some(ToolId(1));
-        }
-
-        let errs = validate_toolpath(&rest, &ToolpathValidationContext::from_session(&session));
-        assert!(
-            errs.iter()
-                .any(|err| err.contains("earlier enabled operation")),
-            "expected earlier-operation validation error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn validate_rest_accepts_earlier_matching_operation() {
-        let mut builder = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 10.0))
-            .tool(sample_tool(ToolId(2), ToolType::EndMill, 6.0))
-            .model(session_polygon_model(4));
-
-        // Add roughing toolpath first
-        let roughing_config = make_session_toolpath_config(
-            "Pocket",
-            1,
-            4,
-            OperationConfig::Pocket(Default::default()),
-        );
-        let _ = builder.add_toolpath(0, roughing_config).unwrap();
-
-        // Add rest toolpath — session assigns the ID
-        let mut rest_op = OperationConfig::Rest(Default::default());
-        if let OperationConfig::Rest(cfg) = &mut rest_op {
-            cfg.prev_tool_id = Some(ToolId(1));
-        }
-        let rest_config = make_session_toolpath_config("Rest", 2, 4, rest_op);
-        let rest_idx = builder
-            .add_toolpath(0, rest_config)
-            .expect("add_toolpath reports the new toolpath index");
-        let session = builder.build();
-
-        // Build entry with the session-assigned ID so validation can locate it
-        // SAFETY: rest_idx bounded by add_toolpath return
-        #[allow(clippy::indexing_slicing)]
-        let rest_id = session.toolpath_configs()[rest_idx].id;
-        let mut rest = ToolpathEntry::for_operation(
-            rest_id,
-            "Rest".to_owned(),
-            ToolId(2),
-            ModelId(4),
-            OperationType::Rest,
-        );
-        if let OperationConfig::Rest(cfg) = &mut rest.operation {
-            cfg.prev_tool_id = Some(ToolId(1));
-        }
-
-        let errs = validate_toolpath(&rest, &ToolpathValidationContext::from_session(&session));
-        assert!(
-            !errs
-                .iter()
-                .any(|err| err.contains("earlier enabled operation")),
-            "did not expect rest-ordering error, got {errs:?}"
         );
     }
 }

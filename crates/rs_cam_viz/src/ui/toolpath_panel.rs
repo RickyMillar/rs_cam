@@ -83,9 +83,8 @@ struct RuntimeSnapshot {
 
 /// One dependency, as the connector draws it.
 ///
-/// The three [`EdgeKind`] arms carry what the Rest card's `dep` badge used
-/// to say about `PrevTool` alone: `Ready` is the old `Resolved`, `Pending`
-/// the old `Stale`, `Broken` the old `Missing` (R3).
+/// The connector draws one row per declared edge. Its state is
+/// [`EdgeState`]: `Ready`, `Pending` or `Broken`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EdgeRow {
     /// The source row, or `None` when the declaration resolves to no
@@ -1314,16 +1313,6 @@ pub fn edge_hover(
         }
         (EdgeKind::Regions, EdgeState::Broken) => {
             format!("Rest regions of {source} \u{00B7} source missing")
-        }
-        (EdgeKind::PrevTool, EdgeState::Ready) => format!("Rest after {source}"),
-        (EdgeKind::PrevTool, EdgeState::Pending) => {
-            format!("Rest after {source} \u{00B7} {source} is not current")
-        }
-        // The one arm that names no source: there is no earlier enabled
-        // operation with that cutter, which is what the static validator
-        // refuses on (G-RESTBADGE).
-        (EdgeKind::PrevTool, EdgeState::Broken) => {
-            "No previous operation with that tool".to_owned()
         }
     };
     if selectable {

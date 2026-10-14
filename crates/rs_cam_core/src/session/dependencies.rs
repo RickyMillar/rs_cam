@@ -9,7 +9,7 @@
 //! The module is pure. It takes `&ProjectSession`, returns values, mutates
 //! nothing and names no GUI type.
 //!
-//! # The three declarations
+//! # The two declarations
 //!
 //! A consumer declares its own edges; a source declares none.
 //!
@@ -18,17 +18,13 @@
 //! - [`EdgeKind::Regions`]: `boundary.enabled` plus
 //!   `BoundarySource::DerivedRestRegions { source_toolpath_id }`. The
 //!   consumer machines the rest regions another op's result carries.
-//! - [`EdgeKind::PrevTool`]: `OperationConfig::Rest(cfg)`. The consumer
-//!   clears what the cutter named by `cfg.prev_tool_id` left behind.
 //!
 //! # Two asymmetries a reviewer must not "fix"
 //!
-//! **A Stock edge is NOT filtered on the source's `enabled` flag; a PrevTool
-//! edge IS.** A Stock edge asks "did the material above me move", and an op
-//! that was just switched off moves it: `set_toolpath_enabled` writes
-//! `enabled = false` and THEN seeds the walker, so the walker must still see
-//! the edge. A PrevTool edge asks "does a predecessor with that cutter
-//! exist", and a disabled op is not one.
+//! **A Stock edge is NOT filtered on the source's `enabled` flag.** A Stock
+//! edge asks "did the material above me move", and an op that was just
+//! switched off moves it: `set_toolpath_enabled` writes `enabled = false`
+//! and THEN seeds the walker, so the walker must still see the edge.
 //!
 //! # A setup's first rest operation reads the previous setup's stock
 //!
@@ -50,40 +46,24 @@
 //! with no enabled row leaves every edge Broken, which is the honest
 //! answer: nothing above the consumer removed material.
 //!
-//! **A Stock consumer must be enabled; a Regions or PrevTool consumer need
-//! not be.** The first mirrors the walker's rule (a), which drops only
-//! enabled `FromRemainingStock` ops. The second two mirror rule (b), which
-//! drops a consumer whose source's OUTPUT moved whether or not the consumer
-//! is switched on.
-//!
-//! # Rule (c) over-approximates, on purpose
-//!
-//! The generator derives `prev_tool_radius` from the TOOL table, not from
-//! the predecessor's result, so a Rest consumer whose predecessor merely
-//! regenerates has unchanged generation inputs. The cost is bounded: rule
-//! (a) already covers every `FromRemainingStock` Rest op, so rule (c) adds
-//! drops only for a `Fresh` Rest op with a resolved predecessor, and those
-//! regenerate in seconds. Read this as a decision, not as an oversight.
-//!
-//! # The PrevTool twin
-//!
-//! `rs_cam_viz::state::rest_dependency::rest_predecessors` holds the same
-//! rule for the card. W3 of the programme deletes the viz copy and re-points
-//! its two callers at this module. Until then the two must agree.
+//! **A Stock consumer must be enabled; a Regions consumer need not be.**
+//! The first mirrors the walker's rule (a), which drops only enabled
+//! `FromRemainingStock` ops. The second mirrors rule (b), which drops a
+//! consumer whose source's OUTPUT moved whether or not the consumer is
+//! switched on.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundarySource, StockSource};
 use crate::ids::ToolpathId;
 use crate::session::ProjectSession;
 
 /// What a consumer asks of its source.
 ///
-/// The wire words are `stock`, `regions` and `prev_tool`. They live on the
-/// enum, not in a surface's own match, so a fourth kind cannot reach one
+/// The wire words are `stock` and `regions`. They live on the
+/// enum, not in a surface's own match, so a third kind cannot reach one
 /// reply under a new name and another under none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,8 +72,6 @@ pub enum EdgeKind {
     Stock,
     /// The rest regions the source's result carries.
     Regions,
-    /// The predecessor that ran the coarse cutter.
-    PrevTool,
 }
 
 /// How current a dependency is.
@@ -222,24 +200,6 @@ pub fn edges(session: &ProjectSession) -> Vec<Edge> {
                 kind: EdgeKind::Regions,
             });
         }
-
-        // PrevTool. One edge, on the LAST qualifying predecessor. The
-        // source IS `enabled`-filtered; see the module doc.
-        if let OperationConfig::Rest(cfg) = &tc.operation {
-            let resolved = cfg.prev_tool_id.and_then(|prev| {
-                above
-                    .iter()
-                    .rev()
-                    .filter_map(|&up_index| configs.get(up_index))
-                    .find(|up| up.enabled && up.tool_id == prev.0 && up.model_id == tc.model_id)
-                    .map(|up| up.id)
-            });
-            out.push(Edge {
-                from: tc.id,
-                on: resolved,
-                kind: EdgeKind::PrevTool,
-            });
-        }
     }
     out
 }
@@ -286,15 +246,6 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
                 _ => EdgeState::Broken,
             },
         },
-        // The generator reads the predecessor's TOOL, not its result, so
-        // "has it generated" is the finest question there is to ask.
-        EdgeKind::PrevTool => {
-            if session.get_result(source_index).is_some() {
-                EdgeState::Ready
-            } else {
-                EdgeState::Pending
-            }
-        }
     }
 }
 
@@ -306,7 +257,7 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
 /// `edges` emits a cross-setup source BEFORE the consumer's own setup, so
 /// "nearest" prefers a same-setup row and falls back to the previous
 /// setup's LAST enabled row.
-/// The Regions and PrevTool rows pass through unchanged.
+/// The Regions rows pass through unchanged.
 pub fn primary_edges(session: &ProjectSession) -> Vec<Edge> {
     let all = edges(session);
     let mut out: Vec<Edge> = Vec::new();

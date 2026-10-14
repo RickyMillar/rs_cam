@@ -26,9 +26,7 @@ use crate::ids::ToolpathId;
 use crate::tool_load::ToolpathLoadVerdict;
 
 pub use from_model_refs::ModelRefContext;
-pub use from_preconditions::{
-    PreconditionContext, PriorToolpathSummary, TargetModelGeometry, ToolDiameterEntry,
-};
+pub use from_preconditions::{PreconditionContext, TargetModelGeometry};
 
 /// Inputs the pure orchestrator needs to compute a toolpath's
 /// diagnostic list. All fields except the operation/tool are
@@ -104,7 +102,6 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
         out.extend(from_preconditions::diagnostics_from_preconditions(
             inputs.toolpath_id,
             inputs.operation,
-            inputs.tool.id.0,
             ctx,
         ));
     }

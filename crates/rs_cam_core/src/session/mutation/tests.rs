@@ -26,9 +26,7 @@ use std::collections::BTreeSet;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-use crate::compute::operation_configs::{
-    AlignmentPinDrillConfig, PencilConfig, PocketConfig, RestConfig,
-};
+use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
 use crate::compute::toolpath_stats::ToolpathStats;
 use crate::gcode::CoolantMode;
 use crate::ids::FixtureId;
@@ -1188,7 +1186,6 @@ fn chain_fixture() -> ProjectSession {
     let model = s.models()[0].id;
     let upstream = make_tc(tool, model);
     let mut downstream = make_tc(tool, model);
-    downstream.operation = OperationConfig::Rest(RestConfig::default());
     downstream.stock_source = crate::session::StockSource::FromRemainingStock;
     let _ = s.add_toolpath(0, upstream).unwrap();
     let _ = s.add_toolpath(0, downstream).unwrap();

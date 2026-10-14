@@ -240,10 +240,6 @@ pub struct OperationDef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub z_blend: Option<bool>,
 
-    // Rest machining-specific
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prev_tool: Option<String>,
-
     // STL scaling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
@@ -1037,18 +1033,17 @@ struct SessionOpOutput {
 }
 
 /// The job-file operation vocabulary. Anything else points the user at
-/// the generic registry-driven `run` subcommand (all 23 ops).
+/// the generic registry-driven `run` subcommand (every op in the registry).
 fn op_type_for(token: &str) -> Result<OperationType> {
     Ok(match token {
         "pocket" => OperationType::Pocket,
         "profile" => OperationType::Profile,
         "adaptive" => OperationType::Adaptive,
-        "rest" => OperationType::Rest,
         "adaptive3d" => OperationType::Adaptive3d,
         "drop-cutter" | "drop_cutter" | "finish" => OperationType::DropCutter,
         other => bail!(
             "Unknown operation type '{other}'. Job files support: pocket, profile, adaptive, \
-             rest, adaptive3d, drop-cutter. For other operations use `rs_cam_cli run <op>` \
+             adaptive3d, drop-cutter. For other operations use `rs_cam_cli run <op>` \
              (see `run --list-ops`)."
         ),
     })
@@ -1145,27 +1140,6 @@ fn execute_op_via_session(
     )?
     .created
     .context("add_tool reports no new tool index")?;
-    let prev_tool_id = if op_type == OperationType::Rest {
-        let prev_name = op
-            .prev_tool
-            .as_ref()
-            .context("Rest requires 'prev_tool' referencing the larger tool")?;
-        let prev_def = job.tools.get(prev_name).context(format!(
-            "Rest 'prev_tool' references unknown tool '{prev_name}'"
-        ))?;
-        Some(
-            crate::command::apply_command(
-                &mut session,
-                Command::AddTool(AddToolArgs {
-                    tool: Box::new(tool_config_from_def(prev_def, prev_name)),
-                }),
-            )?
-            .created
-            .context("add_tool reports no new tool index")?,
-        )
-    } else {
-        None
-    };
 
     // \u{2500}\u{2500} Dressups (entry / dogbone were post-passes pre-T9) \u{2500}\u{2500}
     let mut dressups = DressupConfig::default();
@@ -1240,7 +1214,7 @@ fn execute_op_via_session(
         .then(|| session.models().first().and_then(LoadedModel::bbox))
         .flatten()
         .map(|bbox| bbox.min.z);
-    let params = job_params_for(op, op_type, prev_tool_id, drop_cutter_min_z)?;
+    let params = job_params_for(op, op_type, drop_cutter_min_z)?;
     let table = op_type.registry_entry().param_defs;
     for (key, value) in params {
         if table.iter().any(|d| d.name == key) {
@@ -1330,7 +1304,6 @@ fn execute_op_via_session(
 fn job_params_for(
     op: &OperationDef,
     op_type: OperationType,
-    prev_tool_id: Option<usize>,
     drop_cutter_min_z: Option<f64>,
 ) -> Result<Vec<(&'static str, serde_json::Value)>> {
     use serde_json::json;
@@ -1389,13 +1362,6 @@ fn job_params_for(
             ));
             // Pre-T9 router hardcoded the hybrid cleanup strategy.
             p.push(("cleanup_strategy", json!("ContourParallelHybrid")));
-        }
-        OperationType::Rest => {
-            p.push(("depth", json!(op.depth.context("Rest requires 'depth'")?)));
-            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
-            p.push(("stepover", json!(op.stepover.unwrap_or(1.0))));
-            p.push(("angle", json!(op.angle.unwrap_or(0.0))));
-            p.push(("prev_tool_id", json!(prev_tool_id)));
         }
         OperationType::Adaptive3d => {
             p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
@@ -1645,7 +1611,7 @@ mod tests {
             "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_distance_mm = 18.0\n",
         )
         .unwrap();
-        let params = job_params_for(&with_live_key, OperationType::Adaptive3d, None, None).unwrap();
+        let params = job_params_for(&with_live_key, OperationType::Adaptive3d, None).unwrap();
         assert_eq!(
             params
                 .iter()
@@ -1660,8 +1626,7 @@ mod tests {
             "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_dist = 30.0\n",
         )
         .unwrap();
-        let params =
-            job_params_for(&with_deleted_key, OperationType::Adaptive3d, None, None).unwrap();
+        let params = job_params_for(&with_deleted_key, OperationType::Adaptive3d, None).unwrap();
         assert!(
             !params
                 .iter()
@@ -1688,7 +1653,7 @@ mod tests {
             "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"ramp\"\n",
         )
         .unwrap();
-        let params = job_params_for(&ramp, OperationType::Adaptive3d, None, None).unwrap();
+        let params = job_params_for(&ramp, OperationType::Adaptive3d, None).unwrap();
         assert!((value(&params, "ramp_angle_deg") - 10.0).abs() < 1e-12);
         assert!((value(&params, "ramp_angle_deg") - gui.ramp_angle_deg).abs() < 1e-12);
 
@@ -1696,7 +1661,7 @@ mod tests {
             "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"helix\"\n",
         )
         .unwrap();
-        let params = job_params_for(&helix, OperationType::Adaptive3d, None, None).unwrap();
+        let params = job_params_for(&helix, OperationType::Adaptive3d, None).unwrap();
         assert!((value(&params, "helix_radius_factor") - gui.helix_radius_factor).abs() < 1e-12);
         assert!((value(&params, "helix_pitch") - gui.helix_pitch).abs() < 1e-12);
     }
@@ -1710,7 +1675,7 @@ mod tests {
             "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\ncoarse_steps = [10.0]\n",
         )
         .unwrap();
-        let params = job_params_for(&op, OperationType::Adaptive3d, None, None).unwrap();
+        let params = job_params_for(&op, OperationType::Adaptive3d, None).unwrap();
         assert!(!params.iter().any(|(k, _)| *k == "coarse_steps"));
         assert!(
             !OperationType::Adaptive3d
@@ -1731,7 +1696,7 @@ mod tests {
                 "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
             ))
             .unwrap();
-            let params = job_params_for(&op, OperationType::Adaptive3d, None, None).unwrap();
+            let params = job_params_for(&op, OperationType::Adaptive3d, None).unwrap();
             assert_eq!(
                 params
                     .iter()
@@ -1745,7 +1710,7 @@ mod tests {
                 "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
             ))
             .unwrap();
-            let err = job_params_for(&op, OperationType::Adaptive3d, None, None)
+            let err = job_params_for(&op, OperationType::Adaptive3d, None)
                 .unwrap_err()
                 .to_string();
             assert!(

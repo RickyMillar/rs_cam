@@ -580,7 +580,6 @@ tolerance = 0.05
 slot_clearing = true
 min_cutting_radius = 1.2
 z_blend = true
-prev_tool = "flat_6mm"
 scale = 2.0
 stock_top_z = 1.0
 stock_to_leave = 0.3
@@ -625,7 +624,6 @@ stay_down_clearance_mm = 0.75
         assert_eq!(op.stay_down_clearance_mm, Some(0.75));
         assert_eq!(op.entry_3d.as_deref(), Some("helix"));
         assert_eq!(op.tabs, Some(4));
-        assert_eq!(op.prev_tool.as_deref(), Some("flat_6mm"));
         assert_eq!(op.strategy.as_deref(), Some("contour"));
         assert_eq!(op.order_by.as_deref(), Some("by_area"));
     }

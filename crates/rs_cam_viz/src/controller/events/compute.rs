@@ -380,7 +380,7 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// W1 removed the generation-completion caller: core's `AdoptResult`
     /// walks the source's consumers itself (D1) and the drain stamps
-    /// `Effects::stale`, which covers PrevTool as well as Regions. What is
+    /// `Effects::stale`, which covers the Regions consumers. What is
     /// left are the two REMOVAL callers, `handle_remove_toolpath` and the
     /// multi-tool planner. Both run against a session the source has already
     /// left, where a Regions edge resolves to no source at all, so the core
@@ -502,7 +502,7 @@ impl<B: ComputeBackend> AppController<B> {
             Ok(computed) => {
                 rt.status = ComputeStatus::Done;
                 // W0/D1 handoff: `AdoptResult` now drops the source's
-                // Regions and PrevTool consumers through the core walker, so
+                // Regions consumers through the core walker, so
                 // the adopt reports a stale set. Collected here and stamped
                 // below, after the runtime-row borrow ends, because
                 // `stamp_stale` takes the whole `AppState`.
@@ -600,10 +600,8 @@ impl<B: ComputeBackend> AppController<B> {
                 //
                 // Since W0's D1 the `Ok` effects are NOT
                 // empty: the source's OUTPUT moved, so the
-                // walker drops its Regions and PrevTool
-                // consumers and names them here. A PrevTool
-                // consumer gets its `stale_since` stamp from
-                // this set and from nowhere else.
+                // walker drops its Regions consumers and
+                // names them here.
                 match adopted {
                     Ok(effects) => adopt_stale = effects.stale,
                     Err(e) => {
@@ -613,9 +611,8 @@ impl<B: ComputeBackend> AppController<B> {
                 rt.result = Some(computed);
                 // W1: the viz twin `mark_derived_rest_dependents_stale` is
                 // NOT called here any more. It re-derived the Regions rule
-                // by hand and saw no PrevTool consumer at all. The core
-                // walker's answer covers both, so the GUI auto-regeneration
-                // clock reads the one truth.
+                // by hand. The core walker's answer covers it, so the GUI
+                // auto-regeneration clock reads the one truth.
                 crate::state::stale::stamp_stale(&mut self.state, &adopt_stale);
             }
             Err(ComputeError::Cancelled) => {
@@ -2599,7 +2596,7 @@ impl<B: ComputeBackend> AppController<B> {
 /// - `ProjectEvidence::from_simulation` (triage, diagnostics): the
 ///   boundaries, the rapid collisions and their move indices, the cut trace
 ///   and `column_grid_cell_mm`.
-/// - Rest generation and `snapshot_is_current`: `prior_stocks` and
+/// - Remaining-stock generation and `snapshot_is_current`: `prior_stocks` and
 ///   `prior_stock_sources`.
 /// - Export, the tool-load report, diagnose and narration: the
 ///   cut trace (narration also reads `column_grid_cell_mm`).

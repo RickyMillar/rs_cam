@@ -4,18 +4,14 @@
 //! # What this replaces
 //!
 //! The Rest card carried a `dep` / `no dep` badge with its own predicate
-//! (`rest_badge`). R3 of `planning/gen_sim_rest_ux_2026-09-18/` folds that
-//! badge into the connector: a `PrevTool` edge says the same three things
-//! (`Resolved` is `Ready`, `Stale` is `Pending`, `Missing` is `Broken`) and
-//! it says them for every dependency kind, not for Rest alone.
-//! `tests/rest_badge_one_predicate_g_restbadge.rs` is deleted; its eight
-//! cases live in arm 2 below, so G-RESTBADGE keeps its guard.
+//! (`rest_badge`). R3 of `planning/gen_sim_rest_ux_2026-09-18/` folded that
+//! badge into the connector. The Rest operation and its `PrevTool` edge
+//! were retired on 2026-10-14 (ruling R3 of `op_architecture_2026-10-14`),
+//! and arm 2 (G-RESTBADGE) went with them.
 //!
-//! # The four arms
+//! # The arms
 //!
-//! 1. Role, stroke and hover for the nine `(EdgeKind, EdgeState)` pairs.
-//! 2. G-RESTBADGE, carried over: the `PrevTool` edge is `Broken` exactly
-//!    when the static validator refuses the same configuration.
+//! 1. Role, stroke and hover for the six `(EdgeKind, EdgeState)` pairs.
 //! 3. Geometry: the elbow sits on the gutter centre line, and an off-list
 //!    source draws a stub rather than a line to nothing.
 //! 4. Non-vacuity: the panel calls `draw_connectors(` and names neither the
@@ -29,25 +25,9 @@
 )]
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-use std::sync::Arc;
 
-use rs_cam_core::ToolpathId;
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::dependencies::{EdgeKind, EdgeState, primary_edges, state as edge_state};
-use rs_cam_core::session::{
-    AddSetupArgs, AddToolpathArgs, AdoptResultArgs, Command, InvalidateToolpathInputsArgs,
-    LoadedModel, ProjectSession, ProjectSessionBuilder, SetToolpathEnabledArgs, ToolpathConfig,
-};
-use rs_cam_viz::state::AppState;
-use rs_cam_viz::state::job::{ModelId, ModelKind, ModelUnits};
-use rs_cam_viz::state::runtime::{ComputeStatus, ToolpathRuntime};
-use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
+use rs_cam_core::session::dependencies::{EdgeKind, EdgeState};
 use rs_cam_viz::ui::components::Role;
-use rs_cam_viz::ui::properties::{ToolpathValidationContext, validate_toolpath};
 use rs_cam_viz::ui::tokens;
 use rs_cam_viz::ui::toolpath_panel::{
     RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke, header_bands,
@@ -56,16 +36,9 @@ use rs_cam_viz::ui::toolpath_panel::{
 
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
 
-const ROUGH_TOOL: usize = 1;
-const REST_TOOL: usize = 2;
-const MODEL_A: usize = 4;
-const MODEL_B: usize = 5;
+// ── arm 1 — role, stroke and hover for the six pairs ────────────────────
 
-const VALIDATOR_REFUSAL: &str = "earlier enabled operation";
-
-// ── arm 1 — role, stroke and hover for the nine pairs ───────────────────
-
-const KINDS: [EdgeKind; 3] = [EdgeKind::Stock, EdgeKind::Regions, EdgeKind::PrevTool];
+const KINDS: [EdgeKind; 2] = [EdgeKind::Stock, EdgeKind::Regions];
 const STATES: [EdgeState; 3] = [EdgeState::Ready, EdgeState::Pending, EdgeState::Broken];
 
 /// The role ladder of §4.4: a pass, a wait, a fault.
@@ -124,7 +97,7 @@ fn every_edge_state_takes_its_own_role_g_connector() {
     );
 }
 
-/// Nine pairs, nine distinct hovers, and each names its source.
+/// Six pairs, six distinct hovers, and each names its source.
 #[test]
 fn every_edge_pair_says_something_different_g_connector() {
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -143,8 +116,8 @@ fn every_edge_pair_says_something_different_g_connector() {
     }
     assert_eq!(
         seen.len(),
-        9,
-        "non-vacuity: nine pairs must yield nine strings"
+        6,
+        "non-vacuity: six pairs must yield six strings"
     );
 
     // The two unready states say WHY, and a ready one does not have to.
@@ -160,16 +133,15 @@ fn every_edge_pair_says_something_different_g_connector() {
         }
     }
 
-    // Seven of the nine name the source. The two that do not are the arms
-    // where there IS no source to name.
+    // All six name the source.
     let named = KINDS
         .iter()
         .flat_map(|k| STATES.iter().map(move |s| (*k, *s)))
         .filter(|(k, s)| edge_hover(Some("Back Rough"), *k, *s, false).contains("Back Rough"))
         .count();
-    assert!(
-        named >= 7,
-        "the hover exists to name the source, and only {named} of nine do"
+    assert_eq!(
+        named, 6,
+        "the hover exists to name the source, and only {named} of six do"
     );
 }
 
@@ -186,356 +158,6 @@ fn a_drawn_source_offers_the_click_g_connector() {
         clickable.starts_with(&quiet) && clickable.contains("Click to select it."),
         "a drawn source adds the click line to the same wording: {clickable}"
     );
-}
-
-// ── arm 2 — G-RESTBADGE, carried over ───────────────────────────────────
-
-fn polygon_model(id: usize) -> LoadedModel {
-    LoadedModel {
-        id,
-        path: PathBuf::from(format!("model_{id}.svg")),
-        name: format!("2D {id}"),
-        kind: Some(ModelKind::Svg),
-        mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::rectangle(
-            -10.0, -10.0, 10.0, 10.0,
-        )])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
-        enriched_mesh: None,
-        units: Some(ModelUnits::Millimeters),
-        winding_report: None,
-        load_error: None,
-    }
-}
-
-fn tool(id: usize, diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(id), ToolType::EndMill);
-    tool.diameter = diameter;
-    tool
-}
-
-fn toolpath(name: &str, tool_id: usize, model_id: usize, op: OperationConfig) -> ToolpathConfig {
-    ToolpathConfig {
-        id: ToolpathId(0), // assigned by session.add_toolpath
-        name: name.to_owned(),
-        enabled: true,
-        operation: op,
-        dressups: Default::default(),
-        heights: Default::default(),
-        tool_id,
-        model_id,
-        pre_gcode: None,
-        post_gcode: None,
-        boundary: Default::default(),
-        boundary_inherit: true,
-        stock_source: Default::default(),
-        coolant: Default::default(),
-        face_selection: None,
-        debug_options: Default::default(),
-        feeds_provenance: Default::default(),
-        rest_analysis: Default::default(),
-        planner_origin: None,
-    }
-}
-
-fn rest_op() -> OperationConfig {
-    let mut op = OperationConfig::Rest(Default::default());
-    if let OperationConfig::Rest(cfg) = &mut op {
-        cfg.prev_tool_id = Some(ToolId(ROUGH_TOOL));
-    }
-    op
-}
-
-fn pocket_op() -> OperationConfig {
-    OperationConfig::Pocket(Default::default())
-}
-
-/// A state with two tools, two 2D models and one setup. No toolpaths yet.
-fn fresh_state() -> AppState {
-    let mut state = AppState::new();
-    state.session = ProjectSessionBuilder::new()
-        .tool(tool(ROUGH_TOOL, 10.0))
-        .tool(tool(REST_TOOL, 6.0))
-        .model(polygon_model(MODEL_A))
-        .model(polygon_model(MODEL_B))
-        .build();
-    state
-}
-
-/// A cached core result, standing for "this toolpath has been generated".
-fn generated_result() -> rs_cam_core::session::ToolpathComputeResult {
-    rs_cam_core::session::ToolpathComputeResult {
-        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
-            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                rs_cam_core::toolpath::Toolpath::new(),
-            ),
-        )),
-        stats: Default::default(),
-        debug_trace: None,
-        semantic_trace: None,
-    }
-}
-
-/// Add a toolpath to `setup_idx`, give it a generated result, return its id.
-fn add(state: &mut AppState, setup_idx: usize, tc: ToolpathConfig) -> ToolpathId {
-    let idx = state
-        .session
-        .apply(Command::AddToolpath(AddToolpathArgs {
-            setup_index: setup_idx,
-            config: Box::new(tc),
-        }))
-        .unwrap()
-        .created
-        .expect("the AddToolpath row reports the new toolpath index");
-    let id = state.session.toolpath_configs()[idx].id;
-    let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    state.gui.toolpath_rt.insert(id, rt);
-    let revision = state.session.toolpath_revision(idx);
-    let _ = state
-        .session
-        .apply(Command::AdoptResult(AdoptResultArgs {
-            index: idx,
-            revision,
-            result: Box::new(generated_result()),
-        }))
-        .expect("index is in range");
-    id
-}
-
-/// The `PrevTool` edge of `rest_id`, read through the one core door the
-/// card and the MCP wire both read.
-fn prev_tool_edge(session: &ProjectSession, rest_id: ToolpathId) -> EdgeState {
-    let edge = primary_edges(session)
-        .into_iter()
-        .find(|e| e.from == rest_id && e.kind == EdgeKind::PrevTool)
-        .expect("a Rest op always declares a PrevTool edge");
-    edge_state(&edge, session)
-}
-
-/// Does the static validator refuse this Rest op for want of a predecessor?
-fn validator_blocks(state: &AppState, rest_id: ToolpathId, model_id: usize) -> bool {
-    let tc = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == rest_id)
-        .expect("rest op is in the session");
-    let OperationConfig::Rest(rest_cfg) = &tc.operation else {
-        panic!("expected a Rest op");
-    };
-    let mut entry = ToolpathEntry::for_operation(
-        rest_id,
-        tc.name.clone(),
-        ToolId(REST_TOOL),
-        ModelId(model_id),
-        OperationType::Rest,
-    );
-    if let OperationConfig::Rest(cfg) = &mut entry.operation {
-        cfg.prev_tool_id = rest_cfg.prev_tool_id;
-    }
-    validate_toolpath(
-        &entry,
-        &ToolpathValidationContext::from_session(&state.session),
-    )
-    .iter()
-    .any(|e| e.contains(VALIDATOR_REFUSAL))
-}
-
-fn assert_agree(case: &str, state: &AppState, rest_id: ToolpathId, model_id: usize) -> EdgeState {
-    let edge = prev_tool_edge(&state.session, rest_id);
-    let refused = validator_blocks(state, rest_id, model_id);
-    assert_eq!(
-        edge == EdgeState::Broken,
-        refused,
-        "{case}: the connector reads {edge:?} while the validator refusal is \
-         {refused}. One rule, two surfaces (G-RESTBADGE)."
-    );
-    edge
-}
-
-#[test]
-fn a_predecessor_below_the_rest_op_is_broken_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let _below = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let edge = assert_agree("(a) predecessor below", &state, rest_id, MODEL_A);
-    assert_eq!(edge, EdgeState::Broken);
-}
-
-#[test]
-fn a_disabled_predecessor_above_is_broken_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let rough_id = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let rough_idx = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .position(|tc| tc.id == rough_id)
-        .unwrap();
-    let _ = state
-        .session
-        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
-            index: rough_idx,
-            enabled: false,
-        }))
-        .unwrap();
-    let edge = assert_agree("(b) predecessor disabled", &state, rest_id, MODEL_A);
-    assert_eq!(edge, EdgeState::Broken);
-}
-
-#[test]
-fn a_qualifying_predecessor_is_ready_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let _rough = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let edge = assert_agree("(c) qualifying predecessor", &state, rest_id, MODEL_A);
-    assert_eq!(
-        edge,
-        EdgeState::Ready,
-        "(c): a generated predecessor is Ready, not Pending"
-    );
-}
-
-/// The old `Stale` badge. A predecessor that has not generated is a WAIT.
-#[test]
-fn a_predecessor_that_has_not_generated_is_pending_g_connector() {
-    let mut state = fresh_state();
-    let rough_id = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let rough_idx = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .position(|tc| tc.id == rough_id)
-        .unwrap();
-    let _ = state
-        .session
-        .apply(Command::InvalidateToolpathInputs(
-            InvalidateToolpathInputsArgs { index: rough_idx },
-        ))
-        .unwrap();
-    let edge = assert_agree("(c2) pending predecessor", &state, rest_id, MODEL_A);
-    assert_eq!(
-        edge,
-        EdgeState::Pending,
-        "(c2): the predecessor exists, so the validator passes and the edge waits"
-    );
-}
-
-#[test]
-fn a_predecessor_in_another_setup_is_broken_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let flip = state
-        .session
-        .apply(Command::AddSetup(AddSetupArgs {
-            name: Some("Flip".to_owned()),
-            face_up: FaceUp::Bottom,
-        }))
-        .expect("the session accepts a second setup")
-        .created
-        .expect("the AddSetup row reports the new setup index");
-    let _other = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        flip,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let edge = assert_agree("(d) predecessor in another setup", &state, rest_id, MODEL_A);
-    assert_eq!(edge, EdgeState::Broken);
-}
-
-#[test]
-fn a_predecessor_on_another_model_is_broken_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let _other_model = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_B, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let edge = assert_agree("predecessor on another model", &state, rest_id, MODEL_A);
-    assert_eq!(edge, EdgeState::Broken);
-}
-
-#[test]
-fn a_predecessor_with_another_tool_is_broken_on_both_surfaces_g_connector() {
-    let mut state = fresh_state();
-    let _wrong_tool = add(
-        &mut state,
-        0,
-        toolpath("Pocket", REST_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath("Rest", REST_TOOL, MODEL_A, rest_op()),
-    );
-    let edge = assert_agree("predecessor with the wrong tool", &state, rest_id, MODEL_A);
-    assert_eq!(edge, EdgeState::Broken);
-}
-
-#[test]
-fn no_previous_tool_configured_is_broken_g_connector() {
-    let mut state = fresh_state();
-    let _rough = add(
-        &mut state,
-        0,
-        toolpath("Pocket", ROUGH_TOOL, MODEL_A, pocket_op()),
-    );
-    let rest_id = add(
-        &mut state,
-        0,
-        toolpath(
-            "Rest",
-            REST_TOOL,
-            MODEL_A,
-            OperationConfig::Rest(Default::default()),
-        ),
-    );
-    assert_eq!(prev_tool_edge(&state.session, rest_id), EdgeState::Broken);
 }
 
 // ── arm 3 — geometry ────────────────────────────────────────────────────

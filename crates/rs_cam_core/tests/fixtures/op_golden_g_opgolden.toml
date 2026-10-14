@@ -303,18 +303,6 @@ bbox_min = [-11.6857, -13.9961, 0.4796]
 bbox_max = [11.9043, 11.8467, 13.0]
 moves_hash = "41ec0ce23bebd38b"
 
-["rest/fresh"]
-outcome = "ok"
-move_count = 2558
-rapid_count = 261
-linear_count = 2297
-arc_count = 0
-cutting_length_mm = 2256.307
-rapid_length_mm = 2271.883
-bbox_min = [-16.825, -8.825, -6.0]
-bbox_max = [16.825, 8.175, 10.0]
-moves_hash = "755e83c39863c72d"
-
 ["scallop/continuous_flipped"]
 outcome = "ok"
 move_count = 537

@@ -2126,7 +2126,7 @@ fn append_air_cut_anomaly(
     let hint = {
         use crate::compute::catalog::OperationType;
         match context.operation_kind {
-            Some(OperationType::Adaptive3d | OperationType::Adaptive | OperationType::Rest) => {
+            Some(OperationType::Adaptive3d | OperationType::Adaptive) => {
                 " High values on roughing ops usually mean boundary/stepover tuning or stale remaining-stock assumptions."
             }
             Some(

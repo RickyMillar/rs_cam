@@ -69,7 +69,6 @@ fn fixtures() -> Vec<(OperationType, ToolType)> {
         (OperationType::Profile, ToolType::EndMill),
         (OperationType::Adaptive, ToolType::EndMill),
         (OperationType::VCarve, ToolType::VBit),
-        (OperationType::Rest, ToolType::EndMill),
         (OperationType::Inlay, ToolType::EndMill),
         (OperationType::Zigzag, ToolType::EndMill),
         (OperationType::DropCutter, ToolType::EndMill),

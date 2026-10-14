@@ -1,7 +1,8 @@
 //! **R2 / H3 — the adversarial 2D campaign.**
 //!
-//! Nine operation families (pocket, adaptive, profile, trace, zigzag, inlay,
-//! v-carve, rest, 2D-driven drill) against the hostile fixture library in
+//! Eight operation families (pocket, adaptive, profile, trace, zigzag, inlay,
+//! v-carve, 2D-driven drill; the Rest op was retired on 2026-10-14, ruling
+//! R3) against the hostile fixture library in
 //! `common::adversarial2d`, driven through the production funnel
 //! `ProjectSession::generate_toolpath` — the one entry point the GUI worker,
 //! the CLI and MCP all share.
@@ -49,7 +50,7 @@ use common::session::{polygon_model, toolpath_config};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::operation_configs::{
-    AdaptiveConfig, DrillConfig, InlayConfig, PocketConfig, ProfileConfig, RestConfig, TraceConfig,
+    AdaptiveConfig, DrillConfig, InlayConfig, PocketConfig, ProfileConfig, TraceConfig,
     VCarveConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -162,10 +163,6 @@ fn vbit() -> ToolConfig {
 
 /// Every 2D operation config the campaign drives, parameterised by the
 /// fixture's authored tool diameter.
-///
-/// `Rest` is absent on purpose: it needs a *second, larger* tool in the
-/// session and a `prev_tool_id` pointing at it, which changes the session
-/// shape rather than just the operation. [`rest_session`] builds that case.
 fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
     let stepover = tool_d * 0.4;
     vec![
@@ -302,35 +299,6 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
     session
 }
 
-/// Rest needs two tools: a larger previous one and the smaller one doing the
-/// rest pass. Below `tool_radius < prev_tool_radius` it returns empty by
-/// contract (`rest.rs:70`), so the sizes are not decorative.
-fn rest_session(fixture: &Fixture) -> ProjectSession {
-    let mut builder = ProjectSessionBuilder::new();
-    builder = builder.stock(stock_for(&fixture.polys));
-    let prev_idx = builder.add_tool(endmill(fixture.tool_d * 2.0));
-    let prev_id = builder.tools()[prev_idx].id;
-    let cur_idx = builder.add_tool(endmill(fixture.tool_d));
-    let cur_id = builder.tools()[cur_idx].id.0;
-    let model_id = builder.add_model(polygon_model(fixture.polys.clone(), fixture.name));
-    let mut session = builder.build();
-    let op = OperationConfig::Rest(RestConfig {
-        prev_tool_id: Some(prev_id),
-        stepover: fixture.tool_d * 0.4,
-        depth: DEPTH_MM,
-        depth_per_pass: DEPTH_MM,
-        ..RestConfig::default()
-    });
-    let cfg = toolpath_config(fixture.name, op, cur_id, model_id);
-    let _ = session
-        .apply(Command::AddToolpath(AddToolpathArgs {
-            setup_index: 0,
-            config: Box::new(cfg),
-        }))
-        .expect("add rest toolpath to a fresh session");
-    session
-}
-
 /// Announce a cell BEFORE running it.
 ///
 /// Not decoration. The wall-clock ceiling is checked *after* the generate
@@ -461,32 +429,13 @@ fn run_cell(
     Some(rec)
 }
 
-fn run_rest_cell(fixture: &Fixture) -> Option<RunRecord> {
-    if let Some(why) = fixture.skip_reason("rest") {
-        println!("··· SKIPPED rest × {} — {why}", fixture.name);
-        return None;
-    }
-    announce("rest", fixture.name);
-    let mut session = rest_session(fixture);
-    let rec = adv::run_op(&mut session, 0, "rest", fixture.name);
-    println!("{}", rec.row());
-    Some(rec)
-}
-
 /// Judge one record against the campaign's three failure conditions.
 fn violations(rec: &RunRecord, fixture: &Fixture, ceiling: Duration) -> Vec<String> {
     let mut out = Vec::new();
     if let Outcome::Panic(msg) = &rec.outcome {
         out.push(format!("{} × {}: PANIC — {msg}", rec.op, rec.fixture));
     }
-    // `rest` is exempt from the silent-empty gate, and the reason is
-    // geometric rather than convenient: rest machining's entire job is to
-    // cut what a LARGER previous tool could not reach, so on a fixture whose
-    // features are all bigger than that previous tool there is legitimately
-    // nothing to do, and `rest.rs:70` returns empty by contract when
-    // `tool_radius >= prev_tool_radius`. Its empties are RECORDED in the
-    // findings table instead of failing here.
-    if rec.op != "rest" && rec.is_silent_empty(fixture.expectation) {
+    if rec.is_silent_empty(fixture.expectation) {
         out.push(format!(
             "{} × {}: reported SUCCESS with zero cutting moves on a MustCut \
              fixture ({} moves total). An empty toolpath that reports success \
@@ -682,10 +631,6 @@ fn every_2d_operation_survives_its_worst_fixtures() {
                 rows.push(rec);
             }
         }
-        if let Some(rec) = run_rest_cell(f) {
-            failures.extend(violations(&rec, f, CI_CEILING));
-            rows.push(rec);
-        }
     }
 
     assert!(
@@ -693,12 +638,12 @@ fn every_2d_operation_survives_its_worst_fixtures() {
         "2D adversarial acceptance gate failed:\n{}",
         failures.join("\n")
     );
-    // Coverage, asserted rather than assumed: nine families ran.
+    // Coverage, asserted rather than assumed: eight families ran.
     let ops: std::collections::BTreeSet<&str> = rows.iter().map(|r| r.op.as_str()).collect();
     assert_eq!(
         ops.len(),
-        9,
-        "expected all nine 2D families to run, got {ops:?}"
+        8,
+        "expected all eight 2D families to run, got {ops:?}"
     );
 }
 
@@ -830,7 +775,7 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 // 4. The cancellation asymmetry, pinned
 // ---------------------------------------------------------------------------
 
-/// **All nine 2D families in this campaign now read their cancel flag.**
+/// **All eight 2D families in this campaign now read their cancel flag.**
 ///
 /// This test was called `exactly_two_2d_families_ignore_a_pre_set_cancel_flag`
 /// and it pinned F-4: `generate_rest` built no `cancel_fn` and called the
@@ -841,21 +786,18 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 /// two cancellable under Checkpoint C, Q3 turned it red, which is how this
 /// restatement came to be written on purpose rather than by drift.
 ///
-/// The fix (2026-08-05): `generate_rest` polls `ctx.cancel` as its first
-/// statement and runs its levels through `toolpath_at_levels_with_cancel`;
-/// `generate_drill` polls as its first statement. Both are also in
+/// The fix (2026-08-05): `generate_rest` (retired 2026-10-14) polled
+/// `ctx.cancel` as its first statement and ran its levels through
+/// `toolpath_at_levels_with_cancel`; `generate_drill` polls as its first
+/// statement. Both are also in
 /// `compute::execute`'s in-crate `cancellable_families_honour_a_preset_cancel_flag`
 /// case list, which is the coverage claim `ExecutionContext`'s doc says goes
 /// stale otherwise. Registry-wide that left AlignmentPinDrill and Chamfer,
-/// neither of which is in this campaign's nine; both were closed by S-5's
+/// neither of which was in this campaign's nine; both were closed by S-5's
 /// O-CANC item (2026-08-14), and that in-crate sentry now asserts its case
 /// list covers `OperationType::ALL` rather than carrying a hand-written
-/// count. This campaign's claim is unchanged — it is about these nine.
-///
-/// **Rest's first statement is the cancel check, ahead of its prev-tool
-/// precondition.** That ordering is deliberate and this test depends on it:
-/// a rest op with no previous tool would otherwise report the precondition
-/// error and a pre-set flag would look ignored.
+/// count. This campaign's claim is about these eight. (The Rest op was the
+/// ninth; it was retired on 2026-10-14, ruling R3.)
 ///
 /// The flag is set **synchronously, before the call**
 /// ([`adv::run_op_precancelled`]), and that detail is the whole test.
@@ -902,16 +844,6 @@ fn no_2d_family_ignores_a_pre_set_cancel_flag() {
             _ => ignored.push(name),
         }
     }
-    {
-        let mut session = rest_session(f);
-        let rec = adv::run_op_precancelled(&mut session, 0, "rest", f.name);
-        match &rec.outcome {
-            Outcome::Err(msg) if msg.to_ascii_lowercase().contains("cancel") => {
-                honoured.push("rest");
-            }
-            _ => ignored.push("rest"),
-        }
-    }
 
     ignored.sort_unstable();
     honoured.sort_unstable();
@@ -928,13 +860,12 @@ fn no_2d_family_ignores_a_pre_set_cancel_flag() {
     assert_eq!(
         honoured,
         vec![
-            "adaptive", "drill", "inlay", "pocket", "profile", "rest", "trace", "vcarve", "zigzag"
+            "adaptive", "drill", "inlay", "pocket", "profile", "trace", "vcarve", "zigzag"
         ],
-        "all nine read the flag at least once before emitting"
+        "all eight read the flag at least once before emitting"
     );
     // Reachability, so the list above cannot silently describe dead code.
     for op in [
-        OperationType::Rest,
         OperationType::Drill,
         OperationType::Profile,
         OperationType::Trace,
@@ -1006,7 +937,7 @@ fn cancellable_2d_families_return_after_the_flag_is_set() {
 /// growth, outcome, emitted topology, and a rendered toolpath for every cell
 /// that emitted anything.
 ///
-/// `#[ignore]` because it is nine families × twenty-two fixtures of hostile
+/// `#[ignore]` because it is eight families × twenty-two fixtures of hostile
 /// geometry in a debug build. Run it with:
 ///
 /// ```text
@@ -1041,7 +972,6 @@ fn adversarial_2d_full_campaign() {
             .into_iter()
             .map(|(n, o, k)| (n.to_owned(), o, k))
             .collect();
-        // Rest last, because it is the one that needs a second tool.
         for (name, op, kind) in cells.drain(..) {
             if !selected(only_ops.as_ref(), &name) {
                 continue;
@@ -1067,24 +997,6 @@ fn adversarial_2d_full_campaign() {
                 && let Some(r) = session.get_result(0)
                 && let Some(p) =
                     adv::write_toolpath_svg(f, r.toolpath(), &format!("{}_{}", name, f.name))
-            {
-                renders.push(p);
-            }
-        }
-        if selected(only_ops.as_ref(), "rest") && f.skip_reason("rest").is_none() {
-            announce("rest", f.name);
-            let mut session = rest_session(f);
-            let rec = adv::run_op(&mut session, 0, "rest", f.name);
-            failures.extend(violations(&rec, f, CEILING));
-            println!("{}", rec.row());
-            rows.push_str(&rec.row());
-            rows.push('\n');
-            record_row(&rec.row());
-            record_row(&probe_row("rest", f.name, &session));
-            if rec.moves > 0
-                && let Some(r) = session.get_result(0)
-                && let Some(p) =
-                    adv::write_toolpath_svg(f, r.toolpath(), &format!("rest_{}", f.name))
             {
                 renders.push(p);
             }

@@ -163,7 +163,6 @@ fn every_operation_declares_its_formula_source() {
             | OperationType::Profile
             | OperationType::Adaptive
             | OperationType::VCarve
-            | OperationType::Rest
             | OperationType::Inlay
             | OperationType::InlayPlug
             | OperationType::Zigzag
@@ -189,7 +188,7 @@ fn every_operation_declares_its_formula_source() {
              the registry row together."
         );
     }
-    assert_eq!(OperationType::ALL.len(), 25, "the operation count changed");
+    assert_eq!(OperationType::ALL.len(), 24, "the operation count changed");
 }
 
 /// (b) The resolver runs on every cell, agrees with the arm `calculate`
@@ -197,7 +196,7 @@ fn every_operation_declares_its_formula_source() {
 #[test]
 fn a_cell_with_a_vendor_row_is_vendor_backed() {
     let cells = every_cell();
-    assert_eq!(cells.len(), 25 * 5 * 4, "the matrix is not the full grid");
+    assert_eq!(cells.len(), 24 * 5 * 4, "the matrix is not the full grid");
 
     let mut vendor_backed = 0usize;
     let mut extrapolated = 0usize;

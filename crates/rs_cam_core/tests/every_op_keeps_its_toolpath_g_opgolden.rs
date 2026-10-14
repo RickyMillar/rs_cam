@@ -427,18 +427,6 @@ fn session_for(case: &Case) -> (ProjectSession, usize) {
         // The pin door snapshots the stock pins into the op; do the same.
         cfg.holes = vec![PIN_XY];
     }
-    if let OperationConfig::Rest(cfg) = &mut op {
-        // The Rest op models the corners a larger previous tool left. The
-        // op has no default for that tool, so the fixture adds one of twice
-        // the op tool's diameter.
-        let prev = ToolConfig {
-            diameter: 2.0 * builder.tools()[tool_idx].diameter,
-            ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
-        };
-        let prev_idx = builder.add_tool(prev);
-        cfg.prev_tool_id = Some(builder.tools()[prev_idx].id);
-    }
-
     if case.source == Source::Rest {
         // The prior op: a flat end mill, which every fixture admits.
         let prior_tool_idx =

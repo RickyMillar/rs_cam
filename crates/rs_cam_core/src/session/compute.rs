@@ -76,10 +76,9 @@ pub struct ResolvedGenInputs {
     /// Read it through [`Self::spatial_index`], never by hand.
     spatial_index: Option<Arc<crate::maps::geom_cache::LazyIndex>>,
     cutting_levels: Vec<f64>,
-    prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved real reference tool config when the Pencil op's
     /// `reference_tool_id` names a library tool. Resolved here (the context has
-    /// no tool list) exactly like `prev_tool_radius`.
+    /// no tool list).
     reference_tool_cfg: Option<ToolConfig>,
     operation: crate::compute::OperationConfig,
     pre_boundary: Option<crate::polygon::Polygon2>,
@@ -1103,7 +1102,6 @@ pub fn execute_generation(
         polygons: inputs.polygons.as_deref().map(|v| v.as_slice()),
         drill_targets: &inputs.drill_targets,
         setup_transform: inputs.setup_transform.as_ref(),
-        prev_tool_radius: inputs.prev_tool_radius,
         reference_tool_cfg: inputs.reference_tool_cfg.clone(),
         debug_ctx: observer.debug_ctx(),
         initial_stock: seed_stock,
@@ -1407,7 +1405,6 @@ pub fn execute_recommend_clearing_strategy(
             mesh: resolved.mesh.as_deref(),
             index: resolved.spatial_index(),
             polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-            prev_tool_radius: resolved.prev_tool_radius,
             boundary: resolved.pre_boundary.as_ref(),
             // Everything else stays at the constructor default. The probe
             // records no trace, seeds no stock, resolves no reference tool

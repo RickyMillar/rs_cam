@@ -528,40 +528,6 @@ impl Default for VCarveConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RestConfig {
-    pub prev_tool_id: Option<ToolId>,
-    pub stepover: f64,
-    pub depth: f64,
-    pub depth_per_pass: f64,
-    pub feed_rate: f64,
-    pub plunge_rate: f64,
-    /// Feed (mm/min) of a helix or ramp entry through material. `None`
-    /// uses the plunge feed (the behaviour before the field). A straight
-    /// feed through air and a straight plunge peck keep their own feeds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ramp_feed_rate: Option<f64>,
-    pub angle: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spindle_rpm: Option<u32>,
-}
-
-impl Default for RestConfig {
-    fn default() -> Self {
-        Self {
-            prev_tool_id: None,
-            stepover: 1.0,
-            depth: 6.0,
-            depth_per_pass: 2.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            ramp_feed_rate: None,
-            angle: 0.0,
-            spindle_rpm: None,
-        }
-    }
-}
-
 /// The default glue gap (mm) of an inlay: the vertical gap between the plug
 /// face and the pocket floor. The value is the default that the Inlay op
 /// shipped with before ruling R2; its help text gave the range
@@ -1089,8 +1055,8 @@ pub struct PencilConfig {
     pub rest_cell_mm: f64,
     /// R1: optional library tool id whose *real* cutter geometry defines the
     /// rest reference (all three detectors). `None` = legacy nominal-diameter
-    /// behaviour via `reference_tool_diameter`. Mirrors `RestConfig.prev_tool_id`
-    /// — `#[serde(default, skip_serializing_if)]` so older project files load
+    /// behaviour via `reference_tool_diameter`.
+    /// `#[serde(default, skip_serializing_if)]` so older project files load
     /// and files that never set it stay byte-identical on save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_tool_id: Option<ToolId>,
@@ -2351,15 +2317,6 @@ impl_operation_params!(VCarveConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_semantics: Explicit(max_depth)
-});
-
-impl_operation_params!(RestConfig {
-    plunge_rate: plunge_rate,
-    ramp_feed_rate: ramp_feed_rate,
-    stepover: stepover,
-    depth_per_pass: depth_per_pass,
-    total_depth: depth,
-    depth_semantics: Explicit(depth)
 });
 
 impl_operation_params!(InlayConfig {

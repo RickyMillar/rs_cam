@@ -1,14 +1,17 @@
 //! F-015 regression — op-precondition static validation rules for
-//! rest machining, drill, and project_curve must surface as
+//! drill and project_curve must surface as
 //! `Severity::Blocking` diagnostics through
 //! `ProjectSession::diagnose_toolpath_with_trace` so the MCP
 //! `add_toolpath` / `set_toolpath_param` `diagnostic_delta` carries them
 //! before generation.
 //!
-//! Before this fix the three preconditions only fired at generate time
+//! Before this fix the preconditions only fired at generate time
 //! (`compute::execute` returned `OperationError::MissingGeometry` /
 //! `OperationError::Other(...)`), leaving the GUI / MCP in a wedged
 //! state where the params panel said "OK" but Generate failed.
+//!
+//! The rest machining cases (acceptance test #1) went with the Rest
+//! operation on 2026-10-14 (ruling R3).
 
 #![allow(
     clippy::unwrap_used,
@@ -23,9 +26,7 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
-use rs_cam_core::compute::operation_configs::{
-    DrillConfig, PocketConfig, ProjectCurveConfig, RestConfig,
-};
+use rs_cam_core::compute::operation_configs::{DrillConfig, ProjectCurveConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
@@ -123,121 +124,6 @@ fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> 
 
 fn has_id(diags: &[Diagnostic], id: &str) -> bool {
     diags.iter().any(|d| d.id.as_str() == id)
-}
-
-// ── Rest machining (Acceptance test #1) ─────────────────────────────
-
-#[test]
-fn rest_op_without_prior_enabled_tool_surfaces_blocking_diagnostic() {
-    let mut builder = ProjectSessionBuilder::new();
-    let mut t_small = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    t_small.diameter = 3.0;
-    let mut t_large = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    t_large.diameter = 6.0;
-    builder.add_tool(t_small);
-    builder.add_tool(t_large);
-    let mid = builder.add_model(polygon_model(0));
-
-    // Rest op with prev_tool_id = the 6 mm tool, but nothing earlier in
-    // the setup uses it. Generation will fail at runtime — diagnose
-    // must surface that before that point.
-    let rest_cfg = RestConfig {
-        prev_tool_id: Some(ToolId(1)),
-        ..RestConfig::default()
-    };
-    let idx = builder
-        .add_toolpath(
-            0,
-            make_tp("rest_dangler", OperationConfig::Rest(rest_cfg), 0, mid),
-        )
-        .unwrap();
-    let session = builder.build();
-
-    let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
-    assert!(
-        has_id(&diags, ids::PRECOND_REST_NO_PRIOR),
-        "expected PRECOND_REST_NO_PRIOR, got {:?}",
-        diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
-    );
-    let diag = diags
-        .iter()
-        .find(|d| d.id.as_str() == ids::PRECOND_REST_NO_PRIOR)
-        .unwrap();
-    assert_eq!(diag.severity, Severity::Blocking);
-}
-
-#[test]
-fn rest_op_without_prev_tool_id_surfaces_blocking_diagnostic() {
-    let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    tool.diameter = 3.0;
-    builder.add_tool(tool);
-    let mid = builder.add_model(polygon_model(0));
-
-    let rest_cfg = RestConfig {
-        prev_tool_id: None,
-        ..RestConfig::default()
-    };
-    let idx = builder
-        .add_toolpath(
-            0,
-            make_tp("rest_no_prev", OperationConfig::Rest(rest_cfg), 0, mid),
-        )
-        .unwrap();
-    let session = builder.build();
-
-    let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
-    assert!(
-        has_id(&diags, ids::PRECOND_REST_PREV_TOOL_MISSING),
-        "expected PRECOND_REST_PREV_TOOL_MISSING, got {:?}",
-        diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn rest_op_with_correct_prior_is_silent() {
-    let mut builder = ProjectSessionBuilder::new();
-    let mut t_small = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-    t_small.diameter = 3.0;
-    let mut t_large = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    t_large.diameter = 6.0;
-    builder.add_tool(t_small);
-    builder.add_tool(t_large);
-    let mid = builder.add_model(polygon_model(0));
-
-    // Prior op uses the large tool.
-    let _ = builder
-        .add_toolpath(
-            0,
-            make_tp(
-                "rough",
-                OperationConfig::Pocket(PocketConfig::default()),
-                1,
-                mid,
-            ),
-        )
-        .unwrap();
-    // Rest op references it.
-    let rest_cfg = RestConfig {
-        prev_tool_id: Some(ToolId(1)),
-        ..RestConfig::default()
-    };
-    let idx = builder
-        .add_toolpath(
-            0,
-            make_tp("rest_clean", OperationConfig::Rest(rest_cfg), 0, mid),
-        )
-        .unwrap();
-    let session = builder.build();
-
-    let diags = session.diagnose_toolpath_with_trace(idx, None).unwrap();
-    assert!(
-        !has_id(&diags, ids::PRECOND_REST_NO_PRIOR),
-        "rest precondition must clear when a prior enabled op uses the prev tool: {:?}",
-        diags.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()
-    );
-    assert!(!has_id(&diags, ids::PRECOND_REST_PREV_TOOL_MISSING));
-    assert!(!has_id(&diags, ids::PRECOND_REST_PREV_TOOL_NOT_LARGER));
 }
 
 // ── ProjectCurve (Acceptance test #2) ───────────────────────────────

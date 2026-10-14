@@ -195,7 +195,7 @@ pub struct GenerateAllParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct OperationSchemaParam {
-    /// Operation type (e.g. "pocket", "adaptive3d", "rest")
+    /// Operation type (e.g. "pocket", "adaptive3d", "drill")
     pub operation_type: String,
 }
 
@@ -1451,7 +1451,7 @@ pub struct SimJumpToToolpathBoundaryParam {
 /// Parse a string into an `OperationType` (snake_case).
 pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
     serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, rest, inlay, inlay_plug, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
+        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, inlay, inlay_plug, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
 }
 
 /// Parse a string into a `ToolType`.

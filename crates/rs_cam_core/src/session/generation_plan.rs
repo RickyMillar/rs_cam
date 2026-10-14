@@ -11,9 +11,9 @@
 //!
 //! Setup order is plan order. Inside a setup the order is
 //! `SetupData::toolpath_indices`, which is NOT the numeric index order. That
-//! is the only order in which a Regions or a PrevTool source is guaranteed
-//! earlier than its consumer, so those two edge kinds need no step of their
-//! own: the walk already generates the source first.
+//! is the only order in which a Regions source is guaranteed earlier than
+//! its consumer, so that edge kind needs no step of its own: the walk
+//! already generates the source first.
 //!
 //! # One Simulate step per rest operation (the F.4 property)
 //!
@@ -74,8 +74,8 @@
 //! - it holds no result now; or
 //! - it starts from the remaining stock and a row earlier in carve order is
 //!   in the set (rule (2) or (3) then drops its result); or
-//! - an edge of it names a row in the set (an adopt walks the Regions and
-//!   PrevTool dependents and drops their results).
+//! - an edge of it names a row in the set (an adopt walks the Regions
+//!   dependents and drops their results).
 //!
 //! A rest operation gets a Simulate step when its snapshot is not current,
 //! or when a row of the set comes after the last Simulate step. A row with

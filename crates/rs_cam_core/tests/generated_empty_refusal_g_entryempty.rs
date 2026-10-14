@@ -24,7 +24,6 @@
 //! | `a_pocket_the_tool_fits_cuts_something` | **non-vacuity** — the fixture cuts before anything is asked of the gate |
 //! | `a_pocket_whose_offsets_collapse_is_refused_not_reported_as_done` | the refusal, and that it is [`SessionError::GeneratedEmpty`] rather than prose in `OperationFailed` |
 //! | `a_refused_generation_leaves_no_cached_result` | the half of the refusal that de-poisons: nothing is cached |
-//! | `a_rest_operation_that_finds_nothing_still_succeeds` | the exemption, without which rest chains break |
 //! | `an_empty_generation_does_not_stop_the_next_one` | G-STICKYEMPTY on the fresh-stock path: empty → known-good params → cuts again, no reload |
 //! | `an_empty_rest_pass_keeps_its_prior_stock_snapshot` | G-STICKYEMPTY's **mechanism**: the phantom-prior-stock scan vs. the short-toolpath filter |
 //!
@@ -58,7 +57,7 @@ use common::tools::endmill_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::session::{
     Command, ProjectSession, ProjectSessionBuilder, SessionError, SetToolParamArgs,
     SimulationOptions,
@@ -189,50 +188,6 @@ fn a_refused_generation_leaves_no_cached_result() {
         "a refused generation must cache nothing — a 0-move result left in \
          `session.results` is exportable, simulatable, and counts as \
          'generated' to the phantom-prior-stock scan"
-    );
-}
-
-// ── The exemption that keeps rest chains working ────────────────────────
-
-/// A `Rest` operation returns empty **by contract** when its tool is not
-/// finer than the previous one, and rest machining generally is empty
-/// whenever the upstream genuinely left nothing. Refusing that would wedge
-/// the chains `generate_all(fixpoint: true)` exists to walk, so the gate
-/// exempts it — the same carve-out `adversarial_2d_campaign_r2.rs` already
-/// makes in its silent-empty gate, for the same geometric reason.
-///
-/// Note what is NOT asserted: that `zero_removal` fires. It cannot. That
-/// finding measures engagement of *emitted cutting geometry* against a
-/// reference stock, and an empty toolpath samples zero positions — which
-/// X-19 rules is "not measured", not "measured zero". An empty rest pass is
-/// reported by its move count and by the generator's log line, not by
-/// `zero_removal`.
-#[test]
-fn a_rest_operation_that_finds_nothing_still_succeeds() {
-    let mut builder = ProjectSessionBuilder::new();
-    builder = builder.stock(stock_under(HALF, STOCK_Z));
-    let prev_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
-    let prev_id = builder.tools()[prev_idx].id;
-    let cur_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
-    let cur_tool = builder.tools()[cur_idx].id.0;
-    let model_id = builder.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
-    let op = OperationConfig::Rest(RestConfig {
-        prev_tool_id: Some(prev_id),
-        stepover: 2.0,
-        depth: 3.0,
-        depth_per_pass: 3.0,
-        ..RestConfig::default()
-    });
-    let _ = builder
-        .add_toolpath(0, toolpath_config("Rest", op, cur_tool, model_id))
-        .expect("add rest toolpath");
-    let mut session = builder.build();
-
-    generate(&mut session, 0).expect("an empty rest pass is a legitimate result, not a refusal");
-    assert_eq!(
-        cutting_moves(&session, 0),
-        0,
-        "fixture is vacuous: this rest pass was supposed to find nothing"
     );
 }
 

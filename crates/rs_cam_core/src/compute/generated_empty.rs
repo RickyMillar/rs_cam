@@ -34,7 +34,7 @@
 //! # What is deliberately NOT refused
 //!
 //! An empty result is legitimate whenever the *region* the operation was
-//! pointed at can itself be empty. Five such cases, and each one is a
+//! pointed at can itself be empty. Four such cases, and each one is a
 //! ruling rather than a convenience:
 //!
 //! * **Rest machining** ([`StockSource::FromRemainingStock`], or any op
@@ -42,10 +42,6 @@
 //!   an upstream op left; when the upstream genuinely left nothing there is
 //!   nothing to do. Refusing here would wedge exactly the chains
 //!   `generate_all(fixpoint: true)` exists to walk.
-//! * **`Rest` operations.** `rest.rs` returns empty *by contract* when
-//!   `tool_radius >= prev_tool_radius`. This is the same exemption
-//!   `tests/adversarial_2d_campaign_r2.rs` already carves out of its
-//!   silent-empty gate, and for the same geometric reason.
 //! * **A `DerivedRestRegions` boundary.** That boundary source means "cut
 //!   only what the named op left" — a rest-shaped intent expressed through
 //!   the boundary rather than the stock source.
@@ -119,8 +115,6 @@ pub struct EmptyGenerationInputs<'a> {
 pub enum LegitimateEmptyReason {
     /// Seeded with (or configured for) a machined-stock snapshot.
     RestMachining,
-    /// An `OperationType::Rest` op; `rest.rs` returns empty by contract.
-    RestOperation,
     /// The enabled boundary is `DerivedRestRegions`.
     DerivedRestBoundary,
     /// A drill cycle: its region is a hole list, not material.
@@ -139,10 +133,6 @@ impl LegitimateEmptyReason {
         match self {
             Self::RestMachining => {
                 "it reads remaining stock, and the upstream operations left nothing to cut"
-            }
-            Self::RestOperation => {
-                "a rest operation returns empty by contract when its tool is not finer than the \
-                 previous one"
             }
             Self::DerivedRestBoundary => {
                 "its boundary is derived from another operation's rest regions, which can be empty"
@@ -296,9 +286,6 @@ pub fn classify(toolpath: &Toolpath, inputs: &EmptyGenerationInputs<'_>) -> Empt
     }
     if inputs.seeded_machined_stock || inputs.stock_source == StockSource::FromRemainingStock {
         return EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::RestMachining);
-    }
-    if op_type == OperationType::Rest {
-        return EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::RestOperation);
     }
     if inputs.boundary_is_derived_rest_regions {
         return EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::DerivedRestBoundary);

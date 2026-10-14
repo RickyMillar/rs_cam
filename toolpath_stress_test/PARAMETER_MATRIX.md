@@ -95,20 +95,6 @@ Source: `VCarveConfig` → `VCarveParams` (`vcarve.rs`)
 
 **Note**: Tool half-angle is derived from the V-bit tool geometry, not a separate parameter.
 
-### Rest Machining
-
-Source: `RestConfig` → `RestParams` (`rest.rs`)
-
-| Config field | Core field | GUI | Default | Range | Expected effect | Validation |
-|---|---|---|---|---|---|---|
-| `prev_tool_id` | `prev_tool_radius` | Yes | None | tool list | Previous larger tool; determines rest region geometry | visual: only cuts where prev tool couldn't reach |
-| `stepover` | `stepover` | Yes | 1.0 mm | 0.05–50 | Scan line spacing | visual: pass density |
-| `depth` | `cut_depth` | Yes | 6.0 mm | 0.1–100 | Cut depth | sim: floor Z |
-| `depth_per_pass` | (via DepthStepping) | Yes | 2.0 mm | 0.1–50 | Z per pass | gcode: Z level count |
-| `feed_rate` | `feed_rate` | Yes | 1000 mm/min | 1–50000 | Cutting feed rate | gcode: F value |
-| `plunge_rate` | `plunge_rate` | Yes | 500 mm/min | 1–10000 | Plunge feed rate | gcode: F value |
-| `angle` | `angle` | Yes | 0.0 deg | 0–360 | Scan line angle | visual: line orientation |
-
 ### Inlay
 
 Source: `InlayConfig` → `InlayPocketParams` (`inlay.rs`). V walls only (ruling R2).

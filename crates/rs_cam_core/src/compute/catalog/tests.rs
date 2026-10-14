@@ -7,7 +7,7 @@ use crate::feeds::CutterKind;
 
 #[test]
 fn operation_catalog_is_exhaustive_and_consistent() {
-    assert_eq!(OperationType::ALL.len(), 25);
+    assert_eq!(OperationType::ALL.len(), 24);
     for &op_type in OperationType::ALL {
         let config = OperationConfig::new_default(op_type);
         assert_eq!(config.op_type(), op_type);
@@ -252,8 +252,9 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
         }
         assert_eq!(schema.supports_v_bit, tc.supports_v_bit);
     }
+    // 16 since ruling R3 (2026-10-14) retired the Rest operation.
     assert_eq!(
-        unrestricted, 17,
+        unrestricted, 16,
         "unrestricted-op count changed — decide deliberately"
     );
 }
@@ -541,7 +542,6 @@ fn operation_type_serde_repr_pinned() {
         ("profile", OperationType::Profile),
         ("adaptive", OperationType::Adaptive),
         ("v_carve", OperationType::VCarve),
-        ("rest", OperationType::Rest),
         ("inlay", OperationType::Inlay),
         ("inlay_plug", OperationType::InlayPlug),
         ("zigzag", OperationType::Zigzag),
@@ -646,9 +646,9 @@ fn operation_transform_capabilities_are_explicit() {
         !adaptive.allows_unbarriered_rapid_reorder(),
         "2D Adaptive must veto unbarriered rapid-order permutation"
     );
-    // Rest frames every scan segment with its own rapids: no order veto.
+    // Pocket shares the plain 2.5D capability row: no order veto.
     assert!(
-        OperationType::Rest
+        OperationType::Pocket
             .transform_capabilities()
             .allows_barriered_rapid_reorder()
     );
@@ -783,7 +783,6 @@ fn air_cut_threshold_band_for_clearing_ops() {
         OperationType::Pocket,
         OperationType::Face,
         OperationType::Zigzag,
-        OperationType::Rest,
     ] {
         let t = op
             .air_cut_high_threshold_pct()

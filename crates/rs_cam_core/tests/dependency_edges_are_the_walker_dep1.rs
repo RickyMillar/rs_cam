@@ -19,19 +19,17 @@
 //!    `a_setup_one_edit_drops_setup_twos_rest_chain`: R2, the cross-setup
 //!    Stock edge.
 //! 5. `regenerating_a_source_drops_its_consumers`: D1. Adopting a result
-//!    for a source drops its Regions and PrevTool consumers, leaves its
+//!    for a source drops its Regions consumers, leaves its
 //!    Stock consumers alone, and keeps the simulation.
 //! 6. `edge_state_reads_the_session`: the three `EdgeState` answers, and
 //!    the split that makes them differ: the edit door clears the
 //!    simulation, the adopt door does not.
-//! 6. `the_two_enums_carry_their_own_wire_words`: the six tokens, exactly.
+//! 6. `the_two_enums_carry_their_own_wire_words`: the five tokens, exactly.
 //!    W5 hand-mapped them in `app/mcp/project.rs` because the enums carried
 //!    no serde; the derive replaced that map, so this file owns the words.
 //!
 //! Read `edges()` AFTER `apply`, never before. The walker derives its edges
-//! after the mutation wrote, so a pre-apply snapshot of the disable case
-//! still holds `rest2d -> rough` and predicts a drop the walker never
-//! makes.
+//! after the mutation wrote.
 //!
 //! The fixture builds no geometry, so the file runs in seconds.
 
@@ -50,7 +48,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::simulate::SimulationResult;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
@@ -69,15 +67,14 @@ use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
-// ── the seven rows ───────────────────────────────────────────────
+// ── the six rows ─────────────────────────────────────────────────
 
 const ROUGH: usize = 0;
 const PROFILE: usize = 1;
 const FINISH: usize = 2;
 const LAKES: usize = 3;
-const REST2D: usize = 4;
-const BACK_ROUGH: usize = 5;
-const BACK_FINISH: usize = 6;
+const BACK_ROUGH: usize = 4;
+const BACK_FINISH: usize = 5;
 
 /// The one feed value the edit arms write.
 const EDITED_FEED_RATE: f64 = 4321.0;
@@ -232,20 +229,18 @@ fn id_of(session: &ProjectSession, index: usize) -> ToolpathId {
     session.toolpath_configs()[index].id
 }
 
-/// Two setups, seven rows, one model, two tools.
+/// Two setups, six rows, one model, two tools.
 ///
 /// Setup 1: `0` rough (`Fresh`, rough tool); `1` profile (`Fresh`, fine
 /// tool); `2` finish (`FromRemainingStock`); `3` lakes (`Fresh`, boundary
-/// `DerivedRestRegions` on `0`); `4` rest2d (`Rest` with
-/// `prev_tool_id = rough`).
+/// `DerivedRestRegions` on `0`).
 ///
-/// Setup 2: `5` back rough (`Fresh`, rough tool); `6` back finish
+/// Setup 2: `4` back rough (`Fresh`, rough tool); `5` back finish
 /// (`FromRemainingStock`).
 ///
 /// Index 1 is the non-vacuity of "many Stock edges, not just the nearest":
 /// it sits between the edited row and the consumer and declares nothing.
-/// Setup 2 is the non-vacuity of the setup scope. Only `0` and `5` carry
-/// the rough tool, so index 4's PrevTool edge can land nowhere else.
+/// Setup 2 is the non-vacuity of the setup scope.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
@@ -311,22 +306,6 @@ fn fixture() -> ProjectSession {
         .unwrap();
     let _ = builder
         .add_toolpath(
-            0,
-            tc(
-                "rest2d",
-                OperationConfig::Rest(RestConfig {
-                    prev_tool_id: Some(ToolId(rough_tool)),
-                    ..RestConfig::default()
-                }),
-                StockSource::Fresh,
-                fine_tool,
-                model,
-                plain.clone(),
-            ),
-        )
-        .unwrap();
-    let _ = builder
-        .add_toolpath(
             setup_2,
             tc(
                 "back rough",
@@ -368,7 +347,7 @@ fn fixture() -> ProjectSession {
             },
         }))
         .expect("the boundary door writes a derived source");
-    for index in 0..7 {
+    for index in 0..6 {
         let regions = (index == ROUGH).then(|| vec![a_square()]);
         adopt(&mut session, index, regions);
     }
@@ -380,10 +359,10 @@ fn fixture() -> ProjectSession {
 fn assert_fixture_is_live(session: &ProjectSession) {
     assert_eq!(
         session.toolpath_count(),
-        7,
-        "the fixture holds seven toolpaths"
+        6,
+        "the fixture holds six toolpaths"
     );
-    for index in 0..7 {
+    for index in 0..6 {
         assert!(
             session.get_result(index).is_some(),
             "row {index} starts with a cached result"
@@ -411,15 +390,10 @@ fn edges_name_every_declaration() {
 
     let stock: Vec<&Edge> = all.iter().filter(|e| e.kind == EdgeKind::Stock).collect();
     let regions: Vec<&Edge> = all.iter().filter(|e| e.kind == EdgeKind::Regions).collect();
-    let prev: Vec<&Edge> = all
-        .iter()
-        .filter(|e| e.kind == EdgeKind::PrevTool)
-        .collect();
 
     // Non-vacuity: one edge of each kind exists.
     assert!(!stock.is_empty(), "the fixture declares a Stock edge");
     assert_eq!(regions.len(), 1, "the fixture declares one Regions edge");
-    assert_eq!(prev.len(), 1, "the fixture declares one PrevTool edge");
 
     // Stock: MANY edges for `finish`, one per op above it in its setup.
     let finish_sources: BTreeSet<Option<ToolpathId>> = stock
@@ -453,16 +427,6 @@ fn edges_name_every_declaration() {
         regions[0].on,
         Some(id_of(&session, ROUGH)),
         "the Regions edge names the source the boundary declares"
-    );
-    assert_eq!(
-        prev[0].from,
-        id_of(&session, REST2D),
-        "the Rest op declares the PrevTool edge"
-    );
-    assert_eq!(
-        prev[0].on,
-        Some(id_of(&session, ROUGH)),
-        "the PrevTool edge lands on the enabled same-setup predecessor with that cutter"
     );
 
     // A row that declares nothing gets no edge.
@@ -610,7 +574,7 @@ fn every_walker_drop_is_an_edge() {
 
 /// The walker's fixpoint, computed HERE from `edges()` alone.
 ///
-/// Stock hits on the chain-dirty set; Regions and PrevTool hit on the
+/// Stock hits on the chain-dirty set; Regions hits on the
 /// dirty set. A dropped enabled consumer joins the chain-dirty set.
 fn predicted_drops(session: &ProjectSession, arm: &Arm) -> BTreeSet<usize> {
     let all = edges(session);
@@ -636,7 +600,7 @@ fn predicted_drops(session: &ProjectSession, arm: &Arm) -> BTreeSet<usize> {
             let Some(source_id) = edge.on else { continue };
             let hit = match edge.kind {
                 EdgeKind::Stock => chain_ids.contains(&source_id),
-                EdgeKind::Regions | EdgeKind::PrevTool => dirty_ids.contains(&source_id),
+                EdgeKind::Regions => dirty_ids.contains(&source_id),
             };
             let Some(&index) = index_of.get(&edge.from) else {
                 continue;
@@ -681,16 +645,14 @@ fn every_edge_drop_the_rules_predict_is_made() {
 #[test]
 fn the_arms_drop_the_named_rows() {
     let table: [(&str, BTreeSet<usize>); 4] = [
-        // The Stock consumer, the Regions consumer, and (rule (c)) the
-        // Rest consumer.
-        ("edit rough", BTreeSet::from([FINISH, LAKES, REST2D])),
-        // The predecessor is now disabled, so the PrevTool edge resolves
-        // to nothing and rule (c) does not fire.
+        // The Stock consumer and the Regions consumer.
+        ("edit rough", BTreeSet::from([FINISH, LAKES])),
+        // The same two: a disabled source still moves the material.
         ("disable rough", BTreeSet::from([FINISH, LAKES])),
         // Nothing in the project depends on `finish`.
         ("edit finish", BTreeSet::new()),
-        // D1: rules (b) and (c) only.
-        ("adopt rough", BTreeSet::from([LAKES, REST2D])),
+        // D1: rule (b) only.
+        ("adopt rough", BTreeSet::from([LAKES])),
     ];
     for arm in arms() {
         let expected = &table
@@ -862,16 +824,12 @@ fn regenerating_a_source_drops_its_consumers() {
 
     assert_eq!(
         stale,
-        BTreeSet::from([LAKES, REST2D]),
-        "an adopt stales the Regions and PrevTool consumers, and nothing else"
+        BTreeSet::from([LAKES]),
+        "an adopt stales the Regions consumers, and nothing else"
     );
     assert!(
         session.get_result(LAKES).is_none(),
         "the Regions consumer's result is gone"
-    );
-    assert!(
-        session.get_result(REST2D).is_none(),
-        "the PrevTool consumer's result is gone"
     );
     assert!(
         session.get_result(ROUGH).is_some(),
@@ -927,11 +885,6 @@ fn edge_state_reads_the_session() {
         EdgeState::Ready,
         "a Regions edge whose source's RESULT carries regions is Ready"
     );
-    assert_eq!(
-        state_of(&session, REST2D, EdgeKind::PrevTool),
-        EdgeState::Ready,
-        "a PrevTool edge whose predecessor has generated is Ready"
-    );
 
     // The edit door clears the simulation, so the snapshot goes.
     let mut edited = fixture();
@@ -951,14 +904,9 @@ fn edge_state_reads_the_session() {
         "an adopt keeps the simulation, so the Stock edge stays Ready"
     );
 
-    // A disabled source breaks both of its edges.
+    // A disabled source breaks its edges.
     let mut disabled = fixture();
     let _ = disable_rough(&mut disabled);
-    assert_eq!(
-        state_of(&disabled, REST2D, EdgeKind::PrevTool),
-        EdgeState::Broken,
-        "a disabled op is not a predecessor, so the edge resolves to nothing"
-    );
     let stock_on_rough = edges(&disabled)
         .into_iter()
         .find(|e| {
@@ -990,7 +938,7 @@ fn edge_state_reads_the_session() {
     );
 }
 
-/// The six wire words, on the enums and nowhere else.
+/// The five wire words, on the enums and nowhere else.
 ///
 /// W5 wrote these tokens a second time, in `app/mcp/project.rs`, because
 /// neither enum derived serde. The derive deleted that map. A fourth arm
@@ -998,11 +946,7 @@ fn edge_state_reads_the_session() {
 /// or it does not compile.
 #[test]
 fn the_two_enums_carry_their_own_wire_words() {
-    for (kind, token) in [
-        (EdgeKind::Stock, "stock"),
-        (EdgeKind::Regions, "regions"),
-        (EdgeKind::PrevTool, "prev_tool"),
-    ] {
+    for (kind, token) in [(EdgeKind::Stock, "stock"), (EdgeKind::Regions, "regions")] {
         assert_eq!(
             serde_json::to_value(kind).expect("EdgeKind serialises"),
             serde_json::Value::String(token.to_owned()),

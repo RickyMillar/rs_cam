@@ -364,9 +364,6 @@ pub const STALE_PROJECT_CURVE_NEGATIVE_DEPTH: &str = "stale.project_curve_negati
 // the problem on the Params tab before clicking Generate. Each rule
 // mirrors a runtime check that previously bubbled up as a generation
 // error.
-pub const PRECOND_REST_NO_PRIOR: &str = "precondition.rest_no_prior";
-pub const PRECOND_REST_PREV_TOOL_MISSING: &str = "precondition.rest_prev_tool_missing";
-pub const PRECOND_REST_PREV_TOOL_NOT_LARGER: &str = "precondition.rest_prev_tool_not_larger";
 pub const PRECOND_DRILL_NO_HOLES: &str = "precondition.drill_no_holes";
 pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str = "precondition.alignment_pin_drill_no_holes";
 pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
@@ -465,9 +462,6 @@ pub const ALL: &[&str] = &[
     STALE_TAPERED_BALL_PLUNGE,
     STALE_WOOD_ADAPTIVE_STEPOVER,
     STALE_PROJECT_CURVE_NEGATIVE_DEPTH,
-    PRECOND_REST_NO_PRIOR,
-    PRECOND_REST_PREV_TOOL_MISSING,
-    PRECOND_REST_PREV_TOOL_NOT_LARGER,
     PRECOND_DRILL_NO_HOLES,
     PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
     PRECOND_PROJECT_CURVE_NO_CURVE,

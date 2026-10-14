@@ -2,8 +2,7 @@ use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{
     AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, InlayPlugConfig,
-    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig,
-    ZigzagConfig,
+    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, VCarveConfig, ZigzagConfig,
 };
 
 use super::super::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
@@ -420,72 +419,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
             " mm",
             0.01,
             0.01..=1.0,
-        );
-    });
-}
-
-pub(in crate::ui::properties) fn draw_rest_params(
-    ui: &mut egui::Ui,
-    cfg: &mut RestConfig,
-    tools: &[(crate::state::job::ToolId, String, f64)],
-    pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-) {
-    let stepover_sugg = pills.map(PillSuggestions::stepover);
-    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("rest_p", |ui| {
-        ui.label("Previous Tool:");
-        let prev_label = cfg
-            .prev_tool_id
-            .and_then(|pid| tools.iter().find(|(id, _, _)| *id == pid))
-            .map(|(_, s, _)| s.as_str())
-            .unwrap_or("(select)");
-        egui::ComboBox::from_id_salt("rest_prev_tool")
-            .truncate()
-            .selected_text(prev_label)
-            .show_ui(ui, |ui| {
-                for (id, name, _) in tools {
-                    let selected = cfg.prev_tool_id == Some(*id);
-                    if ui.selectable_label(selected, name.as_str()).clicked() {
-                        cfg.prev_tool_id = Some(*id);
-                    }
-                }
-            });
-        ui.end_row();
-        dv_pill(
-            ui,
-            p(OperationType::Rest, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            0.05..=50.0,
-            stepover_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Rest, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-            0.1..=100.0,
-        );
-        depth_caution_row(ui, depth_caution);
-        dv_pill(
-            ui,
-            p(OperationType::Rest, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            0.1..=50.0,
-            dpp_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Rest, "angle", "Angle:"),
-            &mut cfg.angle,
-            " deg",
-            1.0,
-            0.0..=360.0,
         );
     });
 }

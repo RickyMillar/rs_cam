@@ -26,7 +26,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
@@ -192,7 +192,7 @@ fn set_alignment_pins_stales_the_pin_drill_and_not_the_pocket() {
 fn set_alignment_pins_stales_what_depends_on_the_pin_drill() {
     let rest = tc(
         "rest",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
     );
     let mut s = session_with(vec![pocket(), pin_drill(), rest]);

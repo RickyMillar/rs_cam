@@ -764,7 +764,7 @@ pub fn predict_move_count(
         }
         // Pocket: bbox area / (stepover × stepover) — full cell at the
         // suggested stepover, no adaptive narrow-WOC discount.
-        OperationType::Pocket | OperationType::Rest => {
+        OperationType::Pocket => {
             let cell = stepover * stepover;
             if cell <= 0.0 {
                 return 0;

@@ -145,7 +145,6 @@ pub const fn link_ceiling_need(op: OperationType) -> LinkCeilingNeed {
         | OperationType::Profile
         | OperationType::Adaptive
         | OperationType::VCarve
-        | OperationType::Rest
         | OperationType::Inlay
         | OperationType::InlayPlug
         | OperationType::Zigzag

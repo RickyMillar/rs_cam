@@ -32,7 +32,7 @@
 //!
 //! # N9 runtime-red extension
 //!
-//! N9 adds Rest and dangling-model fixtures for the former context
+//! N9 adds precondition and dangling-model fixtures for the former context
 //! asymmetry. The ribbon arm calls `toolpath_panel_snapshot`, the same owned
 //! entry + context assembly helper used by the production `draw` caller, and
 //! the GUI collector requires both contexts. These arms therefore fail if
@@ -69,8 +69,6 @@ use rs_cam_viz::state::runtime::GuiState;
 use rs_cam_viz::ui::properties::{collect_diagnostics, toolpath_panel_snapshot};
 
 const TOOL: usize = 1;
-const REST_TOOL: usize = 2;
-const PREVIOUS_TOOL: usize = 3;
 const MODEL_2D: usize = 4;
 const STOCK_THICKNESS_MM: f64 = 18.0;
 
@@ -144,14 +142,10 @@ fn pinned(reference: HeightReference, offset: f64) -> HeightMode {
     HeightMode::FromReference(ReferenceOffset { reference, offset })
 }
 
-/// Three tools, one 2D model, an 18 mm board, one setup.
+/// One tool, one 2D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    let mut rest_tool = ToolConfig::new_default(ToolId(REST_TOOL), ToolType::EndMill);
-    rest_tool.diameter = 3.0;
-    let mut previous_tool = ToolConfig::new_default(ToolId(PREVIOUS_TOOL), ToolType::EndMill);
-    previous_tool.diameter = 6.0;
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
         auto_from_model: false,
@@ -159,8 +153,6 @@ fn session() -> ProjectSession {
     };
     ProjectSessionBuilder::new()
         .tool(tool)
-        .tool(rest_tool)
-        .tool(previous_tool)
         .model(polygon_model(MODEL_2D))
         .stock(stock)
         .build()
@@ -186,10 +178,17 @@ fn add_pocket(session: &mut ProjectSession, depth: f64, heights: HeightsConfig) 
     )
 }
 
-fn rest() -> OperationConfig {
-    let mut op = OperationConfig::Rest(Default::default());
-    if let OperationConfig::Rest(cfg) = &mut op {
-        cfg.prev_tool_id = Some(ToolId(PREVIOUS_TOOL));
+/// A drill with no hole source. The model has no drill targets, so the
+/// precondition check refuses it.
+fn drill_without_holes() -> OperationConfig {
+    OperationConfig::Drill(Default::default())
+}
+
+/// A drill with one picked hole. The pick is a hole source.
+fn drill_with_a_pick() -> OperationConfig {
+    let mut op = OperationConfig::Drill(Default::default());
+    if let OperationConfig::Drill(cfg) = &mut op {
+        cfg.selected_holes = Some(vec![[1.0, 2.0]]);
     }
     op
 }
@@ -379,54 +378,60 @@ fn a_retract_pinned_below_the_feed_plane_reaches_both_surfaces() {
 // ── N9: ribbon/session context parity ──────────────────────────────────
 
 #[test]
-fn rest_without_an_enabled_previous_tool_reaches_both_surfaces() {
+fn a_drill_without_holes_reaches_both_surfaces() {
     let mut session = session();
-    let mut rest_config = toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default());
-    rest_config.tool_id = REST_TOOL;
-    let idx = add_operation(&mut session, rest_config);
+    let idx = add_operation(
+        &mut session,
+        toolpath(
+            "Drill",
+            MODEL_2D,
+            drill_without_holes(),
+            HeightsConfig::default(),
+        ),
+    );
 
     let ribbon = ribbon_ids(&session, idx);
     assert!(
-        ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
-        "the ribbon must report the missing Rest predecessor; it reported {ribbon:?}"
+        ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES),
+        "the ribbon must report the missing hole source; it reported {ribbon:?}"
     );
 
     let mcp = mcp_ids(&session, idx);
     assert!(
-        mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
-        "the MCP route must report the missing Rest predecessor; it reported {mcp:?}"
+        mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES),
+        "the MCP route must report the missing hole source; it reported {mcp:?}"
     );
     assert_eq!(
         ribbon, mcp,
-        "the ribbon and MCP route disagree on a Rest operation without a predecessor\n\
+        "the ribbon and MCP route disagree on a drill without holes\n\
          ribbon: {ribbon:?}\nMCP: {mcp:?}"
     );
 }
 
 #[test]
-fn rest_with_an_enabled_previous_tool_clears_the_precondition_on_both_surfaces() {
+fn a_drill_with_a_pick_clears_the_precondition_on_both_surfaces() {
     let mut session = session();
-    let mut rough_config = toolpath("Rough", MODEL_2D, pocket(6.0), HeightsConfig::default());
-    rough_config.tool_id = PREVIOUS_TOOL;
-    let _predecessor = add_operation(&mut session, rough_config);
-    let mut rest_config = toolpath("Rest", MODEL_2D, rest(), HeightsConfig::default());
-    rest_config.tool_id = REST_TOOL;
-    let rest = add_operation(&mut session, rest_config);
+    let idx = add_operation(
+        &mut session,
+        toolpath(
+            "Drill",
+            MODEL_2D,
+            drill_with_a_pick(),
+            HeightsConfig::default(),
+        ),
+    );
 
-    let ribbon = ribbon_ids(&session, rest);
-    let mcp = mcp_ids(&session, rest);
+    let ribbon = ribbon_ids(&session, idx);
+    let mcp = mcp_ids(&session, idx);
     assert!(
-        !ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
-        "the ribbon must clear the Rest predecessor finding; it reported {ribbon:?}"
+        !ribbon.contains(rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES),
+        "the ribbon must clear the hole-source finding; it reported {ribbon:?}"
     );
     assert!(
-        !mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_REST_NO_PRIOR),
-        "the MCP route must clear the Rest predecessor finding; it reported {mcp:?}"
+        !mcp.contains(rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES),
+        "the MCP route must clear the hole-source finding; it reported {mcp:?}"
     );
-    assert_eq!(
-        ribbon, mcp,
-        "the surfaces disagree on a valid Rest predecessor"
-    );
+    assert_eq!(ribbon, mcp, "the surfaces disagree on a drill with a pick");
 }
 
 #[test]

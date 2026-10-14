@@ -44,7 +44,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
@@ -300,7 +300,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 
 /// One setup, one tool, one model, two enabled toolpaths in plan order.
 ///
-/// Index 0 is a `Fresh` Pocket. Index 1 is a Rest that reads the stock
+/// Index 0 is a `Fresh` Pocket. Index 1 is a rest Pocket that reads the stock
 /// index 0 leaves. Both carry a cached result. The fixture is the one
 /// `mutation_paths_invalidate_alike_p0.rs` uses.
 fn fixture() -> ProjectSession {
@@ -318,7 +318,7 @@ fn fixture() -> ProjectSession {
     );
     let downstream = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,

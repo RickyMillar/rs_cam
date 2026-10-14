@@ -318,14 +318,12 @@ impl ProjectSession {
     /// `simulation_cleared` on every completion.
     ///
     /// The rules are [`crate::session::dependencies::edges`], and nothing
-    /// else. There are three:
+    /// else. There are two:
     ///
     /// - (a) a Stock edge hits when its source is in `chain_dirty`: the
     ///   material above the consumer moved.
     /// - (b) a Regions edge hits when its source is in `dirty`: the
     ///   source's rest regions may have appeared, moved or vanished.
-    /// - (c) a PrevTool edge hits when its source is in `dirty`, so a Rest
-    ///   consumer drops when its predecessor's result drops.
     ///
     /// The edges are derived ONCE, before the loop. They come from configs,
     /// and the loop changes only results and revisions, so no edge appears
@@ -376,8 +374,8 @@ impl ProjectSession {
                 let hit = match edge.kind {
                     // (a) the material above the consumer moved.
                     EdgeKind::Stock => chain_ids.contains(&src_id),
-                    // (b) and (c) the source's OUTPUT moved.
-                    EdgeKind::Regions | EdgeKind::PrevTool => dirty_ids.contains(&src_id),
+                    // (b) the source's OUTPUT moved.
+                    EdgeKind::Regions => dirty_ids.contains(&src_id),
                 };
                 let Some(&idx) = index_of.get(&edge.from) else {
                     continue;
@@ -540,8 +538,8 @@ impl ProjectSession {
     /// [`ProjectSession::set_toolpath_param`](Self::set_toolpath_param)
     /// cannot reach it and refuses the key. Keep the two routes disjoint —
     /// `set_toolpath_param` writes the operation's own params through a
-    /// serde round-trip, and Rest's `prev_tool_id` IS one of those params
-    /// (the rest-analysis reference tool), which is a different thing from
+    /// serde round-trip, and Pencil's `reference_tool_id` IS one of those
+    /// params (the rest reference tool), which is a different thing from
     /// the cutter this toolpath runs.
     ///
     /// The tool must exist. Its SHAPE is deliberately not checked here: an

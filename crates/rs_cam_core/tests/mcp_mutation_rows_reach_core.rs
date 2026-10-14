@@ -47,7 +47,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
@@ -158,7 +158,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 ///
 /// This is the P0 fixture of
 /// `crates/rs_cam_core/tests/command_registry_completeness.rs`. Index 0
-/// is a `Fresh` Pocket. Index 1 is a Rest that reads the stock index 0
+/// is a `Fresh` Pocket. Index 1 is a rest Pocket that reads the stock index 0
 /// leaves. Both carry a cached result.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
@@ -175,7 +175,7 @@ fn fixture() -> ProjectSession {
     );
     let downstream = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,

@@ -87,13 +87,6 @@ For each parameter test:
 | stepover | 0.5→0.2 mm | Denser scan lines; smoother carve but slower | visual: line density; gcode: line count | |
 | tolerance | 0.05→0.01 | More points per scan line | gcode: point count per line | |
 
-### Rest Machining
-
-| Parameter | Test change | Expected result | Check method | Negative check |
-|-----------|------------|-----------------|--------------|----------------|
-| prev_tool | Tool A→Tool B (different diameter) | Rest region changes (cuts only where prev tool couldn't reach) | visual: rest region shape changes | |
-| angle | 0→90 | Scan lines rotate 90° | visual: line orientation | |
-
 ### Drill
 
 | Parameter | Test change | Expected result | Check method | Negative check |
@@ -246,7 +239,7 @@ For each operation:
 |-----------|-----------------|
 | Simple rectangle SVG (50×50mm) | 2.5D ops: pocket, profile, adaptive, zigzag, face, trace |
 | Circle SVG (30mm Ø) | Profile tabs, lead-in/out, adaptive spiral |
-| Text SVG ("CAM") | VCarve, inlay, chamfer, rest machining |
+| Text SVG ("CAM") | VCarve, inlay, chamfer |
 | Hemisphere STL | 3D finish, waterline, pencil, scallop, steep/shallow |
 | Terrain STL (irregular surface) | Adaptive3D z_blend, horizontal finish, ramp finish |
 | Multi-level step STL | Adaptive3D detect_flat_areas |

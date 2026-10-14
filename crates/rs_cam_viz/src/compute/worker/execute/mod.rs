@@ -10,7 +10,7 @@ use crate::state::job::{ToolConfig, ToolId, ToolType};
 #[cfg(test)]
 use crate::state::toolpath::{
     FaceConfig, FaceDirection, InlayConfig, InlayPlugConfig, OperationConfig, ProfileConfig,
-    RestConfig, ZigzagConfig,
+    ZigzagConfig,
 };
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
@@ -550,33 +550,6 @@ mod tests {
             dominant_cut_axis(&tp, cfg.feed_rate),
             Some('y'),
             "90 degree zigzag should cut along Y, not a radian-converted skew"
-        );
-    }
-
-    #[test]
-    fn rest_semantic_angle_uses_degrees() {
-        // The Ø16 reference tool replaces the request's old
-        // `prev_tool_radius = Some(8.0)`: the resolver reads the radius off
-        // the tool the config names, so the fixture has to hold that tool.
-        let previous = ToolConfig::new_default(ToolId(2), ToolType::EndMill);
-        let mut previous = previous;
-        previous.diameter = 16.0;
-        let cfg = RestConfig {
-            angle: 90.0,
-            stepover: 4.0,
-            depth: 2.0,
-            depth_per_pass: 2.0,
-            prev_tool_id: Some(previous.id),
-            ..RestConfig::default()
-        };
-        let mut spec = polygon_spec(OperationConfig::Rest(cfg.clone()), ToolType::EndMill);
-        spec.extra_tools = vec![previous];
-        let (tp, _) = generated(spec);
-
-        assert_eq!(
-            dominant_cut_axis(&tp, cfg.feed_rate),
-            Some('y'),
-            "semantic rest reconstruction should preserve the degree-based raster angle"
         );
     }
 

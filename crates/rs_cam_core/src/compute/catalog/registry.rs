@@ -145,29 +145,6 @@ const VCARVE_PARAMS: &[ParamDef] = &[
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
-const REST_PARAMS: &[ParamDef] = &[
-    ParamDef::optional_desc(
-        "prev_tool_id",
-        "option<usize>",
-        "Index of the prior (typically larger) tool used to define rest geometry",
-    ),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("angle", "f64")
-        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
 const INLAY_PARAMS: &[ParamDef] = &[
     ParamDef::required("pocket_depth", "f64").with_help(
         "Depth of the inlay pocket below the stock top. This op cuts only the \
@@ -926,27 +903,6 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
     ),
     policy: OpPolicy::MILLING,
     generate: crate::compute::execute::generate_vcarve,
-};
-
-pub(super) static REG_REST: OpRegistryEntry = OpRegistryEntry {
-    op_type: OperationType::Rest,
-    spec: OperationSpec {
-        label: "Rest Machining",
-        description: "Clean up areas a larger tool couldn\u{2019}t reach",
-        family: OperationFamily::TwoPointFiveD,
-        geometry: GeometryRequirement::Polygons,
-        default_auto_regen: true,
-        ui_family: UiOperationFamily::Pocket,
-        ui_process_role: UiProcessRole::Roughing,
-        feeds_family: FeedsOperationFamily::Pocket,
-        feeds_pass_role: PassRole::Roughing,
-        feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
-    },
-    param_defs: REST_PARAMS,
-    tool_constraints: ToolConstraintsDef::ANY_TOOL,
-    dressup_policy: DressupPolicy::ANY_DRESSUP,
-    policy: OpPolicy::MILLING,
-    generate: crate::compute::execute::generate_rest,
 };
 
 pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {

@@ -27,9 +27,9 @@
 //! That refusal is KEPT — `set_toolpath_param` owns operation params and
 //! nothing else. `rebind_is_not_reachable_through_the_param_route` pins
 //! it so the two namespaces cannot merge later by accident. Note the
-//! near miss: Rest's `prev_tool_id` IS a real operation param (the
-//! rest-analysis reference tool), which is a different thing from the
-//! cutter the toolpath runs.
+//! near miss: Pencil's `reference_tool_id` IS a real operation param (the
+//! rest reference tool), which is a different thing from the cutter the
+//! toolpath runs.
 
 #![allow(
     clippy::unwrap_used,
@@ -43,7 +43,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::{PencilConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
@@ -194,7 +194,7 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     let model_a = s.models()[0].id;
     let mut downstream = tc(
         "rest",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         tool_b,
         model_a,
     );
@@ -425,33 +425,33 @@ fn rebind_is_not_reachable_through_the_param_route() {
     assert_eq!(s.toolpath_configs()[0].tool_id, tool_a);
     assert_eq!(s.toolpath_configs()[0].model_id, model_a);
 
-    // The near miss: `prev_tool_id` IS an operation param on Rest, and it
-    // is a DIFFERENT thing — the rest-analysis reference tool, not the
+    // The near miss: `reference_tool_id` IS an operation param on Pencil,
+    // and it is a DIFFERENT thing — the rest reference tool, not the
     // cutter this toolpath runs.
-    let mut rest = tc(
-        "rest",
-        OperationConfig::Rest(RestConfig::default()),
+    let mut pencil = tc(
+        "pencil",
+        OperationConfig::Pencil(PencilConfig::default()),
         tool_a,
         model_a,
     );
-    rest.stock_source = StockSource::Fresh;
+    pencil.stock_source = StockSource::Fresh;
     let _ = s
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(rest),
+            config: Box::new(pencil),
         }))
         .unwrap();
     let _ = s
         .apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index: 1,
-            param: "prev_tool_id".to_owned(),
+            param: "reference_tool_id".to_owned(),
             value: serde_json::json!(tool_b),
         }))
-        .expect("prev_tool_id is a real Rest param");
+        .expect("reference_tool_id is a real Pencil param");
     assert_eq!(
         s.toolpath_configs()[1].tool_id,
         tool_a,
-        "setting prev_tool_id must NOT move the toolpath's own tool binding"
+        "setting reference_tool_id must NOT move the toolpath's own tool binding"
     );
 }
 

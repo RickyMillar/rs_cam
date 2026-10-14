@@ -53,7 +53,7 @@
 //!   text.
 //! - Operator ruling 2026-09-25 ("Hardwood V-bit formula-only cells:
 //!   refuse", `planning/extrapolation_2026-09-24/RULINGS.md`): Face,
-//!   Pocket, Profile, Rest and Zigzag on a V-bit in hardwood find no row
+//!   Pocket, Profile and Zigzag on a V-bit in hardwood find no row
 //!   (every V-bit row is Trace, keyed by angle) and now refuse; the
 //!   formula is under 0.5x of the Onsrud V-bit band. The same cells in
 //!   softwood are unchanged, and a real Trace/VCarve cell that finds the
@@ -562,10 +562,11 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
     assert_eq!(checked, 32);
 }
 
-/// (h) Operator ruling 2026-09-25: Face, Pocket, Profile, Rest and Zigzag
+/// (h) Operator ruling 2026-09-25: Face, Pocket, Profile and Zigzag
 /// on a V-bit in hardwood find no row (every V-bit row is Trace, keyed by
-/// angle) and now refuse with `VBIT_HARDWOOD`. The same five operations in
-/// softwood are unchanged (still `FormulaOnly`). `ProjectCurve` is NOT in
+/// angle) and now refuse with `VBIT_HARDWOOD`. The same four operations in
+/// softwood are unchanged (still `FormulaOnly`). (The ruling named five
+/// operations; the fifth, Rest, was retired on 2026-10-14, ruling R3.) `ProjectCurve` is NOT in
 /// this set: a second operator ruling the same day ("a ProjectCurve on a
 /// V-bit routes ... as a trace") routes it to the printed Trace rows
 /// instead — see
@@ -576,7 +577,6 @@ fn the_hardwood_formula_only_vbit_cells_refuse_b4() {
         OperationType::Face,
         OperationType::Pocket,
         OperationType::Profile,
-        OperationType::Rest,
         OperationType::Zigzag,
     ];
     for op in ops {

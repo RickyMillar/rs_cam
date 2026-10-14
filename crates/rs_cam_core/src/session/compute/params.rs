@@ -400,7 +400,7 @@ impl ProjectSession {
                         }
                     }
                     // A list field clears with `null` as well as with `[]`,
-                    // as `spindle_rpm` and `prev_tool_id` clear with `null`
+                    // as `spindle_rpm` and `reference_tool_id` clear with `null`
                     // (step-ladder Phase 4, `coarse_steps`).
                     (_, serde_json::Value::Null)
                         if target_type.is_some_and(|ty| ty.starts_with("vec<")) =>

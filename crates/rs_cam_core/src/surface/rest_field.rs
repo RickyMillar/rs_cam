@@ -34,10 +34,9 @@
 //! [`region_polygons_from_mask`] / the P2 selective-finishing boundary
 //! source, and for measuring each ridge polyline's local half-width.
 //!
-//! Not to be confused with [`crate::ops::rest`], the 2D polygon rest op (offset a
-//! polygon inward by the previous tool's radius, scan-line the leftover
-//! ring). This module works on mesh dexel/heightmap depth comparisons; that
-//! one works on 2D polygon offsets. Zero code overlap between the two.
+//! Not to be confused with a 2D rest pass, which is a Pocket from remaining
+//! stock (G-RESTLEVELS). This module works on mesh dexel/heightmap depth
+//! comparisons, not on 2D polygon offsets.
 
 use tracing::info;
 

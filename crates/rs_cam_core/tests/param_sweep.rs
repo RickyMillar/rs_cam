@@ -46,7 +46,6 @@ use rs_cam_core::{
     ops::pocket::PocketParams,
     ops::profile::{ProfileParams, ProfileSide},
     ops::project_curve::ProjectCurveParams,
-    ops::rest::RestParams,
     ops::trace_path::{TraceCompensation, TraceParams},
     ops::vcarve::VCarveParams,
     ops::waterline::{WaterlineParams, waterline_toolpath},
@@ -1431,69 +1430,6 @@ fn sweep_vcarve_stepover() {
         let ctx = format!("vcarve stepover={}", v.value);
         assert_any_change(&v.diff, &ctx);
         assert_has_change(&v.diff, "move_count", &ctx);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// REST MACHINING SWEEPS
-// ═══════════════════════════════════════════════════════════════════════
-
-fn default_rest_params() -> RestParams {
-    RestParams {
-        prev_tool_radius: 6.35,
-        tool_radius: 3.175,
-        cut_depth: -3.0,
-        stepover: 1.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        angle: 0.0,
-    }
-}
-
-#[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_rest_angle() {
-    let poly = l_shape_polygon();
-    let result = run_sweep(
-        "rest",
-        "angle",
-        serde_json::json!(0.0),
-        &[serde_json::json!(45.0), serde_json::json!(90.0)],
-        |ov| {
-            let mut p = default_rest_params();
-            if let Some(v) = ov {
-                p.angle = v.as_f64().unwrap();
-            }
-            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("rest angle={}", v.value);
-        assert_any_change(&v.diff, &ctx);
-    }
-}
-
-#[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_rest_prev_tool_radius() {
-    let poly = l_shape_polygon();
-    let result = run_sweep(
-        "rest",
-        "prev_tool_radius",
-        serde_json::json!(6.35),
-        &[serde_json::json!(3.175), serde_json::json!(12.7)],
-        |ov| {
-            let mut p = default_rest_params();
-            if let Some(v) = ov {
-                p.prev_tool_radius = v.as_f64().unwrap();
-            }
-            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("rest prev_tool_radius={}", v.value);
-        assert_any_change(&v.diff, &ctx);
     }
 }
 

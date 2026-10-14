@@ -38,7 +38,7 @@ use super::{
     draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_inlay_plug_params,
     draw_outline_diagram, draw_pencil_diagram, draw_pencil_params, draw_pocket_params,
     draw_point_set_diagram, draw_profile_params, draw_project_curve_params, draw_radial_diagram,
-    draw_radial_finish_params, draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params,
+    draw_radial_finish_params, draw_ramp_finish_diagram, draw_ramp_finish_params,
     draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
     draw_steep_shallow_diagram, draw_steep_shallow_params, draw_stepover_diagram,
     draw_trace_params, draw_unified_finish_params, draw_vcarve_params, draw_waterline_params,
@@ -107,7 +107,6 @@ pub(in crate::ui::properties) struct OpValidateCtx<'a> {
     /// The chosen tool, as the validation context models it.
     pub tool: &'a super::validate::ValidationTool,
     pub ctx: &'a super::validate::ToolpathValidationContext,
-    pub tp_id: rs_cam_core::ToolpathId,
     pub model_id: ModelId,
 }
 
@@ -218,13 +217,6 @@ editor!(ed_adaptive, Adaptive, |ui, cfg, cx| draw_adaptive_params(
 editor!(ed_vcarve, VCarve, |ui, cfg, cx| draw_vcarve_params(
     ui,
     cfg,
-    cx.pills,
-    cx.depth_caution
-));
-editor!(ed_rest, Rest, |ui, cfg, cx| draw_rest_params(
-    ui,
-    cfg,
-    cx.tools,
     cx.pills,
     cx.depth_caution
 ));
@@ -436,28 +428,6 @@ fn val_needs_v_bit(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<
     }
 }
 
-fn val_rest(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
-    let OperationConfig::Rest(c) = op else {
-        return;
-    };
-    let Some(prev) = c.prev_tool_id else {
-        errs.push("Previous tool not selected".into());
-        return;
-    };
-    let prev_d = cx.ctx.tool_diameter(prev);
-    if let Some(pd) = prev_d
-        && pd <= cx.tool.diameter
-    {
-        errs.push("Previous tool must be larger than current tool".into());
-    }
-    if !super::validate::has_prior_rest_source(cx.ctx, cx.tp_id, cx.model_id, prev) {
-        errs.push(
-            "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
-                .into(),
-        );
-    }
-}
-
 fn val_drill(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
     let OperationConfig::Drill(c) = op else {
         return;
@@ -501,12 +471,6 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         draw: ed_vcarve,
         diagram: OpDiagram::Stepover,
         validate: Some(val_needs_v_bit),
-    },
-    OpUiRow {
-        op: OperationType::Rest,
-        draw: ed_rest,
-        diagram: OpDiagram::Stepover,
-        validate: Some(val_rest),
     },
     OpUiRow {
         op: OperationType::Inlay,

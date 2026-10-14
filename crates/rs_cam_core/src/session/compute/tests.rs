@@ -15,7 +15,7 @@ use super::diagnostics::{air_cut_offenders_for_toolpaths, plunge_stress_offender
 use super::*;
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-use crate::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
+use crate::compute::operation_configs::{DrillConfig, PencilConfig, PocketConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::toolpath_stats::ToolpathStats;
 use crate::gcode::CoolantMode;
@@ -248,9 +248,9 @@ fn set_toolpath_param_coerces_integer_to_bool() {
     }
 }
 
-fn make_rest_tc(tool_id: usize) -> ToolpathConfig {
+fn make_pencil_tc(tool_id: usize) -> ToolpathConfig {
     let mut tc = make_tc(tool_id);
-    tc.operation = OperationConfig::Rest(RestConfig::default());
+    tc.operation = OperationConfig::Pencil(PencilConfig::default());
     tc
 }
 
@@ -274,63 +274,79 @@ fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
 }
 
 #[test]
-fn set_toolpath_param_prev_tool_id_accepts_int() {
+fn set_toolpath_param_reference_tool_id_accepts_int() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-    let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
-        _ => panic!("expected Rest"),
-    }
-}
-
-#[test]
-fn set_toolpath_param_prev_tool_id_accepts_string() {
-    let mut s = make_session();
-    let _ = s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-    let _ = s.set_toolpath_param(0, "prev_tool_id", json!("1")).unwrap();
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
-        _ => panic!("expected Rest"),
-    }
-}
-
-#[test]
-fn set_toolpath_param_prev_tool_id_accepts_float_wire_number() {
-    let mut s = make_session();
-    let _ = s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-    let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1.0)).unwrap();
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, Some(ToolId(1))),
-        _ => panic!("expected Rest"),
-    }
-}
-
-#[test]
-fn set_toolpath_param_prev_tool_id_accepts_null_to_clear() {
-    let mut s = make_session();
-    let _ = s.add_toolpath(0, make_rest_tc(s.tools()[0].id.0)).unwrap();
-    let _ = s.set_toolpath_param(0, "prev_tool_id", json!(1)).unwrap();
     let _ = s
-        .set_toolpath_param(0, "prev_tool_id", serde_json::Value::Null)
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .unwrap();
+    let _ = s
+        .set_toolpath_param(0, "reference_tool_id", json!(1))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Rest(cfg) => assert_eq!(cfg.prev_tool_id, None),
-        _ => panic!("expected Rest"),
+        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        _ => panic!("expected Pencil"),
     }
 }
 
 #[test]
-fn get_operation_schema_rest_lists_prev_tool_id() {
-    let schema = ProjectSession::operation_schema("rest").unwrap();
-    let prev = schema
+fn set_toolpath_param_reference_tool_id_accepts_string() {
+    let mut s = make_session();
+    let _ = s
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .unwrap();
+    let _ = s
+        .set_toolpath_param(0, "reference_tool_id", json!("1"))
+        .unwrap();
+    match &s.toolpath_configs()[0].operation {
+        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        _ => panic!("expected Pencil"),
+    }
+}
+
+#[test]
+fn set_toolpath_param_reference_tool_id_accepts_float_wire_number() {
+    let mut s = make_session();
+    let _ = s
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .unwrap();
+    let _ = s
+        .set_toolpath_param(0, "reference_tool_id", json!(1.0))
+        .unwrap();
+    match &s.toolpath_configs()[0].operation {
+        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        _ => panic!("expected Pencil"),
+    }
+}
+
+#[test]
+fn set_toolpath_param_reference_tool_id_accepts_null_to_clear() {
+    let mut s = make_session();
+    let _ = s
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .unwrap();
+    let _ = s
+        .set_toolpath_param(0, "reference_tool_id", json!(1))
+        .unwrap();
+    let _ = s
+        .set_toolpath_param(0, "reference_tool_id", serde_json::Value::Null)
+        .unwrap();
+    match &s.toolpath_configs()[0].operation {
+        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, None),
+        _ => panic!("expected Pencil"),
+    }
+}
+
+#[test]
+fn get_operation_schema_pencil_lists_reference_tool_id() {
+    let schema = ProjectSession::operation_schema("pencil").unwrap();
+    let reference = schema
         .params
         .iter()
-        .find(|param| param.name == "prev_tool_id")
+        .find(|param| param.name == "reference_tool_id")
         .unwrap();
-    assert_eq!(prev.type_name, "option<usize>");
-    assert!(prev.optional);
-    assert_eq!(prev.default, serde_json::Value::Null);
+    assert_eq!(reference.type_name, "option<usize>");
+    assert!(reference.optional);
+    assert_eq!(reference.default, serde_json::Value::Null);
 }
 
 #[test]
@@ -339,7 +355,11 @@ fn get_operation_schema_unknown_op_returns_error() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("Valid operation_type values"));
-    assert!(err.contains("rest"));
+    assert!(err.contains("pocket"));
+    assert!(
+        !err.contains("rest"),
+        "the retired Rest op is not a valid value: {err}"
+    );
 }
 
 #[test]
@@ -1903,7 +1923,6 @@ fn advisor_modulates_candidate_feeds_before_timing() {
         mesh: resolved.mesh.as_deref(),
         index: resolved.spatial_index(),
         polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-        prev_tool_radius: resolved.prev_tool_radius,
         boundary: resolved.pre_boundary.as_ref(),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,

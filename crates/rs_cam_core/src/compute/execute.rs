@@ -271,11 +271,9 @@ impl From<String> for OperationError {
 /// SpiralFinish, RadialFinish, HorizontalFinish (the 2026-07 mesh-finish
 /// fix's 11), plus Pocket, Profile, Zigzag, Trace, Face, ProjectCurve,
 /// VCarve, Inlay (the flat-2D S.5 fix,
-/// planning/finishing_stack_review_2026-07.md), plus Rest and Drill
-/// (Checkpoint C Q3, 2026-08-05 — W4's F-4 measured those two ignoring a
-/// pre-set flag entirely: `generate_rest` built no `cancel_fn` and called the
-/// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
-/// read `ctx.cancel`), plus UnifiedFinish, plus AlignmentPinDrill and
+/// planning/finishing_stack_review_2026-07.md), plus Drill (Checkpoint C
+/// Q3, 2026-08-05 — W4's F-4 measured it ignoring a pre-set flag entirely:
+/// `generate_drill` never read `ctx.cancel`), plus UnifiedFinish, plus AlignmentPinDrill and
 /// Chamfer (O-CANC, 2026-08-14 — neither was in the 2D campaign's nine,
 /// so W4's evidence never reached them).
 ///
@@ -328,11 +326,10 @@ pub struct ExecutionContext<'a> {
     /// adapter that reaches for this has to leave world coordinates alone
     /// rather than inventing an identity matrix to run them through.
     pub setup_transform: Option<&'a crate::compute::transform::SetupTransformInfo>,
-    pub prev_tool_radius: Option<f64>,
     /// R1 (pencil): the resolved *real* reference tool config, when the pencil
     /// op's `reference_tool_id` names a library tool. Owned clone (small);
-    /// resolution happens upstream because the context has no tool list, exactly
-    /// like `prev_tool_radius`. `generate_pencil` turns it into a `ToolDefinition`.
+    /// resolution happens upstream because the context has no tool list.
+    /// `generate_pencil` turns it into a `ToolDefinition`.
     pub reference_tool_cfg: Option<ToolConfig>,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub cancel: &'a AtomicBool,
@@ -427,7 +424,6 @@ impl<'a> ExecutionContext<'a> {
             cutting_levels,
             stock_bbox,
             setup_transform: None,
-            prev_tool_radius: None,
             reference_tool_cfg: None,
             debug_ctx: None,
             cancel,
@@ -493,8 +489,8 @@ mod shared;
 mod standing_material;
 
 pub(crate) use clearing_2d::{
-    generate_adaptive, generate_face, generate_pocket, generate_profile, generate_rest,
-    generate_trace, generate_zigzag,
+    generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,
+    generate_zigzag,
 };
 pub(crate) use curve_engrave::{
     generate_chamfer, generate_inlay, generate_inlay_plug, generate_project_curve, generate_vcarve,

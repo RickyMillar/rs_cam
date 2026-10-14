@@ -37,10 +37,6 @@ impl StepoverPattern {
                 stepover: cfg.stepover,
                 angle: 0.0,
             }),
-            OperationConfig::Rest(cfg) => Some(Self::Zigzag {
-                stepover: cfg.stepover,
-                angle: cfg.angle,
-            }),
             OperationConfig::HorizontalFinish(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: 0.0,

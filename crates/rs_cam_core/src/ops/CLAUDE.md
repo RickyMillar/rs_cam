@@ -7,8 +7,8 @@ module is reached through `compute::execute_operation_annotated`.
 
 - `mod.rs`, `depth.rs`, `adaptive_shared.rs` — facade, depth stepping, shared
   adaptive helpers.
-- `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs`, `rest.rs` — the 2.5D
-  clearing family. `waterline.rs` — closed contours at constant Z.
+- `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs` — the 2.5D clearing family
+  (a rest pass is a remaining-stock Pocket, R3). `waterline.rs` — constant-Z contours.
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
 - `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs`
   — the engraving and curve family.
