@@ -24,6 +24,7 @@
 //!
 //! W3.4 added the `rest_use` column: the rest rule of each op (AUDIT.md,
 //! "Rest is not one thing"), read by the Layered runner and the drill.
+//! W3.5 moved Chamfer onto the Layered runner: its row reads `LevelSkip`.
 
 #![allow(
     clippy::unwrap_used,
@@ -108,7 +109,7 @@ fn frozen() -> Vec<Row> {
     row((OperationType::Zigzag, [true, false, true, false, false, false, false, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip)),
     row((OperationType::Trace, [true, false, true, false, false, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::CurveFollowing, None, AxialEnvelope::NotApplied, RestUse::LevelSkip)),
     row((OperationType::Drill, [true, true, false, false, true, false, false, false], None, None, false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn)),
-    row((OperationType::Chamfer, [true, false, false, false, true, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None)),
+    row((OperationType::Chamfer, [true, false, false, false, true, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip)),
     row((OperationType::DropCutter, [true, true, false, false, true, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly)),
     row((OperationType::Adaptive3d, [false, false, true, false, false, true, false, false], None, Some(40.0), true, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive3d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::Roughing3d, RestUse::Planner)),
     row((OperationType::Waterline, [true, false, true, false, false, false, false, false], Some(3), Some(45.0), true, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly)),

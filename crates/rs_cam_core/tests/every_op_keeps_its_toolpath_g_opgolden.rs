@@ -207,7 +207,8 @@ fn drill_simple_cycle(op: &mut OperationConfig) {
 /// The ops whose adapter reads the remaining stock today
 /// (`ctx.initial_stock` in `compute/execute/`): Pocket, Zigzag, Profile,
 /// Trace, Face and 2D Adaptive (`clearing_2d.rs`, the Layered rest rules
-/// of W3.4), Drill (`drilling.rs`, the stock column of D8), Adaptive3d,
+/// of W3.4), Chamfer (`curve_engrave.rs`, the Layered level skip of W3.5),
+/// Drill (`drilling.rs`, the stock column of D8), Adaptive3d,
 /// Pencil and Unified Finish (`finish_3d.rs`), the raster link stage of
 /// Drop Cutter, Scallop and Waterline (`finish_raster.rs`), and Project
 /// Curve (`curve_engrave.rs`). Each is an op whose `Capabilities::rest_use`
@@ -218,6 +219,7 @@ const REST_READERS: &[OperationType] = &[
     OperationType::Profile,
     OperationType::Trace,
     OperationType::Face,
+    OperationType::Chamfer,
     OperationType::Drill,
     OperationType::Adaptive,
     OperationType::Adaptive3d,

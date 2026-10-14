@@ -1236,7 +1236,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::NoHint,
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
-        rest_use: RestUse::None,
+        rest_use: RestUse::LevelSkip,
     },
     generate: crate::compute::execute::generate_chamfer,
 };

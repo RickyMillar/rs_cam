@@ -115,7 +115,8 @@ pub enum RestUse {
     LevelClip,
     /// A contour op skips a level when no material stands in the reach
     /// band of its tool-centre path. It never clips the outline, because a
-    /// clipped outline cuts a new wall. Profile, Trace.
+    /// clipped outline cuts a new wall. Profile, Trace, Chamfer (W3.5: its
+    /// one level is the whole outline or nothing).
     LevelSkip,
     /// The per-level material mask seeds the planner's grid, so the
     /// planner does not clear a cell that a prior op cleared. 2D Adaptive.

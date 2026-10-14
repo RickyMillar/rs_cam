@@ -48,6 +48,9 @@
 //! 10. Drill (`StockColumn`, D8): a hole in A starts at A's floor. Its
 //!     R-plane, where its pecks start, keeps the clearance a fresh hole has
 //!     above the stock top. A hole outside A keeps its fresh R-plane.
+//! 11. Chamfer (`LevelSkip`, W3.5): after a Face below the chamfer level,
+//!     a rest Chamfer skips its one level and gives an empty result. After
+//!     a Face above the chamfer level, it cuts the fresh rings.
 //!
 //! Each rule has a red proof: with the rule off, the claim fails. The red
 //! runs are recorded in the W3.4 report.
@@ -72,8 +75,10 @@ use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{
-    DrillConfig, FaceConfig, PocketConfig, PocketPattern, ProfileConfig, ZigzagConfig,
+    ChamferConfig, DrillConfig, FaceConfig, PocketConfig, PocketPattern, ProfileConfig,
+    ZigzagConfig,
 };
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
@@ -182,7 +187,7 @@ fn run_with(b_shift: f64, b_depth: f64, b_source: StockSource, pattern: PocketPa
 
 /// Generate the op `a` on A's outline, simulate, generate the op `b` on
 /// A's outline shifted `b_shift` in +X (with the drill targets
-/// `targets`), and simulate again.
+/// `targets`), and simulate again. Both ops use the Ø[`TOOL_D`] end mill.
 fn run_ops(
     a: OperationConfig,
     b: OperationConfig,
@@ -190,9 +195,28 @@ fn run_ops(
     b_source: StockSource,
     targets: &[[f64; 2]],
 ) -> Arm {
+    run_ops_with_tool(a, b, None, b_shift, b_source, targets)
+}
+
+/// [`run_ops`] with `b_tool` for the op `b` (`None`: the end mill of A).
+fn run_ops_with_tool(
+    a: OperationConfig,
+    b: OperationConfig,
+    b_tool: Option<ToolConfig>,
+    b_shift: f64,
+    b_source: StockSource,
+    targets: &[[f64; 2]],
+) -> Arm {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
     let tool_id = builder.tools()[tool_idx].id.0;
+    let b_tool_id = match b_tool {
+        Some(tool) => {
+            let idx = builder.add_tool(tool);
+            builder.tools()[idx].id.0
+        }
+        None => tool_id,
+    };
     let model_a = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
     let mut b_model = polygon_model(vec![shifted_square(b_shift)], "b");
     b_model.drill_targets = Arc::new(
@@ -210,7 +234,7 @@ fn run_ops(
     let _ = builder
         .add_toolpath(0, toolpath_config("A", a, tool_id, model_a))
         .expect("add A");
-    let mut b = toolpath_config("B", b, tool_id, model_b);
+    let mut b = toolpath_config("B", b, b_tool_id, model_b);
     b.stock_source = b_source;
     let _ = builder.add_toolpath(0, b).expect("add B");
     let mut session = builder.build();
@@ -967,4 +991,90 @@ fn a_rest_drill_starts_each_hole_at_the_remaining_stock_top() {
         "view R-plane {r} vs emitted {rest_r}"
     );
     assert_eq!(top_of(&rest.drill_holes, HOLE_OUTSIDE_A).0, 0.0);
+}
+
+// ── W3.5: Chamfer ───────────────────────────────────────────────────────
+
+/// Width (mm) and tip offset (mm) of the chamfer of claim 11. With the 90°
+/// V-bit the tip runs at `-(width + tip) / tan 45° = -2.1` mm.
+const CHAMFER_WIDTH: f64 = 2.0;
+const CHAMFER_TIP: f64 = 0.1;
+
+/// The tip Z (mm) of the chamfer of claim 11: `-(w + t) / tan(a)`.
+fn chamfer_level() -> f64 {
+    -(CHAMFER_WIDTH + CHAMFER_TIP) / (VBIT_ANGLE_DEG / 2.0).to_radians().tan()
+}
+
+/// Included angle (degrees) of the V-bit of claim 11.
+const VBIT_ANGLE_DEG: f64 = 90.0;
+
+/// The depth (mm) of a prior Face that leaves its top above the chamfer
+/// level. [`FACE_A_DEPTH`] leaves its top below it.
+const FACE_ABOVE_CHAMFER_DEPTH: f64 = 1.0;
+
+fn vbit() -> ToolConfig {
+    ToolConfig {
+        diameter: 12.7,
+        included_angle: VBIT_ANGLE_DEG,
+        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+    }
+}
+
+fn chamfer() -> OperationConfig {
+    OperationConfig::Chamfer(ChamferConfig {
+        side: ProfileSide::Outside,
+        chamfer_width: CHAMFER_WIDTH,
+        tip_offset: CHAMFER_TIP,
+        ..ChamferConfig::default()
+    })
+}
+
+/// Face to `face_depth`, then a Chamfer on A's outline from `source`.
+fn chamfer_after_face(face_depth: f64, source: StockSource) -> Arm {
+    run_ops_with_tool(face(face_depth), chamfer(), Some(vbit()), 0.0, source, &[])
+}
+
+/// 11. Chamfer (`LevelSkip`, W3.5). A Face to 3 mm removes every edge the
+///     chamfer at -2.1 mm would bevel: the rest Chamfer skips its one level
+///     and gives an empty result, not a refusal. A Face to 1 mm leaves the
+///     edge standing above the level: the rest Chamfer cuts the rings a
+///     fresh Chamfer cuts, bit for bit.
+#[test]
+fn a_rest_chamfer_skips_an_edge_a_prior_op_removed() {
+    let z = chamfer_level();
+    assert!(
+        -FACE_A_DEPTH < z - FRESH_MATERIAL_THRESHOLD_MM
+            && z + FRESH_MATERIAL_THRESHOLD_MM < -FACE_ABOVE_CHAMFER_DEPTH,
+        "the two Faces must lie on the two sides of the chamfer level {z}"
+    );
+    for (face_depth, skipped) in [(FACE_A_DEPTH, 1), (FACE_ABOVE_CHAMFER_DEPTH, 0)] {
+        let fresh = chamfer_after_face(face_depth, StockSource::Fresh);
+        let rest = chamfer_after_face(face_depth, StockSource::FromRemainingStock);
+        let f = cut_bits_at(&fresh.moves, z);
+        let r = cut_bits_at(&rest.moves, z);
+        eprintln!(
+            "chamfer after a {face_depth} mm Face: fresh {} cuts, rest {} cuts, \
+             finding {:?}",
+            f.len(),
+            r.len(),
+            rest.finding
+        );
+        assert!(!f.is_empty(), "non-vacuity: a fresh Chamfer cuts level {z}");
+        if skipped == 1 {
+            assert!(
+                rest.moves.is_empty(),
+                "face {face_depth}: the rest Chamfer moved over a removed edge"
+            );
+        } else {
+            assert_eq!(
+                r, f,
+                "face {face_depth}: the rest Chamfer must cut the fresh rings"
+            );
+        }
+        let finding = rest.finding.expect("a rest Chamfer records its level skip");
+        assert_eq!(finding.planned_levels, 1, "a Chamfer has one level");
+        assert_eq!(finding.skipped_levels, skipped, "face {face_depth}: skips");
+        assert_eq!(finding.clipped_levels, 0, "a Chamfer never clips a level");
+        assert_eq!(finding.fallback, None);
+    }
 }

@@ -10,8 +10,8 @@ module is reached through `compute::execute_operation_annotated`.
 - `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
   R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). `face::face_levels` = the ONE Face ladder.
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
-- `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs`
-  — the engraving and curve family.
+- `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs` — the engraving
+  and curve family. Chamfer: Z-free tip rings + one level from the tool angle (W3.5, Layered).
 
 ## Invariants
 

@@ -60,13 +60,23 @@ pub struct ChamferParams {
 /// material from a tip that sits `tip_offset` into the air.
 ///
 /// `depth = (chamfer_width + tip_offset) / tan(half_angle)`
-fn chamfer_depth(params: &ChamferParams) -> f64 {
+///
+/// The Layered Chamfer (`compute/execute/curve_engrave.rs`) reads it as its
+/// one ladder level, `top_z - depth`.
+pub(crate) fn chamfer_depth(params: &ChamferParams) -> f64 {
     (params.chamfer_width + params.tip_offset) / params.tool_half_angle.tan()
 }
 
 /// The tool-centre rings: every ring of the outline, moved `tip_offset` into
-/// its air side (see the module doc).
-fn chamfer_rings(polygon: &Polygon2, params: &ChamferParams) -> Vec<Vec<crate::geo::P2>> {
+/// its air side (see the module doc), and the count of offsets that failed
+/// rather than collapsed (Checkpoint C: `1` when the one offset this makes
+/// failed, else `0`). The rings do not depend on Z: the Layered Chamfer
+/// makes them once in `prepare` and stamps them at its one level with
+/// [`chamfer_rings_at_z`].
+pub(crate) fn chamfer_rings_reported(
+    polygon: &Polygon2,
+    params: &ChamferParams,
+) -> (Vec<Vec<crate::geo::P2>>, usize) {
     // The offset sign and the hole classification both read the winding
     // (exterior CCW, holes CW). Importers normalise it; a hand-built outline
     // may not.
@@ -79,22 +89,49 @@ fn chamfer_rings(polygon: &Polygon2, params: &ChamferParams) -> Vec<Vec<crate::g
         normalised = p;
         &normalised
     };
-    let pieces = if params.tip_offset.abs() < 1e-9 {
+    let (pieces, failures) = if params.tip_offset.abs() < 1e-9 {
         // A zero tip offset puts the tip on the edge itself: no offset to make.
-        vec![polygon.clone()]
+        (vec![polygon.clone()], 0)
     } else {
         // Negative distance = outward, positive = inward (profile's sign).
         let distance = match params.side {
             ProfileSide::Outside => -params.tip_offset,
             ProfileSide::Inside => params.tip_offset,
         };
-        crate::polygon::offset_polygon(polygon, distance)
+        let (pieces, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
+        (pieces, usize::from(failure.is_some()))
     };
-    pieces
+    let rings = pieces
         .into_iter()
         .flat_map(|p| std::iter::once(p.exterior).chain(p.holes))
         .filter(|ring| ring.len() >= 3)
-        .collect()
+        .collect();
+    (rings, failures)
+}
+
+/// The cut of the tool-centre `rings` at the tip Z `z`: one closed profile
+/// pass per ring, each with its own approach and retract.
+pub(crate) fn chamfer_rings_at_z(
+    rings: &[Vec<crate::geo::P2>],
+    z: f64,
+    params: &ChamferParams,
+) -> Toolpath {
+    let profile_params = ProfileParams {
+        tool_radius: params.tip_offset,
+        side: params.side,
+        cut_depth: z,
+        feed_rate: params.feed_rate,
+        plunge_rate: params.plunge_rate,
+        safe_z: params.safe_z,
+        climb: false,
+        compensate_in_controller: false,
+    };
+    let mut tp = Toolpath::new();
+    for ring in rings {
+        tp.moves
+            .extend(profile_path_to_toolpath(ring, &profile_params).moves);
+    }
+    tp
 }
 
 /// Generate a chamfer toolpath on every edge of a polygon using a V-bit.
@@ -118,26 +155,13 @@ fn chamfer_rings(polygon: &Polygon2, params: &ChamferParams) -> Vec<Vec<crate::g
 /// for a pocket wall and a hole in a part. Before G-CHAMFERSIDE, the tool
 /// centre followed the outline offset `w + t` outward, and the cone touched
 /// the part only at the edge line (D4).
+///
+/// This is the composition of the two halves the Layered Chamfer calls:
+/// [`chamfer_rings_reported`] and [`chamfer_rings_at_z`] at
+/// `top_z - depth`.
 pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath {
-    let depth = chamfer_depth(params);
-
-    let profile_params = ProfileParams {
-        tool_radius: params.tip_offset,
-        side: params.side,
-        cut_depth: params.top_z - depth,
-        feed_rate: params.feed_rate,
-        plunge_rate: params.plunge_rate,
-        safe_z: params.safe_z,
-        climb: false,
-        compensate_in_controller: false,
-    };
-
-    let mut tp = Toolpath::new();
-    for ring in chamfer_rings(polygon, params) {
-        tp.moves
-            .extend(profile_path_to_toolpath(&ring, &profile_params).moves);
-    }
-    tp
+    let (rings, _failures) = chamfer_rings_reported(polygon, params);
+    chamfer_rings_at_z(&rings, params.top_z - chamfer_depth(params), params)
 }
 
 #[cfg(test)]

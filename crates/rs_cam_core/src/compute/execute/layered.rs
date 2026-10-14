@@ -22,8 +22,10 @@
 //! - a cancel poll at each level, and the skip of an empty level;
 //! - the findings: the measured zero of the offset channel, the rest-level
 //!   finding and each prepare report, through the W2.3 record door;
-//! - the depth-run spans. The op's [`LayeredOp::annotate`] hook reads
-//!   them into the semantic trace (the default reads each run as a region).
+//! - the spans. The op's [`LayeredOp::spans`] hook builds them (the
+//!   default: the depth runs, snapped to the ladder), and its
+//!   [`LayeredOp::annotate`] hook reads them into the semantic trace (the
+//!   default reads each run as a region).
 //!
 //! # The region order (R4)
 //!
@@ -179,6 +181,14 @@ pub(crate) trait LayeredOp {
         effective_levels(ctx.cutting_levels, ctx.heights, self.depth_per_pass())
     }
 
+    /// The spans of the finished toolpath. The default builds one depth
+    /// run per (outline, level) and snaps it to the ladder `levels`.
+    /// Chamfer overrides it: its one level holds one cut run per ring, and
+    /// its spans keep the "Chamfer run" label they had before W3.5.
+    fn spans(&self, toolpath: Toolpath, levels: &[f64]) -> GeneratedToolpath {
+        generated_with_depth_run_spans(toolpath, levels)
+    }
+
     /// The semantic annotation of the finished toolpath. The default reads
     /// the depth-run spans as regions. Trace overrides it: its runs are
     /// chains inside one region.
@@ -275,10 +285,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
         }
     }
 
-    Ok(op.annotate(
-        generated_with_depth_run_spans(combined, &levels),
-        ctx.semantic_ctx,
-    ))
+    Ok(op.annotate(op.spans(combined, &levels), ctx.semantic_ctx))
 }
 
 /// The cut of one outline at level `i`, or `None` for an empty level.

@@ -3,19 +3,27 @@
 //!
 //! These adapters cut along a curve rather than clearing an area, so they
 //! share the V-bit half-angle read and the projected-curve chaining pass.
+//! Chamfer runs on the Layered runner (`layered.rs`, W3.5): one level from
+//! the tool angle, and the `LevelSkip` rest rule.
 //! Split out of `compute/execute.rs` (P4).
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, RestUse};
 use crate::compute::cutter::build_cutter;
+use crate::compute::operation_configs::RegionOrdering;
 use crate::compute::tool_config::ToolConfig;
+use crate::geo::P2;
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, ReachBand, run_layered};
 use super::shared::{generated_with_cut_run_spans, op_link_ceiling, with_depth_run_annotation};
-use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
+use super::{
+    ExecutionContext, GeneratedToolpath, MeshInput, OffsetFailures, OperationError, Prepared,
+};
 
 /// Inlay adapter: the V walls of the female pocket only (ruling R2). The
 /// plug is [`generate_inlay_plug`], in its own project. Cancellable: the
@@ -142,45 +150,118 @@ pub(crate) fn generate_vcarve(
     ))
 }
 
-/// Chamfer family adapter. Cut-run spans labeled "Chamfer run"; the
-/// dispatch prologue refuses a tool that is not a V-bit. Cancellable since
-/// 2026-08-14 (O-CANC). The dispatch prologue checks the flag ahead of the
-/// polygon and V-bit refusals (W2.2), so a pre-set flag reports "cancelled"
-/// rather than whatever else happened to be wrong first. The adapter polls
-/// it again per polygon, which is the only unbounded axis this family has.
-/// Pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`.
+/// Chamfer family adapter (W3.5): [`ChamferPass`] on the Layered runner.
+/// The ladder is one level, `top_z - (w + t) / tan(a)`, from the tool angle
+/// and not from the heights. The dispatch prologue refuses a tool that is
+/// not a V-bit, and checks the cancel flag ahead of the polygon and V-bit
+/// refusals (W2.2). The kernel has no cancel of its own; the runner polls
+/// the cancel before each (outline, level), which is one poll per polygon
+/// here, as before (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_chamfer(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Chamfer, "generate_chamfer");
-    let polys = prepared.polygons()?;
-    let ha = vbit_half_angle(ctx.tool_cfg);
-    let safe_z = ctx.heights.retract_z;
-    let mut combined = Toolpath::new();
-    for poly in polys {
-        if ctx.is_cancelled() {
-            return Err(OperationError::Cancelled);
-        }
-        let params = crate::ops::chamfer::ChamferParams {
+    let pass = ChamferPass {
+        rest_use: op.capabilities().rest_use,
+        params: crate::ops::chamfer::ChamferParams {
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
-            tool_half_angle: ha,
+            tool_half_angle: vbit_half_angle(ctx.tool_cfg),
             side: cfg.side,
             feed_rate: op.feed_rate(),
             plunge_rate: op.plunge_rate(),
-            safe_z,
+            safe_z: ctx.heights.retract_z,
             top_z: ctx.heights.top_z,
-        };
-        let tp = crate::ops::chamfer::chamfer_toolpath(poly, &params);
-        combined.moves.extend(tp.moves);
+        },
+    };
+    run_layered(&pass, ctx, prepared)
+}
+
+/// The Chamfer op: the tip rings of each outline (the W1.3b side rule,
+/// `ops::chamfer::chamfer_rings_reported`), cut at the one level the tool
+/// angle gives.
+struct ChamferPass {
+    rest_use: RestUse,
+    params: crate::ops::chamfer::ChamferParams,
+}
+
+impl ChamferPass {
+    /// The cone radius (mm) at `top_z`: `depth · tan(a) = w + t`.
+    fn cone_radius_at_top(&self) -> f64 {
+        self.params.chamfer_width + self.params.tip_offset
     }
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(combined, "Chamfer run"),
-        ctx.semantic_ctx,
-    ))
+}
+
+impl LayeredOp for ChamferPass {
+    type Geometry = Vec<Vec<P2>>;
+    type Report = OffsetFailures;
+
+    /// The chamfer depth. [`Self::ladder`] does not read it: the one level
+    /// comes from the tool angle.
+    fn depth_per_pass(&self) -> f64 {
+        crate::ops::chamfer::chamfer_depth(&self.params)
+    }
+
+    /// One level, so the order of the outlines is the order of the cuts in
+    /// both modes. Chamfer has no ordering option.
+    fn region_ordering(&self) -> RegionOrdering {
+        RegionOrdering::ByArea
+    }
+
+    /// `LevelSkip`, as Profile: a chamfer whose edge a prior op removed
+    /// skips its level, and a chamfer is never clipped, because a clipped
+    /// ring starts and ends its bevel in the middle of an edge. With one
+    /// level, the skip is the whole outline or nothing.
+    fn rest_use(&self) -> RestUse {
+        self.rest_use
+    }
+
+    /// The tip rings and the cone radius at `top_z`. The cone removes
+    /// material only within `w + t` of a tip ring, between the level and
+    /// `top_z` (`ops/chamfer.rs`, the geometry of `chamfer_toolpath`). The
+    /// V-bit radius would read material at the full flute height, which
+    /// the bevel never cuts.
+    fn reach_band(&self, geometry: &Self::Geometry, _tool_radius: f64) -> ReachBand {
+        ReachBand {
+            rings: geometry.clone(),
+            half_width: self.cone_radius_at_top(),
+        }
+    }
+
+    /// One level: the tip at `top_z - (w + t) / tan(a)`. The catalogue
+    /// gives Chamfer no `cutting_levels`, and the heights' depth is not its
+    /// depth.
+    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Vec<f64> {
+        vec![self.params.top_z - crate::ops::chamfer::chamfer_depth(&self.params)]
+    }
+
+    fn prepare(
+        &self,
+        region: &[Polygon2],
+        _layer: &LayerCtx<'_>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let mut rings = Vec::new();
+        let mut failures = 0;
+        for piece in region {
+            let (piece_rings, piece_failures) =
+                crate::ops::chamfer::chamfer_rings_reported(piece, &self.params);
+            failures += piece_failures;
+            rings.extend(piece_rings);
+        }
+        Ok((rings, OffsetFailures(failures)))
+    }
+
+    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+        crate::ops::chamfer::chamfer_rings_at_z(geometry, level.z, &self.params)
+    }
+
+    /// One cut run per ring, labelled "Chamfer run", as before W3.5.
+    fn spans(&self, toolpath: Toolpath, _levels: &[f64]) -> GeneratedToolpath {
+        generated_with_cut_run_spans(toolpath, "Chamfer run")
+    }
 }
 
 /// The V-bit half-angle, in radians. The dispatch prologue already refused
