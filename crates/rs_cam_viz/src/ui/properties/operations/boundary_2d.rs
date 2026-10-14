@@ -1,8 +1,8 @@
 use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{
-    AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, PocketConfig,
-    PocketPattern, ProfileConfig, ProfileSide, RestConfig, VCarveConfig, ZigzagConfig,
+    AdaptiveConfig, CompensationType, FaceConfig, FaceDirection, InlayConfig, InlayPlugConfig,
+    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, VCarveConfig, ZigzagConfig,
 };
 
 use super::super::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
@@ -423,72 +423,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
     });
 }
 
-pub(in crate::ui::properties) fn draw_rest_params(
-    ui: &mut egui::Ui,
-    cfg: &mut RestConfig,
-    tools: &[(crate::state::job::ToolId, String, f64)],
-    pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-) {
-    let stepover_sugg = pills.map(PillSuggestions::stepover);
-    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("rest_p", |ui| {
-        ui.label("Previous Tool:");
-        let prev_label = cfg
-            .prev_tool_id
-            .and_then(|pid| tools.iter().find(|(id, _, _)| *id == pid))
-            .map(|(_, s, _)| s.as_str())
-            .unwrap_or("(select)");
-        egui::ComboBox::from_id_salt("rest_prev_tool")
-            .truncate()
-            .selected_text(prev_label)
-            .show_ui(ui, |ui| {
-                for (id, name, _) in tools {
-                    let selected = cfg.prev_tool_id == Some(*id);
-                    if ui.selectable_label(selected, name.as_str()).clicked() {
-                        cfg.prev_tool_id = Some(*id);
-                    }
-                }
-            });
-        ui.end_row();
-        dv_pill(
-            ui,
-            p(OperationType::Rest, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            0.05..=50.0,
-            stepover_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Rest, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-            0.1..=100.0,
-        );
-        depth_caution_row(ui, depth_caution);
-        dv_pill(
-            ui,
-            p(OperationType::Rest, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            0.1..=50.0,
-            dpp_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Rest, "angle", "Angle:"),
-            &mut cfg.angle,
-            " deg",
-            1.0,
-            0.0..=360.0,
-        );
-    });
-}
-
 pub(in crate::ui::properties) fn draw_inlay_params(
     ui: &mut egui::Ui,
     cfg: &mut InlayConfig,
@@ -496,8 +430,8 @@ pub(in crate::ui::properties) fn draw_inlay_params(
     depth_caution: Option<&DepthBeyondStock>,
 ) {
     // Spec: only the stepover field maps to LUT radial_width. The other
-    // inlay fields (pocket_depth, glue_gap, flat_depth, boundary_offset,
-    // flat_tool_radius) are geometry-driven, not feeds-driven.
+    // inlay fields (pocket_depth, floor_overlap) are geometry-driven, not
+    // feeds-driven.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     ui.param_grid("inlay_p", |ui| {
         dv(
@@ -511,27 +445,19 @@ pub(in crate::ui::properties) fn draw_inlay_params(
         depth_caution_row(ui, depth_caution);
         dv(
             ui,
-            p(OperationType::Inlay, "glue_gap", "Glue Gap:"),
-            &mut cfg.glue_gap,
-            " mm",
-            0.01,
-            0.0..=2.0,
-        );
-        dv(
-            ui,
-            p(OperationType::Inlay, "flat_depth", "Flat Depth:"),
-            &mut cfg.flat_depth,
+            p(OperationType::Inlay, "floor_overlap", "Floor Overlap:"),
+            &mut cfg.floor_overlap,
             " mm",
             0.1,
-            0.0..=20.0,
+            0.0..=50.0,
         );
         dv(
             ui,
-            p(OperationType::Inlay, "boundary_offset", "Boundary Offset:"),
-            &mut cfg.boundary_offset,
+            p(OperationType::Inlay, "floor_ridge", "Floor Ridge:"),
+            &mut cfg.floor_ridge,
             " mm",
-            0.05,
-            0.0..=10.0,
+            0.01,
+            0.005..=1.0,
         );
         dv_pill(
             ui,
@@ -546,19 +472,82 @@ pub(in crate::ui::properties) fn draw_inlay_params(
     advanced(ui, "inlay_adv", |ui| {
         dv(
             ui,
-            p(
-                OperationType::Inlay,
-                "flat_tool_radius",
-                "Flat Tool Radius:",
-            ),
-            &mut cfg.flat_tool_radius,
+            p(OperationType::Inlay, "tolerance", "Tolerance:"),
+            &mut cfg.tolerance,
+            " mm",
+            0.01,
+            0.01..=1.0,
+        );
+    });
+}
+
+pub(in crate::ui::properties) fn draw_inlay_plug_params(
+    ui: &mut egui::Ui,
+    cfg: &mut InlayPlugConfig,
+    pills: Option<&PillSuggestions>,
+    depth_caution: Option<&DepthBeyondStock>,
+) {
+    // Only stepover and depth_per_pass map to the LUT; the other plug
+    // fields are geometry-driven.
+    let stepover_sugg = pills.map(PillSuggestions::stepover);
+    let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
+    ui.param_grid("inlay_plug_p", |ui| {
+        dv(
+            ui,
+            p(OperationType::InlayPlug, "pocket_depth", "Pocket Depth:"),
+            &mut cfg.pocket_depth,
             " mm",
             0.1,
             0.1..=50.0,
         );
+        depth_caution_row(ui, depth_caution);
         dv(
             ui,
-            p(OperationType::Inlay, "tolerance", "Tolerance:"),
+            p(OperationType::InlayPlug, "glue_gap", "Glue Gap:"),
+            &mut cfg.glue_gap,
+            " mm",
+            0.01,
+            0.0..=2.0,
+        );
+        dv(
+            ui,
+            p(OperationType::InlayPlug, "proud_height", "Proud Height:"),
+            &mut cfg.proud_height,
+            " mm",
+            0.1,
+            0.0..=50.0,
+        );
+        dv(
+            ui,
+            p(OperationType::InlayPlug, "outer_margin", "Outer Margin:"),
+            &mut cfg.outer_margin,
+            " mm",
+            0.1,
+            0.0..=100.0,
+        );
+        dv_pill(
+            ui,
+            p(OperationType::InlayPlug, "depth_per_pass", "Depth/Pass:"),
+            &mut cfg.depth_per_pass,
+            " mm",
+            0.1,
+            0.1..=50.0,
+            dpp_sugg,
+        );
+        dv_pill(
+            ui,
+            p(OperationType::InlayPlug, "stepover", "Stepover:"),
+            &mut cfg.stepover,
+            " mm",
+            0.05,
+            0.05..=50.0,
+            stepover_sugg,
+        );
+    });
+    advanced(ui, "inlay_plug_adv", |ui| {
+        dv(
+            ui,
+            p(OperationType::InlayPlug, "tolerance", "Tolerance:"),
             &mut cfg.tolerance,
             " mm",
             0.01,

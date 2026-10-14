@@ -52,7 +52,13 @@ Sequential, one editor each. Order by risk.
 | W1.3 | D4 Chamfer side | simulate first; fix only if confirmed | sentry: chamfer width and side measured on the sim stock |
 | W1.4 | D3 Inlay plug in the workpiece | prove with a sim sentry; write the split proposal (R2); implement after the ruling | sentry: the female op cuts nothing outside the female region |
 | W1.5 | D11 GUI prior-op check stops at the setup | walk core `carve_order_before` | viz test: rest op first in setup 3 names the setup-2 op |
-| W1.6 | D9 red schema test | make `diameter` consistent with the schema | the red test turns green |
+| W1.5b | The live generate_all refusal (2026-10-14): `generation_plan.rs:~139` reads `has_snapshot` once when the plan is built; `source_is_current` skips an upstream op with no result, so a stale snapshot reads current and the plan puts no Simulate step before the rest op | the plan must schedule a Simulate before a rest op whose upstream ops are generated inside the same plan | the ignored test `a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11` turns green |
+| W1.6 | D9 red schema test | make `diameter` consistent with the schema (serde default or unexposed decision) | the red test turns green |
+| W1.2b | D2 in Adaptive3d slices (same planner, still plans only `machinable_vec[0]`) | reproduce on a mesh with a split slice; fix in the planner or the 3D adapter | sentry + G-OPGOLDEN |
+| W1.3b | Operator 2026-10-14: Chamfer on inside edges too (pocket walls and holes) | a side setting on Chamfer (outside / inside), or chamfer every edge of the outline including holes; same bevel rule | sentry: inside bevel width and depth on a pocket and a hole |
+| W1.4b | VCarve's Finish lead-in cuts 238 cells up to 0.75 mm outside the outline (found in W1.4) | strip or contain the lead on VCarve as on Inlay | sentry: no cell outside the outline |
+| W1.7 | R3: retire the Rest op | delete the op on every surface (core, GUI, MCP, CLI, catalog, docs); state the load break | G-OPGOLDEN loses its Rest cases on purpose; build + clippy clean |
+| W1.1b | R1 follow-up: links are not scored against the stock | a simulation check that flags a fed link whose tool passes through remaining stock | sentry: a link forced below the stock top is flagged |
 
 Live check after W1: rebuild release, load `testpiece_mini`, generate all,
 simulate, compare with commit 7a9f5d84 (expect no change: it uses none of the
@@ -73,17 +79,17 @@ Proof: G-opgolden shows no change for W2.1–W2.4. W2.5 changes only text.
 ### W3 — the Layered shape for the 2.5D family
 
 - W3.0: trait `LayeredOp` and `run_layered` with `LevelInfo { z, index,
-  is_final }`, `LevelStock`, a `ladder()` hook, region-first order (R4), the
+  is_final }`, `LevelStock`, a `ladder()` hook, region-first default plus
+  `region_ordering` (R4), the
   prepare cache per region, spans and findings owned by the framework.
 - W3.1: move Pocket onto it. G-opgolden: no change. The G-RESTLEVELS sentry
   stays green.
-- W3.2: Zigzag, Rest, Trace, Profile (no output change on fresh stock).
+- W3.2: Zigzag, Trace, Profile (no output change on fresh stock).
 - W3.3: Face onto the framework ladder; fixes D7.
 - W3.4: `RestUse` per op: Zigzag `LevelClip`, Profile/Trace `LevelSkip`,
   Face `LevelClip` on the stock rectangle, 2D Adaptive `LevelMask` (one stock
   read shared with the clip), Drill `StockColumn` (fixes D8). Each gets a case
-  in the G-RESTLEVELS sentry. The Rest op's `prev_tool_radius` model waits for
-  ruling R3.
+  in the G-RESTLEVELS sentry. (The Rest op is gone after W1.7.)
 - W3.5: Chamfer and Waterline as Layered ops (Waterline: `ContourFilter`).
 
 Live check after W3: the mini project; then Z22/Z23 as Zigzag pattern and a
@@ -98,9 +104,9 @@ cancel-flag test moves into it.
 
 ### W5 — params derive
 
-Ruling R5 first (a new proc-macro crate). `#[derive(OpParams)]` gives field
+Ruling R5 = A: a new proc-macro crate (`[lints] workspace = true`; errors through `syn::Error`). `#[derive(OpParams)]` gives field
 list, type names, ranges, help, aliases, `unexposed`. The GUI `dv()` reads
-the derived range (fixes D5); MCP validates against it. `OpUiRow::draw` stays
+the derived range (D5 gets a direct fix in W1 first); MCP validates against it. `OpUiRow::draw` stays
 for layout and custom widgets. The text-parsing test
 `param_defs_cover_every_config_field` is deleted.
 
@@ -109,17 +115,15 @@ for layout and custom widgets. The text-parsing test
 Height field, composed surface, volumetric, curve. Plan this wave after W3
 and W4, from what they measure. It is not scheduled now.
 
-## Rulings the operator owns
+## Rulings (operator, 2026-10-14)
 
-| # | Question | When |
+| # | Ruling | Effect on the plan |
 |---|---|---|
-| R1 | The one link-ceiling rule (tool or envelope radius; stock top or `top_z`; always or only with stock) | before W1.1 code |
-| R2 | Inlay: two ops in two setups, or one op that emits two programs | before W1.4 code |
-| R3 | The Rest op: keep its `prev_tool_radius` model beside real-stock rest, or retire it | before W3.4 touches Rest |
-| R4 | Region-first as the default order for Layered ops | before W3.0 |
-| R5 | A new proc-macro crate for the params derive | before W5 |
-
-The lead brings each ruling with a recommendation and evidence.
+| R1 | **D**: one `LinkCeiling` builder. Stock = remaining stock when known; fallback top = `max(stock_bbox.max.z, heights.top_z)` (the G-PECKSPLIT rule); radius = `envelope_radius_mm()`; each op states in that builder whether it needs a ceiling on fresh stock (engraving: always; finishing: only with remaining stock) | W1.1. Added W1.1b (a simulation check that scores fed links against the stock: today a link through stock is a silent plough) and backlog B1 (shank and holder in the ceiling; pencil searches only the tip radius) |
+| R2 | **A**: split Inlay. "Inlay" cuts only the V walls of the pocket; the floor is a normal Pocket with a flat end mill; a new "Inlay Plug" op (mirrored, start depth) runs in its own project for the plug board | W1.4. Also fix: plug not mirrored; glue gap wrong for bits that are not 90°; default flat tool is imperial |
+| R3 | **Retire the Rest op**, unless the reach map uses it. Checked: the reach map does not use `ops::rest` (only a doc mention in `surface/rest_field.rs:37`). Operator note: the reach map is a visual, not planning, and must not live with planning code | W1.7: delete the Rest op on every surface; state the load break |
+| R4 | **B**: region-first default plus the `region_ordering` option (the 3D Rough enum) on every Layered op | W3.0. 3D Rough keeps its own default (Global, level-first) |
+| R5 | **A**: a proc-macro crate for `#[derive(OpParams)]`, "clean now" | W5 uses a derive. The GUI range drift (D5) and the pin-drill schema test (D9) still get their own direct fixes in W1 |
 
 ## Per-item flow
 
@@ -133,6 +137,14 @@ The lead brings each ruling with a recommendation and evidence.
 
 | Wave | State |
 |---|---|
-| W0 | not started |
-| W1 | not started |
+| W0 | DONE: G-OPGOLDEN, 37 cases, 24/24 ops, 2 s |
+| W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE e72f4ccb; W1.3b DONE. W1 code complete; live check + merge next |
 | W2–W6 | not started |
+
+## Backlog (not scheduled)
+
+- B1: shank and holder radius in the link ceiling (W1.1b evidence: pencil on remaining stock, 21 links cut 0.50 mm = the rough's leave at the mesh edge); pencil link search uses the
+  tip radius, not the envelope (R1 research).
+- B2: a second board in one project (would join the Inlay pocket and plug).
+- B3: D5 GUI ranges read `ParamDef.range` (can land before W5).
+- B4 (was W1.2c): AgentSearch and ContourSpiral leave ~2.4x more wall-band wood than ContourParallel (double inset in tool-centre space). Operator 2026-10-14: ContourParallel is the 3D Rough strategy in use; the others are known to be rough. Revisit with W6 (Volumetric shape).

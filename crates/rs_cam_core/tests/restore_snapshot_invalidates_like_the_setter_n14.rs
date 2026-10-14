@@ -45,7 +45,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{FeedsProvenance, ValueProvenance};
 use rs_cam_core::gcode::CoolantMode;
@@ -135,7 +135,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// One setup, one tool, one model, two enabled toolpaths in plan order.
 ///
 /// - index 0 carries the operation the caller names, on `Fresh` stock.
-/// - index 1 is a Rest on `FromRemainingStock`.
+/// - index 1 is a rest Pocket on `FromRemainingStock`.
 ///
 /// Both rows carry a cached result before the caller edits anything.
 fn fixture(upstream: OperationConfig) -> ProjectSession {
@@ -147,7 +147,7 @@ fn fixture(upstream: OperationConfig) -> ProjectSession {
     let upstream_tc = tc("upstream", upstream, StockSource::Fresh, tool, model);
     let downstream_tc = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,
@@ -235,7 +235,7 @@ fn the_restore_drops_the_set_the_setter_drops_n14() {
         effects.stale,
         set(&[0, 1]),
         "N14: undo, redo and the optimizer apply used to drop {{0}} \
-         alone, so the downstream Rest answered a stock that had moved. \
+         alone, so the downstream rest Pocket answered a stock that had moved. \
          The command now walks the same chain the setter walks."
     );
     assert!(

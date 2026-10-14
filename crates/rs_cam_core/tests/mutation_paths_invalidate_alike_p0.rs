@@ -126,9 +126,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{
-    AlignmentPinDrillConfig, DrillConfig, PocketConfig, RestConfig,
-};
+use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
@@ -227,7 +225,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 ///
 /// - index 0, `upstream`, `StockSource::Fresh`, the operation the caller
 ///   names. Every arm edits this row.
-/// - index 1, `downstream`, a Rest with `StockSource::FromRemainingStock`.
+/// - index 1, `downstream`, a rest Pocket with `StockSource::FromRemainingStock`.
 ///   A WIDE path drops this result. A NARROW path keeps it.
 ///
 /// Both rows carry a cached result before the caller edits anything.
@@ -240,7 +238,7 @@ fn fixture(upstream: OperationConfig) -> ProjectSession {
     let upstream_tc = tc("upstream", upstream, StockSource::Fresh, tool, model);
     let downstream_tc = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,
@@ -261,7 +259,7 @@ fn pocket() -> OperationConfig {
 /// The SES-07 fixture: the same two rows, on TWO tools and TWO models.
 ///
 /// Index 0, `upstream`, runs tool 0 on model 0 with `StockSource::Fresh`.
-/// Index 1, `downstream`, is a Rest with `StockSource::FromRemainingStock`
+/// Index 1, `downstream`, is a rest Pocket with `StockSource::FromRemainingStock`
 /// that runs tool 1 on model 1.
 ///
 /// The second tool and the second model are the non-vacuity of arms 5 and
@@ -289,7 +287,7 @@ fn fixture_split_inputs() -> ProjectSession {
     );
     let downstream_tc = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         downstream_tool,
         downstream_model,
@@ -318,7 +316,7 @@ fn fixture_split_inputs() -> ProjectSession {
 /// Arm 5 — `Command::SetToolParam`, the MCP and CLI tool-edit door.
 ///
 /// It writes the upstream row's tool diameter. A wider cutter removes
-/// other material, so the stock the downstream Rest op inherits moves.
+/// other material, so the stock the downstream rest Pocket inherits moves.
 fn arm_tool_param() -> Observation {
     let mut s = fixture_split_inputs();
     let before = revisions(&s);

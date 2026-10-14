@@ -901,8 +901,7 @@ pub struct SetToolpathParamArgs {
 /// toolpath carries now and refuses a mismatch with
 /// [`SessionError::StaleCompletion`], inserting nothing.
 ///
-/// The command STALES the adopted toolpath's Regions and PrevTool
-/// consumers (D1). A source that regenerates without an input edit still
+/// The command STALES the adopted toolpath's Regions consumers (D1). A source that regenerates without an input edit still
 /// publishes a different answer, and a consumer that resolved its boundary
 /// against the old rest regions describes a region set that no longer
 /// exists. It stales no `FromRemainingStock` consumer: recording an answer
@@ -2351,9 +2350,7 @@ impl ProjectSession {
                 self.try_with_effects(Some(index), move |session| {
                     session.insert_result(index, *result)?;
                     // D1. The source's OUTPUT moved: its rest regions may
-                    // have appeared, changed or vanished, and a Rest
-                    // consumer's predecessor now carries a different
-                    // answer. Rules (b) and (c) only.
+                    // have appeared, changed or vanished. Rule (b) only.
                     //
                     // `chain_seeds` is EMPTY: recording an answer removes
                     // no material, so rule (a) must not fire. Seeding it

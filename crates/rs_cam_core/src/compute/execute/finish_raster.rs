@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::tool::{MillingCutter, ToolDefinition};
+use crate::tool::ToolDefinition;
 use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
@@ -16,7 +16,7 @@ use crate::trace::transform_provenance::ReconcileSet;
 use super::findings::{record_relink_totals, record_truncated_core, record_waterline_ladder};
 use super::shared::{
     generated_with_cut_run_spans, generated_with_depth_run_spans, generated_with_spans,
-    require_index, require_mesh, with_depth_run_annotation,
+    op_link_ceiling, require_index, require_mesh, with_depth_run_annotation,
 };
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
 
@@ -63,14 +63,12 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError};
 /// stock and take the lifted shape where it must — a target-only check reads
 /// 0.000 on a leg that buries itself between its endpoints.
 ///
+/// The ceiling comes from the one builder, `op_link_ceiling` (ruling R1).
+/// The three callers are finishing ops (`LinkCeilingNeed::WithRemainingStock`):
 /// `ctx.initial_stock` is `Some` exactly when the op cuts what a prior op
 /// left. `None` is the fresh-stock arm, where the mesh IS the material; the
 /// stage is then byte-identical to the legacy surface-riding link, which is
 /// what `tests/island_stay_down_links_o3.rs` pins.
-///
-/// The ENVELOPE radius is the SEARCH BOUND, not the shape — inside it
-/// `LinkCeiling::required_tip_z` lets the cutter's own profile decide. Same
-/// reading, and the same evidence, as `generate_unified_finish`'s ceiling.
 ///
 /// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
 /// a reference to it can only live as long as the borrow of `*ctx` — while
@@ -80,6 +78,7 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError};
 /// signature would instead ask the caller to coerce the whole
 /// `ExecutionContext`, which is a stronger requirement for no gain.
 fn finishing_link_stage<'c, 'a: 'c>(
+    op: OperationType,
     ctx: &'c ExecutionContext<'a>,
     hookup_mm: f64,
 ) -> Option<crate::finish::surface_link::FinishingLinkStage<'c>> {
@@ -88,16 +87,7 @@ fn finishing_link_stage<'c, 'a: 'c>(
     }
     Some(crate::finish::surface_link::FinishingLinkStage {
         hookup_distance: hookup_mm,
-        link_ceiling: ctx
-            .initial_stock
-            .map(|stock| crate::finish::surface_link::LinkCeiling {
-                stock: Some(stock),
-                tool_radius: ctx.tool_def.envelope_radius_mm(),
-                // The analytic stock top in the emission frame — the same
-                // fallback `optimize_entry_descents` takes where the dexel
-                // query has no answer.
-                fallback_top_z: ctx.stock_bbox.max.z,
-            }),
+        link_ceiling: op_link_ceiling(op, ctx),
         boundary: ctx.boundary_regions,
         link_kinematics: ctx.link_kinematics.as_ref(),
     })
@@ -214,7 +204,7 @@ pub(crate) fn generate_scallop(
         // The offset-cascade contour scallop IS the op §2 of the linking spec
         // measured: breadth-first ring order, no reorder, no loop rotation
         // and no stock ceiling. It opts in.
-        let stage = finishing_link_stage(ctx, cfg.intra_pass_hookup_mm);
+        let stage = finishing_link_stage(op.op_type(), ctx, cfg.intra_pass_hookup_mm);
         crate::finish::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
             m,
             idx,
@@ -374,7 +364,7 @@ pub(crate) fn generate_drop_cutter(
     // G-LINKVISIBLE: `None` here reaches `ToolpathStats::relink` as `None`,
     // which is the honest "the stage never ran" — `hookup_mm` at its shipped
     // `0.0`. A recorded zero would claim a measurement that never happened.
-    let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
+    let tp = match finishing_link_stage(op.op_type(), ctx, cfg.hookup_mm) {
         None => tp,
         Some(stage) => {
             let (tp, totals) = relink_in_adapter(
@@ -482,7 +472,7 @@ pub(crate) fn generate_waterline(
     // is the follow-up.
     // G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
     // `None` on the stats channel.
-    let tp = match finishing_link_stage(ctx, cfg.hookup_mm) {
+    let tp = match finishing_link_stage(op.op_type(), ctx, cfg.hookup_mm) {
         None => tp,
         Some(stage) => {
             let (tp, totals) = relink_in_adapter(

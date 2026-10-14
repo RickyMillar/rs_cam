@@ -50,7 +50,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
@@ -140,7 +140,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 ///
 /// - index 0, `upstream`, `StockSource::Fresh`, a Pocket. Every arm
 ///   replaces this row.
-/// - index 1, `downstream`, a Rest with `StockSource::FromRemainingStock`.
+/// - index 1, `downstream`, a rest Pocket with `StockSource::FromRemainingStock`.
 ///   A chain walk drops this result. A gated replacement keeps it.
 ///
 /// Both rows carry a cached result before the caller replaces anything.
@@ -159,7 +159,7 @@ fn fixture() -> ProjectSession {
     );
     let downstream = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,

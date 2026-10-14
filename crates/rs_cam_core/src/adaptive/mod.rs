@@ -32,7 +32,7 @@ pub(crate) use crate::ops::adaptive_shared::{
     angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
     target_engagement_fraction,
 };
-use crate::polygon::Polygon2;
+use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2};
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
 
@@ -341,6 +341,55 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
     Ok((tp, annotations))
 }
 
+/// The outline of each piece of the machinable region of `outline`
+/// (G-ADAPTPIECES, D2). The planner plans one piece of the inset by
+/// `tool_radius`; when that inset splits (a neck narrower than the tool),
+/// the caller plans each returned outline in turn. Both adapters use it:
+/// the 2D adapter (`clearing_2d.rs`) and the Adaptive3d slice
+/// (`adaptive3d/clearing.rs::planner_outlines`, G-ADAPT3DPIECES). Each outline is the
+/// piece grown back by the tool radius (the area a cutter centre in the
+/// piece reaches), clipped to `outline`, so its own inset is that piece.
+///
+/// Empty when the inset is zero or one piece: the caller then plans
+/// `outline` itself, unchanged.
+pub(crate) fn inset_piece_outlines(outline: &Polygon2, tool_radius: f64) -> Vec<Polygon2> {
+    let pieces = crate::polygon::offset_polygon(outline, tool_radius);
+    if pieces.len() < 2 {
+        return Vec::new();
+    }
+    pieces
+        .iter()
+        .filter_map(|piece| {
+            // A vertex of the piece lies a tool radius inside its grown
+            // outline, so it names the component that belongs to the piece.
+            let anchor = piece.exterior.first()?;
+            // Grow with the arcs kept and flattened once. The `offset_polygon`
+            // chord would cut each corner of the piece by its sagitta, and the
+            // re-inset would then lose those corners. The grown outline is a
+            // shape the planner insets again, not a path, so the fixed
+            // untoleranced budget (10 µm) applies, not the op's tolerance.
+            let grown = OffsetRingSet::from_polygon(piece)
+                .offset(-tool_radius)
+                .to_polygons(FlattenPolicy::untoleranced());
+            let clipped = grown
+                .iter()
+                .flat_map(|g| g.intersection(outline))
+                .find(|g| g.contains_point(anchor));
+            if clipped.is_none() {
+                // Only float noise gets here. The grown piece lies inside
+                // the outline by construction, so plan it unclipped rather
+                // than drop the piece (which is D2 again).
+                tracing::warn!(
+                    piece_area = piece.area(),
+                    "inset_piece_outlines: no clipped component holds the piece; \
+                     planning the grown piece unclipped"
+                );
+            }
+            clipped.or_else(|| crate::polygon::largest_by_area(&grown).cloned())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -362,6 +411,49 @@ mod tests {
     fn square_polygon(size: f64) -> Polygon2 {
         let h = size / 2.0;
         Polygon2::rectangle(-h, -h, h, h)
+    }
+
+    /// G-ADAPTPIECES: one outline for each inset piece, and each outline
+    /// insets to exactly its own piece (same area to 0.1 %). A one-piece
+    /// inset gives no outlines, so the caller plans the outline unchanged.
+    #[test]
+    fn each_inset_piece_gets_an_outline_that_insets_to_it() {
+        let r = 3.0;
+        assert!(inset_piece_outlines(&square_polygon(20.0), r).is_empty());
+        // Two 20 mm squares joined by a 10 mm neck 5 mm wide (< 2R).
+        let dumbbell = Polygon2::new(vec![
+            P2::new(-25.0, -10.0),
+            P2::new(-5.0, -10.0),
+            P2::new(-5.0, -2.5),
+            P2::new(5.0, -2.5),
+            P2::new(5.0, -10.0),
+            P2::new(25.0, -10.0),
+            P2::new(25.0, 10.0),
+            P2::new(5.0, 10.0),
+            P2::new(5.0, 2.5),
+            P2::new(-5.0, 2.5),
+            P2::new(-5.0, 10.0),
+            P2::new(-25.0, 10.0),
+        ]);
+        let pieces = offset_polygon(&dumbbell, r);
+        assert_eq!(pieces.len(), 2);
+        let outlines = inset_piece_outlines(&dumbbell, r);
+        assert_eq!(outlines.len(), pieces.len());
+        for (piece, outline) in pieces.iter().zip(&outlines) {
+            let again = offset_polygon(outline, r);
+            assert_eq!(again.len(), 1, "an outline insets to one piece");
+            let ratio = again[0].area() / piece.area();
+            assert!((ratio - 1.0).abs() < 1e-3, "area ratio {ratio}");
+            let n = piece.exterior.len() as f64;
+            let mid = P2::new(
+                piece.exterior.iter().map(|q| q.x).sum::<f64>() / n,
+                piece.exterior.iter().map(|q| q.y).sum::<f64>() / n,
+            );
+            assert!(
+                again[0].contains_point(&mid),
+                "the outline is its own piece's"
+            );
+        }
     }
 
     fn default_params(tool_radius: f64, stepover: f64) -> AdaptiveParams {

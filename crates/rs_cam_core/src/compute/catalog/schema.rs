@@ -76,6 +76,58 @@ pub struct OperationSchema {
 /// mention at all.
 pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required("debug_enabled", "bool")];
 
+/// A config field that its own driver writes, and that `set_toolpath_param`
+/// refuses (D9).
+///
+/// The field is in the operation config, so `get_toolpath_params` reads it
+/// back. It is not a `ParamDef`, so `get_operation_schema` does not offer
+/// it, and the setter refuses it with [`Self::reason`]. The schema then
+/// offers no field the setter refuses and hides no field the setter
+/// accepts.
+#[derive(Debug, Clone, Copy)]
+pub struct DriverSetField {
+    /// The config field name.
+    pub name: &'static str,
+    /// The operations whose config holds the field.
+    pub ops: &'static [OperationType],
+    /// Which driver writes the field, and why an edit is refused.
+    pub reason: &'static str,
+}
+
+/// Every driver-set config field, one row per field name.
+pub const DRIVER_SET_FIELDS: &[DriverSetField] = &[
+    DriverSetField {
+        name: "selected_holes",
+        ops: &[OperationType::Drill, OperationType::AlignmentPinDrill],
+        reason: "the DXF/model drill picker writes the picked target list",
+    },
+    DriverSetField {
+        name: "selected_layers",
+        ops: &[OperationType::Drill, OperationType::AlignmentPinDrill],
+        reason: "the layer-select route writes this beside the picked target list",
+    },
+    DriverSetField {
+        name: "diameter",
+        ops: &[OperationType::AlignmentPinDrill],
+        reason: "the pin door keeps one pin-drill operation per pin diameter and writes \
+                 the diameter it drills (R1); an edit would make the operation drill no pin. \
+                 Edit the pin set instead",
+    },
+    DriverSetField {
+        name: "setup_z_flipped",
+        ops: &[OperationType::ProjectCurve],
+        reason: "the setup transform writes this from the setup face",
+    },
+];
+
+/// The driver-set row for `param` on `op_type`, if there is one.
+#[must_use]
+pub fn driver_set_field(op_type: OperationType, param: &str) -> Option<&'static DriverSetField> {
+    DRIVER_SET_FIELDS
+        .iter()
+        .find(|field| field.name == param && field.ops.contains(&op_type))
+}
+
 /// The numeric domain a settable parameter is declared to accept.
 ///
 /// # What `None` on [`ParamDef::range`] means (DR-LIVE, 2026-08-14)

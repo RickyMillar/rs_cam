@@ -1,13 +1,11 @@
 # `adaptive/` — 2D adaptive clearing
 
-The 2D clearing engine; the entry point is `adaptive_toolpath` (`mod.rs`).
-
 ## Files
 
-- `mod.rs` — facade, parameters; `path.rs` — orchestrator, capped walker,
-  frontier hop, mop, links, emission; `spiral.rs` — contour spiral.
-- `search.rs` — step measures, `PassLoad`, `ToolCentreRegion`, direction
-  search, entries; `material_grid.rs` — 2D stock grid, fringe sub-points.
+- `mod.rs` entry `adaptive_toolpath`, parameters, piece split; `path.rs`
+  orchestrator, capped walker, frontier hop, mop, links, emission; `spiral.rs`
+  contour spiral; `search.rs` step measures, `PassLoad`, `ToolCentreRegion`,
+  direction search, entries; `material_grid.rs` 2D stock grid, fringe points.
 
 ## Invariants
 
@@ -22,6 +20,7 @@ The 2D clearing engine; the entry point is `adaptive_toolpath` (`mod.rs`).
 - Exempt: opt-in slot lines, the steps out of a straight plunge. Adaptive3d
   keeps the historical rule (byte parity). Run order is part of the plan
   (no rapid reorder); a `Rapid` retracts Z-only before XY travel.
+- The planner plans one inset piece; both adapters split (D2, `mod.rs`).
 
 ## Sentries
 
@@ -30,7 +29,8 @@ The 2D clearing engine; the entry point is `adaptive_toolpath` (`mod.rs`).
   `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`,
   `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`,
   `adaptive_keeps_its_planner_order_g_adaptorder`, `adaptive_property_harness`,
-  `contour_spiral_gcode_validity_phase0`, `adaptive3d_emission_byte_parity`
+  `contour_spiral_gcode_validity_phase0`, `adaptive3d_emission_byte_parity`,
+  `adaptive_plans_every_inset_piece_g_adaptpieces`
 
 ## Do not
 

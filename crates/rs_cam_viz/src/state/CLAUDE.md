@@ -16,8 +16,8 @@ project. The entry point is `state::AppState` in `mod.rs`.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection
   and the viewport dock and catalogue state.
-- `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
-  undo, the export wizard, the planner and the Rest predecessor rule.
+- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo, the export
+  wizard and the planner.
 - `panels.rs`, `app_settings.rs`, `pin_view.rs` — drafts; settings; pin frame (C8).
 
 ## Invariants

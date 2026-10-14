@@ -416,7 +416,13 @@ impl ProjectSession {
 
     /// Every toolpath index the simulator carves before `consumer`: all rows
     /// of every earlier setup, then the rows above it in its own setup.
-    fn carve_order_before(&self, consumer: ToolpathId) -> Vec<usize> {
+    ///
+    /// The rows are in carve order, disabled rows included. The snapshot
+    /// rule (3) reads this walk, and so does the GUI when it names the
+    /// operation a blocked rest operation waits on (D11). Do not write a
+    /// second walk.
+    #[must_use]
+    pub fn carve_order_before(&self, consumer: ToolpathId) -> Vec<usize> {
         let mut out = Vec::new();
         for setup in &self.setups {
             for &index in &setup.toolpath_indices {

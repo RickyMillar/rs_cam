@@ -60,29 +60,10 @@ fn operation_catalog_is_exhaustive_and_consistent() {
 /// right order of magnitude, or it is measuring nothing.
 #[test]
 fn param_defs_cover_every_config_field() {
-    /// One entry per field that exists and is deliberately NOT settable
-    /// through `set_toolpath_param`. Every entry carries its reason.
-    /// Adding a row here is a decision; the absence of a row is a defect.
-    const UNEXPOSED: &[(&str, &str)] = &[
-        (
-            "selected_holes",
-            "driver-set: the DXF/model drill picker writes the picked target list, on \
-             DrillConfig and AlignmentPinDrillConfig alike",
-        ),
-        (
-            "selected_layers",
-            "driver-set: the layer-select route writes this beside the picked list",
-        ),
-        (
-            "diameter",
-            "driver-set: the pin door keeps one AlignmentPinDrill op per pin diameter \
-             and writes the diameter it drills (R1); an edit would make the op drill nothing",
-        ),
-        (
-            "setup_z_flipped",
-            "driver-set: the setup transform stamps this, not the operator",
-        ),
-    ];
+    // One row per field that exists and is deliberately NOT settable
+    // through `set_toolpath_param`: the production table
+    // `DRIVER_SET_FIELDS` (D9), which the setter reads too. Adding a row
+    // there is a decision; the absence of a row is a defect.
 
     const CONFIG_SRC: &str = include_str!("../operation_configs.rs");
 
@@ -111,7 +92,7 @@ fn param_defs_cover_every_config_field() {
             .collect()
     }
 
-    let mut unexposed_seen: Vec<&str> = Vec::new();
+    let mut unexposed_seen: Vec<(OperationType, &str)> = Vec::new();
     let mut field_total = 0;
     let mut def_total = 0;
 
@@ -132,13 +113,13 @@ fn param_defs_cover_every_config_field() {
                 continue;
             }
             assert!(
-                UNEXPOSED.iter().any(|(name, _)| name == field),
+                driver_set_field(op_type, field).is_some(),
                 "{op_type:?}: `{struct_name}::{field}` is in no `param_defs` array, so no \
                  agent can set it and `get_operation_schema` does not mention it. Publish \
-                 it as a `ParamDef`, or add it to this test's UNEXPOSED list with the \
-                 reason it is driver-set."
+                 it as a `ParamDef`, or add it to `DRIVER_SET_FIELDS` with this operation \
+                 and the reason it is driver-set."
             );
-            unexposed_seen.push(field);
+            unexposed_seen.push((op_type, *field));
         }
 
         // The other direction, as far as it can honestly go: a def must
@@ -168,11 +149,15 @@ fn param_defs_cover_every_config_field() {
 
     // Non-vacuity on the allow-list itself: an entry nobody hits is a
     // stale exemption, and a stale exemption hides the next real one.
-    for (name, _) in UNEXPOSED {
-        assert!(
-            unexposed_seen.contains(name),
-            "the UNEXPOSED entry `{name}` matches no config field any more. Delete the row."
-        );
+    for field in DRIVER_SET_FIELDS {
+        for &op_type in field.ops {
+            assert!(
+                unexposed_seen.contains(&(op_type, field.name)),
+                "the DRIVER_SET_FIELDS row `{}` names {op_type:?}, and that config has no \
+                 unpublished field of that name any more. Delete it from the row.",
+                field.name
+            );
+        }
     }
 }
 
@@ -213,7 +198,7 @@ fn every_alias_names_a_field_of_its_own_operation() {
 /// Phase 1 wildcard kill (architectural refactor T3, re-baselined
 /// typed in T7): tool constraints are an explicit per-entry
 /// registry field, now a `&[CutterKind]` list. This pins (a) the
-/// five restricted ops exactly (VCarve/Inlay/Chamfer on V-bit;
+/// restricted ops exactly (VCarve/Inlay/InlayPlug/Chamfer on V-bit;
 /// Scallop/UnifiedFinish on ball-tip), (b) that the 19 previously-
 /// wildcard-defaulted ops still resolve to the named `ANY_TOOL`
 /// policy, and (c) that `to_schema()` materializes the EXACT
@@ -228,7 +213,10 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
         let tc = op_type.registry_entry().tool_constraints;
         let schema = tc.to_schema();
         match op_type {
-            OperationType::VCarve | OperationType::Inlay | OperationType::Chamfer => {
+            OperationType::VCarve
+            | OperationType::Inlay
+            | OperationType::InlayPlug
+            | OperationType::Chamfer => {
                 assert_eq!(tc.required_kinds, [CutterKind::VBit], "{op_type:?}");
                 assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                 assert!(tc.supports_v_bit, "{op_type:?}");
@@ -264,8 +252,9 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
         }
         assert_eq!(schema.supports_v_bit, tc.supports_v_bit);
     }
+    // 16 since ruling R3 (2026-10-14) retired the Rest operation.
     assert_eq!(
-        unrestricted, 17,
+        unrestricted, 16,
         "unrestricted-op count changed — decide deliberately"
     );
 }
@@ -351,7 +340,7 @@ fn drill_kinematics_set_is_pinned() {
 /// agrees with the operation's own declared depth semantics.
 ///
 /// The exhaustiveness half is the compiler's: the match named every
-/// variant when the `_ => vec![]` wildcard went, so a 25th operation does
+/// variant when the `_ => vec![]` wildcard went, so a 26th operation does
 /// not compile until it decides. This test carries the consistency half —
 /// an operation produces depth-stepped levels EXACTLY when it declares an
 /// explicit total depth AND a per-pass step. An op that declares both and
@@ -553,8 +542,8 @@ fn operation_type_serde_repr_pinned() {
         ("profile", OperationType::Profile),
         ("adaptive", OperationType::Adaptive),
         ("v_carve", OperationType::VCarve),
-        ("rest", OperationType::Rest),
         ("inlay", OperationType::Inlay),
+        ("inlay_plug", OperationType::InlayPlug),
         ("zigzag", OperationType::Zigzag),
         ("trace", OperationType::Trace),
         ("drill", OperationType::Drill),
@@ -657,9 +646,9 @@ fn operation_transform_capabilities_are_explicit() {
         !adaptive.allows_unbarriered_rapid_reorder(),
         "2D Adaptive must veto unbarriered rapid-order permutation"
     );
-    // Rest frames every scan segment with its own rapids: no order veto.
+    // Pocket shares the plain 2.5D capability row: no order veto.
     assert!(
-        OperationType::Rest
+        OperationType::Pocket
             .transform_capabilities()
             .allows_barriered_rapid_reorder()
     );
@@ -794,7 +783,6 @@ fn air_cut_threshold_band_for_clearing_ops() {
         OperationType::Pocket,
         OperationType::Face,
         OperationType::Zigzag,
-        OperationType::Rest,
     ] {
         let t = op
             .air_cut_high_threshold_pct()

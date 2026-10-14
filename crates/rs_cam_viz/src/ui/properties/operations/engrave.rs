@@ -1,8 +1,8 @@
 use super::super::pills::PillSuggestions;
 
-use crate::state::toolpath::{ChamferConfig, TraceCompensation, TraceConfig};
+use crate::state::toolpath::{ChamferConfig, ProfileSide, TraceCompensation, TraceConfig};
 
-use super::super::{depth_caution_row, dv, p};
+use super::super::{depth_caution_row, dv, help_for, p};
 use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
@@ -60,6 +60,24 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
     // Chamfer width/tip offset are geometry-driven, not feeds-driven; feed/
     // plunge are edited on the Feeds & Speeds tab (W3.2).
     ui.param_grid("chamfer_p", |ui| {
+        // W1.3b: the side says where the material is; the bevel goes into it
+        // at every ring of the outline, holes included.
+        let side_help = help_for(OperationType::Chamfer, "side");
+        let label = ui.label("Side:");
+        if let Some(help) = side_help {
+            label.on_hover_text(help);
+        }
+        egui::ComboBox::from_id_salt("chamfer_side")
+            .truncate()
+            .selected_text(match cfg.side {
+                ProfileSide::Outside => "Outside",
+                ProfileSide::Inside => "Inside",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut cfg.side, ProfileSide::Outside, "Outside");
+                ui.selectable_value(&mut cfg.side, ProfileSide::Inside, "Inside");
+            });
+        ui.end_row();
         dv(
             ui,
             p(OperationType::Chamfer, "chamfer_width", "Chamfer Width:"),

@@ -243,12 +243,9 @@ impl ProjectSession {
     }
 
     /// Build a [`PreconditionContext`] for a single toolpath. Captures
-    /// the prior toolpaths in the same setup (so the rest-machining
-    /// precondition can verify a larger upstream tool exists), the
-    /// target model's geometry kind (so the drill / project-curve
-    /// preconditions can verify a curve / mesh source is in scope),
-    /// and the per-tool diameters used by the rest "prev tool must be
-    /// larger" check.
+    /// the target model's geometry kind (so the drill / project-curve
+    /// preconditions can verify a curve / mesh source is in scope) and
+    /// the live stock pin diameters.
     ///
     /// Pure helper — no I/O, no mutation. Safe to call repeatedly per
     /// diagnose round. GUI consumers snapshot this context before borrowing
@@ -257,27 +254,7 @@ impl ProjectSession {
         &self,
         tc: &super::ToolpathConfig,
     ) -> crate::diagnostics::diagnose::PreconditionContext {
-        use crate::diagnostics::diagnose::{
-            PreconditionContext, PriorToolpathSummary, TargetModelGeometry, ToolDiameterEntry,
-        };
-
-        // Find the setup that owns this toolpath and collect prior
-        // toolpaths in that setup (lower display index than `tc`).
-        let mut prior_toolpaths_in_setup = Vec::new();
-        if let Some(setup) = self.find_setup_for_toolpath_id(tc.id) {
-            for &idx in &setup.toolpath_indices {
-                if let Some(other) = self.toolpath_configs.get(idx) {
-                    if other.id == tc.id {
-                        break;
-                    }
-                    prior_toolpaths_in_setup.push(PriorToolpathSummary {
-                        enabled: other.enabled,
-                        tool_id: other.tool_id,
-                        model_id: other.model_id,
-                    });
-                }
-            }
-        }
+        use crate::diagnostics::diagnose::{PreconditionContext, TargetModelGeometry};
 
         let target_model =
             self.models
@@ -291,20 +268,9 @@ impl ProjectSession {
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
 
-        let tool_diameters = self
-            .tools
-            .iter()
-            .map(|t| ToolDiameterEntry {
-                id: t.id,
-                diameter: t.diameter,
-            })
-            .collect();
-
         PreconditionContext {
-            prior_toolpaths_in_setup,
             target_model,
             any_loaded_model_has_mesh,
-            tool_diameters,
             // The generator drills the live stock pins (see
             // `generate_toolpath`), so the check counts them here.
             stock_alignment_pin_diameters: self

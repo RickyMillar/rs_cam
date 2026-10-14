@@ -36,7 +36,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
@@ -114,7 +114,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 
 /// One setup, one tool, one model, two enabled toolpaths in plan order.
 ///
-/// Index 0 is a `Fresh` Pocket. Index 1 is a Rest that reads the stock
+/// Index 0 is a `Fresh` Pocket. Index 1 is a rest Pocket that reads the stock
 /// index 0 leaves, so a wide invalidation of index 0 reaches it. The
 /// fixture is the one `mutation_paths_invalidate_alike_p0.rs` uses, with
 /// one difference: NEITHER row carries a cached result, because this
@@ -134,7 +134,7 @@ fn fixture() -> ProjectSession {
     );
     let downstream = tc(
         "downstream",
-        OperationConfig::Rest(RestConfig::default()),
+        OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
         model,

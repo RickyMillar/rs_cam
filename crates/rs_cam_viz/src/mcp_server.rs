@@ -1059,7 +1059,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_toolpath_tool",
-        description = "Rebind a toolpath to a DIFFERENT CUTTER. This is the only route to a toolpath's tool — `set_toolpath_param` writes the operation's own parameters and refuses the key `tool_id` (no operation declares one); Rest's `prev_tool_id` is a different thing, the rest-analysis reference tool. `tool_id` is the project-assigned `id` from a `list_tools` row, NOT its 0-based position (`add_toolpath` takes a `tool_index` — these differ once a tool has been removed), so check the `tool` object in the reply. Use this to repair an operation blocked on its tool shape: the rebind is ALLOWED even when the operation rejects that shape (e.g. a flat end mill on Scallop), and the generator still refuses until you bind a tool it accepts. Invalidates this toolpath's result and every downstream operation that machines the stock it leaves — regenerate to apply."
+        description = "Rebind a toolpath to a DIFFERENT CUTTER. This is the only route to a toolpath's tool — `set_toolpath_param` writes the operation's own parameters and refuses the key `tool_id` (no operation declares one); Pencil's `reference_tool_id` is a different thing, the rest reference tool. `tool_id` is the project-assigned `id` from a `list_tools` row, NOT its 0-based position (`add_toolpath` takes a `tool_index` — these differ once a tool has been removed), so check the `tool` object in the reply. Use this to repair an operation blocked on its tool shape: the rebind is ALLOWED even when the operation rejects that shape (e.g. a flat end mill on Scallop), and the generator still refuses until you bind a tool it accepts. Invalidates this toolpath's result and every downstream operation that machines the stock it leaves — regenerate to apply."
     )]
     async fn set_toolpath_tool(
         &self,
@@ -1112,7 +1112,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_toolpath",
-        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, rest, inlay, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
+        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, inlay, inlay_plug, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
     )]
     async fn add_toolpath(&self, Parameters(param): Parameters<AddToolpathParam>) -> String {
         Self::format_result(

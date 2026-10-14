@@ -713,6 +713,21 @@ pub fn optimize_entry_descents(
         .0
 }
 
+/// The fresh-stock top: the Z where material stands when no dexel snapshot
+/// gives an answer (G-PECKSPLIT, ruling R1).
+///
+/// `stock_top_z` is the STOCK top in the emission frame. A pinned
+/// `heights_top_z` ABOVE it raises the answer; a pinned top BELOW it does
+/// not lower it, because material stands up to the stock top. The fallback
+/// errs high, which is the safe direction for a clearance.
+///
+/// Two consumers read this one rule: the entry-descent split
+/// (`session/compute.rs`) and every link ceiling
+/// (`compute::execute::link_ceiling_for`).
+pub fn fresh_stock_top_z(stock_top_z: f64, heights_top_z: f64) -> f64 {
+    stock_top_z.max(heights_top_z)
+}
+
 /// [`optimize_entry_descents`] at the [`AnnotatedToolpath`] level, under the
 /// C1 provenance contract: remaps the spans and hands the mapping to every
 /// registered channel through [`Transformed::reconcile`].

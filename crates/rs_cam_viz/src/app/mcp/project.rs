@@ -82,8 +82,8 @@ impl RsCamApp {
                     .filter(|e| e.from == s.id)
                     .map(|e| {
                         // W1 tail: the two wire words live on the enums
-                        // (`stock|regions|prev_tool`, `ready|pending|broken`),
-                        // so a fourth arm cannot reach this reply unnamed.
+                        // (`stock|regions`, `ready|pending|broken`),
+                        // so a third arm cannot reach this reply unnamed.
                         serde_json::json!({
                             "id": e.on,
                             "kind": e.kind,

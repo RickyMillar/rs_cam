@@ -1,10 +1,29 @@
 //! Chamfer operation: edge chamfers using a V-bit along profile edges.
 //!
-//! A chamfer is geometrically equivalent to a profile cut at a computed Z depth
-//! where the V-bit's cutting diameter at that depth produces the desired chamfer
-//! width on the workpiece face.
+//! A chamfer is a profile cut at one computed Z depth. The V-bit tip runs a
+//! small distance on the air side of the edge, and the cone cuts a flat bevel
+//! of the asked width into the top edge of the material.
+//!
+//! # Which side is material (W1.3b)
+//!
+//! [`ChamferParams::side`] says where the material is:
+//!
+//! - `Outside`: the outline is a part. The material is inside the outline,
+//!   and the air is outside it.
+//! - `Inside`: the outline is a cavity (a pocket or a hole). The air is
+//!   inside the outline, and the material is outside it.
+//!
+//! The rule for every ring of the outline: the bevel goes INTO the material.
+//! A hole ring of an `Outside` outline is a hole in the part, so its air is
+//! inside the hole. A hole ring of an `Inside` outline is an island in the
+//! cavity, so its air is outside the island. One signed offset of the whole
+//! outline (exterior and holes together) moves every ring `t` into its air:
+//! outward by `t` for `Outside`, inward by `t` for `Inside`. The operation
+//! cuts every ring of every offset result. Before W1.3b, the operation cut
+//! only the exterior of the first offset result, so the edge of a hole in a
+//! part had no chamfer.
 
-use crate::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
+use crate::ops::profile::{ProfileParams, ProfileSide, profile_path_to_toolpath};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
@@ -12,11 +31,15 @@ use crate::toolpath::Toolpath;
 pub struct ChamferParams {
     /// Width of the chamfer on the workpiece face (mm).
     pub chamfer_width: f64,
-    /// Distance from V-bit tip to contact point, preventing tip wear (mm).
-    /// Default: 0.1 mm.
+    /// Horizontal distance (mm) from the edge to the V-bit tip. The tip runs
+    /// this far into the air side of the wall, so the bevel stops above the
+    /// tip and the fragile point does not cut. Default: 0.1 mm.
     pub tip_offset: f64,
     /// Half angle of the V-bit in radians (e.g., 45-degree V-bit = pi/4).
     pub tool_half_angle: f64,
+    /// Where the material is: `Outside` chamfers a part, `Inside` chamfers a
+    /// cavity. The module doc states the rule for the hole rings.
+    pub side: ProfileSide,
     /// Cutting feed rate (mm/min).
     pub feed_rate: f64,
     /// Plunge feed rate (mm/min).
@@ -31,53 +54,76 @@ pub struct ChamferParams {
     pub top_z: f64,
 }
 
-/// Compute the cut depth for a chamfer.
+/// Compute the cut depth (tip below the stock top) for a chamfer.
 ///
-/// The V-bit must plunge deep enough that the sloped face of the cutter
-/// spans the requested chamfer width, plus the tip offset that keeps the
-/// fragile tip away from the work.
+/// The cone radius at the stock top must reach `chamfer_width` into the
+/// material from a tip that sits `tip_offset` into the air.
 ///
 /// `depth = (chamfer_width + tip_offset) / tan(half_angle)`
 fn chamfer_depth(params: &ChamferParams) -> f64 {
     (params.chamfer_width + params.tip_offset) / params.tool_half_angle.tan()
 }
 
-/// Compute the V-bit's effective cutting radius at a given depth.
-///
-/// At depth `d`, the V-bit cone has radius `d * tan(half_angle)`.
-fn effective_radius_at_depth(depth: f64, half_angle: f64) -> f64 {
-    depth * half_angle.tan()
+/// The tool-centre rings: every ring of the outline, moved `tip_offset` into
+/// its air side (see the module doc).
+fn chamfer_rings(polygon: &Polygon2, params: &ChamferParams) -> Vec<Vec<crate::geo::P2>> {
+    // The offset sign and the hole classification both read the winding
+    // (exterior CCW, holes CW). Importers normalise it; a hand-built outline
+    // may not.
+    let normalised;
+    let polygon = if polygon.has_correct_winding() {
+        polygon
+    } else {
+        let mut p = polygon.clone();
+        p.ensure_winding();
+        normalised = p;
+        &normalised
+    };
+    let pieces = if params.tip_offset.abs() < 1e-9 {
+        // A zero tip offset puts the tip on the edge itself: no offset to make.
+        vec![polygon.clone()]
+    } else {
+        // Negative distance = outward, positive = inward (profile's sign).
+        let distance = match params.side {
+            ProfileSide::Outside => -params.tip_offset,
+            ProfileSide::Inside => params.tip_offset,
+        };
+        crate::polygon::offset_polygon(polygon, distance)
+    };
+    pieces
+        .into_iter()
+        .flat_map(|p| std::iter::once(p.exterior).chain(p.holes))
+        .filter(|ring| ring.len() >= 3)
+        .collect()
 }
 
-/// Generate a chamfer toolpath around the outside of a polygon using a V-bit.
-///
-/// The chamfer is produced by running a profile cut at a computed Z depth
-/// where the V-bit's conical face intersects the top edge of the stock at
-/// the desired chamfer width. The tool center follows a path offset from
-/// the polygon edge by half the chamfer width (so the cut is centered on
-/// the edge).
+/// Generate a chamfer toolpath on every edge of a polygon using a V-bit.
 ///
 /// # Geometry
 ///
 /// For a V-bit with half angle `a`, chamfer width `w`, and tip offset `t`:
-/// - Cut depth: `d = (w + t) / tan(a)`
-/// - Effective tool radius at that depth: `r = d * tan(a) = w + t`
-/// - The profile offset places the tool center at distance `r` from the edge,
-///   so the cutter's outer contact point is at `r` from the edge and the
-///   inner contact point (at the surface) is at `r - w = t` from the edge.
+/// - The tool centre (the tip) follows each ring offset `t` into its air
+///   side.
+/// - Cut depth: `d = (w + t) / tan(a)` below the stock top.
+/// - At the stock top the cone radius is `d * tan(a) = w + t`, so the bevel
+///   meets the top face `w` into the material from the edge.
+/// - At the edge the cone is `t / tan(a)` above the tip, so the bevel meets
+///   the wall `w / tan(a)` below the stock top.
 ///
-/// This means the chamfer starts at the polygon edge and extends `w` mm
-/// inward on the top face.
+/// The bevel makes the angle `90° - a` with the top face: 45° for a 90° bit.
+/// G-CHAMFERSIDE (`tests/chamfer_bevel_sits_on_the_edge_g_chamferside.rs`)
+/// measures this on the simulated stock for an outside edge, and
+/// G-CHAMFERINSIDE
+/// (`tests/chamfer_inside_edge_bevels_into_the_material_g_chamferinside.rs`)
+/// for a pocket wall and a hole in a part. Before G-CHAMFERSIDE, the tool
+/// centre followed the outline offset `w + t` outward, and the cone touched
+/// the part only at the edge line (D4).
 pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath {
     let depth = chamfer_depth(params);
 
-    // The V-bit's effective cutting radius at the chamfer depth is the
-    // offset distance from the polygon edge to the tool center.
-    let effective_tool_radius = effective_radius_at_depth(depth, params.tool_half_angle);
-
     let profile_params = ProfileParams {
-        tool_radius: effective_tool_radius,
-        side: ProfileSide::Outside,
+        tool_radius: params.tip_offset,
+        side: params.side,
         cut_depth: params.top_z - depth,
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
@@ -86,7 +132,12 @@ pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath 
         compensate_in_controller: false,
     };
 
-    profile_toolpath(polygon, &profile_params)
+    let mut tp = Toolpath::new();
+    for ring in chamfer_rings(polygon, params) {
+        tp.moves
+            .extend(profile_path_to_toolpath(&ring, &profile_params).moves);
+    }
+    tp
 }
 
 #[cfg(test)]
@@ -101,6 +152,7 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.1,
             tool_half_angle: FRAC_PI_4, // 45 degrees
+            side: ProfileSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
@@ -128,6 +180,7 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.0,
             tool_half_angle: std::f64::consts::FRAC_PI_6,
+            side: ProfileSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
@@ -223,9 +276,9 @@ mod tests {
         let params = default_chamfer_params();
         let tp = chamfer_toolpath(&square, &params);
 
-        // The effective radius at cut depth is (2.0 + 0.1) * tan(45) / tan(45) = 2.1
-        // So tool center should be 2.1mm outside the polygon boundary.
-        // Check that cutting moves extend beyond the original square.
+        // The tip runs tip_offset (0.1 mm) outside the polygon boundary.
+        // Check that cutting moves extend beyond the original square, and
+        // by no more than the tip offset.
         let cutting_moves: Vec<_> = tp
             .moves
             .iter()
@@ -256,6 +309,105 @@ mod tests {
             "Tool center x_max={} should be outside boundary (> 40)",
             x_max
         );
+        assert!(
+            (x_min - -params.tip_offset).abs() < 1e-6
+                && (x_max - (40.0 + params.tip_offset)).abs() < 1e-6,
+            "Tool center must run tip_offset outside the boundary: x in [{x_min}, {x_max}]"
+        );
+    }
+
+    #[test]
+    fn test_zero_tip_offset_follows_the_edge() {
+        let square = Polygon2::rectangle(0.0, 0.0, 40.0, 40.0);
+        let params = ChamferParams {
+            tip_offset: 0.0,
+            ..default_chamfer_params()
+        };
+        let tp = chamfer_toolpath(&square, &params);
+        let cuts: Vec<_> = tp
+            .moves
+            .iter()
+            .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10))
+            .collect();
+        assert!(!cuts.is_empty(), "Should have cutting moves");
+        for m in cuts {
+            let on_edge = m.target.x.abs() < 1e-9
+                || (m.target.x - 40.0).abs() < 1e-9
+                || m.target.y.abs() < 1e-9
+                || (m.target.y - 40.0).abs() < 1e-9;
+            assert!(on_edge, "Tip must follow the edge: {:?}", m.target);
+        }
+    }
+
+    /// The distances of the cut moves from the origin, and their count.
+    fn cut_radii(tp: &Toolpath, feed: f64) -> Vec<f64> {
+        tp.moves
+            .iter()
+            .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - feed).abs() < 1e-10))
+            .map(|m| m.target.x.abs().max(m.target.y.abs()))
+            .collect()
+    }
+
+    /// W1.3b: an Outside chamfer of a part with a square hole cuts the
+    /// outer edge `t` outside it and the hole edge `t` inside the hole.
+    #[test]
+    fn an_outside_chamfer_cuts_the_hole_edge_from_inside_the_hole() {
+        let mut part = Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0);
+        let mut hole = Polygon2::rectangle(-5.0, -5.0, 5.0, 5.0).exterior;
+        hole.reverse();
+        part.holes.push(hole);
+        let params = default_chamfer_params();
+        let radii = cut_radii(&chamfer_toolpath(&part, &params), params.feed_rate);
+        let t = params.tip_offset;
+        assert!(radii.iter().any(|r| (r - (20.0 + t)).abs() < 1e-6));
+        assert!(radii.iter().any(|r| (r - (5.0 - t)).abs() < 1e-6));
+        for r in radii {
+            assert!(
+                (r - (20.0 + t)).abs() < 1e-6 || (r - (5.0 - t)).abs() < 1e-6,
+                "a cut at {r} mm from the centre is on no air side"
+            );
+        }
+    }
+
+    /// W1.3b: an Inside chamfer of a pocket with an island cuts the pocket
+    /// wall `t` inside the pocket and the island edge `t` outside the island.
+    #[test]
+    fn an_inside_chamfer_cuts_the_island_edge_from_the_cavity() {
+        let mut pocket = Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0);
+        let mut island = Polygon2::rectangle(-5.0, -5.0, 5.0, 5.0).exterior;
+        island.reverse();
+        pocket.holes.push(island);
+        let params = ChamferParams {
+            side: ProfileSide::Inside,
+            ..default_chamfer_params()
+        };
+        let radii = cut_radii(&chamfer_toolpath(&pocket, &params), params.feed_rate);
+        let t = params.tip_offset;
+        assert!(radii.iter().any(|r| (r - (20.0 - t)).abs() < 1e-6));
+        assert!(radii.iter().any(|r| (r - (5.0 + t)).abs() < 1e-6));
+        for r in radii {
+            // The outward offset of the island rounds its corners: a corner
+            // point is at most `t` from the island, so its max norm is in
+            // `[5 + t / sqrt(2), 5 + t]`.
+            let on_island =
+                r >= 5.0 + t * std::f64::consts::FRAC_1_SQRT_2 - 1e-6 && r <= 5.0 + t + 1e-6;
+            assert!(
+                (r - (20.0 - t)).abs() < 1e-6 || on_island,
+                "a cut at {r} mm from the centre is on no air side"
+            );
+        }
+    }
+
+    /// A hand-built outline with the wrong winding gets the same rings.
+    #[test]
+    fn a_reversed_outline_gives_the_same_rings() {
+        let square = Polygon2::rectangle(0.0, 0.0, 40.0, 40.0);
+        let mut reversed = square.clone();
+        reversed.exterior.reverse();
+        let params = default_chamfer_params();
+        let a = cut_radii(&chamfer_toolpath(&square, &params), params.feed_rate);
+        let b = cut_radii(&chamfer_toolpath(&reversed, &params), params.feed_rate);
+        assert_eq!(a.len(), b.len());
     }
 
     #[test]
@@ -296,22 +448,5 @@ mod tests {
             }
         }
         assert!(saw_cut, "Expected at least one cutting move");
-    }
-
-    #[test]
-    fn test_effective_radius_at_depth() {
-        // 45-degree: radius = depth
-        let r = effective_radius_at_depth(3.0, FRAC_PI_4);
-        assert!((r - 3.0).abs() < 1e-10, "45-deg: radius should equal depth");
-
-        // 30-degree: radius = depth * tan(30) ~ depth * 0.5774
-        let r30 = effective_radius_at_depth(3.0, std::f64::consts::FRAC_PI_6);
-        let expected = 3.0 * (std::f64::consts::FRAC_PI_6).tan();
-        assert!(
-            (r30 - expected).abs() < 1e-10,
-            "30-deg: expected {}, got {}",
-            expected,
-            r30
-        );
     }
 }

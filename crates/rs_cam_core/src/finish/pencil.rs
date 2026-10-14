@@ -205,6 +205,12 @@ pub struct PencilParams {
     /// keeps the at-depth tier, which is the control arm that measures what
     /// each tier is worth on its own.
     pub link_hop_distance_mm: Option<f64>,
+    /// The `fallback_top_z` of the op's link ceiling, from the one builder
+    /// (`compute::execute::link_ceiling_for`, ruling R1). The link lift
+    /// ([`emission::plan_link_lift`]) reads it where the dexel query has no
+    /// answer. `None`: no op heights are in scope (a library caller), and
+    /// the lift reads the stock snapshot's own top.
+    pub link_fallback_top_z: Option<f64>,
 }
 
 /// Sensible test/prototyping defaults, sourced from the field-level
@@ -240,6 +246,7 @@ impl Default for PencilParams {
             link_kinematics: None,
             // "Same cap as `hookup_distance`" — byte-identical.
             link_hop_distance_mm: None,
+            link_fallback_top_z: None,
         }
     }
 }

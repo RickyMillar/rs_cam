@@ -12,7 +12,7 @@ RS_CAM_UPDATE_FEEDS_MATRIX=1 scripts/cargo_lane.sh test -p rs_cam_core -q --feat
 
 - Machine: `MachineProfile::default()` = `Generic Wood Router`. The repository holds no measured rigidity or power profile. The presets `shapeoko_vfd` and `shapeoko_makita` and the kinematics preset `shapeoko_xxl_ricky_tuned` exist; the instrument does not walk them.
 - `SpindleStrategy::default()`, `SuggestContext::default()`, stock context top 0, bottom -18, height 18, padding 2.
-- Cells: 5 tool types × 2 diameters × 24 operations × 4 materials = 960 cells. Flutes: 2 on every tool.
+- Cells: 5 tool types × 2 diameters × 25 operations × 4 materials = 1000 cells. Flutes: 2 on every tool.
 
 Diameters walked (small, common):
 
@@ -40,17 +40,17 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 | class | EndMill | BallNose | BullNose | VBit | TaperedBallNose | all |
 |---|---|---|---|---|---|---|
-| Refused | 56 | 94 | 84 | 152 | 40 | 426 |
-| VendorBacked | 72 | 54 | 33 | 20 | 25 | 204 |
-| Extrapolated | 16 | 24 | 18 | 10 | 25 | 93 |
+| Refused | 64 | 102 | 92 | 154 | 48 | 460 |
+| VendorBacked | 72 | 54 | 33 | 24 | 25 | 208 |
+| Extrapolated | 16 | 24 | 18 | 12 | 25 | 95 |
 | FamilyTransferred | 0 | 0 | 57 | 0 | 102 | 159 |
 | DrillTransferred | 16 | 0 | 0 | 0 | 0 | 16 |
 | FormulaOnly | 32 | 20 | 0 | 10 | 0 | 62 |
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
-| fires-a-diagnostic | 136 | 98 | 108 | 40 | 152 | 534 |
-| has a FeedsWarning | 136 | 98 | 108 | 40 | 152 | 534 |
-| has a SuggestWarning | 136 | 98 | 108 | 40 | 152 | 534 |
-| total | 192 | 192 | 192 | 192 | 192 | 960 |
+| fires-a-diagnostic | 136 | 98 | 108 | 46 | 152 | 540 |
+| has a FeedsWarning | 136 | 98 | 108 | 46 | 152 | 540 |
+| has a SuggestWarning | 136 | 98 | 108 | 46 | 152 | 540 |
+| total | 200 | 200 | 200 | 200 | 200 | 1000 |
 
 ## Cell classes per operation (all tools, diameters and materials)
 
@@ -63,6 +63,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | VCarve | 34 | 4 | 2 | 0 | 0 | 0 | 0 | 6 |
 | Rest | 8 | 20 | 10 | 0 | 0 | 2 | 0 | 32 |
 | Inlay | 34 | 4 | 2 | 0 | 0 | 0 | 0 | 6 |
+| InlayPlug | 34 | 4 | 2 | 0 | 0 | 0 | 0 | 6 |
 | Zigzag | 8 | 20 | 10 | 0 | 0 | 2 | 0 | 32 |
 | Trace | 8 | 4 | 2 | 14 | 0 | 12 | 0 | 32 |
 | Drill | 32 | 0 | 0 | 0 | 8 | 0 | 0 | 8 |
@@ -86,27 +87,27 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 42 |
-| `efficiency.very_fine_stepover` | 96 |
+| `efficiency.very_fine_stepover` | 102 |
 | `feeds.aggressiveness_engagement` | 246 |
 | `feeds.feed_clamped` | 30 |
-| `feeds.long_tool_derate` | 509 |
+| `feeds.long_tool_derate` | 511 |
 | `feeds.rpm_lowered_for_ceiling` | 192 |
-| `feeds.shank_too_large` | 101 |
+| `feeds.shank_too_large` | 105 |
 
 ## FeedsWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
 | `FeedRateClamped` | 30 |
-| `LongToolDerate` | 509 |
+| `LongToolDerate` | 511 |
 | `RpmLoweredForFeedCeiling` | 192 |
-| `ShankTooLarge` | 101 |
+| `ShankTooLarge` | 105 |
 
 ## SuggestWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `AggressivenessNotApplied` | 288 |
+| `AggressivenessNotApplied` | 294 |
 | `AxialDocClampedByEnvelope` | 22 |
 | `CutGeometryFieldNotHeld` | 346 |
 | `DeflectionBackoffFigureIsAFloor` | 10 |
@@ -117,7 +118,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `PlungeEntryUnstableAtDpp` | 30 |
 | `PlungeReDerived` | 16 |
 | `ProjectCurveDepthInfeasible` | 6 |
-| `RampFeed` | 518 |
+| `RampFeed` | 524 |
 | `RoughingDepthClampedToRigidity` | 157 |
 | `RpmLoweredForFeedCeiling` | 192 |
 
@@ -126,7 +127,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 6.8 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 29.6 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 

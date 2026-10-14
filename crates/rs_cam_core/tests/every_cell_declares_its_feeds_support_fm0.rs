@@ -163,8 +163,8 @@ fn every_operation_declares_its_formula_source() {
             | OperationType::Profile
             | OperationType::Adaptive
             | OperationType::VCarve
-            | OperationType::Rest
             | OperationType::Inlay
+            | OperationType::InlayPlug
             | OperationType::Zigzag
             | OperationType::Trace
             | OperationType::Chamfer

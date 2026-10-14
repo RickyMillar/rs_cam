@@ -33,7 +33,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`
+- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`, `d11`
 - `cargo test -p rs_cam_viz -q --test apply_contract_a3`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`

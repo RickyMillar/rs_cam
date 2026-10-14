@@ -115,8 +115,8 @@ pub(super) struct RequestSpec {
     pub name: String,
     pub operation: OperationConfig,
     pub tool: ToolConfig,
-    /// Tools the operation REFERS to — a Rest `prev_tool_id`, a Pencil or
-    /// rest-analysis `reference_tool_id`. The session must hold them for
+    /// Tools the operation REFERS to — a Pencil or rest-analysis
+    /// `reference_tool_id`. The session must hold them for
     /// the resolver to find them.
     pub extra_tools: Vec<ToolConfig>,
     pub polygons: Option<Vec<Polygon2>>,

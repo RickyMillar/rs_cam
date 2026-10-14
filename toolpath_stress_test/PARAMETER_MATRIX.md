@@ -95,32 +95,32 @@ Source: `VCarveConfig` → `VCarveParams` (`vcarve.rs`)
 
 **Note**: Tool half-angle is derived from the V-bit tool geometry, not a separate parameter.
 
-### Rest Machining
-
-Source: `RestConfig` → `RestParams` (`rest.rs`)
-
-| Config field | Core field | GUI | Default | Range | Expected effect | Validation |
-|---|---|---|---|---|---|---|
-| `prev_tool_id` | `prev_tool_radius` | Yes | None | tool list | Previous larger tool; determines rest region geometry | visual: only cuts where prev tool couldn't reach |
-| `stepover` | `stepover` | Yes | 1.0 mm | 0.05–50 | Scan line spacing | visual: pass density |
-| `depth` | `cut_depth` | Yes | 6.0 mm | 0.1–100 | Cut depth | sim: floor Z |
-| `depth_per_pass` | (via DepthStepping) | Yes | 2.0 mm | 0.1–50 | Z per pass | gcode: Z level count |
-| `feed_rate` | `feed_rate` | Yes | 1000 mm/min | 1–50000 | Cutting feed rate | gcode: F value |
-| `plunge_rate` | `plunge_rate` | Yes | 500 mm/min | 1–10000 | Plunge feed rate | gcode: F value |
-| `angle` | `angle` | Yes | 0.0 deg | 0–360 | Scan line angle | visual: line orientation |
-
 ### Inlay
 
-Source: `InlayConfig` → `InlayParams` (`inlay.rs`)
+Source: `InlayConfig` → `InlayPocketParams` (`inlay.rs`). V walls only (ruling R2).
 
 | Config field | Core field | GUI | Default | Range | Expected effect | Validation |
 |---|---|---|---|---|---|---|
-| `pocket_depth` | `pocket_depth` | Yes | 3.0 mm | 0.1–50 | Female pocket depth | sim: pocket floor Z |
-| `glue_gap` | `glue_gap` | Yes | 0.1 mm | 0–2 | Gap between mating surfaces | visual: slight offset between male/female |
-| `flat_depth` | `flat_depth` | Yes | 0.5 mm | 0–20 | Extra depth below surface for male plug | sim: male cut extends below surface |
-| `boundary_offset` | `boundary_offset` | Yes | 0.0 mm | 0–10 | Margin around plug boundary | visual: plug boundary expands |
-| `stepover` | `stepover` | Yes | 1.0 mm | 0.05–50 | Scan line spacing for V-carve and flat clearing | visual: pass density |
-| `flat_tool_radius` | `flat_tool_radius` | Yes | 3.175 mm | 0.1–50 | Tool radius for flat area clearing; 0 = skip | visual: flat clearing passes appear/disappear |
+| `pocket_depth` | `pocket_depth` | Yes | 3.0 mm | 0.1–50 | Female pocket depth | sim: wall foot Z |
+| `floor_overlap` | `floor_overlap` | Yes | 4.5 mm | 0–50 | Floor band cut at depth beyond the wall foot | sim: band width |
+| `floor_ridge` | `floor_ridge` | Yes | 0.05 mm | 0.005–1 | Largest floor band ridge; ring pitch = 2 h tan a | sim: band ridge height |
+| `stepover` | `stepover` | Yes | 1.0 mm | 0.05–50 | Scan line spacing over the wall band | visual: pass density |
+| `feed_rate` | `feed_rate` | Yes | 800 mm/min | 1–50000 | Cutting feed rate | gcode: F value |
+| `plunge_rate` | `plunge_rate` | Yes | 400 mm/min | 1–10000 | Plunge feed rate | gcode: F value |
+| `tolerance` | `tolerance` | Yes | 0.05 mm | 0.01–1 | Sampling tolerance | gcode: point density |
+
+### Inlay Plug
+
+Source: `InlayPlugConfig` → `InlayPlugParams` (`inlay.rs`). Mirrored design, own project.
+
+| Config field | Core field | GUI | Default | Range | Expected effect | Validation |
+|---|---|---|---|---|---|---|
+| `pocket_depth` | `pocket_depth` | Yes | 3.0 mm | 0.1–50 | Depth of the pocket the plug fits | sim: start depth = pocket_depth − glue_gap |
+| `glue_gap` | `glue_gap` | Yes | 0.1 mm | 0–2 | Vertical gap plug face to pocket floor | test: fit claim (c) |
+| `proud_height` | `proud_height` | Yes | 3.0 mm | 0–50 | Plug height above the workpiece after seating | sim: background floor Z |
+| `outer_margin` | `outer_margin` | Yes | 3.0 mm | 0–100 | Flat background ring beyond the wall foot | visual: cleared rectangle |
+| `depth_per_pass` | `depth_per_pass` | Yes | 1.5 mm | 0.1–50 | Z per background pass | gcode: Z level count |
+| `stepover` | `stepover` | Yes | 1.0 mm | 0.05–50 | Scan line spacing (background ridges only) | visual: pass density |
 | `feed_rate` | `feed_rate` | Yes | 800 mm/min | 1–50000 | Cutting feed rate | gcode: F value |
 | `plunge_rate` | `plunge_rate` | Yes | 400 mm/min | 1–10000 | Plunge feed rate | gcode: F value |
 | `tolerance` | `tolerance` | Yes | 0.05 mm | 0.01–1 | Sampling tolerance | gcode: point density |

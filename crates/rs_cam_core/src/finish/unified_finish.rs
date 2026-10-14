@@ -1865,6 +1865,10 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             link_kinematics: link_kinematics.cloned(),
             // Boundary-less: see `ClaimsConfig::crease_hookup_mm`.
             hookup_distance: claims.map_or(0.0, |c| c.crease_hookup_mm),
+            // R1: the crease link lift reads the op's own ceiling top. A
+            // territory stock implies the op's snapshot, so the ceiling is
+            // `Some` whenever the lift can run.
+            link_fallback_top_z: link_ceiling.map(|c| c.fallback_top_z),
             ..PencilParams::default()
         };
         // G-ENTRYLOAD: give crease entries the same bite-budgeted ramp the

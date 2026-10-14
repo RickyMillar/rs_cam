@@ -17,7 +17,6 @@ pub mod inlay;
 pub mod pocket;
 pub mod profile;
 pub mod project_curve;
-pub mod rest;
 pub mod trace_path;
 pub mod vcarve;
 pub mod waterline;

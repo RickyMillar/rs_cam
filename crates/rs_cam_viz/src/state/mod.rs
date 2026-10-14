@@ -6,7 +6,6 @@ pub mod multitool_planner;
 pub mod overlays;
 pub mod panels;
 pub mod pin_view;
-pub mod rest_dependency;
 pub mod runtime;
 pub mod selection;
 pub mod simulation;

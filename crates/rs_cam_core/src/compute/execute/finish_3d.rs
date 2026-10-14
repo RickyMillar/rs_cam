@@ -16,8 +16,8 @@ use super::findings::{
     record_relink_totals, record_tip_float, record_truncated_core, record_zero_removal,
 };
 use super::shared::{
-    generated_with_cut_run_spans, generated_with_spans, require_index, require_mesh,
-    with_depth_run_annotation,
+    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, require_index,
+    require_mesh, with_depth_run_annotation,
 };
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
 
@@ -228,17 +228,22 @@ pub(crate) fn generate_pencil(
     }
     let m = require_mesh(ctx.mesh, op.op_type().name())?;
     let idx = require_index(ctx.index, op.op_type().name())?;
-    let params = cfg.params(
-        OpMotion {
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-            safe_z: ctx.heights.retract_z,
-        },
-        ctx.reference_tool_cfg
-            .as_ref()
-            .map(crate::compute::cutter::build_cutter),
-        ctx.link_kinematics.clone(),
-    );
+    let params = crate::finish::pencil::PencilParams {
+        // R1: the link lift's fallback top comes from the one builder.
+        // `None` on fresh stock, where the lift never runs.
+        link_fallback_top_z: op_link_ceiling(op.op_type(), ctx).map(|c| c.fallback_top_z),
+        ..cfg.params(
+            OpMotion {
+                feed_rate: op.feed_rate(),
+                plunge_rate: op.plunge_rate(),
+                safe_z: ctx.heights.retract_z,
+            },
+            ctx.reference_tool_cfg
+                .as_ref()
+                .map(crate::compute::cutter::build_cutter),
+            ctx.link_kinematics.clone(),
+        )
+    };
     let (tp, annotations, report) =
         crate::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
             m,
@@ -445,16 +450,8 @@ pub(crate) fn generate_unified_finish(
     // that cannot contact the cutter (one region 898 s -> 1411 s, 1.57x, with
     // the path held identical). For a FLAT endmill the profile rule is
     // byte-identical to the flat disc, which is the safety anchor.
-    let link_ceiling = ctx
-        .initial_stock
-        .map(|stock| crate::finish::surface_link::LinkCeiling {
-            stock: Some(stock),
-            tool_radius: ctx.tool_def.envelope_radius_mm(),
-            // The analytic stock top in the emission frame — the same
-            // fallback `optimize_entry_descents` takes where the dexel
-            // query has no answer.
-            fallback_top_z: ctx.stock_bbox.max.z,
-        });
+    // R1: the one builder (`op_link_ceiling`) sets all three values.
+    let link_ceiling = op_link_ceiling(op.op_type(), ctx);
     let (tp, annotations, report) =
         crate::finish::unified_finish::unified_finish_toolpath_with_cancel_and_ceiling(
             m,

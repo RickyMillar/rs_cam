@@ -314,7 +314,6 @@ fn pill_fixtures() -> Vec<(OperationType, ToolType)> {
         (OperationType::Profile, ToolType::EndMill),
         (OperationType::Adaptive, ToolType::EndMill),
         (OperationType::VCarve, ToolType::VBit),
-        (OperationType::Rest, ToolType::EndMill),
         // Inlay allows only a V-bit (registry tool rule, R1 `0007528`).
         (OperationType::Inlay, ToolType::VBit),
         (OperationType::Zigzag, ToolType::EndMill),
@@ -391,7 +390,7 @@ fn every_field_the_funnel_writes_previews_exactly_what_it_writes() {
     assert!(covered >= 40, "only {covered} (op, field) pairs covered");
 }
 
-/// The 24 pill sites, classified. A `Some` row is a pill that now writes the
+/// The 22 pill sites, classified. A `Some` row is a pill that now writes the
 /// funnel's value; a `None` row is a dial the funnel does not write, whose
 /// pill offers the raw calculator value labelled "not clamped". Pinned so a
 /// later change to an `OperationParams` impl (say VCarve gaining
@@ -410,7 +409,7 @@ fn pill_site_classification_is_pinned() {
     use OperationType as O;
     use ToolType as T;
     // (site, op, tool, field, funnel writes it?)
-    let table: [(&str, O, T, FeedsField, bool); 24] = [
+    let table: [(&str, O, T, FeedsField, bool); 22] = [
         // Feeds tab (draw_feeds_card)
         ("Feed", O::Pocket, T::EndMill, FeedRate, true),
         (
@@ -448,8 +447,6 @@ fn pill_site_classification_is_pinned() {
         ),
         ("VCarve Max Depth", O::VCarve, T::VBit, DepthPerPass, false),
         ("VCarve Stepover", O::VCarve, T::VBit, Stepover, true),
-        ("Rest Stepover", O::Rest, T::EndMill, Stepover, true),
-        ("Rest Depth/Pass", O::Rest, T::EndMill, DepthPerPass, true),
         ("Inlay Stepover", O::Inlay, T::VBit, Stepover, true),
         ("Zigzag Stepover", O::Zigzag, T::EndMill, Stepover, true),
         (

@@ -290,23 +290,8 @@ impl ProjectSession {
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
         let cutting_levels = tc.operation.cutting_levels(heights.top_z);
 
-        // For Rest machining, resolve prev_tool_radius from the RestConfig's
-        // prev_tool_id, matching the GUI compute path.
-        let prev_tool_radius = if let crate::compute::OperationConfig::Rest(ref cfg) = tc.operation
-        {
-            cfg.prev_tool_id.and_then(|prev_id| {
-                self.tools
-                    .iter()
-                    .find(|t| t.id == prev_id)
-                    .map(|t| t.diameter / 2.0)
-            })
-        } else {
-            None
-        };
-
         // R1 (pencil): resolve the real reference tool config from the Pencil
-        // op's `reference_tool_id`, mirroring the prev_tool_radius resolution
-        // above. `None` (unset id, or id not found) falls back to the nominal
+        // op's `reference_tool_id`. `None` (unset id, or id not found) falls back to the nominal
         // `reference_tool_diameter` ball downstream — never an error.
         //
         // P2.5: non-Pencil ops with `rest_analysis` enabled resolve their
@@ -519,7 +504,6 @@ impl ProjectSession {
             tool_def,
             spatial_index,
             cutting_levels,
-            prev_tool_radius,
             reference_tool_cfg,
             operation,
             pre_boundary,

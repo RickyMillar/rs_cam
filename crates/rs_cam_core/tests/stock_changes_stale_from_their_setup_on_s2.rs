@@ -39,7 +39,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_change::{
     StockChange, StockChangeOp, StockChangeRefusal, StockGeometry,
 };
@@ -208,7 +208,7 @@ fn fixture() -> (ProjectSession, Models) {
                 setup,
                 tc(
                     &format!("rest {setup}"),
-                    OperationConfig::Rest(RestConfig::default()),
+                    OperationConfig::Pocket(PocketConfig::default()),
                     StockSource::FromRemainingStock,
                     tool,
                     part,

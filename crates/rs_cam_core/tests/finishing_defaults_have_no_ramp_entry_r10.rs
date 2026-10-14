@@ -97,9 +97,11 @@ fn every_finishing_operation_creates_with_no_entry() {
              unrestricted dressup policy; got {unrestricted:?}"
         );
     }
+    // Nine since 2026-10-14: Inlay (W1.4) and VCarve (W1.4b) strip their
+    // leads and entries, so their `None` is now forced by the registry.
     assert!(
-        unrestricted.len() >= 10,
-        "population: expected at least ten unrestricted finishing operations, \
+        unrestricted.len() >= 9,
+        "population: expected at least nine unrestricted finishing operations, \
          got {} of {} finishing: {unrestricted:?}",
         unrestricted.len(),
         finishing.len()

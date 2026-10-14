@@ -66,7 +66,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// The operation whose simulated stock `tp_id` is waiting on: the nearest
-    /// ENABLED toolpath before it in the same setup.
+    /// ENABLED toolpath before it in core's carve order, which crosses setups.
     ///
     /// A/M11 defect 1 — the old message named no operation, so the user could
     /// not tell a one-round wait from a four-round one. The distinction the
@@ -80,7 +80,12 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> rs_cam_core::compute::AwaitingPriorStock {
         use rs_cam_core::compute::AwaitingPriorStock;
 
-        let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+        if self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id)
+            .is_none()
+        {
             return AwaitingPriorStock {
                 blocking_toolpath_id: None,
                 blocking_toolpath_index: None,
@@ -89,31 +94,26 @@ impl<B: ComputeBackend> AppController<B> {
                      longer in the project."
                 ),
             };
-        };
+        }
 
-        // Setup membership decides the stock chain: only ops in the same
-        // setup contribute to the snapshot this op reads.
-        let same_setup: Vec<usize> = self
+        // D11: the stock carries across setups (S0), so the blocker is the
+        // nearest ENABLED row in core's carve order: the rows above it in its
+        // own setup, then the rows of every earlier setup. Core owns that
+        // walk (`carve_order_before`); the snapshot rule reads it too.
+        let upstream = self
             .state
             .session
-            .list_setups()
-            .iter()
-            .find(|s| s.toolpath_indices.contains(&tp_idx))
-            .map_or_else(|| (0..tp_idx).collect(), |s| s.toolpath_indices.clone());
-
-        let upstream = same_setup
-            .iter()
-            .copied()
-            .filter(|idx| *idx < tp_idx)
-            .filter_map(|idx| {
+            .carve_order_before(tp_id)
+            .into_iter()
+            .rev()
+            .find_map(|idx| {
                 self.state
                     .session
                     .toolpath_configs()
                     .get(idx)
                     .filter(|tc| tc.enabled)
                     .map(|tc| (idx, tc))
-            })
-            .next_back();
+            });
 
         let Some((blocker_idx, blocker)) = upstream else {
             return AwaitingPriorStock {
@@ -121,9 +121,10 @@ impl<B: ComputeBackend> AppController<B> {
                 blocking_toolpath_index: None,
                 message: format!(
                     "'{toolpath_name}' uses remaining stock (rest machining) but is the \
-                     first enabled operation in its setup — there is no prior operation \
-                     to leave any stock behind. Set its stock source to fresh stock, or \
-                     move it after the operation it is meant to follow."
+                     first enabled operation in the project — no earlier operation, in \
+                     this setup or an earlier setup, leaves any stock behind. Set its \
+                     stock source to fresh stock, or move it after the operation it is \
+                     meant to follow."
                 ),
             };
         };
@@ -379,7 +380,7 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// W1 removed the generation-completion caller: core's `AdoptResult`
     /// walks the source's consumers itself (D1) and the drain stamps
-    /// `Effects::stale`, which covers PrevTool as well as Regions. What is
+    /// `Effects::stale`, which covers the Regions consumers. What is
     /// left are the two REMOVAL callers, `handle_remove_toolpath` and the
     /// multi-tool planner. Both run against a session the source has already
     /// left, where a Regions edge resolves to no source at all, so the core
@@ -501,7 +502,7 @@ impl<B: ComputeBackend> AppController<B> {
             Ok(computed) => {
                 rt.status = ComputeStatus::Done;
                 // W0/D1 handoff: `AdoptResult` now drops the source's
-                // Regions and PrevTool consumers through the core walker, so
+                // Regions consumers through the core walker, so
                 // the adopt reports a stale set. Collected here and stamped
                 // below, after the runtime-row borrow ends, because
                 // `stamp_stale` takes the whole `AppState`.
@@ -599,10 +600,8 @@ impl<B: ComputeBackend> AppController<B> {
                 //
                 // Since W0's D1 the `Ok` effects are NOT
                 // empty: the source's OUTPUT moved, so the
-                // walker drops its Regions and PrevTool
-                // consumers and names them here. A PrevTool
-                // consumer gets its `stale_since` stamp from
-                // this set and from nowhere else.
+                // walker drops its Regions consumers and
+                // names them here.
                 match adopted {
                     Ok(effects) => adopt_stale = effects.stale,
                     Err(e) => {
@@ -612,9 +611,8 @@ impl<B: ComputeBackend> AppController<B> {
                 rt.result = Some(computed);
                 // W1: the viz twin `mark_derived_rest_dependents_stale` is
                 // NOT called here any more. It re-derived the Regions rule
-                // by hand and saw no PrevTool consumer at all. The core
-                // walker's answer covers both, so the GUI auto-regeneration
-                // clock reads the one truth.
+                // by hand. The core walker's answer covers it, so the GUI
+                // auto-regeneration clock reads the one truth.
                 crate::state::stale::stamp_stale(&mut self.state, &adopt_stale);
             }
             Err(ComputeError::Cancelled) => {
@@ -2598,7 +2596,7 @@ impl<B: ComputeBackend> AppController<B> {
 /// - `ProjectEvidence::from_simulation` (triage, diagnostics): the
 ///   boundaries, the rapid collisions and their move indices, the cut trace
 ///   and `column_grid_cell_mm`.
-/// - Rest generation and `snapshot_is_current`: `prior_stocks` and
+/// - Remaining-stock generation and `snapshot_is_current`: `prior_stocks` and
 ///   `prior_stock_sources`.
 /// - Export, the tool-load report, diagnose and narration: the
 ///   cut trace (narration also reads `column_grid_cell_mm`).

@@ -5,25 +5,25 @@ use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 use super::config::StockSource;
 use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
-    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
-    ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig, RestConfig,
-    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, UnifiedFinishConfig,
-    VCarveConfig, WaterlineConfig, ZigzagConfig,
+    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, InlayPlugConfig,
+    PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
+    RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
+    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
 mod registry;
 mod schema;
 
 pub use schema::{
-    DressupPolicy, EntryStylePolicy, Kinematics, OpPolicy, OpRegistryEntry, OperationParamSchema,
-    OperationSchema, ParamDef, ParamHint, ParamRange, TOOLPATH_PARAM_DEFS, ToolConstraints,
-    ToolConstraintsDef,
+    DRIVER_SET_FIELDS, DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpPolicy,
+    OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamRange,
+    TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef, driver_set_field,
 };
 
 use registry::{
     REG_ADAPTIVE, REG_ADAPTIVE3D, REG_ALIGNMENT_PIN_DRILL, REG_CHAMFER, REG_DRILL, REG_DROP_CUTTER,
-    REG_FACE, REG_HORIZONTAL_FINISH, REG_INLAY, REG_PENCIL, REG_POCKET, REG_PROFILE,
-    REG_PROJECT_CURVE, REG_RADIAL_FINISH, REG_RAMP_FINISH, REG_REST, REG_SCALLOP,
+    REG_FACE, REG_HORIZONTAL_FINISH, REG_INLAY, REG_INLAY_PLUG, REG_PENCIL, REG_POCKET,
+    REG_PROFILE, REG_PROJECT_CURVE, REG_RADIAL_FINISH, REG_RAMP_FINISH, REG_SCALLOP,
     REG_SPIRAL_FINISH, REG_STEEP_SHALLOW, REG_TRACE, REG_UNIFIED_FINISH, REG_VCARVE, REG_WATERLINE,
     REG_ZIGZAG,
 };
@@ -270,8 +270,8 @@ macro_rules! for_each_op {
             (Profile,            ProfileConfig,             Menu2d,      "profile"),
             (Adaptive,           AdaptiveConfig,            Menu2d,      "adaptive"),
             (VCarve,             VCarveConfig,              Menu2d,      "v_carve"),
-            (Rest,               RestConfig,                Menu2d,      "rest"),
             (Inlay,              InlayConfig,               Menu2d,      "inlay"),
+            (InlayPlug,          InlayPlugConfig,           Menu2d,      "inlay_plug"),
             (Zigzag,             ZigzagConfig,              Menu2d,      "zigzag"),
             (Trace,              TraceConfig,               Menu2d,      "trace"),
             (Drill,              DrillConfig,               Menu2d,      "drill"),
@@ -402,8 +402,8 @@ impl OperationType {
         OperationType::Profile,
         OperationType::Adaptive,
         OperationType::VCarve,
-        OperationType::Rest,
         OperationType::Inlay,
+        OperationType::InlayPlug,
         OperationType::Zigzag,
         OperationType::Trace,
         OperationType::Drill,
@@ -443,8 +443,8 @@ impl OperationType {
             OperationType::Profile => &REG_PROFILE,
             OperationType::Adaptive => &REG_ADAPTIVE,
             OperationType::VCarve => &REG_VCARVE,
-            OperationType::Rest => &REG_REST,
             OperationType::Inlay => &REG_INLAY,
+            OperationType::InlayPlug => &REG_INLAY_PLUG,
             OperationType::Zigzag => &REG_ZIGZAG,
             OperationType::Trace => &REG_TRACE,
             OperationType::Drill => &REG_DRILL,
@@ -584,9 +584,9 @@ impl OperationType {
     fn transform_capabilities_without_lap_cap(self) -> OperationTransformCapabilities {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
-            Waterline, Zigzag,
+            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
+            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
+            VCarve, Waterline, Zigzag,
         };
 
         match self {
@@ -620,15 +620,16 @@ impl OperationType {
             // not imply the corridor was cleared to the width the bridge
             // needs. Until the check models depth-dependent width (or link
             // decisions move into the generators, where geometry is in scope),
-            // these forbid links but retain rapid-order eligibility.
-            Inlay | VCarve => OperationTransformCapabilities::new(false, false, false, false),
+            // these forbid links but retain rapid-order eligibility. The
+            // inlay plug cuts with the same depth-dependent V width.
+            Inlay | InlayPlug | VCarve => {
+                OperationTransformCapabilities::new(false, false, false, false)
+            }
             HorizontalFinish | Chamfer | Pencil | RadialFinish => {
                 OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
-            // Rest emits each scan segment framed by its own rapids, with no
-            // keep-down link and no planner stock, so any order holds.
-            Pocket | Profile | Rest | Zigzag | Waterline | Trace => {
+            Pocket | Profile | Zigzag | Waterline | Trace => {
                 OperationTransformCapabilities::new(false, true, false, false)
             }
             // The 2D adaptive planner clears one material grid per level, in
@@ -720,9 +721,9 @@ impl OperationType {
     pub fn air_cut_high_threshold_pct(self) -> Option<f64> {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
-            Waterline, Zigzag,
+            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
+            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
+            VCarve, Waterline, Zigzag,
         };
         match self {
             // Drill kinematics: dexel polygon-to-material init can't see Z-only
@@ -752,9 +753,9 @@ impl OperationType {
             | SteepShallow | RampFinish | SpiralFinish | RadialFinish => Some(45.0),
             // 2.5D clearing and 3D rough: boundary overshoot + Z-level transitions
             // make 40% the high-water mark.
-            Pocket | Face | Adaptive | Rest | Zigzag | Adaptive3d => Some(40.0),
+            Pocket | Face | Adaptive | Zigzag | Adaptive3d => Some(40.0),
             // 2D contour-style ops.
-            Profile | Chamfer | Inlay | VCarve | Trace => Some(40.0),
+            Profile | Chamfer | Inlay | InlayPlug | VCarve | Trace => Some(40.0),
         }
     }
 
@@ -771,11 +772,12 @@ impl OperationType {
     ///
     /// Every other operation anchors its floor at `heights.top_z` minus its
     /// OWN depth dial, and a pinned bottom changes nothing it emits. For the
-    /// seven depth-stepping operations the mechanism is
+    /// six depth-stepping 2.5D operations (and the inlay plug, whose kernel
+    /// walks the same ladder from its own dials) the mechanism is
     /// [`OperationConfig::cutting_levels`], which takes `top_z` and nothing
     /// else: `session/compute.rs` builds the ladder before generation, and
     /// `execute.rs`'s `effective_levels` returns that ladder whenever it is
-    /// non-empty — which it always is for those seven. The `else` branch of
+    /// non-empty — which it always is for those six. The `else` branch of
     /// `effective_levels` is the one place a pinned bottom WOULD reach a 2.5D
     /// ladder, through `ResolvedHeights::depth()`, and it is unreachable from
     /// all six of its callers.
@@ -793,20 +795,21 @@ impl OperationType {
     pub fn honors_pinned_bottom_z(self) -> bool {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
-            HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,
-            RampFinish, Rest, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish, VCarve,
-            Waterline, Zigzag,
+            HorizontalFinish, Inlay, InlayPlug, Pencil, Pocket, Profile, ProjectCurve,
+            RadialFinish, RampFinish, Scallop, SpiralFinish, SteepShallow, Trace, UnifiedFinish,
+            VCarve, Waterline, Zigzag,
         };
         match self {
             // The three that read heights.bottom_z.
             Adaptive3d | UnifiedFinish | Waterline => true,
             // Depth-stepping family: the floor is `top_z - cfg.depth`, carried
             // in the pre-computed `cutting_levels` ladder.
-            Pocket | Profile | Adaptive | Zigzag | Rest | Trace | Face => false,
+            Pocket | Profile | Adaptive | Zigzag | Trace | Face => false,
             // Top-anchored own-depth ops that do not step: VCarve max_depth,
-            // Inlay pocket_depth, Chamfer width, Drill depth, and the pin
-            // drill's spoilboard allowance.
-            VCarve | Inlay | Chamfer | Drill | AlignmentPinDrill => false,
+            // Inlay pocket_depth, the inlay plug's start depth plus proud
+            // height, Chamfer width, Drill depth, and the pin drill's
+            // spoilboard allowance.
+            VCarve | Inlay | InlayPlug | Chamfer | Drill | AlignmentPinDrill => false,
             // Surface-riding finish ops: the mesh is the floor. They read
             // `heights.retract_z` only.
             DropCutter | Scallop | Pencil | HorizontalFinish | SteepShallow | RampFinish
@@ -910,8 +913,8 @@ pub enum OperationConfig {
     Profile(ProfileConfig),
     Adaptive(AdaptiveConfig),
     VCarve(VCarveConfig),
-    Rest(RestConfig),
     Inlay(InlayConfig),
+    InlayPlug(InlayPlugConfig),
     Zigzag(ZigzagConfig),
     Trace(TraceConfig),
     Drill(DrillConfig),
@@ -958,8 +961,8 @@ impl OperationConfig {
             | OperationConfig::Profile(_)
             | OperationConfig::Adaptive(_)
             | OperationConfig::VCarve(_)
-            | OperationConfig::Rest(_)
             | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
@@ -1415,8 +1418,8 @@ impl OperationConfig {
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
             | OperationConfig::Adaptive(_)
-            | OperationConfig::Rest(_)
             | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
@@ -1463,8 +1466,10 @@ impl OperationConfig {
             .all_levels(),
             Self::Adaptive(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
             Self::Zigzag(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
-            Self::Rest(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
             Self::Trace(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            // The plug kernel walks the same `z_ladder` arm over the same
+            // total (`ops::inlay::inlay_plug_toolpath_with_cancel`).
+            Self::InlayPlug(cfg) => uniform(cfg.total_cut_depth(), cfg.depth_per_pass),
             Self::Face(cfg) => {
                 if cfg.depth <= 0.0 {
                     vec![top_z]
@@ -1517,11 +1522,6 @@ pub fn feed_optimization_unavailable_reason(
     if stock_source == StockSource::FromRemainingStock {
         return Some(
             "Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows.",
-        );
-    }
-    if matches!(operation, OperationConfig::Rest(_)) {
-        return Some(
-            "Rest machining depends on prior tool removal, so feed optimization is disabled for now.",
         );
     }
     if operation.is_3d() {

@@ -219,11 +219,6 @@ EXPECTED_EFFECTS = {
         "should_not_change": [],
         "rule": "different_algorithm_different_path",
     },
-    "prev_tool_radius": {
-        "should_change": [],
-        "should_not_change": [],
-        "rule": "changes_rest_region_geometry",
-    },
     "angle": {
         "should_change": [],
         "should_not_change": ["min_z", "feed_rates"],

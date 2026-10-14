@@ -30,7 +30,7 @@
 //!   of feed rates. `DressupConfig::default()` carries
 //!   `feed_optimization: true` (`core/compute/config.rs:2007`) and
 //!   `feed_optimization_unavailable_reason` (`core/compute/catalog.rs:2749`)
-//!   refuses only remaining-stock, Rest and 3D operations, so the pass is
+//!   refuses only remaining-stock and 3D operations, so the pass is
 //!   LIVE on this fixture. WP11b closed the item: the GUI door runs core's
 //!   `start` / `execute_job` steps and the core door reads the stock.
 //!

@@ -6,15 +6,13 @@
 use rs_cam_core::diagnostics::adapters::from_static_checks as core_static_checks;
 
 use crate::state::job::ToolType;
-use crate::state::rest_dependency::{RestCandidate, rest_predecessors};
 use crate::state::toolpath::{
-    HeightContext, HeightsConfig, OperationConfig, ProfileConfig, ToolpathEntry, ToolpathId,
+    HeightContext, HeightsConfig, OperationConfig, ProfileConfig, ToolpathEntry,
 };
 
 pub struct ToolpathValidationContext {
     tools: Vec<ValidationTool>,
     models: Vec<ValidationModel>,
-    setups: Vec<ValidationSetup>,
 }
 
 pub(in crate::ui::properties) struct ValidationTool {
@@ -34,25 +32,7 @@ struct ValidationModel {
     drill_target_count: usize,
 }
 
-struct ValidationSetup {
-    /// The setup's toolpaths in plan order, as the Rest predecessor rule
-    /// reads them (`crate::state::rest_dependency`).
-    toolpaths: Vec<RestCandidate>,
-}
-
 impl ToolpathValidationContext {
-    /// The diameter of one tool, or `None` when the project has no such
-    /// tool. The Rest arm on the registry row reads it.
-    pub(in crate::ui::properties) fn tool_diameter(
-        &self,
-        id: crate::state::job::ToolId,
-    ) -> Option<f64> {
-        self.tools
-            .iter()
-            .find(|tool| tool.id == id)
-            .map(|tool| tool.diameter)
-    }
-
     /// Build from a `ProjectSession`.
     pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
         Self {
@@ -76,18 +56,6 @@ impl ToolpathValidationContext {
                     drill_target_count: model.drill_targets.len(),
                 })
                 .collect(),
-            setups: session
-                .list_setups()
-                .iter()
-                .map(|setup| ValidationSetup {
-                    toolpaths: setup
-                        .toolpath_indices
-                        .iter()
-                        .filter_map(|&tp_idx| session.toolpath_configs().get(tp_idx))
-                        .map(RestCandidate::from_config)
-                        .collect(),
-                })
-                .collect(),
         }
     }
 }
@@ -101,7 +69,6 @@ pub fn validate_toolpath_config(
 
     let tool_id = crate::state::job::ToolId(tc.tool_id);
     let model_id = crate::state::job::ModelId(tc.model_id);
-    let tp_id = tc.id;
 
     let Some(tool) = ctx.tools.iter().find(|t| t.id == tool_id) else {
         errs.push("No tool selected".into());
@@ -152,7 +119,6 @@ pub fn validate_toolpath_config(
         &super::registry::OpValidateCtx {
             tool,
             ctx,
-            tp_id,
             model_id,
         },
         &mut errs,
@@ -193,7 +159,6 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
         &super::registry::OpValidateCtx {
             tool,
             ctx,
-            tp_id: entry.id,
             model_id: entry.model_id,
         },
         &mut errs,
@@ -246,20 +211,6 @@ fn validate_geometry_selection(
     } else if !has_polygons {
         errs.push("Selected model has no 2D geometry".into());
     }
-}
-
-/// Does the Rest op `rest_id` have a predecessor under the one rule in
-/// [`crate::state::rest_dependency`]? The Operations card connector reads
-/// the stored form of the same rule, the core `PrevTool` edge (G-RESTBADGE).
-pub(in crate::ui::properties) fn has_prior_rest_source(
-    ctx: &ToolpathValidationContext,
-    rest_id: ToolpathId,
-    rest_model_id: crate::state::job::ModelId,
-    prev_tool_id: crate::state::job::ToolId,
-) -> bool {
-    ctx.setups.iter().any(|setup| {
-        !rest_predecessors(&setup.toolpaths, rest_id, rest_model_id, prev_tool_id).is_empty()
-    })
 }
 
 // ── Depth vs stock thickness (G-DEPTHSTOCK / G-DEPTHSTOCKCORE) ──────────

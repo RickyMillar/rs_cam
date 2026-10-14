@@ -723,11 +723,14 @@ fn a_link_may_not_leave_the_machining_boundary() {
         link_kinematics: None,
         reorder: true,
         boundary: Some(&region_set),
-        link_ceiling: Some(crate::finish::surface_link::LinkCeiling {
-            stock: None,
-            tool_radius: tool_def.radius(),
-            fallback_top_z: 0.0,
-        }),
+        // The production builder (R1), with this fixture's stock top (0).
+        link_ceiling: crate::compute::execute::link_ceiling_for(
+            OperationType::ProjectCurve,
+            None,
+            &tool_def,
+            0.0,
+            heights(SAFE_Z_MM).top_z,
+        ),
         flush_ride: false,
         // project_curve's own prior, mirrored: its boundary is machining
         // territory (keep-outs, fixtures), not a cut-confinement polygon, so

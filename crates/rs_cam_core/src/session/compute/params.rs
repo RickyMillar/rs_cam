@@ -298,6 +298,19 @@ impl ProjectSession {
                 tc.debug_options.enabled = v;
             }
             _ => {
+                // D9: a driver-set field is in the config, and its own
+                // driver writes it. The schema does not offer it, so the
+                // setter refuses it with the reason.
+                if let Some(field) =
+                    crate::compute::catalog::driver_set_field(tc.operation.op_type(), param)
+                {
+                    return Err(SessionError::InvalidParam(format!(
+                        "'{param}' is not settable for {} operation: {}. The value was NOT \
+                         applied.",
+                        tc.operation.label(),
+                        field.reason
+                    )));
+                }
                 // Config-specific param: serialize -> merge -> deserialize
                 let target_type = tc.operation.param_type_name(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
@@ -387,7 +400,7 @@ impl ProjectSession {
                         }
                     }
                     // A list field clears with `null` as well as with `[]`,
-                    // as `spindle_rpm` and `prev_tool_id` clear with `null`
+                    // as `spindle_rpm` and `reference_tool_id` clear with `null`
                     // (step-ladder Phase 4, `coarse_steps`).
                     (_, serde_json::Value::Null)
                         if target_type.is_some_and(|ty| ty.starts_with("vec<")) =>

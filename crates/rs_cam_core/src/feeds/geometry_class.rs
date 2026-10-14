@@ -69,11 +69,11 @@ pub fn classify(op_type: OperationType, model_bbox: Option<&BoundingBox3>) -> Ge
     match op_type {
         // Feature-driven: input geometry IS the path, no terrain
         // classification applies.
-        VCarve | ProjectCurve | Drill | AlignmentPinDrill | Trace | Inlay => {
+        VCarve | ProjectCurve | Drill | AlignmentPinDrill | Trace | Inlay | InlayPlug => {
             GeometryClass::FeatureDriven
         }
         // 2D / pocket-like: planar engagement, strategy auto-pick moot.
-        Pocket | Rest | Profile | Chamfer | Face | Pencil | Adaptive => GeometryClass::PocketLike,
+        Pocket | Profile | Chamfer | Face | Pencil | Adaptive => GeometryClass::PocketLike,
         // 3D ops fall through to terrain-aware classification.
         Adaptive3d | DropCutter | Scallop | UnifiedFinish | Waterline | HorizontalFinish
         | SteepShallow | SpiralFinish | RadialFinish | Zigzag | RampFinish => {
@@ -134,6 +134,7 @@ mod tests {
             OperationType::AlignmentPinDrill,
             OperationType::Trace,
             OperationType::Inlay,
+            OperationType::InlayPlug,
         ] {
             assert_eq!(
                 classify(op, Some(&bbox(100.0, 100.0, 20.0))),
@@ -147,7 +148,6 @@ mod tests {
     fn pocket_like_routes_correctly() {
         for op in [
             OperationType::Pocket,
-            OperationType::Rest,
             OperationType::Profile,
             OperationType::Chamfer,
             OperationType::Face,

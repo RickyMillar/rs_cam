@@ -42,11 +42,10 @@ use rs_cam_core::{
     ops::chamfer::ChamferParams,
     ops::drill::{DrillCycle, DrillParams},
     ops::face::{FaceDirection, FaceParams},
-    ops::inlay::InlayParams,
+    ops::inlay::{InlayPlugParams, InlayPocketParams},
     ops::pocket::PocketParams,
     ops::profile::{ProfileParams, ProfileSide},
     ops::project_curve::ProjectCurveParams,
-    ops::rest::RestParams,
     ops::trace_path::{TraceCompensation, TraceParams},
     ops::vcarve::VCarveParams,
     ops::waterline::{WaterlineParams, waterline_toolpath},
@@ -1338,6 +1337,7 @@ fn default_chamfer_params() -> ChamferParams {
         chamfer_width: 1.0,
         tip_offset: 0.1,
         tool_half_angle: std::f64::consts::FRAC_PI_4, // 45 degrees
+        side: ProfileSide::Outside,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,
@@ -1431,69 +1431,6 @@ fn sweep_vcarve_stepover() {
         let ctx = format!("vcarve stepover={}", v.value);
         assert_any_change(&v.diff, &ctx);
         assert_has_change(&v.diff, "move_count", &ctx);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// REST MACHINING SWEEPS
-// ═══════════════════════════════════════════════════════════════════════
-
-fn default_rest_params() -> RestParams {
-    RestParams {
-        prev_tool_radius: 6.35,
-        tool_radius: 3.175,
-        cut_depth: -3.0,
-        stepover: 1.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        angle: 0.0,
-    }
-}
-
-#[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_rest_angle() {
-    let poly = l_shape_polygon();
-    let result = run_sweep(
-        "rest",
-        "angle",
-        serde_json::json!(0.0),
-        &[serde_json::json!(45.0), serde_json::json!(90.0)],
-        |ov| {
-            let mut p = default_rest_params();
-            if let Some(v) = ov {
-                p.angle = v.as_f64().unwrap();
-            }
-            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("rest angle={}", v.value);
-        assert_any_change(&v.diff, &ctx);
-    }
-}
-
-#[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_rest_prev_tool_radius() {
-    let poly = l_shape_polygon();
-    let result = run_sweep(
-        "rest",
-        "prev_tool_radius",
-        serde_json::json!(6.35),
-        &[serde_json::json!(3.175), serde_json::json!(12.7)],
-        |ov| {
-            let mut p = default_rest_params();
-            if let Some(v) = ov {
-                p.prev_tool_radius = v.as_f64().unwrap();
-            }
-            rs_cam_core::ops::rest::rest_machining_toolpath(&poly, &p)
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("rest prev_tool_radius={}", v.value);
-        assert_any_change(&v.diff, &ctx);
     }
 }
 
@@ -1699,6 +1636,7 @@ fn default_pencil_params() -> PencilParams {
         reference_cutter: None,
         link_kinematics: None,
         link_hop_distance_mm: None,
+        link_fallback_top_z: None,
     }
 }
 
@@ -2161,15 +2099,31 @@ fn sweep_horizontal_finish_stepover() {
 // INLAY SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
 
-fn default_inlay_params() -> InlayParams {
-    InlayParams {
+fn default_inlay_params() -> InlayPocketParams {
+    InlayPocketParams {
+        half_angle: std::f64::consts::FRAC_PI_4,
+        pocket_depth: 3.0,
+        floor_overlap: 1.0,
+        floor_ridge: 0.05,
+        tip_flat: 0.0,
+        stepover: 1.0,
+        feed_rate: 800.0,
+        plunge_rate: 400.0,
+        safe_z: 10.0,
+        tolerance: 0.05,
+        top_z: 0.0,
+    }
+}
+
+fn default_inlay_plug_params() -> InlayPlugParams {
+    InlayPlugParams {
         half_angle: std::f64::consts::FRAC_PI_4,
         pocket_depth: 3.0,
         glue_gap: 0.1,
-        flat_depth: 0.5,
-        boundary_offset: 0.0,
+        proud_height: 3.0,
+        outer_margin: 3.0,
+        depth_per_pass: 1.5,
         stepover: 1.0,
-        flat_tool_radius: 3.175,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,
@@ -2192,8 +2146,7 @@ fn sweep_inlay_pocket_depth() {
             if let Some(v) = ov {
                 p.pocket_depth = v.as_f64().unwrap();
             }
-            // Use the female toolpath for fingerprinting
-            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_pocket_toolpath(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -2208,23 +2161,25 @@ fn sweep_inlay_pocket_depth() {
 fn sweep_inlay_glue_gap() {
     let poly = l_shape_polygon();
     let result = run_sweep(
-        "inlay",
+        "inlay_plug",
         "glue_gap",
         serde_json::json!(0.1),
         &[serde_json::json!(0.0), serde_json::json!(0.5)],
         |ov| {
-            let mut p = default_inlay_params();
+            let mut p = default_inlay_plug_params();
             if let Some(v) = ov {
                 p.glue_gap = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::inlay::inlay_toolpaths(&poly, &p).female
+            rs_cam_core::ops::inlay::inlay_plug_toolpath(std::slice::from_ref(&poly), &p)
         },
     );
-    // Glue gap primarily affects the male plug, not the female pocket.
-    // The female fingerprint may not change. This is a valid finding —
-    // a future test should also fingerprint the male toolpath.
-    let dir = output_dir().join("inlay").join("glue_gap");
-    assert!(dir.join("sweep_result.json").exists());
+    // Ruling R2: the glue gap belongs to the plug. It moves the start
+    // depth, so the deepest plug cut moves with it.
+    for v in &result.variants {
+        let ctx = format!("inlay_plug glue_gap={}", v.value);
+        assert_any_change(&v.diff, &ctx);
+        assert_has_change(&v.diff, "min_z", &ctx);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -805,6 +805,21 @@ impl ProjectSession {
             .map(|tc| tc.id)
             .collect();
 
+        // G-LINKPLOUGH scope: a finishing op that is not rest-driven builds
+        // no link ceiling (`LinkCeilingNeed::WithRemainingStock`), so its
+        // links ride the mesh through the stock its passes cut. The link
+        // rule does not grade them.
+        let links_on_mesh: std::collections::BTreeSet<crate::ids::ToolpathId> = self
+            .toolpath_configs
+            .iter()
+            .filter(|tc| {
+                crate::compute::execute::link_ceiling_need(tc.operation.op_type())
+                    == crate::compute::execute::LinkCeilingNeed::WithRemainingStock
+                    && !rest_driven.contains(&tc.id)
+            })
+            .map(|tc| tc.id)
+            .collect();
+
         // Phase 4 — the plunge-class backstop's population
         // (`kinematic_utilization`): every enabled toolpath with a result,
         // drill ops included. The finding itself is NOT gated on
@@ -835,6 +850,7 @@ impl ProjectSession {
                 region_of: None,
             },
             &rest_driven,
+            &links_on_mesh,
         )
     }
 

@@ -482,11 +482,13 @@ pub(super) fn plan_link_lift(
 ) -> LinkLift {
     let ceiling = crate::finish::surface_link::LinkCeiling {
         stock: Some(stock),
+        // B1 (backlog): the search reads the TIP radius, not the envelope
+        // radius the one builder uses. Ruling R1 leaves this as it is.
         tool_radius: contact_radius,
-        // Off-grid the dexel has no answer; the analytic fresh-stock top is
-        // the fallback `dressup::optimize_entry_descents` takes, and it errs
-        // high, which is the safe direction for a clearance.
-        fallback_top_z: stock.stock_bbox.max.z,
+        // Off-grid the dexel has no answer. The op's builder gives the
+        // fresh-stock top (`compute::execute::link_ceiling_for`, R1); a
+        // library caller with no op heights reads the snapshot's own top.
+        fallback_top_z: params.link_fallback_top_z.unwrap_or(stock.stock_bbox.max.z),
     };
     // Same stock, same fallback, one column wide — `max_conservative_top_z_in_disc`
     // dilates by half a cell, so radius 0 is "the cells the tip is over".

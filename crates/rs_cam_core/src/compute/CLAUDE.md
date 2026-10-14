@@ -31,10 +31,10 @@
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test retract_intent_move_type_census_w6` (and `capability_link_moves_safety`)
-- `cargo test -p rs_cam_core -q --test sim_prefix_memo_s5`; `--test sim_peak_memory_g_simmem` (Linux)
-- `--test stock_carries_across_setups_s0`, `--test stock_changes_stale_from_their_setup_on_s2`,
-  `--test stock_changes_apply_to_the_stock_s3` (each `cargo test -p rs_cam_core -q`)
+- `cargo test -p rs_cam_core -q --test retract_intent_move_type_census_w6` (and `capability_link_moves_safety`, `sim_prefix_memo_s5`; `sim_peak_memory_g_simmem` on Linux)
+- `--test one_link_ceiling_for_every_op_g_linkceil` (G-LINKCEIL, R1): `execute/shared.rs::link_ceiling_for` is the ONE link-ceiling builder; each op states its `LinkCeilingNeed`
+- `--test stock_carries_across_setups_s0`, `--test stock_changes_stale_from_their_setup_on_s2`, `--test stock_changes_apply_to_the_stock_s3`
+- `--test every_op_keeps_its_toolpath_g_opgolden` (G-OPGOLDEN, 2 s): the output of every op. Re-bless (`RS_CAM_BLESS_OPGOLDEN=1`) only the ops a change names
 - `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5 --test generated_empty_refusal_g_entryempty`
 - `--test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`, `--test a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels`
 - Pins: `--test` `alignment_pin_keying_intrinsic_p1`, `alignment_pins_judge_the_full_setup_map_p2`, `alignment_pin_keying_g_pinauto`, `a_pin_set_edit_stales_only_the_pin_drill_p4`, `alignment_pin_walls_and_2d_placer_p6`, `dowel_holes_have_one_source_p8`, `pin_holes_are_drilled_by_size_r1`

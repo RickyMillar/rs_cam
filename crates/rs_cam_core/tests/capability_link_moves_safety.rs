@@ -743,6 +743,7 @@ fn chamfer_link_moves_preserves_material_state() {
             chamfer_width: 1.0,
             tip_offset: 0.1,
             tool_half_angle: std::f64::consts::FRAC_PI_4,
+            side: rs_cam_core::ops::profile::ProfileSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 30.0,
@@ -809,6 +810,8 @@ fn pencil_link_moves_preserves_material_state() {
             // G-LINKSTAGE: `None` = the hop cap IS `hookup_distance`, i.e.
             // the pre-stage emitter, which is what this suite measures.
             link_hop_distance_mm: None,
+            // No op heights: no stock is in scope, so the lift never runs.
+            link_fallback_top_z: None,
         },
     );
     if raw.moves.is_empty() {

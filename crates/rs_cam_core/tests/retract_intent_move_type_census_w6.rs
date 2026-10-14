@@ -86,8 +86,8 @@ use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, PencilConfig, PocketConfig,
     PocketPattern, ProfileConfig, ProjectCurveConfig, RadialFinishConfig, RampFinishConfig,
-    RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
-    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig, UnifiedFinishConfig,
+    VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -346,33 +346,6 @@ fn flat_session(
     let mut builder = ProjectSessionBuilder::new().stock(flat_stock());
     let tool_id = add_tool(&mut builder, tool_kind, tool_diameter, "w6 census tool");
     let model_id = add_rect_polygon(&mut builder);
-    let _ = builder
-        .add_toolpath(
-            0,
-            toolpath_config(op, profile, tool_id, model_id, HeightsConfig::default()),
-        )
-        .expect("add toolpath");
-    builder.build()
-}
-
-/// The Rest arm needs a *previous* tool to have left something behind, so
-/// it is the one flat case that cannot use [`flat_session`].
-fn rest_session(profile: DressupProfile) -> ProjectSession {
-    let mut builder = ProjectSessionBuilder::new().stock(flat_stock());
-    let prev_tool_id = add_tool(&mut builder, ToolType::EndMill, 12.0, "w6 census prev");
-    let tool_id = add_tool(&mut builder, ToolType::EndMill, 3.0, "w6 census rest");
-    let model_id = add_rect_polygon(&mut builder);
-    let op = OperationConfig::Rest(RestConfig {
-        ramp_feed_rate: None,
-        prev_tool_id: Some(ToolId(prev_tool_id)),
-        stepover: 1.0,
-        depth: 4.0,
-        depth_per_pass: 2.0,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
-        angle: 0.0,
-        spindle_rpm: Some(18_000),
-    });
     let _ = builder
         .add_toolpath(
             0,
@@ -659,6 +632,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Chamfer(ChamferConfig {
+                    side: ProfileSide::Outside,
                     ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,
@@ -875,10 +849,6 @@ fn collect_rows() -> (Vec<Row>, Vec<String>) {
             let outcome = census(op_type, profile, flat_session(op, profile, kind, dia));
             push(label, outcome, &mut rows, &mut skipped);
         }
-
-        let label = format!("Rest [{}]", profile.label());
-        let outcome = census(OperationType::Rest, profile, rest_session(profile));
-        push(label, outcome, &mut rows, &mut skipped);
 
         for (build, kind, dia) in hemi_cases() {
             let op = build();

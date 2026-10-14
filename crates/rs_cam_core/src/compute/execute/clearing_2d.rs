@@ -1,4 +1,4 @@
-//! The 2.5D clearing family: rest, zigzag, trace, profile, pocket, face and
+//! The 2.5D clearing family: zigzag, trace, profile, pocket, face and
 //! adaptive.
 //!
 //! Every adapter here steps a 2D region down a ladder of Z levels, so they
@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
+use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
@@ -16,78 +17,6 @@ use super::record_offset_library_failures;
 use super::shared::{generated_with_depth_run_spans, require_polygons, with_depth_run_annotation};
 use super::standing_material::LevelRegion;
 use super::{ExecutionContext, GeneratedToolpath, OperationError};
-
-/// Rest-machining family adapter. Requires `prev_tool_radius` in the
-/// context (set by the session/worker drivers from the previous tool).
-pub(crate) fn generate_rest(
-    ctx: &ExecutionContext<'_>,
-    op: &OperationConfig,
-) -> Result<GeneratedToolpath, OperationError> {
-    let cfg = config_guard!(op, Rest, "generate_rest");
-    // Checkpoint C, Q3: checked as the very first statement, before the
-    // prev-tool precondition below. A pre-set flag must short-circuit before
-    // any work AND before any other refusal, or "cancelled" gets reported as
-    // whatever else happened to be wrong first.
-    if ctx.cancel.load(Ordering::SeqCst) {
-        return Err(OperationError::Cancelled);
-    }
-    let polys = require_polygons(ctx.polygons, op.op_type().name())?;
-    let ptr = ctx
-        .prev_tool_radius
-        .ok_or_else(|| OperationError::Other("Previous tool not set for rest machining".into()))?;
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
-    let tool_radius = ctx.tool_def.radius();
-    let safe_z = ctx.heights.retract_z;
-    // Checkpoint C, Q3: rest is cancellable now. It built no `cancel_fn` at
-    // all and called the non-cancellable `depth::toolpath_at_levels`, so a
-    // rest pass over many Z levels could not be interrupted — one of the two
-    // families W4 measured as ignoring a pre-set flag entirely (F-4).
-    // Granularity is per Z level, the same as profile/trace/zigzag.
-    let cancel_fn = || ctx.cancel.load(Ordering::SeqCst);
-    let mut combined = Toolpath::new();
-    for poly in polys {
-        // G2: the rest geometry — the inward offset, the zigzag scan lines and
-        // the per-sample containment walk over the large tool's reachable
-        // region — is entirely XY, so it is computed ONCE per polygon here
-        // instead of once per Z level inside the closure. `cut_depth` on the
-        // base params is a placeholder; `rest_segments` never reads it, and
-        // the per-level stamp below overrides it.
-        if ctx.cancel.load(Ordering::SeqCst) {
-            return Err(OperationError::Cancelled);
-        }
-        let base = crate::ops::rest::RestParams {
-            prev_tool_radius: ptr,
-            tool_radius,
-            cut_depth: 0.0,
-            stepover: cfg.stepover,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-            safe_z,
-            angle: cfg.angle,
-        };
-        let segments = crate::ops::rest::rest_segments(poly, &base);
-        let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
-            &levels,
-            safe_z,
-            |z| {
-                Ok(crate::ops::rest::rest_segments_to_toolpath(
-                    &segments,
-                    &crate::ops::rest::RestParams {
-                        cut_depth: z,
-                        ..base
-                    },
-                ))
-            },
-            &cancel_fn,
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
-        combined.moves.extend(tp.moves);
-    }
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(combined, &levels),
-        ctx.semantic_ctx,
-    ))
-}
 
 /// Zigzag family adapter. Cancellable: the cooperative cancel closure is
 /// rebuilt from `ctx.cancel` (pinned by
@@ -550,7 +479,24 @@ pub(crate) fn generate_adaptive(
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
     let mut all_annotations = Vec::new();
-    for poly in polys {
+    // G-ADAPTPIECES (D2): the planner plans one piece of the machinable
+    // inset, so an outline whose inset splits is planned piece by piece.
+    // Each piece goes to full depth before the next, as each outline does.
+    let piece_outlines: Vec<Vec<Polygon2>> = polys
+        .iter()
+        .map(|poly| crate::adaptive::inset_piece_outlines(poly, ctx.tool_def.radius()))
+        .collect();
+    let outlines = polys
+        .iter()
+        .zip(&piece_outlines)
+        .flat_map(|(poly, pieces)| {
+            if pieces.is_empty() {
+                std::slice::from_ref(poly)
+            } else {
+                pieces.as_slice()
+            }
+        });
+    for poly in outlines {
         for (level_i, &z) in levels.iter().enumerate() {
             let params = crate::adaptive::AdaptiveParams {
                 tool_radius: ctx.tool_def.radius(),

@@ -41,6 +41,7 @@ The calculator is fed from:
 | VCarve | `Trace` | `Finish` | `max_depth` as axial hint |
 | Rest | `Pocket` | `Roughing` | none |
 | Inlay | `Trace` | `Finish` | none |
+| InlayPlug | `Trace` | `Finish` | none |
 | Zigzag | `Pocket` | `Roughing` | none |
 | Trace | `Trace` | `Finish` | none |
 | Drill | `Pocket` | `Roughing` | none |

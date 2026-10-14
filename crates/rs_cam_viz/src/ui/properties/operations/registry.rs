@@ -14,7 +14,7 @@
 //!
 //! Core solved the same problem once. `for_each_op!` generates
 //! `OperationType`, `ALL`, `category()`, `name()` and the rest from one
-//! 24-row list, and `registry_entry()` will not compile without a row. That
+//! 25-row list, and `registry_entry()` will not compile without a row. That
 //! macro is not exported, so the viz side states its own table — and
 //! `operations_registry` holds it against `OperationType::ALL`, the way
 //! `overlays_registry` holds the overlay list.
@@ -35,13 +35,14 @@ use super::validate::{DepthBeyondStock, ThroughCut};
 use super::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
     draw_chamfer_params, draw_drill_params, draw_dropcutter_params, draw_face_params,
-    draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_outline_diagram,
-    draw_pencil_diagram, draw_pencil_params, draw_pocket_params, draw_point_set_diagram,
-    draw_profile_params, draw_project_curve_params, draw_radial_diagram, draw_radial_finish_params,
-    draw_ramp_finish_diagram, draw_ramp_finish_params, draw_rest_params, draw_scallop_params,
-    draw_spiral_diagram, draw_spiral_finish_params, draw_steep_shallow_diagram,
-    draw_steep_shallow_params, draw_stepover_diagram, draw_trace_params,
-    draw_unified_finish_params, draw_vcarve_params, draw_waterline_params, draw_zigzag_params,
+    draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_inlay_plug_params,
+    draw_outline_diagram, draw_pencil_diagram, draw_pencil_params, draw_pocket_params,
+    draw_point_set_diagram, draw_profile_params, draw_project_curve_params, draw_radial_diagram,
+    draw_radial_finish_params, draw_ramp_finish_diagram, draw_ramp_finish_params,
+    draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
+    draw_steep_shallow_diagram, draw_steep_shallow_params, draw_stepover_diagram,
+    draw_trace_params, draw_unified_finish_params, draw_vcarve_params, draw_waterline_params,
+    draw_zigzag_params,
 };
 use crate::state::job::{ModelId, ToolId};
 use crate::state::toolpath::{OperationConfig, OperationType, ProfileSide, StockSource};
@@ -106,7 +107,6 @@ pub(in crate::ui::properties) struct OpValidateCtx<'a> {
     /// The chosen tool, as the validation context models it.
     pub tool: &'a super::validate::ValidationTool,
     pub ctx: &'a super::validate::ToolpathValidationContext,
-    pub tp_id: rs_cam_core::ToolpathId,
     pub model_id: ModelId,
 }
 
@@ -220,19 +220,15 @@ editor!(ed_vcarve, VCarve, |ui, cfg, cx| draw_vcarve_params(
     cx.pills,
     cx.depth_caution
 ));
-editor!(ed_rest, Rest, |ui, cfg, cx| draw_rest_params(
-    ui,
-    cfg,
-    cx.tools,
-    cx.pills,
-    cx.depth_caution
-));
 editor!(ed_inlay, Inlay, |ui, cfg, cx| draw_inlay_params(
     ui,
     cfg,
     cx.pills,
     cx.depth_caution
 ));
+editor!(ed_inlay_plug, InlayPlug, |ui, cfg, cx| {
+    draw_inlay_plug_params(ui, cfg, cx.pills, cx.depth_caution);
+});
 editor!(ed_zigzag, Zigzag, |ui, cfg, cx| draw_zigzag_params(
     ui,
     cfg,
@@ -323,8 +319,14 @@ fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) {
     }
 }
 
-fn dia_chamfer(_op: &OperationConfig, ui: &mut egui::Ui) {
-    draw_outline_diagram(ui, "Chamfer (edge contour)", None);
+fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) {
+    if let OperationConfig::Chamfer(cfg) = op {
+        let side = match cfg.side {
+            ProfileSide::Outside => "Outside",
+            ProfileSide::Inside => "Inside",
+        };
+        draw_outline_diagram(ui, &format!("Chamfer ({side})"), Some(side));
+    }
 }
 
 fn dia_trace(op: &OperationConfig, ui: &mut egui::Ui) {
@@ -395,7 +397,13 @@ fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) {
 
 fn dia_inlay(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::Inlay(cfg) = op {
-        draw_inlay_diagram(ui, cfg.pocket_depth, cfg.glue_gap, cfg.flat_depth);
+        draw_inlay_diagram(ui, cfg.pocket_depth, None);
+    }
+}
+
+fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) {
+    if let OperationConfig::InlayPlug(cfg) = op {
+        draw_inlay_diagram(ui, cfg.pocket_depth, Some(cfg.glue_gap));
     }
 }
 
@@ -423,28 +431,6 @@ fn val_stepover_under_diameter(
 fn val_needs_v_bit(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
     if cx.tool.tool_type != crate::state::job::ToolType::VBit {
         errs.push(format!("{} requires a V-Bit tool", op.op_type().name()));
-    }
-}
-
-fn val_rest(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
-    let OperationConfig::Rest(c) = op else {
-        return;
-    };
-    let Some(prev) = c.prev_tool_id else {
-        errs.push("Previous tool not selected".into());
-        return;
-    };
-    let prev_d = cx.ctx.tool_diameter(prev);
-    if let Some(pd) = prev_d
-        && pd <= cx.tool.diameter
-    {
-        errs.push("Previous tool must be larger than current tool".into());
-    }
-    if !super::validate::has_prior_rest_source(cx.ctx, cx.tp_id, cx.model_id, prev) {
-        errs.push(
-            "Rest machining requires an earlier enabled operation in the same setup using the previous tool on the same model"
-                .into(),
-        );
     }
 }
 
@@ -493,15 +479,15 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         validate: Some(val_needs_v_bit),
     },
     OpUiRow {
-        op: OperationType::Rest,
-        draw: ed_rest,
-        diagram: OpDiagram::Stepover,
-        validate: Some(val_rest),
-    },
-    OpUiRow {
         op: OperationType::Inlay,
         draw: ed_inlay,
         diagram: OpDiagram::Draw(dia_inlay),
+        validate: Some(val_needs_v_bit),
+    },
+    OpUiRow {
+        op: OperationType::InlayPlug,
+        draw: ed_inlay_plug,
+        diagram: OpDiagram::Draw(dia_inlay_plug),
         validate: Some(val_needs_v_bit),
     },
     OpUiRow {

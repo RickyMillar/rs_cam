@@ -20,9 +20,9 @@
 //! # The four arms
 //!
 //! * **(a) The predicate.** `feed_optimization_unavailable_reason` answers
-//!   with the remaining-stock reason, the rest-machining reason and the
-//!   mesh-derived reason, and answers `None` for a fresh-stock 2D pocket.
-//!   The three strings are asserted verbatim, because the GUI panel and the
+//!   with the remaining-stock reason and the mesh-derived reason, and
+//!   answers `None` for a fresh-stock 2D pocket. The two strings are
+//!   asserted verbatim, because the GUI panel and the
 //!   log line both show the operator this text.
 //! * **(b) The real stock bounds.** The handle's own request snapshot
 //!   reports the session's stock bounding box. That bounding box is the
@@ -102,10 +102,6 @@ use common::tools::endmill_tool_config;
 /// The refusal a `StockSource::FromRemainingStock` operation reads.
 const REMAINING_STOCK_REASON: &str =
     "Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows.";
-
-/// The refusal a rest operation reads.
-const REST_REASON: &str =
-    "Rest machining depends on prior tool removal, so feed optimization is disabled for now.";
 
 /// The refusal a mesh-derived operation reads.
 const MESH_DERIVED_REASON: &str = "Phase 1 feed optimization only supports operations that start from flat stock, not mesh-derived surfaces.";
@@ -284,24 +280,17 @@ fn cutting_move_count(toolpath: &Toolpath) -> usize {
 /// Each refusal reads back with its own sentence, and a fresh 2D pocket
 /// reads none.
 ///
-/// The three subjects the WP11b deletion left uncovered. The operator sees
+/// The subjects the WP11b deletion left uncovered. (A third refusal, for
+/// the Rest operation, went with that operation on 2026-10-14, ruling R3.) The operator sees
 /// this text, so the assertion is on the sentence, not on "some reason".
 #[test]
-fn the_predicate_names_the_three_refusals_and_clears_a_fresh_pocket() {
+fn the_predicate_names_the_two_refusals_and_clears_a_fresh_pocket() {
     let pocket = pocket_op();
     assert_eq!(
         feed_optimization_unavailable_reason(&pocket, StockSource::FromRemainingStock),
         Some(REMAINING_STOCK_REASON),
         "a remaining-stock operation is refused before anything else, \
          whatever the operation is"
-    );
-
-    let rest = OperationConfig::new_default(OperationType::Rest);
-    assert_eq!(
-        feed_optimization_unavailable_reason(&rest, StockSource::Fresh),
-        Some(REST_REASON),
-        "a rest operation depends on prior tool removal, so it is refused \
-         on fresh stock too"
     );
 
     let drop_cutter = OperationConfig::new_default(OperationType::DropCutter);
