@@ -123,6 +123,7 @@ and W4, from what they measure. It is not scheduled now.
 | R2 | **A**: split Inlay. "Inlay" cuts only the V walls of the pocket; the floor is a normal Pocket with a flat end mill; a new "Inlay Plug" op (mirrored, start depth) runs in its own project for the plug board | W1.4. Also fix: plug not mirrored; glue gap wrong for bits that are not 90°; default flat tool is imperial |
 | R3 | **Retire the Rest op**, unless the reach map uses it. Checked: the reach map does not use `ops::rest` (only a doc mention in `surface/rest_field.rs:37`). Operator note: the reach map is a visual, not planning, and must not live with planning code | W1.7: delete the Rest op on every surface; state the load break |
 | R4 | **B**: region-first default plus the `region_ordering` option (the 3D Rough enum) on every Layered op | W3.0. 3D Rough keeps its own default (Global, level-first) |
+| R6 | **A** (2026-10-15): 2D Adaptive seeds its grid from the shared per-level mask (threshold z + FRESH_MATERIAL_THRESHOLD_MM, the stock lattice); Adaptive3d keeps its own path | in progress |
 | R5 | **A**: a proc-macro crate for `#[derive(OpParams)]`, "clean now" | W5 uses a derive. The GUI range drift (D5) and the pin-drill schema test (D9) still get their own direct fixes in W1 |
 
 ## Per-item flow
