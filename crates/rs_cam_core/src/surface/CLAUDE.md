@@ -10,8 +10,8 @@ The two cutter walks and the derived surface fields. The entry point is
   — split a straight feed that leaves the drop-cutter surface (G-TIERBURIAL).
 - `pushcutter.rs` — the horizontal push along a fiber at constant Z.
 - `slope.rs` — surface slope analysis and the heightmap infrastructure.
-- `rest_field.rs` — the rest-depth-field pencil detector, in tool-offset
-  space.
+- `rest_field.rs` — the rest-depth-field pencil detector (tool-offset space).
+  `stock_reference.rs` — the ONE stock-vs-mesh XY overlap guard (W2.1).
 - `reach.rs` — the canonical valley-reach policy: how wide a band around a
   rest centreline a tool can reach.
 - `flow_accum.rs` — D8 flow routing on a rasterised heightfield.
@@ -24,6 +24,8 @@ The two cutter walks and the derived surface fields. The entry point is
 - `flow_accum` traces surface drainage. That is a different curve family from
   a rest ridge. Keep the module; do not route pencil through it.
 - The valley-reach policy is canonical. Do not derive a second band width.
+- A rest reference takes the stock only through `StockReference::resolve`.
+  The tool tier after an `Absent` is the caller's own dial.
 - `RestGrid` states its grid once, as `grid.grid` — a `maps::grid::GridSpec`.
   `SurfaceHeightmap` and `SlopeMap` keep their own `rows`/`cols`/`cell_size`
   layout on purpose (anisotropic steps, rotated frame).
@@ -32,9 +34,7 @@ The two cutter walks and the derived surface fields. The entry point is
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test reach_policy_pr4`
+- `cargo test -p rs_cam_core -q --test reach_policy_pr4`; `... -q --lib stock_reference`
 - `... --features test-support -q --test grid_z_uncovered_contract_c2`
-- `cargo test -p rs_cam_core -q --test rest_routing_probe_e9`
-- `cargo test -p rs_cam_core -q --test catchment_basin_census_w0`
-- `cargo test -p rs_cam_core -q --test drop_cutter_off_mesh`
-- `cargo test -p rs_cam_core -q --test waterline_sees_material_above_the_flute_top_g_flutetop`
+- `cargo test -p rs_cam_core -q --test rest_routing_probe_e9 --test catchment_basin_census_w0`
+- `... --test drop_cutter_off_mesh --test waterline_sees_material_above_the_flute_top_g_flutetop`

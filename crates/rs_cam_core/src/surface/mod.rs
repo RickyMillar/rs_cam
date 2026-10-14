@@ -12,3 +12,4 @@ pub mod pushcutter;
 pub mod reach;
 pub mod rest_field;
 pub mod slope;
+pub mod stock_reference;

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::finish::pencil_dihedral::{
@@ -199,10 +199,10 @@ pub(super) fn curvature_arm(
 /// toolpaths left (`initial_stock`, when this op cuts FromRemainingStock and
 /// a prior sim exists) — it captures the real prior toolpath pattern
 /// (scallop cusps, skipped boundaries, walls the finish never visited), not
-/// just a tool's shape. Frame guard (the F-024 lesson): the stock z_grid and
-/// the mesh the pencil drops against must share a frame; require their XY
-/// bboxes to overlap or a silent frame mismatch would read garbage rest
-/// everywhere. On no stock / non-overlap, fall back to the R1 cutter
+/// just a tool's shape. Frame guard (the F-024 lesson): the shared
+/// `surface::stock_reference::StockReference::resolve` (W2.1) accepts the
+/// stock only when its XY bbox overlaps the mesh. On no stock / non-overlap,
+/// fall back to the R1 cutter
 /// resolution ([`resolve_reference_cutter`]): real reference tool or the
 /// bigger nominal ball (`is_surface_probe = false`), else a tiny
 /// bare-surface probe with the sign flipped. NOTE the sign-flip trap: a
@@ -220,28 +220,8 @@ pub(super) fn rest_depth_arm(
     float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
-    let stock_ref = initial_stock.filter(|stock| {
-        let (sb, mb) = (&stock.stock_bbox, &mesh.bbox);
-        let overlap = sb.min.x <= mb.max.x
-            && sb.max.x >= mb.min.x
-            && sb.min.y <= mb.max.y
-            && sb.max.y >= mb.min.y;
-        if !overlap {
-            warn!(
-                stock = format!(
-                    "[{:.1},{:.1}]..[{:.1},{:.1}]",
-                    sb.min.x, sb.min.y, sb.max.x, sb.max.y
-                ),
-                mesh = format!(
-                    "[{:.1},{:.1}]..[{:.1},{:.1}]",
-                    mb.min.x, mb.min.y, mb.max.x, mb.max.y
-                ),
-                "Rest-depth detector: stock/mesh XY frames do not overlap; \
-                 falling back to tool reference"
-            );
-        }
-        overlap
-    });
+    let stock_ref =
+        crate::surface::stock_reference::StockReference::resolve(initial_stock, &mesh.bbox).stock();
     let probe_ball =
         crate::tool::BallEndmill::new(SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM);
     let resolved = resolve_reference_cutter(params, cutter);

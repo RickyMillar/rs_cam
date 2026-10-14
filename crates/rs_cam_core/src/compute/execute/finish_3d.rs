@@ -337,16 +337,11 @@ pub(crate) fn generate_unified_finish(
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease
         // detection when the resolved reference is
         // `CreaseReference::MachinedStock` (build-list item 3 —
-        // `CreaseReference` doc). The same XY frame guard
-        // `resolve_rest_reference` applies, minus its reference fallback
-        // chain.
-        let territory_stock = ctx.initial_stock.filter(|stock| {
-            let (sb, mb) = (&stock.stock_bbox, &m.bbox);
-            sb.min.x <= mb.max.x
-                && sb.max.x >= mb.min.x
-                && sb.min.y <= mb.max.y
-                && sb.max.y >= mb.min.y
-        });
+        // `CreaseReference` doc). The one stock-vs-mesh guard (W2.1); this
+        // op has no tool tier after it (`CreaseReference` decides).
+        let territory_stock =
+            crate::surface::stock_reference::StockReference::resolve(ctx.initial_stock, &m.bbox)
+                .stock();
         // A/M6: resolve the three-valued DIAL into the two-valued field the
         // detector switches on, HERE — this is the only site that can see
         // both the operator's setting and what is actually in scope. The
