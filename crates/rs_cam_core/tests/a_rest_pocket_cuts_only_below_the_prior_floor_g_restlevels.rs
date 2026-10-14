@@ -51,6 +51,14 @@
 //! 11. Chamfer (`LevelSkip`, W3.5): after a Face below the chamfer level,
 //!     a rest Chamfer skips its one level and gives an empty result. After
 //!     a Face above the chamfer level, it cuts the fresh rings.
+//! 12. 2D Adaptive (`LevelMask`): on A's outline it skips the levels A
+//!     cleared and cuts only below A's floor. Shifted, above A's floor it
+//!     cuts only near the material A left (its entry starter apart). It
+//!     leaves the stock a fresh Adaptive leaves, with no material above its
+//!     floor in the cells its tool covers.
+//! 13. B8, Face on a whole top: a rest Face cuts the rows of a fresh Face.
+//! 14. B8, Face on part of the top: each rest row lies on a fresh row and
+//!     inside that row's X span.
 //!
 //! Each rule has a red proof: with the rule off, the claim fails. The red
 //! runs are recorded in the W3.4 report.
@@ -75,8 +83,8 @@ use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{
-    ChamferConfig, DrillConfig, FaceConfig, PocketConfig, PocketPattern, ProfileConfig,
-    ZigzagConfig,
+    AdaptiveConfig, ChamferConfig, DrillConfig, FaceConfig, PocketConfig, PocketPattern,
+    ProfileConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
@@ -1076,5 +1084,296 @@ fn a_rest_chamfer_skips_an_edge_a_prior_op_removed() {
         assert_eq!(finding.skipped_levels, skipped, "face {face_depth}: skips");
         assert_eq!(finding.clipped_levels, 0, "a Chamfer never clips a level");
         assert_eq!(finding.fallback, None);
+    }
+}
+
+/// A 2D Adaptive to `depth`, one level per millimetre.
+fn adaptive(depth: f64) -> OperationConfig {
+    OperationConfig::Adaptive(AdaptiveConfig {
+        stepover: 2.0,
+        depth,
+        depth_per_pass: DPP,
+        ..AdaptiveConfig::default()
+    })
+}
+
+/// The distance from `p` to the nearest point of the material A left
+/// inside B shifted `shift` (B minus A's footprint, sampled on a quarter
+/// cell). `f64::INFINITY` when A left none.
+fn distance_to_material_left(p: P2, shift: f64) -> f64 {
+    let step = CELL_MM / 4.0;
+    let inner = HALF - TOOL_R;
+    let n = ((2.0 * HALF) / step).round() as usize;
+    let mut best = f64::INFINITY;
+    for i in 0..=n {
+        for j in 0..=n {
+            let q = P2::new(-HALF + shift + i as f64 * step, -HALF + j as f64 * step);
+            let dx = (q.x.abs() - inner).max(0.0);
+            let dy = (q.y.abs() - inner).max(0.0);
+            if dx.hypot(dy) > TOOL_R {
+                best = best.min((q.x - p.x).hypot(q.y - p.y));
+            }
+        }
+    }
+    best
+}
+
+/// The highest top (mm) over the cells whose centre lies at least one cell
+/// inside the footprint of B's tool, and the count of those cells. The
+/// cells along the wall are left out: the simulator blends a cell the tool
+/// covers in part, and a fresh Adaptive leaves the same blend there (0.31
+/// mm at a cell from the wall on this fixture, cell for cell the same).
+fn highest_covered_top(stock: &TriDexelStock, shift: f64) -> (f32, usize) {
+    let g = &stock.z_grid;
+    let inner = HALF - TOOL_R;
+    let mut top = f32::NEG_INFINITY;
+    let mut judged = 0;
+
+    for r in 0..g.rows {
+        for c in 0..g.cols {
+            let (x, y) = g.cell_to_world(r, c);
+            let dx = ((x - shift).abs() - inner).max(0.0);
+            let dy = (y.abs() - inner).max(0.0);
+            if dx.hypot(dy) > TOOL_R - 2.0 * CELL_MM {
+                continue;
+            }
+            judged += 1;
+            top = top.max(g.top_z_at(r, c).unwrap_or(f32::NEG_INFINITY));
+        }
+    }
+    (top, judged)
+}
+
+/// 12. 2D Adaptive (`LevelMask`, item 1 of the W3.4 follow-up): after
+///     Pocket A, a rest Adaptive on A's outline skips every level A cleared
+///     and cuts only below A's floor. Shifted, above A's floor it cuts only
+///     near the material A left. After the rest Adaptive no material stands
+///     above its floor (plus the simulator's threshold) in the cells its
+///     tool covers completely.
+#[test]
+fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands() {
+    let floor = -A_DEPTH - FRESH_MATERIAL_THRESHOLD_MM;
+    for shift in [0.0, SHIFT] {
+        let rest = run_ops(
+            pocket(A_DEPTH),
+            adaptive(B_DEPTH),
+            shift,
+            StockSource::FromRemainingStock,
+            &[],
+        );
+        let cuts = cutting_moves(&rest.moves);
+        let finding = rest
+            .finding
+            .expect("a rest Adaptive records its level read");
+        eprintln!(
+            "adaptive shift {shift}: {} moves, {} cutting moves, finding {finding:?}",
+            rest.moves.len(),
+            cuts.len()
+        );
+        assert_eq!(finding.planned_levels, ladder(B_DEPTH).len());
+        assert_eq!(finding.fallback, None);
+        assert!(
+            !cuts.is_empty(),
+            "shift {shift}: the rest Adaptive must cut"
+        );
+        if shift == 0.0 {
+            assert_eq!(
+                finding.skipped_levels,
+                ladder(A_DEPTH).len(),
+                "every level A already cut must be skipped"
+            );
+            for m in &cuts {
+                assert!(
+                    m.target.z < floor,
+                    "a cut at z = {} lies at or above A's floor {floor}",
+                    m.target.z
+                );
+            }
+        } else {
+            assert_eq!(
+                finding.skipped_levels, 0,
+                "the strip holds material at every level"
+            );
+            // The planner starts each level with its entry starter at the
+            // medial point of the piece, which lies in A's cleared area
+            // here (an open item, not a rest rule). The starter stays
+            // within 2R + cell of the first cut of the level; every other
+            // cut must lie near the material A left. The level at A's own
+            // floor is not judged: there the simulator's blend of the
+            // cells along A's wall stands above the threshold, so the
+            // planner reads (and cleans) a sliver along that wall.
+            let bound = TOOL_R + 2.0 * CELL_MM;
+            let starter = 2.0 * TOOL_R + CELL_MM;
+            let mut worst: f64 = 0.0;
+            let mut starter_moves = 0;
+            for z in ladder(A_DEPTH - DPP) {
+                let level = cuts_at(&cuts, z);
+                let Some(&first) = level.first() else {
+                    panic!("the strip holds material at level {z}");
+                };
+                for p in level {
+                    let d = distance_to_material_left(p, shift);
+                    if d > bound && (p.x - first.x).hypot(p.y - first.y) <= starter {
+                        starter_moves += 1;
+                        continue;
+                    }
+                    worst = worst.max(d);
+                    assert!(
+                        d <= bound,
+                        "a cut at ({:.2}, {:.2}, {z}) lies {d:.2} mm from the material A \
+                         left; the bound is {bound} mm",
+                        p.x,
+                        p.y
+                    );
+                }
+            }
+            eprintln!("adaptive shifted: {starter_moves} starter moves above A's floor");
+            eprintln!("adaptive shifted: worst distance above A's floor {worst:.3} mm");
+        }
+        let fresh = run_ops(
+            pocket(A_DEPTH),
+            adaptive(B_DEPTH),
+            shift,
+            StockSource::Fresh,
+            &[],
+        );
+        let worst = worst_covered_difference(&fresh.final_stock, &rest.final_stock, shift);
+        eprintln!("adaptive shift {shift}: worst top difference to a fresh Adaptive {worst:.4} mm");
+        assert!(
+            f64::from(worst) <= FRESH_MATERIAL_THRESHOLD_MM,
+            "shift {shift}: the rest Adaptive left {worst} mm more or less than a fresh one"
+        );
+        assert!(
+            rest.moves.len() < fresh.moves.len(),
+            "shift {shift}: the rest Adaptive must skip work the fresh one does"
+        );
+        let (top, judged) = highest_covered_top(&rest.final_stock, shift);
+        eprintln!("adaptive shift {shift}: highest covered top {top:.4} over {judged} cells");
+        assert!(
+            judged > 0,
+            "shift {shift}: the judged set must not be empty"
+        );
+        assert!(
+            f64::from(top) <= -B_DEPTH + FRESH_MATERIAL_THRESHOLD_MM,
+            "shift {shift}: material stands at {top} mm, above the floor {}",
+            -B_DEPTH
+        );
+    }
+}
+
+/// The facing offset (mm) of the B8 cases: more than `2R + cell`, so a rest
+/// clip region ends inside the facing rectangle.
+const FACE_B8_OFFSET: f64 = 10.0;
+
+/// A Face to `depth` with the B8 offset and a stepover that is no divisor
+/// of the gap between the clip region and the rectangle.
+fn face_b8(depth: f64) -> OperationConfig {
+    OperationConfig::Face(FaceConfig {
+        depth,
+        depth_per_pass: DPP,
+        stepover: 2.3,
+        stock_offset: FACE_B8_OFFSET,
+        ..FaceConfig::default()
+    })
+}
+
+/// The rows a Face cuts at level `z`: each cutting move as a segment from
+/// the target of the move before it. Only rows in the reach of the stock
+/// count (`|y|` at most the stock half-width plus R): the stock-aware entry
+/// dressup turns a rest row that runs only in air into a rapid, and a
+/// fresh Face does not know the stock.
+fn face_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
+    let reach = HALF + MARGIN + TOOL_R;
+    moves
+        .windows(2)
+        .filter(|w| {
+            let m = &w[1];
+            m.move_type != MoveType::Rapid
+                && matches!(m.intent, MoveIntent::ClearingCut | MoveIntent::FinishingCut)
+                && (m.target.z - z).abs() < 1e-6
+                && m.target.y.abs() <= reach
+        })
+        .map(|w| {
+            [
+                P2::new(w[0].target.x, w[0].target.y),
+                P2::new(w[1].target.x, w[1].target.y),
+            ]
+        })
+        .collect()
+}
+
+/// 13. B8, whole top: after a Face to 1 mm the material covers the whole
+///     top at each lower level, so a rest Face cuts each of those levels
+///     on the rows of a fresh Face, bit for bit.
+#[test]
+fn a_rest_face_on_a_whole_top_cuts_as_a_fresh_face() {
+    let fresh = run_ops(face_b8(1.0), face_b8(3.0), 0.0, StockSource::Fresh, &[]);
+    let rest = run_ops(
+        face_b8(1.0),
+        face_b8(3.0),
+        0.0,
+        StockSource::FromRemainingStock,
+        &[],
+    );
+    let finding = rest.finding.expect("a rest Face records its level clip");
+    assert_eq!(finding.skipped_levels, 1, "the level the first Face cut");
+    assert_eq!(finding.clipped_levels, 0, "the whole top stands below it");
+    let bits = |rows: Vec<[P2; 2]>| -> Vec<[u64; 4]> {
+        rows.iter()
+            .map(|[a, b]| [a.x.to_bits(), a.y.to_bits(), b.x.to_bits(), b.y.to_bits()])
+            .collect()
+    };
+    for z in [-2.0, -3.0] {
+        let f = bits(face_rows(&fresh.moves, z));
+        assert!(!f.is_empty(), "non-vacuity: a fresh Face cuts level {z}");
+        assert_eq!(bits(face_rows(&rest.moves, z)), f, "level {z}");
+    }
+}
+
+/// 14. B8, part of the top: after Pocket A a rest Face cuts on the rows of
+///     the fresh Face only. Each rest row lies on a fresh row and inside
+///     that row's X span, so no rest row reaches past the fresh rows.
+#[test]
+fn a_rest_face_never_reaches_past_the_fresh_rows() {
+    let fresh = run_ops(pocket(A_DEPTH), face_b8(2.0), 0.0, StockSource::Fresh, &[]);
+    let rest = run_ops(
+        pocket(A_DEPTH),
+        face_b8(2.0),
+        0.0,
+        StockSource::FromRemainingStock,
+        &[],
+    );
+    let finding = rest.finding.expect("a rest Face records its level clip");
+    assert_eq!(
+        finding.clipped_levels, 2,
+        "both levels are clipped: {finding:?}"
+    );
+    for z in [-1.0, -2.0] {
+        let rows = face_rows(&fresh.moves, z);
+        assert!(!rows.is_empty(), "non-vacuity: a fresh Face cuts level {z}");
+        let rest_rows = face_rows(&rest.moves, z);
+        assert!(!rest_rows.is_empty(), "the rest Face cuts level {z}");
+        for p in rest_rows.iter().flatten() {
+            let span = rows
+                .iter()
+                .flatten()
+                .filter(|q| (q.y - p.y).abs() < 1e-9)
+                .fold(None, |acc: Option<(f64, f64)>, q| {
+                    Some(acc.map_or((q.x, q.x), |(lo, hi)| (lo.min(q.x), hi.max(q.x))))
+                });
+            let Some((lo, hi)) = span else {
+                panic!(
+                    "level {z}: a rest row at y = {:.4} lies on no fresh row",
+                    p.y
+                );
+            };
+            assert!(
+                p.x >= lo - 1e-9 && p.x <= hi + 1e-9,
+                "level {z}: a rest row reaches x = {:.4} past the fresh row \
+                 [{lo:.4}, {hi:.4}] at y = {:.4}",
+                p.x,
+                p.y
+            );
+        }
     }
 }

@@ -6,7 +6,11 @@
 //! runner (`layered.rs`): each writes `prepare` (the Z-independent geometry
 //! of a region) and `emit_level` (that geometry at one Z). Each reads its
 //! rest rule from its capabilities (`Capabilities::rest_use`, W3.4). 2D
-//! Adaptive keeps its own ladder. Split out of `compute/execute.rs` (P4).
+//! Adaptive keeps its own ladder: its planner is fallible, polls the
+//! cancel, plans each level from that level's stock and returns
+//! annotations, which `LayeredOp::emit_level` cannot carry. It reads the
+//! stock through the shared step all the same (`RestUse::LevelMask`,
+//! `standing_material::level_masks`). Split out of `compute/execute.rs` (P4).
 
 use crate::compute::catalog::{OperationConfig, RestUse};
 use crate::compute::operation_configs::{
@@ -21,7 +25,7 @@ use crate::trace::semantic_trace::ToolpathSemanticContext;
 use super::OffsetFailures;
 use super::layered::{LayerCtx, LayeredOp, LevelInfo, ReachBand, effective_levels, run_layered};
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
-use super::standing_material::OffGrid;
+use super::standing_material::{LevelSeed, OffGrid, level_masks};
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 
 /// The feeds and heights every Layered adapter here stamps into its moves.
@@ -467,10 +471,14 @@ pub(crate) fn generate_face(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Face, "generate_face");
+    let rect = crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset);
+    let lattice =
+        crate::ops::face::FaceLattice::of_rect(&rect, ctx.tool_def.radius(), cfg.stepover);
     let pass = FacePass {
         cfg,
         rest_use: op.capabilities().rest_use,
-        rect: crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset),
+        rect,
+        lattice,
         feeds: LayerFeeds::new(ctx, op),
     };
     run_layered(&pass, ctx, prepared)
@@ -483,6 +491,9 @@ struct FacePass<'a> {
     rest_use: RestUse,
     /// The facing rectangle: the stock XY bounds grown by `stock_offset`.
     rect: Polygon2,
+    /// The rows of the whole rectangle. A rest piece cuts only on them
+    /// (B8), so a rest row never reaches past a fresh row.
+    lattice: Option<crate::ops::face::FaceLattice>,
     feeds: LayerFeeds,
 }
 
@@ -533,6 +544,7 @@ impl LayeredOp for FacePass<'_> {
             layer.tool_radius,
             self.cfg.stepover,
             self.cfg.direction,
+            self.lattice,
         );
         Ok((lines, OffsetFailures(failures)))
     }
@@ -586,8 +598,37 @@ pub(crate) fn generate_adaptive(
                 pieces.as_slice()
             }
         });
+    let rest_use = op.capabilities().rest_use;
     for poly in outlines {
-        for (level_i, &z) in levels.iter().enumerate() {
+        // G-RESTLEVELS (`RestUse::LevelMask`): one stock read per level of
+        // this piece. It skips a level with no material in reach and seeds
+        // each other level's planner grid.
+        let seeds = match rest_use {
+            RestUse::LevelMask => {
+                let plan = level_masks(
+                    ctx.initial_stock,
+                    poly,
+                    &levels,
+                    ctx.tool_def.radius(),
+                    &cancel_fn,
+                )?;
+                ctx.record(&plan.finding);
+                plan.levels
+            }
+            RestUse::None
+            | RestUse::LevelClip
+            | RestUse::LevelSkip
+            | RestUse::StockColumn
+            | RestUse::Planner
+            | RestUse::Reference
+            | RestUse::LinkSafetyOnly => vec![LevelSeed::Fresh; levels.len()],
+        };
+        for ((level_i, &z), seed) in levels.iter().enumerate().zip(seeds) {
+            let standing_material = match seed {
+                LevelSeed::Empty => continue,
+                LevelSeed::Fresh => None,
+                LevelSeed::Material(mask) => Some(mask),
+            };
             let params = crate::adaptive::AdaptiveParams {
                 tool_radius: ctx.tool_def.radius(),
                 stepover: cfg.stepover,
@@ -598,7 +639,7 @@ pub(crate) fn generate_adaptive(
                 tolerance: cfg.tolerance,
                 slot_clearing: cfg.slot_clearing,
                 min_cutting_radius: cfg.min_cutting_radius,
-                initial_stock: ctx.initial_stock.cloned(),
+                standing_material,
                 cleanup_strategy: cfg.cleanup_strategy,
                 engagement_measure: cfg.engagement_measure,
                 path_strategy: cfg.path_strategy,

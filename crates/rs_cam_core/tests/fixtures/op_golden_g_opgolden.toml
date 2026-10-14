@@ -17,15 +17,15 @@ moves_hash = "6a7919a9fa017e9e"
 
 ["adaptive/rest"]
 outcome = "ok"
-move_count = 1101
-rapid_count = 69
-linear_count = 759
-arc_count = 273
-cutting_length_mm = 2458.29
-rapid_length_mm = 731.637
+move_count = 1119
+rapid_count = 72
+linear_count = 768
+arc_count = 279
+cutting_length_mm = 2468.532
+rapid_length_mm = 775.32
 bbox_min = [-16.825, -8.825, -6.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "134a3fc61d11853a"
+moves_hash = "a1594c8d7ae0a807"
 
 ["adaptive3d/fresh"]
 outcome = "ok"

@@ -26,13 +26,13 @@ pub(crate) use material_grid::MaterialGrid;
 pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
 use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
-use crate::dexel_stock::TriDexelStock;
 use crate::interrupt::{CancelCheck, Cancelled};
 pub(crate) use crate::ops::adaptive_shared::{
     angle_diff, average_angles, blend_corners_to_moves, refine_angle_bracket,
     target_engagement_fraction,
 };
 use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2};
+use crate::stock::dexel::MaterialMask;
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
 
@@ -162,10 +162,13 @@ pub struct AdaptiveParams {
     /// Minimum cutting radius: blend sharp inside corners with arcs of at
     /// least this radius. Prevents chatter on sharp corners. 0.0 = disabled.
     pub min_cutting_radius: f64,
-    /// Optional prior stock state. When provided, the material grid is
-    /// initialized from the tri-dexel stock so that cells already cleared
-    /// by earlier operations are not re-cut.
-    pub initial_stock: Option<TriDexelStock>,
+    /// G-RESTLEVELS (`RestUse::LevelMask`): the material that stands above
+    /// this level, read from the machined stock
+    /// (`compute::execute::standing_material::level_masks`). The planner
+    /// seeds its material grid from it, so it does not re-cut what an
+    /// earlier operation cleared. `None`: fresh stock. The 2D adapter sets
+    /// it; the Adaptive3d slices never do.
+    pub standing_material: Option<std::sync::Arc<MaterialMask>>,
     /// How residue is mopped up after the main spiral. See `CleanupStrategy`.
     pub cleanup_strategy: CleanupStrategy,
     /// Which engagement quantity the direction search measures. See
@@ -467,7 +470,7 @@ mod tests {
             tolerance: 0.2,
             slot_clearing: false,
             min_cutting_radius: 0.0,
-            initial_stock: None,
+            standing_material: None,
             cleanup_strategy: CleanupStrategy::Legacy,
             engagement_measure: EngagementMeasure::DiskArea,
             path_strategy: PathStrategy2d::Agent,
@@ -1571,7 +1574,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_stock_reduces_adaptive_moves() {
+    fn standing_material_reduces_adaptive_moves() {
         use crate::geo::{BoundingBox3, P3};
 
         let poly = square_polygon(20.0);
@@ -1590,7 +1593,7 @@ mod tests {
             max: P3::new(10.0, 10.0, 0.0),
         };
         let cell_size = 0.5;
-        let mut stock = TriDexelStock::from_bounds(&bbox, cell_size);
+        let mut stock = crate::dexel_stock::TriDexelStock::from_bounds(&bbox, cell_size);
 
         // Clear the left half (x < 0) by subtracting above z = -10 (removes
         // all material in those cells).
@@ -1608,9 +1611,14 @@ mod tests {
         }
 
         // Run with the half-cleared stock.
+        let base = default_params(tool_radius, stepover);
+        let window = stock.z_grid.lattice_window([-20.0, -20.0, 20.0, 20.0], 2);
+        let floor = (base.cut_depth + crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM) as f32;
         let params_stock = AdaptiveParams {
-            initial_stock: Some(stock),
-            ..default_params(tool_radius, stepover)
+            standing_material: Some(std::sync::Arc::new(
+                stock.z_grid.material_mask(window, floor),
+            )),
+            ..base
         };
         let tp_stock = adaptive_toolpath(&poly, &params_stock);
         assert!(
