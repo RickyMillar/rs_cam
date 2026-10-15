@@ -165,3 +165,4 @@ and W4, from what they measure. It is not scheduled now.
 - B13 (W5): planning/fixtures/nz_south.toml holds four ProjectCurve point_spacing = 0.05, below the W5 range 0.1..=5.0 (the old GUI literal). Operator ruling 2026-10-15: allow down to 0.01 (ProjectCurve point_spacing min 0.01).
 - B14 (W5): feeds clamp_peck_to_depth bypasses the setter and can write a peck under the 0.5 mm floor on a shallow hole (0.75 x depth).
 - B15: feed optimisation is refused on rest ops (catalog feed_optimization_unavailable_reason), so rest ramps run at the plunge-derived rate (250 vs 1000 mm/min on the Waterline cap). Revisit with the optimizer rebuild ruling (optimizer culled 2026-10-13).
+- B16 (W6.4 design): the UnifiedFinish link between regions reads no link ceiling when it plans; only the W1.1b simulation check can flag it, and no fixture covers this op.
