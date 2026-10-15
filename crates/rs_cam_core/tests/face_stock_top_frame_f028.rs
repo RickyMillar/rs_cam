@@ -2,7 +2,7 @@
 //!
 //! ## Background
 //!
-//! The face op planner (`crate::ops::face::face_toolpath`) used to hardcode
+//! The face op planner (then `ops::face::face_toolpath`, deleted in D3) used to hardcode
 //! `start_z = 0.0` for its depth stepping, emitting cuts at world
 //! Z=[-depth, 0]. This produced the correct stock-engaging behavior for
 //! the AS001 convention (stock origin chosen so the world stock top
@@ -36,9 +36,10 @@
 //!   setups still use the zero-rooted local bbox; their toolpaths emit
 //!   in setup-local frame and the session's `local_to_global` transform
 //!   translates back to world.
-//! - `face::face_toolpath` — anchors its depth stepping at the new
-//!   `FaceParams::stock_top_z` field (populated from `heights.top_z`),
-//!   so cuts emit at `stock_top - depth_in_pass` in the correct frame.
+//! - The face planner anchors its depth stepping at the stock top (then a
+//!   `FaceParams::stock_top_z` field; since W3 the Layered Face adapter
+//!   reads `heights.top_z` in `face_levels`), so cuts emit at
+//!   `stock_top - depth_in_pass` in the correct frame.
 //!
 //! ## Acceptance bars (from F-028 finding)
 //!

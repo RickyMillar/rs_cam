@@ -2990,14 +2990,16 @@ mod tests {
     ///
     /// This test exercises the full chain:
     ///   2D polygon bbox → update_from_bbox → stock at [−z, 0]
-    ///   → pocket_toolpath at cut_depth=−3 → run_simulation with
+    ///   → the pocket kernels at cut_depth=−3 → run_simulation with
     ///     the cut trace → average_engagement > 0
     ///
     /// See planning/adaptive_review_2026-04.md F-2.
     #[test]
     fn two_d_pocket_simulation_reports_engagement() {
         use crate::compute::stock_config::StockConfig;
-        use crate::ops::pocket::{PocketParams, pocket_toolpath};
+        use crate::ops::pocket::{
+            PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_toolpath,
+        };
         use crate::polygon::Polygon2;
 
         // 30×30 mm square polygon at z=0 — the 2D pocket geometry.
@@ -3042,8 +3044,17 @@ mod tests {
 
         // Generate a pocket toolpath. cut_depth is negative: the pocket
         // cuts from z=0 down to z=-3, staying inside the stock.
-        let tp = pocket_toolpath(
+        // The two kernels the Layered Pocket adapter calls (D3 deleted the
+        // public wrapper).
+        let (rings, _report) = pocket_contours_reported_with_cancel(
             &polygon,
+            3.175,
+            2.0,
+            &crate::interrupt::NeverCancel,
+        )
+        .expect("never cancelled");
+        let tp = pocket_contours_to_toolpath(
+            &rings,
             &PocketParams {
                 tool_radius: 3.175,
                 stepover: 2.0,

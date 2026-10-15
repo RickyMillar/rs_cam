@@ -15,7 +15,8 @@
 //! validator (PR-2B, this PR) catches it *pre*-generation with an
 //! auto-fix that flips the sign.
 //!
-//! This test stays at the `project_curve_toolpath` level so the
+//! This test stays at the `project_curve_toolpath_with_cancel` level (the
+//! kernel the Curve runner calls) so the
 //! convention is locked at the geometric boundary, independent of GUI /
 //! MCP wiring.
 
@@ -29,7 +30,7 @@
 use rs_cam_core::geo::P2;
 use rs_cam_core::mesh::{SpatialIndex, make_test_flat};
 use rs_cam_core::ops::project_curve::{
-    ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath,
+    ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath_with_cancel,
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::FlatEndmill;
@@ -86,7 +87,9 @@ fn run(direction: ProjectDirection, depth: f64) -> Option<(f64, f64)> {
         projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
-    let tp = project_curve_toolpath(&poly, &mesh, &idx, &cutter, &params);
+    let tp = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        project_curve_toolpath_with_cancel(&poly, &mesh, &idx, &cutter, &params, cancel)
+    });
     feed_z_range(&tp)
 }
 

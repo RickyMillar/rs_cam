@@ -46,7 +46,7 @@
 use rs_cam_core::compute::toolpath_stats::ToolpathStats;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::finish::ramp_finish::{
-    RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated,
+    RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated_with_cancel,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
@@ -119,8 +119,17 @@ fn params() -> RampFinishParams {
 
 fn run(mesh: &TriangleMesh, cutter: &dyn rs_cam_core::tool::MillingCutter) -> RampReachClamp {
     let index = SpatialIndex::build(mesh, 2.0);
-    let (_tp, _anns, clamp) =
-        ramp_finish_toolpath_structured_annotated(mesh, &index, cutter, &params(), None, None);
+    let (_tp, _anns, clamp) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        ramp_finish_toolpath_structured_annotated_with_cancel(
+            mesh,
+            &index,
+            cutter,
+            &params(),
+            None,
+            None,
+            cancel,
+        )
+    });
     clamp
 }
 

@@ -60,8 +60,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ops::inlay::{
-    InlayPlugParams, InlayPocketParams, floor_inset, inlay_plug_toolpath, inlay_pocket_toolpath,
-    mirror_design, plug_start_depth,
+    InlayPlugParams, InlayPocketParams, floor_inset, inlay_plug_toolpath_with_cancel,
+    inlay_pocket_toolpath_with_cancel, mirror_design, plug_start_depth,
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
@@ -367,22 +367,25 @@ fn fit_case(included_angle_deg: f64) {
     let glue_gap = 0.15;
     let square = Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0);
 
-    let female = inlay_pocket_toolpath(
-        &square,
-        &InlayPocketParams {
-            half_angle: half,
-            pocket_depth,
-            floor_overlap: 1.0,
-            floor_ridge: 0.05,
-            tip_flat: 0.0,
-            stepover: 0.25,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 10.0,
-            tolerance: 0.05,
-            top_z: 0.0,
-        },
-    );
+    let female = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        inlay_pocket_toolpath_with_cancel(
+            &square,
+            &InlayPocketParams {
+                half_angle: half,
+                pocket_depth,
+                floor_overlap: 1.0,
+                floor_ridge: 0.05,
+                tip_flat: 0.0,
+                stepover: 0.25,
+                feed_rate: 1000.0,
+                plunge_rate: 500.0,
+                safe_z: 10.0,
+                tolerance: 0.05,
+                top_z: 0.0,
+            },
+            cancel,
+        )
+    });
     let plug_params = InlayPlugParams {
         half_angle: half,
         pocket_depth,
@@ -397,7 +400,9 @@ fn fit_case(included_angle_deg: f64) {
         tolerance: 0.05,
         top_z: 0.0,
     };
-    let male = inlay_plug_toolpath(std::slice::from_ref(&square), &plug_params);
+    let male = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        inlay_plug_toolpath_with_cancel(std::slice::from_ref(&square), &plug_params, cancel)
+    });
     let start = plug_start_depth(pocket_depth, glue_gap);
     let d_n = pocket_depth * tan_a;
 

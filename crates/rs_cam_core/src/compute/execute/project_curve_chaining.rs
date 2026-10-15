@@ -342,9 +342,11 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
     };
     let mut raw = Toolpath::new();
     for poly in curves() {
-        let tp = crate::ops::project_curve::project_curve_toolpath(
-            &poly, &mesh, &index, &tool_def, &params,
-        );
+        let tp = crate::interrupt::run_uncancellable(|cancel| {
+            crate::ops::project_curve::project_curve_toolpath_with_cancel(
+                &poly, &mesh, &index, &tool_def, &params, cancel,
+            )
+        });
         raw.moves.extend(tp.moves);
     }
 

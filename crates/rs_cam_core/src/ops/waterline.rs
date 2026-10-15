@@ -229,29 +229,6 @@ fn floor_contour(points: &[P3], closed: bool) -> Vec<P3> {
     )
 }
 
-/// Generate waterline toolpaths at multiple Z heights.
-///
-/// Z heights are generated from start_z down to final_z with the given step.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(
-    start_z, final_z, z_step,
-    tri_count = mesh.triangles.len(),
-))]
-pub fn waterline_toolpath(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    start_z: f64,
-    final_z: f64,
-    z_step: f64,
-    params: &WaterlineParams,
-) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        waterline_toolpath_with_cancel(
-            mesh, index, cutter, start_z, final_z, z_step, params, None, cancel,
-        )
-    })
-}
-
 /// `boundary_regions` (P2.3): after each Z level's closed contours come back
 /// from [`waterline_contours_with_cancel`], every contour is run through the
 /// shared run-splitter with a "point is inside a boundary region" keep
@@ -275,9 +252,9 @@ pub fn waterline_toolpath_with_cancel(
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     // R4: the raw ladder, byte-identical to the pre-2026-09-18 loop. The
-    // `UnifiedFinish` very-steep band and the benches ladder through here;
-    // the standalone adapter builds its ladder with `waterline_ladder` and
-    // calls `waterline_toolpath_at_levels` directly.
+    // `UnifiedFinish` very-steep band ladders through here. The Waterline
+    // op is Layered: `run_layered` walks `waterline_ladder` and calls
+    // `waterline_level` per level.
     let levels = waterline_z_levels(start_z, final_z, z_step);
     waterline_toolpath_at_levels(
         mesh,
@@ -295,7 +272,7 @@ pub fn waterline_toolpath_with_cancel(
 /// The caller owns the levels, so the ladder it cuts is the ladder it hands
 /// to the span builder — one `Vec`, two readers. `levels` is walked in the
 /// order given; [`waterline_ladder`] hands them top first.
-pub fn waterline_toolpath_at_levels(
+fn waterline_toolpath_at_levels(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -723,7 +700,11 @@ mod tests {
             stock_to_leave: 0.0,
         };
 
-        let tp = waterline_toolpath(&mesh, &index, &tool, 15.0, 5.0, 5.0, &params);
+        let tp = crate::interrupt::run_uncancellable(|cancel| {
+            waterline_toolpath_with_cancel(
+                &mesh, &index, &tool, 15.0, 5.0, 5.0, &params, None, cancel,
+            )
+        });
         // Should have multiple Z levels: 15, 10, 5
         assert!(!tp.moves.is_empty(), "Waterline toolpath should have moves");
 
@@ -777,42 +758,6 @@ mod tests {
     }
 
     // ── P2.3: boundary_regions pre-clip ──────────────────────────────
-
-    #[test]
-    fn waterline_boundary_regions_none_matches_call_without_param() {
-        let mesh = make_test_hemisphere(20.0, 32);
-        let index = SpatialIndex::build(&mesh, 10.0);
-        let tool = BallEndmill::new(6.0, 25.0);
-        let params = WaterlineParams {
-            sampling: 2.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 25.0,
-            stock_to_leave: 0.0,
-        };
-        let never_cancel = || false;
-
-        let tp_default = waterline_toolpath(&mesh, &index, &tool, 15.0, 5.0, 5.0, &params);
-        let tp_none = waterline_toolpath_with_cancel(
-            &mesh,
-            &index,
-            &tool,
-            15.0,
-            5.0,
-            5.0,
-            &params,
-            None,
-            &never_cancel,
-        )
-        .unwrap();
-
-        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
-        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
-            assert!((a.target.x - b.target.x).abs() < 1e-9);
-            assert!((a.target.y - b.target.y).abs() < 1e-9);
-            assert!((a.target.z - b.target.z).abs() < 1e-9);
-        }
-    }
 
     #[test]
     fn waterline_boundary_regions_confines_cuts_to_region() {

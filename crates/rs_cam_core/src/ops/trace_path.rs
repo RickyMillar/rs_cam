@@ -4,8 +4,6 @@
 //! by the tool radius for left/right cutter compensation.
 
 use crate::geo::{P2, P3};
-use crate::interrupt::{CancelCheck, Cancelled};
-use crate::ops::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -51,32 +49,8 @@ pub struct TraceParams {
     pub top_z: f64,
 }
 
-/// Trace polygon contours at a single Z level.
-///
-/// Applies cutter compensation, then traces each ring (exterior + holes)
-/// at the given `z`. This is the building block for depth-stepped tracing;
-/// callers handle multi-pass iteration.
-pub fn trace_polygon_at_z(polygon: &Polygon2, z: f64, params: &TraceParams) -> Toolpath {
-    trace_polygon_at_z_reported(polygon, z, params).0
-}
-
-/// [`trace_polygon_at_z`] with Checkpoint C's offset failure channel
-/// attached: `1` when the compensation offset failed rather than collapsed,
-/// `0` otherwise (including when no compensation is configured and no offset
-/// is made — trace's caller records the total across levels, so a
-/// no-compensation trace honestly reports a measured zero).
-#[must_use]
-pub(crate) fn trace_polygon_at_z_reported(
-    polygon: &Polygon2,
-    z: f64,
-    params: &TraceParams,
-) -> (Toolpath, usize) {
-    let (working_polygons, failures) = trace_compensated_polygons_reported(polygon, params);
-    (trace_polygons_at_z(&working_polygons, z, params), failures)
-}
-
-/// The **Z-independent half** of `trace_polygon_at_z_reported`: the
-/// cutter-compensated rings this trace will follow, plus Checkpoint C's offset
+/// The **Z-independent half** of a trace pass (the Layered Trace adapter's
+/// `prepare`): the cutter-compensated rings this trace will follow, plus Checkpoint C's offset
 /// failure count.
 ///
 /// Split out for the G2 hoist (2026-08-20). A depth-stepped trace used to
@@ -121,46 +95,6 @@ pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) 
     tp
 }
 
-/// Generate a toolpath that traces polygon contours with depth stepping.
-///
-/// Convenience wrapper around [`trace_polygon_at_z`] that handles multi-pass
-/// depth stepping automatically when `depth > depth_per_pass`.
-pub fn trace_toolpath(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        trace_toolpath_with_cancel(polygon, params, cancel)
-    })
-}
-
-/// Cancellable variant of [`trace_toolpath`]. Polls `cancel` once per Z
-/// level via the shared `depth::toolpath_at_levels_with_cancel` choke point
-/// (planning/finishing_stack_review_2026-07.md S.5).
-///
-/// G2 (2026-08-20): the compensation offset is computed ONCE above the level
-/// loop instead of once per level. The per-level closure stamps Z only.
-pub(crate) fn trace_toolpath_with_cancel(
-    polygon: &Polygon2,
-    params: &TraceParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    // The hoisted offset now runs BEFORE `depth_stepped_toolpath_with_cancel`,
-    // which used to be the first thing to poll. Poll here so a pre-set flag
-    // still short-circuits ahead of any geometry work rather than after it.
-    crate::interrupt::check_cancel(cancel)?;
-    let depth = DepthStepping::new(
-        params.top_z,
-        params.top_z - params.depth,
-        params.depth_per_pass,
-    );
-
-    let (rings, _failures) = trace_compensated_polygons_reported(polygon, params);
-    depth_stepped_toolpath_with_cancel(
-        &depth,
-        params.safe_z,
-        |z| Ok(trace_polygons_at_z(&rings, z, params)),
-        cancel,
-    )
-}
-
 /// Trace a single closed ring at the given Z depth.
 ///
 /// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared
@@ -190,7 +124,29 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use crate::ops::depth::DepthStepping;
     use crate::toolpath::MoveType;
+
+    /// The trace through the kernels the Layered Trace adapter calls: the
+    /// compensation once (`prepare`), then `trace_polygons_at_z` at each Z
+    /// of the 2.5D ladder (`emit_level`). The levels are concatenated; the
+    /// link between levels belongs to `run_layered`, and no test here reads
+    /// it. D3 deleted the public wrapper.
+    fn trace_levels(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
+        let (rings, _failures) = trace_compensated_polygons_reported(polygon, params);
+        let mut tp = Toolpath::new();
+        for z in DepthStepping::new(
+            params.top_z,
+            params.top_z - params.depth,
+            params.depth_per_pass,
+        )
+        .all_levels()
+        {
+            tp.moves
+                .extend(trace_polygons_at_z(&rings, z, params).moves);
+        }
+        tp
+    }
 
     fn square_polygon() -> Polygon2 {
         Polygon2::rectangle(0.0, 0.0, 10.0, 10.0)
@@ -209,71 +165,11 @@ mod tests {
         }
     }
 
-    /// **G2, trace side.** `trace_toolpath_with_cancel` now hoists the
-    /// compensation offset above the level loop; this asserts the composed
-    /// output is bit-identical to calling `trace_polygon_at_z` per level, on
-    /// all three compensation modes — the offsetting ones are the point, and
-    /// `None` is included so the clone-per-call path is covered too.
-    #[test]
-    fn the_hoisted_compensation_emits_exactly_what_the_per_level_offset_did() {
-        let poly = Polygon2::rectangle(0.0, 0.0, 40.0, 25.0);
-
-        for compensation in [
-            TraceCompensation::None,
-            TraceCompensation::Left,
-            TraceCompensation::Right,
-        ] {
-            let params = TraceParams {
-                depth: 6.0,
-                depth_per_pass: 1.5,
-                compensation,
-                ..default_params()
-            };
-            let levels = DepthStepping::new(
-                params.top_z,
-                params.top_z - params.depth,
-                params.depth_per_pass,
-            )
-            .all_levels();
-            assert_eq!(levels.len(), 4, "the fixture must actually be multi-level");
-
-            let naive = crate::ops::depth::toolpath_at_levels(&levels, params.safe_z, |z| {
-                trace_polygon_at_z(&poly, z, &params)
-            });
-            let hoisted = trace_toolpath(&poly, &params);
-
-            let label = format!("{compensation:?}");
-            assert!(!naive.moves.is_empty(), "{label}: vacuous fixture");
-            assert_eq!(
-                hoisted.moves.len(),
-                naive.moves.len(),
-                "{label}: move count"
-            );
-            for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
-                assert_eq!(
-                    (
-                        h.target.x.to_bits(),
-                        h.target.y.to_bits(),
-                        h.target.z.to_bits()
-                    ),
-                    (
-                        n.target.x.to_bits(),
-                        n.target.y.to_bits(),
-                        n.target.z.to_bits()
-                    ),
-                    "{label}: move {i} diverges"
-                );
-                assert_eq!(h.move_type, n.move_type, "{label}: move {i} type");
-                assert_eq!(h.intent, n.intent, "{label}: move {i} intent");
-            }
-        }
-    }
-
     #[test]
     fn trace_square_produces_vertex_moves() {
         let poly = square_polygon();
         let params = default_params();
-        let tp = trace_toolpath(&poly, &params);
+        let tp = trace_levels(&poly, &params);
 
         assert!(!tp.moves.is_empty(), "Toolpath should not be empty");
 
@@ -352,11 +248,11 @@ mod tests {
 
         // No compensation: tool follows the exact polygon
         params.compensation = TraceCompensation::None;
-        let tp_none = trace_toolpath(&poly, &params);
+        let tp_none = trace_levels(&poly, &params);
 
         // Right compensation: tool offset inward (for CCW exterior)
         params.compensation = TraceCompensation::Right;
-        let tp_right = trace_toolpath(&poly, &params);
+        let tp_right = trace_levels(&poly, &params);
 
         assert!(!tp_none.moves.is_empty());
         assert!(!tp_right.moves.is_empty());
@@ -412,11 +308,11 @@ mod tests {
 
         // No compensation baseline
         params.compensation = TraceCompensation::None;
-        let tp_none = trace_toolpath(&poly, &params);
+        let tp_none = trace_levels(&poly, &params);
 
         // Left compensation: tool offset outward (for CCW exterior)
         params.compensation = TraceCompensation::Left;
-        let tp_left = trace_toolpath(&poly, &params);
+        let tp_left = trace_levels(&poly, &params);
 
         assert!(!tp_none.moves.is_empty());
         assert!(!tp_left.moves.is_empty());
@@ -450,7 +346,7 @@ mod tests {
         params.depth = 6.0;
         params.depth_per_pass = 2.0;
 
-        let tp = trace_toolpath(&poly, &params);
+        let tp = trace_levels(&poly, &params);
         assert!(!tp.moves.is_empty());
 
         // Should have 3 depth levels: -2, -4, -6
@@ -480,7 +376,7 @@ mod tests {
         let poly = Polygon2::with_holes(square_polygon().exterior, vec![hole]);
         let params = default_params();
 
-        let tp = trace_toolpath(&poly, &params);
+        let tp = trace_levels(&poly, &params);
         assert!(!tp.moves.is_empty());
 
         // Should have two retract-rapid sequences (one for exterior, one for hole)
@@ -503,7 +399,7 @@ mod tests {
     fn trace_empty_polygon_produces_empty_toolpath() {
         let poly = Polygon2::new(vec![]);
         let params = default_params();
-        let tp = trace_toolpath(&poly, &params);
+        let tp = trace_levels(&poly, &params);
         assert!(tp.moves.is_empty());
     }
 
@@ -515,7 +411,7 @@ mod tests {
         params.tool_radius = 5.0;
         params.compensation = TraceCompensation::Right;
 
-        let tp = trace_toolpath(&tiny, &params);
+        let tp = trace_levels(&tiny, &params);
         assert!(
             tp.moves.is_empty(),
             "Collapsed compensation should produce empty toolpath"
@@ -526,7 +422,7 @@ mod tests {
     fn trace_all_rapids_at_safe_z() {
         let poly = square_polygon();
         let params = default_params();
-        let tp = trace_toolpath(&poly, &params);
+        let tp = trace_levels(&poly, &params);
 
         for m in &tp.moves {
             if m.move_type == MoveType::Rapid {

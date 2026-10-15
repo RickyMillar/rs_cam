@@ -710,7 +710,7 @@ pub(crate) fn generate_adaptive(
             if level_tp.moves.is_empty() {
                 continue;
             }
-            // Inter-level retract (matching toolpath_at_levels behaviour)
+            // Inter-level retract: before each non-empty level but the first
             if level_i > 0 {
                 let offset_before = combined.moves.len();
                 combined.final_retract(safe_z);

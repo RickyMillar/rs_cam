@@ -33,103 +33,6 @@ pub struct PocketParams {
     pub climb: bool,
 }
 
-/// Generate a contour-parallel pocket clearing toolpath.
-///
-/// Process:
-/// 1. Offset boundary inward by tool radius (tool compensation)
-/// 2. Generate concentric inward offsets by stepover
-/// 3. Convert contours to toolpath with rapids, plunges, and contour following
-///
-/// Contours are cut from outermost to innermost (finish pass first).
-/// Returns an empty toolpath if the pocket is too small for the tool.
-#[tracing::instrument(skip(polygon, params), fields(
-    tool_radius = params.tool_radius,
-    stepover = params.stepover,
-))]
-pub fn pocket_toolpath(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        pocket_toolpath_with_cancel(polygon, params, cancel)
-    })
-}
-
-/// Cancellable variant of [`pocket_toolpath`]. Polls `cancel` once per
-/// concentric offset ring via [`pocket_contours_with_cancel`] — pocket's
-/// `loop {}` (planning/finishing_stack_review_2026-07.md S.5: "worst
-/// loops... pocket (unbounded offset loop)") is otherwise unbounded for a
-/// large polygon with a tiny stepover.
-pub fn pocket_toolpath_with_cancel(
-    polygon: &Polygon2,
-    params: &PocketParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    Ok(pocket_toolpath_reported_with_cancel(polygon, params, cancel)?.0)
-}
-
-/// [`pocket_toolpath_with_cancel`] with Checkpoint C's offset failure
-/// channel attached.
-///
-/// The second element counts offset calls that FAILED rather than collapsed
-/// — the compensation offset plus every ring of the cascade. It matters most
-/// here, and F-12 is why: the cascade's only exit is a collapsed ring, and a
-/// contained panic IS a collapsed ring to that loop. An inlay's female pocket
-/// stopped early on a `debug_assert!` inside a transitive dependency, left
-/// material standing, and reported a successful generate — the loop cannot
-/// tell "the pocket is finished" from "the offset broke".
-pub(crate) fn pocket_toolpath_reported_with_cancel(
-    polygon: &Polygon2,
-    params: &PocketParams,
-    cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
-    let (contours, report) =
-        pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
-    Ok((pocket_contours_to_toolpath(&contours, params), report))
-}
-
-/// Depth-stepped pocket: the ring cascade computed **once**, then stamped at
-/// every Z level (G2, `planning/perf_review_2026-08-19/PERF_REVIEW.md`).
-///
-/// The old shape called this whole function once per level, so an `L`-level
-/// pocket re-ran tool compensation plus the full [`OffsetRingSet`] cascade
-/// `L` times to produce `L` copies of the same XY geometry — the only
-/// Z-dependent thing in the output is the stamp in
-/// [`pocket_contours_to_toolpath`]. Composition still runs through
-/// [`crate::ops::depth::toolpath_at_levels_with_cancel`], so the inter-level
-/// retract and the cancellation cadence are unchanged.
-///
-/// Cancellation is preserved on **both** granularities: the cascade polls per
-/// offset ring (once, now, instead of once per level) and the level loop polls
-/// per level.
-///
-/// `params.cut_depth` is ignored — `levels` supplies the Z for every pass.
-///
-/// D2: only the G2 unit test below calls it; production steps Z in
-/// `compute::execute::layered::run_layered`.
-#[cfg(test)]
-pub fn pocket_toolpath_at_levels_reported_with_cancel(
-    polygon: &Polygon2,
-    levels: &[f64],
-    params: &PocketParams,
-    cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, PocketCascadeReport), Cancelled> {
-    let (contours, report) =
-        pocket_contours_reported_with_cancel(polygon, params.tool_radius, params.stepover, cancel)?;
-    let tp = crate::ops::depth::toolpath_at_levels_with_cancel(
-        levels,
-        params.safe_z,
-        |z| {
-            Ok(pocket_contours_to_toolpath(
-                &contours,
-                &PocketParams {
-                    cut_depth: z,
-                    ..*params
-                },
-            ))
-        },
-        cancel,
-    )?;
-    Ok((tp, report))
-}
-
 /// Generate the 2D contour rings for pocket clearing (no Z, no toolpath yet).
 ///
 /// Useful for visualization or when you need the geometry separately.
@@ -258,8 +161,15 @@ pub fn pocket_contours_with_cancel(
 }
 
 /// [`pocket_contours_with_cancel`] with Checkpoint C's offset failure
-/// channel attached — see `pocket_toolpath_reported_with_cancel` for why
-/// this cascade is the one that most needs it.
+/// channel attached. The Layered Pocket adapter calls it (`prepare`).
+///
+/// The report counts offset calls that FAILED rather than collapsed: the
+/// compensation offset plus every ring of the cascade. It matters most
+/// here, and F-12 is why: the cascade's only exit is a collapsed ring, and a
+/// contained panic IS a collapsed ring to that loop. An inlay's female pocket
+/// stopped early on a `debug_assert!` inside a transitive dependency, left
+/// material standing, and reported a successful generate. The loop cannot
+/// tell "the pocket is finished" from "the offset broke".
 pub fn pocket_contours_reported_with_cancel(
     polygon: &Polygon2,
     tool_radius: f64,
@@ -470,6 +380,19 @@ mod tests {
     use super::*;
     use crate::toolpath::MoveType;
 
+    /// One pocket level through the two kernels the Layered Pocket adapter
+    /// calls (`prepare`, then `emit_level`). D3 deleted the public wrapper.
+    fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
+        let (contours, _report) = pocket_contours_reported_with_cancel(
+            polygon,
+            params.tool_radius,
+            params.stepover,
+            &crate::interrupt::NeverCancel,
+        )
+        .expect("never cancelled");
+        pocket_contours_to_toolpath(&contours, params)
+    }
+
     fn default_params() -> PocketParams {
         PocketParams {
             tool_radius: 3.175, // 1/4" endmill
@@ -479,97 +402,6 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             climb: false,
-        }
-    }
-
-    /// Every move as raw bits, so a last-ULP divergence cannot hide behind
-    /// `f64` equality and `-0.0 == 0.0` cannot mask one.
-    ///
-    /// Shared shape with `tests/perf_golden_depth_level_geometry.rs`'s
-    /// `xy_bits_at`, and for the same reason: this is an identity check, not a
-    /// similarity check.
-    fn move_bits(tp: &Toolpath) -> Vec<(u64, u64, u64, String)> {
-        tp.moves
-            .iter()
-            .map(|m| {
-                (
-                    m.target.x.to_bits(),
-                    m.target.y.to_bits(),
-                    m.target.z.to_bits(),
-                    format!("{:?}/{:?}", m.move_type, m.intent),
-                )
-            })
-            .collect()
-    }
-
-    /// **G2's acceptance property, at the seam that actually moved.**
-    ///
-    /// `tests/perf_golden_depth_level_geometry.rs` pins the PRE-fix call shape
-    /// — `pocket_toolpath` inside the per-level closure — and it must keep
-    /// passing, but it cannot see the hoist because the hoist is a different
-    /// call shape. This is the other half: the hoisted composition against the
-    /// naive one, bit for bit, on the shape class the review is written against
-    /// (a jittered ring at marching-squares vertex density).
-    ///
-    /// It is a property, not a pinned constant, so it cannot rot and never
-    /// needs re-baselining. If it fires, the hoist changed emission rather than
-    /// scheduling — which is precisely the claim "identical by construction"
-    /// makes and the only thing that could invalidate it.
-    #[test]
-    fn the_hoisted_cascade_emits_exactly_what_the_per_level_one_did() {
-        let poly = Polygon2::new(
-            (0..600)
-                .map(|i| {
-                    let t = std::f64::consts::TAU * i as f64 / 600.0;
-                    let r = 40.0 + 0.6 * (7.0 * t).sin() + 0.25 * (23.0 * t).cos();
-                    P2::new(r * t.cos(), r * t.sin())
-                })
-                .collect(),
-        );
-        let base = PocketParams {
-            tool_radius: 3.0,
-            stepover: 4.0,
-            cut_depth: 0.0,
-            feed_rate: 1200.0,
-            plunge_rate: 400.0,
-            safe_z: 10.0,
-            climb: true,
-        };
-        let never = || false;
-
-        for n in [1_usize, 5] {
-            let levels: Vec<f64> = (1..=n).map(|i| -1.5 * i as f64).collect();
-
-            let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
-                pocket_toolpath(
-                    &poly,
-                    &PocketParams {
-                        cut_depth: z,
-                        ..base
-                    },
-                )
-            });
-            let (hoisted, report) =
-                pocket_toolpath_at_levels_reported_with_cancel(&poly, &levels, &base, &never)
-                    .expect("never cancelled");
-
-            assert!(
-                !naive.moves.is_empty(),
-                "L{n}: the fixture emitted nothing — the comparison would be vacuous"
-            );
-            assert_eq!(
-                move_bits(&hoisted),
-                move_bits(&naive),
-                "L{n}: the hoisted cascade emitted a different move list"
-            );
-            // The whole point: one cascade, not `n` of them. The report is the
-            // only observable that legitimately CHANGES with the hoist, and it
-            // changes in the direction the `offset_library_failures` x L
-            // over-count documents.
-            assert_eq!(
-                report.stopped_by, None,
-                "L{n}: the convergent fixture must not trip a cascade bound"
-            );
         }
     }
 
@@ -822,7 +654,7 @@ mod tests {
     fn test_pocket_toolpath_basic() {
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params();
-        let tp = pocket_toolpath(&sq, &params);
+        let tp = pocket_level(&sq, &params);
 
         assert!(!tp.moves.is_empty(), "Pocket toolpath should have moves");
 
@@ -858,7 +690,7 @@ mod tests {
         // Verify the rapid-plunge-cut-retract pattern
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params();
-        let tp = pocket_toolpath(&sq, &params);
+        let tp = pocket_level(&sq, &params);
 
         let contours = pocket_contours(&sq, params.tool_radius, params.stepover);
         let n_contours = contours.len();
@@ -895,7 +727,7 @@ mod tests {
         // 5mm square with 3.175mm radius tool → pocket collapses
         let tiny = Polygon2::rectangle(0.0, 0.0, 5.0, 5.0);
         let params = default_params();
-        let tp = pocket_toolpath(&tiny, &params);
+        let tp = pocket_level(&tiny, &params);
 
         assert!(
             tp.moves.is_empty(),
@@ -910,11 +742,11 @@ mod tests {
 
         let mut conv_params = default_params();
         conv_params.climb = false;
-        let conv_tp = pocket_toolpath(&sq, &conv_params);
+        let conv_tp = pocket_level(&sq, &conv_params);
 
         let mut climb_params = default_params();
         climb_params.climb = true;
-        let climb_tp = pocket_toolpath(&sq, &climb_params);
+        let climb_tp = pocket_level(&sq, &climb_params);
 
         // Both should have the same number of moves
         assert_eq!(conv_tp.moves.len(), climb_tp.moves.len());
@@ -959,7 +791,7 @@ mod tests {
     fn test_pocket_no_cutting_above_surface() {
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params();
-        let tp = pocket_toolpath(&sq, &params);
+        let tp = pocket_level(&sq, &params);
 
         // No feed moves should be above cut_depth (except plunge which goes from safe_z to cut_depth)
         for i in 1..tp.moves.len() {
@@ -1034,7 +866,7 @@ mod tests {
             safe_z: 10.0,
             climb: false,
         };
-        let tp = pocket_toolpath(&poly, &params);
+        let tp = pocket_level(&poly, &params);
 
         // Verify no feed moves have XY inside the hole (with tool radius margin)
         let hole_margin = 1.0; // allow some tolerance for tool radius
@@ -1075,7 +907,7 @@ mod tests {
             "L-shape pocket should produce contours"
         );
 
-        let tp = pocket_toolpath(
+        let tp = pocket_level(
             &l_shape,
             &PocketParams {
                 tool_radius: 2.0,

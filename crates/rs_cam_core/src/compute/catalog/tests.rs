@@ -168,23 +168,12 @@ fn every_declared_range_holds_the_default() {
     assert!(ranged > 100, "only {ranged} ranged params");
 }
 
-/// CMP-08: every alias the registry publishes names a real def on the
-/// same operation, and no alias collides with a published name.
+/// Every name the setter publishes resolves to a def. D3 deleted the
+/// alias field from `ParamDef`, so a second name for one field cannot be
+/// declared (the compiler refuses it).
 #[test]
-fn every_alias_names_a_field_of_its_own_operation() {
-    let mut aliases_seen = 0;
+fn every_published_name_resolves_to_a_def() {
     for &op_type in OperationType::ALL {
-        let entry = op_type.registry_entry();
-        for def in entry.params.defs {
-            for alias in def.aliases {
-                aliases_seen += 1;
-                assert!(
-                    entry.params.defs.iter().all(|other| other.name != *alias),
-                    "{op_type:?}: `{alias}` is both an alias of `{}` and a param name of                      its own. One name, one field.",
-                    def.name
-                );
-            }
-        }
         for name in OperationConfig::param_names_for_type(op_type) {
             assert!(
                 OperationConfig::new_default(op_type)
@@ -194,14 +183,6 @@ fn every_alias_names_a_field_of_its_own_operation() {
             );
         }
     }
-    // C1 deleted the Waterline `depth_per_pass` alias; D2 deleted the
-    // RampFinish `depth_per_pass` and Pencil `stepover` aliases. The
-    // setter accepts only published names.
-    assert_eq!(
-        aliases_seen, 0,
-        "a setter alias came back. The setter accepts only published names \
-         (C1, D2); publish the field under its own name instead."
-    );
 }
 
 /// Phase 1 wildcard kill (architectural refactor T3, re-baselined

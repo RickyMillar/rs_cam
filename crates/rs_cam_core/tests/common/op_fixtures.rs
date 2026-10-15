@@ -43,8 +43,8 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::alignment_pins::AlignmentPin;
 use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
-use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig};
+use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, HeightMode, StockSource};
+use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, FaceConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::export::fingerprint::ToolpathFingerprint;
@@ -53,6 +53,7 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs,
@@ -498,6 +499,91 @@ pub fn run_prior(session: &mut ProjectSession) {
         .generate_toolpath(0, &cancel)
         .expect("the prior op generates");
     simulate(session);
+}
+
+// ── The one door for one op's toolpath (D3) ────────────────────────────
+
+/// Every dressup off: no entry, no link, no lead, no arc fit, no merge, no
+/// feed optimisation and no rapid reorder. A test that dresses the op
+/// output itself, or that reads the op output alone, starts from this.
+pub fn no_dressups() -> DressupConfig {
+    DressupConfig {
+        entry_style: DressupEntryStyle::None,
+        link_moves: None,
+        lead_in_out: None,
+        arc_fitting: None,
+        segment_merge: None,
+        dogbone: None,
+        feed_optimization: false,
+        optimize_rapid_order: false,
+        ..DressupConfig::default()
+    }
+}
+
+/// D3: the one door a test takes for the toolpath of one op. It builds a
+/// one-op session, generates through `ProjectSession::generate_toolpath`
+/// (the door the GUI, MCP and the CLI share) and returns the annotated
+/// result: the op's runner output after the session stages (dressups,
+/// boundary clip, entry split, obstacle step). `tweak` adjusts the
+/// `ToolpathConfig` first; pass `|tc| tc.dressups = no_dressups()` for the
+/// op output without dressups. D3 deleted the per-op public wrappers that
+/// tests called before.
+#[track_caller]
+pub fn generated_op(
+    stock: StockConfig,
+    tool: ToolConfig,
+    model: LoadedModel,
+    op: OperationConfig,
+    tweak: impl FnOnce(&mut ToolpathConfig),
+) -> AnnotatedToolpath {
+    let mut session = super::session::single_op_session_with(stock, tool, model, "op", op, tweak);
+    super::session::generate(&mut session, 0);
+    let annotated = session
+        .get_result(0)
+        .expect("the generated op has a result")
+        .annotated();
+    AnnotatedToolpath::clone(annotated)
+}
+
+/// The Face that the dressup sentries dress (`dressup_span_invariants`,
+/// `arcfit_intent_key_cost_f1`, `transform_provenance_fingerprints`): a
+/// 40 x 30 mm stock with its top at Z0, a 6 mm end mill, 4 mm stepover,
+/// `OneWay` rows, `depth` deep in passes of 2 mm, feed 1500, plunge 500,
+/// retract plane at Z 30. It comes through [`generated_op`] with
+/// [`no_dressups`], so it is the Face runner's output after the session
+/// stages. Before D3 these files called the deleted `face_toolpath` with
+/// the same dials.
+pub fn dressup_face(depth: f64) -> Toolpath {
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 6.0;
+    let stock = StockConfig {
+        x: 40.0,
+        y: 30.0,
+        z: 5.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        origin_z: -5.0,
+        auto_from_model: false,
+        alignment_pins: Vec::new(),
+        ..StockConfig::default()
+    };
+    let op = OperationConfig::Face(FaceConfig {
+        stepover: 4.0,
+        depth,
+        depth_per_pass: 2.0,
+        feed_rate: 1500.0,
+        plunge_rate: 500.0,
+        stock_offset: 0.0,
+        direction: FaceDirection::OneWay,
+        ..FaceConfig::default()
+    });
+    let model = polygon_model(vec![rectangle(0.0, 0.0, 40.0, 30.0)], "dressup_face");
+    generated_op(stock, tool, model, op, |tc| {
+        tc.dressups = no_dressups();
+        tc.heights.retract_z = HeightMode::Manual(30.0);
+        tc.heights.clearance_z = HeightMode::Manual(30.0);
+    })
+    .toolpath
 }
 
 /// The count of moves with `MoveIntent::Unknown` (B11; the W6 census rule

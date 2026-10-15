@@ -498,27 +498,6 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
     }
 }
 
-/// Generate pencil finishing toolpath.
-///
-/// Detects concave mesh edges (creases) and generates toolpaths that
-/// follow them, cleaning material that standard finishing passes miss.
-pub fn pencil_toolpath(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &PencilParams,
-) -> Toolpath {
-    let (tp, _, _) = pencil_toolpath_structured_annotated(
-        mesh,
-        index,
-        cutter,
-        params,
-        PencilStock::default(),
-        None,
-    );
-    tp
-}
-
 impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
     fn move_index(&self) -> usize {
         self.move_index
@@ -608,22 +587,6 @@ pub struct PencilReport {
     pub link: Option<PencilLinkReport>,
 }
 
-#[allow(clippy::expect_used)]
-pub fn pencil_toolpath_structured_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &PencilParams,
-    stock: PencilStock<'_>,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        pencil_toolpath_structured_annotated_with_cancel(
-            mesh, index, cutter, params, stock, debug, cancel,
-        )
-    })
-}
-
 /// The stock a pencil pass reads (W6.2). `Default` is a fresh-stock pass.
 #[derive(Clone, Copy, Default)]
 pub struct PencilStock<'a> {
@@ -644,7 +607,7 @@ pub struct PencilStock<'a> {
     pub link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'a>>,
 }
 
-/// Cancellable variant of [`pencil_toolpath_structured_annotated`]. Polls
+/// The pencil kernel (`compute::execute::generate_pencil` calls it). Polls
 /// `cancel` between the major phases (detector dispatch → path ordering →
 /// emission) and once per line/chain inside each detector arm's own sampling
 /// loop (see [`dihedral_arm`], [`curvature_arm`], [`rest_depth_arm`]). Does

@@ -1,8 +1,8 @@
 //! Pass emission: entry-ramp planning, stock-aware link lifts, and the
 //! `emit_*` functions that turn ordered `PencilPath`s into a toolpath.
 //!
-//! Split out of `finish/pencil.rs` (P4). The public entry points
-//! (`pencil_toolpath*`) stay in the parent.
+//! Split out of `finish/pencil.rs` (P4). The public entry point
+//! (`pencil_toolpath_structured_annotated_with_cancel`) stays in the parent.
 
 use crate::finish::surface_link::build_surface_link;
 use crate::geo::P3;
@@ -500,7 +500,7 @@ pub(super) enum LinkLift {
 ///
 /// `None` is a library caller with no op heights: the fallback top is the
 /// snapshot's own top, and no obstacle is in scope.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // SAFETY: the link end points, the stock, the ceiling and the contact dials are separate inputs
 pub(super) fn plan_link_lift(
     from: P3,
     to: P3,
@@ -628,7 +628,7 @@ pub(crate) fn emit_paths(
 ///
 /// `link_ceiling` is the op's ceiling from the one builder (R1); the link
 /// lift reads its fallback top and its obstacles ([`plan_link_lift`]).
-#[allow(clippy::too_many_arguments)] // the emitter inputs plus the two stock readings
+#[allow(clippy::too_many_arguments)] // SAFETY: the emitter inputs plus the two stock readings
 pub(crate) fn emit_paths_with_entry_stock(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
@@ -699,7 +699,7 @@ pub struct PencilLinkReport {
 }
 
 /// [`emit_paths_with_entry_stock`] with the link report a sentry can read.
-#[allow(clippy::too_many_arguments)] // the emitter inputs plus the two stock readings
+#[allow(clippy::too_many_arguments)] // SAFETY: the emitter inputs plus the two stock readings
 pub(crate) fn emit_paths_with_entry_stock_reported(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,

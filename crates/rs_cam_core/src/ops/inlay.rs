@@ -375,13 +375,6 @@ pub fn inlay_pocket_toolpath_with_cancel(
     Ok(tp)
 }
 
-/// Uncancellable [`inlay_pocket_toolpath_with_cancel`].
-pub fn inlay_pocket_toolpath(polygon: &Polygon2, params: &InlayPocketParams) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        inlay_pocket_toolpath_with_cancel(polygon, params, cancel)
-    })
-}
-
 /// The male plug of a whole design (all its polygons at once).
 ///
 /// The op mirrors the design ([`mirror_design`]) and cuts the surface
@@ -482,19 +475,26 @@ pub fn inlay_plug_toolpath_with_cancel(
     Ok(tp)
 }
 
-/// Uncancellable [`inlay_plug_toolpath_with_cancel`].
-pub fn inlay_plug_toolpath(polygons: &[Polygon2], params: &InlayPlugParams) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        inlay_plug_toolpath_with_cancel(polygons, params, cancel)
-    })
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;
     use std::f64::consts::FRAC_PI_4;
+
+    /// The female pocket through the kernel the Inlay adapter calls.
+    fn pocket_cut(polygon: &Polygon2, params: &InlayPocketParams) -> Toolpath {
+        crate::interrupt::run_uncancellable(|cancel| {
+            inlay_pocket_toolpath_with_cancel(polygon, params, cancel)
+        })
+    }
+
+    /// The male plug through the kernel the Inlay Plug adapter calls.
+    fn plug_cut(polygons: &[Polygon2], params: &InlayPlugParams) -> Toolpath {
+        crate::interrupt::run_uncancellable(|cancel| {
+            inlay_plug_toolpath_with_cancel(polygons, params, cancel)
+        })
+    }
 
     fn square(size: f64) -> Polygon2 {
         let h = size / 2.0;
@@ -546,7 +546,7 @@ mod tests {
     fn the_pocket_walls_stay_in_the_band_and_reach_the_pocket_depth() {
         let sq = square(40.0);
         let p = pocket_params();
-        let tp = inlay_pocket_toolpath(&sq, &p);
+        let tp = pocket_cut(&sq, &p);
         let pts = cuts(&tp);
         assert!(!pts.is_empty());
         let band = floor_inset(p.pocket_depth, p.half_angle) + p.floor_overlap;
@@ -569,7 +569,7 @@ mod tests {
             top_z: 5.0,
             ..pocket_params()
         };
-        let pts = cuts(&inlay_pocket_toolpath(&square(20.0), &p));
+        let pts = cuts(&pocket_cut(&square(20.0), &p));
         assert!(pts.iter().all(|q| q.z <= 5.0 + 1e-9 && q.z >= 2.0 - 1e-9));
     }
 
@@ -577,7 +577,7 @@ mod tests {
     fn the_plug_never_cuts_its_face_and_stops_at_its_full_depth() {
         let p = plug_params();
         let sq = square(20.0);
-        let pts = cuts(&inlay_plug_toolpath(std::slice::from_ref(&sq), &p));
+        let pts = cuts(&plug_cut(std::slice::from_ref(&sq), &p));
         assert!(!pts.is_empty());
         let start = plug_start_depth(p.pocket_depth, p.glue_gap);
         let total = start + p.proud_height;

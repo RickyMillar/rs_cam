@@ -15,6 +15,28 @@ use super::*;
 use crate::mesh::{SpatialIndex, make_test_hemisphere};
 use crate::tool::BallEndmill;
 
+/// A fresh-stock pencil pass through the kernel the Pencil adapter calls.
+/// D3 deleted the public `pencil_toolpath` wrapper.
+fn pencil_pass(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+) -> Toolpath {
+    crate::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            params,
+            PencilStock::default(),
+            None,
+            cancel,
+        )
+    })
+    .0
+}
+
 /// Create a flat-only mesh (convex-only, no concave edges). Also kept
 /// (duplicated) as a tiny same-module helper in `pencil_dihedral::tests`
 /// for its own concavity-detection unit tests.
@@ -77,7 +99,7 @@ fn test_pencil_toolpath_v_groove() {
         ..Default::default()
     };
 
-    let tp = pencil_toolpath(&mesh, &index, &tool, &params);
+    let tp = pencil_pass(&mesh, &index, &tool, &params);
     assert!(
         !tp.moves.is_empty(),
         "V-groove should produce pencil toolpath moves"
@@ -97,7 +119,7 @@ fn test_pencil_toolpath_convex_empty() {
         ..Default::default()
     };
 
-    let tp = pencil_toolpath(&mesh, &index, &tool, &params);
+    let tp = pencil_pass(&mesh, &index, &tool, &params);
     assert!(
         tp.moves.is_empty(),
         "Convex mesh should produce empty pencil toolpath"
@@ -129,8 +151,8 @@ fn test_pencil_with_offset_passes() {
         ..params_center
     };
 
-    let tp_center = pencil_toolpath(&mesh, &index, &tool, &params_center);
-    let tp_offset = pencil_toolpath(&mesh, &index, &tool, &params_offset);
+    let tp_center = pencil_pass(&mesh, &index, &tool, &params_center);
+    let tp_offset = pencil_pass(&mesh, &index, &tool, &params_offset);
 
     // Offset passes should produce more moves
     assert!(
@@ -271,7 +293,7 @@ fn pencil_real_mesh_gate() {
         .collect();
     let angle_chains = chain_concave_edges(&angle_owned, &mesh, params.min_cut_length).len();
     let gated_chains = pencil_chain_count(&mesh, &tool, &params);
-    let tp = pencil_toolpath(&mesh, &index, &tool, &params);
+    let tp = pencil_pass(&mesh, &index, &tool, &params);
 
     assert!(
         gated_chains <= angle_chains,
@@ -411,7 +433,7 @@ fn render_pencil_real_mesh() {
     let t_shared = t.elapsed().as_millis();
 
     let t = Instant::now();
-    let tp = pencil_toolpath(&mesh, &index, &tool, &params);
+    let tp = pencil_pass(&mesh, &index, &tool, &params);
     let t_gen = t.elapsed().as_millis();
     let _ = std::fs::write(
         out.replace(".png", ".timing.txt"),
@@ -526,8 +548,8 @@ fn test_hookup_linking_reduces_rapids() {
         ..Default::default()
     };
 
-    let unlinked = pencil_toolpath(&mesh, &index, &tool, &mk(0.0));
-    let linked = pencil_toolpath(&mesh, &index, &tool, &mk(50.0));
+    let unlinked = pencil_pass(&mesh, &index, &tool, &mk(0.0));
+    let linked = pencil_pass(&mesh, &index, &tool, &mk(50.0));
 
     assert!(!linked.moves.is_empty(), "linked path must still cut");
     assert!(
@@ -674,7 +696,7 @@ fn test_hemisphere_pencil_produces_ring() {
     let _concave_count = shared.iter().filter(|e| e.is_concave).count();
     // The hemisphere is all convex from outside, but some edges at base may be concave
     // depending on tessellation. At minimum, the algorithm should not crash.
-    let _tp = pencil_toolpath(&mesh, &index, &tool, &params);
+    let _tp = pencil_pass(&mesh, &index, &tool, &params);
     // We just verify it runs without panic — hemisphere may or may not produce edges
     // depending on tessellation quality
     assert!(

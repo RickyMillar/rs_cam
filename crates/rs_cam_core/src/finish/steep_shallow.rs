@@ -17,7 +17,7 @@
 use std::ops::Range;
 
 use crate::compute::spans::RegionNode;
-use crate::finish::composed::{ComposedRest, ComposedSurfaceOp, Routed, compose, composed_spans};
+use crate::finish::composed::{ComposedRest, ComposedSurfaceOp, Routed, compose};
 use crate::finish::finish_setup::FinishResolutionPolicy;
 use crate::finish::surface_link::{FinishingLinkStage, LinkGeometry, relink_fragments};
 use crate::finish::unified_finish::RelinkTotals;
@@ -543,32 +543,12 @@ pub struct SteepShallowSplit {
     pub shallow: Range<usize>,
 }
 
-/// Spans for a [`steep_shallow_toolpath_split_with_cancel`] result. The op
-/// does not call it: since W6.4 `run_composed` builds the op's spans from
-/// `order_constraints`. The capability sentry reads it. Per-run `Region` spans, plus a labelled `Region`
-/// span for each half (so the halves stay identifiable after the TSP
-/// remaps spans), plus the rapid-order barriers that make the reorder safe:
-/// one at each half's start, and one per Z level inside the steep half
-/// (W6.4: the op's `order_constraints`).
-pub fn steep_shallow_spans(
-    toolpath: &Toolpath,
-    split: &SteepShallowSplit,
-) -> Vec<crate::trace::toolpath_spans::Span> {
-    composed_spans::<SteepShallowOp<'_>>(
-        toolpath,
-        &[],
-        &SteepShallowReport {
-            split: split.clone(),
-            relink: None,
-        },
-    )
-}
-
 /// Label on the steep half's `Region` span — the handle sentries use to
 /// find the waterline pass again after a reorder remaps spans.
 pub const STEEP_HALF_LABEL: &str = "Steep pass";
-/// Label on the shallow half's `Region` span.
-pub(crate) const SHALLOW_HALF_LABEL: &str = "Shallow pass";
+/// Label on the shallow half's `Region` span — the sentries' handle for
+/// the raster pass, beside [`STEEP_HALF_LABEL`].
+pub const SHALLOW_HALF_LABEL: &str = "Shallow pass";
 
 /// Generate a steep-and-shallow finishing toolpath, and the
 /// [`SteepShallowSplit`] describing where each half landed.

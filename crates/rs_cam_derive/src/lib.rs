@@ -21,8 +21,6 @@
 //! - `range = a..=b` or `range = a..`: an inclusive domain.
 //! - `min = a`, `gt = a`, `max = b`: one bound each (`gt` is a strict
 //!   lower bound). Do not use `range` together with these.
-//! - `alias = "name"`: another name the setter accepts. Repeat the key for
-//!   more than one alias.
 //! - `optional`: publish the field as optional when its type is not an
 //!   `Option`.
 //! - `frame_dependent`: the field is an absolute coordinate in the setup
@@ -71,7 +69,6 @@ struct FieldSpec {
     min: Option<Expr>,
     gt: Option<Expr>,
     max: Option<Expr>,
-    aliases: Vec<LitStr>,
     optional: bool,
     frame_dependent: bool,
     skip: Option<Expr>,
@@ -85,7 +82,6 @@ impl FieldSpec {
             || self.min.is_some()
             || self.gt.is_some()
             || self.max.is_some()
-            || !self.aliases.is_empty()
             || self.optional
             || self.frame_dependent
     }
@@ -122,10 +118,6 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
                     spec.frame_dependent = true;
                     Ok(())
                 }
-                "alias" => {
-                    spec.aliases.push(meta.value()?.parse()?);
-                    Ok(())
-                }
                 "help" => set_once(&mut spec.help, meta.value()?.parse()?, &key, span),
                 "range" => set_once(&mut spec.range, meta.value()?.parse()?, &key, span),
                 "min" => set_once(&mut spec.min, meta.value()?.parse()?, &key, span),
@@ -134,7 +126,7 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
                 "skip" => set_once(&mut spec.skip, meta.value()?.parse()?, &key, span),
                 "driver_set" => set_once(&mut spec.driver_set, meta.value()?.parse()?, &key, span),
                 _ => Err(meta.error(
-                    "unknown #[param] key; expected help, range, min, gt, max, alias, \
+                    "unknown #[param] key; expected help, range, min, gt, max, \
                      optional, frame_dependent, skip or driver_set",
                 )),
             }
@@ -150,7 +142,7 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
         return Err(syn::Error::new(
             field.span(),
             "a `skip` or `driver_set` field is not published, so it takes no help, \
-             range, alias or optional",
+             range or optional",
         ));
     }
     if spec.range.is_some() && (spec.min.is_some() || spec.gt.is_some() || spec.max.is_some()) {
@@ -270,7 +262,6 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
             |h| quote!(::core::option::Option::Some(#h)),
         );
         let range = range_tokens(&spec, &catalog)?;
-        let aliases = &spec.aliases;
         let force_optional = spec.optional;
         let frame_dependent = spec.frame_dependent;
         defs.push(quote! {
@@ -280,7 +271,6 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 optional: <#ty as #catalog::ParamType>::OPTIONAL || #force_optional,
                 help: #help,
                 range: #range,
-                aliases: &[#(#aliases),*],
                 frame_dependent: #frame_dependent,
             }
         });

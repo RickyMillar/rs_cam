@@ -324,7 +324,7 @@ pub(crate) fn push_link_landing(
 /// degenerate case — a gap shorter than one sample spacing, where
 /// `build_surface_link` yields no interior points at all — is the same rule
 /// with an empty middle, not a special case that feeds across at depth.
-#[allow(clippy::too_many_arguments)] // the candidate, the surface and the ceiling are separate inputs
+#[allow(clippy::too_many_arguments)] // SAFETY: the candidate, the surface and the ceiling are separate inputs
 pub(crate) fn shape_under_ceiling(
     ceiling: &LinkCeiling<'_>,
     from: P3,
@@ -861,7 +861,7 @@ pub fn relink_fragments(
 /// purpose: `RelinkParams` is spelled out as an exhaustive struct literal at
 /// 27 sites across the crate and its tests, and a new field would rewrite
 /// every one of them for a value that only two callers can supply.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // SAFETY: the relink inputs plus the fragment kinds, which ride a parameter (see above)
 pub fn relink_fragments_with_kinds(
     annotated: AnnotatedToolpath,
     mesh: &TriangleMesh,

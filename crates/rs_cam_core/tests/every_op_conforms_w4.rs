@@ -1161,23 +1161,22 @@ fn check6_every_schema_default_round_trips_and_every_driver_field_is_refused() {
             }
         }
         for p in schema.params.iter().filter(|p| !p.default.is_null()) {
-            for name in std::iter::once(&p.name).chain(&p.aliases) {
-                set_count += 1;
-                match set_param(&mut session, name, p.default.clone()) {
-                    Err(e) => defects.push(format!(
-                        "{key}/schema: `{name}` = {} (the published default) is refused: {e}",
+            let name = &p.name;
+            set_count += 1;
+            match set_param(&mut session, name, p.default.clone()) {
+                Err(e) => defects.push(format!(
+                    "{key}/schema: `{name}` = {} (the published default) is refused: {e}",
+                    p.default
+                )),
+                Ok(()) if config(&session) != before => {
+                    defects.push(format!(
+                        "{key}/schema: `{name}` = {} (the published default) changed \
+                         the config",
                         p.default
-                    )),
-                    Ok(()) if config(&session) != before => {
-                        defects.push(format!(
-                            "{key}/schema: `{name}` = {} (the published default) changed \
-                             the config",
-                            p.default
-                        ));
-                        session = default_op_session(op);
-                    }
-                    Ok(()) => {}
+                    ));
+                    session = default_op_session(op);
                 }
+                Ok(()) => {}
             }
         }
         let held_debug = session.toolpath_configs()[0].debug_options.enabled;
@@ -1253,25 +1252,22 @@ fn check6b_every_null_schema_default_round_trips() {
         let key = op.kind_str();
         let schema = OperationConfig::schema_for_type(op);
         for p in schema.params.iter().filter(|p| p.default.is_null()) {
-            for name in std::iter::once(&p.name).chain(&p.aliases) {
-                set_count += 1;
-                let mut session = default_op_session(op);
-                let before = format!("{:?}", session.toolpath_configs()[0].operation);
-                match set_param(&mut session, name, serde_json::Value::Null) {
-                    Err(e) => defects.push(format!(
-                        "{key}/schema_null: `{name}` = null (the published default) is \
-                         refused: {e}"
-                    )),
-                    Ok(())
-                        if format!("{:?}", session.toolpath_configs()[0].operation) != before =>
-                    {
-                        defects.push(format!(
-                            "{key}/schema_null: `{name}` = null (the published default) \
-                             changed the config"
-                        ));
-                    }
-                    Ok(()) => {}
+            let name = &p.name;
+            set_count += 1;
+            let mut session = default_op_session(op);
+            let before = format!("{:?}", session.toolpath_configs()[0].operation);
+            match set_param(&mut session, name, serde_json::Value::Null) {
+                Err(e) => defects.push(format!(
+                    "{key}/schema_null: `{name}` = null (the published default) is \
+                     refused: {e}"
+                )),
+                Ok(()) if format!("{:?}", session.toolpath_configs()[0].operation) != before => {
+                    defects.push(format!(
+                        "{key}/schema_null: `{name}` = null (the published default) \
+                         changed the config"
+                    ));
                 }
+                Ok(()) => {}
             }
         }
     }

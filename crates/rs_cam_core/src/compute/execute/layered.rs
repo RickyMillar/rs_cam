@@ -55,8 +55,8 @@
 //!
 //! # The retract rule
 //!
-//! Region-first keeps the rule of the hand-written ladder
-//! (`ops::depth::toolpath_at_levels_with_cancel`): a retract to `safe_z`
+//! Region-first keeps the rule of the old hand-written ladder (D3 deleted
+//! it): a retract to `safe_z`
 //! comes before each non-empty level of an outline except its first
 //! ladder level, and no retract comes between outlines. Level-first puts a
 //! retract before each non-empty piece after the first. Each retract is a

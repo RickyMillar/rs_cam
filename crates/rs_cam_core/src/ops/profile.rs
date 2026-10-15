@@ -52,52 +52,14 @@ pub struct ProfileParams {
     pub compensate_in_controller: bool,
 }
 
-/// Generate a profile cutting toolpath along the polygon boundary.
-///
-/// The tool is offset by `tool_radius` to the specified side so the tool
-/// edge follows the design boundary exactly.
-///
-/// Returns an empty toolpath if the offset collapses (e.g., inside profile
-/// on a polygon smaller than the tool diameter).
-#[tracing::instrument(skip(polygon, params), fields(
-    tool_radius = params.tool_radius,
-    side = ?params.side,
-))]
-pub fn profile_toolpath(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
-    profile_toolpath_reported(polygon, params).0
-}
-
-/// [`profile_toolpath`] with Checkpoint C's offset failure channel attached.
-///
-/// The second element counts offset CALLS that failed rather than collapsed
-/// (see [`crate::polygon::OffsetFailure`]). `0` is a measurement — every
-/// offset was clean — and the caller may record it as such; there is no
-/// "not measured" state here because this function always makes the call.
-///
-/// It matters for profile specifically because a failed offset and a
-/// collapsed one produce the same empty toolpath, and for an OUTSIDE profile
-/// a collapse is nearly impossible: an outward offset of a valid ring has no
-/// geometric reason to vanish, so an empty result there is almost always the
-/// failure this channel names.
-#[must_use]
-pub fn profile_toolpath_reported(polygon: &Polygon2, params: &ProfileParams) -> (Toolpath, usize) {
-    let (contour, failures) = profile_path_reported(polygon, params);
-    let tp = match contour {
-        Some(pts) => profile_path_to_toolpath(&pts, params),
-        None => Toolpath::new(),
-    };
-    (tp, failures)
-}
-
-/// The **Z-independent half** of [`profile_toolpath_reported`]: the tool-centre
-/// path this profile will cut, plus Checkpoint C's offset failure count.
+/// The **Z-independent half** of a profile pass (the Layered Profile
+/// adapter's `prepare`): the tool-centre path this profile will cut, plus
+/// Checkpoint C's offset failure count.
 ///
 /// Split out for the G2 hoist (2026-08-20). A depth-stepped profile used to
 /// re-run the compensation offset once per Z level to produce the same
 /// polyline every time; `cut_depth` reaches the output only through
-/// [`profile_path_to_toolpath`]'s stamp. `profile_toolpath_reported` is now
-/// literally this function composed with that one, so a hoisted caller and a
-/// per-level caller cannot drift apart.
+/// [`profile_path_to_toolpath`]'s stamp (`emit_level`).
 ///
 /// Handles both compensation modes: `compensate_in_controller` returns the
 /// exterior verbatim (no offset is made, so the count is a measured `0`), and
@@ -217,6 +179,17 @@ mod tests {
     use super::*;
     use crate::toolpath::MoveType;
 
+    /// One profile level through the kernels the Layered Profile adapter
+    /// calls: `profile_path_reported` (`prepare`), then
+    /// `profile_path_to_toolpath` (`emit_level`). A collapsed offset gives
+    /// no contour and an empty toolpath. D3 deleted the public wrapper.
+    fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
+        match profile_path_reported(polygon, params).0 {
+            Some(contour) => profile_path_to_toolpath(&contour, params),
+            None => Toolpath::new(),
+        }
+    }
+
     fn default_params(side: ProfileSide) -> ProfileParams {
         ProfileParams {
             tool_radius: 3.175,
@@ -227,90 +200,6 @@ mod tests {
             safe_z: 10.0,
             climb: false,
             compensate_in_controller: false,
-        }
-    }
-
-    /// **G2, profile side.** The hoisted composition (`profile_path_reported`
-    /// once, `profile_path_to_toolpath` per level) against the naive one
-    /// (`profile_toolpath` per level), bit for bit — and on BOTH compensation
-    /// modes, because `compensate_in_controller` is the branch the split had to
-    /// absorb and the one most likely to drift.
-    #[test]
-    fn the_hoisted_contour_emits_exactly_what_the_per_level_offset_did() {
-        let poly = Polygon2::new(
-            (0..400)
-                .map(|i| {
-                    let t = std::f64::consts::TAU * i as f64 / 400.0;
-                    let r = 25.0 + 0.7 * (5.0 * t).sin();
-                    P2::new(r * t.cos(), r * t.sin())
-                })
-                .collect(),
-        );
-        let levels: Vec<f64> = (1..=5).map(|i| -1.5 * i as f64).collect();
-
-        for in_control in [false, true] {
-            for side in [ProfileSide::Outside, ProfileSide::Inside] {
-                let base = ProfileParams {
-                    side,
-                    compensate_in_controller: in_control,
-                    ..default_params(side)
-                };
-
-                let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
-                    profile_toolpath(
-                        &poly,
-                        &ProfileParams {
-                            cut_depth: z,
-                            ..base
-                        },
-                    )
-                });
-
-                let (contour, _failures) = profile_path_reported(&poly, &base);
-                let hoisted =
-                    crate::ops::depth::toolpath_at_levels(
-                        &levels,
-                        base.safe_z,
-                        |z| match &contour {
-                            Some(pts) => profile_path_to_toolpath(
-                                pts,
-                                &ProfileParams {
-                                    cut_depth: z,
-                                    ..base
-                                },
-                            ),
-                            None => Toolpath::new(),
-                        },
-                    );
-
-                let label = format!("in_control={in_control} side={side:?}");
-                assert!(
-                    !naive.moves.is_empty(),
-                    "{label}: the fixture emitted nothing — vacuous comparison"
-                );
-                assert_eq!(
-                    hoisted.moves.len(),
-                    naive.moves.len(),
-                    "{label}: move count"
-                );
-                for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
-                    assert_eq!(
-                        (
-                            h.target.x.to_bits(),
-                            h.target.y.to_bits(),
-                            h.target.z.to_bits()
-                        ),
-                        (
-                            n.target.x.to_bits(),
-                            n.target.y.to_bits(),
-                            n.target.z.to_bits()
-                        ),
-                        "{label}: move {i} diverges"
-                    );
-                    assert_eq!(h.move_type, n.move_type, "{label}: move {i} type");
-                    assert_eq!(h.intent, n.intent, "{label}: move {i} intent");
-                }
-            }
         }
     }
 
@@ -362,7 +251,7 @@ mod tests {
             "Inside profile on tiny polygon should collapse"
         );
 
-        let tp = profile_toolpath(&tiny, &default_params(ProfileSide::Inside));
+        let tp = profile_level(&tiny, &default_params(ProfileSide::Inside));
         assert!(tp.moves.is_empty());
     }
 
@@ -370,7 +259,7 @@ mod tests {
     fn test_profile_toolpath_structure() {
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params(ProfileSide::Outside);
-        let tp = profile_toolpath(&sq, &params);
+        let tp = profile_level(&sq, &params);
 
         assert!(!tp.moves.is_empty());
 
@@ -423,7 +312,7 @@ mod tests {
     fn test_profile_closes_loop() {
         let sq = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
         let params = default_params(ProfileSide::Outside);
-        let tp = profile_toolpath(&sq, &params);
+        let tp = profile_level(&sq, &params);
 
         // The closing move (last feed at feed_rate) should return to the plunge point XY
         let plunge = tp
@@ -457,10 +346,10 @@ mod tests {
     fn test_profile_climb_reverses_direction() {
         let sq = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
 
-        let conv_tp = profile_toolpath(&sq, &default_params(ProfileSide::Outside));
+        let conv_tp = profile_level(&sq, &default_params(ProfileSide::Outside));
         let mut climb_params = default_params(ProfileSide::Outside);
         climb_params.climb = true;
-        let climb_tp = profile_toolpath(&sq, &climb_params);
+        let climb_tp = profile_level(&sq, &climb_params);
 
         // Same number of moves
         assert_eq!(conv_tp.moves.len(), climb_tp.moves.len());
@@ -500,13 +389,13 @@ mod tests {
             P2::new(0.0, 30.0),
         ]);
 
-        let outside = profile_toolpath(&l_shape, &default_params(ProfileSide::Outside));
+        let outside = profile_level(&l_shape, &default_params(ProfileSide::Outside));
         assert!(
             !outside.moves.is_empty(),
             "Outside profile of L-shape should work"
         );
 
-        let inside = profile_toolpath(
+        let inside = profile_level(
             &l_shape,
             &ProfileParams {
                 tool_radius: 2.0,

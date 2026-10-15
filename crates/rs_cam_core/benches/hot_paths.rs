@@ -8,7 +8,7 @@
 //!
 //! ```text
 //! cargo bench -p rs_cam_core --bench hot_paths
-//! cargo bench -p rs_cam_core --bench hot_paths -- gen_depth   # one group
+//! cargo bench -p rs_cam_core --bench hot_paths -- gen_waterline   # one group
 //! ```
 //!
 //! Criterion always builds `--release`, so every number here is a release
@@ -21,7 +21,6 @@
 //! | `sim_e2e_small`      | S4, S6 |
 //! | `sim_dispatch_ab`    | S3 wave 4 — per-stamp vs whole-toolpath, PAIRED |
 //! | `sim_playback_ab`    | SIM w6 — serial vs banded PLAYBACK replay, PAIRED |
-//! | `gen_depth`          | G2 — the L20/L1 **ratio** is the number |
 //! | `gen_waterline`      | G1 — likewise the L20/L1 ratio |
 //! | `gen_contains_point` | G4 |
 //! | `gen_rapid_order`    | G5 |
@@ -29,9 +28,14 @@
 //! | `viz_triage_build`   | V1 (core side) |
 //!
 //! Sizing rule: one criterion iteration stays under ~2 s, so the whole target
-//! runs in minutes. Where a finding is about repetition (G1, G2) the bench
+//! runs in minutes. Where a finding is about repetition (G1) the bench
 //! carries BOTH arms of the ratio, because it is the ratio — not the absolute
 //! — that the fix is supposed to move.
+//!
+//! D3 (2026-10-16) deleted the two G2 groups (`gen_depth`,
+//! `gen_face_levels`). They timed the per-level wrapper composition
+//! against the hoisted one; D3 deleted the wrappers, and `run_layered`
+//! prepares each region once.
 
 #![allow(
     clippy::unwrap_used,
@@ -464,219 +468,6 @@ fn bench_sim_kernel_plunge(c: &mut Criterion) {
     group.finish();
 }
 
-// ── G2: depth-stepped 2.5D geometry recomputed per Z level ──────────────
-
-/// The G2 number is the **ratio** `L20 / L1`. Before the fix it should be
-/// ≈ 20 (the whole 2D cascade re-runs per level); after the hoist it should
-/// fall towards 1 plus the per-level emission cost.
-///
-/// **Two families of arms, deliberately.** `pocket/L20` and friends measure
-/// the PRE-FIX call shape — `pocket_toolpath` inside the per-level closure, so
-/// the whole 2D cascade re-runs per level. Those arms are left exactly as
-/// Phase 0 captured them, and they still read the Phase 0 numbers, because the
-/// hoist does not make that shape faster; it makes it avoidable. The
-/// `*_hoisted` arms measure the POST-FIX shape that `compute/execute.rs` now
-/// uses: geometry once, then stamp per level. The G2 deliverable is
-/// `pocket/L20_hoisted` against `pocket/L1`, in one run, on one machine.
-fn bench_gen_depth(c: &mut Criterion) {
-    use rs_cam_core::ops::depth::{toolpath_at_levels, toolpath_at_levels_with_cancel};
-    use rs_cam_core::ops::pocket::pocket_toolpath;
-    use rs_cam_core::ops::pocket::{PocketParams, pocket_contours, pocket_contours_to_toolpath};
-    use rs_cam_core::ops::profile::{
-        ProfileParams, ProfileSide, profile_path_reported, profile_path_to_toolpath,
-        profile_toolpath,
-    };
-    use rs_cam_core::ops::zigzag::{
-        ZigzagParams, lines_to_toolpath, zigzag_lines, zigzag_toolpath,
-    };
-
-    let mut group = c.benchmark_group("gen_depth");
-    group.sample_size(10);
-
-    let poly = Polygon2::new(jittered_ring(40.0, 1400));
-    let levels_1: Vec<f64> = vec![-2.0];
-    let levels_20: Vec<f64> = (1..=20).map(|i| -0.5 * i as f64).collect();
-
-    for (label, levels) in [("L1", &levels_1), ("L20", &levels_20)] {
-        group.bench_function(BenchmarkId::new("pocket", label), |b| {
-            b.iter(|| {
-                black_box(toolpath_at_levels(levels, 10.0, |z| {
-                    pocket_toolpath(
-                        &poly,
-                        &PocketParams {
-                            tool_radius: 3.0,
-                            stepover: 4.0,
-                            cut_depth: z,
-                            feed_rate: 1200.0,
-                            plunge_rate: 400.0,
-                            safe_z: 10.0,
-                            climb: true,
-                        },
-                    )
-                }))
-            })
-        });
-
-        group.bench_function(BenchmarkId::new("profile", label), |b| {
-            b.iter(|| {
-                black_box(toolpath_at_levels(levels, 10.0, |z| {
-                    profile_toolpath(
-                        &poly,
-                        &ProfileParams {
-                            tool_radius: 3.0,
-                            side: ProfileSide::Outside,
-                            cut_depth: z,
-                            feed_rate: 1200.0,
-                            plunge_rate: 400.0,
-                            safe_z: 10.0,
-                            climb: true,
-                            compensate_in_controller: false,
-                        },
-                    )
-                }))
-            })
-        });
-
-        group.bench_function(BenchmarkId::new("zigzag", label), |b| {
-            b.iter(|| {
-                black_box(toolpath_at_levels(levels, 10.0, |z| {
-                    zigzag_toolpath(
-                        &poly,
-                        &ZigzagParams {
-                            tool_radius: 3.0,
-                            stepover: 4.0,
-                            cut_depth: z,
-                            feed_rate: 1200.0,
-                            plunge_rate: 400.0,
-                            safe_z: 10.0,
-                            angle: 0.0,
-                        },
-                    )
-                }))
-            })
-        });
-
-        // ── POST-FIX shape (G2 hoist): geometry once, stamp per level ──
-        //
-        // This is what `compute::execute`'s pocket/profile/zigzag adapters do
-        // since 2026-08-20. The composition still runs through
-        // `toolpath_at_levels_with_cancel`, so inter-level retracts and the
-        // cancellation cadence are identical to the arms above.
-        let never = || false;
-
-        group.bench_function(
-            BenchmarkId::new("pocket", format!("{label}_hoisted")),
-            |b| {
-                b.iter(|| {
-                    let base = PocketParams {
-                        tool_radius: 3.0,
-                        stepover: 4.0,
-                        cut_depth: 0.0,
-                        feed_rate: 1200.0,
-                        plunge_rate: 400.0,
-                        safe_z: 10.0,
-                        climb: true,
-                    };
-                    let contours = pocket_contours(&poly, base.tool_radius, base.stepover);
-                    black_box(
-                        toolpath_at_levels_with_cancel(
-                            levels,
-                            10.0,
-                            |z| {
-                                Ok(pocket_contours_to_toolpath(
-                                    &contours,
-                                    &PocketParams {
-                                        cut_depth: z,
-                                        ..base
-                                    },
-                                ))
-                            },
-                            &never,
-                        )
-                        .expect("never cancelled"),
-                    )
-                })
-            },
-        );
-
-        group.bench_function(
-            BenchmarkId::new("profile", format!("{label}_hoisted")),
-            |b| {
-                b.iter(|| {
-                    let base = ProfileParams {
-                        tool_radius: 3.0,
-                        side: ProfileSide::Outside,
-                        cut_depth: 0.0,
-                        feed_rate: 1200.0,
-                        plunge_rate: 400.0,
-                        safe_z: 10.0,
-                        climb: true,
-                        compensate_in_controller: false,
-                    };
-                    let (contour, _failures) = profile_path_reported(&poly, &base);
-                    black_box(
-                        toolpath_at_levels_with_cancel(
-                            levels,
-                            10.0,
-                            |z| {
-                                Ok(match &contour {
-                                    Some(pts) => profile_path_to_toolpath(
-                                        pts,
-                                        &ProfileParams {
-                                            cut_depth: z,
-                                            ..base
-                                        },
-                                    ),
-                                    None => rs_cam_core::toolpath::Toolpath::new(),
-                                })
-                            },
-                            &never,
-                        )
-                        .expect("never cancelled"),
-                    )
-                })
-            },
-        );
-
-        group.bench_function(
-            BenchmarkId::new("zigzag", format!("{label}_hoisted")),
-            |b| {
-                b.iter(|| {
-                    let base = ZigzagParams {
-                        tool_radius: 3.0,
-                        stepover: 4.0,
-                        cut_depth: 0.0,
-                        feed_rate: 1200.0,
-                        plunge_rate: 400.0,
-                        safe_z: 10.0,
-                        angle: 0.0,
-                    };
-                    let lines = zigzag_lines(&poly, base.tool_radius, base.stepover, base.angle);
-                    black_box(
-                        toolpath_at_levels_with_cancel(
-                            levels,
-                            10.0,
-                            |z| {
-                                Ok(lines_to_toolpath(
-                                    &lines,
-                                    &ZigzagParams {
-                                        cut_depth: z,
-                                        ..base
-                                    },
-                                ))
-                            },
-                            &never,
-                        )
-                        .expect("never cancelled"),
-                    )
-                })
-            },
-        );
-    }
-
-    group.finish();
-}
-
 // ── G1: push-cutter query radius = half the part width ──────────────────
 
 /// `push_cutter_batch` in `perf_suite.rs` measures ONE fiber batch at one Z.
@@ -888,47 +679,6 @@ fn bench_gen_vcarve_field(c: &mut Criterion) {
     group.bench_function("frame60_9holes_tol005", |b| {
         b.iter(|| black_box(vcarve_toolpath(&poly, &params).moves.len()))
     });
-
-    group.finish();
-}
-
-// ── G2 (face side): scan rows rebuilt per Z level ───────────────────────
-
-/// Facing a large stock at a fine stepover over many depth levels. The scan
-/// rows (inset + slicing + any OneWay normalisation) are Z-independent, so
-/// this arm measures exactly what the hoist removed: `levels - 1` redundant
-/// rebuilds.
-fn bench_gen_face_levels(c: &mut Criterion) {
-    use rs_cam_core::geo::BoundingBox3;
-    use rs_cam_core::ops::face::{FaceDirection, FaceParams, face_toolpath};
-
-    let mut group = c.benchmark_group("gen_face_levels");
-    group.sample_size(20);
-
-    let bounds = BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(600.0, 400.0, 25.0),
-    };
-    for (label, direction) in [
-        ("zigzag_20levels", FaceDirection::Zigzag),
-        ("oneway_20levels", FaceDirection::OneWay),
-    ] {
-        let params = FaceParams {
-            tool_radius: 6.0,
-            stepover: 1.0,
-            depth: 10.0,
-            depth_per_pass: 0.5,
-            feed_rate: 2000.0,
-            plunge_rate: 500.0,
-            safe_z: 10.0,
-            stock_offset: 5.0,
-            direction,
-            stock_top_z: 0.0,
-        };
-        group.bench_function(label, |b| {
-            b.iter(|| black_box(face_toolpath(&bounds, &params).moves.len()))
-        });
-    }
 
     group.finish();
 }
@@ -1407,12 +1157,10 @@ criterion_group!(
     bench_sim_dispatch_ab,
     bench_sim_playback_ab,
     bench_sim_fixpoint_ladder,
-    bench_gen_depth,
     bench_gen_waterline,
     bench_gen_contains_point,
     bench_gen_rapid_order,
     bench_gen_vcarve_field,
-    bench_gen_face_levels,
     bench_viz_triage_build,
 );
 criterion_main!(benches);

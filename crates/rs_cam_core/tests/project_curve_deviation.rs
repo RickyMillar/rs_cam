@@ -38,7 +38,7 @@ use rs_cam_core::geometry::boundary::{
 use rs_cam_core::io::dxf_input::load_dxf;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::ops::project_curve::{
-    ProjectCurveParams, ProjectDirection, project_curve_toolpath,
+    ProjectCurveParams, ProjectDirection, project_curve_toolpath_with_cancel,
 };
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{FlatEndmill, MillingCutter};
@@ -357,13 +357,16 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let mut worst_poly_idx = 0usize;
     let mut worst_closed_flag = false;
     for (idx, poly) in polygons.iter().enumerate() {
-        let tp = project_curve_toolpath(
-            poly,
-            &mesh,
-            &spatial,
-            &cutter as &dyn MillingCutter,
-            &params,
-        );
+        let tp = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+            project_curve_toolpath_with_cancel(
+                poly,
+                &mesh,
+                &spatial,
+                &cutter as &dyn MillingCutter,
+                &params,
+                cancel,
+            )
+        });
         let midpoints = collect_cut_move_midpoints(&tp);
         let single = std::slice::from_ref(poly);
         for mp in &midpoints {

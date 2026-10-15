@@ -41,14 +41,14 @@ use rs_cam_core::{
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
     ops::chamfer::ChamferParams,
     ops::drill::{DrillCycle, DrillParams},
-    ops::face::{FaceDirection, FaceParams},
+    ops::face::FaceDirection,
     ops::inlay::{InlayPlugParams, InlayPocketParams},
     ops::pocket::PocketParams,
     ops::profile::{ProfileParams, ProfileSide},
     ops::project_curve::ProjectCurveParams,
-    ops::trace_path::{TraceCompensation, TraceParams},
+    ops::trace_path::TraceCompensation,
     ops::vcarve::VCarveParams,
-    ops::waterline::{WaterlineParams, waterline_toolpath},
+    ops::waterline::{WaterlineParams, waterline_toolpath_with_cancel},
     ops::zigzag::ZigzagParams,
     polygon::Polygon2,
     surface::dropcutter::batch_drop_cutter,
@@ -56,6 +56,68 @@ use rs_cam_core::{
     toolpath::{Toolpath, raster_toolpath_from_grid},
 };
 use std::path::PathBuf;
+
+mod common;
+
+use common::kernels::{pocket_level, profile_level, zigzag_level};
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::{FaceConfig, TraceConfig};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+
+/// A Face or Trace toolpath through the session door (D3), dressups off.
+/// D3 deleted the public `face_toolpath` and `trace_toolpath`; the depth
+/// ladder these sweeps vary belongs to `run_layered`, so the sweep goes
+/// through the real op. The stock is `stock_bounds_2d`, the model is
+/// `rect_polygon`, and the tool is a flat end mill of `tool_diameter`.
+fn via_session(op: OperationConfig, tool_diameter: f64) -> Toolpath {
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = tool_diameter;
+    let b = stock_bounds_2d();
+    let stock = rs_cam_core::compute::StockConfig {
+        x: b.max.x - b.min.x,
+        y: b.max.y - b.min.y,
+        z: b.max.z - b.min.z,
+        origin_x: b.min.x,
+        origin_y: b.min.y,
+        origin_z: b.min.z,
+        auto_from_model: false,
+        ..rs_cam_core::compute::StockConfig::default()
+    };
+    let model = common::session::polygon_model(vec![rect_polygon()], "rect");
+    common::op_fixtures::generated_op(stock, tool, model, op, |tc| {
+        tc.dressups = common::op_fixtures::no_dressups();
+    })
+    .toolpath
+}
+
+fn face_via_session(cfg: FaceConfig) -> Toolpath {
+    via_session(OperationConfig::Face(cfg), FACE_TOOL_DIAMETER)
+}
+
+fn trace_via_session(cfg: TraceConfig) -> Toolpath {
+    via_session(OperationConfig::Trace(cfg), TRACE_TOOL_DIAMETER)
+}
+
+/// A fresh-stock pencil pass through the kernel the Pencil adapter calls.
+fn pencil_pass(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &PencilParams,
+) -> Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
+            mesh,
+            index,
+            cutter,
+            params,
+            rs_cam_core::finish::pencil::PencilStock::default(),
+            None,
+            cancel,
+        )
+    })
+    .0
+}
 
 // ── Output helpers ──────────────────────────────────────────────────────
 
@@ -401,7 +463,7 @@ fn sweep_pocket_stepover() {
             if let Some(v) = override_val {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
+            pocket_level(&poly, &p)
         },
     );
 
@@ -436,7 +498,7 @@ fn sweep_pocket_feed_rate() {
             if let Some(v) = override_val {
                 p.feed_rate = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
+            pocket_level(&poly, &p)
         },
     );
 
@@ -469,7 +531,7 @@ fn sweep_pocket_cut_depth() {
             if let Some(v) = override_val {
                 p.cut_depth = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
+            pocket_level(&poly, &p)
         },
     );
 
@@ -496,7 +558,7 @@ fn sweep_pocket_climb() {
             if let Some(v) = override_val {
                 p.climb = v.as_bool().unwrap();
             }
-            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
+            pocket_level(&poly, &p)
         },
     );
 
@@ -528,7 +590,7 @@ fn sweep_pocket_safe_z() {
             if let Some(v) = override_val {
                 p.safe_z = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::pocket::pocket_toolpath(&poly, &p)
+            pocket_level(&poly, &p)
         },
     );
 
@@ -566,7 +628,7 @@ fn sweep_profile_side() {
                     _ => ProfileSide::Outside,
                 };
             }
-            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
+            profile_level(&poly, &p)
         },
     );
 
@@ -599,7 +661,7 @@ fn sweep_profile_feed_rate() {
             if let Some(v) = override_val {
                 p.feed_rate = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
+            profile_level(&poly, &p)
         },
     );
 
@@ -626,7 +688,7 @@ fn sweep_profile_climb() {
             if let Some(v) = override_val {
                 p.climb = v.as_bool().unwrap();
             }
-            rs_cam_core::ops::profile::profile_toolpath(&poly, &p)
+            profile_level(&poly, &p)
         },
     );
 
@@ -905,7 +967,11 @@ fn sweep_waterline_z_step() {
         |override_val| {
             let zs = override_val.and_then(|v| v.as_f64()).unwrap_or(2.0);
             let p = default_waterline_params();
-            waterline_toolpath(&mesh, &index, &cutter, 18.0, 0.0, zs, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                waterline_toolpath_with_cancel(
+                    &mesh, &index, &cutter, 18.0, 0.0, zs, &p, None, cancel,
+                )
+            })
         },
     );
 
@@ -933,7 +999,11 @@ fn sweep_waterline_sampling() {
             if let Some(v) = override_val {
                 p.sampling = v.as_f64().unwrap();
             }
-            waterline_toolpath(&mesh, &index, &cutter, 18.0, 0.0, 2.0, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                waterline_toolpath_with_cancel(
+                    &mesh, &index, &cutter, 18.0, 0.0, 2.0, &p, None, cancel,
+                )
+            })
         },
     );
 
@@ -961,7 +1031,11 @@ fn sweep_waterline_feed_rate() {
             if let Some(v) = override_val {
                 p.feed_rate = v.as_f64().unwrap();
             }
-            waterline_toolpath(&mesh, &index, &cutter, 18.0, 0.0, 2.0, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                waterline_toolpath_with_cancel(
+                    &mesh, &index, &cutter, 18.0, 0.0, 2.0, &p, None, cancel,
+                )
+            })
         },
     );
 
@@ -987,7 +1061,11 @@ fn sweep_waterline_z_range() {
         |override_val| {
             let fz = override_val.and_then(|v| v.as_f64()).unwrap_or(0.0);
             let p = default_waterline_params();
-            waterline_toolpath(&mesh, &index, &cutter, 18.0, fz, 2.0, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                waterline_toolpath_with_cancel(
+                    &mesh, &index, &cutter, 18.0, fz, 2.0, &p, None, cancel,
+                )
+            })
         },
     );
 
@@ -1003,18 +1081,20 @@ fn sweep_waterline_z_range() {
 // FACE SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
 
-fn default_face_params() -> FaceParams {
-    FaceParams {
-        tool_radius: 6.35,
+/// The face tool: a 12.7 mm end mill (the radius 6.35 mm the kernel sweep
+/// used before D3).
+const FACE_TOOL_DIAMETER: f64 = 12.7;
+
+fn default_face_params() -> FaceConfig {
+    FaceConfig {
         stepover: 5.0,
         depth: 0.0,
         depth_per_pass: 1.0,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
-        safe_z: 10.0,
         stock_offset: 5.0,
         direction: FaceDirection::Zigzag,
-        stock_top_z: 0.0,
+        ..FaceConfig::default()
     }
 }
 
@@ -1032,7 +1112,7 @@ fn sweep_face_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
+            face_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1058,7 +1138,7 @@ fn sweep_face_direction() {
             if ov.is_some() {
                 p.direction = FaceDirection::OneWay;
             }
-            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
+            face_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1084,7 +1164,7 @@ fn sweep_face_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
+            face_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1108,7 +1188,7 @@ fn sweep_face_stock_offset() {
             if let Some(v) = ov {
                 p.stock_offset = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::face::face_toolpath(&bounds, &p)
+            face_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1147,7 +1227,7 @@ fn sweep_zigzag_angle() {
             if let Some(v) = ov {
                 p.angle = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::zigzag::zigzag_toolpath(&poly, &p)
+            zigzag_level(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1170,7 +1250,7 @@ fn sweep_zigzag_stepover() {
             if let Some(v) = ov {
                 p.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::zigzag::zigzag_toolpath(&poly, &p)
+            zigzag_level(&poly, &p)
         },
     );
     for v in &result.variants {
@@ -1184,16 +1264,18 @@ fn sweep_zigzag_stepover() {
 // TRACE SWEEPS
 // ═══════════════════════════════════════════════════════════════════════
 
-fn default_trace_params() -> TraceParams {
-    TraceParams {
-        tool_radius: 3.175,
+/// The trace tool: a 6.35 mm end mill (the radius 3.175 mm the kernel
+/// sweep used before D3).
+const TRACE_TOOL_DIAMETER: f64 = 6.35;
+
+fn default_trace_params() -> TraceConfig {
+    TraceConfig {
         depth: 1.0,
         depth_per_pass: 0.5,
         feed_rate: 800.0,
         plunge_rate: 400.0,
-        safe_z: 10.0,
         compensation: TraceCompensation::None,
-        top_z: 0.0,
+        ..TraceConfig::default()
     }
 }
 
@@ -1215,7 +1297,7 @@ fn sweep_trace_compensation() {
                     _ => TraceCompensation::None,
                 };
             }
-            rs_cam_core::ops::trace_path::trace_toolpath(&poly, &p)
+            trace_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1246,7 +1328,7 @@ fn sweep_trace_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::trace_path::trace_toolpath(&poly, &p)
+            trace_via_session(p)
         },
     );
     for v in &result.variants {
@@ -1654,7 +1736,7 @@ fn sweep_pencil_bitangency_angle() {
             if let Some(v) = ov {
                 p.bitangency_angle = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
+            pencil_pass(&mesh, &index, &cutter, &p)
         },
     );
     // Hemisphere may have no detectable creases at default angle threshold.
@@ -1679,7 +1761,7 @@ fn sweep_pencil_num_offset_passes() {
             if let Some(v) = ov {
                 p.num_offset_passes = v.as_f64().unwrap() as usize;
             }
-            rs_cam_core::finish::pencil::pencil_toolpath(&mesh, &index, &cutter, &p)
+            pencil_pass(&mesh, &index, &cutter, &p)
         },
     );
     // See bitangency_angle note — hemisphere may lack creases for this param to affect.
@@ -2146,7 +2228,9 @@ fn sweep_inlay_pocket_depth() {
             if let Some(v) = ov {
                 p.pocket_depth = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::inlay::inlay_pocket_toolpath(&poly, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::ops::inlay::inlay_pocket_toolpath_with_cancel(&poly, &p, cancel)
+            })
         },
     );
     for v in &result.variants {
@@ -2170,7 +2254,13 @@ fn sweep_inlay_glue_gap() {
             if let Some(v) = ov {
                 p.glue_gap = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::inlay::inlay_plug_toolpath(std::slice::from_ref(&poly), &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::ops::inlay::inlay_plug_toolpath_with_cancel(
+                    std::slice::from_ref(&poly),
+                    &p,
+                    cancel,
+                )
+            })
         },
     );
     // Ruling R2: the glue gap belongs to the plug. It moves the start
@@ -2218,9 +2308,11 @@ fn sweep_project_curve_depth() {
             if let Some(v) = ov {
                 p.depth = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::project_curve::project_curve_toolpath(
-                &poly, &mesh, &index, &cutter, &p,
-            )
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::ops::project_curve::project_curve_toolpath_with_cancel(
+                    &poly, &mesh, &index, &cutter, &p, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {
@@ -2246,9 +2338,11 @@ fn sweep_project_curve_point_spacing() {
             if let Some(v) = ov {
                 p.point_spacing = v.as_f64().unwrap();
             }
-            rs_cam_core::ops::project_curve::project_curve_toolpath(
-                &poly, &mesh, &index, &cutter, &p,
-            )
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::ops::project_curve::project_curve_toolpath_with_cancel(
+                    &poly, &mesh, &index, &cutter, &p, cancel,
+                )
+            })
         },
     );
     for v in &result.variants {

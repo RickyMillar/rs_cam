@@ -7,8 +7,8 @@ part says what the file protects. Search by claim words, not by code.
 
 ## Layout
 
-- `common/` — shared fixtures: meshes, chains, the reference plate, the
-  band map, the fingerprint helper, the offset lab.
+- `common/` — shared fixtures (meshes, chains, reference plate, band map, fingerprint, offset lab). D3: one op's toolpath
+  comes from `op_fixtures::generated_op` (the session door); one 2.5D level from `kernels.rs`.
 - `fixtures/` — the pinned projects, `terrain.stl`, the STEP samples, the
   golden files. A project or baseline a test loads lives HERE, not in
   `planning/`, dated and hashed; re-bless a golden on a measured cause.

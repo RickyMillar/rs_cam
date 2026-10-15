@@ -1135,14 +1135,13 @@ impl OperationConfig {
 
     /// Schema-backed settable param names for an operation type.
     ///
-    /// Every def's own name, then every alias it declares (CMP-08). The
-    /// refusal message of `set_toolpath_param` prints this list, so a
-    /// name the setter accepts and this list omits is a lie told to the
-    /// caller that just got refused.
+    /// Every def's own name. The refusal message of `set_toolpath_param`
+    /// prints this list. A def has one name only (D3 deleted the alias
+    /// field), so the setter accepts exactly this list.
     pub fn param_names_for_type(op_type: OperationType) -> Vec<&'static str> {
         param_defs_for_type(op_type)
             .iter()
-            .flat_map(|def| std::iter::once(def.name).chain(def.aliases.iter().copied()))
+            .map(|def| def.name)
             .collect()
     }
 
@@ -1170,7 +1169,6 @@ impl OperationConfig {
                     .unwrap_or(serde_json::Value::Null),
                 range: def.range.map(ParamRange::to_json),
                 description: def.help.map(str::to_owned),
-                aliases: def.aliases.iter().map(|a| (*a).to_owned()).collect(),
             })
             .collect();
         OperationSchema {
@@ -1186,7 +1184,6 @@ impl OperationConfig {
                     default: serde_json::Value::Null,
                     range: def.range.map(ParamRange::to_json),
                     description: def.help.map(str::to_owned),
-                    aliases: Vec::new(),
                 })
                 .collect(),
             tool_constraints: tool_constraints_for_type(op_type),
@@ -1194,12 +1191,11 @@ impl OperationConfig {
     }
 }
 
-/// The def one settable NAME resolves to — its own name, or an alias it
-/// declares (CMP-08).
+/// The def one settable NAME resolves to: the def with that name.
 fn param_def_for_type(op_type: OperationType, param: &str) -> Option<&'static ParamDef> {
     param_defs_for_type(op_type)
         .iter()
-        .find(|def| def.name == param || def.aliases.contains(&param))
+        .find(|def| def.name == param)
 }
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {

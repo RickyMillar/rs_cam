@@ -52,7 +52,7 @@ use std::collections::HashMap;
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, PencilStock, entry_bite_budget_mm,
-    pencil_toolpath_structured_annotated,
+    pencil_toolpath_structured_annotated_with_cancel,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -132,18 +132,21 @@ fn generate(stock: Option<&TriDexelStock>) -> Toolpath {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = ball_cutter(TOOL_DIAMETER_MM);
     let p = params();
-    let (tp, _ann, _report) = pencil_toolpath_structured_annotated(
-        &mesh,
-        &index,
-        &cutter,
-        &p,
-        PencilStock {
-            remaining: stock,
-            rest_reference: None,
-            link_ceiling: None,
-        },
-        None,
-    );
+    let (tp, _ann, _report) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            &p,
+            PencilStock {
+                remaining: stock,
+                rest_reference: None,
+                link_ceiling: None,
+            },
+            None,
+            cancel,
+        )
+    });
     tp
 }
 

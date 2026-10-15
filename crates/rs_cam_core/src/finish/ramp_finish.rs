@@ -469,8 +469,11 @@ fn ramp_finish_toolpath(
     cutter: &dyn MillingCutter,
     params: &RampFinishParams,
 ) -> Toolpath {
-    let (tp, _, _) =
-        ramp_finish_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
+    let (tp, _, _) = crate::interrupt::run_uncancellable(|cancel| {
+        ramp_finish_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+    });
     tp
 }
 
@@ -484,30 +487,8 @@ impl crate::compute::spans::RuntimeLabel for RampFinishRuntimeAnnotation {
     }
 }
 
-#[allow(clippy::indexing_slicing, clippy::expect_used)]
-pub fn ramp_finish_toolpath_structured_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &RampFinishParams,
-    debug: Option<&ToolpathDebugContext>,
-    boundary_regions: Option<&RegionSet<'_>>,
-) -> (Toolpath, Vec<RampFinishRuntimeAnnotation>, RampReachClamp) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        ramp_finish_toolpath_structured_annotated_with_cancel(
-            mesh,
-            index,
-            cutter,
-            params,
-            debug,
-            boundary_regions,
-            cancel,
-        )
-    })
-}
-
-/// Cancellable variant of [`ramp_finish_toolpath_structured_annotated`].
-/// Polls `cancel` once per Z level while building waterline contours, once
+/// The ramp finish kernel (`compute::execute::generate_ramp_finish` calls
+/// it). Polls `cancel` once per Z level while building waterline contours, once
 /// per terrace (adjacent Z-level pair) while ramping between them, and once
 /// per ramp segment during toolpath emission.
 ///
