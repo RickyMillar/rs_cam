@@ -6,6 +6,7 @@ members = [
     "crates/rs_cam_viz",
     "crates/rs_cam_mcp",
     "crates/rs_cam_mcp_proxy",
+    "crates/rs_cam_derive",
 ]
 
 [workspace.package]

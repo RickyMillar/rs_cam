@@ -5,7 +5,7 @@ use crate::state::toolpath::{
     SpiralFinishConfig,
 };
 
-use super::super::{advanced, dv, dv_pill, p};
+use super::super::{advanced, dv, dv_narrowed, dv_pill, p};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -23,7 +23,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.max_stepdown,
             " mm",
             0.1,
-            0.05..=10.0,
         );
         dv(
             ui,
@@ -31,7 +30,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.slope_from,
             " deg",
             1.0,
-            0.0..=90.0,
         );
         dv(
             ui,
@@ -39,7 +37,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.slope_to,
             " deg",
             1.0,
-            0.0..=90.0,
         );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("rf_dir")
@@ -69,7 +66,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
     advanced(ui, "rf_adv", |ui| {
@@ -82,7 +78,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.sampling,
             " mm",
             0.1,
-            0.1..=5.0,
         );
         dv(
             ui,
@@ -90,7 +85,6 @@ pub(in crate::ui::properties) fn draw_ramp_finish_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
     });
 }
@@ -108,7 +102,6 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=20.0,
             stepover_sugg,
         );
         ui.label("Direction:");
@@ -133,7 +126,6 @@ pub(in crate::ui::properties) fn draw_spiral_finish_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
 }
@@ -146,15 +138,17 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
     // Radial finish uses angular_step + point_spacing — neither maps to a
     // clearing-style WOC/DOC. Feed/plunge live on the Feeds tab.
     ui.param_grid("radial_p", |ui| {
-        dv(
+        // The schema floors are `> 0` (N10 ruling); the rows keep their
+        // pre-W5 floors of 1 deg and 0.1 mm (see `dv_narrowed`).
+        dv_narrowed(
             ui,
             p(OperationType::RadialFinish, "angular_step", "Angular Step:"),
             &mut cfg.angular_step,
             " deg",
             1.0,
-            1.0..=90.0,
+            1.0..=f64::INFINITY,
         );
-        dv(
+        dv_narrowed(
             ui,
             p(
                 OperationType::RadialFinish,
@@ -164,7 +158,7 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
             &mut cfg.point_spacing,
             " mm",
             0.1,
-            0.1..=5.0,
+            0.1..=f64::INFINITY,
         );
         dv(
             ui,
@@ -176,7 +170,6 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
 }
@@ -198,7 +191,6 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
             &mut cfg.angle_threshold,
             " deg",
             1.0,
-            1.0..=30.0,
         );
         dv_pill(
             ui,
@@ -206,7 +198,6 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=20.0,
             stepover_sugg,
         );
         dv(
@@ -219,7 +210,6 @@ pub(in crate::ui::properties) fn draw_horizontal_finish_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
 }

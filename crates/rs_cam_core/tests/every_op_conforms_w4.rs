@@ -82,9 +82,7 @@ use common::op_fixtures::{
 };
 use common::session::toolpath_config;
 use rayon::prelude::*;
-use rs_cam_core::compute::catalog::{
-    DRIVER_SET_FIELDS, Kinematics, OperationConfig, OperationType, RestUse,
-};
+use rs_cam_core::compute::catalog::{Kinematics, OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::compute::{OperationError, StockConfig};
@@ -988,7 +986,7 @@ fn set_param(
 /// - each toolpath-level param (`debug_enabled`), set to the value the
 ///   toolpath holds, is accepted and changes nothing. The schema publishes no
 ///   default for it (null), so the config's own value is the round trip;
-/// - each `DRIVER_SET_FIELDS` row of the op, set to the value the config
+/// - each driver-set field of the op (`ParamTable::driver_set`), set to the value the config
 ///   holds, is refused with the row's reason and changes nothing.
 #[test]
 fn check6_every_schema_default_round_trips_and_every_driver_field_is_refused() {
@@ -1062,7 +1060,7 @@ fn check6_every_schema_default_round_trips_and_every_driver_field_is_refused() {
         }
         let op_value =
             serde_json::to_value(&session.toolpath_configs()[0].operation).expect("an op");
-        for field in DRIVER_SET_FIELDS.iter().filter(|f| f.ops.contains(&op)) {
+        for field in op.registry_entry().params.driver_set {
             driver_count += 1;
             let value = op_value
                 .pointer(&format!("/{}", field.name))

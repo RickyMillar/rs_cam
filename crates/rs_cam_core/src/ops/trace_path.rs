@@ -10,7 +10,16 @@ use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Cutter compensation direction relative to the travel direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TraceCompensation {
     /// No compensation — tool center follows the path exactly.

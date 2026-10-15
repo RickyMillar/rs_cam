@@ -67,7 +67,17 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 ///   offsets and emits only contours that pass through residue. So a
 ///   shape with a wide bulb and a narrow tail (tadpole, key) gets a
 ///   spiral in the bulb and concentric offset loops in the tail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 pub enum CleanupStrategy {
     Legacy,
     ResidueMop,
@@ -91,7 +101,17 @@ pub enum CleanupStrategy {
 /// reads neither. It holds every step to its swept width (sideways
 /// material extent / D) against the commanded radial fraction, whatever a
 /// project saved here; the field only steers the Adaptive3d slices.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 pub enum EngagementMeasure {
     #[default]
     DiskArea,
@@ -110,7 +130,17 @@ pub enum EngagementMeasure {
 /// one plunge per region is retired, G-ADAPTPASSLOAD). Shares the narrow gate, starter
 /// pocket, residue cleanup and toolpath emission with the agent path;
 /// falls back to the agent when no starter-pocket position exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 pub enum PathStrategy2d {
     #[default]
     Agent,

@@ -97,7 +97,12 @@ pub(super) fn draw_speed_controls(
     ui.named_section("Speed", |ui| {
         ui.param_grid("feeds_speed_controls", |ui| {
             let mut feed = entry.operation.feed_rate();
-            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50_000.0)
+            // W5: an op whose schema states a feed range (the drill ops)
+            // clamps to it here too; the others keep this row's own range.
+            let feed_range =
+                OperationConfig::param_range_for_type(entry.operation.op_type(), "feed_rate")
+                    .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
+            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, feed_range)
                 .show(ui)
                 .edited
             {

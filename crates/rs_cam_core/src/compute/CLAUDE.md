@@ -14,8 +14,8 @@
   `simulate.rs`: `PhantomPriorStockScan`, `entry_tool_fields`, `group_stock_cut_direction`,
   `entry_metrics_not_applicable`, `group_stock_changes` (S2). Put a sixth there, not in one builder.
   Both builders carve every enabled result, an empty one too (G-RESTLEVELS: no phantom theft).
-- A new operation needs a catalogue row and a config variant. The row's `generate` field IS the
-  dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
+- A new operation needs a catalogue row and a config variant that derives `OpParams` (W5: its `#[param]`
+  attributes ARE the schema, and the GUI row and the setter read one range). The row's `generate` IS the dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
 - W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`.
 - W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face, Chamfer) writes `prepare` + `emit_level`; hooks `outlines`, `ladder`, `spans`, `annotate`, `reach_band`, `off_grid`.
@@ -36,5 +36,5 @@
 - `--test one_link_ceiling_for_every_op_g_linkceil` (G-LINKCEIL, R1): `execute/shared.rs::link_ceiling_for` is the ONE link-ceiling builder; each op states its `LinkCeilingNeed`
 - `--test stock_carries_across_setups_s0`, `--test stock_changes_stale_from_their_setup_on_s2`, `--test stock_changes_apply_to_the_stock_s3`; `--lib cancellable_families_honour_a_preset_cancel_flag` (prologue order), `--lib every_generator_polls` (kernels), `--lib every_tool_refusal`
 - `--test every_op_keeps_its_toolpath_g_opgolden` (G-OPGOLDEN, 2 s): the output of every op. Re-bless (`RS_CAM_BLESS_OPGOLDEN=1`) only the ops a change names. `--test every_op_states_its_capabilities_w2_4`: the frozen capability table. `--test every_op_conforms_w4` (W4, 7 s): rest, empty, flipped frame, determinism, schema, intent for every op; fixtures in `tests/common/op_fixtures.rs`
-- `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5 --test generated_empty_refusal_g_entryempty`; `--test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`, `--test a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels`, `--test layered_framework_owns_the_ladder_w3` + `--lib compute::execute::layered` (W3)
+- `cargo test -p rs_cam_core -q --lib catalog` (W5 partition and default-in-range) `--test set_param_refuses_absent_field_n5 --test generated_empty_refusal_g_entryempty`; `--test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`, `--test a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels`, `--test layered_framework_owns_the_ladder_w3` + `--lib compute::execute::layered` (W3)
 - Pins: `--test` `alignment_pin_keying_intrinsic_p1`, `alignment_pins_judge_the_full_setup_map_p2`, `alignment_pin_keying_g_pinauto`, `a_pin_set_edit_stales_only_the_pin_drill_p4`, `alignment_pin_walls_and_2d_placer_p6`, `dowel_holes_have_one_source_p8`, `pin_holes_are_drilled_by_size_r1`

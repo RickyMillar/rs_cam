@@ -41,6 +41,7 @@ research = []
 test-support = []
 
 [dependencies]
+rs_cam_derive = { path = "../rs_cam_derive" }
 nalgebra = { workspace = true }
 stl_io = { workspace = true }
 rayon = { workspace = true, optional = true }

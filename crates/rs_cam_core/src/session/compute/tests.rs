@@ -445,6 +445,30 @@ fn set_toolpath_param_wrong_type_errors() {
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
 }
 
+/// W5: before W5 only the GUI clamped Pocket `stepover` (0.05..=50) and
+/// `angle` (0..=360); MCP took any finite value. The ranges now live in the
+/// schema, so the setter refuses a value outside them on the named arm and
+/// on the generic serde arm, names the range, and keeps the config.
+#[test]
+fn set_toolpath_param_refuses_a_value_outside_the_schema_range_w5() {
+    let mut s = make_session();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let before = format!("{:?}", s.toolpath_configs()[0].operation);
+    let err = s
+        .set_toolpath_param(0, "stepover", json!(60.0))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("<= 50"), "the refusal names the range: {err}");
+    let err = s
+        .set_toolpath_param(0, "angle", json!(400.0))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("<= 360"), "the refusal names the range: {err}");
+    assert_eq!(format!("{:?}", s.toolpath_configs()[0].operation), before);
+    // The bound itself is inside the inclusive range.
+    let _ = s.set_toolpath_param(0, "stepover", json!(50.0)).unwrap();
+}
+
 #[test]
 fn set_toolpath_param_unknown_param() {
     let mut s = make_session();

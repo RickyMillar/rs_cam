@@ -37,7 +37,6 @@ pub(in crate::ui::properties) fn draw_trace_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.1..=50.0,
         );
         depth_caution_row(ui, depth_caution);
         dv(
@@ -46,7 +45,6 @@ pub(in crate::ui::properties) fn draw_trace_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=20.0,
         );
         super::boundary_2d::region_ordering_row(ui, "trace_ord", &mut cfg.region_ordering);
     });
@@ -85,7 +83,6 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
             &mut cfg.chamfer_width,
             " mm",
             0.1,
-            0.1..=10.0,
         );
         depth_caution_row(ui, depth_caution);
         dv(
@@ -94,7 +91,6 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
             &mut cfg.tip_offset,
             " mm",
             0.01,
-            0.0..=2.0,
         );
     });
 }

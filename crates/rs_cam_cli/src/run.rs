@@ -255,7 +255,7 @@ fn print_params(op_type: OperationType) {
         "{:<28} {:<16} {:<9} DESCRIPTION",
         "PARAM", "TYPE", "OPTIONAL"
     );
-    for def in entry.param_defs {
+    for def in entry.params.defs {
         println!(
             "{:<28} {:<16} {:<9} {}",
             def.name,

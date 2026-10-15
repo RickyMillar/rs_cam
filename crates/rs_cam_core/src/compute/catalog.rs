@@ -22,9 +22,10 @@ pub use capabilities::{
 };
 
 pub use schema::{
-    DRIVER_SET_FIELDS, DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpPolicy,
+    DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpParams, OpPolicy,
     OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamRange,
-    TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef, driver_set_field,
+    ParamTable, ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
+    driver_set_field,
 };
 
 use registry::{
@@ -1144,7 +1145,7 @@ fn param_def_for_type(op_type: OperationType, param: &str) -> Option<&'static Pa
 }
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
-    op_type.registry_entry().param_defs
+    op_type.registry_entry().params.defs
 }
 
 fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {

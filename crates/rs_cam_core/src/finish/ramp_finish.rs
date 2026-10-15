@@ -30,7 +30,17 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 use tracing::info;
 
 /// Cutting direction for ramp finishing.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CutDirection {
     /// Climb milling (tool moves with feed direction).

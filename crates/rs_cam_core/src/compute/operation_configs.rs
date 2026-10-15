@@ -1,3 +1,4 @@
+use rs_cam_derive::{OpParams, ParamEnum};
 use serde::{Deserialize, Serialize};
 
 use super::catalog::{DepthSemantics, OperationParams};
@@ -12,6 +13,60 @@ pub use crate::finish::unified_finish::{ClaimsReference, CreaseReference};
 pub use crate::ops::face::FaceDirection;
 pub use crate::ops::profile::ProfileSide;
 pub use crate::ops::trace_path::TraceCompensation;
+
+// ── W5: shared parameter help and driver-set reasons ─────────────────────
+//
+// `#[derive(OpParams)]` reads `#[param(help = ...)]` and
+// `#[param(driver_set = ...)]`. A text that two or more fields publish is a
+// const here, so the fields cannot drift apart.
+
+const HELP_STEPOVER: &str =
+    "Distance between passes. 40-60% of diameter for roughing, 10-20% for finishing.";
+
+const HELP_DEPTH: &str = "Total cut depth from stock surface.";
+
+const HELP_DEPTH_PER_PASS: &str =
+    "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter for large.";
+
+const RAMP_FEED_RATE_HELP: &str = "Feed (mm/min) of a helix or ramp entry through material. Empty uses the plunge rate. A \
+     straight feed through air and a straight plunge keep their own feeds.";
+
+const HELP_ANGLE: &str = "Zigzag/raster angle in degrees. 0 = along X axis.";
+
+const HELP_REGION_ORDERING: &str = "by_area (the default): each outline goes to full depth before the next. global: each depth \
+     level cuts every outline before the next level.";
+
+const HELP_TOLERANCE: &str =
+    "Geometric tolerance for path approximation. Smaller = more accurate, slower.";
+
+const HELP_MIN_CUTTING_RADIUS: &str = "Blend sharp corners with arcs of at least this radius.";
+
+const HELP_PECK_DEPTH: &str = "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. Must be strictly positive and \
+     finite: `drill::fed_descents` degrades a zero, negative or non-finite peck to a single \
+     full-depth descent, so any such value silently turns a Peck cycle into a single-shot one \
+     (DR-LIVE).";
+
+const HELP_SLOPE_FROM: &str =
+    "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped.";
+
+const HELP_SLOPE_TO: &str =
+    "Maximum surface slope (degrees) to machine. Steeper faces are skipped.";
+
+const HELP_STOCK_TO_LEAVE_AXIAL: &str = "Finishing allowance kept on the surface for a later pass. Applied as a vertical offset: on a \
+     wall sloped at angle A, what remains measured normal to the surface is this value x cos(A).";
+
+const HELP_Z_STEP: &str = "Vertical distance between waterline Z levels.";
+
+const HELP_SAMPLING: &str = "XY grid resolution for push-cutter sampling.";
+
+const HELP_SCALLOP_HEIGHT: &str = "Target cusp height between passes. 0.05-0.2mm for finishing.";
+
+const HELP_OVERLAP_MM: &str = "Overlap between steep and shallow regions.";
+
+const DRIVER_SET_SELECTED_HOLES: &str = "the DXF/model drill picker writes the picked target list";
+
+const DRIVER_SET_SELECTED_LAYERS: &str =
+    "the layer-select route writes this beside the picked target list";
 
 /// The three runtime numbers every finishing `…Params` carries and no
 /// config holds (FIN-02).
@@ -31,14 +86,14 @@ pub struct OpMotion {
     pub safe_z: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum PocketPattern {
     Contour,
     Zigzag,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum Adaptive3dEntryStyle {
     Plunge,
@@ -51,7 +106,7 @@ pub enum Adaptive3dEntryStyle {
 /// 3D Rough (`Adaptive3dConfig`) defaults to `Global`. A Layered 2.5D op
 /// (Pocket, Zigzag, Trace, Profile) defaults to `ByArea` (ruling R4, W3.0);
 /// there a region is one input outline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum RegionOrdering {
     /// Level-first: each Z level visits every region before the op descends.
@@ -65,7 +120,7 @@ pub(crate) fn default_layered_region_ordering() -> RegionOrdering {
     RegionOrdering::ByArea
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ClearingStrategy {
     /// Fast contour-parallel offset clearing via EDT. Default.
@@ -82,7 +137,7 @@ pub enum ClearingStrategy {
     ContourSpiral,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum DrillCycleType {
     Simple,
@@ -149,17 +204,20 @@ impl DrillCycleType {
 }
 
 /// Whether tool compensation is computed in CAM or on the controller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum CompensationType {
     InComputer,
     InControl,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct FaceConfig {
+    #[param(help = HELP_STEPOVER, range = 0.5..=100.0)]
     pub stepover: f64,
+    #[param(help = HELP_DEPTH, range = 0.0..=50.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -167,7 +225,12 @@ pub struct FaceConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(
+        help = "Extra distance beyond stock boundary to ensure full coverage.",
+        range = 0.0..=50.0,
+    )]
     pub stock_offset: f64,
     pub direction: FaceDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,9 +253,11 @@ impl Default for FaceConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct TraceConfig {
+    #[param(help = HELP_DEPTH, range = 0.1..=50.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -200,6 +265,7 @@ pub struct TraceConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     pub compensation: TraceCompensation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,6 +273,7 @@ pub struct TraceConfig {
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
     #[serde(default = "default_layered_region_ordering")]
+    #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
 }
 
@@ -225,14 +292,20 @@ impl Default for TraceConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct DrillConfig {
+    #[param(help = HELP_DEPTH, range = 0.5..=100.0)]
     pub depth: f64,
     pub cycle: DrillCycleType,
+    #[param(help = HELP_PECK_DEPTH, gt = 0.0, max = 50.0)]
     pub peck_depth: f64,
+    #[param(range = 0.1..=10.0)]
     pub dwell_time: f64,
+    #[param(range = 0.1..=5.0)]
     pub retract_amount: f64,
+    #[param(range = 1.0..=5000.0)]
     pub feed_rate: f64,
+    #[param(frame_dependent)]
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -246,11 +319,13 @@ pub struct DrillConfig {
     /// taken control of the selection; an empty list then means "no
     /// targets selected" rather than "all targets".
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
     pub selected_holes: Option<Vec<[f64; 2]>>,
     /// Layer name(s) the user bulk-selected with "select all in layer".
     /// Display/round-trip only — the resolved positions live in
     /// [`Self::selected_holes`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
     pub selected_layers: Vec<String>,
 }
 
@@ -271,23 +346,35 @@ impl Default for DrillConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct AlignmentPinDrillConfig {
     /// The diameter of the pins this operation drills, in mm (R1,
     /// 2026-10-12). The pin door keeps one pin-drill operation for each pin
     /// diameter. The operation drills the pins of this diameter (within
     /// `PIN_CAD_ROUNDING_MM`) and no other pin. The field is required: a
     /// project file without it does not load.
+    #[param(
+        driver_set = "the pin door keeps one pin-drill operation per pin diameter and writes the \
+                      diameter it drills (R1); an edit would make the operation drill no pin. Edit \
+                      the pin set instead"
+    )]
     pub diameter: f64,
     /// Pin hole XY positions: the pins of [`Self::diameter`], a snapshot
     /// of `stock.alignment_pins` (`alignment_pins::pin_holes_of_diameter`).
     #[serde(default)]
     pub holes: Vec<[f64; 2]>,
     /// How far below stock bottom to drill into spoilboard (mm).
+    #[param(
+        help = "How far the drill penetrates into the spoilboard below the stock.",
+        range = 0.5..=20.0,
+    )]
     pub spoilboard_penetration: f64,
     pub cycle: DrillCycleType,
+    #[param(help = HELP_PECK_DEPTH, gt = 0.0, max = 50.0)]
     pub peck_depth: f64,
+    #[param(range = 1.0..=5000.0)]
     pub feed_rate: f64,
+    #[param(frame_dependent)]
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -295,9 +382,11 @@ pub struct AlignmentPinDrillConfig {
     /// entities or circle/arc centres. These are drilled in addition to the
     /// stock alignment pins in [`Self::holes`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
     pub selected_holes: Option<Vec<[f64; 2]>>,
     /// Layer name(s) bulk-selected with "select all in layer" (display/round-trip).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
     pub selected_layers: Vec<String>,
 }
 
@@ -344,13 +433,27 @@ impl Default for AlignmentPinDrillConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ChamferConfig {
     /// Where the material is (W1.3b): `Outside` chamfers a part, `Inside`
     /// chamfers a pocket or a hole. Every ring of the outline is chamfered
     /// into the material; `ops/chamfer.rs` states the rule for hole rings.
+    #[param(
+        help = "Where the material is. Outside: the outline is a part; its outer edge and the edges \
+                of its holes are chamfered. Inside: the outline is a pocket or a hole; its walls \
+                are chamfered. The bevel always goes into the material."
+    )]
     pub side: ProfileSide,
+    #[param(
+        help = "Width of the chamfer on the face (mm). Depth computed from tool angle.",
+        range = 0.1..=10.0,
+    )]
     pub chamfer_width: f64,
+    #[param(
+        help = "Distance (mm) the V-bit tip runs off the edge into the air, so the tip does not \
+                cut. Increases cut depth slightly.",
+        range = 0.0..=2.0,
+    )]
     pub tip_offset: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -358,6 +461,7 @@ pub struct ChamferConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -377,10 +481,13 @@ impl Default for ChamferConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct PocketConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -388,16 +495,20 @@ pub struct PocketConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     pub climb: bool,
     pub pattern: PocketPattern,
+    #[param(help = HELP_ANGLE, range = 0.0..=360.0)]
     pub angle: f64,
+    #[param(range = 0.0..=10.0)]
     pub finishing_passes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
     #[serde(default = "default_layered_region_ordering")]
+    #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
 }
 
@@ -420,10 +531,12 @@ impl Default for PocketConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ProfileConfig {
     pub side: ProfileSide,
+    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -431,11 +544,22 @@ pub struct ProfileConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     pub climb: bool,
+    #[param(range = 0.0..=20.0)]
     pub tab_count: usize,
+    #[param(
+        help = "Width of holding tabs that keep the part attached to stock.",
+        range = 1.0..=50.0,
+    )]
     pub tab_width: f64,
+    #[param(
+        help = "Height of holding tabs from the floor of the cut.",
+        range = 0.5..=20.0,
+    )]
     pub tab_height: f64,
+    #[param(range = 0.0..=10.0)]
     pub finishing_passes: usize,
     pub compensation: CompensationType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,6 +567,7 @@ pub struct ProfileConfig {
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
     #[serde(default = "default_layered_region_ordering")]
+    #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
 }
 
@@ -467,10 +592,13 @@ impl Default for ProfileConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct AdaptiveConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -478,7 +606,9 @@ pub struct AdaptiveConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     /// Cut full-width seeding slots before the adaptive passes. Off by
     /// default since G-ADAPTPASSLOAD (2026-09-26): a slot line runs at full
@@ -486,7 +616,13 @@ pub struct AdaptiveConfig {
     /// field stays required in a saved file (no serde default), so a project
     /// that saved `true` keeps its slot lines; only a new operation starts
     /// with them off.
+    #[param(
+        help = "Cut full-width seeding slots before the adaptive passes. A slot line runs at full \
+                radial immersion, outside the pass load every other 2D Adaptive cut holds. Off by \
+                default."
+    )]
     pub slot_clearing: bool,
+    #[param(help = HELP_MIN_CUTTING_RADIUS, range = 0.0..=50.0)]
     pub min_cutting_radius: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -501,6 +637,10 @@ pub struct AdaptiveConfig {
     /// as radial immersion, whatever this says. Kept so saved projects load
     /// and round-trip unchanged; Adaptive 3D still reads its own field.
     #[serde(default)]
+    #[param(
+        help = "Not read by 2D Adaptive: every step holds the stepover as radial immersion \
+                (sideways width of cut / tool diameter). Kept so saved projects load unchanged."
+    )]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
     /// How the main clearing passes are generated: the historical
     /// reactive `Agent`, or the constructive `ContourSpiral` (Stage 1).
@@ -530,9 +670,14 @@ impl Default for AdaptiveConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct VCarveConfig {
+    #[param(
+        help = "Maximum V-carve plunge depth. Limits how deep the V-bit goes.",
+        range = 0.1..=50.0,
+    )]
     pub max_depth: f64,
+    #[param(help = HELP_STEPOVER, range = 0.01..=10.0)]
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -540,7 +685,9 @@ pub struct VCarveConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -569,18 +716,45 @@ pub const INLAY_GLUE_GAP_DEFAULT_MM: f64 = 0.1;
 /// The female pocket of an inlay: the V walls only (ruling R2). A normal
 /// Pocket with a flat end mill clears the floor. See `ops::inlay` for the
 /// geometry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct InlayConfig {
     /// Pocket depth below the stock top (mm).
+    #[param(
+        help = "Depth of the inlay pocket below the stock top. This op cuts only the V walls. Add a \
+                Pocket with a flat end mill for the floor: the same depth, a machining boundary of \
+                Model Outline on this design, containment Inside, offset minus pocket_depth x \
+                tan(half the V angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket first. \
+                CAUTION: where the floor is narrower than the end mill plus that inset, the Inside \
+                clip collapses and the Pocket cuts the whole design and the V walls; read \
+                boundary_clip_dropped. Use the same pocket_depth on the Inlay Plug op.",
+        range = 0.1..=50.0,
+    )]
     pub pocket_depth: f64,
     /// Width (mm) of the band beyond the wall foot that the V-bit also cuts
     /// at the pocket depth.
+    #[param(
+        help = "Width of the floor band beyond the wall foot that the V-bit also cuts at the pocket \
+                depth. It removes the strip and the corners that the clipped floor Pocket leaves. \
+                Use at least the floor Pocket's stepover plus its tool radius.",
+        range = 0.0..=50.0,
+    )]
     pub floor_overlap: f64,
     /// Largest ridge (mm) the V-bit may leave on the floor band. The ring
     /// pitch follows from it and the bit angle (`ops::inlay::floor_ring_pitch`).
+    #[param(
+        help = "Largest ridge the V-bit may leave on the floor band. The ring pitch is 2 x \
+                floor_ridge x tan(half the V angle). Keep it below the glue gap of the plug; the \
+                default is half the default gap.",
+        range = 0.005..=1.0,
+    )]
     pub floor_ridge: f64,
     /// Scan line spacing (mm) over the wall band. The walls do not depend
     /// on it; the first floor ring cuts the whole wall.
+    #[param(
+        help = "Distance between scan lines over the wall band. The walls do not depend on it: the \
+                first floor ring cuts the whole wall.",
+        range = 0.05..=50.0,
+    )]
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -588,7 +762,9 @@ pub struct InlayConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -624,19 +800,51 @@ impl Default for InlayConfig {
 
 /// The male plug of an inlay (ruling R2). It runs in its own project, on
 /// the plug board. See `ops::inlay` for the geometry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct InlayPlugConfig {
     /// Depth of the female pocket that the plug fits (mm). Copy it from the
     /// Inlay op.
+    #[param(
+        help = "Depth of the female pocket that this plug fits. Copy it from the Inlay op. The plug \
+                face sits pocket_depth - glue_gap below the design edge (the start depth).",
+        range = 0.1..=50.0,
+    )]
     pub pocket_depth: f64,
     /// Vertical gap (mm) between the plug face and the pocket floor.
+    #[param(
+        help = "Vertical gap between the plug face and the pocket floor, for the glue. The walls \
+                touch. 0.05-0.15 mm.",
+        range = 0.0..=2.0,
+    )]
     pub glue_gap: f64,
     /// Height (mm) that the plug stands proud of the workpiece after it is
     /// seated.
+    #[param(
+        help = "Height that the plug stands above the workpiece after it is seated. The background \
+                is cut to start depth + proud height. Saw or plane this layer off after the glue \
+                sets.",
+        range = 0.0..=50.0,
+    )]
     pub proud_height: f64,
     /// Width (mm) of the flat background ring beyond the wall foot.
+    #[param(
+        help = "Width of the flat background ring beyond the wall foot. The V-bit clears the design \
+                box grown by proud_height x tan(half the V angle) + outer_margin. The board outside \
+                stays at full height: saw the plug free inside the ring, or clear the rest with a \
+                Face.",
+        range = 0.0..=100.0,
+    )]
     pub outer_margin: f64,
+    #[param(
+        help = "Max depth per pass of the V-bit through the background.",
+        range = 0.1..=50.0,
+    )]
     pub depth_per_pass: f64,
+    #[param(
+        help = "Distance between scan lines. The walls are exact at any stepover; only the \
+                background shows ridges.",
+        range = 0.05..=50.0,
+    )]
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -644,7 +852,9 @@ pub struct InlayPlugConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -691,10 +901,13 @@ impl Default for InlayPlugConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ZigzagConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
     pub depth: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -702,13 +915,16 @@ pub struct ZigzagConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_ANGLE, range = 0.0..=360.0)]
     pub angle: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
     #[serde(default = "default_layered_region_ordering")]
+    #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
 }
 
@@ -728,8 +944,9 @@ impl Default for ZigzagConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct DropCutterConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -737,9 +954,16 @@ pub struct DropCutterConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(
+        help = "Lowest Z the tool will descend to during drop-cutter.",
+        frame_dependent
+    )]
     pub min_z: f64,
+    #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
     pub slope_from: f64,
+    #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
     pub slope_to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -752,6 +976,11 @@ pub struct DropCutterConfig {
     /// preserves the legacy formula-based stepover and the F-037 smoke
     /// baseline. Has no effect on flat/bull tools (no spherical tip).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Target scallop (cusp) height in mm. When set, Suggest derives stepover from the \
+                tool's tip radius instead of the ae_factor formula. No effect on a flat or bull \
+                tool."
+    )]
     pub scallop_height: Option<f64>,
     /// G-LINKSTAGE: cap on the XY gap a raster-row-to-row **surface link**
     /// may span, in mm. **Ships at `0.0`, which is OFF** — the input is
@@ -770,6 +999,7 @@ pub struct DropCutterConfig {
     /// input stock, refused if it leaves the machining regions, and (with
     /// kinematics) kept only when it beats the retract on time.
     #[serde(default)]
+    #[param(optional)]
     pub hookup_mm: f64,
 }
 
@@ -792,15 +1022,18 @@ impl Default for DropCutterConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct Adaptive3dConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     /// Vertical leave allowance above the surface heightmap. The only
     /// leave-stock dial the `adaptive3d` planner applies, and since L2
     /// the only one it carries: the drop-cutter / dexel heightmap engine
     /// offsets in Z alone. See
     /// `compute::execute::adaptive3d_effective_stock_to_leave`.
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave_axial: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -808,27 +1041,47 @@ pub struct Adaptive3dConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
+    #[param(help = HELP_MIN_CUTTING_RADIUS, range = 0.0..=50.0)]
     pub min_cutting_radius: f64,
     pub entry_style: Adaptive3dEntryStyle,
     /// Ramp entry: maximum descent angle in degrees. Only honored when
     /// `entry_style == Ramp`.
     #[serde(default = "default_adaptive3d_ramp_angle")]
+    #[param(
+        help = "Ramp entry angle from horizontal (degrees), for the Ramp entry style.",
+        range = 0.5..=45.0,
+    )]
     pub ramp_angle_deg: f64,
     /// Helix entry: helix radius as a fraction of the tool's nominal cutting
     /// diameter (`compute::config::helix_entry_diameter_mm`; the tip ball on
     /// a tapered ball, not the shaft). Only honored when `entry_style == Helix`. The engine caps
     /// the radius at the flat bottom (G10 Q6): [`Self::helix_radius_for`].
     #[serde(default = "default_adaptive3d_helix_radius_factor")]
+    #[param(
+        help = "Helix entry radius as a multiple of the tool diameter.",
+        range = 0.05..=0.5,
+    )]
     pub helix_radius_factor: f64,
     /// Helix entry: vertical pitch in mm. Only honored when `entry_style == Helix`.
     #[serde(default = "default_adaptive3d_helix_pitch")]
+    #[param(
+        help = "Vertical drop per revolution of the helical entry move.",
+        range = 0.1..=10.0,
+    )]
     pub helix_pitch: f64,
     /// Helix or ramp entry: the height (mm) above the material top where
     /// the helix or ramp starts. Below the rapid, the air above that height
     /// is a straight move (operator ruling 2026-09-25: never helix air).
     #[serde(default = "crate::compute::config::default_entry_clearance_mm")]
+    #[param(
+        help = "Height (mm) above the material top where the helix or ramp entry starts. The air \
+                above it is a straight move.",
+        range = 0.0..=5.0,
+    )]
     pub entry_clearance_mm: f64,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
@@ -988,9 +1241,11 @@ impl Adaptive3dConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
+    #[param(help = HELP_Z_STEP, range = 0.05..=20.0, alias = "depth_per_pass")]
     pub z_step: f64,
+    #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -998,6 +1253,7 @@ pub struct WaterlineConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     pub continuous: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1013,6 +1269,7 @@ pub struct WaterlineConfig {
     /// reorders it without rotating. Declaring the kinds in the generator is
     /// the follow-up.
     #[serde(default)]
+    #[param(optional)]
     pub hookup_mm: f64,
 }
 
@@ -1032,13 +1289,32 @@ impl Default for WaterlineConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct PencilConfig {
+    #[param(
+        help = "Minimum dihedral angle to detect concave edges. 140-170 deg typical.",
+        range = 90.0..=180.0,
+    )]
     pub bitangency_angle: f64,
+    #[param(
+        help = "Minimum polyline length to include as a pencil pass.",
+        range = 0.5..=50.0,
+    )]
     pub min_cut_length: f64,
+    #[param(
+        help = "Max gap between pencil segments to connect into one pass.",
+        range = 0.5..=50.0,
+    )]
     pub hookup_distance: f64,
+    #[param(range = 0.0..=10.0)]
     pub num_offset_passes: usize,
+    #[param(
+        help = "Lateral step between offset cleanup passes around pencil traces.",
+        range = 0.05..=10.0,
+        alias = "stepover",
+    )]
     pub offset_stepover: f64,
+    #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1046,12 +1322,19 @@ pub struct PencilConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     /// Reach-gap tolerance (mm): minimum uncut valley depth for the tool-radius-
     /// aware gate to keep a concave seam. Higher = ignore shallow surface texture,
     /// keep only deeper channels. `#[serde(default)]` so older project files load.
     #[serde(default = "crate::finish::pencil::reach_gap_threshold")]
+    #[param(
+        help = "Keep only valleys this much deeper than the reference finish tool reaches. 0 = \
+                trace every detected valley.",
+        range = 0.0..=5.0,
+    )]
     pub min_valley_depth: f64,
     /// Bisector positioning strength (0 = off, 1 = geometrically correct). Shifts
     /// the trace out along the wall bisector in asymmetric corners so the ball
@@ -1065,6 +1348,11 @@ pub struct PencilConfig {
     /// missed and skips reachable walls + sub-pencil texture. `#[serde(default)]`
     /// so older project files load.
     #[serde(default = "crate::finish::pencil::reference_tool_diameter_default")]
+    #[param(
+        help = "Nominal reference-tool diameter the rest gate measures against. Applies only when \
+                no library tool is chosen.",
+        range = 0.5..=25.0,
+    )]
     pub reference_tool_diameter: f64,
     /// Valley-detection algorithm: `dihedral` (mesh crease detection, the
     /// default), `curvature` (curvature crest lines, best for noisy organic
@@ -1080,15 +1368,25 @@ pub struct PencilConfig {
     /// `curvature` detector to trace it — the valley significance dial. Low →
     /// every concave seam; high → only deep sharp valleys. `#[serde(default)]`.
     #[serde(default = "crate::finish::pencil::valley_saliency_default")]
+    #[param(
+        help = "Smallest concave curvature (1/mm) a valley must reach. Low traces every seam; high \
+                keeps only deep sharp valleys.",
+        range = 0.0..=2.0,
+    )]
     pub valley_saliency: f64,
     /// Curvature-tensor smoothing iterations for the `curvature` detector (the
     /// literature denoise — smooths the curvature field, not the geometry).
     /// `#[serde(default)]` so older project files load.
     #[serde(default = "crate::finish::pencil::curvature_smoothing_default")]
+    #[param(range = 0.0..=20.0)]
     pub curvature_smoothing: usize,
     /// XY grid cell size (mm) for the `rest_depth` detector's rest field. Smaller
     /// = finer regions, more drops. `#[serde(default)]` so older files load.
     #[serde(default = "crate::finish::pencil::rest_cell_default")]
+    #[param(
+        help = "XY grid resolution of the rest field the rest-depth detector reads.",
+        range = 0.1..=2.0,
+    )]
     pub rest_cell_mm: f64,
     /// R1: optional library tool id whose *real* cutter geometry defines the
     /// rest reference (all three detectors). `None` = legacy nominal-diameter
@@ -1096,6 +1394,10 @@ pub struct PencilConfig {
     /// `#[serde(default, skip_serializing_if)]` so older project files load
     /// and files that never set it stay byte-identical on save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Library tool id whose real geometry defines the pencil rest reference (else nominal \
+                diameter)"
+    )]
     pub reference_tool_id: Option<ToolId>,
     /// G-LINKSTAGE: the reach (mm) of the CLEARANCE-HOP link tier, which is
     /// separate from [`Self::hookup_distance`]. That dial caps the at-depth
@@ -1124,6 +1426,12 @@ pub struct PencilConfig {
     /// panel has no widget for it yet — the dial is reachable from a project
     /// file and from MCP `set_toolpath_param`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Reach (mm) of the CLEARANCE-HOP link tier only; hookup_distance caps the at-depth \
+                tier. Absent = one cap for both tiers (the shipped emission, byte for byte) — \
+                absent does NOT mean the hop tier is off. 0 refuses every hop and keeps the \
+                at-depth tier, which is the control arm that separates the two tiers."
+    )]
     pub link_hop_distance_mm: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1209,13 +1517,17 @@ impl PencilConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ScallopConfig {
+    #[param(help = HELP_SCALLOP_HEIGHT, range = 0.01..=2.0)]
     pub scallop_height: f64,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     pub direction: ScallopDirection,
     pub continuous: bool,
+    #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
     pub slope_from: f64,
+    #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
     pub slope_to: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1223,7 +1535,9 @@ pub struct ScallopConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1244,6 +1558,7 @@ pub struct ScallopConfig {
     /// byte-identically. Speed is traded at `scallop_height` and the tool
     /// — never across the surface (operator ruling, 2026-09-03).
     #[serde(default)]
+    #[param(optional)]
     pub iso_field: bool,
 }
 
@@ -1330,21 +1645,35 @@ impl ScallopConfig {
 /// standalone three-op stack and this orchestrator at the same tool
 /// doesn't silently change feeds/quality (see
 /// `unified_finish::UnifiedFinishParams::default`'s doc comment).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct UnifiedFinishConfig {
     /// Slope entering the mid-steep scallop band (deg from horizontal).
     /// Primary new dial — the raster→scallop boundary.
+    #[param(
+        help = "Slope entering the mid-steep scallop band (deg). Below this: raster.",
+        range = 5.0..=85.0,
+    )]
     pub steep_threshold_deg: f64,
     /// Slope entering the very-steep waterline band (deg). Advanced
     /// dial — the scallop→waterline boundary.
+    #[param(help = "Slope entering the very-steep waterline band (deg). Above this: waterline.")]
     pub waterline_threshold_deg: f64,
     /// Band overlap at polygon extraction (mm) — `steep_shallow`'s
     /// `overlap_distance` analogue.
+    #[param(help = HELP_OVERLAP_MM, range = 0.0..=10.0)]
     pub overlap_mm: f64,
+    #[param(help = HELP_SCALLOP_HEIGHT, range = 0.01..=2.0)]
     pub scallop_height: f64,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
+    #[param(
+        help = "Distance between raster passes in the shallow band.",
+        range = 0.05..=50.0,
+    )]
     pub raster_stepover: f64,
+    #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
     pub z_step: f64,
+    #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
     /// Material left on the finished surface (mm), applied as a vertical
     /// `+Z` offset on the cut.
@@ -1359,6 +1688,14 @@ pub struct UnifiedFinishConfig {
     /// θ from horizontal what remains measured normal to the surface is
     /// `stock_to_leave · cos θ`. That is the repo-wide convention for every
     /// finish operation, so bands and their links stay flush with each other.
+    #[param(
+        help = "Material left on the finished surface (mm), applied as a VERTICAL +Z offset on the \
+                cut. Honoured by all three bands (shallow raster, mid-steep scallop, very-steep \
+                waterline) since 2026-08-06 — before that only the scallop band applied it. \
+                Vertical, not surface-normal: on a wall at angle theta from horizontal what remains \
+                measured normal to the surface is stock_to_leave * cos(theta).",
+        range = 0.0..=10.0,
+    )]
     pub stock_to_leave: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1366,6 +1703,7 @@ pub struct UnifiedFinishConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1397,6 +1735,10 @@ pub struct UnifiedFinishConfig {
     /// dead on both sides of `territory_clip` (see `unified_finish`
     /// module doc for the full account). Default 0.02mm.
     #[serde(default = "default_unified_finish_min_rest_depth_mm")]
+    #[param(
+        help = "Smallest rest depth a claimed region must reach before the pencil pass cuts it.",
+        range = 0.0..=1.0,
+    )]
     pub min_rest_depth_mm: f64,
     /// Which reference the crease detector runs against — a three-valued
     /// dial since A/M6 (`unified_finish::ClaimsReference` doc), resolved to
@@ -1461,6 +1803,19 @@ pub struct UnifiedFinishConfig {
     /// The C4 rendered-surface review bound adoption because cell seams
     /// change the cusp pattern; the operator passed it 2026-09-01.
     #[serde(default = "default_unified_finish_monotone_cell_decomposition")]
+    #[param(
+        help = "Split each SHALLOW region into monotone CELLS on the region's own raster lattice, \
+                and rotate that lattice to the region's PCA-minor axis when its elongation clears \
+                3.0. Every cell is rastered on that ONE shared lattice, so the relinker sees \
+                cell-shaped fragments. Default true since 2026-09-01 (C4 operator surface review \
+                passed); set false for the pre-C2 op byte-for-byte. NOT a per-cell strategy: \
+                per-cell sweep direction (0.917x), cell TSP (byte-identical to emission order) and \
+                contour-per-cell (0.686x) were each measured and refuted. Measured value under a \
+                realistic machined-stock link ceiling: 1.155x across the reference relief's \
+                top-three shallow regions, 1.215x on the one region that clears the elongation gate \
+                — rig figures, not promises. Cell seams change the cusp pattern, which is why a \
+                rendered-surface review bound adoption."
+    )]
     pub monotone_cell_decomposition: bool,
     /// INTRA-region stay-down linking (`planning/unified_v3_design.md`
     /// §9): the maximum XY gap (mm) a gouge-checked, surface-following
@@ -1504,6 +1859,13 @@ pub struct UnifiedFinishConfig {
     /// sized off the tool's CUSP (tip) radius, not its envelope. On a Ø1-tip
     /// / Ø6-shank taper the derived value is 4 mm², not 144 mm².
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Island absorption floor (mm^2) for the finish planner's min-area step: a connected \
+                band island smaller than this is absorbed into its surrounding band. null = derive \
+                from the tool as (2 * cusp_radius)^2 * 4 (roughly four tool-diameters^2). CUSP \
+                radius, not envelope: on a 1 mm-tip / 6 mm-shank taper the derived value is 4 mm^2, \
+                not 144 mm^2."
+    )]
     pub min_region_area_mm2: Option<f64>,
     /// F2: island **merge radius** (mm) — the morphological close radius
     /// applied to each band mask before regions are extracted. Larger values
@@ -1518,6 +1880,11 @@ pub struct UnifiedFinishConfig {
     /// Cusp radius, not envelope radius — same footgun as
     /// [`Self::min_region_area_mm2`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Island merge radius (mm) — the morphological close radius applied to each band mask \
+                before regions are extracted. Larger merges neighbouring islands into one region. \
+                null = derive from the tool as cusp_radius * 0.5 (cusp radius, not envelope)."
+    )]
     pub close_radius_mm: Option<f64>,
     /// F2: band **hysteresis width** (degrees) — a cell leaves a band only
     /// once its slope falls below `enter − hysteresis_deg`, which is what
@@ -1531,6 +1898,11 @@ pub struct UnifiedFinishConfig {
     /// It is load-bearing: `for_tool`'s own doc records that `0` makes the
     /// masks storm to O(100) islands. Lower it deliberately or not at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Band hysteresis width (deg): a cell leaves a band only once its slope falls below \
+                (enter - hysteresis_deg). null = the planner's fixed 10.0. Load-bearing — at 0 the \
+                raw slope masks storm to O(100) speckled islands."
+    )]
     pub hysteresis_deg: Option<f64>,
     /// Which sampler builds this op's classification grid (M3 wave 7b —
     /// `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`).
@@ -1549,6 +1921,13 @@ pub struct UnifiedFinishConfig {
     ///
     /// [`ClassificationSampler::PRODUCTION`]: crate::finish::classify_probe::ClassificationSampler::PRODUCTION
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Which sampler fills the classification height grid (M3 COLUMNS). NOT a quality or \
+                speed dial: it exists so an A/B can drive the pre-switch drop-cutter classifier and \
+                the production tile-raster one through one pipeline, and so a project that hits a \
+                regression has an escape hatch that needs no rebuild. Null or absent = tile_raster, \
+                the production sampler."
+    )]
     pub classification_sampler: Option<crate::finish::classify_probe::ClassificationSampler>,
 }
 
@@ -1751,13 +2130,24 @@ fn default_unified_finish_crease_hookup_mm() -> f64 {
     5.0
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct SteepShallowConfig {
+    #[param(
+        help = "Angle dividing steep (waterline) from shallow (raster) regions.",
+        range = 10.0..=80.0,
+    )]
     pub threshold_angle: f64,
+    #[param(help = HELP_OVERLAP_MM, range = 0.0..=10.0)]
     pub overlap_distance: f64,
+    #[param(
+        help = "Extra clearance from vertical walls.",
+        range = 0.0..=10.0,
+    )]
     pub wall_clearance: f64,
     pub steep_first: bool,
+    #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
     pub z_step: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1765,9 +2155,13 @@ pub struct SteepShallowConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1815,10 +2209,17 @@ impl SteepShallowConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct RampFinishConfig {
+    #[param(
+        help = "Maximum Z step between ramp passes.",
+        range = 0.05..=10.0,
+        alias = "depth_per_pass",
+    )]
     pub max_stepdown: f64,
+    #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
     pub slope_from: f64,
+    #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
     pub slope_to: f64,
     pub direction: CutDirection,
     pub order_bottom_up: bool,
@@ -1828,9 +2229,13 @@ pub struct RampFinishConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
+    #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1876,8 +2281,9 @@ impl RampFinishConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct SpiralFinishConfig {
+    #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
     pub stepover: f64,
     pub direction: SpiralDirection,
     pub feed_rate: f64,
@@ -1886,7 +2292,9 @@ pub struct SpiralFinishConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1922,9 +2330,25 @@ impl SpiralFinishConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct RadialFinishConfig {
+    #[param(
+        help = "Angle (degrees) between two spokes. Must be strictly positive and finite: \
+                `radial_finish` computes the spoke count as `360.0 / angular_step`, so a zero gives \
+                `inf` and casts to `usize::MAX` spokes, and a negative value casts to zero spokes \
+                and emits nothing (N10).",
+        gt = 0.0,
+        max = 90.0
+    )]
     pub angular_step: f64,
+    #[param(
+        help = "Distance (mm) between two sample points along one spoke. Must be strictly positive \
+                and finite: `radial_finish` computes the point count as `max_radius / \
+                point_spacing`, so a zero overflows the point allocation and a negative value \
+                leaves one point per spoke and emits nothing (N10).",
+        gt = 0.0,
+        max = 5.0
+    )]
     pub point_spacing: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1932,7 +2356,9 @@ pub struct RadialFinishConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -1968,9 +2394,14 @@ impl RadialFinishConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct HorizontalFinishConfig {
+    #[param(
+        help = "Max slope angle (degrees) to consider a surface flat/horizontal.",
+        range = 1.0..=30.0,
+    )]
     pub angle_threshold: f64,
+    #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
     pub stepover: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -1978,7 +2409,9 @@ pub struct HorizontalFinishConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
+    #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -2019,7 +2452,7 @@ impl HorizontalFinishConfig {
 }
 
 /// Which side of the mesh to project the curve onto.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectCurveDirection {
     /// Project from above — tool contacts the top surface.
@@ -2039,7 +2472,7 @@ impl ProjectCurveDirection {
 }
 
 /// How Project Curve finds the tool tip Z at each sample of the curve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectCurveProjection {
     /// Drop the real cutter on the surface. The tool body touches the
@@ -2069,7 +2502,7 @@ pub const PROJECT_CURVE_POINT_CAUTION: &str = "Point projection does not protect
      surface: the tool body can cut it. Use only when the tool cuts from the other side or \
      into material that is removed later.";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectCurveSide {
     /// Tool centerline rides exactly on the curve.
@@ -2093,9 +2526,14 @@ impl ProjectCurveSide {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ProjectCurveConfig {
+    #[param(help = HELP_DEPTH, range = -20.0..=20.0)]
     pub depth: f64,
+    #[param(
+        help = "Distance between sample points along curves. Smaller = smoother.",
+        range = 0.1..=5.0,
+    )]
     pub point_spacing: f64,
     pub feed_rate: f64,
     pub plunge_rate: f64,
@@ -2103,6 +2541,7 @@ pub struct ProjectCurveConfig {
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     /// Optional separate surface model for projection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2117,10 +2556,19 @@ pub struct ProjectCurveConfig {
     /// the real cutter; `Point` puts the tip at the surface Z plus the
     /// depth. See [`ProjectCurveProjection`].
     #[serde(default)]
+    #[param(
+        help = "How the tip Z is found at each sample. `cutter` (the default) drops the real cutter \
+                on the surface, so the tool body does not cut the surface. `point` puts the tip at \
+                the surface Z under the sample plus the depth, at every curve vertex and at most \
+                `point_spacing` apart between vertices. Point projection does not protect the far \
+                surface: the tool body can cut it. Use only when the tool cuts from the other side \
+                or into material that is removed later."
+    )]
     pub projection: ProjectCurveProjection,
     /// Set by the compute pipeline when the mesh has already been Z-inverted
     /// by a bottom-facing setup transform. Not persisted.
     #[serde(skip)]
+    #[param(driver_set = "the setup transform writes this from the setup face")]
     pub setup_z_flipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
@@ -2137,6 +2585,15 @@ pub struct ProjectCurveConfig {
     /// [`crate::finish::surface_link::LinkCeiling`] for why it travels above the
     /// standing material rather than on the mesh.
     #[serde(default = "default_project_curve_chain_distance_mm")]
+    #[param(
+        help = "Cap (mm) on the XY gap between two projected chains that may be joined by one \
+                clearance-height link instead of a full retract/rapid/replunge round trip. `0.0` \
+                (the default) disables chaining and emits exactly what this operation always did. \
+                The value is a CAP, not a target: every candidate inside it is still drop-cutter \
+                sampled for gouge, refused if it would leave the operation's boundary, lifted clear \
+                of standing material, and refused outright when that clearance reaches safe Z.",
+        range = 0.0..=25.0,
+    )]
     pub chain_distance_mm: f64,
 }
 

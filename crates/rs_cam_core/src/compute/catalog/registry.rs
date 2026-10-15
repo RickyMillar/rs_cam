@@ -1,11 +1,21 @@
-//! The operation registry data: one `*_PARAMS` const and one `REG_*`
-//! static per operation.
+//! The operation registry data: one `REG_*` static per operation.
+//!
+//! W5: a row's parameter table is `<Config>::PARAMS`, which
+//! `#[derive(OpParams)]` writes from the config struct in
+//! `compute/operation_configs.rs`. No hand `ParamDef` array is left.
 //!
 //! Split out of `compute/catalog.rs` (P4). Pure data — the parent's
 //! `OperationType::registry_entry` is the only reader of the `REG_*`
 //! statics, so they carry `pub(super)`.
 
 use crate::compute::execute::LinkCeilingNeed;
+use crate::compute::operation_configs::{
+    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
+    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, InlayPlugConfig,
+    PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
+    RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
+    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+};
 use crate::feeds::support::MILLING_FORMULA_SOURCE;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
 
@@ -17,802 +27,12 @@ use super::capabilities::{
     TRANSFORM_XY_INDEPENDENT,
 };
 use super::schema::{
-    DressupPolicy, Kinematics, OpPolicy, OpRegistryEntry, ParamDef, ParamRange, ToolConstraintsDef,
+    DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
 };
 use super::{
     FeedsHints, GeometryRequirement, OperationFamily, OperationSpec, OperationType,
     UiOperationFamily, UiProcessRole,
 };
-
-/// The help of `ramp_feed_rate`, the same on every operation that has an
-/// entry (operator ruling 2026-09-24/25).
-const RAMP_FEED_RATE_HELP: &str = "Feed (mm/min) of a helix or ramp entry through \
-     material. Empty uses the plunge rate. A straight feed through air and a straight \
-     plunge keep their own feeds.";
-
-const FACE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_offset", "f64")
-        .with_help("Extra distance beyond stock boundary to ensure full coverage."),
-    ParamDef::required("direction", "enum:one_way|zigzag"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const POCKET_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("climb", "bool"),
-    ParamDef::required("pattern", "enum:contour|zigzag"),
-    ParamDef::required("angle", "f64")
-        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
-    ParamDef::required("finishing_passes", "usize"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    LAYERED_REGION_ORDERING,
-];
-
-/// The region order of a Layered 2.5D op (ruling R4): Pocket, Zigzag,
-/// Trace and Profile share the one definition.
-const LAYERED_REGION_ORDERING: ParamDef =
-    ParamDef::required("region_ordering", "enum:global|by_area").with_help(
-        "by_area (the default): each outline goes to full depth before the \
-     next. global: each depth level cuts every outline before the next \
-     level.",
-    );
-
-const PROFILE_PARAMS: &[ParamDef] = &[
-    // G-SCHEMAENUM: `on` was never a `ProfileSide` and the generator has no
-    // on-the-line arm. The on-the-line cut ships twice under its own names —
-    // `project_curve` with `side: center` (labelled "On Line") and `trace`
-    // with `compensation: none`, whose tool centre follows the path exactly.
-    ParamDef::required("side", "enum:inside|outside"),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("climb", "bool"),
-    ParamDef::required("tab_count", "usize"),
-    ParamDef::required("tab_width", "f64")
-        .with_help("Width of holding tabs that keep the part attached to stock."),
-    ParamDef::required("tab_height", "f64")
-        .with_help("Height of holding tabs from the floor of the cut."),
-    ParamDef::required("finishing_passes", "usize"),
-    ParamDef::required("compensation", "enum:in_computer|in_control"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    LAYERED_REGION_ORDERING,
-];
-
-const ADAPTIVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::required("slot_clearing", "bool").with_help(
-        "Cut full-width seeding slots before the adaptive passes. A slot line \
-         runs at full radial immersion, outside the pass load every other \
-         2D Adaptive cut holds. Off by default.",
-    ),
-    ParamDef::required("min_cutting_radius", "f64")
-        .with_help("Blend sharp corners with arcs of at least this radius."),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    ParamDef::required(
-        "cleanup_strategy",
-        "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
-    ),
-    // F1 (algorithm review 2026-06-12): which engagement quantity the
-    // direction search compares against the α/2π target. Retired for 2D
-    // Adaptive by G-ADAPTPASSLOAD (2026-09-26); kept so saved projects load.
-    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc").with_help(
-        "Not read by 2D Adaptive: every step holds the stepover as radial \
-         immersion (sideways width of cut / tool diameter). Kept so saved \
-         projects load unchanged.",
-    ),
-    // Stage 1: reactive agent vs constructive contour spiral.
-    ParamDef::required("path_strategy", "enum:Agent|ContourSpiral"),
-];
-
-const VCARVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("max_depth", "f64")
-        .with_help("Maximum V-carve plunge depth. Limits how deep the V-bit goes."),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const INLAY_PARAMS: &[ParamDef] = &[
-    ParamDef::required("pocket_depth", "f64").with_help(
-        "Depth of the inlay pocket below the stock top. This op cuts only the \
-         V walls. Add a Pocket with a flat end mill for the floor: the same \
-         depth, a machining boundary of Model Outline on this design, \
-         containment Inside, offset minus pocket_depth x tan(half the V \
-         angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket \
-         first. CAUTION: where the floor is narrower than the end mill plus \
-         that inset, the Inside clip collapses and the Pocket cuts the whole \
-         design and the V walls; read boundary_clip_dropped. Use the same \
-         pocket_depth on the Inlay Plug op.",
-    ),
-    ParamDef::required("floor_overlap", "f64").with_help(
-        "Width of the floor band beyond the wall foot that the V-bit also \
-         cuts at the pocket depth. It removes the strip and the corners \
-         that the clipped floor Pocket leaves. Use at least the floor \
-         Pocket's stepover plus its tool radius.",
-    ),
-    ParamDef::required("floor_ridge", "f64").with_help(
-        "Largest ridge the V-bit may leave on the floor band. The ring pitch \
-         is 2 x floor_ridge x tan(half the V angle). Keep it below the glue \
-         gap of the plug; the default is half the default gap.",
-    ),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between scan lines over the wall band. The walls do not \
-         depend on it: the first floor ring cuts the whole wall.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const INLAY_PLUG_PARAMS: &[ParamDef] = &[
-    ParamDef::required("pocket_depth", "f64").with_help(
-        "Depth of the female pocket that this plug fits. Copy it from the \
-         Inlay op. The plug face sits pocket_depth - glue_gap below the \
-         design edge (the start depth).",
-    ),
-    ParamDef::required("glue_gap", "f64").with_help(
-        "Vertical gap between the plug face and the pocket floor, for the \
-         glue. The walls touch. 0.05-0.15 mm.",
-    ),
-    ParamDef::required("proud_height", "f64").with_help(
-        "Height that the plug stands above the workpiece after it is seated. \
-         The background is cut to start depth + proud height. Saw or plane \
-         this layer off after the glue sets.",
-    ),
-    ParamDef::required("outer_margin", "f64").with_help(
-        "Width of the flat background ring beyond the wall foot. The V-bit \
-         clears the design box grown by proud_height x tan(half the V \
-         angle) + outer_margin. The board outside stays at full height: \
-         saw the plug free inside the ring, or clear the rest with a Face.",
-    ),
-    ParamDef::required("depth_per_pass", "f64")
-        .with_help("Max depth per pass of the V-bit through the background."),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between scan lines. The walls are exact at any stepover; \
-         only the background shows ridges.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const ZIGZAG_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("angle", "f64")
-        .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    LAYERED_REGION_ORDERING,
-];
-
-const TRACE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    // G-SCHEMAENUM: the variant is `none`, not `center`.
-    ParamDef::required("compensation", "enum:none|left|right"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    LAYERED_REGION_ORDERING,
-];
-
-const DRILL_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-    ParamDef::required_ranged(
-        "peck_depth",
-        "f64",
-        ParamRange::greater_than(0.0),
-        "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. \
-         Must be strictly positive and finite: `drill::fed_descents` \
-         degrades a zero, negative or non-finite peck to a single \
-         full-depth descent, so any such value silently turns a Peck \
-         cycle into a single-shot one (DR-LIVE).",
-    ),
-    ParamDef::required("dwell_time", "f64"),
-    ParamDef::required("retract_amount", "f64"),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("retract_z", "f64"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const CHAMFER_PARAMS: &[ParamDef] = &[
-    ParamDef::required_desc(
-        "side",
-        "enum:outside|inside",
-        "Where the material is. Outside: the outline is a part; its outer \
-         edge and the edges of its holes are chamfered. Inside: the outline \
-         is a pocket or a hole; its walls are chamfered. The bevel always \
-         goes into the material.",
-    ),
-    ParamDef::required("chamfer_width", "f64").with_help(
-        "Width of the chamfer on the face (mm). Depth computed from tool \
-         angle.",
-    ),
-    ParamDef::required("tip_offset", "f64").with_help(
-        "Distance (mm) the V-bit tip runs off the edge into the air, so the \
-         tip does not cut. Increases cut depth slightly.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const DROP_CUTTER_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("min_z", "f64")
-        .with_help("Lowest Z the tool will descend to during drop-cutter."),
-    ParamDef::required("slope_from", "f64").with_help(
-        "Minimum surface slope (degrees) to machine. Faces shallower than \
-         this are skipped.",
-    ),
-    ParamDef::required("slope_to", "f64").with_help(
-        "Maximum surface slope (degrees) to machine. Steeper faces are \
-         skipped.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    // CMP-09: the Suggest pipeline reads this and the GUI has a dedicated
-    // route to it (`set_drop_cutter_scallop_height`), so an operator could
-    // turn the dial and an agent could not. `None` keeps the legacy
-    // formula stepover.
-    ParamDef::optional_desc(
-        "scallop_height",
-        "option<f64>",
-        "Target scallop (cusp) height in mm. When set, Suggest derives stepover from the \
-         tool's tip radius instead of the ae_factor formula. No effect on a flat or bull tool.",
-    ),
-    // G-LINKSTAGE (2026-09-09) — the shared surface-link stage's cap.
-    // Absent, or 0.0, is OFF and byte-identical.
-    ParamDef::optional("hookup_mm", "f64"),
-];
-
-const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("depth_per_pass", "f64").with_help(
-        "Max depth per Z level. Wood: 1-3mm small tools, up to half diameter \
-         for large.",
-    ),
-    ParamDef::required("stock_to_leave_axial", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::required("min_cutting_radius", "f64")
-        .with_help("Blend sharp corners with arcs of at least this radius."),
-    ParamDef::required("entry_style", "enum:plunge|helix|ramp"),
-    ParamDef::required("ramp_angle_deg", "f64").with_help(
-        "Ramp entry angle from horizontal (degrees), for the Ramp entry \
-         style.",
-    ),
-    ParamDef::required("helix_radius_factor", "f64")
-        .with_help("Helix entry radius as a multiple of the tool diameter."),
-    ParamDef::required("helix_pitch", "f64")
-        .with_help("Vertical drop per revolution of the helical entry move."),
-    ParamDef::required("entry_clearance_mm", "f64").with_help(
-        "Height (mm) above the material top where the helix or ramp entry starts. \
-         The air above it is a straight move.",
-    ),
-    ParamDef::required("detect_flat_areas", "bool"),
-    ParamDef::required("region_ordering", "enum:global|by_area"),
-    ParamDef::required(
-        "clearing_strategy",
-        "enum:contour_parallel|adaptive|agent_search|contour_spiral",
-    ),
-    // "Nibble" dial — trochoid trigger cap for the ContourSpiral strategy
-    // (low = flat load/more travel, high = relaxed/less travel). Default
-    // 1.6. Ignored by the other strategies.
-    ParamDef::required("trochoid_cap_mult", "f64"),
-    // F1 (algorithm review 2026-06-12): engagement quantity for the
-    // AgentSearch 2D sub-pass.
-    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
-    ParamDef::required("z_blend", "bool"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    ParamDef::required("min_region_cut_length_mm", "f64"),
-    // F-038b: keep-tool-down link knobs.
-    ParamDef::optional("max_stay_down_distance_mm", "option<f64>"),
-    ParamDef::required("stay_down_clearance_mm", "f64"),
-];
-
-const WATERLINE_PARAMS: &[ParamDef] = &[
-    // CMP-08: `depth_per_pass` is the alias `set_toolpath_param`'s named
-    // arm writes onto this field. It is published here, so the schema and
-    // the refusal message agree with the setter.
-    ParamDef::required("z_step", "f64")
-        .with_aliases(&["depth_per_pass"])
-        .with_help("Vertical distance between waterline Z levels."),
-    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("continuous", "bool"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    // G-LINKSTAGE (2026-09-09). Absent, or 0.0, is OFF and byte-identical.
-    ParamDef::optional("hookup_mm", "f64"),
-];
-
-const PENCIL_PARAMS: &[ParamDef] = &[
-    ParamDef::required("bitangency_angle", "f64")
-        .with_help("Minimum dihedral angle to detect concave edges. 140-170 deg typical."),
-    ParamDef::required("min_cut_length", "f64")
-        .with_help("Minimum polyline length to include as a pencil pass."),
-    ParamDef::required("hookup_distance", "f64")
-        .with_help("Max gap between pencil segments to connect into one pass."),
-    ParamDef::required("num_offset_passes", "usize"),
-    // CMP-08: `stepover` is the alias the named arm writes onto this
-    // field. Pencil has no `stepover` field of its own.
-    ParamDef::required("offset_stepover", "f64")
-        .with_aliases(&["stepover"])
-        .with_help("Lateral step between offset cleanup passes around pencil traces."),
-    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::required("min_valley_depth", "f64").with_help(
-        "Keep only valleys this much deeper than the reference finish tool \
-         reaches. 0 = trace every detected valley.",
-    ),
-    ParamDef::required("bisector_strength", "f64"),
-    ParamDef::required("reference_tool_diameter", "f64").with_help(
-        "Nominal reference-tool diameter the rest gate measures against. \
-         Applies only when no library tool is chosen.",
-    ),
-    // G-SCHEMAENUM / FIN-09: the field is `PencilDetector`, not a string.
-    ParamDef::required("detector", "enum:dihedral|curvature|rest_depth"),
-    ParamDef::required("valley_saliency", "f64").with_help(
-        "Smallest concave curvature (1/mm) a valley must reach. Low traces \
-         every seam; high keeps only deep sharp valleys.",
-    ),
-    ParamDef::required("curvature_smoothing", "usize"),
-    ParamDef::required("rest_cell_mm", "f64")
-        .with_help("XY grid resolution of the rest field the rest-depth detector reads."),
-    ParamDef::optional_desc(
-        "reference_tool_id",
-        "option<usize>",
-        "Library tool id whose real geometry defines the pencil rest reference (else nominal diameter)",
-    ),
-    ParamDef::optional_desc(
-        "link_hop_distance_mm",
-        "option<f64>",
-        "Reach (mm) of the CLEARANCE-HOP link tier only; hookup_distance caps the at-depth \
-         tier. Absent = one cap for both tiers (the shipped emission, byte for byte) — absent \
-         does NOT mean the hop tier is off. 0 refuses every hop and keeps the at-depth tier, \
-         which is the control arm that separates the two tiers.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const SCALLOP_PARAMS: &[ParamDef] = &[
-    ParamDef::required("scallop_height", "f64")
-        .with_help("Target cusp height between passes. 0.05-0.2mm for finishing."),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    // G-SCHEMAENUM: was `x|y`, a raster-axis dial `ScallopConfig` does not
-    // have. `ScallopDirection` is outside-in or inside-out.
-    ParamDef::required("direction", "enum:outside_in|inside_out"),
-    ParamDef::required("continuous", "bool"),
-    ParamDef::required("slope_from", "f64").with_help(
-        "Minimum surface slope (degrees) to machine. Faces shallower than \
-         this are skipped.",
-    ),
-    ParamDef::required("slope_to", "f64").with_help(
-        "Maximum surface slope (degrees) to machine. Steeper faces are \
-         skipped.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    // A/M7: the ring-to-ring stay-down relink cap. Ships ON at 3.0 mm since
-    // wave 12 — see `default_scallop_intra_pass_hookup_mm` for the A/B and
-    // for what wave 11's blocking gate was actually measuring.
-    ParamDef::required("intra_pass_hookup_mm", "f64"),
-    // M8 (2026-09-03) — iso-field ring source; absent = legacy cascade.
-    ParamDef::optional("iso_field", "bool"),
-];
-
-const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("steep_threshold_deg", "f64")
-        .with_help("Slope entering the mid-steep scallop band (deg). Below this: raster."),
-    ParamDef::required("waterline_threshold_deg", "f64").with_help(
-        "Slope entering the very-steep waterline band (deg). Above this: \
-         waterline.",
-    ),
-    ParamDef::required("overlap_mm", "f64").with_help("Overlap between steep and shallow regions."),
-    ParamDef::required("scallop_height", "f64")
-        .with_help("Target cusp height between passes. 0.05-0.2mm for finishing."),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::required("raster_stepover", "f64")
-        .with_help("Distance between raster passes in the shallow band."),
-    ParamDef::required("z_step", "f64").with_help("Vertical distance between waterline Z levels."),
-    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
-    ParamDef::required_desc(
-        "stock_to_leave",
-        "f64",
-        "Material left on the finished surface (mm), applied as a VERTICAL +Z offset on \
-         the cut. Honoured by all three bands (shallow raster, mid-steep scallop, \
-         very-steep waterline) since 2026-08-06 — before that only the scallop band \
-         applied it. Vertical, not surface-normal: on a wall at angle theta from \
-         horizontal what remains measured normal to the surface is stock_to_leave * \
-         cos(theta).",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    // v3 S1/S2 claims pipeline: serde-defaulted for project-file back-compat
-    // (older files omit them), always serialized.
-    ParamDef::required("pencil_claims", "bool"),
-    ParamDef::required("min_rest_depth_mm", "f64").with_help(
-        "Smallest rest depth a claimed region must reach before the pencil \
-         pass cuts it.",
-    ),
-    // Which reference the crease/rest detector runs against
-    // (`unified_finish::ClaimsReference` doc). A/M6 widened it to three
-    // values: `auto` DERIVES the answer from whether a machined prior stock
-    // is in scope; the other two pin it and keep their exact pre-A/M6
-    // meanings. What `auto` resolved to is not a param — read it from the
-    // toolpath's `runtime.claims_reference` in `get_toolpath_params`, or
-    // from the `config.claims_reference` diagnostic.
-    ParamDef::required("claims_reference", "enum:auto|self_probe|machined_stock"),
-    // S4 region-level territory clip (`unified_finish::ClaimsConfig::
-    // territory_clip` doc) — same serde-defaulted back-compat treatment.
-    ParamDef::required("territory_clip", "bool"),
-    // C2 shallow-band monotone cell decomposition — same serde-defaulted
-    // back-compat treatment again.
-    ParamDef::required_desc(
-        "monotone_cell_decomposition",
-        "bool",
-        "Split each SHALLOW region into monotone CELLS on the region's own raster lattice, \
-         and rotate that lattice to the region's PCA-minor axis when its elongation clears \
-         3.0. Every cell is rastered on that ONE shared lattice, so the relinker sees \
-         cell-shaped fragments. Default true since 2026-09-01 (C4 operator surface review \
-         passed); set false for the pre-C2 op byte-for-byte. NOT a \
-         per-cell strategy: per-cell sweep direction (0.917x), cell TSP (byte-identical to \
-         emission order) and contour-per-cell (0.686x) were each measured and refuted. \
-         Measured value under a realistic machined-stock link ceiling: 1.155x across the \
-         reference relief's top-three shallow regions, 1.215x on the one region that clears \
-         the elongation gate — rig figures, not promises. Cell seams change the cusp \
-         pattern, which is why a rendered-surface review bound adoption.",
-    ),
-    // §9/§11 link caps, both serde-defaulted for back-compat:
-    // `intra_region_hookup_mm` is the per-region stay-down relink cap,
-    // `crease_hookup_mm` the crease node's (see `unified_finish::
-    // ClaimsConfig::crease_hookup_mm`).
-    ParamDef::required("intra_region_hookup_mm", "f64"),
-    ParamDef::required("crease_hookup_mm", "f64"),
-    // CMP-09: the field is read at `execute/finish_3d.rs` and reaches
-    // `unified_finish`, but no surface could set it, so it was frozen at
-    // `ClassificationSampler::PRODUCTION`. `optional` because the field is
-    // an `Option`: null (the published default) is "not pinned".
-    ParamDef::optional_desc(
-        "classification_sampler",
-        "enum:drop_cutter_probe|drop_cutter_probe_scratch|triangle_raster|vertical_ray|tile_raster",
-        "Which sampler fills the classification height grid (M3 COLUMNS). NOT a quality or \
-         speed dial: it exists so an A/B can drive the pre-switch drop-cutter classifier and \
-         the production tile-raster one through one pipeline, and so a project that hits a \
-         regression has an escape hatch that needs no rebuild. Null or absent = tile_raster, \
-         the production sampler.",
-    ),
-    // F2 island-filter overrides on `FinishPlannerParams`. All three are
-    // `null` by default and are OMITTED from a saved project while null, so
-    // an existing file round-trips byte-identically. `null` = derive from the
-    // tool (`FinishPlannerParams::for_tool`); a number overrides that ONE
-    // dial and leaves the rest derived.
-    ParamDef::optional_desc(
-        "min_region_area_mm2",
-        "option<f64>",
-        "Island absorption floor (mm^2) for the finish planner's min-area step: a connected \
-         band island smaller than this is absorbed into its surrounding band. null = derive \
-         from the tool as (2 * cusp_radius)^2 * 4 (roughly four tool-diameters^2). CUSP \
-         radius, not envelope: on a 1 mm-tip / 6 mm-shank taper the derived value is 4 mm^2, \
-         not 144 mm^2.",
-    ),
-    ParamDef::optional_desc(
-        "close_radius_mm",
-        "option<f64>",
-        "Island merge radius (mm) — the morphological close radius applied to each band mask \
-         before regions are extracted. Larger merges neighbouring islands into one region. \
-         null = derive from the tool as cusp_radius * 0.5 (cusp radius, not envelope).",
-    ),
-    ParamDef::optional_desc(
-        "hysteresis_deg",
-        "option<f64>",
-        "Band hysteresis width (deg): a cell leaves a band only once its slope falls below \
-         (enter - hysteresis_deg). null = the planner's fixed 10.0. Load-bearing — at 0 the \
-         raw slope masks storm to O(100) speckled islands.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
-    ParamDef::required("threshold_angle", "f64")
-        .with_help("Angle dividing steep (waterline) from shallow (raster) regions."),
-    ParamDef::required("overlap_distance", "f64")
-        .with_help("Overlap between steep and shallow regions."),
-    ParamDef::required("wall_clearance", "f64").with_help("Extra clearance from vertical walls."),
-    ParamDef::required("steep_first", "bool"),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("z_step", "f64").with_help("Vertical distance between waterline Z levels."),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const RAMP_FINISH_PARAMS: &[ParamDef] = &[
-    // CMP-08: the `depth_per_pass` alias, as on Waterline's `z_step`.
-    ParamDef::required("max_stepdown", "f64")
-        .with_aliases(&["depth_per_pass"])
-        .with_help("Maximum Z step between ramp passes."),
-    ParamDef::required("slope_from", "f64").with_help(
-        "Minimum surface slope (degrees) to machine. Faces shallower than \
-         this are skipped.",
-    ),
-    ParamDef::required("slope_to", "f64").with_help(
-        "Maximum surface slope (degrees) to machine. Steeper faces are \
-         skipped.",
-    ),
-    ParamDef::required("direction", "enum:climb|conventional"),
-    ParamDef::required("order_bottom_up", "bool"),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::required("tolerance", "f64").with_help(
-        "Geometric tolerance for path approximation. Smaller = more accurate, \
-         slower.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    // G-SCHEMAENUM: was `outward|inward`; `SpiralDirection` spells the same
-    // two directions `inside_out` and `outside_in`.
-    ParamDef::required("direction", "enum:inside_out|outside_in"),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const RADIAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required_ranged(
-        "angular_step",
-        "f64",
-        ParamRange::greater_than(0.0),
-        "Angle (degrees) between two spokes. Must be strictly positive \
-         and finite: `radial_finish` computes the spoke count as \
-         `360.0 / angular_step`, so a zero gives `inf` and casts to \
-         `usize::MAX` spokes, and a negative value casts to zero spokes \
-         and emits nothing (N10).",
-    ),
-    ParamDef::required_ranged(
-        "point_spacing",
-        "f64",
-        ParamRange::greater_than(0.0),
-        "Distance (mm) between two sample points along one spoke. Must \
-         be strictly positive and finite: `radial_finish` computes the \
-         point count as `max_radius / point_spacing`, so a zero \
-         overflows the point allocation and a negative value leaves one \
-         point per spoke and emits nothing (N10).",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const HORIZONTAL_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("angle_threshold", "f64")
-        .with_help("Max slope angle (degrees) to consider a surface flat/horizontal."),
-    ParamDef::required("stepover", "f64").with_help(
-        "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
-         finishing.",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::required("stock_to_leave", "f64").with_help(
-        "Finishing allowance kept on the surface for a later pass. Applied as \
-         a vertical offset: on a wall sloped at angle A, what remains \
-         measured normal to the surface is this value x cos(A).",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
-
-const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("depth", "f64").with_help("Total cut depth from stock surface."),
-    ParamDef::required("point_spacing", "f64")
-        .with_help("Distance between sample points along curves. Smaller = smoother."),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("plunge_rate", "f64"),
-    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
-    ParamDef::optional("surface_model_id", "option<usize>"),
-    ParamDef::required("direction", "enum:from_above|from_below"),
-    ParamDef::required("side", "enum:center|inside|outside"),
-    ParamDef::required("projection", "enum:cutter|point").with_help(
-        "How the tip Z is found at each sample. `cutter` (the default) drops \
-         the real cutter on the surface, so the tool body does not cut the \
-         surface. `point` puts the tip at the surface Z under the sample \
-         plus the depth, at every curve vertex and at most `point_spacing` \
-         apart between vertices. Point projection does not protect the far \
-         surface: the tool body can cut it. Use only when the tool cuts \
-         from the other side or into material that is removed later.",
-    ),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-    ParamDef::required_ranged(
-        "chain_distance_mm",
-        "f64",
-        ParamRange::at_least(0.0),
-        "Cap (mm) on the XY gap between two projected chains that may be \
-         joined by one clearance-height link instead of a full \
-         retract/rapid/replunge round trip. `0.0` (the default) disables \
-         chaining and emits exactly what this operation always did. The \
-         value is a CAP, not a target: every candidate inside it is still \
-         drop-cutter sampled for gouge, refused if it would leave the \
-         operation's boundary, lifted clear of standing material, and \
-         refused outright when that clearance reaches safe Z.",
-    ),
-];
-
-const ALIGNMENT_PIN_DRILL_PARAMS: &[ParamDef] = &[
-    ParamDef::required("holes", "array<[f64;2]>"),
-    ParamDef::required("spoilboard_penetration", "f64")
-        .with_help("How far the drill penetrates into the spoilboard below the stock."),
-    ParamDef::required("cycle", "enum:simple|dwell|peck|chip_break"),
-    ParamDef::required_ranged(
-        "peck_depth",
-        "f64",
-        ParamRange::greater_than(0.0),
-        "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. \
-         Must be strictly positive and finite: `drill::fed_descents` \
-         degrades a zero, negative or non-finite peck to a single \
-         full-depth descent, so any such value silently turns a Peck \
-         cycle into a single-shot one (DR-LIVE).",
-    ),
-    ParamDef::required("feed_rate", "f64"),
-    ParamDef::required("retract_z", "f64"),
-    ParamDef::optional("spindle_rpm", "option<u32>"),
-];
 
 pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Face,
@@ -828,7 +48,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: FACE_PARAMS,
+    params: FaceConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -863,7 +83,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: POCKET_PARAMS,
+    params: PocketConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -898,7 +118,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: PROFILE_PARAMS,
+    params: ProfileConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -933,7 +153,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: ADAPTIVE_PARAMS,
+    params: AdaptiveConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
     // boundaries, so a new toolpath starts with Helix. G10 D3: an
@@ -971,7 +191,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: VCARVE_PARAMS,
+    params: VCarveConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
@@ -1018,7 +238,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: INLAY_PARAMS,
+    params: InlayConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
@@ -1063,7 +283,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: INLAY_PLUG_PARAMS,
+    params: InlayPlugConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
@@ -1108,7 +328,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: ZIGZAG_PARAMS,
+    params: ZigzagConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -1143,7 +363,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: TRACE_PARAMS,
+    params: TraceConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — single-pass engraving: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
@@ -1181,7 +401,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: None,
     },
-    param_defs: DRILL_PARAMS,
+    params: DrillConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
@@ -1217,7 +437,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: CHAMFER_PARAMS,
+    params: ChamferConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::VBit],
         supports_v_bit: true,
@@ -1255,7 +475,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: DROP_CUTTER_PARAMS,
+    params: DropCutterConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Each raster segment that starts with a Ramp entry would cut a
     // diagonal line from safe_z down to the mesh surface — hundreds per
@@ -1296,7 +516,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: ADAPTIVE3D_PARAMS,
+    params: Adaptive3dConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // F-031 (2026-05-26): the planner already emits its entry sequence
     // per `Adaptive3dParams::entry_style` and stamps it into its
@@ -1337,7 +557,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::SemiFinish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: WATERLINE_PARAMS,
+    params: WaterlineConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::FEATURE_SELECTIVE,
@@ -1372,7 +592,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: PENCIL_PARAMS,
+    params: PencilConfig::PARAMS,
     // Feeds matrix R1 (2026-09-23): a ball-tip rule. Since W2.2 the
     // generator prologue, the static check and Suggest all refuse on it.
     tool_constraints: ToolConstraintsDef {
@@ -1412,7 +632,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: SCALLOP_PARAMS,
+    params: ScallopConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,
@@ -1455,7 +675,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: UNIFIED_FINISH_PARAMS,
+    params: UnifiedFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef {
         required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
         supports_v_bit: false,
@@ -1503,7 +723,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: STEEP_SHALLOW_PARAMS,
+    params: SteepShallowConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::LATERAL_RASTER,
@@ -1538,7 +758,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: RAMP_FINISH_PARAMS,
+    params: RampFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -1573,7 +793,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: SPIRAL_FINISH_PARAMS,
+    params: SpiralFinishConfig::PARAMS,
     // Feeds matrix R1 (2026-09-23, EVIDENCE 2-1): the row declares the
     // Scallop feeds family, so it carries Scallop's tool rule. Before, the
     // scallop refusal fired from the family alone while the row accepted
@@ -1615,7 +835,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: RADIAL_FINISH_PARAMS,
+    params: RadialFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
@@ -1650,7 +870,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: HORIZONTAL_FINISH_PARAMS,
+    params: HorizontalFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy {
@@ -1692,7 +912,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Finish,
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
-    param_defs: PROJECT_CURVE_PARAMS,
+    params: ProjectCurveConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Entry ramps, lead-in/out, and link moves produce phantom
     // lateral cuts on multi-ring DXFs.
@@ -1731,7 +951,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         feeds_pass_role: PassRole::Roughing,
         feeds_formula_source: None,
     },
-    param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
+    params: AlignmentPinDrillConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // FORCE_NO_ENTRY, matching REG_DRILL. A ramp or helix entry on a
     // registration-pin hole cuts an oval slot, which destroys the flip

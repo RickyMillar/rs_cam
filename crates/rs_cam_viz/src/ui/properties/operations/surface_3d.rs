@@ -10,7 +10,7 @@ use crate::state::toolpath::{
     UnifiedFinishConfig, WaterlineConfig,
 };
 
-use super::super::{advanced, dv, dv_pill, p};
+use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
 use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -31,7 +31,6 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
     });
@@ -42,7 +41,6 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
             &mut cfg.min_z,
             " mm",
             0.5,
-            -500.0..=0.0,
         );
         dv(
             ui,
@@ -50,7 +48,6 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
             &mut cfg.slope_from,
             " deg",
             1.0,
-            0.0..=90.0,
         );
         dv(
             ui,
@@ -58,7 +55,6 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
             &mut cfg.slope_to,
             " deg",
             1.0,
-            0.0..=90.0,
         );
     });
 }
@@ -87,7 +83,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 &mut cfg.stepover,
                 " mm",
                 0.1,
-                0.05..=50.0,
                 stepover_sugg,
             );
         }
@@ -97,7 +92,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
         dv(
@@ -110,7 +104,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             &mut cfg.stock_to_leave_axial,
             " mm",
             0.05,
-            0.0..=10.0,
         );
         ui.label("Entry Style:");
         egui::ComboBox::from_id_salt("a3d_entry")
@@ -136,7 +129,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     &mut cfg.ramp_angle_deg,
                     " deg",
                     0.5,
-                    0.5..=45.0,
                 );
                 dv(
                     ui,
@@ -148,7 +140,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     &mut cfg.entry_clearance_mm,
                     " mm",
                     0.1,
-                    0.0..=5.0,
                 );
             }
             Adaptive3dEntryStyle::Helix => {
@@ -162,7 +153,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     &mut cfg.helix_radius_factor,
                     " × D",
                     0.05,
-                    0.05..=0.5,
                 );
                 dv(
                     ui,
@@ -170,7 +160,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     &mut cfg.helix_pitch,
                     " mm",
                     0.1,
-                    0.1..=10.0,
                 );
                 dv(
                     ui,
@@ -182,7 +171,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     &mut cfg.entry_clearance_mm,
                     " mm",
                     0.1,
-                    0.0..=5.0,
                 );
             }
         }
@@ -236,7 +224,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
         dv(
             ui,
@@ -248,7 +235,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             &mut cfg.min_cutting_radius,
             " mm",
             0.1,
-            0.0..=50.0,
         );
         ui.label("Detect Flat:");
         ui.checkbox(&mut cfg.detect_flat_areas, "");
@@ -329,7 +315,6 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             &mut cfg.z_step,
             " mm",
             0.1,
-            0.05..=20.0,
         );
         ui.label("Continuous:");
         ui.checkbox(&mut cfg.continuous, "");
@@ -343,7 +328,6 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             &mut cfg.sampling,
             " mm",
             0.1,
-            0.1..=5.0,
         );
     });
 }
@@ -413,7 +397,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 &mut cfg.rest_cell_mm,
                 " mm",
                 0.05,
-                0.1..=2.0,
             );
             ui.end_row();
         } else if curvature {
@@ -426,13 +409,18 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 &mut cfg.valley_saliency,
                 " 1/mm",
                 0.01,
-                0.0..=2.0,
             );
             // UI-10: an integer field. `ValueRow` edits an `f64`, and a
             // temporary f64 would change what a partial edit commits.
             ui.label("Curv. Smoothing:");
             let mut s = cfg.curvature_smoothing as i32;
-            if ui.add(egui::DragValue::new(&mut s).range(0..=20)).changed() {
+            if ui
+                .add(
+                    egui::DragValue::new(&mut s)
+                        .range(schema_range(OperationType::Pencil, "curvature_smoothing")),
+                )
+                .changed()
+            {
                 cfg.curvature_smoothing = s.max(0) as usize;
             }
             ui.end_row();
@@ -447,14 +435,19 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 &mut cfg.bitangency_angle,
                 " deg",
                 1.0,
-                90.0..=180.0,
             );
         }
         // UI-10: an integer field. `ValueRow` edits an `f64`, and a
         // temporary f64 would change what a partial edit commits.
         ui.label("Offset Passes:");
         let mut n = cfg.num_offset_passes as i32;
-        if ui.add(egui::DragValue::new(&mut n).range(0..=10)).changed() {
+        if ui
+            .add(
+                egui::DragValue::new(&mut n)
+                    .range(schema_range(OperationType::Pencil, "num_offset_passes")),
+            )
+            .changed()
+        {
             cfg.num_offset_passes = n.max(0) as usize;
         }
         ui.end_row();
@@ -464,7 +457,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.offset_stepover,
             " mm",
             0.1,
-            0.05..=10.0,
         );
         // Reference-tool rest gate: keep only valleys the pencil tool (the
         // op's own tool) reaches more than this deeper than the bigger
@@ -480,7 +472,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.min_valley_depth,
             " mm",
             0.05,
-            0.0..=5.0,
         );
         // The analytic reference: what "rest" is measured against when the
         // generator does NOT read a machined stock. Only `rest_depth_arm`
@@ -531,7 +522,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                     &mut cfg.reference_tool_diameter,
                     " mm",
                     0.5,
-                    0.5..=25.0,
                 );
             }
         }
@@ -541,7 +531,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
     advanced(ui, "pen_adv", |ui| {
@@ -551,7 +540,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.min_cut_length,
             " mm",
             0.5,
-            0.5..=50.0,
         );
         dv(
             ui,
@@ -559,7 +547,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.hookup_distance,
             " mm",
             0.5,
-            0.5..=50.0,
         );
         dv(
             ui,
@@ -567,7 +554,6 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             &mut cfg.sampling,
             " mm",
             0.1,
-            0.1..=5.0,
         );
     });
 }
@@ -587,7 +573,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             &mut cfg.scallop_height,
             " mm",
             0.01,
-            0.01..=2.0,
         );
         ui.label("Direction:");
         egui::ComboBox::from_id_salt("sc_dir")
@@ -615,7 +600,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
     advanced(ui, "sc_adv", |ui| {
@@ -625,7 +609,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
         ui.label("Continuous:");
         ui.checkbox(&mut cfg.continuous, "");
@@ -645,7 +628,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             &mut cfg.slope_from,
             " deg",
             1.0,
-            0.0..=90.0,
         );
         dv(
             ui,
@@ -653,7 +635,6 @@ pub(in crate::ui::properties) fn draw_scallop_params(
             &mut cfg.slope_to,
             " deg",
             1.0,
-            0.0..=90.0,
         );
     });
 }
@@ -758,7 +739,6 @@ fn draw_unified_finish_claims(
             &mut cfg.min_rest_depth_mm,
             " mm",
             0.005,
-            0.0..=1.0,
         );
     });
 
@@ -848,9 +828,8 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.steep_threshold_deg,
             " deg",
             1.0,
-            5.0..=85.0,
         );
-        dv(
+        dv_narrowed(
             ui,
             p(
                 OperationType::UnifiedFinish,
@@ -875,7 +854,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.scallop_height,
             " mm",
             0.01,
-            0.01..=2.0,
         );
         dv(
             ui,
@@ -887,7 +865,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.raster_stepover,
             " mm",
             0.1,
-            0.05..=50.0,
         );
         dv(
             ui,
@@ -895,7 +872,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.z_step,
             " mm",
             0.1,
-            0.05..=20.0,
         );
         dv(
             ui,
@@ -907,7 +883,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
     advanced(ui, "uf_adv", |ui| {
@@ -917,7 +892,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.overlap_mm,
             " mm",
             0.1,
-            0.0..=10.0,
         );
         dv(
             ui,
@@ -925,7 +899,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
         dv(
             ui,
@@ -933,7 +906,6 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
             &mut cfg.sampling,
             " mm",
             0.1,
-            0.1..=5.0,
         );
 
         // `dv` ends its own grid row, so this one opens straight after.
@@ -979,7 +951,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.threshold_angle,
             " deg",
             1.0,
-            10.0..=80.0,
         );
         dv_pill(
             ui,
@@ -987,7 +958,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
         dv(
@@ -996,7 +966,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.z_step,
             " mm",
             0.1,
-            0.05..=20.0,
         );
         dv(
             ui,
@@ -1008,7 +977,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.stock_to_leave,
             " mm",
             0.05,
-            0.0..=10.0,
         );
     });
     advanced(ui, "ss_adv", |ui| {
@@ -1018,7 +986,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.overlap_distance,
             " mm",
             0.1,
-            0.0..=10.0,
         );
         dv(
             ui,
@@ -1030,7 +997,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.wall_clearance,
             " mm",
             0.1,
-            0.0..=10.0,
         );
         ui.label("Steep First:");
         ui.checkbox(&mut cfg.steep_first, "");
@@ -1041,7 +1007,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.sampling,
             " mm",
             0.1,
-            0.1..=5.0,
         );
         dv(
             ui,
@@ -1049,7 +1014,6 @@ pub(in crate::ui::properties) fn draw_steep_shallow_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
     });
 }

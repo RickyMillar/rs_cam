@@ -38,7 +38,17 @@ use ring_generation::decimate_ring_polygon;
 pub use ring_generation::generate_scallop_rings;
 
 /// Direction for scallop contouring.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ScallopDirection {
     /// Start from boundary, work inward (default).

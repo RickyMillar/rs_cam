@@ -283,7 +283,7 @@ impl ProjectSession {
                 );
             }
             // Not an operation parameter: it writes `ToolpathConfig`
-            // state, so no `param_defs` array holds it. The published
+            // state, so no `ParamDef` table holds it. The published
             // schema lists it under `toolpath_params` (CMP-08).
             "debug_enabled" => {
                 let v = match &value {

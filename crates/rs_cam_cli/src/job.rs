@@ -1220,7 +1220,7 @@ fn execute_op_via_session(
         .flatten()
         .map(|bbox| bbox.min.z);
     let params = job_params_for(op, op_type, drop_cutter_min_z)?;
-    let table = op_type.registry_entry().param_defs;
+    let table = op_type.registry_entry().params.defs;
     for (key, value) in params {
         if table.iter().any(|d| d.name == key) {
             let command = Command::SetToolpathParam(SetToolpathParamArgs {
@@ -1694,7 +1694,8 @@ mod tests {
         assert!(
             !OperationType::Adaptive3d
                 .registry_entry()
-                .param_defs
+                .params
+                .defs
                 .iter()
                 .any(|d| d.name == "coarse_steps"),
             "the registry still names coarse_steps"
