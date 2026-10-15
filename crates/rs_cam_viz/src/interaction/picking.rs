@@ -65,9 +65,10 @@ pub struct PickContext<'a> {
 /// cannot be picked, because the pick and the GPU upload read ONE function
 /// (`state::viewport::toolpaths_to_draw`).
 ///
-/// `display_frame` is the frame of the setup the viewport displays
-/// (`state::pin_view::active_display_setup`). The pins are picked where
-/// that frame draws them (C8).
+/// `display_setup` is the frame and the id of the setup the viewport
+/// displays (`state::pin_view::active_display_setup`). The pins are picked
+/// where that frame draws them (C8), and only that setup's obstacles are
+/// picked (K2).
 // SAFETY: one flat pick entry; each argument is a distinct input the
 // viewport already holds.
 #[allow(clippy::too_many_arguments)]
@@ -79,8 +80,9 @@ pub fn pick(
     workspace: Workspace,
     draw_filter: ToolpathDrawFilter,
     drill_pick_toolpath: Option<ToolpathId>,
-    display_frame: Option<&SetupFrame>,
+    display_setup: Option<&(SetupFrame, SetupId)>,
 ) -> Option<PickHit> {
+    let display_frame = display_setup.map(|(frame, _)| frame);
     // 1. Screen-space picks (small targets first)
     if workspace == Workspace::Simulation
         && let Some(hit) = pick_collision_markers(ctx, collision_positions)
@@ -120,33 +122,32 @@ pub fn pick(
 
     let stock = session.stock_config();
 
-    // Obstacles (Setup only). K1: a box obstacle is in its setup frame;
-    // the display frame is that frame moved by the setup's
-    // emission-to-display shift.
-    if workspace == Workspace::Setup {
-        for setup in session.list_setups() {
-            let shift = crate::state::job::SetupFrame::new(setup.face_up, setup.z_rotation)
-                .emission_to_display_shift(stock);
-            for obstacle in &setup.obstacles {
-                if !obstacle.enabled {
-                    continue;
-                }
-                let Some(bb) = crate::state::job::obstacle_clearance_box(obstacle) else {
-                    continue;
-                };
-                let bbox = BoundingBox3 {
-                    min: P3::new(bb.min.x + shift.x, bb.min.y + shift.y, bb.min.z + shift.z),
-                    max: P3::new(bb.max.x + shift.x, bb.max.y + shift.y, bb.max.z + shift.z),
-                };
-                if let Some(t) = bbox.ray_intersect(&origin, &dir)
-                    && t < best_t
-                {
-                    best_t = t;
-                    best_hit = Some(PickHit::Obstacle {
-                        setup_id: SetupId(setup.id),
-                        obstacle_id: obstacle.id,
-                    });
-                }
+    // Obstacles (Setup only). K2: the obstacles of the DISPLAYED setup
+    // only, the set the renderer draws (`active_display_setup`, the one
+    // selector). An obstacle is in its setup frame; the display frame is
+    // that frame moved by the setup's emission-to-display shift.
+    if workspace == Workspace::Setup
+        && let Some((frame, setup_id)) = display_setup
+        && let Some((_, setup)) = session.find_setup_by_id(setup_id.0)
+    {
+        let shift = frame.emission_to_display_shift(stock);
+        for obstacle in &setup.obstacles {
+            let Some(bb) = crate::state::job::obstacle_display_extent(obstacle, session.models())
+            else {
+                continue;
+            };
+            let bbox = BoundingBox3 {
+                min: P3::new(bb.min.x + shift.x, bb.min.y + shift.y, bb.min.z + shift.z),
+                max: P3::new(bb.max.x + shift.x, bb.max.y + shift.y, bb.max.z + shift.z),
+            };
+            if let Some(t) = bbox.ray_intersect(&origin, &dir)
+                && t < best_t
+            {
+                best_t = t;
+                best_hit = Some(PickHit::Obstacle {
+                    setup_id: *setup_id,
+                    obstacle_id: obstacle.id,
+                });
             }
         }
     }

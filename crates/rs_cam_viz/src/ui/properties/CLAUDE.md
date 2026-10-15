@@ -11,7 +11,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
   `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (one fn per tab).
 - `operations/` — one editor per op family, plus `registry.rs`,
   `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`.
-- `setup.rs`, `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`.
+- `setup.rs`, `obstacles.rs` (K2: list + editor), `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`.
 
 ## Invariants
 

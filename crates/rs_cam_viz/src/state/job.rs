@@ -249,28 +249,77 @@ pub fn height_context_from_session(
     ctx.height_context(tc.operation.default_depth_for_heights(), mb.as_ref())
 }
 
-/// K1: the box of a box obstacle, in its setup frame (the frame the
-/// setup's toolpaths emit in). `None` for an outline or a model obstacle:
-/// the GUI draws and edits boxes only until K2.
-pub fn obstacle_box(o: &rs_cam_core::session::Obstacle) -> Option<BoundingBox3> {
+/// K2: the extent of an obstacle with its clearance, in its setup frame
+/// (the frame the setup's toolpaths emit in). Picking reads it.
+///
+/// The XY range is the raw section's bounding box grown by the clearance:
+/// an outward offset by `d` grows a bounding box by exactly `d`, so this is
+/// the bounding box of the resolver's footprint without the offset work
+/// (the hover pick asks it each frame). A mesh takes its bounding box plus
+/// the one raster cell the resolver adds. `None` for a disabled obstacle
+/// and for a model the obstacle reads that is missing or holds no geometry
+/// of the kind it needs.
+pub fn obstacle_display_extent(
+    o: &rs_cam_core::session::Obstacle,
+    models: &[rs_cam_core::session::LoadedModel],
+) -> Option<BoundingBox3> {
+    use rs_cam_core::compute::obstacle::SILHOUETTE_CELL_MM;
+    use rs_cam_core::compute::stock_change::is_closed_outline;
     use rs_cam_core::geo::P3;
-    match &o.geometry {
-        rs_cam_core::session::ObstacleGeometry::Box { min, max } => Some(BoundingBox3 {
-            min: P3::new(min[0], min[1], min[2]),
-            max: P3::new(max[0], max[1], max[2]),
-        }),
-        rs_cam_core::session::ObstacleGeometry::OutlineExtrude { .. }
-        | rs_cam_core::session::ObstacleGeometry::Model { .. } => None,
+    use rs_cam_core::session::ObstacleGeometry;
+    if !o.enabled {
+        return None;
     }
-}
-
-/// K1: [`obstacle_box`] grown by the obstacle's clearance on every side.
-pub fn obstacle_clearance_box(o: &rs_cam_core::session::Obstacle) -> Option<BoundingBox3> {
-    use rs_cam_core::geo::P3;
-    let c = o.clearance;
-    obstacle_box(o).map(|b| BoundingBox3 {
-        min: P3::new(b.min.x - c, b.min.y - c, b.min.z - c),
-        max: P3::new(b.max.x + c, b.max.y + c, b.max.z + c),
+    let find = |id: rs_cam_core::ids::ModelId| models.iter().find(|m| m.id == id.0);
+    let (xy, z0, z1, grow) = match &o.geometry {
+        ObstacleGeometry::Box { min, max } => {
+            ([min[0], min[1], max[0], max[1]], min[2], max[2], 0.0)
+        }
+        ObstacleGeometry::OutlineExtrude {
+            model_ids,
+            z_bottom,
+            z_top,
+        } => {
+            let mut xy = [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ];
+            for id in model_ids {
+                let polygons = find(*id)?.polygons.as_ref()?;
+                for p in polygons.iter().filter(|p| is_closed_outline(p)) {
+                    for v in &p.exterior {
+                        xy = [
+                            xy[0].min(v.x),
+                            xy[1].min(v.y),
+                            xy[2].max(v.x),
+                            xy[3].max(v.y),
+                        ];
+                    }
+                }
+            }
+            if !(xy[0] < xy[2] && xy[1] < xy[3]) {
+                return None;
+            }
+            (xy, *z_bottom, *z_top, 0.0)
+        }
+        ObstacleGeometry::Model { model_id } => {
+            let mesh = find(*model_id)?.mesh.as_ref()?;
+            let b = &mesh.bbox;
+            (
+                [b.min.x, b.min.y, b.max.x, b.max.y],
+                b.min.z,
+                b.max.z,
+                SILHOUETTE_CELL_MM,
+            )
+        }
+    };
+    let c = o.clearance.max(0.0);
+    let d = c + grow;
+    Some(BoundingBox3 {
+        min: P3::new(xy[0] - d, xy[1] - d, z0 - c),
+        max: P3::new(xy[2] + d, xy[3] + d, z1 + c),
     })
 }
 

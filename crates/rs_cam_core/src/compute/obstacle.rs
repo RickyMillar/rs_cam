@@ -364,7 +364,11 @@ impl std::error::Error for ObstacleResolveError {}
 /// The raster cell (mm) of a mesh obstacle's silhouette. The silhouette
 /// then grows by one more cell, because the raster outline can lie up to
 /// one cell inside the true projection.
-const SILHOUETTE_CELL_MM: f64 = 0.5;
+///
+/// It IS the default silhouette cell, so the resolver can read the
+/// per-mesh memo `maps::geom_cache::cached_silhouette` (K2). If obstacles
+/// get their own cell, the resolver must go back to the uncached raster.
+pub const SILHOUETTE_CELL_MM: f64 = crate::geometry::boundary::SILHOUETTE_CELL_SIZE;
 
 /// One enabled obstacle, resolved into the setup frame and grown by its
 /// clearance.
@@ -382,6 +386,14 @@ pub struct ResolvedObstacle {
     /// The bottom Z, grown by the clearance. A display value: the service
     /// reads the obstacle as solid from its top down (module doc).
     pub bottom_z: f64,
+    /// The XY section before the clearance grow: the box rectangle, the
+    /// outline union, or the silhouette after its one-cell grow. A display
+    /// value (K2): the renderer draws it as the obstacle itself.
+    pub outline: Vec<Polygon2>,
+    /// The bottom Z of [`Self::outline`], without the clearance.
+    pub outline_bottom_z: f64,
+    /// The top Z of [`Self::outline`], without the clearance.
+    pub outline_top_z: f64,
 }
 
 /// The enabled obstacles of one setup, in the setup frame. Empty when the
@@ -512,10 +524,9 @@ impl ObstacleSet {
                         .find(|m| m.id == model_id.0)
                         .and_then(|m| m.mesh.clone())
                         .ok_or_else(|| refuse(format!("model id {} holds no mesh", model_id.0)))?;
-                    let silhouette = crate::geometry::boundary::model_silhouette(
-                        &mesh,
-                        Some(SILHOUETTE_CELL_MM),
-                    );
+                    // The per-mesh memo: the pin panel resolves every
+                    // setup each frame, and the raster is the cost (K2).
+                    let silhouette = crate::maps::geom_cache::cached_silhouette(&mesh);
                     if silhouette.is_empty() {
                         return Err(refuse("the mesh has an empty silhouette".to_owned()));
                     }
@@ -535,6 +546,9 @@ impl ObstacleSet {
                 footprint,
                 top_z: top + c,
                 bottom_z: bottom - c,
+                outline: raw_footprint,
+                outline_bottom_z: bottom,
+                outline_top_z: top,
             });
         }
         Ok(Self {
@@ -1252,6 +1266,84 @@ mod tests {
             &[],
         )
         .unwrap()
+    }
+
+    /// K2: the resolver keeps the section before the clearance grow, for
+    /// the renderer. A box gives its own rectangle and Z range; the grown
+    /// footprint contains it and is larger.
+    #[test]
+    fn a_resolved_obstacle_keeps_its_outline_before_the_clearance_k2() {
+        let set = ObstacleSet::resolve(
+            &[Obstacle {
+                id: ObstacleId(0),
+                name: "Clamp".to_owned(),
+                enabled: true,
+                clearance: 3.0,
+                geometry: ObstacleGeometry::Box {
+                    min: [0.0, 0.0, -5.0],
+                    max: [10.0, 20.0, 15.0],
+                },
+            }],
+            &[],
+        )
+        .unwrap();
+        let resolved = &set.obstacles()[0];
+        assert_eq!(resolved.outline.len(), 1);
+        assert!((resolved.outline[0].area() - 200.0).abs() < 1e-9);
+        assert_eq!(resolved.outline_bottom_z, -5.0);
+        assert_eq!(resolved.outline_top_z, 15.0);
+        assert_eq!(resolved.top_z, 18.0);
+        assert_eq!(resolved.bottom_z, -8.0);
+        let grown: f64 = resolved.footprint.iter().map(Polygon2::area).sum();
+        assert!(grown > 200.0, "the grown footprint is larger: {grown}");
+        for p in &resolved.outline[0].exterior {
+            assert!(
+                resolved.footprint.iter().any(|f| f.contains_point(p)),
+                "the footprint contains the outline corner {p:?}"
+            );
+        }
+    }
+
+    /// K2: two resolves of one mesh obstacle give the same outline and
+    /// footprint (the second reads the silhouette memo).
+    #[test]
+    fn a_mesh_obstacle_resolves_to_the_same_outline_twice_k2() {
+        let model = crate::session::LoadedModel {
+            id: 4,
+            name: "clamp.stl".to_owned(),
+            mesh: Some(std::sync::Arc::new(crate::mesh::make_test_hemisphere(
+                8.0, 12,
+            ))),
+            polygons: None,
+            drill_targets: std::sync::Arc::new(Vec::new()),
+            layers: std::sync::Arc::new(Vec::new()),
+            path: std::path::PathBuf::from("synthetic://clamp.stl"),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        };
+        let obstacle = Obstacle {
+            id: ObstacleId(0),
+            name: "Clamp".to_owned(),
+            enabled: true,
+            clearance: 2.0,
+            geometry: ObstacleGeometry::Model {
+                model_id: ModelId(4),
+            },
+        };
+        let models = [model];
+        let first = ObstacleSet::resolve(std::slice::from_ref(&obstacle), &models).unwrap();
+        let second = ObstacleSet::resolve(std::slice::from_ref(&obstacle), &models).unwrap();
+        let rings = |polygons: &[Polygon2]| -> Vec<Vec<crate::geo::P2>> {
+            polygons.iter().map(|p| p.exterior.clone()).collect()
+        };
+        let (a, b) = (&first.obstacles()[0], &second.obstacles()[0]);
+        assert!(!a.outline.is_empty());
+        assert_eq!(rings(&a.outline), rings(&b.outline));
+        assert_eq!(rings(&a.footprint), rings(&b.footprint));
+        assert_eq!(a.outline_top_z, b.outline_top_z);
     }
 
     #[test]

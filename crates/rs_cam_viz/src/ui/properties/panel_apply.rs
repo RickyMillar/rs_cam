@@ -300,27 +300,64 @@ pub(super) fn apply_setup_draft(
     }
 }
 
-/// Apply the obstacle panel's draft through `Command::ReplaceObstacle`
-/// (K1).
+/// Apply the obstacle editor's draft through `Command::ReplaceObstacle`
+/// (K1, K2).
+///
+/// `stored` is the record the setup holds. A draft equal to it applies
+/// nothing. The draft keeps the STORED `enabled` flag: the list-row
+/// checkbox is the one control for that field, so an open editor cannot
+/// undo a row toggle.
 ///
 /// G-FRESHSTATE: an edit that moves the obstacle drops every result in the
 /// setup and its dependents, because every operation in the setup keeps
 /// out of it. A rename drops nothing.
+///
+/// # Errors
+/// The core refusal text. The draw site writes it into the editor's
+/// banner (S4 refusal contract) and keeps the draft.
 pub(crate) fn apply_obstacle_draft(
     state: &mut AppState,
     setup_index: usize,
-    obstacle_id: crate::state::job::ObstacleId,
-    obstacle: rs_cam_core::session::Obstacle,
-) {
+    stored: &rs_cam_core::session::Obstacle,
+    mut obstacle: rs_cam_core::session::Obstacle,
+) -> Result<(), String> {
     use rs_cam_core::session::{Command, ReplaceObstacleArgs};
+    obstacle.enabled = stored.enabled;
+    if obstacle == *stored {
+        return Ok(());
+    }
+    let Some(setup_id) = state
+        .session
+        .list_setups()
+        .get(setup_index)
+        .map(|s| crate::state::job::SetupId(s.id))
+    else {
+        return Err(format!("no setup at index {setup_index}"));
+    };
     let command = Command::ReplaceObstacle(ReplaceObstacleArgs {
         setup_index,
-        obstacle_id,
-        obstacle: Box::new(obstacle),
+        obstacle_id: stored.id,
+        obstacle: Box::new(obstacle.clone()),
     });
-    if apply_panel_command(state, command) {
-        state.gui.mark_edited();
-        state.panel_side_effects.upload = true;
+    match state.session.apply(command) {
+        Ok(effects) => {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
+            state
+                .history
+                .push(crate::state::history::UndoAction::ObstacleChange {
+                    setup_id,
+                    obstacle_id: stored.id,
+                    old: Some(stored.clone()),
+                    new: Some(obstacle),
+                });
+            state.gui.mark_edited();
+            state.panel_side_effects.upload = true;
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
     }
 }
 

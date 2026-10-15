@@ -605,42 +605,28 @@ pub const ROWS: &[OverlayRow] = &[
         hover: "The XY zero the export writes (magenta crosshair).",
     },
     OverlayRow {
-        id: "fixtures",
+        id: "obstacles",
         group: OverlayGroup::Geometry,
-        label: "Fixtures",
+        label: "Obstacles",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
-        flag: Some("viewport.show_fixtures"),
+        flag: Some("viewport.show_obstacles"),
         radio: false,
-        get: |s| s.viewport.show_fixtures,
-        set: |s, on| s.viewport.show_fixtures = on,
+        get: |s| s.viewport.show_obstacles,
+        set: |s, on| s.viewport.show_obstacles = on,
         precondition: |s| match active_setup(s) {
             Some(sd) if sd.obstacles.iter().any(|o| o.enabled) => Precondition::Ready,
             Some(_) => Precondition::no("no obstacle in this setup"),
             None => Precondition::no("no setup in this project"),
         },
         default_for: geometry_default,
-        hover: "Obstacle clearance boxes (K1: fixtures and keep-out zones are \
-                one concept). Before P6 this one checkbox also drew pins, the \
-                flip axis and the datum.",
-    },
-    OverlayRow {
-        id: "keep_outs",
-        group: OverlayGroup::Geometry,
-        label: "Keep-out zones",
-        surface: OverlaySurface::None,
-        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
-        flag: Some("viewport.show_keep_outs"),
-        radio: false,
-        get: |s| s.viewport.show_keep_outs,
-        set: |s, on| s.viewport.show_keep_outs = on,
-        // K1: a keep-out zone is an obstacle, and the Fixtures row draws
-        // every obstacle. K2 merges the two rows.
-        precondition: |_| {
-            Precondition::no("keep-out zones are obstacles now; the Fixtures row draws them")
-        },
-        default_for: geometry_default,
-        hover: "Keep-out zones are obstacles (K1); the Fixtures row draws them.",
+        // K2: one row for one concept (K1 ruling). The old "fixtures" and
+        // "keep_outs" ids are gone; a saved preference under them is
+        // ignored (no legacy, operator ruling 2026-09-16).
+        hover: "Obstacles of this setup: fixtures and keep-out zones (one \
+                concept). The solid line is the obstacle, the dim line is its \
+                clearance, and the flat rectangle is the obstacle plane (it \
+                shows while the setup or one of its obstacles is selected).",
     },
     OverlayRow {
         id: "alignment_pins",
@@ -1641,8 +1627,7 @@ pub const PREFERENCE_OVERLAYS: &[&str] = &[
     "stock_box",
     "origin_axes",
     "datum",
-    "fixtures",
-    "keep_outs",
+    "obstacles",
     "alignment_pins",
     "flip_axis",
     "pin_ghost",

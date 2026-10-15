@@ -783,3 +783,193 @@ mod stock_change_panel_s4 {
         assert!(refusal.contains("no closed outline"), "{refusal}");
     }
 }
+
+// K2 — the obstacle panel: every action reaches the session as one core
+// command, and a refusal comes back into the editor in the core's words.
+//
+// Plan: `planning/op_architecture_2026-10-14/K2_PLAN.md`, test T2.
+mod obstacle_panel_k2 {
+    use super::*;
+    use crate::state::job::ObstacleId;
+    use crate::ui::AppEvent;
+    use crate::ui::properties::apply_obstacle_draft;
+    use rs_cam_core::ids::ModelId;
+    use rs_cam_core::polygon::Polygon2;
+    use rs_cam_core::session::{Obstacle, ObstacleGeometry};
+
+    /// Add a 2D model with one closed outline; return its id.
+    fn add_outline_model(controller: &mut AppController<ScriptedBackend>) -> ModelId {
+        let id = controller
+            .state
+            .session
+            .apply(Command::AddModel(AddModelArgs {
+                model: Box::new(LoadedModel {
+                    id: 0,
+                    path: std::path::PathBuf::from("jaws.svg"),
+                    name: "jaws".to_owned(),
+                    kind: Some(ModelKind::Svg),
+                    mesh: None,
+                    polygons: Some(Arc::new(vec![Polygon2::rectangle(0.0, 0.0, 10.0, 5.0)])),
+                    drill_targets: Arc::new(Vec::new()),
+                    layers: Arc::new(Vec::new()),
+                    enriched_mesh: None,
+                    units: Some(ModelUnits::Millimeters),
+                    winding_report: None,
+                    load_error: None,
+                }),
+            }))
+            .expect("the session takes the model")
+            .created
+            .expect("the AddModel row reports the new model id");
+        ModelId(id)
+    }
+
+    fn stored(controller: &AppController<ScriptedBackend>, id: ObstacleId) -> Option<Obstacle> {
+        controller.state.session.list_setups()[0]
+            .obstacles
+            .iter()
+            .find(|o| o.id == id)
+            .cloned()
+    }
+
+    #[test]
+    fn every_obstacle_action_is_one_command_k2() {
+        let mut controller = sample_controller();
+        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let mesh = ModelId(controller.state.session.models()[0].id);
+        let outline = add_outline_model(&mut controller);
+
+        // Add: one default box, selected, editor open on it.
+        controller.state.gui.dirty = false;
+        controller.handle_internal_event(AppEvent::AddObstacle(setup));
+        let id = ObstacleId(0);
+        let added = stored(&controller, id).expect("the add applies");
+        assert!(matches!(added.geometry, ObstacleGeometry::Box { .. }));
+        assert_eq!(controller.state.selection, Selection::Obstacle(setup, id));
+        assert!(
+            controller
+                .state
+                .panels
+                .obstacle_editor
+                .as_ref()
+                .is_some_and(|e| e.obstacle_id == id && e.draft == added),
+            "the editor opens on the new record"
+        );
+        assert!(controller.state.gui.dirty);
+
+        // Apply an extrude on the outline model.
+        controller.state.gui.dirty = false;
+        let mut draft = added.clone();
+        draft.geometry = ObstacleGeometry::OutlineExtrude {
+            model_ids: vec![outline],
+            z_bottom: -5.0,
+            z_top: 10.0,
+        };
+        apply_obstacle_draft(&mut controller.state, 0, &added, draft.clone())
+            .expect("an extrude on a closed outline applies");
+        assert_eq!(stored(&controller, id), Some(draft.clone()));
+        assert!(controller.state.gui.dirty);
+
+        // The row checkbox: the stored record with the new flag only.
+        controller.state.gui.dirty = false;
+        controller.handle_internal_event(AppEvent::SetObstacleEnabled(setup, id, false));
+        let toggled = stored(&controller, id).expect("still there");
+        assert!(!toggled.enabled);
+        assert_eq!(toggled.geometry, draft.geometry, "the rest is unchanged");
+        assert!(controller.state.gui.dirty);
+
+        // A model kind on the mesh model.
+        controller.state.gui.dirty = false;
+        let mut model_draft = toggled.clone();
+        model_draft.geometry = ObstacleGeometry::Model { model_id: mesh };
+        apply_obstacle_draft(&mut controller.state, 0, &toggled, model_draft.clone())
+            .expect("a model obstacle on a mesh applies");
+        assert_eq!(
+            stored(&controller, id).map(|o| o.geometry),
+            Some(model_draft.geometry)
+        );
+        assert!(controller.state.gui.dirty);
+
+        // Remove: the list is empty, the editor closes, the setup is
+        // selected.
+        controller.state.selection = Selection::Obstacle(setup, id);
+        controller.state.gui.dirty = false;
+        controller.handle_internal_event(AppEvent::RemoveObstacle(setup, id));
+        assert!(
+            controller.state.session.list_setups()[0]
+                .obstacles
+                .is_empty()
+        );
+        assert!(controller.state.panels.obstacle_editor.is_none());
+        assert_eq!(controller.state.selection, Selection::Setup(setup));
+        assert!(controller.state.gui.dirty);
+    }
+
+    #[test]
+    fn a_refusal_reaches_the_obstacle_editor_in_the_core_words_k2() {
+        let mut controller = sample_controller();
+        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let outline = add_outline_model(&mut controller);
+        controller.handle_internal_event(AppEvent::AddObstacle(setup));
+        let id = ObstacleId(0);
+        let before = stored(&controller, id).expect("added");
+        controller.state.gui.dirty = false;
+
+        // A model kind on the polygon-only model.
+        let mut draft = before.clone();
+        draft.geometry = ObstacleGeometry::Model { model_id: outline };
+        let refusal = apply_obstacle_draft(&mut controller.state, 0, &before, draft)
+            .expect_err("a model obstacle on a 2D model is refused");
+        assert!(
+            refusal.contains("a model obstacle needs a mesh"),
+            "the core words: {refusal}"
+        );
+        assert_eq!(stored(&controller, id), Some(before.clone()));
+        assert!(!controller.state.gui.dirty);
+
+        // Non-vacuity: a different rule gives a different text.
+        let mut empty = before.clone();
+        empty.geometry = ObstacleGeometry::Box {
+            min: [5.0, 0.0, 0.0],
+            max: [5.0, 10.0, 10.0],
+        };
+        let refusal = apply_obstacle_draft(&mut controller.state, 0, &before, empty)
+            .expect_err("an empty box is refused");
+        assert!(
+            refusal.contains("min below max on the x axis"),
+            "the core words: {refusal}"
+        );
+        assert!(!controller.state.gui.dirty);
+    }
+
+    #[test]
+    fn an_unchanged_draft_applies_nothing_k2() {
+        let mut controller = sample_controller();
+        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        controller.handle_internal_event(AppEvent::AddObstacle(setup));
+        let before = stored(&controller, ObstacleId(0)).expect("added");
+        generate_all_for_test(&mut controller);
+        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        // Drop the add's undo entry, so the history reads only this apply.
+        while controller.state.history.undo().is_some() {}
+        controller.state.gui.dirty = false;
+
+        apply_obstacle_draft(&mut controller.state, 0, &before, before.clone())
+            .expect("an unchanged draft is not a refusal");
+        // An editor draft with another enabled flag is still unchanged:
+        // the row checkbox owns that field.
+        let mut flipped = before.clone();
+        flipped.enabled = !before.enabled;
+        apply_obstacle_draft(&mut controller.state, 0, &before, flipped)
+            .expect("the enabled flag is not the editor's field");
+
+        assert!(!controller.state.gui.dirty);
+        assert!(
+            controller.state.gui.toolpath_rt[&tp_id]
+                .stale_since
+                .is_none(),
+            "no stale stamp"
+        );
+        assert!(controller.state.history.undo().is_none(), "no undo entry");
+    }
+}

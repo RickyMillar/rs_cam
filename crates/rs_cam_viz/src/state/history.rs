@@ -51,6 +51,15 @@ pub enum UndoAction {
         old: rs_cam_core::machine::MachineProfile,
         new: rs_cam_core::machine::MachineProfile,
     },
+    /// One obstacle add, edit, toggle or remove (K2). `None` means "the
+    /// setup holds no obstacle with this id": an add is `(None, Some)`, a
+    /// remove is `(Some, None)`, an edit or a toggle is `(Some, Some)`.
+    ObstacleChange {
+        setup_id: SetupId,
+        obstacle_id: ObstacleId,
+        old: Option<Obstacle>,
+        new: Option<Obstacle>,
+    },
 }
 
 /// Snapshot of toolpath state captured before a parameter edit drag.
@@ -98,9 +107,6 @@ pub struct UndoHistory {
     /// to. The id is part of the draft because the panel draws whichever
     /// setup is selected.
     pub setup_draft: Option<(SetupId, SetupData)>,
-    /// WP6, K1 — the obstacle panel's scratch copy, with the setup and the
-    /// obstacle it belongs to.
-    pub obstacle_draft: Option<(SetupId, ObstacleId, Obstacle)>,
     /// TOO-003 — pending draft for the selected tool. The properties panel
     /// edits this clone; it is committed to the session on an explicit Apply
     /// (or auto-committed when the user navigates away). `None` when no tool
@@ -124,7 +130,6 @@ impl UndoHistory {
             stock_draft: None,
             machine_draft: None,
             setup_draft: None,
-            obstacle_draft: None,
             tool_draft: None,
             post_snapshot: None,
             machine_snapshot: None,

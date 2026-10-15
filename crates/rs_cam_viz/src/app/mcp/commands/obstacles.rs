@@ -29,7 +29,8 @@ pub(crate) fn obstacle_json(obstacle: &Obstacle) -> serde_json::Value {
         "name": obstacle.name,
         "enabled": obstacle.enabled,
         "clearance": obstacle.clearance,
-        "kind": obstacle.geometry.kind_label(),
+        // K2: `geometry.kind` (the serde tag, snake_case) is the one kind
+        // spelling. It equals the `kind` input of `add_obstacle`.
         "geometry": serde_json::to_value(&obstacle.geometry)
             .unwrap_or(serde_json::Value::Null),
     })
@@ -349,6 +350,38 @@ impl RsCamApp {
             .get("obstacle_id")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or_default();
+        // K2: a removed obstacle closes its editor and gives the selection
+        // to its setup (the S4 rule). An edit closes an editor open on the
+        // obstacle too: its draft predates the edit, and the page re-seeds
+        // it from the new record on the next frame.
+        let setup_id = self
+            .controller
+            .state()
+            .session
+            .list_setups()
+            .get(setup_index)
+            .map(|setup| crate::state::job::SetupId(setup.id));
+        if let Some(setup_id) = setup_id
+            && let Ok(raw) = usize::try_from(obstacle_id)
+        {
+            let state = self.controller.state_mut();
+            let id = ObstacleId(raw);
+            if verb == "Removed" {
+                crate::state::panels::forget_obstacle(
+                    &mut state.panels,
+                    &mut state.selection,
+                    setup_id,
+                    id,
+                );
+            } else if state
+                .panels
+                .obstacle_editor
+                .as_ref()
+                .is_some_and(|e| e.setup_id == setup_id && e.obstacle_id == id)
+            {
+                state.panels.obstacle_editor = None;
+            }
+        }
         let stale = self.core_stale(effects);
         let rows: Vec<serde_json::Value> = self
             .controller
@@ -382,6 +415,21 @@ impl RsCamApp {
 )]
 mod tests {
     use super::*;
+
+    /// K2: the obstacle JSON names the kind once, as the serde tag that
+    /// equals the `add_obstacle` input spelling.
+    #[test]
+    fn the_obstacle_json_names_the_kind_once_k2() {
+        let mut obstacle = Obstacle::new_default_box(ObstacleId(0));
+        obstacle.geometry = ObstacleGeometry::OutlineExtrude {
+            model_ids: vec![ModelId(1)],
+            z_bottom: -5.0,
+            z_top: 5.0,
+        };
+        let json = obstacle_json(&obstacle);
+        assert!(json.get("kind").is_none(), "no top-level kind: {json}");
+        assert_eq!(json["geometry"]["kind"], "outline_extrude");
+    }
 
     #[test]
     fn each_kind_needs_its_own_fields_and_refuses_the_others() {

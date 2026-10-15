@@ -41,7 +41,6 @@ impl RsCamApp {
                 crate::state::viewport::ToolpathDrawFilter::from_state(state),
                 drill_pick,
                 crate::state::pin_view::active_display_setup(&state.session, &state.selection)
-                    .map(|(frame, _)| frame)
                     .as_ref(),
             )
         };
@@ -331,7 +330,6 @@ impl RsCamApp {
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
                     crate::state::pin_view::active_display_setup(&state.session, &state.selection)
-                        .map(|(frame, _)| frame)
                         .as_ref(),
                 )
             {
@@ -372,7 +370,6 @@ impl RsCamApp {
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
                     crate::state::pin_view::active_display_setup(&state.session, &state.selection)
-                        .map(|(frame, _)| frame)
                         .as_ref(),
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
@@ -491,8 +488,7 @@ impl RsCamApp {
             // One buffer carries five overlays, each filtered into it at
             // upload time by its own flag, so the draw gate is "did any kind
             // contribute" (audit §3.3).
-            show_fixtures: state.viewport.show_fixtures
-                || state.viewport.show_keep_outs
+            show_line_marks: state.viewport.show_obstacles
                 || state.viewport.show_alignment_pins
                 || state.viewport.show_flip_axis
                 || state.viewport.show_pin_ghost

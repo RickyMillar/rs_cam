@@ -1,11 +1,9 @@
 use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
-use crate::state::selection::Selection;
 use crate::ui::AppEvent;
-use crate::ui::components::ValueRow;
-use crate::ui::components::{OneLine, SectionHeader, UiExt as _};
+use crate::ui::components::{OneLine, SectionHeader};
 use crate::ui_command::UiCommand;
-use rs_cam_core::session::{Corner, Obstacle, ObstacleGeometry, SetupData, XYDatum, ZDatum};
+use rs_cam_core::session::{Corner, SetupData, XYDatum, ZDatum};
 
 /// The four stock rotations, in degrees, for the Z Rotation row.
 const Z_ROTATIONS: &[(ZRotation, &str)] = &[
@@ -15,7 +13,9 @@ const Z_ROTATIONS: &[(ZRotation, &str)] = &[
     (ZRotation::Deg270, "270\u{00B0}"),
 ];
 
-/// Draw the setup overview panel (fixtures list, keep-out list, setup name).
+/// Draw the setup overview panel: the name, the orientation, the datum and
+/// the model scope. The caller draws the obstacle list (K2) and the stock
+/// changes (S4) after it.
 ///
 /// `pin_count` is the number of alignment pins on the stock (pins are now
 /// stock-level, not per-setup). `all_models` lists every loaded model for
@@ -292,107 +292,6 @@ pub fn draw(
             }
         }
     }
-
-    // ── Obstacles (K1) ────────────────────────────────────────────
-    // Fixtures and keep-out zones are one concept. Every value is in this
-    // setup's frame. K1 edits box obstacles here; K2 adds the outline and
-    // model geometry to the GUI (MCP edits them today).
-    ui.add_space(8.0);
-    SectionHeader::new("Obstacles").show(ui);
-
-    for obstacle in &setup_data.obstacles {
-        let label = format!("{} [{}]", obstacle.name, obstacle.geometry.kind_label());
-        let resp = ui.selectable_label(false, &label);
-        if resp.clicked() {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Obstacle(
-                setup_id,
-                obstacle.id,
-            ))));
-        }
-        resp.context_menu(|ui| {
-            if ui.button("Delete").clicked() {
-                events.push(AppEvent::RemoveObstacle(setup_id, obstacle.id));
-                ui.close();
-            }
-        });
-    }
-    if ui.small_button("+ Add Obstacle").clicked() {
-        events.push(AppEvent::AddObstacle(setup_id));
-    }
-
-    edit
-}
-
-/// Draw the obstacle property editor over a SCRATCH copy (WP6, K1).
-///
-/// The caller applies `Command::ReplaceObstacle` when the returned
-/// [`PanelEdit`] reports a finished edit. A box obstacle edits its corners
-/// here; an outline or a model obstacle shows its kind only (K2).
-pub fn draw_obstacle_properties(
-    ui: &mut egui::Ui,
-    _setup_id: SetupId,
-    obstacle: &mut Obstacle,
-) -> PanelEdit {
-    ui.heading("Obstacle Properties");
-    ui.separator();
-
-    let mut edit = PanelEdit::default();
-
-    ui.horizontal(|ui| {
-        ui.label("Name:");
-        edit.click(&ui.text_edit_singleline(&mut obstacle.name));
-    });
-
-    edit.click(&ui.checkbox(&mut obstacle.enabled, "Enabled"));
-
-    ui.add_space(4.0);
-
-    match &mut obstacle.geometry {
-        ObstacleGeometry::Box { min, max } => {
-            ui.label(
-                egui::RichText::new("Box, setup frame (mm)")
-                    .strong()
-                    .color(crate::ui::tokens::TEXT_MUTED),
-            );
-            ui.param_grid("obstacle_box", |ui| {
-                let labels = [
-                    ("X min:", "X max:"),
-                    ("Y min:", "Y max:"),
-                    ("Z min:", "Z max:"),
-                ];
-                for ((lo, hi), (label_min, label_max)) in
-                    min.iter_mut().zip(max.iter_mut()).zip(labels)
-                {
-                    let out =
-                        ValueRow::new(label_min, lo, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-                    edit.drag(&out.value_response);
-                    let out =
-                        ValueRow::new(label_max, hi, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-                    edit.drag(&out.value_response);
-                }
-            });
-        }
-        other => {
-            ui.label(format!(
-                "Geometry: {}. Edit it through the MCP edit_obstacle tool.",
-                other.kind_label()
-            ));
-        }
-    }
-
-    ui.add_space(4.0);
-
-    ui.horizontal(|ui| {
-        ui.label("Clearance:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut obstacle.clearance)
-                    .speed(0.1)
-                    .range(0.0..=100.0)
-                    .suffix(" mm"),
-            ),
-        );
-    });
 
     edit
 }

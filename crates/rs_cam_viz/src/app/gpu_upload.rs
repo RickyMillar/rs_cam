@@ -210,9 +210,39 @@ impl RsCamApp {
                 .map(|(id, s)| (id, s.face_up, s.z_rotation)),
             stock: stock.clone(),
         };
+        // K2 (D13): a model that an obstacle of the active setup reads as
+        // its mesh is table-fixed, in the setup frame. The part pass below
+        // moves every mesh with the part (`transform_mesh`), so it would
+        // draw the obstacle in the wrong place on a flipped setup. The
+        // obstacle prism (`obstacle_marks`) stands in for it. A disabled
+        // obstacle's model is left out too: it is still table-fixed.
+        let obstacle_model_ids: Vec<usize> = active_setup_id
+            .and_then(|sid| {
+                self.controller
+                    .state()
+                    .session
+                    .find_setup_by_id(sid.0)
+                    .map(|(_, sd)| sd.obstacles.clone())
+            })
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|o| match o.geometry {
+                rs_cam_core::session::ObstacleGeometry::Model { model_id } => Some(model_id.0),
+                _ => None,
+            })
+            .collect();
+        let part_model =
+            |m: &&rs_cam_core::session::LoadedModel| !obstacle_model_ids.contains(&m.id);
         let mut plain_mesh_ids = Vec::new();
         let mut enriched_ids = Vec::new();
-        for model in self.controller.state().session.models() {
+        for model in self
+            .controller
+            .state()
+            .session
+            .models()
+            .iter()
+            .filter(part_model)
+        {
             if let Some(enriched) = &model.enriched_mesh {
                 enriched_ids.push(upload_cache::ArcId::new(enriched));
             } else if let Some(mesh) = &model.mesh {
@@ -246,7 +276,14 @@ impl RsCamApp {
             resources.upload_stats.mesh_builds += 1;
         }
 
-        for model in self.controller.state().session.models() {
+        for model in self
+            .controller
+            .state()
+            .session
+            .models()
+            .iter()
+            .filter(part_model)
+        {
             // If model has enriched mesh (STEP), use face-colored rendering
             if let Some(enriched) = &model.enriched_mesh {
                 if !rebuild_enriched {
@@ -598,13 +635,12 @@ impl RsCamApp {
             ));
         }
 
-        // Upload fixture and keep-out wireframes.
+        // Upload the reference lines: obstacles, pins, flip axis, datum.
         {
             use crate::render::fixture_render::FixtureGpuData;
-            use rs_cam_core::geo::{BoundingBox3, P3};
+            use rs_cam_core::geo::P3;
 
             let state = self.controller.state();
-            let selection = &state.selection;
 
             // Only show obstacles and pins from the active setup (each
             // setup has its own local frame, so mixing them is wrong).
@@ -612,58 +648,70 @@ impl RsCamApp {
             let active_session_setup = active_setup_id
                 .and_then(|sid| state.session.list_setups().iter().find(|sd| sd.id == sid.0));
 
-            // P6 — five overlays share this one line buffer, and each is now
-            // filtered into it by its OWN registry flag: fixtures,
-            // keep-outs, alignment pins, the flip axis and the datum
-            // crosshair (audit §3.3, §5 Geometry). The old workspace clauses
-            // are gone: `show_fixtures` and friends carry per-workspace
-            // DEFAULTS instead, so the Simulation view still hides fixtures
-            // while the operator can switch them back on.
+            // P6 — four overlays share this one line buffer, and each is
+            // filtered into it by its OWN registry flag: obstacles, alignment
+            // pins, the flip axis and the datum crosshair (audit §3.3, §5
+            // Geometry). The old workspace clauses are gone: the flags carry
+            // per-workspace DEFAULTS instead, so the Simulation view still
+            // hides obstacles while the operator can switch them back on.
             //
-            // Every one of these five is therefore an UPLOAD-time flag, and
+            // Every one of these is therefore an UPLOAD-time flag, and
             // upload-time flags need a trigger. `overlay_upload_key` in
             // `app.rs` is that trigger, and it carries the workspace too —
             // `UiCommand::SwitchWorkspace` never set `pending_upload` itself
             // (audit §3.3, "a future edit that removes the incidental
             // trigger would expose the gap silently").
-            let mut boxes = Vec::new();
-            if let Some(sd) = active_session_setup {
-                // SAFETY: active_setup_ref.is_some() when active_session_setup.is_some()
-                #[allow(clippy::unwrap_used)]
-                let setup = active_setup_ref.as_ref().unwrap();
-                // K1: the obstacles of the setup. Their values are in the
-                // setup (emission) frame, so the display needs only the
-                // setup's emission-to-display shift. The GUI draws box
-                // obstacles; K2 draws the outline and model kinds.
-                let shift = setup.emission_to_display_shift(&stock);
-                let shifted = |bb: BoundingBox3| BoundingBox3 {
-                    min: P3::new(bb.min.x + shift.x, bb.min.y + shift.y, bb.min.z + shift.z),
-                    max: P3::new(bb.max.x + shift.x, bb.max.y + shift.y, bb.max.z + shift.z),
-                };
-                for obstacle in &sd.obstacles {
-                    if !(obstacle.enabled && state.viewport.show_fixtures) {
-                        continue;
-                    }
-                    let Some(clearance) = crate::state::job::obstacle_clearance_box(obstacle)
-                    else {
-                        continue;
-                    };
-                    let selected = *selection == Selection::Obstacle(SetupId(sd.id), obstacle.id);
-                    let color = if selected {
-                        [1.0_f32, 0.9, 0.4] // bright highlight
-                    } else {
-                        [0.9_f32, 0.7, 0.2]
-                    };
-                    boxes.push((shifted(clearance), color));
-                    if selected && let Some(inner) = crate::state::job::obstacle_box(obstacle) {
-                        boxes.push((shifted(inner), [0.9_f32, 0.9, 0.9]));
+            //
+            // K2: the obstacle lines resolve each obstacle, so they rebuild
+            // only when their key moves; every upload appends the cached
+            // lines.
+            let obstacle_key = active_session_setup.map(|sd| {
+                let mut models = Vec::new();
+                for o in &sd.obstacles {
+                    for id in o.geometry.model_ids() {
+                        let model = state.session.models().iter().find(|m| m.id == id.0);
+                        models.push(upload_cache::ObstacleModelKey {
+                            model_id: id.0,
+                            mesh: model
+                                .and_then(|m| m.mesh.as_ref())
+                                .map(upload_cache::ArcId::new),
+                            polygons: model
+                                .and_then(|m| m.polygons.as_ref())
+                                .map(upload_cache::ArcId::new),
+                        });
                     }
                 }
+                upload_cache::ObstacleLinesKey {
+                    frame: frame_key.clone(),
+                    obstacles: sd
+                        .obstacles
+                        .iter()
+                        .map(|o| (o.id, o.effect_digest()))
+                        .collect(),
+                    models,
+                    focus: match state.selection {
+                        Selection::Setup(id) => Some((id, None)),
+                        Selection::Obstacle(id, obstacle) => Some((id, Some(obstacle))),
+                        _ => None,
+                    },
+                    show: state.viewport.show_obstacles,
+                }
+            });
+            if upload_cache::refresh_key(&mut resources.obstacle_lines_key, obstacle_key) {
+                resources.obstacle_lines.clear();
+                if let (Some(sd), Some(setup)) = (active_session_setup, active_setup_ref.as_ref()) {
+                    super::obstacle_marks::push_obstacle_lines(
+                        state,
+                        setup,
+                        sd,
+                        &mut resources.obstacle_lines,
+                    );
+                }
             }
+            let mut pin_vertices: Vec<crate::render::LineVertex> = resources.obstacle_lines.clone();
 
             // The alignment pins, the wrong-orientation ghost and the flip
             // axis (P7), in the frame the pick reads (C8).
-            let mut pin_vertices: Vec<crate::render::LineVertex> = Vec::new();
             if let Some(setup) = active_setup_ref.as_ref() {
                 super::pin_marks::push_pin_lines(state, setup, &mut pin_vertices);
             }
@@ -742,15 +790,11 @@ impl RsCamApp {
                 }
             }
 
-            if boxes.is_empty() && pin_vertices.is_empty() {
-                resources.fixture_data = None;
-            } else {
-                resources.fixture_data = Some(FixtureGpuData::from_boxes_and_lines(
-                    &render_state.device,
-                    &boxes,
-                    &pin_vertices,
-                ));
-            }
+            resources.fixture_data = FixtureGpuData::from_lines(
+                &render_state.device,
+                &resources.gpu_limits,
+                &pin_vertices,
+            );
         }
 
         // Re-upload sim mesh with current viz mode colors, or clear if no results.

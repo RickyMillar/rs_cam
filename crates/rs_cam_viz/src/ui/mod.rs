@@ -154,6 +154,9 @@ pub enum AppEvent {
     // Obstacles (K1: fixtures and keep-out zones are one concept)
     AddObstacle(SetupId),
     RemoveObstacle(SetupId, ObstacleId),
+    /// K2: the list-row checkbox. The controller applies the STORED record
+    /// with the new flag, so an open editor draft cannot ride along.
+    SetObstacleEnabled(SetupId, ObstacleId, bool),
 
     // Stock changes (S4): one intent per action of the setup panel's list.
     // The controller turns each into one S2 command.

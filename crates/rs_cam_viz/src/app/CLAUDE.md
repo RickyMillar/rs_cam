@@ -12,7 +12,7 @@ processing. The server lives here, not in `rs_cam_mcp`.
   `simulation.rs` (run, scrub, cut trace), `view.rs` (reach map, screenshots).
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.
-- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins) — the frame and the GPU upload.
+- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins), `obstacle_marks.rs` (K2) — the frame and the GPU upload.
 - `input.rs` — keyboard and mouse handling at the application level.
 
 ## Invariants

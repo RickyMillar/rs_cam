@@ -72,12 +72,12 @@ pub struct ViewportState {
     /// The XYZ axis triad at the stock origin. Split from `show_stock`.
     pub show_origin_axes: bool,
     /// The magenta datum crosshair — the XY zero the export writes.
-    /// Split out of the five-way `show_fixtures` coupling (audit §3.3).
+    /// Split out of the old five-way `show_fixtures` coupling (audit §3.3).
     pub show_datum: bool,
-    /// Fixture clearance boxes only. The four overlays that used to ride
-    /// this flag now have their own.
-    pub show_fixtures: bool,
-    pub show_keep_outs: bool,
+    /// The obstacles of the displayed setup (K2: fixtures and keep-out
+    /// zones are one concept). The four overlays that used to ride the old
+    /// `show_fixtures` flag have their own.
+    pub show_obstacles: bool,
     pub show_alignment_pins: bool,
     pub show_flip_axis: bool,
     /// The wrong-orientation ghost: the holes after the closest wrong
@@ -227,8 +227,7 @@ impl ViewportState {
             show_stock_solid: false,
             show_origin_axes: true,
             show_datum: true,
-            show_fixtures: true,
-            show_keep_outs: true,
+            show_obstacles: true,
             show_alignment_pins: true,
             show_flip_axis: true,
             show_pin_ghost: true,

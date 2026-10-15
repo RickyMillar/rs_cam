@@ -389,6 +389,40 @@ fn eight_toolpaths_over_one_model_build_one_index() {
     );
 }
 
+/// K2: the obstacle resolver reads the per-mesh silhouette memo. The pin
+/// panel resolves every setup each frame; before K2 each resolve
+/// rasterised the mesh again (and the memo counters stayed at 0).
+#[test]
+fn a_mesh_obstacle_rasterises_its_silhouette_once_k2() {
+    use rs_cam_core::compute::obstacle::{Obstacle, ObstacleGeometry, ObstacleSet};
+    use rs_cam_core::ids::{ModelId, ObstacleId};
+
+    let _guard = counter_lock();
+    rs_cam_core::maps::geom_cache::reset_stats();
+    // A FRESH mesh `Arc`: no earlier test can have warmed its entry.
+    let model = common::session::mesh_model(make_test_hemisphere(9.0, 14), "clamp");
+    let obstacle = Obstacle {
+        id: ObstacleId(0),
+        name: "Clamp".to_owned(),
+        enabled: true,
+        clearance: 1.0,
+        geometry: ObstacleGeometry::Model {
+            model_id: ModelId(model.id),
+        },
+    };
+    let models = [model];
+    for _ in 0..3 {
+        let set = ObstacleSet::resolve(std::slice::from_ref(&obstacle), &models).expect("resolve");
+        assert_eq!(set.obstacles().len(), 1);
+    }
+    let stats = rs_cam_core::maps::geom_cache::stats();
+    assert_eq!(stats.silhouette_builds, 1, "one raster for one mesh");
+    assert_eq!(
+        stats.silhouette_hits, 2,
+        "the next two resolves hit the memo"
+    );
+}
+
 // ── 3. Measurement (ignored) ─────────────────────────────────────────────
 
 fn measurement_mesh() -> (TriangleMesh, String) {

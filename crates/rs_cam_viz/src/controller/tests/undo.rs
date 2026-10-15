@@ -72,6 +72,22 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                 },
             ),
         ),
+        // K2: `old: Some` on a setup that holds no obstacle 0. The undo
+        // ADDS an enabled obstacle and the redo removes it, so both
+        // mutate. (`old: None` would apply nothing on this fixture.)
+        (
+            "ObstacleChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::ObstacleChange {
+                    setup_id: crate::state::job::SetupId(c.state.session.list_setups()[0].id),
+                    obstacle_id: crate::state::job::ObstacleId(0),
+                    old: Some(rs_cam_core::session::Obstacle::new_default_box(
+                        crate::state::job::ObstacleId(0),
+                    )),
+                    new: None,
+                },
+            ),
+        ),
     ];
 
     for (name, build) in arms {
@@ -1372,4 +1388,68 @@ mod pin_edit_one_door_p5 {
         );
         assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
     }
+}
+
+/// K2: an obstacle add, edit and remove each undo and redo, and every undo
+/// stales the setup's toolpaths, as the same edit made by hand does.
+#[test]
+fn an_obstacle_add_edit_remove_each_undo_and_redo_k2() {
+    use crate::state::job::ObstacleId;
+    use rs_cam_core::session::Obstacle;
+
+    let (mut controller, tp_id) = controller_ready_for_undo();
+    let setup = SetupId(controller.state.session.list_setups()[0].id);
+    let id = ObstacleId(0);
+    let stored = |c: &AppController<ScriptedBackend>| -> Option<Obstacle> {
+        c.state.session.list_setups()[0]
+            .obstacles
+            .iter()
+            .find(|o| o.id == id)
+            .cloned()
+    };
+    let reset = |c: &mut AppController<ScriptedBackend>| {
+        generate_all_for_test(c);
+        assert!(c.state.gui.toolpath_rt[&tp_id].stale_since.is_none());
+    };
+    let stale = |c: &AppController<ScriptedBackend>| -> bool {
+        c.state.gui.toolpath_rt[&tp_id].stale_since.is_some()
+    };
+
+    // Add.
+    controller.handle_internal_event(AppEvent::AddObstacle(setup));
+    let added = stored(&controller).expect("added");
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller), None, "the undo removes the add");
+    assert!(stale(&controller), "the undo stales the setup");
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(
+        stored(&controller),
+        Some(added.clone()),
+        "the redo adds it back"
+    );
+
+    // Edit the clearance 3 to 5.
+    let mut edited = added.clone();
+    edited.clearance = 5.0;
+    crate::ui::properties::apply_obstacle_draft(&mut controller.state, 0, &added, edited)
+        .expect("the edit applies");
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller).map(|o| o.clearance), Some(3.0));
+    assert!(stale(&controller));
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(stored(&controller).map(|o| o.clearance), Some(5.0));
+
+    // Remove. The undo adds the record back (at the end of the list; the
+    // assert reads it by id).
+    let before_remove = stored(&controller).expect("present");
+    controller.handle_internal_event(AppEvent::RemoveObstacle(setup, id));
+    assert_eq!(stored(&controller), None);
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller), Some(before_remove), "the same record");
+    assert!(stale(&controller));
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(stored(&controller), None);
 }

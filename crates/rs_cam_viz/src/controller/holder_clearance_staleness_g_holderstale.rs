@@ -273,14 +273,10 @@ fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
         .session
         .list_setups()
         .first()
-        .and_then(|setup| {
-            setup
-                .obstacles
-                .first()
-                .map(|fixture| (fixture.id, fixture.clone()))
-        });
-    if let Some((fixture_id, mut fixture)) = found {
+        .and_then(|setup| setup.obstacles.first().cloned());
+    if let Some(stored) = found {
         let setup_index = 0;
+        let mut fixture = stored.clone();
         if let rs_cam_core::session::ObstacleGeometry::Box { min, max } = &mut fixture.geometry {
             min[2] += 12.0;
             max[2] += 24.0;
@@ -288,9 +284,10 @@ fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
         crate::ui::properties::apply_obstacle_draft(
             &mut controller.state,
             setup_index,
-            fixture_id,
+            &stored,
             fixture,
-        );
+        )
+        .expect("the obstacle edit applies");
     }
 }
 

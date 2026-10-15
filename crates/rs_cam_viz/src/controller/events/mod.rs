@@ -210,6 +210,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::RemoveObstacle(setup_id, obstacle_id) => {
                 self.handle_remove_obstacle(setup_id, obstacle_id);
             }
+            AppEvent::SetObstacleEnabled(setup_id, obstacle_id, enabled) => {
+                self.handle_set_obstacle_enabled(setup_id, obstacle_id, enabled);
+            }
             AppEvent::EditStockChanges(setup_id, intent) => {
                 self.handle_stock_change_intent(setup_id, intent);
             }

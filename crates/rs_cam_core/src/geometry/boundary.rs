@@ -674,7 +674,7 @@ fn feed_rate_of(mt: &MoveType) -> Option<f64> {
 }
 
 /// Default silhouette grid resolution in mm.
-const SILHOUETTE_CELL_SIZE: f64 = 0.5;
+pub(crate) const SILHOUETTE_CELL_SIZE: f64 = 0.5;
 
 /// Compute the 2D silhouette (XY projection) of a 3D mesh.
 ///

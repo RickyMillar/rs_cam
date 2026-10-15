@@ -2,6 +2,7 @@ mod feeds_speeds;
 mod linking_dressup;
 mod machine_panel;
 mod model_sim_panels;
+pub mod obstacles;
 pub mod operations;
 mod panel_apply;
 mod pills;
@@ -152,7 +153,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Tool(id) => draw_tool_selection(ui, state, id),
         Selection::Setup(setup_id) => draw_setup_selection(ui, state, events, setup_id),
         Selection::Obstacle(setup_id, obstacle_id) => {
-            draw_obstacle_selection(ui, state, setup_id, obstacle_id);
+            draw_obstacle_selection(ui, state, events, setup_id, obstacle_id);
         }
         Selection::Face(model_id, face_id) => draw_face_selection(ui, state, model_id, face_id),
         Selection::Faces(model_id, ref face_ids) => {
@@ -1138,12 +1139,80 @@ fn draw_setup_selection(
         if edit.in_flight {
             state.history.setup_draft = Some((setup_id, draft));
         }
+        draw_obstacle_list(ui, state, events, setup_id, &stored);
         draw_stock_changes_section(ui, state, events, setup_id, &stored);
     }
 }
 
-/// S4: the setup panel's "Stock changes" section, after the fixtures and
-/// the keep-out zones. The rows come from `ProjectSession::stock_change_rows`,
+/// Every project model, with the facts an editor filters on: the
+/// stock-change editor (S4) and the obstacle editor (K2) read one list.
+fn model_choices(
+    session: &rs_cam_core::session::ProjectSession,
+) -> Vec<stock_changes::ModelChoice> {
+    session
+        .models()
+        .iter()
+        .map(|m| {
+            let id = rs_cam_core::ids::ModelId(m.id);
+            let facts = session.stock_change_model_facts(id);
+            stock_changes::ModelChoice {
+                id,
+                name: m.name.clone(),
+                has_mesh: facts.is_some_and(|f| f.has_mesh),
+                has_closed_outline: facts.is_some_and(|f| f.has_closed_outline),
+            }
+        })
+        .collect()
+}
+
+/// K2: the setup page's obstacle list. A row whose enabled obstacle does
+/// not pass the core validation shows the core text under it (D10).
+fn draw_obstacle_list(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    events: &mut Vec<AppEvent>,
+    setup_id: SetupId,
+    setup: &rs_cam_core::session::SetupData,
+) {
+    use rs_cam_core::compute::obstacle::{
+        ObstacleResolveError, model_geometry_facts, validate_obstacle,
+    };
+    let models = model_choices(&state.session);
+    // The validation is the cheap half of the resolve: it reads the model
+    // facts only, so the list can ask it each frame.
+    let errors: Vec<_> = setup
+        .obstacles
+        .iter()
+        .filter(|o| o.enabled)
+        .filter_map(|o| {
+            validate_obstacle(o, |id| model_geometry_facts(state.session.models(), id))
+                .err()
+                .map(|refusal| {
+                    let text = ObstacleResolveError {
+                        name: o.name.clone(),
+                        reason: refusal.to_string(),
+                    }
+                    .to_string();
+                    (o.id, text)
+                })
+        })
+        .collect();
+    let selected = match state.selection {
+        Selection::Obstacle(sid, oid) if sid == setup_id => Some(oid),
+        _ => None,
+    };
+    let inputs = obstacles::ObstacleListInputs {
+        setup_id,
+        obstacles: &setup.obstacles,
+        models: &models,
+        errors: &errors,
+        selected,
+    };
+    obstacles::draw_list(ui, &inputs, events);
+}
+
+/// S4: the setup panel's "Stock changes" section, after the obstacle
+/// list. The rows come from `ProjectSession::stock_change_rows`,
 /// the read every surface prints.
 fn draw_stock_changes_section(
     ui: &mut egui::Ui,
@@ -1158,21 +1227,7 @@ fn draw_stock_changes_section(
         .into_iter()
         .filter(|row| row.setup_id == setup_id.0)
         .collect();
-    let models: Vec<stock_changes::ModelChoice> = state
-        .session
-        .models()
-        .iter()
-        .map(|m| {
-            let id = rs_cam_core::ids::ModelId(m.id);
-            let facts = state.session.stock_change_model_facts(id);
-            stock_changes::ModelChoice {
-                id,
-                name: m.name.clone(),
-                has_mesh: facts.is_some_and(|f| f.has_mesh),
-                has_closed_outline: facts.is_some_and(|f| f.has_closed_outline),
-            }
-        })
-        .collect();
+    let models = model_choices(&state.session);
     let frame =
         rs_cam_core::session::SetupEvalContext::build_for_setup(&state.session, Some(setup))
             .heights_stock_bbox;
@@ -1187,10 +1242,15 @@ fn draw_stock_changes_section(
     stock_changes::draw(ui, &inputs, &mut state.panels.stock_change_editor, events);
 }
 
-/// The `Obstacle` arm of [`draw`]'s selection dispatch (K1).
+/// The `Obstacle` arm of [`draw`]'s selection dispatch (K1, K2).
+///
+/// The page hosts the ONE obstacle editor. It opens the editor on the
+/// selected obstacle, seeded from the stored record, and keeps the draft
+/// and a refusal across frames in `state.panels.obstacle_editor`.
 fn draw_obstacle_selection(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    events: &mut Vec<AppEvent>,
     setup_id: SetupId,
     obstacle_id: ObstacleId,
 ) {
@@ -1202,21 +1262,54 @@ fn draw_obstacle_selection(
                 .obstacles
                 .iter()
                 .find(|obstacle| obstacle.id == obstacle_id)
-                .map(|obstacle| (index, obstacle.clone()))
+                .map(|obstacle| (index, obstacle.clone(), setup_data.clone()))
         });
-    if let Some((setup_index, stored)) = stored {
-        let mut draft = match state.history.obstacle_draft.take() {
-            Some((s_id, o_id, data)) if s_id == setup_id && o_id == obstacle_id => data,
-            _ => stored.clone(),
-        };
-        let edit = setup::draw_obstacle_properties(ui, setup_id, &mut draft);
-        if edit.committed && draft != stored {
-            apply_obstacle_draft(state, setup_index, obstacle_id, draft.clone());
+    let Some((setup_index, stored, setup)) = stored else {
+        state.panels.obstacle_editor = None;
+        return;
+    };
+    let open_here = state
+        .panels
+        .obstacle_editor
+        .as_ref()
+        .is_some_and(|e| e.setup_id == setup_id && e.obstacle_id == obstacle_id);
+    if !open_here {
+        state.panels.obstacle_editor = Some(crate::state::panels::ObstacleEditor {
+            setup_id,
+            obstacle_id,
+            draft: stored.clone(),
+            refusal: None,
+        });
+    }
+    let models = model_choices(&state.session);
+    let frame =
+        rs_cam_core::session::SetupEvalContext::build_for_setup(&state.session, Some(&setup))
+            .heights_stock_bbox;
+    let inputs = obstacles::ObstacleEditorInputs {
+        models: &models,
+        stock_z: (frame.min.z, frame.max.z),
+    };
+    let Some(mut editor) = state.panels.obstacle_editor.take() else {
+        return;
+    };
+    match obstacles::draw_editor(ui, &inputs, &mut editor) {
+        obstacles::EditorAction::None => {}
+        obstacles::EditorAction::Apply => {
+            match apply_obstacle_draft(state, setup_index, &stored, editor.draft.clone()) {
+                // The next frame re-seeds the draft from the new record.
+                Ok(()) => return,
+                Err(text) => editor.refusal = Some(text),
+            }
         }
-        if edit.in_flight {
-            state.history.obstacle_draft = Some((setup_id, obstacle_id, draft));
+        obstacles::EditorAction::Cancel => {
+            editor.draft = stored;
+            editor.refusal = None;
+        }
+        obstacles::EditorAction::Remove => {
+            events.push(AppEvent::RemoveObstacle(setup_id, obstacle_id));
         }
     }
+    state.panels.obstacle_editor = Some(editor);
 }
 
 /// The `Face` arm of [`draw`]'s selection dispatch.

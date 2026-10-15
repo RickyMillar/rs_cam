@@ -378,7 +378,7 @@ pub struct SetUiViewParam {
     /// The ids are the rows of the GUI's viewport catalogue (All viewport options) — the same list the
     /// panel renders, so anything the operator can switch, an agent can:
     /// `grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,
-    /// `fixtures`, `keep_outs`, `alignment_pins`, `flip_axis`, `curves`,
+    /// `obstacles`, `alignment_pins`, `flip_axis`, `curves`,
     /// `orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,
     /// `height_planes`, `tool_profile_ghost`, `span_entry`,
     /// `span_lead_out`, `span_link_bridge`, `span_dressup`,

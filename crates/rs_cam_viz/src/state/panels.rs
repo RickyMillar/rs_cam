@@ -101,6 +101,45 @@ pub struct StockChangeEditor {
     pub refusal: Option<String>,
 }
 
+/// The obstacle editor (K2): the draft the operator edits on the
+/// `Selection::Obstacle` page, and the refusal of the last apply.
+///
+/// A kind switch to an outline or a model is not valid until the operator
+/// picks a model, so the draft lives here and is applied only on Apply.
+#[derive(Debug, Clone)]
+pub struct ObstacleEditor {
+    /// The setup that holds the obstacle.
+    pub setup_id: SetupId,
+    /// The obstacle the draft edits.
+    pub obstacle_id: rs_cam_core::ids::ObstacleId,
+    /// The record the operator edits.
+    pub draft: rs_cam_core::compute::obstacle::Obstacle,
+    /// The refusal of the last apply, in the core's words. `None` before
+    /// an apply, and after the operator edits the draft again.
+    pub refusal: Option<String>,
+}
+
+/// K2: the obstacle `obstacle_id` of the setup is gone. Close an editor
+/// open on it, and move a selection of it to its setup (the S4 rule). The
+/// controller door, the undo and the MCP remove all call it.
+pub fn forget_obstacle(
+    panels: &mut PanelDrafts,
+    selection: &mut super::selection::Selection,
+    setup_id: SetupId,
+    obstacle_id: rs_cam_core::ids::ObstacleId,
+) {
+    if panels
+        .obstacle_editor
+        .as_ref()
+        .is_some_and(|e| e.setup_id == setup_id && e.obstacle_id == obstacle_id)
+    {
+        panels.obstacle_editor = None;
+    }
+    if *selection == super::selection::Selection::Obstacle(setup_id, obstacle_id) {
+        *selection = super::selection::Selection::Setup(setup_id);
+    }
+}
+
 /// Every panel draft that outlives one frame.
 #[derive(Debug, Default, Clone)]
 pub struct PanelDrafts {
@@ -116,6 +155,8 @@ pub struct PanelDrafts {
     pub pending_setup_removal: Option<SetupRemovalConfirmation>,
     /// The setup panel's stock-change editor, when it is open.
     pub stock_change_editor: Option<StockChangeEditor>,
+    /// The obstacle editor (K2), when an obstacle is selected.
+    pub obstacle_editor: Option<ObstacleEditor>,
     /// The pin the operator clicked in the viewport (index into the stock
     /// pins). The viewport draws its circle twice, and the wizard marks it
     /// on the plan view. A pin count below the index clears it.
