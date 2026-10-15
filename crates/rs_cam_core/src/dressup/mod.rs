@@ -816,9 +816,11 @@ pub fn optimize_entry_descents_with_provenance(
     // G-ISOCLIPENTRY: the lap window is read off the moves that FOLLOW the
     // plunge, so the run has to be visible before the list is consumed. Two
     // parallel reads, not a clone of the moves.
-    let followers: Vec<(P3, bool, MoveIntent)> = moves
+    // The move type rides along so the run samples an arc move along the
+    // arc, not its chord (G-RAMPCHORD).
+    let followers: Vec<(P3, MoveType, MoveIntent)> = moves
         .iter()
-        .map(|m| (m.target, m.move_type.is_cutting(), m.intent))
+        .map(|m| (m.target, m.move_type, m.intent))
         .collect();
     let mut new_moves = Vec::with_capacity(moves.len());
     let mut mapping = Vec::with_capacity(moves.len() + 1);

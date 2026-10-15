@@ -247,7 +247,7 @@ fn ab_config(sampler: ClassificationSampler) -> UnifiedFinishConfig {
         plunge_rate: 150.0,
         spindle_rpm: Some(21000),
         pencil_claims: false,
-        classification_sampler: sampler,
+        classification_sampler: Some(sampler),
         ..UnifiedFinishConfig::default()
     }
 }

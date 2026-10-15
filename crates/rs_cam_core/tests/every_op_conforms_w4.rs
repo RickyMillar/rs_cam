@@ -42,9 +42,8 @@
 //!    [`check6_every_schema_default_round_trips_and_every_driver_field_is_refused`]
 //!    and [`check6b_every_null_schema_default_round_trips`].
 //!
-//! Two claims are RED on purpose: each names one op and one product
-//! defect that W4 found (check 2b: Waterline; check 6b: Unified Finish).
-//! They stay red until the lead rules on the fix.
+//! W4 found two product defects (check 2b: Waterline, G-RAMPCHORD; check
+//! 6b: Unified Finish). Both are fixed; the claims stand green.
 //! 7. **No Unknown intent** (B11, the W6 census rule). G-OPGOLDEN owns the
 //!    fresh and rest arms. This file runs the same counter
 //!    (`common::op_fixtures::unknown_intents`) on the arms only it
@@ -342,6 +341,21 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
             session.get_result(index).is_none(),
             "{key}/cancel: a cancelled generation adopted a result"
         );
+
+        // A rest op with no snapshot: the cancel comes before the session
+        // door's own rest precondition too.
+        let (mut session, index) = case_session(CaseSpec {
+            stock_source: StockSource::FromRemainingStock,
+            ..spec(key, op)
+        });
+        match session.generate_toolpath(index, &cancel) {
+            Err(SessionError::OperationFailed(text)) if text == cancelled => {}
+            other => panic!(
+                "{key}/cancel_rest: expected the cancel ({cancelled:?}) ahead of the \
+                 snapshot refusal, got {:?}",
+                other.map(|_| ())
+            ),
+        }
     }
     assert!(
         with_refused_tool > 0,
@@ -649,13 +663,12 @@ fn check2_rest_rule_per_op() {
 /// slack is the simulator's material threshold over each cell the Fresh op
 /// lowered.
 ///
-/// RED until the lead fixes the product (W4 finding, 2026-10-15): the
-/// rest Waterline removes 356.6 mm³ against 156.5 mm³ and
-/// cuts up to 3.1 mm under the cap surface in 493 cells. Its stock-aware
-/// entry ramp laps along the CHORD of an arc move: `dressup/mod.rs:819`
-/// keeps only each move's target in `followers`, and `upcoming_run`
-/// (`dressup/entry_descent.rs:19`) builds the ramp run from those targets.
-/// Every other op passes.
+/// W4 finding, 2026-10-15 (G-RAMPCHORD, fixed): the rest Waterline removed
+/// 356.6 mm³ against 156.5 mm³ and cut up to 3.1 mm under the cap surface
+/// in 493 cells. Its stock-aware entry ramp lapped along the CHORD of an arc
+/// move, because `upcoming_run` (`dressup/entry_descent.rs`) built the run
+/// from the move targets alone. The run now samples each arc; the sentry is
+/// `an_entry_ramp_follows_the_arc_g_rampchord`.
 #[test]
 fn check2b_a_rest_op_removes_no_more_material_than_a_fresh_op() {
     let mut judged = 0;
@@ -1081,12 +1094,11 @@ fn check6_every_schema_default_round_trips_and_every_driver_field_is_refused() {
 /// leaves the operation config unchanged. A null default says "absent";
 /// the setter must take back what the schema hands out.
 ///
-/// RED until the lead fixes the product (W4 finding, 2026-10-15): Unified
-/// Finish publishes `classification_sampler` with the default null
-/// (`catalog.rs:1016-1022` writes null for a key the config omits, and
-/// `operation_configs.rs:1548-1552` omits it while it holds the production
-/// sampler; `registry.rs:595` marks it optional). The field is not an
-/// `Option`, so the setter refuses null.
+/// W4 finding, 2026-10-15 (fixed): Unified Finish published
+/// `classification_sampler` with the default null, but the field was not an
+/// `Option`, so the setter refused null. The field is now
+/// `Option<ClassificationSampler>`: null is "not pinned" and runs
+/// `ClassificationSampler::PRODUCTION`.
 #[test]
 fn check6b_every_null_schema_default_round_trips() {
     let mut defects = Vec::new();

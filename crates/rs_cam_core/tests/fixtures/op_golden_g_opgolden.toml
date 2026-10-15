@@ -485,15 +485,15 @@ moves_hash = "980ff223a423a338"
 
 ["waterline/rest"]
 outcome = "ok"
-move_count = 107
+move_count = 191
 rapid_count = 18
-linear_count = 50
+linear_count = 134
 arc_count = 39
-cutting_length_mm = 817.584
+cutting_length_mm = 317.68
 rapid_length_mm = 104.827
 bbox_min = [-11.5715, -11.718, 1.0]
 bbox_max = [11.5827, 11.5827, 13.0]
-moves_hash = "3081b45e1cf4f5cc"
+moves_hash = "883cefbeb4fcd637"
 
 ["zigzag/fresh"]
 outcome = "ok"

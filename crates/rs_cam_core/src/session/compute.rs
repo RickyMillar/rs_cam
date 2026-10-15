@@ -2112,7 +2112,8 @@ impl ProjectSession {
     /// behind it. The method holds `&mut self` and is meant to run on the
     /// frame loop. It does, in order:
     ///
-    /// 1. drops the cached result (G-STICKYEMPTY);
+    /// 1. drops the cached result (G-STICKYEMPTY), then reads the cancel
+    ///    flag: a pre-set flag reports `Cancelled` before any refusal;
     /// 2. runs the rest-machining and boundary preconditions, so a
     ///    refusal appears at SUBMIT time and not on the worker thread;
     /// 3. resolves every generation input through
@@ -2156,6 +2157,15 @@ impl ProjectSession {
         // (`rt.result = None` in `submit_toolpath_compute`); this makes the
         // core path agree rather than being the odd one out.
         let _ = self.results.remove(&index);
+
+        // Cancel first (the dispatch prologue's rule,
+        // `compute/execute/prologue.rs`): a pre-set flag reports the
+        // dispatch's cancel text before any precondition below refuses.
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(SessionError::OperationFailed(
+                crate::compute::execute::OperationError::Cancelled.to_string(),
+            ));
+        }
 
         // Rest-machining precondition, checked BEFORE any geometry work so we fail
         // fast and NEVER fall back to fresh stock: a `FromRemainingStock` op must

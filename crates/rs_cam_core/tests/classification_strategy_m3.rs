@@ -756,9 +756,9 @@ fn the_production_builder_cancels_and_discards_the_partial_grid() {
 fn the_unified_finish_op_defaults_to_the_production_sampler() {
     // The op-level end of the wiring. `UnifiedFinishConfig` carries the
     // sampler so the COLUMNS A/B can drive both classifiers through the
-    // production pipeline; the default must be production, an absent field
-    // must LOAD as production, and a production value must not be written
-    // into any project file.
+    // production pipeline. A default config pins no sampler (`None`) and
+    // runs production; an absent field loads as `None`; a default config
+    // writes no key into a project file.
     use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
     use rs_cam_core::finish::unified_finish::UnifiedFinishParams;
 
@@ -766,9 +766,16 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
         UnifiedFinishParams::default().classification_sampler,
         ClassificationSampler::PRODUCTION
     );
+    // The config pins no sampler; the params it builds run production.
     let cfg = UnifiedFinishConfig::default();
+    assert_eq!(cfg.classification_sampler, None);
+    let built = cfg.params(rs_cam_core::compute::operation_configs::OpMotion {
+        feed_rate: 1000.0,
+        plunge_rate: 500.0,
+        safe_z: 50.0,
+    });
     assert_eq!(
-        cfg.classification_sampler,
+        built.classification_sampler,
         ClassificationSampler::PRODUCTION
     );
 
@@ -783,15 +790,12 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
     // written before wave 7b looks like.
     let loaded: UnifiedFinishConfig =
         toml::from_str(&written).expect("round-trip a default UnifiedFinishConfig");
-    assert_eq!(
-        loaded.classification_sampler,
-        ClassificationSampler::PRODUCTION
-    );
+    assert_eq!(loaded.classification_sampler, None);
 
     // A deliberately pinned non-production sampler DOES round-trip, so the
     // documented escape hatch is real rather than silently dropped.
     let pinned = UnifiedFinishConfig {
-        classification_sampler: ClassificationSampler::DropCutterProbe,
+        classification_sampler: Some(ClassificationSampler::DropCutterProbe),
         ..UnifiedFinishConfig::default()
     };
     let text = toml::to_string(&pinned).expect("serialise a pinned config");
@@ -799,7 +803,7 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
     let back: UnifiedFinishConfig = toml::from_str(&text).expect("round-trip a pinned config");
     assert_eq!(
         back.classification_sampler,
-        ClassificationSampler::DropCutterProbe
+        Some(ClassificationSampler::DropCutterProbe)
     );
 }
 
@@ -809,8 +813,8 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
 /// but no surface wrote it: it was in no `param_defs` array and the GUI never
 /// names it, so it was frozen at `ClassificationSampler::PRODUCTION`. The
 /// registry row makes the schema and the setter agree. Note that the field is
-/// `skip_serializing_if = is_production`, so the setter's absent-key path is
-/// the one under test here.
+/// an `Option` that serde skips while `None`, so the setter's absent-key path
+/// is the one under test here.
 #[test]
 fn the_sampler_is_a_settable_published_param() {
     use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -846,7 +850,7 @@ fn the_sampler_is_a_settable_published_param() {
     };
     assert_eq!(
         cfg.classification_sampler,
-        ClassificationSampler::VerticalRay
+        Some(ClassificationSampler::VerticalRay)
     );
 }
 

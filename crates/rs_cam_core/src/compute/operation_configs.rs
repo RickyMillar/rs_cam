@@ -1541,15 +1541,15 @@ pub struct UnifiedFinishConfig {
     /// project that hits a regression has a documented escape hatch that does
     /// not need a rebuild.
     ///
-    /// Defaults to [`ClassificationSampler::PRODUCTION`] and is omitted from
-    /// serialisation while it holds that value, so no existing project file
-    /// changes and no newly written one grows a key unless it deliberately
-    /// pinned a non-production sampler. An absent field loads as production.
-    #[serde(
-        default,
-        skip_serializing_if = "crate::finish::classify_probe::ClassificationSampler::is_production"
-    )]
-    pub classification_sampler: crate::finish::classify_probe::ClassificationSampler,
+    /// `None` (absent, or null on the wire) runs
+    /// [`ClassificationSampler::PRODUCTION`]. A `None` is omitted from
+    /// serialisation, so a default project file grows no key. The field is an
+    /// `Option` so the schema's null default is a value the setter accepts
+    /// (W4 check 6b): null means "not pinned".
+    ///
+    /// [`ClassificationSampler::PRODUCTION`]: crate::finish::classify_probe::ClassificationSampler::PRODUCTION
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification_sampler: Option<crate::finish::classify_probe::ClassificationSampler>,
 }
 
 impl Default for UnifiedFinishConfig {
@@ -1585,8 +1585,7 @@ impl Default for UnifiedFinishConfig {
             min_region_area_mm2: None,
             close_radius_mm: None,
             hysteresis_deg: None,
-            classification_sampler:
-                crate::finish::classify_probe::ClassificationSampler::PRODUCTION,
+            classification_sampler: None,
         }
     }
 }
@@ -1656,7 +1655,9 @@ impl UnifiedFinishConfig {
             plunge_rate: motion.plunge_rate,
             safe_z: motion.safe_z,
             intra_region_hookup_mm: self.intra_region_hookup_mm,
-            classification_sampler: self.classification_sampler,
+            classification_sampler: self
+                .classification_sampler
+                .unwrap_or(crate::finish::classify_probe::ClassificationSampler::PRODUCTION),
             monotone_cell_decomposition: self.monotone_cell_decomposition,
         }
     }

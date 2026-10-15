@@ -16,8 +16,15 @@ use super::{EntrySafety, EntrySurfaceProbe, OffMeshEntry, is_plunge};
 /// target (about 1.2 mm at the shipped dials), so reading further is waste,
 /// and an unbounded read would walk a whole 90 000-move ring set once per
 /// entry.
+///
+/// G-RAMPCHORD (2026-10-15): an arc move is sampled along the arc, within
+/// [`RUN_ARC_CHORD_TOL_MM`] of it. The descent pass runs after the arc fit,
+/// so a run built from the move targets alone joined each arc's two ends
+/// by its chord. The laps then cut along that chord, off the op's own
+/// cutter path and into the part: 3.1 mm under the cap of the W4 rest
+/// Waterline fixture.
 pub(super) fn upcoming_run(
-    followers: &[(P3, bool, crate::toolpath::MoveIntent)],
+    followers: &[(P3, MoveType, crate::toolpath::MoveIntent)],
     plunge_index: usize,
 ) -> Vec<P3> {
     const MAX_POINTS: usize = 256;
@@ -29,18 +36,56 @@ pub(super) fn upcoming_run(
     let mut run = vec![first];
     let mut arc = 0.0_f64;
     let mut prev = first;
-    for &(point, cutting, _) in followers.iter().skip(plunge_index + 1) {
-        if !cutting {
-            break;
+    let mut samples = Vec::new();
+    for &(target, move_type, _) in followers.iter().skip(plunge_index + 1) {
+        let clockwise = match move_type {
+            MoveType::Rapid => break,
+            MoveType::Linear { .. } => None,
+            MoveType::ArcCW { i, j, .. } => Some((i, j, true)),
+            MoveType::ArcCCW { i, j, .. } => Some((i, j, false)),
+        };
+        samples.clear();
+        match clockwise {
+            None => samples.push(target),
+            Some((i, j, cw)) => {
+                crate::geometry::arc_util::linearize_arc_into(
+                    &mut samples,
+                    prev,
+                    target,
+                    i,
+                    j,
+                    cw,
+                    run_arc_spacing_mm(i.hypot(j)),
+                );
+                // The first sample is `prev`, which the run already holds.
+                if !samples.is_empty() {
+                    samples.remove(0);
+                }
+            }
         }
-        arc += ((point.x - prev.x).powi(2) + (point.y - prev.y).powi(2)).sqrt();
-        run.push(point);
-        prev = point;
-        if run.len() >= MAX_POINTS || arc >= MAX_ARC_MM {
-            break;
+        for &point in &samples {
+            arc += ((point.x - prev.x).powi(2) + (point.y - prev.y).powi(2)).sqrt();
+            run.push(point);
+            prev = point;
+            if run.len() >= MAX_POINTS || arc >= MAX_ARC_MM {
+                return run;
+            }
         }
     }
     run
+}
+
+/// The most a run chord may stand off the arc it samples (mm).
+const RUN_ARC_CHORD_TOL_MM: f64 = 0.01;
+
+/// The sample spacing (mm) that keeps a chord of an arc of `radius` within
+/// [`RUN_ARC_CHORD_TOL_MM`] of the arc. A chord of length `s` on radius `r`
+/// stands `s^2 / (8 r)` off the arc, so `s = sqrt(8 r tol)`. The floor bounds
+/// the point count on a tiny radius; the ceiling is the fold walk's spacing.
+fn run_arc_spacing_mm(radius: f64) -> f64 {
+    (8.0 * radius.max(0.0) * RUN_ARC_CHORD_TOL_MM)
+        .sqrt()
+        .clamp(0.02, FOLD_ARC_SPACING_MM)
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

@@ -135,14 +135,6 @@ impl ClassificationSampler {
     /// config field that omits the sampler gets production.
     pub const PRODUCTION: Self = Self::TileRaster;
 
-    /// True when `self` is what production runs — used by serde to keep the
-    /// sampler out of every project file that has not deliberately pinned a
-    /// non-default one.
-    #[must_use]
-    pub const fn is_production(&self) -> bool {
-        matches!(*self, Self::PRODUCTION)
-    }
-
     /// Every sampler, oracle first.
     pub const ALL: [Self; 5] = [
         Self::DropCutterProbe,
@@ -793,9 +785,8 @@ mod tests {
     fn production_sampler_is_the_default_and_is_the_tile_raster() {
         // The one-line fallback lever the M3 checkpoint ruling names: flip
         // `PRODUCTION` and production classification returns to the shipped
-        // drop-cutter path with nothing else moved. `Default` must track it,
-        // because the serde field on `UnifiedFinishConfig` omits the sampler
-        // whenever it is production.
+        // drop-cutter path with nothing else moved. `Default` must track it:
+        // `UnifiedFinishParams` and every caller without a pin read it.
         assert_eq!(
             ClassificationSampler::PRODUCTION,
             ClassificationSampler::TileRaster
@@ -804,8 +795,6 @@ mod tests {
             ClassificationSampler::default(),
             ClassificationSampler::PRODUCTION
         );
-        assert!(ClassificationSampler::PRODUCTION.is_production());
-        assert!(!ClassificationSampler::DropCutterProbe.is_production());
         // The production sampler reads the TRUE surface. If this ever flips,
         // `finish_setup`'s classification doc — and the §5.3 attribution the
         // switch rests on — are describing a different function.
