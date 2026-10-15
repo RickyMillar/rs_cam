@@ -941,7 +941,7 @@ M3 S{spindle_rpm}
         use crate::ops::drill::DrillCycle;
         use crate::toolpath::MoveIntent;
         let mut tp = Toolpath::new();
-        tp.rapid_to(P3::new(0.0, 0.0, 30.0));
+        tp.rapid_to_with_intent(P3::new(0.0, 0.0, 30.0), MoveIntent::ObstacleClearance);
         for x in [0.0, 10.0] {
             tp.rapid_to(P3::new(x, 0.0, 5.0));
             tp.rapid_to(P3::new(x, 0.0, 2.0));

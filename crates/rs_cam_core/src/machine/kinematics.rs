@@ -1168,7 +1168,9 @@ pub fn compute_cycle_time_breakdown(
                     breakdown.entry_s += dt;
                 }
                 MI::Linking | MI::LeadOut => breakdown.linking_s += dt,
-                MI::Retract => breakdown.retract_s += dt,
+                // K3: the obstacle clearance is always a rapid (the arm
+                // above). A fed one lifts off the work, as a retract does.
+                MI::Retract | MI::ObstacleClearance => breakdown.retract_s += dt,
                 MI::Unknown => breakdown.unknown_s += dt,
             }
         }

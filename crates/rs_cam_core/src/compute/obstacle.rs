@@ -59,7 +59,8 @@
 //! - the per-op step splits each move that the check forbids, and the
 //!   tool crosses the obstacle at the plane;
 //! - the first move of every toolpath in a setup with an obstacle is a
-//!   rapid at the plane or higher ([`clip_annotated_to_obstacles`]). So the
+//!   rapid at the plane or higher ([`clip_annotated_to_obstacles`]). The
+//!   step tags the rapid that it inserts `MoveIntent::ObstacleClearance`. So the
 //!   G-code builder's join into a toolpath rises to the plane before it
 //!   traverses, from a known start ([`JoinStart::After`]) and from an
 //!   unknown one ([`JoinStart::Unknown`]).
@@ -1190,7 +1191,11 @@ pub fn clip_annotated_to_obstacles(
 
 /// K3: put a rapid to `plane` at the XY of the first move in front of
 /// it, when the first move is below `plane`. The inserted move belongs to
-/// input move 0, so every later entry of `mapping` moves up by one.
+/// input move 0, so every later entry of `mapping` moves up by one. Its
+/// intent is [`MoveIntent::ObstacleClearance`]: the G-code drill reader
+/// reads that intent, not the move shape.
+///
+/// [`MoveIntent::ObstacleClearance`]: crate::toolpath::MoveIntent::ObstacleClearance
 fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64) {
     let Some(first) = toolpath.moves.first() else {
         return;
@@ -1201,7 +1206,7 @@ fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64
     let lift = Move {
         target: P3::new(first.target.x, first.target.y, plane),
         move_type: MoveType::Rapid,
-        intent: crate::toolpath::MoveIntent::Linking,
+        intent: crate::toolpath::MoveIntent::ObstacleClearance,
     };
     toolpath.moves.insert(0, lift);
     for entry in mapping.iter_mut().skip(1) {
@@ -1277,6 +1282,10 @@ mod tests {
             .into_inner();
         assert_eq!(out.toolpath.moves.len(), n + 1);
         assert_eq!(out.toolpath.moves[0].target, P3::new(-50.0, 5.0, plane));
+        assert_eq!(
+            out.toolpath.moves[0].intent,
+            crate::toolpath::MoveIntent::ObstacleClearance
+        );
         // The traverse far from the clamp stays at its own Z.
         assert_eq!(out.toolpath.moves[n].target, P3::new(-50.0, 40.0, 10.0));
         // A second pass changes nothing.

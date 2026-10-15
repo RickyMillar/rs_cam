@@ -241,9 +241,13 @@ pub fn is_drill_cycle_for_narration(
             | MoveIntent::EntryRamp
             | MoveIntent::LeadIn
             | MoveIntent::LeadOut => return false,
-            // Plunges, links, retracts and unlabelled moves say nothing
-            // either way.
-            _ => {}
+            // Plunges, links, retracts, obstacle clearances and unlabelled
+            // moves say nothing either way.
+            MoveIntent::EntryPlunge
+            | MoveIntent::Linking
+            | MoveIntent::Retract
+            | MoveIntent::ObstacleClearance
+            | MoveIntent::Unknown => {}
         }
     }
     drilled

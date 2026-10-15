@@ -679,28 +679,20 @@ struct DrillHole {
 /// G98 return level) and one feed.
 ///
 /// K3: in a setup with an obstacle the toolpath starts with a rapid to
-/// the obstacle plane above the first hole. Three rapids at one XY that
-/// fall in Z (plane, start, R) read as that lead-in and the first hole.
-/// The lead-in Z comes back with the holes.
+/// the obstacle plane above the first hole. The reader knows that move
+/// by its intent ([`MoveIntent::ObstacleClearance`]), never by its shape:
+/// a rest drill starts with the same shape. The lead-in Z comes back with
+/// the holes.
 fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<(Option<f64>, Vec<DrillHole>)> {
     const EPS: f64 = 1e-9;
     let moves = &phase.toolpath.moves;
     let mut holes: Vec<DrillHole> = Vec::new();
-    let lead_in = match moves.get(..3) {
-        Some([a, b, c])
-            if [a, b, c]
-                .iter()
-                .all(|m| matches!(m.move_type, MoveType::Rapid))
-                && [b, c].iter().all(|m| {
-                    (m.target.x - a.target.x).abs() < EPS && (m.target.y - a.target.y).abs() < EPS
-                })
-                && a.target.z > b.target.z
-                && b.target.z > c.target.z =>
-        {
-            Some(a.target.z)
-        }
-        _ => None,
-    };
+    let lead_in = moves
+        .first()
+        .filter(|m| {
+            m.intent == MoveIntent::ObstacleClearance && matches!(m.move_type, MoveType::Rapid)
+        })
+        .map(|m| m.target.z);
     let mut i = usize::from(lead_in.is_some());
     while i < moves.len() {
         let first = moves.get(i)?;
