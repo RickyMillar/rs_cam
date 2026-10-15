@@ -177,8 +177,9 @@ impl LayerInput for MeshInput<'_> {
 /// The remaining stock, as [`LayeredOp::emit_level`] gets it at one level.
 #[derive(Clone, Copy)]
 pub(crate) struct LevelStock<'s> {
-    /// The machined stock the op cuts, in the frame of the op.
-    /// `None`: a fresh op. A rest rule that cuts per level
+    /// The machined stock the op cuts, in the frame of the op, after the
+    /// W2.1 guard (`Territory::reference_stock`, C3). `None`: a fresh op,
+    /// or a rule that reads no reference. A rest rule that cuts per level
     /// ([`RestUse::ContourFilter`]) reads it at the level's Z.
     pub remaining: Option<&'s TriDexelStock>,
 }
@@ -340,8 +341,13 @@ pub(crate) fn run_layered<O: LayeredOp>(
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let tool_radius = ctx.tool_def.radius();
+    // C3: the territory resolved both stocks. `ContourFilter` compares the
+    // stock with the surface, so it reads the guarded one; `LevelClip` and
+    // `LevelSkip` have no mesh to guard against.
+    let territory = prepared.territory();
+    let unguarded = territory.unguarded_stock();
     let stock = LevelStock {
-        remaining: ctx.initial_stock,
+        remaining: territory.reference_stock(),
     };
     // Checkpoint C: an op that measures its offsets holds a measured zero
     // before the first prepare. Each prepare report adds its own count
@@ -357,7 +363,15 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // the outline count.
         RegionOrdering::ByArea => {
             for outline in outlines.iter() {
-                let layers = prepare_outline(op, ctx, tool_radius, &cancel_fn, outline, &levels)?;
+                let layers = prepare_outline(
+                    op,
+                    ctx,
+                    unguarded,
+                    tool_radius,
+                    &cancel_fn,
+                    outline,
+                    &levels,
+                )?;
                 let mut emitted = false;
                 for i in 0..levels.len() {
                     check_cancel(&cancel_fn)?;
@@ -380,6 +394,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
                 layers.push(prepare_outline(
                     op,
                     ctx,
+                    unguarded,
                     tool_radius,
                     &cancel_fn,
                     outline,
@@ -471,6 +486,7 @@ fn emit_at<O: LayeredOp>(
 fn prepare_outline<O: LayeredOp>(
     op: &O,
     ctx: &ExecutionContext<'_>,
+    unguarded: Option<&TriDexelStock>,
     tool_radius: f64,
     cancel: &dyn CancelCheck,
     outline: &O::Input,
@@ -491,7 +507,7 @@ fn prepare_outline<O: LayeredOp>(
     };
     let mut plan = match (op.rest_use(), outline.outline()) {
         (RestUse::LevelClip, Some(polygon)) => regions_per_level(
-            ctx.initial_stock,
+            unguarded,
             polygon,
             levels,
             layer.tool_radius,
@@ -504,7 +520,7 @@ fn prepare_outline<O: LayeredOp>(
             let whole = prepare(std::slice::from_ref(outline))?;
             let band = op.reach_band(&whole, layer.tool_radius);
             let plan = levels_in_reach(
-                ctx.initial_stock,
+                unguarded,
                 &band.rings,
                 levels,
                 band.half_width,

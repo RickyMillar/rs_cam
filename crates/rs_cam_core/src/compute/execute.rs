@@ -15,7 +15,6 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
-use crate::geometry::region_set::RegionSet;
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
@@ -340,7 +339,7 @@ pub struct ExecutionContext<'a> {
     /// The setup's world→local transform, or `None` for an identity setup.
     ///
     /// Everything else in this context arrives ALREADY in the emission
-    /// frame — `mesh`, `polygons` and `boundary` are transformed by the
+    /// frame — `mesh`, `polygons` and the boundary inputs are transformed by the
     /// driver before generation, `stock_bbox` is the emission-frame bbox.
     /// The one class of input that cannot be pre-transformed that way is
     /// config-carried geometry: coordinates that live inside the
@@ -361,29 +360,12 @@ pub struct ExecutionContext<'a> {
     pub reference_tool_cfg: Option<ToolConfig>,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub cancel: &'a AtomicBool,
-    pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
-    /// W6.2: `boundary`, `boundary_regions` and `boundary_centre` are the
-    /// inputs of the territory resolver (`execute/territory.rs`). An adapter
-    /// reads them through `Prepared::territory`, never from here.
-    pub boundary: Option<&'a Polygon2>,
-    /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
-    /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
-    /// / waterline / drop_cutter) pre-clips generation to, so sampling never
-    /// wastes work outside the machining boundary and never has to be
-    /// discarded at post-clip. `boundary` remains the adaptive3d
-    /// single-polygon pre-clear path; the two carry independent semantics
-    /// today and consolidating them is deferred. Consolidated onto
-    /// `RegionSet` (region_set.rs) so containment tests share one
-    /// implementation across every family.
-    pub boundary_regions: Option<&'a RegionSet<'a>>,
-    /// G-BOUNDARYPHANTOM: the containment polygons the session's
-    /// post-generation boundary clip clips this toolpath to (the regions
-    /// after keep-outs, the user offset and the tool-radius containment).
-    /// The adaptive3d planner keeps its tool centre inside them so it stamps
-    /// only what the clip keeps. `None`: no boundary, or a caller that
-    /// applies no clip.
-    pub boundary_centre: Option<&'a [Polygon2]>,
+    /// W6.2 / C3: the remaining stock and the boundary inputs (the outline,
+    /// the region set, the centre containment). Only the territory resolver
+    /// (`execute/territory.rs`) can read them; an adapter reads the resolved
+    /// parts through `Prepared::territory`.
+    pub territory_inputs: TerritoryInputs<'a>,
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
     /// envelope the pencil generator (and, in future, other finishing
     /// families with a hookup/link decision) costs surface-link vs.
@@ -491,11 +473,8 @@ impl<'a> ExecutionContext<'a> {
             reference_tool_cfg: None,
             debug_ctx: None,
             cancel,
-            initial_stock: None,
             semantic_ctx: None,
-            boundary: None,
-            boundary_regions: None,
-            boundary_centre: None,
+            territory_inputs: TerritoryInputs::default(),
             link_kinematics: None,
             rest_analysis: None,
             segment_merge_tolerance: None,
@@ -592,7 +571,7 @@ pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_
 pub use prologue::{MeshInput, Prepared};
 pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
-pub use territory::{SurfaceMask, Territory, XyTerritory};
+pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
 /// annotations.

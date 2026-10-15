@@ -12,7 +12,6 @@ use crate::compute::catalog::{OperationConfig, OperationType, RestUse};
 use crate::compute::operation_configs::{OpMotion, RegionOrdering};
 use crate::compute::toolpath_stats::RestLevelsFinding;
 use crate::geo::P2;
-use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -351,7 +350,7 @@ pub(crate) fn generate_waterline(
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
-        boundary_regions: prepared.territory().regions(),
+        territory: prepared.territory(),
         link_kinematics: ctx.link_kinematics.clone(),
         rest_tally: Cell::new(None),
     };
@@ -377,7 +376,9 @@ struct WaterlinePass<'a> {
     hookup_mm: f64,
     op_type: OperationType,
     rest_use: RestUse,
-    boundary_regions: Option<&'a RegionSet<'a>>,
+    /// The op's territory: the boundary regions of the contour split and
+    /// of the link stage, and the stock of the link ceiling (C3).
+    territory: &'a Territory<'a>,
     /// The machine envelope that times a stretch the contour filter drops
     /// (`machine::kinematics::retract_saves_time`). `None`: the filter
     /// drops nothing.
@@ -459,7 +460,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         };
         let keep = |p: P2| standing.as_ref().is_none_or(|s| s.keeps(p));
         let filter = crate::ops::waterline::RunFilter {
-            boundary_regions: self.boundary_regions,
+            boundary_regions: self.territory.regions(),
             keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
             split_timing: self.link_kinematics.as_ref(),
         };
@@ -509,8 +510,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
     /// G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
     /// `None` on the stats channel.
     fn link(&self, toolpath: Toolpath, ctx: &ExecutionContext<'_>) -> Toolpath {
-        let Some(stage) =
-            finishing_link_stage(self.op_type, ctx, self.boundary_regions, self.hookup_mm)
+        let Some(stage) = finishing_link_stage(self.op_type, ctx, self.territory, self.hookup_mm)
         else {
             return toolpath;
         };

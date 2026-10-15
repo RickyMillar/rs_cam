@@ -11,7 +11,7 @@
 //!
 //! - the read of the territory (`TerritoryXy::PlannerBounds`: the outline
 //!   of the planner pre-clear and the centre containment, W6.2);
-//! - the seed stock: `ExecutionContext::initial_stock`, RAW. The W2.1
+//! - the seed stock: `Territory::unguarded_stock`, RAW (C3). The W2.1
 //!   guard of `Territory::reference_stock` can drop a stock the planner
 //!   must seed from, and that changes output;
 //! - the top Z and the floor, from [`HeightsPolicy`];
@@ -148,7 +148,7 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
         outline,
         centre,
         world_stock_xy: (bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y),
-        seed_stock: ctx.initial_stock,
+        seed_stock: prepared.territory().unguarded_stock(),
         top_z: match O::HEIGHTS.top {
             TopAnchor::StockBox => bbox.max.z,
         },

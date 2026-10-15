@@ -27,7 +27,7 @@
 //! - `fresh`: every op, default parameters, fresh stock.
 //! - A non-default arm for each op with a cheap pattern or mode switch.
 //! - `rest`: every op that reads the remaining stock in its adapter
-//!   (`ctx.initial_stock`). A prior op cuts part of the stock, the session
+//!   (`Prepared::territory`). A prior op cuts part of the stock, the session
 //!   simulates it, and the op then generates with `FromRemainingStock`.
 //! - `regions` (W6.3.0): each height-field op whose territory is a region
 //!   set, with a `ModelOutline` boundary rectangle that cuts through the
@@ -474,7 +474,7 @@ const REGION_OPS: &[OperationType] = &[
 ];
 
 /// The ops whose adapter reads the remaining stock today
-/// (`ctx.initial_stock` in `compute/execute/`): Pocket, Zigzag, Profile,
+/// (`Prepared::territory` in `compute/execute/`): Pocket, Zigzag, Profile,
 /// Trace, Face and 2D Adaptive (`clearing_2d.rs`, the Layered rest rules
 /// of W3.4), Chamfer (`curve_engrave.rs`, the Layered level skip of W3.5),
 /// Drill (`drilling.rs`, the stock column of D8), Adaptive3d,

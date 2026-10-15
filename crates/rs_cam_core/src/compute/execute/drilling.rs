@@ -567,7 +567,7 @@ fn column_stock<'s>(
 /// Drill family adapter (holes from the model's drill targets or picks).
 pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
-    _prepared: &Prepared<'_>,
+    prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Drill, "generate_drill");
@@ -582,7 +582,7 @@ pub(crate) fn generate_drill(
         cfg,
         &hole_xys,
         ctx.stock_bbox,
-        column_stock(op, ctx.initial_stock),
+        column_stock(op, prepared.territory().unguarded_stock()),
         ctx.tool_def.radius(),
     );
     let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath_at_holes(

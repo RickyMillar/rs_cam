@@ -280,7 +280,7 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
     let stage = match rule {
         LinkRule::Off => None,
         LinkRule::AfterPlan { hookup_mm } | LinkRule::InPlan { hookup_mm } => {
-            finishing_link_stage(op.op_type(), ctx, territory.regions(), hookup_mm)
+            finishing_link_stage(op.op_type(), ctx, territory, hookup_mm)
         }
     };
     let cancel = ctx.cancel_fn();

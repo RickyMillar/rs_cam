@@ -226,12 +226,12 @@ pub enum TerritoryXy {
     /// after generation is its only boundary. Pencil and the 2D ops.
     ClipAfter,
     /// The op pre-clips its sampling and its link stage to the boundary
-    /// region set (`ExecutionContext::boundary_regions`, P2.3). The 3D
+    /// region set (the regions input of `TerritoryInputs`, P2.3). The 3D
     /// finishes, Waterline and Project Curve (its link stage).
     Regions,
-    /// The planner reads the boundary outline (`ExecutionContext::boundary`,
-    /// the pre-clear) and the centre containment
-    /// (`ExecutionContext::boundary_centre`, G-BOUNDARYPHANTOM). 3D Rough.
+    /// The planner reads the boundary outline (the pre-clear) and the
+    /// centre containment (G-BOUNDARYPHANTOM), both inputs of
+    /// `TerritoryInputs`. 3D Rough.
     PlannerBounds,
 }
 

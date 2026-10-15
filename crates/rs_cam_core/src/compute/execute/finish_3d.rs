@@ -53,12 +53,12 @@ pub(crate) fn generate_pencil(
             // guard, which the territory resolved once (W6.2). The RestDepth
             // detector prefers it as the rest reference.
             crate::finish::pencil::PencilStock {
-                remaining: ctx.initial_stock,
+                remaining: prepared.territory().unguarded_stock(),
                 rest_reference: prepared.territory().reference_stock(),
                 // R1 / C8: the link lift reads the one builder's ceiling
                 // (its fallback top and its obstacles). `None` on fresh
                 // stock, where the lift never runs.
-                link_ceiling: op_link_ceiling(op.op_type(), ctx),
+                link_ceiling: op_link_ceiling(op.op_type(), ctx, prepared.territory()),
             },
             ctx.debug_ctx,
             &ctx.cancel_fn(),
@@ -207,7 +207,7 @@ pub(crate) fn generate_unified_finish(
 
     // B3 / G-LINKLOAD (Phase O item 3): an intra-region link rides the MESH,
     // which is the material only on a fresh-stock pass. This op is handed
-    // `ctx.initial_stock` exactly when it cuts what a prior op left — there,
+    // the remaining stock exactly when it cuts what a prior op left — there,
     // material stands above the design surface wherever nothing has cut yet,
     // and a surface-riding link is a cutting feed straight through it.
     //
@@ -232,7 +232,7 @@ pub(crate) fn generate_unified_finish(
     // the path held identical). For a FLAT endmill the profile rule is
     // byte-identical to the flat disc, which is the safety anchor.
     // R1: the one builder (`op_link_ceiling`) sets all three values.
-    let link_ceiling = op_link_ceiling(op.op_type(), ctx);
+    let link_ceiling = op_link_ceiling(op.op_type(), ctx, territory);
     // W6.4: the composed op. `run_composed` records the whole report (the
     // link totals and the C2 cells only when their pass ran, the cascade
     // residual, the dropped and clipped bands, the crease tip float and the
@@ -309,8 +309,9 @@ pub(crate) fn generate_steep_shallow(
     // W6.4.6: the flat band of `standing_near` around each point, at the
     // tool tip Z the point carries. The stock and the reach are the ones
     // the Waterline rule reads (`finish_raster.rs`): the remaining stock
-    // of the context and the cutter radius.
-    let rest_stock = ctx.initial_stock;
+    // after the W2.1 guard, which the territory resolved (C3), and the
+    // cutter radius.
+    let rest_stock = territory.reference_stock();
     let radius = ctx.tool_def.radius();
     let standing = |p: crate::geo::P3| {
         super::standing_material::standing_near(rest_stock, p.z, radius)
@@ -335,7 +336,7 @@ pub(crate) fn generate_steep_shallow(
             standing: &standing,
             split_timing: ctx.link_kinematics.as_ref(),
         }),
-        link_stage: finishing_link_stage(op.op_type(), ctx, territory.regions(), cfg.hookup_mm),
+        link_stage: finishing_link_stage(op.op_type(), ctx, territory, cfg.hookup_mm),
     };
     run_composed(&steep_shallow, ctx)
 }

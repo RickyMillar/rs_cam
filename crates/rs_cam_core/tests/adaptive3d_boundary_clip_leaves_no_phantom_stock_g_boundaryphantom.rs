@@ -26,7 +26,7 @@
 //! ## The fix
 //!
 //! The session hands the planner the clip's containment polygons
-//! (`ExecutionContext::boundary_centre` ->
+//! (`TerritoryInputs::centre` ->
 //! `Adaptive3dGeometry::centre_boundary`). The planner clips every segment
 //! before it pushes and stamps it (`adaptive3d/centre_clip.rs`), so it
 //! stamps only what the clip keeps.

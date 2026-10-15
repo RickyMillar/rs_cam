@@ -985,7 +985,7 @@ impl ZeroRemovalFinding {
 /// depth. It does not change a move.
 ///
 /// Measured on the planned moves, before the link, against the stock the
-/// op reads (`ExecutionContext::initial_stock`). Only on a remaining stock:
+/// op reads (`Territory::unguarded_stock`). Only on a remaining stock:
 /// on fresh stock nothing is measured, and an absent measurement is not a
 /// claim (X-19). Lead ruling (W6.5): severity Info; it fires also after a
 /// normal rough, because it states a measured fact.

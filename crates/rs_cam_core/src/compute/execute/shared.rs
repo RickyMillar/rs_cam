@@ -12,12 +12,11 @@ use crate::compute::catalog::OperationType;
 use crate::dexel_stock::TriDexelStock;
 use crate::finish::surface_link::{FinishingLinkStage, LinkCeiling, LinkGeometry};
 use crate::finish::unified_finish::RelinkTotals;
-use crate::geometry::region_set::RegionSet;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::trace::transform_provenance::ReconcileSet;
 
-use super::{ExecutionContext, GeneratedToolpath};
+use super::{ExecutionContext, GeneratedToolpath, Territory};
 
 /// F2 (defect class C3): every generation funnel appends the
 /// [`crate::toolpath::MoveIntent`]-derived transit spans
@@ -129,14 +128,18 @@ pub fn link_ceiling_for<'a>(
     })
 }
 
-/// [`link_ceiling_for`] with its inputs read off the execution context.
+/// [`link_ceiling_for`] with its inputs read off the execution context and
+/// the op's territory. The stock is the remaining stock WITHOUT the W2.1
+/// guard ([`Territory::unguarded_stock`], C3): the ceiling must see all the
+/// material that stands, also where no mesh is in scope.
 pub(super) fn op_link_ceiling<'a>(
     op: OperationType,
     ctx: &ExecutionContext<'a>,
+    territory: &Territory<'a>,
 ) -> Option<LinkCeiling<'a>> {
     link_ceiling_for(
         op,
-        ctx.initial_stock,
+        territory.unguarded_stock(),
         ctx.tool_def,
         ctx.stock_bbox.max.z,
         ctx.heights.top_z,
@@ -150,7 +153,7 @@ pub(super) fn op_link_ceiling<'a>(
 /// Every finishing family that opts in reads its ceiling, its boundary and
 /// its kinematics from here, so the three cannot drift apart family by family
 /// again. Before this existed the unified finish took its ceiling from
-/// `ctx.initial_stock` and the scallop passed `link_ceiling: None`, which on a
+/// the context stock and the scallop passed `link_ceiling: None`, which on a
 /// `FromRemainingStock` island pass made every finger-to-finger hop a full
 /// safe-Z retract AND left the scallop's surface-riding links unchecked
 /// against the standing material they crossed.
@@ -171,13 +174,13 @@ pub(super) fn op_link_ceiling<'a>(
 ///
 /// The ceiling comes from the one builder, `op_link_ceiling` (ruling R1).
 /// The three callers are finishing ops (`LinkCeilingNeed::WithRemainingStock`):
-/// `ctx.initial_stock` is `Some` exactly when the op cuts what a prior op
-/// left. `None` is the fresh-stock arm, where the mesh IS the material; the
+/// the unguarded stock of the territory is `Some` exactly when the op cuts
+/// what a prior op left. `None` is the fresh-stock arm, where the mesh IS the material; the
 /// stage is then byte-identical to the legacy surface-riding link, which is
 /// what `tests/island_stay_down_links_o3.rs` pins.
 ///
-/// The boundary is the op's territory regions (W6.2): a link may not leave
-/// the area the op cuts.
+/// The boundary is the op's territory regions (W6.2,
+/// [`Territory::regions`]): a link may not leave the area the op cuts.
 ///
 /// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
 /// a reference to it can only live as long as the borrow of `*ctx` — while
@@ -189,7 +192,7 @@ pub(super) fn op_link_ceiling<'a>(
 pub(super) fn finishing_link_stage<'c, 'a: 'c>(
     op: OperationType,
     ctx: &'c ExecutionContext<'a>,
-    boundary: Option<&'c RegionSet<'c>>,
+    territory: &'c Territory<'c>,
     hookup_mm: f64,
 ) -> Option<FinishingLinkStage<'c>> {
     if hookup_mm <= 0.0 {
@@ -197,8 +200,8 @@ pub(super) fn finishing_link_stage<'c, 'a: 'c>(
     }
     Some(FinishingLinkStage {
         hookup_distance: hookup_mm,
-        link_ceiling: op_link_ceiling(op, ctx),
-        boundary,
+        link_ceiling: op_link_ceiling(op, ctx, territory),
+        boundary: territory.regions(),
         link_kinematics: ctx.link_kinematics.as_ref(),
     })
 }

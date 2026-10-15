@@ -2,7 +2,7 @@
 //! Z level of the ladder.
 //!
 //! A 2.5D operation with `StockSource::FromRemainingStock` receives the
-//! machined stock as `ExecutionContext::initial_stock`. Before this module,
+//! machined stock on `ExecutionContext::territory_inputs`. Before this module,
 //! Pocket planned every level from `top_z` down and cut air where an
 //! upstream operation had already cleared the material (op Z23 re-cut 112
 //! levels that op Z22 had cleared; 93.5 % of its cut time was air).

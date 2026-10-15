@@ -14,8 +14,15 @@
 //! The prologue resolves the territory ONCE per op ([`Territory::resolve`])
 //! from the op's capabilities and its config, and hands it to the adapter
 //! on [`super::Prepared`]. An adapter passes the parts its kernel reads. It
-//! does not read `ExecutionContext::boundary_regions`, `boundary`,
-//! `boundary_centre` or call the stock guard again.
+//! does not call the stock guard again.
+//!
+//! # The inputs (C3)
+//!
+//! The boundary inputs and the remaining stock arrive on
+//! `ExecutionContext::territory_inputs` ([`TerritoryInputs`]). Its fields
+//! are private to this module, so the compiler refuses an op that reads
+//! them around the territory. The caller writes them through the builder
+//! methods; only [`Territory::resolve`] reads them.
 //!
 //! # The obstacle pre-clip (K3)
 //!
@@ -103,6 +110,61 @@ pub enum SurfaceMask {
     },
 }
 
+/// The inputs of [`Territory::resolve`]: the boundary inputs and the
+/// remaining stock, all in the emission frame. The caller builds them with
+/// [`Self::default`] and the builder methods. The fields are private to this
+/// module (C3): an op reads them through [`super::Prepared::territory`]
+/// only.
+#[derive(Clone, Copy, Default)]
+pub struct TerritoryInputs<'a> {
+    /// The machined stock the op cuts. `None`: a fresh op.
+    stock: Option<&'a TriDexelStock>,
+    /// The single boundary outline, the 3D Rough pre-clear.
+    boundary: Option<&'a Polygon2>,
+    /// P2.3: the multi-region set the mesh-finish family pre-clips
+    /// generation to, so sampling never wastes work outside the machining
+    /// boundary. `boundary` stays the 3D Rough single-polygon pre-clear.
+    regions: Option<&'a RegionSet<'a>>,
+    /// G-BOUNDARYPHANTOM: the containment polygons the session's
+    /// post-generation boundary clip clips this toolpath to (the regions
+    /// after keep-outs, the user offset and the tool-radius containment).
+    /// The 3D Rough planner keeps its tool centre inside them so it stamps
+    /// only what the clip keeps. `None`: no boundary, or a caller that
+    /// applies no clip.
+    centre: Option<&'a [Polygon2]>,
+}
+
+impl<'a> TerritoryInputs<'a> {
+    /// The remaining stock the generator is seeded with. `None`: a fresh op.
+    #[must_use]
+    pub(crate) fn stock(mut self, stock: Option<&'a TriDexelStock>) -> Self {
+        self.stock = stock;
+        self
+    }
+
+    /// The single boundary outline (the 3D Rough pre-clear).
+    #[must_use]
+    pub(crate) fn boundary(mut self, boundary: Option<&'a Polygon2>) -> Self {
+        self.boundary = boundary;
+        self
+    }
+
+    /// The boundary region set of the mesh-finish family (P2.3).
+    #[must_use]
+    pub(crate) fn regions(mut self, regions: Option<&'a RegionSet<'a>>) -> Self {
+        self.regions = regions;
+        self
+    }
+
+    /// The centre containment of the post-generation clip
+    /// (G-BOUNDARYPHANTOM).
+    #[must_use]
+    pub(crate) fn centre(mut self, centre: Option<&'a [Polygon2]>) -> Self {
+        self.centre = centre;
+        self
+    }
+}
+
 /// The territory of one op, resolved once by the prologue. The obstacle
 /// pre-clip makes owned polygons, so the type is not `Copy`; an adapter
 /// reads it by reference ([`super::Prepared::territory`]).
@@ -114,10 +176,12 @@ pub struct Territory<'a> {
     pub mask: Option<SurfaceMask>,
     /// The remaining stock as a rest reference, after the W2.1 guard.
     /// `None`: the op reads no reference stock, or there is no mesh to
-    /// compare the stock with. A `Planner` op (3D Rough) seeds its planner
-    /// from `ExecutionContext::initial_stock` without the guard, and an op
-    /// builds its link ceiling from it the same way; neither reads this.
+    /// compare the stock with. The readers whose rule needs the stock
+    /// without the guard read [`Self::unguarded_stock`].
     pub stock: Option<StockReference<'a>>,
+    /// The remaining stock without the guard. Private (C3): see
+    /// [`Self::unguarded_stock`].
+    unguarded: Option<&'a TriDexelStock>,
     /// K1: the setup's obstacles for this op's tool. Every op keeps out of
     /// them with no opt-in: the link ceiling lifts over them and the
     /// session clips the result after the dressups. `None`: no obstacle.
@@ -128,28 +192,62 @@ impl<'a> Territory<'a> {
     /// THE resolver. The prologue calls it once per op.
     ///
     /// The stock part runs the guard only when something reads it: an op
-    /// whose rest rule is [`RestUse::Reference`] (Pencil, Unified Finish),
-    /// or an enabled generic rest analysis. Both need a mesh.
+    /// whose rest rule is [`RestUse::Reference`] (Pencil, Unified Finish)
+    /// or [`RestUse::ContourFilter`] (Waterline, Steep and Shallow, C3), or
+    /// an enabled generic rest analysis. All of them need a mesh.
     pub(super) fn resolve(ctx: &ExecutionContext<'a>, op: &OperationConfig) -> Self {
         let caps = op.capabilities();
+        let inputs = ctx.territory_inputs;
         let obstacles = ctx.obstacles.filter(|view| !view.is_empty());
         let xy = match caps.territory_xy {
             TerritoryXy::ClipAfter => XyTerritory::ClipAfter,
-            TerritoryXy::Regions => XyTerritory::Regions(regions_less_obstacles(ctx, obstacles)),
-            TerritoryXy::PlannerBounds => planner_bounds_less_obstacles(ctx, obstacles),
+            TerritoryXy::Regions => {
+                XyTerritory::Regions(regions_less_obstacles(ctx, &inputs, obstacles))
+            }
+            TerritoryXy::PlannerBounds => planner_bounds_less_obstacles(ctx, &inputs, obstacles),
         };
-        let reads_stock =
-            caps.rest_use == RestUse::Reference || ctx.rest_analysis.is_some_and(|ra| ra.enabled);
+        let rule_reads_reference = match caps.rest_use {
+            RestUse::Reference | RestUse::ContourFilter => true,
+            RestUse::None
+            | RestUse::LevelClip
+            | RestUse::LevelSkip
+            | RestUse::LevelMask
+            | RestUse::StockColumn
+            | RestUse::Planner
+            | RestUse::LinkSafetyOnly => false,
+        };
+        let reads_stock = rule_reads_reference || ctx.rest_analysis.is_some_and(|ra| ra.enabled);
         let stock = ctx
             .mesh
             .filter(|_| reads_stock)
-            .map(|mesh| StockReference::resolve(ctx.initial_stock, &mesh.bbox));
+            .map(|mesh| StockReference::resolve(inputs.stock, &mesh.bbox));
         Self {
             xy,
             mask: op.surface_mask(),
             stock,
+            unguarded: inputs.stock,
             obstacles,
         }
+    }
+
+    /// The remaining stock WITHOUT the W2.1 guard. `None`: a fresh op.
+    ///
+    /// The guard compares the stock with the mesh, so a reader that has no
+    /// mesh, or that must read the stock as it is, reads this. The readers
+    /// are a closed list (C3); a new reader is a design decision:
+    ///
+    /// - the link ceiling (`shared::op_link_ceiling`, G-LINKCEIL);
+    /// - the rest rules of the 2D ops: `LevelClip` and `LevelSkip`
+    ///   (`layered::run_layered`), `LevelMask` (2D Adaptive), and
+    ///   `StockColumn` (Drill);
+    /// - the RAW seed of a `Planner` op (`volumetric::run_volumetric`);
+    /// - the Pencil entry ramps (`PencilStock::remaining`);
+    /// - `BuriedCurveFinding` (`curve::run_curve`).
+    ///
+    /// A rest rule that compares the stock with the surface reads
+    /// [`Self::reference_stock`].
+    pub(super) fn unguarded_stock(&self) -> Option<&'a TriDexelStock> {
+        self.unguarded
     }
 
     /// The boundary region set, for an op whose XY part is
@@ -210,9 +308,10 @@ impl<'a> Territory<'a> {
 /// meets the base: the op then reads no set, as with no obstacle.
 fn regions_less_obstacles<'a>(
     ctx: &ExecutionContext<'a>,
+    inputs: &TerritoryInputs<'a>,
     obstacles: Option<&'a ObstacleToolView>,
 ) -> Option<RegionSet<'a>> {
-    let base: Option<&'a [Polygon2]> = ctx.boundary_regions.map(|regions| regions.as_slice());
+    let base: Option<&'a [Polygon2]> = inputs.regions.map(|regions| regions.as_slice());
     let Some(view) = obstacles else {
         return base.map(RegionSet::from_slice);
     };
@@ -245,15 +344,16 @@ fn regions_less_obstacles<'a>(
 ///   keeps).
 fn planner_bounds_less_obstacles<'a>(
     ctx: &ExecutionContext<'a>,
+    inputs: &TerritoryInputs<'a>,
     obstacles: Option<&'a ObstacleToolView>,
 ) -> XyTerritory<'a> {
     let Some(view) = obstacles else {
         return XyTerritory::PlannerBounds {
-            outline: ctx.boundary.map(Cow::Borrowed),
-            centre: ctx.boundary_centre.map(Cow::Borrowed),
+            outline: inputs.boundary.map(Cow::Borrowed),
+            centre: inputs.centre.map(Cow::Borrowed),
         };
     };
-    let outline: Option<Cow<'a, Polygon2>> = match (ctx.boundary, ctx.boundary_centre) {
+    let outline: Option<Cow<'a, Polygon2>> = match (inputs.boundary, inputs.centre) {
         (Some(outline), _) => Some(Cow::Borrowed(outline)),
         // A boundary whose regions do not union to one outline: the
         // planner keeps no outline, as without obstacles.
@@ -270,7 +370,7 @@ fn planner_bounds_less_obstacles<'a>(
             Some(Cow::Owned(subtract_keepouts(&rect, view.footprints())))
         }
     };
-    let base_centre: Vec<Polygon2> = match (ctx.boundary_centre, outline.as_deref()) {
+    let base_centre: Vec<Polygon2> = match (inputs.centre, outline.as_deref()) {
         (Some(centre), _) => centre.to_vec(),
         (None, Some(outline)) => vec![Polygon2::new(outline.exterior.clone())],
         (None, None) => Vec::new(),

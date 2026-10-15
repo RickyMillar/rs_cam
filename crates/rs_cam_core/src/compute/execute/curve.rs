@@ -107,14 +107,14 @@ pub(crate) fn run_curve<O: CurveOp>(
     if let Some(finding) = BuriedCurveFinding::measure(
         &planned,
         op.commanded_depth_mm(),
-        ctx.initial_stock,
+        prepared.territory().unguarded_stock(),
         ctx.tool_def,
     ) {
         ctx.record(&finding);
     }
     let link = CurveLink {
         regions: prepared.territory().regions(),
-        ceiling: op_link_ceiling(op_type, ctx),
+        ceiling: op_link_ceiling(op_type, ctx, prepared.territory()),
         kinematics: ctx.link_kinematics.as_ref(),
     };
     let linked = op.link(planned, query, frame, &link);

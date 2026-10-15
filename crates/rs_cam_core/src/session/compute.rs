@@ -96,7 +96,7 @@ pub struct ResolvedGenInputs {
     /// re-derives for its post-generation clip (keep-outs subtracted, user
     /// offset applied, but NOT yet tool-radius inset). Resolved once here
     /// alongside `pre_boundary`'s union attempt and shared with the
-    /// mesh-finish family's pre-clip via `ExecutionContext::boundary_regions`
+    /// mesh-finish family's pre-clip via `TerritoryInputs::regions`
     /// — never re-derived just for this field. `PlannedTierRegions` and
     /// `ModelOutline` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
@@ -1235,8 +1235,8 @@ pub fn execute_generation(
 > {
     // P2.3: `pre_boundary_regions` (resolved once, by the submit step,
     // alongside `pre_boundary`) reaches the mesh-finish family's pre-clip
-    // through `ExecutionContext::boundary_regions`. The advisor's probe
-    // below leaves that field at its constructor default, `None`.
+    // through `ExecutionContext::territory_inputs`. The advisor's probe
+    // below sets only the boundary outline there.
     let seed_stock = context.generator_seed_stock();
     let regions = inputs
         .pre_boundary_regions
@@ -1253,11 +1253,12 @@ pub fn execute_generation(
         setup_transform: inputs.setup_transform.as_ref(),
         reference_tool_cfg: inputs.reference_tool_cfg.clone(),
         debug_ctx: observer.debug_ctx(),
-        initial_stock: seed_stock,
         semantic_ctx: observer.semantic_ctx(),
-        boundary: inputs.pre_boundary.as_ref(),
-        boundary_regions: regions.as_ref(),
-        boundary_centre: boundary_centre.as_deref(),
+        territory_inputs: crate::compute::execute::TerritoryInputs::default()
+            .stock(seed_stock)
+            .boundary(inputs.pre_boundary.as_ref())
+            .regions(regions.as_ref())
+            .centre(boundary_centre.as_deref()),
         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
@@ -1572,7 +1573,8 @@ pub fn execute_recommend_clearing_strategy(
             mesh: resolved.mesh.as_deref(),
             index: resolved.spatial_index(),
             polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-            boundary: resolved.pre_boundary.as_ref(),
+            territory_inputs: crate::compute::execute::TerritoryInputs::default()
+                .boundary(resolved.pre_boundary.as_ref()),
             // Everything else stays at the constructor default. The probe
             // records no trace, seeds no stock, resolves no reference tool
             // (it plans clearing ops only, never pencil) and discards its

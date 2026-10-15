@@ -49,7 +49,8 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::execute::{
-    ExecutionContext, GenerationFindings, apply_dressups, execute_operation_annotated,
+    ExecutionContext, GenerationFindings, TerritoryInputs, apply_dressups,
+    execute_operation_annotated,
 };
 use crate::compute::operation_configs::{ProjectCurveConfig, ProjectCurveDirection};
 use crate::compute::stats::compute_retract_trips;
@@ -148,8 +149,8 @@ fn heights(safe_z: f64) -> ResolvedHeights {
         retract_z: safe_z,
         feed_z: 1.0,
         // Stock top == mesh top: the fallback ceiling a run with no dexel
-        // snapshot uses is then the mesh itself, so the `initial_stock:
-        // None` arms measure the link against the surface and nothing else.
+        // snapshot uses is then the mesh itself, so the stock
+        // `None` arms measure the link against the surface and nothing else.
         top_z: 0.0,
         bottom_z: -12.0,
         top_pinned: true,
@@ -191,8 +192,9 @@ fn generate_with(
         mesh: Some(&mesh),
         index: Some(&index),
         polygons: Some(polys.as_slice()),
-        initial_stock: stock,
-        boundary_regions: regions.as_ref(),
+        territory_inputs: TerritoryInputs::default()
+            .stock(stock)
+            .regions(regions.as_ref()),
         ..ExecutionContext::new(
             &findings,
             &tool_def,

@@ -2036,7 +2036,8 @@ fn advisor_modulates_candidate_feeds_before_timing() {
         mesh: resolved.mesh.as_deref(),
         index: resolved.spatial_index(),
         polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-        boundary: resolved.pre_boundary.as_ref(),
+        territory_inputs: crate::compute::execute::TerritoryInputs::default()
+            .boundary(resolved.pre_boundary.as_ref()),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,
             &resolved.tool_def,

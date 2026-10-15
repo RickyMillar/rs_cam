@@ -665,7 +665,7 @@ pub(crate) fn generate_adaptive(
         let seeds = match rest_use {
             RestUse::LevelMask => {
                 let plan = level_masks(
-                    ctx.initial_stock,
+                    prepared.territory().unguarded_stock(),
                     poly,
                     &levels,
                     ctx.tool_def.radius(),
