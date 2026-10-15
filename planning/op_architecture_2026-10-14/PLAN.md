@@ -158,3 +158,4 @@ and W4, from what they measure. It is not scheduled now.
 - B9: ZigzagRaster (Zigzag op, Pocket zigzag pattern) has the same latent rest row shift B8 fixed for Face (rows start at the clipped region edge).
 - B10: on a rest level the 2D Adaptive planner starts with an entry starter at the piece centre even when that point is cleared.
 - B11: for a rest op, the entry dressup turns a row that runs only in air into a rapid with intent Unknown (also seen on rest Drill pecks). Air rows should be dropped or tagged, not left Unknown.
+- B12 (from B10): at the level at a prior op's own floor, the rest 2D Adaptive still places an entry helix at the piece centre 7.4 mm from material with no cuts near it (level mask reads material, air filter reads air, the filter never drops a helix).
