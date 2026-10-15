@@ -67,16 +67,9 @@ pub(super) fn dv(ui: &mut egui::Ui, param: Param, val: &mut f64, suffix: &str, s
 /// [`dv`] for a row whose range a GUI rule narrows inside [`schema_range`].
 /// The row clamps to the part of `narrow` that is inside the schema range.
 ///
-/// Two rules use it:
-///
-/// - a cross-field rule: the Unified Finish waterline threshold stays above
-///   the steep threshold;
-/// - a practical floor above a strict schema floor. The schema of
-///   `peck_depth`, `angular_step` and `point_spacing` is `> 0` (DR-LIVE, the
-///   N10 operator ruling), and the setter refuses only zero and less. A
-///   tiny positive value still makes the generator emit an unbounded count
-///   of pecks or spokes. So the row keeps the floor the GUI had before W5
-///   until a ruling moves that floor into the schema.
+/// One rule uses it: a cross-field rule. The Unified Finish waterline
+/// threshold stays above the steep threshold. A single-field floor goes in
+/// the schema, not here (operator ruling 2026-10-15).
 pub(super) fn dv_narrowed(
     ui: &mut egui::Ui,
     param: Param,

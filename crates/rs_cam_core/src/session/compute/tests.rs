@@ -123,6 +123,8 @@ fn set_toolpath_param_depth_per_pass() {
 /// smallest sane positive accepted, and **the refused value not
 /// applied** — a setter that rejects and mutates anyway is worse than
 /// one that accepts.
+///
+/// The operator ruling of 2026-10-15 moves the GUI floor of 0.5 mm into the schema.
 #[test]
 fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
     let mut s = make_session();
@@ -140,7 +142,7 @@ fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
         }
     };
 
-    for bad in [0.0_f64, -3.0, -0.000_001] {
+    for bad in [0.0_f64, -3.0, -0.000_001, 0.499] {
         let err = s
             .set_toolpath_param(0, "peck_depth", json!(bad))
             .expect_err(
@@ -175,22 +177,21 @@ fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
         .range
         .as_ref()
         .expect("peck_depth must publish its range");
-    assert_eq!(range["min"], json!(0.0));
-    assert_eq!(range["min_exclusive"], json!(true));
+    assert_eq!(range["min"], json!(0.5));
+    assert_eq!(range["min_exclusive"], json!(false));
     assert_eq!(range["finite"], json!(true));
 }
 
 /// The **residual** the sentry above deliberately does not close, so
 /// it is on the record rather than implied away.
 ///
-/// `ParamRange::greater_than(0.0)` matches `drill::fed_descents`'
-/// guard exactly (`!peck.is_finite() || peck <= 0.0`). It bounds the
-/// *sign and finiteness* of the peck. It does **not** bound the peck
-/// COUNT: `fed_descents` has no cap, so descents scale as
-/// `depth / peck` without limit, and a positive-but-tiny peck set
-/// through MCP is still a practical hang (allocation-bound, not a
-/// spin). This is measured at safe magnitudes and asserted as a
-/// TREND, not run at the magnitude that would take the machine down.
+/// The schema floor (0.5 mm since the operator ruling of 2026-10-15)
+/// bounds the peck count of a value set through MCP. It does **not**
+/// bound `fed_descents` itself: the emitter has no cap, so descents
+/// scale as `depth / peck` without limit, and a project file or a
+/// feeds write that bypasses the setter can still carry a tiny peck.
+/// This is measured at safe magnitudes and asserted as a TREND, not
+/// run at the magnitude that would take the machine down.
 ///
 /// Not fixed here: capping the emitter is a behavioural change to
 /// generation, and S-5's brief is to align the ParamDef. Reported as

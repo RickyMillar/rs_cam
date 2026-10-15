@@ -23,6 +23,9 @@
 //! in the `peck_depth` shape. Both numbers are OPERATOR-AUTHORED on that
 //! date. They are not a vendor figure and not a handbook figure.
 //!
+//! The operator ruling of 2026-10-15 moves the GUI floors into the schema:
+//! `angular_step >= 1.0` and `point_spacing >= 0.1`.
+//!
 //! # What each test covers
 //!
 //! 1. The DR-LIVE gate in `set_toolpath_param` refuses the value BEFORE
@@ -96,7 +99,7 @@ fn set_toolpath_param_refuses_a_non_positive_angular_step() {
     let mut s = radial_session(RadialFinishConfig::default());
     let (before, _) = dials(&s);
 
-    for bad in [0.0_f64, -5.0, -0.000_001] {
+    for bad in [0.0_f64, -5.0, -0.000_001, 0.999] {
         let err = s
             .apply(Command::SetToolpathParam(SetToolpathParamArgs {
                 index: 0,
@@ -137,7 +140,7 @@ fn set_toolpath_param_refuses_a_non_positive_point_spacing() {
     let mut s = radial_session(RadialFinishConfig::default());
     let (_, before) = dials(&s);
 
-    for bad in [0.0_f64, -0.5, -0.000_001] {
+    for bad in [0.0_f64, -0.5, -0.000_001, 0.099] {
         let err = s
             .apply(Command::SetToolpathParam(SetToolpathParamArgs {
                 index: 0,
@@ -178,7 +181,7 @@ fn the_radial_finish_schema_publishes_both_domains() {
         .expect("radial_finish must be a known operation type");
     let op = OperationType::RadialFinish;
 
-    for name in ["angular_step", "point_spacing"] {
+    for (name, floor) in [("angular_step", 1.0_f64), ("point_spacing", 0.1)] {
         let entry = schema
             .params
             .iter()
@@ -188,8 +191,8 @@ fn the_radial_finish_schema_publishes_both_domains() {
             .range
             .as_ref()
             .unwrap_or_else(|| panic!("{name} must publish its range"));
-        assert_eq!(range["min"], json!(0.0));
-        assert_eq!(range["min_exclusive"], json!(true));
+        assert_eq!(range["min"], json!(floor));
+        assert_eq!(range["min_exclusive"], json!(false));
         assert_eq!(range["finite"], json!(true));
 
         // The same domain, read off the registry the generator reads.
@@ -198,7 +201,11 @@ fn the_radial_finish_schema_publishes_both_domains() {
         assert!(!declared.accepts(0.0), "{name} must refuse 0.0");
         assert!(!declared.accepts(-1.0), "{name} must refuse a negative");
         assert!(!declared.accepts(f64::NAN), "{name} must refuse NaN");
-        assert!(declared.accepts(0.5), "{name} must accept a real length");
+        assert!(
+            !declared.accepts(floor * 0.99),
+            "{name} must refuse a value below its floor"
+        );
+        assert!(declared.accepts(floor), "{name} must accept its floor");
     }
 }
 

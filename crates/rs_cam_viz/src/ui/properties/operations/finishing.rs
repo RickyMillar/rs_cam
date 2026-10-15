@@ -5,7 +5,7 @@ use crate::state::toolpath::{
     SpiralFinishConfig,
 };
 
-use super::super::{advanced, dv, dv_narrowed, dv_pill, p};
+use super::super::{advanced, dv, dv_pill, p};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -138,17 +138,14 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
     // Radial finish uses angular_step + point_spacing — neither maps to a
     // clearing-style WOC/DOC. Feed/plunge live on the Feeds tab.
     ui.param_grid("radial_p", |ui| {
-        // The schema floors are `> 0` (N10 ruling); the rows keep their
-        // pre-W5 floors of 1 deg and 0.1 mm (see `dv_narrowed`).
-        dv_narrowed(
+        dv(
             ui,
             p(OperationType::RadialFinish, "angular_step", "Angular Step:"),
             &mut cfg.angular_step,
             " deg",
             1.0,
-            1.0..=f64::INFINITY,
         );
-        dv_narrowed(
+        dv(
             ui,
             p(
                 OperationType::RadialFinish,
@@ -158,7 +155,6 @@ pub(in crate::ui::properties) fn draw_radial_finish_params(
             &mut cfg.point_spacing,
             " mm",
             0.1,
-            0.1..=f64::INFINITY,
         );
         dv(
             ui,

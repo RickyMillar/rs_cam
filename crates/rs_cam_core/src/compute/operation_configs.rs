@@ -41,10 +41,10 @@ const HELP_TOLERANCE: &str =
 
 const HELP_MIN_CUTTING_RADIUS: &str = "Blend sharp corners with arcs of at least this radius.";
 
-const HELP_PECK_DEPTH: &str = "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. Must be strictly positive and \
-     finite: `drill::fed_descents` degrades a zero, negative or non-finite peck to a single \
-     full-depth descent, so any such value silently turns a Peck cycle into a single-shot one \
-     (DR-LIVE).";
+const HELP_PECK_DEPTH: &str = "Depth of each peck (mm), rooted at the R-plane like Fanuc G83. Must be at least 0.5 mm \
+     and finite: `drill::fed_descents` degrades a zero, negative or non-finite peck to a single \
+     full-depth descent (DR-LIVE), and a tiny positive peck emits a descent count with no cap \
+     (floor in the schema: operator ruling 2026-10-15).";
 
 const HELP_SLOPE_FROM: &str =
     "Minimum surface slope (degrees) to machine. Faces shallower than this are skipped.";
@@ -297,7 +297,7 @@ pub struct DrillConfig {
     #[param(help = HELP_DEPTH, range = 0.5..=100.0)]
     pub depth: f64,
     pub cycle: DrillCycleType,
-    #[param(help = HELP_PECK_DEPTH, gt = 0.0, max = 50.0)]
+    #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
     pub peck_depth: f64,
     #[param(range = 0.1..=10.0)]
     pub dwell_time: f64,
@@ -370,7 +370,7 @@ pub struct AlignmentPinDrillConfig {
     )]
     pub spoilboard_penetration: f64,
     pub cycle: DrillCycleType,
-    #[param(help = HELP_PECK_DEPTH, gt = 0.0, max = 50.0)]
+    #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
     pub peck_depth: f64,
     #[param(range = 1.0..=5000.0)]
     pub feed_rate: f64,
@@ -2333,20 +2333,21 @@ impl SpiralFinishConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct RadialFinishConfig {
     #[param(
-        help = "Angle (degrees) between two spokes. Must be strictly positive and finite: \
+        help = "Angle (degrees) between two spokes. Must be at least 1 degree and finite: \
                 `radial_finish` computes the spoke count as `360.0 / angular_step`, so a zero gives \
                 `inf` and casts to `usize::MAX` spokes, and a negative value casts to zero spokes \
-                and emits nothing (N10).",
-        gt = 0.0,
+                and emits nothing (N10). Floor in the schema: operator ruling 2026-10-15.",
+        min = 1.0,
         max = 90.0
     )]
     pub angular_step: f64,
     #[param(
-        help = "Distance (mm) between two sample points along one spoke. Must be strictly positive \
+        help = "Distance (mm) between two sample points along one spoke. Must be at least 0.1 mm \
                 and finite: `radial_finish` computes the point count as `max_radius / \
                 point_spacing`, so a zero overflows the point allocation and a negative value \
-                leaves one point per spoke and emits nothing (N10).",
-        gt = 0.0,
+                leaves one point per spoke and emits nothing (N10). Floor in the schema: operator \
+                ruling 2026-10-15.",
+        min = 0.1,
         max = 5.0
     )]
     pub point_spacing: f64,
