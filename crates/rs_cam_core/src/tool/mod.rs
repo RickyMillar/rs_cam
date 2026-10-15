@@ -626,7 +626,9 @@ pub struct ToolDefinition {
     cutter: Box<dyn MillingCutter>,
     /// Shank diameter above the cutting flutes (mm).
     pub shank_diameter: f64,
-    /// Shank length above the cutting flutes (mm).
+    /// Length of the shank blank above the cutting flutes (mm). The
+    /// assembly does not read it: the exposed shank follows from
+    /// `stickout` ([`Self::exposed_shank_length`]).
     pub shank_length: f64,
     /// Holder / collet diameter (mm).
     pub holder_diameter: f64,
@@ -659,9 +661,12 @@ impl ToolDefinition {
         }
     }
 
-    /// Computed holder length from stickout minus cutting length and shank.
-    pub fn holder_length(&self) -> f64 {
-        (self.stickout - self.cutter.length() - self.shank_length).max(0.0)
+    /// The shank length between the flutes and the holder face (mm):
+    /// `max(stickout - cutting length, 0)`. The holder face is at
+    /// `stickout` above the tip, always; `shank_length` is the length of
+    /// the shank blank and does not move the face.
+    pub fn exposed_shank_length(&self) -> f64 {
+        self.to_assembly().exposed_shank_length()
     }
 
     /// Build a `ToolAssembly` for collision detection.
@@ -674,9 +679,8 @@ impl ToolDefinition {
             cutter_radius: self.cutter.radius(),
             cutter_length: self.cutter.length(),
             shank_diameter: self.shank_diameter,
-            shank_length: self.shank_length,
             holder_diameter: self.holder_diameter,
-            holder_length: self.holder_length(),
+            stickout: self.stickout,
         }
     }
 
@@ -1247,9 +1251,11 @@ mod tests {
         assert!((asm.cutter_radius - 5.0).abs() < 1e-10);
         assert!((asm.cutter_length - 25.0).abs() < 1e-10);
         assert!((asm.shank_diameter - 6.35).abs() < 1e-10);
-        assert!((asm.shank_length - 20.0).abs() < 1e-10);
         assert!((asm.holder_diameter - 25.0).abs() < 1e-10);
-        assert!((asm.holder_length - 5.0).abs() < 1e-10); // 50 - 25 - 20
+        // The holder face is at the stickout; the exposed shank fills the
+        // rest above the flutes: 50 - 25.
+        assert!((asm.stickout - 50.0).abs() < 1e-10);
+        assert!((asm.exposed_shank_length() - 25.0).abs() < 1e-10);
     }
 
     #[test]
@@ -1481,21 +1487,40 @@ mod tests {
         );
     }
 
+    /// The holder face is at `stickout` above the tip whatever the shank
+    /// blank length is. Before the fix, a tool with cutting length plus
+    /// shank length at or above the stickout had NO holder in the check.
     #[test]
-    fn test_tool_definition_holder_length() {
-        let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
-        assert!((td.holder_length() - 5.0).abs() < 1e-10);
-        // Clamps to 0 if stickout is short
-        let td2 = ToolDefinition::new(
+    fn the_holder_face_is_at_the_stickout() {
+        // 25 + 20 = 45 >= stickout 30: the old model gave no holder.
+        let td = ToolDefinition::new(
             Box::new(FlatEndmill::new(10.0, 25.0)),
             6.35,
             20.0,
             25.0,
-            30.0, // 30 - 25 - 20 = -15 -> clamped to 0
+            30.0,
             2,
             ToolMaterial::Carbide,
         );
-        assert!((td2.holder_length()).abs() < 1e-10);
+        assert!((td.exposed_shank_length() - 5.0).abs() < 1e-10);
+        let segs = td.to_assembly().segments();
+        assert_eq!(segs.len(), 2, "{segs:?}");
+        assert!((segs[0].0 - 25.0).abs() < 1e-10, "shank above the flutes");
+        assert!((segs[1].0 - 30.0).abs() < 1e-10, "holder face at stickout");
+        assert!((segs[1].1 - 12.5).abs() < 1e-10);
+        // Stickout shorter than the flutes: no exposed shank, the holder
+        // face is still at the stickout.
+        let short = ToolDefinition::new(
+            Box::new(FlatEndmill::new(10.0, 25.0)),
+            6.35,
+            20.0,
+            25.0,
+            20.0,
+            2,
+            ToolMaterial::Carbide,
+        );
+        let segs = short.to_assembly().segments();
+        assert_eq!(segs.len(), 1, "{segs:?}");
+        assert!((segs[0].0 - 20.0).abs() < 1e-10);
     }
 }

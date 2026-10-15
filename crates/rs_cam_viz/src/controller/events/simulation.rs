@@ -258,6 +258,7 @@ impl<B: ComputeBackend> AppController<B> {
                     name: tc.name.clone(),
                     annotated: Arc::clone(result.annotated()),
                     tool: tool_def,
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(tc.tool_id),
                     flute_count,
                     tool_summary,
                     semantic_trace,
@@ -303,7 +304,6 @@ impl<B: ComputeBackend> AppController<B> {
                 let obstacles = rs_cam_core::compute::simulate::group_obstacles(
                     setup,
                     self.state.session.models(),
-                    setup_ctx.local_to_global.as_ref(),
                 );
                 groups.push(SimGroupEntry {
                     toolpaths,
@@ -635,14 +635,6 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|m| m.id == tc.model_id)
                     .and_then(|m| m.mesh.clone())?;
-                // K1: carry the setup's obstacles so the GUI check runs the
-                // obstacle kernel too. An obstacle that cannot be resolved
-                // refuses the simulation, which names it.
-                let obstacles = self
-                    .state
-                    .session
-                    .obstacle_set_for_toolpath(index)
-                    .unwrap_or_default();
                 Some((
                     index,
                     tc.id,
@@ -650,12 +642,24 @@ impl<B: ComputeBackend> AppController<B> {
                     Arc::clone(&result.annotated),
                     tool,
                     mesh,
-                    obstacles,
                 ))
             });
 
-        if let Some((index, toolpath_id, enabled, annotated, tool, mesh, obstacles)) = toolpath_data
-        {
+        if let Some((index, toolpath_id, enabled, annotated, tool, mesh)) = toolpath_data {
+            // K1: carry the setup's obstacles so the GUI check runs the
+            // obstacle kernel too. An obstacle that cannot be resolved
+            // REFUSES the check and names the obstacle; a check with no
+            // obstacles would read as clear.
+            let obstacles = match self.state.session.obstacle_set_for_toolpath(index) {
+                Ok(obstacles) => obstacles,
+                Err(e) => {
+                    let text = format!("Collision check refused: {e}");
+                    tracing::warn!("{text}");
+                    self.push_notification(text, super::super::Severity::Error);
+                    return;
+                }
+            };
+            let join = self.state.session.obstacle_join_for_toolpath(index);
             // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
             // stands at SUBMIT, and only on the branch that really submits.
             // The `else` arm below reaches the lane with nothing, and a stamp
@@ -688,6 +692,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tool,
                 mesh,
                 obstacles,
+                join,
             });
         } else {
             tracing::warn!("No toolpath with STL mesh available for collision check");

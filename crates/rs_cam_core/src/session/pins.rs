@@ -153,16 +153,13 @@ impl ProjectSession {
         // reading, and the only one for a lateral setup.
         for setup in &self.setups {
             let ctx = super::SetupEvalContext::build_for_setup(self, Some(setup));
-            let set = match crate::compute::obstacle::ObstacleSet::resolve(
-                &setup.obstacles,
-                &self.models,
-                ctx.local_to_global.as_ref(),
-            ) {
-                Ok(set) => set,
-                Err(e) => {
-                    tracing::warn!(setup = %setup.name, error = %e, "pin walls skip an obstacle");
-                    continue;
-                }
+            // K1: when a setup's obstacles cannot be resolved, the wall to
+            // them is not measured. `pin_obstacle_findings` reports it; the
+            // skip is not silent.
+            let Ok(set) =
+                crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, &self.models)
+            else {
+                continue;
             };
             for obstacle in set.obstacles() {
                 let Some(info) = ctx.local_to_global.as_ref() else {
@@ -202,6 +199,28 @@ impl ProjectSession {
             }
         }
         out
+    }
+
+    /// K1: one finding for each setup whose obstacles cannot be resolved.
+    /// [`Self::pin_obstacles`] leaves those obstacles out, so the pin walls
+    /// to them are not measured; this finding says so. The pin placement
+    /// findings and the pin report both carry it.
+    #[must_use]
+    pub fn pin_obstacle_findings(&self) -> Vec<PinFinding> {
+        self.setups
+            .iter()
+            .filter_map(|setup| {
+                crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, &self.models)
+                    .err()
+                    .map(|e| PinFinding {
+                        kind: crate::compute::alignment_pins::PinFindingKind::ObstacleUnresolved,
+                        text: format!(
+                            "Setup '{}': the pin walls do not include an obstacle. {e}.",
+                            setup.name
+                        ),
+                    })
+            })
+            .collect()
     }
 
     /// The pin-drill operations: for each, its toolpath index and the pin
@@ -374,6 +393,9 @@ impl ProjectSession {
         let obstacles = self.pin_obstacles(&self.pin_part_models());
         let mut out = self.stock.pin_wall_findings(&obstacles);
         out.extend(self.pin_tool_mismatch_findings(&self.stock.alignment_pins));
+        if !self.stock.alignment_pins.is_empty() {
+            out.extend(self.pin_obstacle_findings());
+        }
         out
     }
 

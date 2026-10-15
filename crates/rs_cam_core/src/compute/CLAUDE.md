@@ -24,8 +24,8 @@
   `StockColumn` lowers each hole top and R-plane (D8). 2D Adaptive `LevelMask` (own loop): `level_masks` skips a level, seeds the planner from the raw mask. Rest Face keeps the fresh rows (`FaceLattice`, B8). Zigzag op and Pocket share `ZigzagRaster`, rows on the lattice of `LayerCtx::outline` (B9).
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()` (<= the cut feed). `DefaultHelix` is read by `for_op` only (D3).
-- K1: EVERY op keeps the tool out of the setup's obstacles, boundary on or off, no opt-in. ONE `ObstacleSet::resolve` (setup frame, refuses a missing model) and ONE `ObstacleToolView` serve the post-dressup step, `link_ceiling_for`, the 3D Rough pre-clip,
-  the simulation and `collision_check`; `SetupEvalContext::safe_z` rises to `plane_z`. An obstacle is solid from its top down. Do not gate any of them on the boundary.
+- K1: EVERY op keeps the tool out of the setup's obstacles, boundary on or off, no opt-in. ONE `ObstacleSet::resolve` (setup frame, NO part transform: table-fixed; refuses a missing model) and ONE `ObstacleToolView` serve the post-dressup step, `link_ceiling_for`, the 3D Rough pre-clip,
+  the simulation and `collision_check` (with the `JoinStart` from the previous toolpath). An obstacle is solid from its top down. The check forbids a band below the GROWN top; the plane (+`SAFE_Z_CLEARANCE_MM`) is only the retract target, and `HeightsConfig::resolve` floors every retract and clearance at it. Do not gate any of them on the boundary.
 - G-SIMMEM: the loop holds the cut trace ONCE. The memo asks `admits` BEFORE it clones a snapshot; share the trace by `Arc`, never `clone()` it.
 - A checkpoint keeps its mesh inputs; `build_mesh` builds on demand (M2). Checkpoint k's `mesh_stock` is prior k+1: one `Arc`, same group (M3).
   S0: a Z-axis group starts from the last Z-axis group's final stock. S3: its stock changes then apply, to it and (not lateral) to `global_stock`.

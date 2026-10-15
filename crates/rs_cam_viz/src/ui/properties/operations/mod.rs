@@ -440,6 +440,7 @@ mod tests {
             stock_bottom_z: 0.0,
             model_top_z: Some(24.0),
             model_bottom_z: Some(2.0),
+            obstacle_plane: None,
         }
     }
 

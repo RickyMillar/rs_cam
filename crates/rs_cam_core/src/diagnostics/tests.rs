@@ -160,6 +160,10 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
         ),
         ("GEOM_PLUNGE_EXCEEDS_FEED", ids::GEOM_PLUNGE_EXCEEDS_FEED),
+        (
+            "GEOM_HEIGHT_RAISED_TO_OBSTACLE",
+            ids::GEOM_HEIGHT_RAISED_TO_OBSTACLE,
+        ),
         ("COMPAT_TOOL_KIND_REFUSED", ids::COMPAT_TOOL_KIND_REFUSED),
         (
             "COMPAT_BALL_NOSE_FLAT_CLEARING",

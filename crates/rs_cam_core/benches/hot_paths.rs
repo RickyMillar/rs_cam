@@ -1205,6 +1205,7 @@ fn ladder_request(
                     name: format!("Pass{i}"),
                     annotated: std::sync::Arc::clone(tp),
                     tool: std::sync::Arc::new(tool()),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: 2,
                     tool_summary: "6mm Flat".to_owned(),
                     semantic_trace: None,

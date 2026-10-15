@@ -8,7 +8,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::compute::config::HeightContext;
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
 use crate::geo::BoundingBox3;
@@ -157,7 +156,6 @@ impl ProjectSession {
             crate::compute::obstacle::ObstacleSet::resolve(
                 setup.map(|s| s.obstacles.as_slice()).unwrap_or_default(),
                 &self.models,
-                ctx.local_to_global.as_ref(),
             )
             .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
         );
@@ -240,14 +238,10 @@ impl ProjectSession {
         let safe_z = ctx.safe_z;
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
-        let height_ctx = HeightContext {
-            safe_z,
-            op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: emission_stock_bbox.max.z,
-            stock_bottom_z: emission_stock_bbox.min.z,
-            model_top_z: model_bbox.map(|b| b.max.z),
-            model_bottom_z: model_bbox.map(|b| b.min.z),
-        };
+        // K1: the context carries the obstacle plane, so the resolver
+        // raises every retract and clearance to it, in every mode.
+        let height_ctx = ctx.height_context(tc.operation.default_depth_for_heights(), model_bbox);
+        debug_assert_eq!(height_ctx.safe_z, safe_z);
         let mut heights = tc.heights.resolve(&height_ctx);
         // N12 item 1: an AUTO top follows the picked faces. The GUI
         // controller applied this override and the resolver did not. A

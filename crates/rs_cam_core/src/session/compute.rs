@@ -2231,6 +2231,7 @@ fn simulate_candidate_isolated(
         name: context.toolpath_name.clone(),
         annotated,
         tool: tool_def,
+        tool_id: tool_cfg.id,
         flute_count,
         tool_summary,
         semantic_trace: None,

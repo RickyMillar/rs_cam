@@ -104,6 +104,7 @@ fn entry(
         name: format!("tp{id}"),
         annotated: Arc::clone(annotated),
         tool: Arc::clone(tool),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".into(),
         semantic_trace: None,

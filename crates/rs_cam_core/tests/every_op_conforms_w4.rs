@@ -1499,7 +1499,8 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
                 .obstacle_set_for_toolpath(index)
                 .expect("the strip resolves");
             let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
-            let hits = view.check_toolpath(&tp);
+            let join = session.obstacle_join_for_toolpath(index);
+            let hits = view.check_toolpath(&tp, join);
             if let Some(hit) = hits.first() {
                 defects.push(format!(
                     "{label}/obstacle: the service finds {} hits, first at move {} ({})",
@@ -1517,7 +1518,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
                         Frame::TopUp => fresh.clone(),
                         Frame::Flipped => return true,
                     };
-                    !view.check_toolpath(&fresh_frame).is_empty()
+                    !view.check_toolpath(&fresh_frame, join).is_empty()
                 });
             simulate(&mut session);
             let sim_hits = session

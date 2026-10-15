@@ -4,8 +4,13 @@
 //! An obstacle is a solid the tool must not enter: a clamp, a vise jaw, a
 //! keep-out zone. Fixtures and keep-out zones are ONE concept (operator
 //! ruling 2026-10-15). The geometry is a box, a prism from closed 2D
-//! outlines, or an imported mesh. Every value is in the SETUP frame, as
-//! for a stock change (`compute::stock_change`): the setup's +Z is up.
+//! outlines, or an imported mesh. Every value is in the SETUP frame: the
+//! frame the setup's toolpaths emit in, with the setup's +Z up. An obstacle
+//! is fixed to the table, not to the part. So the resolver reads all three
+//! kinds as they are, with NO setup transform: a flip of the part on a
+//! Bottom setup does not move a clamp. (A stock change is material and
+//! moves with the part, so it does map through the setup transform; the
+//! two share only the model validation.)
 //!
 //! # The model of the solid
 //!
@@ -36,9 +41,18 @@
 //! [`ObstacleSet::plane_z`] is the one obstacle plane: the highest grown
 //! top plus [`SAFE_Z_CLEARANCE_MM`]. The height resolver, the clip and
 //! the link ceiling read it.
+//!
+//! # The check height and the plane
+//!
+//! Two heights, one rule each. The CHECK forbids a band of the tool below
+//! its ceiling, `tip_ceiling_z` = grown top minus the band offset: the
+//! grown top (top plus clearance) is the physical limit. The PLANE (grown
+//! top plus [`SAFE_Z_CLEARANCE_MM`]) is only the height the tool retracts
+//! to and crosses at; it is a margin above the limit, and the check does
+//! not read it. Every height the resolver gives (retract, clearance, safe
+//! Z) is at least the plane (`compute::config::HeightsConfig::resolve`).
 
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +61,6 @@ use crate::compute::stock_change::{
     ModelGeometryFacts, StockChangeOp, StockChangeRefusal, StockGeometry, is_closed_outline,
     validate_stock_geometry,
 };
-use crate::compute::transform::SetupTransformInfo;
 use crate::geo::P3;
 use crate::geometry::boundary::{ClipPermit, maximal_inside_intervals};
 use crate::ids::{ModelId, ObstacleId};
@@ -55,7 +68,10 @@ use crate::polygon::Polygon2;
 use crate::stock::collision::{AssemblySegment, CollisionEvent, CollisionKind, ToolAssembly};
 use crate::toolpath::{Move, MoveType, Toolpath};
 
-/// The geometry of an obstacle. Every value is in the setup frame.
+/// The geometry of an obstacle. Every value is in the setup frame (the
+/// frame the setup's toolpaths emit in), for all three kinds. The resolver
+/// applies no setup transform: an obstacle is fixed to the table, and a
+/// part flip does not move it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ObstacleGeometry {
@@ -67,7 +83,8 @@ pub enum ObstacleGeometry {
         max: [f64; 3],
     },
     /// A prism from the closed 2D outlines of `model_ids`, from `z_bottom`
-    /// to `z_top`. The outlines map into the setup frame like a drawing.
+    /// to `z_top`. The outline XY values are setup-frame XY values, as
+    /// they are in the file.
     OutlineExtrude {
         /// The 2D models whose closed outlines give the prism section.
         model_ids: Vec<ModelId>,
@@ -76,8 +93,8 @@ pub enum ObstacleGeometry {
         /// The prism top (mm).
         z_top: f64,
     },
-    /// An imported mesh. The mesh maps into the setup frame like the model
-    /// mesh of a toolpath.
+    /// An imported mesh. The mesh coordinates are setup-frame coordinates,
+    /// as they are in the file. The mesh does not move with the part.
     Model {
         /// The mesh model.
         model_id: ModelId,
@@ -387,15 +404,11 @@ fn grow(
 }
 
 /// The Z range of a geometry in the setup frame, without the clearance.
-/// `None` when a model the geometry reads is missing.
-///
-/// A mesh maps its bounding box corners: a setup transform turns the stock
-/// by quarter turns and flips only, so the corners give the exact range of
-/// the mapped mesh.
+/// `None` when a model the geometry reads is missing. A mesh gives its
+/// bounding box Z range: its coordinates are setup-frame coordinates.
 fn geometry_z_range(
     geometry: &ObstacleGeometry,
     models: &[crate::session::LoadedModel],
-    transform: Option<&SetupTransformInfo>,
 ) -> Option<(f64, f64)> {
     match geometry {
         ObstacleGeometry::Box { min, max } => Some((min[2], max[2])),
@@ -407,59 +420,54 @@ fn geometry_z_range(
                 .iter()
                 .find(|m| m.id == model_id.0)
                 .and_then(|m| m.mesh.as_ref())?;
-            let b = &mesh.bbox;
-            let Some(info) = transform else {
-                return Some((b.min.z, b.max.z));
-            };
-            let mut lo = f64::INFINITY;
-            let mut hi = f64::NEG_INFINITY;
-            for x in [b.min.x, b.max.x] {
-                for y in [b.min.y, b.max.y] {
-                    for z in [b.min.z, b.max.z] {
-                        let p = info.world_to_local(P3::new(x, y, z));
-                        lo = lo.min(p.z);
-                        hi = hi.max(p.z);
-                    }
-                }
-            }
-            Some((lo, hi))
+            Some((mesh.bbox.min.z, mesh.bbox.max.z))
         }
     }
 }
 
+/// The obstacle plane of a setup: its height and the obstacle that sets
+/// it (the one with the highest grown top).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObstaclePlane {
+    /// The plane Z: the highest grown top plus [`SAFE_Z_CLEARANCE_MM`].
+    pub z: f64,
+    /// The name of the obstacle with the highest grown top.
+    pub obstacle: String,
+}
+
 /// THE obstacle plane of a setup's obstacle list, without resolving the
-/// footprints: the highest enabled grown top plus [`SAFE_Z_CLEARANCE_MM`].
-/// `None` when no enabled obstacle gives a top.
+/// footprints: the highest enabled grown top plus [`SAFE_Z_CLEARANCE_MM`],
+/// with the name of the obstacle that sets it. `None` when no enabled
+/// obstacle gives a top.
 ///
 /// The height context reads it (`session::SetupEvalContext`), so every
 /// consumer of the setup's safe Z sees the plane. It agrees with
 /// [`ObstacleSet::plane_z`] by construction: both read
 /// `geometry_z_range`.
 #[must_use]
-pub fn obstacle_plane_z(
+pub fn obstacle_plane(
     obstacles: &[Obstacle],
     models: &[crate::session::LoadedModel],
-    transform: Option<&SetupTransformInfo>,
-) -> Option<f64> {
+) -> Option<ObstaclePlane> {
     obstacles
         .iter()
         .filter(|o| o.enabled)
         .filter_map(|o| {
-            geometry_z_range(&o.geometry, models, transform).map(|(_, top)| top + o.clearance)
+            geometry_z_range(&o.geometry, models).map(|(_, top)| (top + o.clearance, o))
         })
-        .max_by(f64::total_cmp)
-        .map(|top| top + SAFE_Z_CLEARANCE_MM)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(top, o)| ObstaclePlane {
+            z: top + SAFE_Z_CLEARANCE_MM,
+            obstacle: o.name.clone(),
+        })
 }
 
 impl ObstacleSet {
-    /// THE resolver: one setup's enabled obstacles, mapped into the setup
-    /// frame and grown by their clearance.
+    /// THE resolver: one setup's enabled obstacles, in the setup frame,
+    /// grown by their clearance.
     ///
-    /// `transform` is the setup transform; `None` for an identity setup,
-    /// whose frame is the world frame. Outlines map like a drawing
-    /// (`SetupTransformInfo::apply_to_drawing_polygons`) and a mesh like
-    /// the model mesh of a toolpath (`apply_to_mesh`), as for a stock
-    /// change (`compute::stock_change_apply`).
+    /// All three kinds read their values as setup-frame values, with no
+    /// setup transform (module doc): an obstacle is fixed to the table.
     ///
     /// # Errors
     /// [`ObstacleResolveError`] when an enabled obstacle reads a model that
@@ -468,7 +476,6 @@ impl ObstacleSet {
     pub fn resolve(
         obstacles: &[Obstacle],
         models: &[crate::session::LoadedModel],
-        transform: Option<&SetupTransformInfo>,
     ) -> Result<Self, ObstacleResolveError> {
         let mut resolved = Vec::new();
         for obstacle in obstacles.iter().filter(|o| o.enabled) {
@@ -501,10 +508,6 @@ impl ObstacleSet {
                             })?;
                         closed.extend(polygons.iter().filter(|p| is_closed_outline(p)).cloned());
                     }
-                    let closed = match transform {
-                        Some(info) => info.apply_to_drawing_polygons(&closed),
-                        None => closed,
-                    };
                     let union = Polygon2::union_all(&closed);
                     if union.is_empty() {
                         return Err(refuse(
@@ -519,10 +522,6 @@ impl ObstacleSet {
                         .find(|m| m.id == model_id.0)
                         .and_then(|m| m.mesh.clone())
                         .ok_or_else(|| refuse(format!("model id {} holds no mesh", model_id.0)))?;
-                    let mesh: Arc<crate::mesh::TriangleMesh> = match transform {
-                        Some(info) => Arc::new(info.apply_to_mesh(&mesh)),
-                        None => mesh,
-                    };
                     let silhouette = crate::geometry::boundary::model_silhouette(
                         &mesh,
                         Some(SILHOUETTE_CELL_MM),
@@ -531,7 +530,7 @@ impl ObstacleSet {
                         return Err(refuse("the mesh has an empty silhouette".to_owned()));
                     }
                     let silhouette = grow(&silhouette, SILHOUETTE_CELL_MM, &obstacle.name)?;
-                    let (bottom, top) = geometry_z_range(&obstacle.geometry, models, transform)
+                    let (bottom, top) = geometry_z_range(&obstacle.geometry, models)
                         .ok_or_else(|| refuse(format!("model id {} holds no mesh", model_id.0)))?;
                     (silhouette, bottom, top)
                 }
@@ -697,6 +696,13 @@ struct Forbidden {
 }
 
 /// The obstacles of a setup for one tool. See [`ObstacleSet::for_tool`].
+///
+/// THE check-height rule: the view forbids a band of the tool below its
+/// `tip_ceiling_z`, the GROWN top (top plus clearance) minus the band
+/// offset. The grown top is the physical limit. The obstacle plane
+/// ([`Self::plane_z`], grown top plus [`SAFE_Z_CLEARANCE_MM`]) is not a
+/// limit: it is the height the tool retracts to and crosses at, a margin
+/// above the limit.
 #[derive(Debug, Clone)]
 pub struct ObstacleToolView {
     names: Vec<String>,
@@ -858,51 +864,124 @@ impl ObstacleToolView {
         }
     }
 
+    /// The highest band ceiling of the view: the highest grown top. A tip
+    /// at or above it clears every obstacle at any XY. `None` for an empty
+    /// view.
+    #[must_use]
+    pub fn max_ceiling_z(&self) -> Option<f64> {
+        self.entries
+            .iter()
+            .map(|e| e.tip_ceiling_z)
+            .max_by(f64::total_cmp)
+    }
+
+    /// The first forbidden interval on the polyline `points`, as the hit
+    /// position and the interval.
+    fn polyline_hit(&self, points: &[P3]) -> Option<(P3, Forbidden)> {
+        points.windows(2).find_map(|w| {
+            let &[a, b] = w else {
+                return None;
+            };
+            self.forbidden(a, b).into_iter().next().map(|f| {
+                let t = 0.5 * (f.t0 + f.t1);
+                let p = P3::new(
+                    a.x + t * (b.x - a.x),
+                    a.y + t * (b.y - a.y),
+                    a.z + t * (b.z - a.z),
+                );
+                (p, f)
+            })
+        })
+    }
+
+    /// The hit of the join into the first move `m`: the motion the G-code
+    /// builder emits from `start` to `m.target` (see [`JoinStart`]).
+    fn join_hit(&self, start: JoinStart, m: &Move) -> Option<(P3, Forbidden)> {
+        let t = m.target;
+        match start {
+            JoinStart::After(p) => {
+                let points = match m.move_type {
+                    // `gcode::program_builder::push_rapid`: a rising
+                    // diagonal lifts first, then traverses; a falling one
+                    // traverses at the old Z, then plunges.
+                    MoveType::Rapid => {
+                        let xy_changed = t.x != p.x || t.y != p.y;
+                        if xy_changed && t.z != p.z {
+                            let corner = if t.z > p.z {
+                                P3::new(p.x, p.y, t.z)
+                            } else {
+                                P3::new(t.x, t.y, p.z)
+                            };
+                            vec![p, corner, t]
+                        } else {
+                            vec![p, t]
+                        }
+                    }
+                    // A feed or an arc runs from the last position as it is.
+                    MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                        Self::arc_points(p, m)
+                    }
+                };
+                self.polyline_hit(&points)
+            }
+            JoinStart::Unknown => {
+                // The XY before the move is not known: a Z-first rapid
+                // traverses at `t.z` from anywhere, and a feed comes from
+                // anywhere. Only a target at or above every ceiling is
+                // safe.
+                let ceiling = self.max_ceiling_z()?;
+                if t.z < ceiling - Z_EPS_MM {
+                    let e = self
+                        .entries
+                        .iter()
+                        .find(|e| e.tip_ceiling_z >= ceiling - Z_EPS_MM)?;
+                    return Some((
+                        t,
+                        Forbidden {
+                            t0: 0.0,
+                            t1: 1.0,
+                            obstacle: e.obstacle,
+                            segment: e.segment,
+                            tip_ceiling_z: e.tip_ceiling_z,
+                        },
+                    ));
+                }
+                self.point_hit(t).map(|e| {
+                    (
+                        t,
+                        Forbidden {
+                            t0: 0.0,
+                            t1: 1.0,
+                            obstacle: e.obstacle,
+                            segment: e.segment,
+                            tip_ceiling_z: e.tip_ceiling_z,
+                        },
+                    )
+                })
+            }
+        }
+    }
+
     /// Every hit of `toolpath`, at most one per move: every move class,
     /// the rapids included, with the cutter, shank and holder. The move
-    /// index is the toolpath's own; the first move is read as a point.
+    /// index is the toolpath's own.
+    ///
+    /// `join` says where the tool is before the first move. The join
+    /// motion into the first move is checked as the G-code builder emits
+    /// it ([`JoinStart`]); a hit on it is reported at move index 0.
     #[must_use]
-    pub fn check_toolpath(&self, toolpath: &Toolpath) -> Vec<CollisionEvent> {
+    pub fn check_toolpath(&self, toolpath: &Toolpath, join: JoinStart) -> Vec<CollisionEvent> {
         let mut hits = Vec::new();
         if self.is_empty() {
             return hits;
         }
         let mut prev: Option<P3> = None;
         for (move_index, m) in toolpath.moves.iter().enumerate() {
-            let start = prev.unwrap_or(m.target);
+            let hit = match prev {
+                Some(start) => self.polyline_hit(&Self::arc_points(start, m)),
+                None => self.join_hit(join, m),
+            };
             prev = Some(m.target);
-            let points = Self::arc_points(start, m);
-            let hit = points.windows(2).find_map(|w| {
-                let &[a, b] = w else {
-                    return None;
-                };
-                self.forbidden(a, b).into_iter().next().map(|f| {
-                    let t = 0.5 * (f.t0 + f.t1);
-                    let p = P3::new(
-                        a.x + t * (b.x - a.x),
-                        a.y + t * (b.y - a.y),
-                        a.z + t * (b.z - a.z),
-                    );
-                    (p, f)
-                })
-            });
-            let hit = hit.or_else(|| {
-                (points.len() < 2)
-                    .then(|| self.point_hit(m.target))
-                    .flatten()
-                    .map(|e| {
-                        (
-                            m.target,
-                            Forbidden {
-                                t0: 0.0,
-                                t1: 1.0,
-                                obstacle: e.obstacle,
-                                segment: e.segment,
-                                tip_ceiling_z: e.tip_ceiling_z,
-                            },
-                        )
-                    })
-            });
             if let Some((position, f)) = hit {
                 hits.push(CollisionEvent {
                     move_index,
@@ -919,6 +998,56 @@ impl ObstacleToolView {
     }
 }
 
+/// Where the tool is before the first move of a toolpath, for the obstacle
+/// check of the join (K1). The rule mirrors the G-code builder
+/// (`gcode::program_builder`):
+///
+/// - [`Self::After`]: the previous toolpath of the same setup ran with the
+///   same tool. The builder carries its last position. A rapid that rises
+///   lifts first, then traverses; a rapid that falls traverses at the old
+///   Z, then plunges; a feed runs straight.
+/// - [`Self::Unknown`]: the first toolpath of a setup (program start, or
+///   after the setup-change pause), or the first after a tool change. The
+///   builder forgets the position there (the operator may have jogged), so
+///   the rapid goes Z-first and then traverses from an XY that is not
+///   known. The check then needs the target at or above every ceiling.
+///
+/// A raw G-code snippet (`pre_gcode` / `post_gcode`) also makes the builder
+/// forget the position. The simulation request does not carry the
+/// snippets, so this rule does not model that reset.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum JoinStart {
+    /// The last position of the previous toolpath, same setup, same tool.
+    After(P3),
+    /// The position is not known.
+    Unknown,
+}
+
+impl JoinStart {
+    /// THE join rule over the toolpaths that run before this one in the
+    /// same setup, in run order, as `(tool key, toolpath)`. Both the
+    /// simulation and `collision_check` call it.
+    ///
+    /// The builder fires a tool change at every toolpath whose tool
+    /// differs from the loaded one, and the change forgets the position.
+    /// An empty toolpath moves nothing but its tool change still fires.
+    pub fn after_previous<'a, T: PartialEq + 'a>(
+        previous: impl DoubleEndedIterator<Item = (T, &'a Toolpath)>,
+        this_tool: &T,
+    ) -> Self {
+        for (tool, toolpath) in previous.rev() {
+            if &tool != this_tool {
+                // A tool change fires between that toolpath and this one.
+                return Self::Unknown;
+            }
+            if let Some(last) = toolpath.moves.last() {
+                return Self::After(last.target);
+            }
+        }
+        Self::Unknown
+    }
+}
+
 /// One obstacle hit of a simulation run (K1).
 #[derive(Debug, Clone)]
 pub struct ObstacleCollision {
@@ -927,7 +1056,9 @@ pub struct ObstacleCollision {
     /// The run-global move index (the simulation timeline).
     pub global_move: usize,
     /// The hit. `event.move_index` is the toolpath's own move index and
-    /// `event.kind` is [`CollisionKind::Obstacle`].
+    /// `event.kind` is [`CollisionKind::Obstacle`]. The join from the
+    /// previous toolpath is not a toolpath move: a hit on it is reported at
+    /// move 0 of the toolpath it leads into.
     pub event: CollisionEvent,
 }
 
@@ -1021,9 +1152,8 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 20.0,
             shank_diameter: 6.0,
-            shank_length: 20.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 40.0,
         }
     }
 
@@ -1041,7 +1171,6 @@ mod tests {
                 },
             }],
             &[],
-            None,
         )
         .unwrap()
     }
@@ -1095,7 +1224,10 @@ mod tests {
             .reconcile(&mut channels)
             .into_inner();
         let plane = set.plane_z().unwrap();
-        assert!(view.check_toolpath(&out.toolpath).is_empty());
+        assert!(
+            view.check_toolpath(&out.toolpath, JoinStart::Unknown)
+                .is_empty()
+        );
         assert!(
             out.toolpath
                 .moves
@@ -1121,7 +1253,8 @@ mod tests {
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(-20.0, 5.0, 15.0));
         tp.rapid_to(P3::new(30.0, 5.0, 15.0));
-        let hits = view.check_toolpath(&tp);
+        // The join starts where the first move ends: it moves nothing.
+        let hits = view.check_toolpath(&tp, JoinStart::After(P3::new(-20.0, 5.0, 15.0)));
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].move_index, 1);
         assert_eq!(
@@ -1166,7 +1299,6 @@ mod tests {
                 },
             }],
             &[],
-            None,
         )
         .unwrap_err();
         assert_eq!(err.name, "Vise");
@@ -1182,7 +1314,6 @@ mod tests {
                 },
             }],
             &[],
-            None,
         )
         .unwrap();
         assert!(ok.is_empty());

@@ -879,7 +879,9 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
         def.shank_diameter.unwrap_or(d),
         def.shank_length.unwrap_or(0.0),
         def.holder_diameter.unwrap_or(d * 2.0),
-        def.shank_length.unwrap_or(0.0) + cl + 20.0, // default stickout
+        // The default stickout puts the holder face at the top of the shank
+        // blank: the stickout is the holder face height above the tip.
+        def.shank_length.unwrap_or(0.0) + cl,
         def.flute_count.unwrap_or(2),
         rs_cam_core::compute::ToolMaterial::Carbide,
     ))

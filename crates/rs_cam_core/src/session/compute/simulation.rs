@@ -154,6 +154,7 @@ impl ProjectSession {
                         name: tc.name.clone(),
                         annotated: Arc::clone(result.annotated()),
                         tool: tool_def,
+                        tool_id: crate::compute::tool_config::ToolId(tc.tool_id),
                         flute_count,
                         tool_summary,
                         semantic_trace: result.semantic_trace.clone(),
@@ -215,11 +216,7 @@ impl ProjectSession {
                 let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
                 let local_to_global = setup_ctx.local_to_global.clone();
                 // K1: the sixth shared decision.
-                let obstacles = crate::compute::simulate::group_obstacles(
-                    setup,
-                    &self.models,
-                    local_to_global.as_ref(),
-                );
+                let obstacles = crate::compute::simulate::group_obstacles(setup, &self.models);
 
                 groups.push(SimGroupEntry {
                     toolpaths: entries,

@@ -482,6 +482,9 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
         annotated: _,
         semantic_trace: _,
         drill_op: _,
+        // K1: the tool id moves no stock. Only the obstacle join check
+        // reads it, and that check runs at the tail from the live request.
+        tool_id: _,
     } = entry;
 
     let mut hasher = DefaultHasher::new();

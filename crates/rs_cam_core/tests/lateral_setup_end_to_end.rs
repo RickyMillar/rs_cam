@@ -540,6 +540,6 @@ fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
     assert!(!set.is_empty());
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
     let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
-    let hits = view.check_toolpath(&toolpath);
+    let hits = view.check_toolpath(&toolpath, session.obstacle_join_for_toolpath(0));
     assert!(hits.is_empty(), "no move enters the obstacle: {hits:?}");
 }

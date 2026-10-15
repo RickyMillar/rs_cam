@@ -291,6 +291,7 @@ impl ProjectSession {
             tool: tool_def,
             mesh: model,
             obstacles,
+            join: self.obstacle_join_for_toolpath(index),
             index: prebuilt_index,
         };
         let check_result = run_collision_check(&request, cancel)?;
@@ -316,6 +317,34 @@ impl ProjectSession {
         self.obstacle_set_for_setup(setup).map(std::sync::Arc::new)
     }
 
+    /// K1: where the tool is before the first move of toolpath `index`,
+    /// for the obstacle check of the join
+    /// ([`crate::compute::obstacle::JoinStart::after_previous`]). It reads
+    /// the toolpaths that run before `index` in its setup: enabled, with a
+    /// result, in setup order, the entries the simulation group holds.
+    /// The GUI collision check and `collision_check` both call it.
+    #[must_use]
+    pub fn obstacle_join_for_toolpath(&self, index: usize) -> crate::compute::obstacle::JoinStart {
+        use crate::compute::obstacle::JoinStart;
+        let (Some(setup), Some(tc)) = (
+            self.find_setup_for_toolpath_index(index),
+            self.toolpath_configs.get(index),
+        ) else {
+            return JoinStart::Unknown;
+        };
+        let before = setup
+            .toolpath_indices
+            .iter()
+            .take_while(|&&i| i != index)
+            .filter_map(|&i| {
+                let prev = self.toolpath_configs.get(i)?;
+                let result = self.results.get(&i)?;
+                prev.enabled
+                    .then(|| (ToolId(prev.tool_id), result.toolpath()))
+            });
+        JoinStart::after_previous(before.collect::<Vec<_>>().into_iter(), &ToolId(tc.tool_id))
+    }
+
     /// K1: the obstacles of `setup`, resolved into its frame.
     ///
     /// # Errors
@@ -325,13 +354,8 @@ impl ProjectSession {
         &self,
         setup: &crate::session::SetupData,
     ) -> Result<crate::compute::obstacle::ObstacleSet, SessionError> {
-        let ctx = crate::session::SetupEvalContext::build_for_setup(self, Some(setup));
-        crate::compute::obstacle::ObstacleSet::resolve(
-            &setup.obstacles,
-            &self.models,
-            ctx.local_to_global.as_ref(),
-        )
-        .map_err(|e| SessionError::OperationFailed(e.to_string()))
+        crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, &self.models)
+            .map_err(|e| SessionError::OperationFailed(e.to_string()))
     }
 
     /// Narrate one generated toolpath in prose for agent-oriented debugging.
@@ -1239,7 +1263,16 @@ impl ProjectSession {
                 crate::compute::alignment_pins::PinFindingKind::PinToolMismatch => {
                     VerdictKind::PinToolMismatch
                 }
-                _ => VerdictKind::PinWallThin,
+                // K1: a wall to an unresolved obstacle is not measured, so
+                // it can be thin. The headline names the obstacle.
+                crate::compute::alignment_pins::PinFindingKind::ObstacleUnresolved
+                | crate::compute::alignment_pins::PinFindingKind::OutOfBounds
+                | crate::compute::alignment_pins::PinFindingKind::NotModelled
+                | crate::compute::alignment_pins::PinFindingKind::DoesNotSeat
+                | crate::compute::alignment_pins::PinFindingKind::NotKeyed
+                | crate::compute::alignment_pins::PinFindingKind::ThinWall => {
+                    VerdictKind::PinWallThin
+                }
             };
             verdicts.push(Verdict {
                 severity: VerdictSeverity::Important,

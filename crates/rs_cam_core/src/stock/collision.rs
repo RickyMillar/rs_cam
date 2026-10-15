@@ -39,6 +39,14 @@ impl HolderSegment {
 }
 
 /// Describes the physical tool assembly: cutter + shank + holder.
+///
+/// The model has one length rule: `stickout` is the length from the
+/// holder face to the tool tip. The holder face is therefore at
+/// `stickout` above the tip, always. The cutter occupies the first
+/// `cutter_length`; the exposed shank is the rest of the stickout,
+/// `max(stickout - cutter_length, 0)`. The holder (and the spindle above
+/// it) starts at the face and extends upward with no top: both collision
+/// kernels read a band from its bottom offset upward.
 pub struct ToolAssembly {
     /// Radius of the cutting tool (from MillingCutter::radius())
     pub cutter_radius: f64,
@@ -46,18 +54,22 @@ pub struct ToolAssembly {
     pub cutter_length: f64,
     /// Shank diameter above the cutting flutes (mm).
     pub shank_diameter: f64,
-    /// Shank length above the cutting flutes (mm).
-    pub shank_length: f64,
     /// Holder diameter (mm) — the collet/holder body.
     pub holder_diameter: f64,
-    /// Holder length (mm).
-    pub holder_length: f64,
+    /// Length from the holder face to the cutter tip (mm).
+    pub stickout: f64,
 }
 
 impl ToolAssembly {
     /// Total tool stickout from holder face to cutter tip.
     pub fn stickout(&self) -> f64 {
-        self.cutter_length + self.shank_length
+        self.stickout
+    }
+
+    /// The shank length between the flutes and the holder face (mm):
+    /// `max(stickout - cutter_length, 0)`.
+    pub fn exposed_shank_length(&self) -> f64 {
+        (self.stickout - self.cutter_length).max(0.0)
     }
 
     /// Which assembly part a collision at `radius` belongs to.
@@ -89,25 +101,24 @@ impl ToolAssembly {
     }
 
     /// Segments of the assembly from tip upward, as (z_offset, max_radius, length).
+    ///
+    /// The shank segment runs from the top of the flutes to the holder
+    /// face; there is none when the flutes reach the face. The holder
+    /// segment starts at the face (`stickout`) and its length is
+    /// `f64::INFINITY`: the holder and the spindle continue upward. The
+    /// kernels read the offset and the radius only.
     pub(crate) fn segments(&self) -> Vec<(f64, f64, f64)> {
         let mut segs = Vec::new();
 
-        // Shank: above cutter
-        if self.shank_length > 0.0 {
-            segs.push((
-                self.cutter_length,
-                self.shank_diameter / 2.0,
-                self.shank_length,
-            ));
+        // Shank: from the top of the flutes to the holder face.
+        let shank = self.exposed_shank_length();
+        if shank > 0.0 {
+            segs.push((self.cutter_length, self.shank_diameter / 2.0, shank));
         }
 
-        // Holder: above shank
-        if self.holder_length > 0.0 {
-            segs.push((
-                self.cutter_length + self.shank_length,
-                self.holder_diameter / 2.0,
-                self.holder_length,
-            ));
+        // Holder: from the holder face upward, always.
+        if self.holder_diameter > 0.0 {
+            segs.push((self.stickout, self.holder_diameter / 2.0, f64::INFINITY));
         }
 
         segs
@@ -756,9 +767,8 @@ mod tests {
             cutter_radius: 3.0, // 6mm ball endmill
             cutter_length: 25.0,
             shank_diameter: 6.0,
-            shank_length: 10.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 35.0,
         }
     }
 
@@ -808,9 +818,8 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0, // short cutter
             shank_diameter: 6.0,
-            shank_length: 5.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 15.0,
         };
 
         // Toolpath at z=0 over the hemisphere center
@@ -843,9 +852,8 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            shank_length: 5.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 15.0,
         };
 
         // Long move that sweeps over the hemisphere center
@@ -904,9 +912,8 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 40.0, // 40mm cutter length
             shank_diameter: 6.0,
-            shank_length: 20.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 60.0,
         };
 
         // Toolpath at mesh surface level (z ~ 0)
@@ -931,9 +938,8 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            shank_length: 5.0,
             holder_diameter: 35.0,
-            holder_length: 40.0,
+            stickout: 15.0,
         };
 
         let mut tp = Toolpath::new();

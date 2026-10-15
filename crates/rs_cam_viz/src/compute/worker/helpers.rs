@@ -27,6 +27,7 @@ where
         tool: build_cutter(&req.tool),
         mesh: Some(&req.mesh),
         obstacles: std::sync::Arc::clone(&req.obstacles),
+        join: req.join,
         // One toolpath, one index. The per-model hoist is the batch
         // sweep's concern (CMP-24).
         index: None,

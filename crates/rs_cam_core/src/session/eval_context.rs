@@ -87,6 +87,12 @@ pub struct SetupEvalContext {
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
 
+    /// K1: the obstacle plane of the setup and the obstacle that sets it.
+    /// `None` when the setup has no enabled obstacle (or no setup).
+    /// [`Self::height_context`] copies the Z into the height context, and
+    /// the height resolver raises every retract and clearance to it.
+    pub obstacle_plane: Option<crate::compute::obstacle::ObstaclePlane>,
+
     /// How this setup establishes program Z zero. Consumed only by
     /// [`Self::export_datum_shift`] to place the emitted Z0.
     /// `ZDatum::StockTop` (the default) shifts the emitted stock top to
@@ -130,6 +136,7 @@ impl SetupEvalContext {
             // export behaviour on a correctly-configured stock (top at
             // Z0). `build_for_setup` overrides this from the setup.
             z_datum: ZDatum::default(),
+            obstacle_plane: None,
         }
     }
 
@@ -148,16 +155,33 @@ impl SetupEvalContext {
         // K1: the safe Z rises to the obstacle plane when the plane is
         // higher, so every rapid at the safe or retract Z clears the
         // obstacles of the setup.
-        if let Some(plane) = setup.and_then(|s| {
-            crate::compute::obstacle::obstacle_plane_z(
-                &s.obstacles,
-                &session.models,
-                ctx.local_to_global.as_ref(),
-            )
-        }) {
-            ctx.safe_z = ctx.safe_z.max(plane);
+        ctx.obstacle_plane = setup
+            .and_then(|s| crate::compute::obstacle::obstacle_plane(&s.obstacles, &session.models));
+        if let Some(plane) = &ctx.obstacle_plane {
+            ctx.safe_z = ctx.safe_z.max(plane.z);
         }
         ctx
+    }
+
+    /// THE height context of a toolpath in this setup: the one builder the
+    /// generation, the session diagnostics and the GUI read, so all three
+    /// resolve the same heights. `model_bbox` is the model box in this
+    /// setup's frame (`None` when the toolpath binds no model).
+    #[must_use]
+    pub fn height_context(
+        &self,
+        op_depth: f64,
+        model_bbox: Option<&BoundingBox3>,
+    ) -> crate::compute::config::HeightContext {
+        crate::compute::config::HeightContext {
+            safe_z: self.safe_z,
+            op_depth,
+            stock_top_z: self.heights_stock_bbox.max.z,
+            stock_bottom_z: self.heights_stock_bbox.min.z,
+            model_top_z: model_bbox.map(|b| b.max.z),
+            model_bottom_z: model_bbox.map(|b| b.min.z),
+            obstacle_plane: self.obstacle_plane.clone(),
+        }
     }
 
     /// `true` when the setup applies a non-identity face_up / z_rotation

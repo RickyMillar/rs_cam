@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::compute::obstacle::ObstacleSet;
+use crate::compute::obstacle::{JoinStart, ObstacleSet};
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::stock::collision::{CollisionReport, check_collisions_interpolated_with_cancel};
@@ -27,6 +27,11 @@ pub struct CollisionCheckRequest<'a> {
     /// every move class, the cutter included. Empty when the setup has no
     /// enabled obstacle.
     pub obstacles: Arc<ObstacleSet>,
+    /// K1: where the tool is before the first move, for the obstacle check
+    /// of the join from the previous toolpath of the setup
+    /// ([`crate::compute::obstacle::JoinStart`]). The session door
+    /// `ProjectSession::obstacle_join_for_toolpath` gives it.
+    pub join: JoinStart,
     /// A spatial index the caller already built over `mesh`. `None` makes
     /// this call build its own, and a `None` `mesh` ignores it.
     ///
@@ -134,7 +139,7 @@ pub fn run_collision_check(
         }
         report
             .collisions
-            .extend(view.check_toolpath(request.toolpath));
+            .extend(view.check_toolpath(request.toolpath, request.join));
     }
 
     Ok(CollisionCheckResult {
@@ -176,6 +181,7 @@ mod tests {
             tool,
             mesh: Some(&mesh),
             obstacles: Arc::default(),
+            join: JoinStart::Unknown,
             index: None,
         };
         let cancel = AtomicBool::new(false);
@@ -211,6 +217,7 @@ mod tests {
                 tool: tool(),
                 mesh: Some(&mesh),
                 obstacles: Arc::default(),
+                join: JoinStart::Unknown,
                 index: None,
             },
             &cancel,
@@ -224,6 +231,7 @@ mod tests {
                 tool: tool(),
                 mesh: Some(&mesh),
                 obstacles: Arc::default(),
+                join: JoinStart::Unknown,
                 index: Some(&index),
             },
             &cancel,
@@ -258,6 +266,7 @@ mod tests {
             tool,
             mesh: Some(&mesh),
             obstacles: Arc::default(),
+            join: JoinStart::Unknown,
             index: None,
         };
         let cancel = AtomicBool::new(true);

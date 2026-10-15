@@ -99,6 +99,7 @@ fn rapid_heavy_entry() -> SimToolpathEntry {
             2,
             ToolMaterial::Carbide,
         )),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,

@@ -154,6 +154,7 @@ fn waterline_ctx(op_depth: f64) -> HeightContext {
         stock_bottom_z: -17.2,
         model_top_z: Some(9.8),
         model_bottom_z: Some(0.0),
+        obstacle_plane: None,
     }
 }
 

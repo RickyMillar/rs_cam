@@ -48,6 +48,10 @@ pub struct SimToolpathEntry {
     /// and is not `Clone`, and the GUI's viewport playback needs the same
     /// cutter this entry simulates with. An `Arc` hands it over for free.
     pub tool: Arc<ToolDefinition>,
+    /// The tool's config id. The G-code builder fires a tool change when
+    /// it differs from the previous entry's; the obstacle join check
+    /// (K1, [`crate::compute::obstacle::JoinStart`]) reads it the same way.
+    pub tool_id: crate::compute::tool_config::ToolId,
     /// Number of cutting flutes (for metric sampling).
     pub flute_count: u32,
     /// Short description of the tool for boundary labels.
@@ -152,16 +156,14 @@ pub type GroupObstacles = Result<
 >;
 
 /// The obstacles a setup's simulation group carries (K1): the sixth shared
-/// decision of the request. Both builders call it with the group's
-/// `local_to_global`, so the set is in the frame the group's toolpaths
-/// emit in.
+/// decision of the request. The set is in the setup frame, the frame the
+/// group's toolpaths emit in. An obstacle is fixed to the table, so no
+/// setup transform applies (`compute::obstacle` module doc).
 pub fn group_obstacles(
     setup: &crate::session::SetupData,
     models: &[crate::session::LoadedModel],
-    local_to_global: Option<&SetupTransformInfo>,
 ) -> GroupObstacles {
-    crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, models, local_to_global)
-        .map(Arc::new)
+    crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, models).map(Arc::new)
 }
 
 /// The stock changes a setup's simulation group carries: every ENABLED
@@ -2367,7 +2369,9 @@ fn group_obstacle_views(
 
 /// K1: check every entry's moves against its group's obstacles. The
 /// global move index reads the entry's boundary (by toolpath id, in run
-/// order).
+/// order). The join into an entry's first move starts from the previous
+/// entry of the group ([`crate::compute::obstacle::JoinStart`]); a hit on
+/// the join is reported at the entry's move 0.
 fn obstacle_collisions(
     request: &SimulationRequest,
     views: &[Vec<crate::compute::obstacle::ObstacleToolView>],
@@ -2392,7 +2396,17 @@ fn obstacle_collisions(
             let start_move = position
                 .and_then(|p| boundaries.get(p))
                 .map_or(0, |b| b.start_move);
-            for event in view.check_toolpath(&entry.annotated.toolpath) {
+            // The join from the previous entry of this group (this setup)
+            // into this one, as the G-code builder emits it.
+            let join = crate::compute::obstacle::JoinStart::after_previous(
+                group
+                    .toolpaths
+                    .iter()
+                    .take(k)
+                    .map(|e| (e.tool_id, &e.annotated.toolpath)),
+                &entry.tool_id,
+            );
+            for event in view.check_toolpath(&entry.annotated.toolpath, join) {
                 out.push(crate::compute::obstacle::ObstacleCollision {
                     toolpath_id: entry.id,
                     global_move: start_move + event.move_index,
@@ -2733,6 +2747,7 @@ mod tests {
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool),
+            tool_id: crate::compute::tool_config::ToolId(0),
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
@@ -3057,6 +3072,7 @@ mod tests {
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool_def),
+            tool_id: crate::compute::tool_config::ToolId(0),
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
@@ -3161,6 +3177,7 @@ mod tests {
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
                 tool: Arc::new(make_tool()),
+                tool_id: crate::compute::tool_config::ToolId(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -3183,6 +3200,7 @@ mod tests {
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
                 tool: Arc::new(make_tool()),
+                tool_id: crate::compute::tool_config::ToolId(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,

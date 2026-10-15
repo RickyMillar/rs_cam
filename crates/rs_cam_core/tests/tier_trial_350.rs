@@ -1178,6 +1178,7 @@ impl EntryParts {
             name: self.name.clone(),
             annotated: Arc::clone(&self.annotated),
             tool: Arc::clone(&self.tool),
+            tool_id: rs_cam_core::compute::tool_config::ToolId(0),
             flute_count: self.flute_count,
             tool_summary: self.tool_summary.clone(),
             semantic_trace: self.semantic_trace.clone(),

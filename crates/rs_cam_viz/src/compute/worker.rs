@@ -304,6 +304,10 @@ pub struct CollisionRequest {
     /// `ProjectSession::obstacle_set_for_toolpath`. The check runs the one
     /// obstacle kernel the simulation runs.
     pub obstacles: Arc<rs_cam_core::compute::obstacle::ObstacleSet>,
+    /// K1: the join start of the toolpath, from
+    /// `ProjectSession::obstacle_join_for_toolpath`, the door the core
+    /// collision check reads.
+    pub join: rs_cam_core::compute::obstacle::JoinStart,
 }
 
 pub struct CollisionResult {
