@@ -810,9 +810,8 @@ impl<B: ComputeBackend> AppController<B> {
             self.invalidate_simulation();
         }
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
+        // B19: `stamp_stale` above is the only stamp. An Apply that changes
+        // no generation input stales nothing, so auto-regen submits nothing.
         Ok(effects)
     }
 
@@ -932,10 +931,8 @@ impl<B: ComputeBackend> AppController<B> {
         if !self.apply_controller_command(command, "the scallop target") {
             return;
         }
+        // B19: `apply_controller_command` stamps the stale set core returns.
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
     }
 
     /// Apply Feeds recommendations to every toolpath whose row is

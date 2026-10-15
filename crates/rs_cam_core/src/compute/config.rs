@@ -11,6 +11,24 @@ pub enum StockSource {
     FromRemainingStock,
 }
 
+impl StockSource {
+    /// Does an operation with this source read the simulated machined stock?
+    ///
+    /// B19 (operator-level ruling 2026-10-15): a `Fresh` operation reads
+    /// only the board, so its generation is a pure function of the project
+    /// file. The generate step captures the `prior_stocks` snapshot only
+    /// when this is `true`, and every stage that reads the machined stock
+    /// (the generator seed, the air-cut filter, the entry replay, the
+    /// entry-descent split, the result stamp) reads that one capture.
+    #[must_use]
+    pub const fn reads_machined_stock(self) -> bool {
+        match self {
+            Self::Fresh => false,
+            Self::FromRemainingStock => true,
+        }
+    }
+}
+
 // Canonical definition now lives in `crate::ids` (R3 — id/index split);
 // re-exported here so the long-standing `compute::config::ToolpathId`
 // path keeps working.

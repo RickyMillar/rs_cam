@@ -847,6 +847,53 @@ fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
     }
 }
 
+/// B19: the generation context of a `Fresh` op holds no prior stock, also
+/// when the session holds a current snapshot under its id. A
+/// `FromRemainingStock` op in the same position holds the snapshot, so the
+/// test reads the predicate from both sides.
+#[test]
+fn a_fresh_op_captures_no_prior_stock_b19() {
+    let mut s = make_session_with_pocket_model();
+    let tool_id = s.tools()[0].id.0;
+    let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
+    let cancel = AtomicBool::new(false);
+    for index in [0, 1] {
+        s.generate_toolpath(index, &cancel)
+            .expect("a Fresh pocket generates");
+    }
+    s.run_simulation(&SimulationOptions::default(), &cancel)
+        .expect("the simulation runs");
+    let id = s.toolpath_configs()[1].id;
+    assert!(
+        s.snapshot_is_current(id).is_ok(),
+        "fixture: TP1 must hold a current snapshot"
+    );
+
+    let fresh = s.capture_generate_handle(1, &cancel).unwrap();
+    assert!(
+        fresh.context.prior_stock.is_none(),
+        "B19: a Fresh op captured the simulated prior stock"
+    );
+    assert!(fresh.context.generator_seed_stock().is_none());
+    assert!(fresh.context.source_stock.is_none());
+
+    // The other side: the same position as a rest op reads the snapshot.
+    let mut rest = s.toolpath_configs()[1].clone();
+    rest.stock_source = crate::session::StockSource::FromRemainingStock;
+    s.toolpath_configs[1] = rest;
+    assert!(
+        s.snapshot_is_current(id).is_ok(),
+        "fixture: the stock-source edit leaves the snapshot current"
+    );
+    let rest = s.capture_generate_handle(1, &cancel).unwrap();
+    assert!(
+        rest.context.prior_stock.is_some(),
+        "a FromRemainingStock op must capture the current snapshot"
+    );
+    assert!(rest.context.generator_seed_stock().is_some());
+}
+
 // ── diagnostics ──────────────────────────────────────────────
 
 #[test]

@@ -458,6 +458,9 @@ pub struct DressupContext<'a> {
     pub tool_diameter: f64,
     pub safe_z: f64,
     pub stock_top: f64,
+    /// The machined stock before this op. The session passes `Some` only
+    /// for a `FromRemainingStock` op (B19); a `Fresh` op reads only the
+    /// board, so the air-cut filter and the entry replay see `None`.
     pub prior_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     /// The machine envelope (`MachineProfile::link_kinematics`) the
     /// air-cut filter times a bridge with. `None` skips the filter, as a

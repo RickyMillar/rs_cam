@@ -765,10 +765,11 @@ pub struct SimulationResult {
     /// `SimCheckpointMesh::mesh_stock` of toolpath k in the same group (M3).
     ///
     /// Every generated toolpath keeps an entry, not only a rest consumer.
-    /// `ProjectSession`'s generation reads `prior_stocks[id]` for every
-    /// toolpath, ungated by its stock source, because the dressup air-cut
-    /// filter and the entry stock replay read it for a `Fresh` operation too.
-    /// A pruned entry would change the moves a regeneration emits.
+    /// B19: `ProjectSession`'s generation reads `prior_stocks[id]` only for
+    /// an operation whose `StockSource::reads_machined_stock` is true. A
+    /// `Fresh` operation reads only the board, so its entry here does not
+    /// change the moves it emits. The entry of toolpath k+1 shares its
+    /// `Arc` with checkpoint k (M3), so the entry costs no extra stock.
     pub prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
     /// How each `prior_stocks` snapshot was made: the cell the request
     /// asked for and the toolpaths carved before the consumer. Same keys

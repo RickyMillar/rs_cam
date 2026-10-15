@@ -2272,6 +2272,8 @@ pub struct AirBridgeTiming<'a> {
 /// dropped the rest result on an equal regenerate (G-RESTRES). This arm only
 /// keeps a move fed, so it cannot put a rapid into material. `EntryPlunge`
 /// is not exempt: `optimize_entry_descents` handles its airborne top.
+/// B19: a `Fresh` op now gets no prior stock at all, so this filter never
+/// runs on it. The exemption stays for the entries of a rest op.
 ///
 /// Span behavior: dropped air moves remap to `None`. Each inserted
 /// retract/rapid/plunge that bridges across a dropped run is tagged with

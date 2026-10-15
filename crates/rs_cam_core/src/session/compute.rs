@@ -236,10 +236,11 @@ pub struct GenContext {
     /// The simulated machined-stock snapshot this toolpath's id names,
     /// read from `self.simulation.prior_stocks`.
     ///
-    /// S-4 (G-BYTE): this is the snapshot the generation CONSUMES in the
-    /// broadest true sense. `stock_source` gates the generator seed and
-    /// the entry-descent split, but the dressup air-cut filter reads the
-    /// same snapshot ungated. `None` means no machined stock at all.
+    /// B19: the capture reads `StockSource::reads_machined_stock`, so a
+    /// `Fresh` operation always holds `None` here. Every stage that reads
+    /// the machined stock reads this one field: the generator seed, the
+    /// entry-descent split, the entry replay, the air-cut filter and the
+    /// result stamp. `None` means no machined stock at all.
     prior_stock: Option<Arc<crate::dexel_stock::TriDexelStock>>,
     /// G-RESTRES: how `prior_stock` was made, for a `FromRemainingStock`
     /// operation. The result records it, and the session compares it with
@@ -268,15 +269,14 @@ pub struct GenContext {
 impl GenContext {
     /// The machined stock the GENERATOR is seeded with.
     ///
-    /// `stock_source` gates it: a `Fresh` operation starts from the board
-    /// whatever snapshot the simulation left. That is a narrower question
-    /// than [`Self::prior_stock`], which the dressup air-cut filter reads
-    /// ungated.
+    /// B19: the same predicate as the capture of [`Self::prior_stock`]
+    /// (`StockSource::reads_machined_stock`), so the generator and the
+    /// dressups cannot read two different stocks. A `Fresh` operation
+    /// starts from the board whatever snapshot the simulation left.
     fn generator_seed_stock(&self) -> Option<&crate::dexel_stock::TriDexelStock> {
-        match self.stock_source {
-            crate::session::StockSource::FromRemainingStock => self.prior_stock.as_deref(),
-            crate::session::StockSource::Fresh => None,
-        }
+        self.prior_stock
+            .as_deref()
+            .filter(|_| self.stock_source.reads_machined_stock())
     }
 }
 
@@ -640,8 +640,8 @@ pub(crate) fn fresh_twin_cycle_time(
         return None;
     }
     let link = handle.context.link_kinematics.as_ref()?;
-    // Fresh stock is the board: no machined-stock snapshot at all, so the
-    // air-cut filter (which reads the snapshot whatever the stock source)
+    // Fresh stock is the board: no machined-stock snapshot at all (B19,
+    // the capture rule of `GenContext::prior_stock`), so the air-cut filter
     // does not drop the motion over material an earlier op removed.
     let context = GenContext {
         stock_source: crate::session::StockSource::Fresh,
@@ -1143,14 +1143,11 @@ impl JobPhases<'_, '_> {
         // having exactly four. The rapid distance and the
         // `compute_retract_trips` arguments were already identical.
         // S-4 (G-BYTE): stamp the machined-stock snapshot THIS
-        // generation consumed. `context.prior_stock` — not
-        // `gen_initial_stock` — is deliberately the subject: the
-        // source-gated `gen_initial_stock` seeds the generator and
-        // the entry-descent split, but the same `Arc` also reaches
-        // the dressup air-cut filter ungated, so it is the snapshot
-        // this generation consumed in the broadest true sense.
-        // `None` therefore means no machined stock was consumed at
-        // all, which is what the field documents.
+        // generation consumed: `context.prior_stock`, the one capture
+        // every stage reads. B19: a `Fresh` operation captures none, so
+        // its result records no snapshot dependency. `None` means no
+        // machined stock was consumed at all, which is what the field
+        // documents.
         let stats = crate::compute::stats::stats_with_findings(
             &annotated.toolpath,
             annotated.spans_valid.then_some(annotated.spans.as_slice()),
@@ -2403,22 +2400,15 @@ impl ProjectSession {
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
-        // G-RESTSTALE: a snapshot that is not current is not read at all,
-        // by the generator or by the air-cut filter.
-        let current_snapshot = self.snapshot_is_current(tc.id).is_ok();
-        let prior_stock = self
-            .simulation
-            .as_ref()
-            .filter(|_| current_snapshot)
-            .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
-        let source_stock = self
-            .simulation
-            .as_ref()
-            .filter(|_| {
-                current_snapshot
-                    && tc.stock_source == crate::session::StockSource::FromRemainingStock
-            })
-            .and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
+        // B19: only an op that reads the machined stock captures a snapshot.
+        // A `Fresh` op reads only the board, so no stage of its generation
+        // sees the session history. G-RESTSTALE: a snapshot that is not
+        // current is not read at all.
+        let reads_snapshot =
+            tc.stock_source.reads_machined_stock() && self.snapshot_is_current(tc.id).is_ok();
+        let simulation = self.simulation.as_ref().filter(|_| reads_snapshot);
+        let prior_stock = simulation.and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+        let source_stock = simulation.and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
 
         // P1 W4a: the link stage's surface-link-vs-retract decision costs
         // candidates against the real machine envelope. The one builder;
