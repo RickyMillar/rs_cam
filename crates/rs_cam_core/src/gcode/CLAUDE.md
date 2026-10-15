@@ -1,7 +1,9 @@
 # `gcode/` — G-code generation and post-processors
 
-Turns a `Toolpath` into bytes. The entry point is
-`gcode::program_builder::build_program`, then `gcode::emitter::emit`.
+Turns a `Toolpath` into bytes. The builders are `program_builder::build_single`,
+`build_phased` and `build_multi_setup` (the last two with a `_with` variant); then
+`gcode::emitter::emit_program`. B18: a snippet resets the builder position; the next rapid is
+Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_snippet_join_rises_to_the_plane_b18`).
 
 ## Files
 

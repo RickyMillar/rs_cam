@@ -52,9 +52,9 @@
 //!     a rest Chamfer skips its one level and gives an empty result. After
 //!     a Face above the chamfer level, it cuts the fresh rings.
 //! 12. 2D Adaptive (`LevelMask`): on A's outline it skips the levels A
-//!     cleared and cuts only below A's floor. Shifted, above A's floor it
-//!     cuts and enters only near the material A left (B10). It
-//!     leaves the stock a fresh Adaptive leaves, with no material above its
+//!     cleared and cuts only below A's floor. Shifted, at and above A's
+//!     floor it cuts and enters only near the material A left (B10, B12).
+//!     It leaves the stock a fresh Adaptive leaves, with no material above its
 //!     floor in the cells its tool covers.
 //! 13. B8, Face on a whole top: a rest Face cuts the rows of a fresh Face.
 //! 14. B8, Face on part of the top: each rest row lies on a fresh row and
@@ -63,6 +63,9 @@
 //!     intent, and the holes read back as native canned cycles.
 //! 16. B9, Zigzag op and Pocket zigzag on part of the outline: each rest
 //!     row lies on a fresh row, in that row's direction and span.
+//! 17. Waterline (`ContourFilter`, W6.1): after a Pocket through the cap,
+//!     no rest run stands over cleared stock, the runs over material stay,
+//!     and the rest stock stands no higher than the fresh stock.
 //!
 //! Each rule has a red proof: with the rule off, the claim fails. The red
 //! runs are recorded in the W3.4 report.
@@ -88,7 +91,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{
     AdaptiveConfig, ChamferConfig, DrillConfig, FaceConfig, PocketConfig, PocketPattern,
-    ProfileConfig, ZigzagConfig,
+    ProfileConfig, WaterlineConfig, ZigzagConfig,
 };
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
@@ -1276,13 +1279,11 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                 finding.skipped_levels, 0,
                 "the strip holds material at every level"
             );
-            // Every cut and every entry move above A's floor lies near the
+            // Every cut and every entry at or above A's floor lies near the
             // material A left (B10: the entry starter stands on material,
             // not at the medial point of the piece, which lies in A's
-            // cleared area here). The level at A's own floor is not
-            // judged: there the simulator's blend of the cells along A's
-            // wall stands above the threshold, so the planner reads (and
-            // cleans) a sliver along that wall.
+            // cleared area here). The level at A's own floor is judged too
+            // (B12).
             let bound = TOOL_R + 2.0 * CELL_MM;
             let mut worst: f64 = 0.0;
             let mut judge = |kind: &str, p: P2, z: f64| {
@@ -1296,35 +1297,65 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                     p.y
                 );
             };
-            for z in ladder(A_DEPTH - DPP) {
+            for z in ladder(A_DEPTH) {
                 let level = cuts_at(&cuts, z);
                 assert!(!level.is_empty(), "the strip holds material at level {z}");
                 for p in level {
                     judge("cut", p, z);
                 }
             }
-            // The fed entry moves (plunge, helix, ramp) inside the stock
-            // and above the level at A's floor (not judged, as above).
-            let mut entries = 0;
-            for m in &rest.moves {
-                if m.move_type != MoveType::Rapid
+            // The fed entry moves (plunge, helix, ramp), one run per entry.
+            // An entry belongs to the level its run ends on (B12): the
+            // helix into a level below A's floor starts its clearance
+            // above A's floor and passes through the levels above in the
+            // air A cleared, so one of its arc ends can lie on A's floor
+            // (z = -5.000 at 7.4 mm from the strip). Below A's floor the
+            // whole footprint holds material, so such a run is not judged.
+            let is_entry = |m: &Move| {
+                m.move_type != MoveType::Rapid
                     && matches!(
                         m.intent,
                         MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp
                     )
-                    && m.target.z <= 0.0
-                    && m.target.z > -A_DEPTH + LEVEL_Z_EPS_MM
-                {
-                    entries += 1;
+            };
+            let mut runs: Vec<Vec<&Move>> = Vec::new();
+            let mut open = false;
+            for m in &rest.moves {
+                if is_entry(m) {
+                    if !open {
+                        runs.push(Vec::new());
+                    }
+                    if let Some(run) = runs.last_mut() {
+                        run.push(m);
+                    }
+                }
+                open = is_entry(m);
+            }
+            let mut entries = 0;
+            let mut floor_entries = 0;
+            for run in &runs {
+                let Some(last) = run.last() else { continue };
+                let level = last.target.z;
+                if level < -A_DEPTH - LEVEL_Z_EPS_MM {
+                    continue;
+                }
+                entries += 1;
+                if (level + A_DEPTH).abs() <= LEVEL_Z_EPS_MM {
+                    floor_entries += 1;
+                }
+                for m in run {
                     judge("entry move", P2::new(m.target.x, m.target.y), m.target.z);
                 }
             }
-            eprintln!("adaptive shifted: {entries} entry moves judged above A's floor");
-            assert!(
-                entries > 0,
-                "non-vacuity: the rest Adaptive enters above A's floor"
+            eprintln!(
+                "adaptive shifted: {entries} entries judged at or above A's floor, \
+                 {floor_entries} at A's floor"
             );
-            eprintln!("adaptive shifted: worst distance above A's floor {worst:.3} mm");
+            assert!(
+                floor_entries > 0,
+                "non-vacuity: the rest Adaptive enters at the level at A's floor"
+            );
+            eprintln!("adaptive shifted: worst distance at or above A's floor {worst:.3} mm");
         }
         let fresh = run_ops(
             pocket(A_DEPTH),
@@ -1566,10 +1597,442 @@ fn a_rest_zigzag_cuts_on_the_fresh_rows() {
                 judged += 1;
             }
         }
-        eprintln!("{name}: {judged} rest rows judged above A's floor");
+        eprintln!("{name}: {judged} rest rows judged at or above A's floor");
         assert!(
             judged > 0,
             "{name}: the rest zigzag cuts rows above A's floor"
+        );
+    }
+}
+
+// ── W6.1: Waterline ─────────────────────────────────────────────────────
+
+/// Half extent (mm) of the Waterline fixture: the cap height field and
+/// the stock.
+const WL_HALF: f64 = 15.0;
+/// Height-field step (mm) of the cap.
+const WL_MESH_STEP: f64 = 1.0;
+/// Sphere radius (mm) and centre height (mm) of the cap: its top stands at
+/// `R + CZ` = 6 mm.
+const WL_SPHERE_R: f64 = 10.0;
+const WL_SPHERE_CZ: f64 = -4.0;
+/// Stock height (mm), from `z = 0`: 2 mm over the cap top.
+const WL_STOCK_Z: f64 = 8.0;
+/// Depth (mm) and depth per pass (mm) of the prior Pocket on the +X half.
+/// Its floor, 3.5 mm, lies between two waterline levels.
+const WL_POCKET_DEPTH: f64 = 4.5;
+const WL_POCKET_DPP: f64 = 1.5;
+
+/// A contour point with X above this (mm) reaches no cell at or left of
+/// the prior Pocket's wall at `x = 0`: its band is `R + cell`, and the
+/// cell centres sit on the half-millimetre lattice. One more cell keeps
+/// the blended wall cells out.
+const WL_CLEARED_X: f64 = TOOL_R + CELL_MM + CELL_MM;
+
+fn waterline_stock() -> StockConfig {
+    StockConfig {
+        x: 2.0 * WL_HALF,
+        y: 2.0 * WL_HALF,
+        z: WL_STOCK_Z,
+        origin_x: -WL_HALF,
+        origin_y: -WL_HALF,
+        origin_z: 0.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    }
+}
+
+/// A spherical cap on flat ground at `z = 0`.
+fn cap_mesh() -> rs_cam_core::mesh::TriangleMesh {
+    common::meshes::height_field(WL_HALF, WL_MESH_STEP, |x, y| {
+        let s = WL_SPHERE_R * WL_SPHERE_R - (x * x + y * y);
+        if s <= 0.0 {
+            0.0
+        } else {
+            (s.sqrt() + WL_SPHERE_CZ).max(0.0)
+        }
+    })
+}
+
+/// The feed (mm/min) of the slow Waterline arm: a quarter of the default
+/// 1000. At the default feed the air stretches over the cleared half are
+/// short enough that the feed through them beats a retract and a plunge at
+/// 500 mm/min, so the time rule keeps them; at this feed the retract wins.
+const WL_SLOW_FEED: f64 = 250.0;
+
+/// What the Waterline arm left: the arm, the stock after the prior
+/// Pocket, and the simulator's runtime (s) of the Waterline.
+struct WaterlineArm {
+    arm: Arm,
+    prior_stock: Arc<TriDexelStock>,
+    runtime_s: f64,
+}
+
+/// Pocket the +X half of the stock to [`WL_POCKET_DEPTH`], simulate, then
+/// generate a default Waterline over the cap from `source` and simulate
+/// again. Both ops use the Ø[`TOOL_D`] end mill.
+fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
+    // A machine with a kinematics block: the simulator integrates each
+    // toolpath's runtime only then, and the time rule reads the same
+    // envelope (`MachineProfile::link_kinematics`).
+    let machine = rs_cam_core::machine::MachineProfile {
+        kinematics: Some(
+            rs_cam_core::machine::kinematics::MachineKinematics::generic_wood_router(),
+        ),
+        ..rs_cam_core::machine::MachineProfile::default()
+    };
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(waterline_stock())
+        .machine(machine);
+    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let cap = builder.add_model(common::session::mesh_model(cap_mesh(), "w6_cap"));
+    // The half past the stock on three sides, so the tool clears every
+    // cell of the stock with x >= 0.
+    let half = builder.add_model(polygon_model(
+        vec![Polygon2::new(vec![
+            P2::new(0.0, -WL_HALF - TOOL_D),
+            P2::new(WL_HALF + TOOL_D, -WL_HALF - TOOL_D),
+            P2::new(WL_HALF + TOOL_D, WL_HALF + TOOL_D),
+            P2::new(0.0, WL_HALF + TOOL_D),
+        ])],
+        "w6_half",
+    ));
+    let pocket = OperationConfig::Pocket(PocketConfig {
+        stepover: 2.0,
+        depth: WL_POCKET_DEPTH,
+        depth_per_pass: WL_POCKET_DPP,
+        ..PocketConfig::default()
+    });
+    let _ = builder
+        .add_toolpath(0, toolpath_config("pocket", pocket, tool_id, half))
+        .expect("add the pocket");
+    let mut waterline = toolpath_config(
+        "waterline",
+        OperationConfig::Waterline(WaterlineConfig {
+            feed_rate,
+            ..WaterlineConfig::default()
+        }),
+        tool_id,
+        cap,
+    );
+    waterline.heights = common::session::pinned_heights(WL_STOCK_Z, 0.0);
+    // The claims judge each contour point, so the arc fit stays off: an
+    // arc keeps only its end points.
+    waterline.dressups.arc_fitting = None;
+    waterline.stock_source = source;
+    let _ = builder
+        .add_toolpath(0, waterline)
+        .expect("add the waterline");
+    let mut session = builder.build();
+
+    generate(&mut session, 0);
+    let _ = session
+        .apply(Command::SetSimulationResolution(
+            SetSimulationResolutionArgs {
+                resolution: SimulationResolution::Fixed(CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
+    simulate(&mut session);
+    let prior_stock = session
+        .simulation_result()
+        .and_then(|sim| sim.checkpoints.last().map(|c| Arc::clone(&c.mesh_stock)))
+        .expect("the first simulation carved the pocket");
+    generate(&mut session, 1);
+    simulate(&mut session);
+
+    let result = session.get_result(1).expect("the waterline holds a result");
+    let sim = session.simulation_result().expect("a simulation");
+    let final_stock = sim
+        .checkpoints
+        .last()
+        .map(|c| Arc::clone(&c.mesh_stock))
+        .expect("the second simulation carved the waterline");
+    let id = session.toolpath_configs()[1].id;
+    let runtime_s = sim
+        .cut_trace
+        .as_deref()
+        .and_then(|t| t.toolpath_runtimes.iter().find(|r| r.toolpath_id == id))
+        .map(|r| r.breakdown.total_s)
+        .expect("the simulator integrates the waterline's runtime");
+    WaterlineArm {
+        runtime_s,
+        arm: Arm {
+            moves: result.toolpath().moves.clone(),
+            final_stock,
+            finding: result.stats.rest_levels,
+            drill_holes: Vec::new(),
+        },
+        prior_stock,
+    }
+}
+
+/// The Z levels of the cutting moves, top first, with the bits of each Z.
+fn cut_levels(moves: &[Move]) -> Vec<f64> {
+    let mut zs: Vec<u64> = cutting_moves(moves)
+        .iter()
+        .map(|m| m.target.z.to_bits())
+        .collect();
+    zs.sort_unstable();
+    zs.dedup();
+    let mut levels: Vec<f64> = zs.into_iter().map(f64::from_bits).collect();
+    levels.sort_by(|a, b| b.total_cmp(a));
+    levels
+}
+
+/// True when material stands in `stock` above `z + FRESH_MATERIAL_THRESHOLD_MM`
+/// within `R + cell` of `p`, or when that band holds a cell off the grid:
+/// the rule `ContourFilter` states, written out here from the grid API.
+fn passes_material(stock: &TriDexelStock, p: P2, z: f64) -> bool {
+    let grid = &stock.z_grid;
+    let band = TOOL_R + grid.cell_size;
+    let floor = (z + FRESH_MATERIAL_THRESHOLD_MM) as f32;
+    let reach = (band / grid.cell_size).ceil() as isize + 1;
+    let col = ((p.x - grid.origin_u) / grid.cell_size).round() as isize;
+    let row = ((p.y - grid.origin_v) / grid.cell_size).round() as isize;
+    let mut seen = false;
+    for r in row - reach..=row + reach {
+        for c in col - reach..=col + reach {
+            let x = grid.origin_u + c as f64 * grid.cell_size;
+            let y = grid.origin_v + r as f64 * grid.cell_size;
+            if (x - p.x).hypot(y - p.y) > band {
+                continue;
+            }
+            seen = true;
+            if r < 0 || c < 0 || r as usize >= grid.rows || c as usize >= grid.cols {
+                return true;
+            }
+            if grid.has_material_above(r as usize, c as usize, floor) {
+                return true;
+            }
+        }
+    }
+    !seen
+}
+
+/// 17. Waterline (`ContourFilter`, W6.1). A prior Pocket clears the +X
+///     half of the stock to 3.5 mm, through the cap. Above that floor a
+///     fresh Waterline still cuts its contours over the cleared half; the
+///     rest Waterline keeps only the runs that pass material:
+///
+///     - at each level whose contour crosses the cleared half, no rest cut
+///       point stands over cleared stock: each passes material in the prior
+///       stock within `R + cell` (the rule, written out from the grid API),
+///       and none lies in the cleared half;
+///     - the runs over the uncleared half stay, and below the floor the
+///       rest Waterline cuts the fresh contours bit for bit;
+///     - no undercut: in each cell the fresh tool covers completely, the
+///       rest stock stands no higher than the fresh stock (or the level of
+///       that cover) plus the simulator's material threshold;
+///     - the finding counts the levels the filter clipped.
+///
+///
+///     The simulator's runtime of each arm is printed, not judged: a rest
+///     op enters each run on a stock-aware ramp, and a fresh op plunges, so
+///     rest against fresh measures the entry rule, not this filter
+///     (measured 2026-10-15, W6.1 report).
+///
+///     The arm runs at [`WL_SLOW_FEED`], where a retract beats the feed
+///     through the air. Red with `RestUse::LinkSafetyOnly` on the
+///     Waterline row: the rest Waterline cuts the fresh contours over the
+///     cleared half.
+#[test]
+fn a_rest_waterline_cuts_only_the_runs_that_pass_material() {
+    let fresh = waterline_after_pocket(StockSource::Fresh, WL_SLOW_FEED);
+    let rest = waterline_after_pocket(StockSource::FromRemainingStock, WL_SLOW_FEED);
+    eprintln!(
+        "waterline at {WL_SLOW_FEED} mm/min: fresh {:.2} s, rest {:.2} s",
+        fresh.runtime_s, rest.runtime_s
+    );
+    let floor = WL_STOCK_Z - WL_POCKET_DEPTH;
+    let prior = &rest.prior_stock;
+
+    // The prior Pocket cleared the +X half to its floor and left the -X
+    // half whole.
+    let grid = &prior.z_grid;
+    let (row, cleared_col) = grid
+        .world_to_cell(WL_HALF / 2.0, 0.0)
+        .expect("a cell in the cleared half");
+    let (_, whole_col) = grid
+        .world_to_cell(-WL_HALF + 1.0, 0.0)
+        .expect("a cell in the uncleared half");
+    let cleared_top = f64::from(
+        grid.top_z_at(row, cleared_col)
+            .expect("material under the floor"),
+    );
+    let whole_top = f64::from(grid.top_z_at(row, whole_col).expect("the stock top"));
+    assert!(
+        (cleared_top - floor).abs() < 1e-3 && (whole_top - WL_STOCK_Z).abs() < 1e-3,
+        "the prior Pocket must clear the +X half to {floor}: tops {cleared_top}, {whole_top}"
+    );
+
+    let fresh_cuts = cutting_moves(&fresh.arm.moves);
+    let rest_cuts = cutting_moves(&rest.arm.moves);
+    let levels = cut_levels(&fresh.arm.moves);
+    let above: Vec<f64> = levels
+        .iter()
+        .copied()
+        .filter(|&z| z > floor + FRESH_MATERIAL_THRESHOLD_MM)
+        .filter(|&z| cuts_at(&fresh_cuts, z).iter().any(|p| p.x > WL_CLEARED_X))
+        .collect();
+    let below: Vec<f64> = levels
+        .iter()
+        .copied()
+        .filter(|&z| z < floor - FRESH_MATERIAL_THRESHOLD_MM)
+        .collect();
+    eprintln!(
+        "waterline levels {levels:?}: above the floor with cuts over the cleared half \
+         {above:?}, below the floor {below:?}; rest finding {:?}",
+        rest.arm.finding
+    );
+    assert!(
+        !above.is_empty() && !below.is_empty(),
+        "non-vacuity: the fresh Waterline cuts over the cleared half above the floor, \
+         and cuts below it"
+    );
+
+    // At the levels whose fresh contour crosses the cleared half, the air
+    // stretch is long, and a retract saves time at this feed. A short
+    // stretch elsewhere (the 3 mm ring at the cap top) is fed through by
+    // the time rule, as claim 17b pins.
+    for m in rest_cuts
+        .iter()
+        .filter(|m| above.iter().any(|&z| (m.target.z - z).abs() < 1e-6))
+    {
+        let p = P2::new(m.target.x, m.target.y);
+        assert!(
+            passes_material(prior, p, m.target.z),
+            "the rest Waterline cuts at {:?}, over cleared stock",
+            m.target
+        );
+    }
+    for &z in &above {
+        let r = cuts_at(&rest_cuts, z);
+        let over_cleared: Vec<&P2> = r.iter().filter(|p| p.x > WL_CLEARED_X).collect();
+        assert!(
+            over_cleared.is_empty(),
+            "level {z}: the rest Waterline cuts {} points over the cleared half",
+            over_cleared.len()
+        );
+        assert!(
+            r.iter().any(|p| p.x < -WL_CLEARED_X),
+            "level {z}: the rest Waterline must keep its runs over the uncleared half"
+        );
+    }
+    for &z in &below {
+        assert_eq!(
+            cut_bits_at(&rest.arm.moves, z),
+            cut_bits_at(&fresh.arm.moves, z),
+            "level {z}: below the prior floor the rest Waterline cuts the fresh contours"
+        );
+    }
+
+    // No undercut. A cell counts where the fresh tool covers it
+    // completely: its centre lies within `R - cell` of a fresh cut point.
+    // The lowest such level is the depth the fresh cut takes it to. The
+    // simulator blends a cell the tool covers in part, by the stamps along
+    // each move, so a fresh plunge and a rest feed through the same point
+    // leave a part-covered cell at different heights; those cells are not
+    // judged (claim 5 skips them for the same reason).
+    let (f, r) = (&fresh.arm.final_stock.z_grid, &rest.arm.final_stock.z_grid);
+    assert_eq!((f.rows, f.cols), (r.rows, r.cols), "one grid shape");
+    let mut cover = vec![f64::INFINITY; f.rows * f.cols];
+    let reach = TOOL_R - CELL_MM;
+    let span = (reach / CELL_MM).ceil() as isize + 1;
+    for m in &fresh_cuts {
+        let col = ((m.target.x - f.origin_u) / CELL_MM).round() as isize;
+        let row = ((m.target.y - f.origin_v) / CELL_MM).round() as isize;
+        for rr in row - span..=row + span {
+            for cc in col - span..=col + span {
+                if rr < 0 || cc < 0 || rr as usize >= f.rows || cc as usize >= f.cols {
+                    continue;
+                }
+                let (x, y) = f.cell_to_world(rr as usize, cc as usize);
+                if (x - m.target.x).hypot(y - m.target.y) <= reach {
+                    let i = rr as usize * f.cols + cc as usize;
+                    cover[i] = cover[i].min(m.target.z);
+                }
+            }
+        }
+    }
+    let mut worst = f64::NEG_INFINITY;
+    let mut judged = 0_usize;
+    for row in 0..f.rows {
+        for col in 0..f.cols {
+            let z = cover[row * f.cols + col];
+            if !z.is_finite() {
+                continue;
+            }
+            judged += 1;
+            let tf = f.top_z_at(row, col).map_or(0.0, f64::from);
+            let tr = r.top_z_at(row, col).map_or(0.0, f64::from);
+            worst = worst.max(tr - tf.max(z));
+        }
+    }
+    eprintln!(
+        "waterline: over {judged} cells the fresh tool covers, the rest stock stands at most \
+         {worst:.4} mm over the fresh stock or the fresh cover level"
+    );
+    assert!(judged > 0, "the judged set must not be empty");
+    assert!(
+        worst <= FRESH_MATERIAL_THRESHOLD_MM,
+        "undercut: the rest stock stands {worst} mm over the fresh cut"
+    );
+
+    let finding = rest
+        .arm
+        .finding
+        .expect("a rest Waterline records its contour filter");
+    assert_eq!(finding.fallback, None);
+    assert!(
+        finding.clipped_levels >= above.len(),
+        "each level above the floor drops its runs over the cleared half: {finding:?}"
+    );
+    assert!(
+        fresh.arm.finding.is_none(),
+        "a fresh Waterline reads no stock, so it records no rest finding"
+    );
+}
+
+/// 17b. Waterline time rule (W6.1). At the default feed each air stretch
+///      over the cleared half is fed faster than a retract and a plunge
+///      take, so the rest Waterline keeps it as a cut: it cuts the fresh
+///      points at every level, and its finding drops no level.
+#[test]
+fn a_rest_waterline_feeds_through_air_that_a_retract_would_not_save() {
+    let feed = WaterlineConfig::default().feed_rate;
+    let fresh = waterline_after_pocket(StockSource::Fresh, feed);
+    let rest = waterline_after_pocket(StockSource::FromRemainingStock, feed);
+    eprintln!(
+        "waterline at {feed} mm/min: fresh {:.2} s, rest {:.2} s; rest finding {:?}",
+        fresh.runtime_s, rest.runtime_s, rest.arm.finding
+    );
+    let finding = rest
+        .arm
+        .finding
+        .expect("a rest Waterline records its contour filter");
+    assert_eq!(
+        (finding.skipped_levels, finding.clipped_levels),
+        (0, 0),
+        "no level drops a stretch: {finding:?}"
+    );
+    let levels = cut_levels(&fresh.arm.moves);
+    assert!(!levels.is_empty(), "non-vacuity: the fresh Waterline cuts");
+    for z in levels {
+        let (mut r, mut f) = (
+            cut_bits_at(&rest.arm.moves, z),
+            cut_bits_at(&fresh.arm.moves, z),
+        );
+        r.sort_unstable();
+        f.sort_unstable();
+        // Above the prior floor the session's air-cut filter (a dressup,
+        // `filter_air_cuts`, the same time rule) may turn cuts in air into
+        // rapids, after the kernel. The kernel's own output is the whole contour: the finding
+        // above says it dropped nothing. Each rest cut point is a fresh one.
+        assert!(
+            r.iter().all(|p| f.binary_search(p).is_ok()),
+            "level {z}: the rest Waterline cuts a point the fresh one does not"
         );
     }
 }

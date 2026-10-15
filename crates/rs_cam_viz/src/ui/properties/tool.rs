@@ -370,15 +370,6 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 )
                 .show(ui);
 
-                ValueRow::new(
-                    "Shank Length:",
-                    &mut tool.shank_length,
-                    " mm",
-                    0.5,
-                    0.0..=200.0,
-                )
-                .show(ui);
-
                 ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, 0.0..=300.0).show(ui);
             });
         });
@@ -420,12 +411,16 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     let cutter_r = tool_def.radius() as f32;
     let cutting_len = tool_def.length() as f32;
     let shank_r = (tool_def.shank_diameter / 2.0) as f32;
-    let shank_len = tool_def.shank_length as f32;
+    // The exposed shank runs from the flutes to the holder face, which is
+    // at the stickout above the tip. The holder has no top in the model;
+    // the preview draws it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
+    let shank_len = tool_def.exposed_shank_length() as f32;
+    let holder_face = tool_def.stickout as f32;
     let holder_r = (tool_def.holder_diameter / 2.0) as f32;
-    let holder_len = tool_def.holder_length() as f32;
+    let holder_len = 2.0 * holder_r * crate::render::sim_render::HOLDER_DRAW_LENGTH_OVER_DIAMETER;
 
     // Total height to display; clamp so preview isn't squished
-    let total_h = (cutting_len + shank_len + holder_len).max(cutting_len * 1.2);
+    let total_h = (holder_face.max(cutting_len) + holder_len).max(cutting_len * 1.2);
     let max_r = cutter_r.max(shank_r).max(holder_r).max(0.1);
 
     // Scale: fit both width and height with padding
@@ -495,7 +490,7 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     }
 
     // --- Holder rectangle ---
-    let shank_top_y = cutter_top_y - shank_len * scale;
+    let shank_top_y = bottom - holder_face * scale;
     if holder_len > 0.01 && holder_r > 0.01 {
         let holder_top_y = shank_top_y - holder_len * scale;
         let hr = holder_r * scale;

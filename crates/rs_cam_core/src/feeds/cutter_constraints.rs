@@ -486,7 +486,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(diameter_mm, stickout_mm.max(20.0))),
             diameter_mm,
-            (stickout_mm - 20.0).max(10.0),
             25.0,
             stickout_mm,
             2,
@@ -498,7 +497,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(BallEndmill::new(diameter_mm, stickout_mm.max(20.0))),
             diameter_mm,
-            (stickout_mm - 20.0).max(10.0),
             25.0,
             stickout_mm,
             2,
@@ -511,7 +509,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0)),
             6.0,
-            10.0,
             25.0,
             35.0,
             2,
@@ -523,7 +520,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(VBitEndmill::new(6.0, 60.0, 25.0)),
             6.0,
-            10.0,
             25.0,
             45.0,
             2,

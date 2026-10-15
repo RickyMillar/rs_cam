@@ -9,6 +9,7 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - `debug_trace.rs` — the per-operation debug record.
 - `semantic_trace.rs` — the semantic items for operation-level diagnostics.
 - `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`.
+- `produced.rs` — `Produced`, the typed side channel of a generated toolpath (W6.2).
 - `narrate.rs` — agent-friendly narration of a toolpath and a cut trace.
 - `transform_provenance.rs` — the post-generation transform provenance.
 
@@ -21,8 +22,9 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - A span survives a relink. A relink that drops spans is a defect.
 - W2.5: the narration prints the feed stage of the move list it describes
   (`ToolpathNarrationContext::feed_stage`). The GUI narrates the worker copy.
-- The narration reads an op's DOC basis, air-cut hint, air-cut bar and relink dial from
-  `OperationType::capabilities()` (W2.4). Do not add a `match` on the op type here.
+- The narration reads an op's DOC basis, air-cut hint, air-cut bar, relink dial,
+  `plans_bands` and `ramp_descent` from `OperationType::capabilities()` (W2.4, C2).
+  Do not add a `match` on the op type here.
 
 ## Sentries
 

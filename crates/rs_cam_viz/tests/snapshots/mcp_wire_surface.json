@@ -33,6 +33,128 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`add_obstacle` (K1): add an obstacle to the END of a setup's list. An\nobstacle is a fixture or a keep-out zone (one concept): every operation\nof the setup keeps the tool (cutter, shank and holder) out of it, the\nrapids cross above it, and the simulation counts a hit as a collision.\n\nEvery value is in the SETUP frame: the frame the setup's toolpaths use,\nwith the setup's +Z up.",
+      "properties": {
+        "clearance": {
+          "default": null,
+          "description": "The distance (mm) the tool keeps from the geometry on every side.\nDefault: 3.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "Default: true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The geometry kind.",
+          "oneOf": [
+            {
+              "const": "box",
+              "description": "An axis-aligned box from `min` to `max` ([x, y, z], mm).",
+              "type": "string"
+            },
+            {
+              "const": "outline_extrude",
+              "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+              "type": "string"
+            },
+            {
+              "const": "model",
+              "description": "An imported mesh model. `model_ids` holds exactly one id.",
+              "type": "string"
+            }
+          ]
+        },
+        "max": {
+          "default": null,
+          "description": "`box` only: the high corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "min": {
+          "default": null,
+          "description": "`box` only: the low corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "default": [],
+          "description": "The model ids (`inspect_model` ids): one mesh model for `model`, one\nor more 2D models with closed outlines for `outline_extrude`.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": null,
+          "description": "A name for the obstacle. Default: \"Obstacle <id + 1>\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism bottom (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism top (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "kind"
+      ],
+      "title": "AddObstacleParam",
+      "type": "object"
+    },
+    "name": "add_obstacle"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "name": {
           "description": "Optional name for the new setup",
@@ -257,14 +379,6 @@
             "null"
           ]
         },
-        "shank_length": {
-          "description": "Shank length in mm. Default 20.0.",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
         "size_units": {
           "anyOf": [
             {
@@ -477,6 +591,164 @@
       "type": "object"
     },
     "name": "collision_check"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based) of a rest operation (remaining stock)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "CompareRestWithFreshParam",
+      "type": "object"
+    },
+    "name": "compare_rest_with_fresh"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`edit_obstacle` (K1): change one obstacle in place. Each field that is\ngiven replaces that part; the others stay. Use `enabled` to turn the\nobstacle on or off. To change the geometry kind, give `kind` with every\nvalue that kind needs.",
+      "properties": {
+        "clearance": {
+          "default": null,
+          "description": "The clearance (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "On (true) or off (false).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "description": "K1: the geometry kind of an obstacle, as a wire enum. A mirror of the\nkinds of `rs_cam_core::compute::obstacle::ObstacleGeometry`.",
+              "oneOf": [
+                {
+                  "const": "box",
+                  "description": "An axis-aligned box from `min` to `max` ([x, y, z], mm).",
+                  "type": "string"
+                },
+                {
+                  "const": "outline_extrude",
+                  "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+                  "type": "string"
+                },
+                {
+                  "const": "model",
+                  "description": "An imported mesh model. `model_ids` holds exactly one id.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The geometry kind. With it, the geometry is built again from the\nvalues given here."
+        },
+        "max": {
+          "default": null,
+          "description": "The high box corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "min": {
+          "default": null,
+          "description": "The low box corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "default": null,
+          "description": "The model ids.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "description": "A new name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "obstacle_id": {
+          "description": "The obstacle id (`list_setups` `obstacles[].id`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "The prism bottom (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "The prism top (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "obstacle_id"
+      ],
+      "title": "EditObstacleParam",
+      "type": "object"
+    },
+    "name": "edit_obstacle"
   },
   {
     "inputSchema": {
@@ -1876,6 +2148,33 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`remove_obstacle` (K1): remove one obstacle from a setup.",
+      "properties": {
+        "obstacle_id": {
+          "description": "The obstacle id.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "obstacle_id"
+      ],
+      "title": "RemoveObstacleParam",
+      "type": "object"
+    },
+    "name": "remove_obstacle"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "description": "`remove_stock_change` (S4): remove one stock change from a setup.",
       "properties": {
         "change_id": {
@@ -2673,7 +2972,7 @@
           "type": "integer"
         },
         "param": {
-          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"shank_length\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
+          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
           "type": "string"
         },
         "value": {
@@ -2886,7 +3185,7 @@
           "additionalProperties": {
             "type": "boolean"
           },
-          "description": "Viewport overlays to switch on or off, as `{\"<id>\": true|false}`.\n\nThe ids are the rows of the GUI's viewport catalogue (All viewport options) — the same list the\npanel renders, so anything the operator can switch, an agent can:\n`grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,\n`fixtures`, `keep_outs`, `alignment_pins`, `flip_axis`, `curves`,\n`orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,\n`height_planes`, `tool_profile_ghost`, `span_entry`,\n`span_lead_out`, `span_link_bridge`, `span_dressup`,\n`rest_heatmap`, `tier_map`, `reach_map`, `simulated_stock`,\n`collisions`, `tool_deflection`, `generator_steps`,\n`active_step_highlight`, and the colour choices\n`stock_colour_solid` / `stock_colour_deviation` /\n`stock_colour_by_height` and `move_colour_palette` /\n`move_colour_engagement` / `move_colour_advance_per_tooth`.\n\nNothing is silently dropped. The reply reports every key under\n`overlays.applied` or `overlays.refused`, and a refusal carries the\nsame reason string the panel prints beside the greyed row — for\nexample `{\"tier_map\": \"previewed on setup 2 — switch setup to see\nit\"}`. Switching a colour choice OFF is refused (switch a sibling on\ninstead), an unknown id is refused, and every id is refused in the\nReadiness workspace, which renders no viewport.\n\nOne colour source per surface: enabling one clears the others on the\nmodel, the simulated stock or the move lines. Pair with\n`screenshot_gui` to photograph what was enabled.",
+          "description": "Viewport overlays to switch on or off, as `{\"<id>\": true|false}`.\n\nThe ids are the rows of the GUI's viewport catalogue (All viewport options) — the same list the\npanel renders, so anything the operator can switch, an agent can:\n`grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,\n`obstacles`, `alignment_pins`, `flip_axis`, `curves`,\n`orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,\n`height_planes`, `tool_profile_ghost`, `span_entry`,\n`span_lead_out`, `span_link_bridge`, `span_dressup`,\n`rest_heatmap`, `tier_map`, `reach_map`, `simulated_stock`,\n`collisions`, `tool_deflection`, `generator_steps`,\n`active_step_highlight`, and the colour choices\n`stock_colour_solid` / `stock_colour_deviation` /\n`stock_colour_by_height` and `move_colour_palette` /\n`move_colour_engagement` / `move_colour_advance_per_tooth`.\n\nNothing is silently dropped. The reply reports every key under\n`overlays.applied` or `overlays.refused`, and a refusal carries the\nsame reason string the panel prints beside the greyed row — for\nexample `{\"tier_map\": \"previewed on setup 2 — switch setup to see\nit\"}`. Switching a colour choice OFF is refused (switch a sibling on\ninstead), an unknown id is refused, and every id is refused in the\nReadiness workspace, which renders no viewport.\n\nOne colour source per surface: enabling one clears the others on the\nmodel, the simulated stock or the move lines. Pair with\n`screenshot_gui` to photograph what was enabled.",
           "type": [
             "object",
             "null"

@@ -5,6 +5,7 @@ mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
+mod obstacle_marks;
 mod pin_marks;
 /// The `basis` object of the MCP `get_suggest_rationale` tool, as a pure
 /// function of the Suggest profile (G10: a test reads it).
@@ -1392,8 +1393,17 @@ fn push_circle_vertices(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OverlayUploadKey {
     tool_profile: bool,
-    fixtures: bool,
-    keep_outs: bool,
+    obstacles: bool,
+    /// K2: the obstacle highlight and the obstacle plane follow the
+    /// selection: `(setup, None)` for a selected setup, `(setup,
+    /// Some(obstacle))` for a selected obstacle. A pick sets
+    /// `Selection::Obstacle` with no upload of its own, so without this
+    /// field a pick of a second obstacle in the same setup kept the old
+    /// highlight.
+    obstacle_focus: Option<(
+        crate::state::job::SetupId,
+        Option<crate::state::job::ObstacleId>,
+    )>,
     alignment_pins: bool,
     flip_axis: bool,
     pin_ghost: bool,
@@ -1429,8 +1439,14 @@ pub(crate) struct OverlayUploadKey {
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
     OverlayUploadKey {
         tool_profile: state.viewport.show_tool_profile_preview,
-        fixtures: state.viewport.show_fixtures,
-        keep_outs: state.viewport.show_keep_outs,
+        obstacles: state.viewport.show_obstacles,
+        obstacle_focus: match state.selection {
+            crate::state::selection::Selection::Setup(id) => Some((id, None)),
+            crate::state::selection::Selection::Obstacle(id, obstacle) => {
+                Some((id, Some(obstacle)))
+            }
+            _ => None,
+        },
         alignment_pins: state.viewport.show_alignment_pins,
         flip_axis: state.viewport.show_flip_axis,
         pin_ghost: state.viewport.show_pin_ghost,

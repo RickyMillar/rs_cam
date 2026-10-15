@@ -25,13 +25,13 @@ use crate::ui_command::{
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
-    AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CutTraceParam, ExportParam,
-    GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam, GetNotificationsParam,
-    ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
-    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam,
-    OperationSchemaParam, PlaceAlignmentPatternParam, PlanMultitoolFinishingParam,
-    PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam,
-    RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CompareRestWithFreshParam,
+    CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam,
+    GetNotificationsParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
+    ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
+    MoveAlignmentPinsParam, OperationSchemaParam, PlaceAlignmentPatternParam,
+    PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
+    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
     SetDressupFieldParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
     SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
@@ -87,8 +87,6 @@ pub struct EmbeddedCamServer {
     /// caller that has no event loop to wake — the server then behaves
     /// exactly as it did before B-4.
     waker: Option<GuiWaker>,
-    #[allow(dead_code)]
-    tool_router: ToolRouter<Self>,
 }
 
 impl EmbeddedCamServer {
@@ -98,7 +96,6 @@ impl EmbeddedCamServer {
         generation: GenerationControl,
         reads: McpReadCache,
     ) -> Self {
-        let tool_router = Self::tool_router();
         Self {
             request_tx,
             egui_ctx,
@@ -106,7 +103,6 @@ impl EmbeddedCamServer {
             reads,
             memory: MemoryControl::detached(),
             waker: None,
-            tool_router,
         }
     }
 
@@ -473,7 +469,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "list_setups",
-        description = "List all setups in the loaded project with name, face orientation, toolpath indices and stock_changes (each change with its id, op, geometry, material and the volume the last simulation measured)"
+        description = "List all setups in the loaded project with name, face orientation, toolpath indices, obstacles (K1: each with its id, name, enabled, clearance and geometry in the setup frame) and stock_changes (each change with its id, op, geometry, material and the volume the last simulation measured)"
     )]
     async fn list_setups(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::ListSetups).await)
@@ -850,6 +846,48 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "add_obstacle",
+        description = "Add an obstacle to the end of a setup's list (K1). An obstacle is a fixture or a keep-out zone (one concept): every operation of the setup keeps the tool (cutter, shank and holder) out of it, grown by its clearance; the tool crosses it at the obstacle plane (its top + clearance + 5 mm); the simulation counts a hit as a collision. kind: box (min and max [x, y, z]), outline_extrude (closed 2D outlines of model_ids, from z_bottom to z_top) or model (one mesh model). Every value is in the SETUP frame (the frame the setup's toolpaths use). clearance default 3 mm. Adding an enabled obstacle drops the setup's results. Returns the new obstacle id."
+    )]
+    async fn add_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddObstacle(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "edit_obstacle",
+        description = "Edit one obstacle of a setup in place (K1). Each given field replaces that part; the others stay. enabled turns it on or off. Give kind with its values to change the geometry kind; without kind, min, max, model_ids, z_bottom and z_top patch the current geometry. Every value is in the setup frame. An edit that moves the obstacle drops the setup's results and their dependents; a rename drops nothing."
+    )]
+    async fn edit_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::EditObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::EditObstacle(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "remove_obstacle",
+        description = "Remove one obstacle from a setup by its id (K1)."
+    )]
+    async fn remove_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::RemoveObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveObstacle(param)))
+                .await,
+        )
+    }
+
+    #[tool(
         name = "add_setup",
         description = "Add a new setup (workholding orientation) to the project. Returns the new setup index and ID. Use set_setup_face to change orientation."
     )]
@@ -1087,7 +1125,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_tool_param",
-        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, shank_length, holder_diameter, size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
+        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, holder_diameter, size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
     )]
     async fn set_tool_param(&self, Parameters(param): Parameters<SetToolParamInput>) -> String {
         Self::format_result(
@@ -1134,7 +1172,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_tool",
-        description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), shank_length (20), stickout (45), holder_diameter (25), tool_number, size_units ('metric' or 'imperial': the unit the size is SHOWN in; omitted, it is inferred from the name, and every length stays mm). Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
+        description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), stickout (45), holder_diameter (25), tool_number, size_units ('metric' or 'imperial': the unit the size is SHOWN in; omitted, it is inferred from the name, and every length stays mm). Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
     )]
     async fn add_tool(&self, Parameters(param): Parameters<AddToolParam>) -> String {
         Self::format_result(
@@ -1246,7 +1284,7 @@ impl EmbeddedCamServer {
         // literal, so the list cannot be built here; the
         // `dressup_field_names_are_published` test holds this string against
         // the table and fails when a field is added without a word here.
-        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order, air_bridge_policy. helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
+        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order. helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
     )]
     async fn set_dressup_config(
         &self,
@@ -1488,6 +1526,20 @@ impl EmbeddedCamServer {
         )
     }
 
+    #[tool(
+        name = "compare_rest_with_fresh",
+        description = "Compare a rest operation (stock source: remaining stock) with the same operation on fresh stock. Generates the fresh twin once (one more generation of the op, no simulation) and answers both cycle times in one measure: the simulator's cycle-time model at the commanded feeds. The comparison is recorded; while it stays current (the op is not edited or regenerated), the simulation triage reports project.rest_slower_than_fresh (Info) when rest is slower. Generate the rest op first."
+    )]
+    async fn compare_rest_with_fresh(
+        &self,
+        Parameters(CompareRestWithFreshParam { index }): Parameters<CompareRestWithFreshParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::CompareRestWithFresh { index })
+                .await,
+        )
+    }
+
     // ── Simulation scrubbing tools ──────────────────────────────────
 
     #[tool(
@@ -1694,7 +1746,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_ui_view",
-        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, fixtures, keep_outs, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal needs a toolpath — pass toolpath_index in the same call or have one selected. Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, obstacles, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal needs a toolpath — pass toolpath_index in the same call or have one selected. Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
     )]
     async fn set_ui_view(
         &self,

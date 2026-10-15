@@ -64,6 +64,37 @@ pub enum ProjectProjection {
     Point,
 }
 
+impl From<crate::compute::operation_configs::ProjectCurveDirection> for ProjectDirection {
+    fn from(d: crate::compute::operation_configs::ProjectCurveDirection) -> Self {
+        use crate::compute::operation_configs::ProjectCurveDirection as Config;
+        match d {
+            Config::FromAbove => Self::FromAbove,
+            Config::FromBelow => Self::FromBelow,
+        }
+    }
+}
+
+impl From<crate::compute::operation_configs::ProjectCurveSide> for ProjectSide {
+    fn from(s: crate::compute::operation_configs::ProjectCurveSide) -> Self {
+        use crate::compute::operation_configs::ProjectCurveSide as Config;
+        match s {
+            Config::Center => Self::Center,
+            Config::Inside => Self::Inside,
+            Config::Outside => Self::Outside,
+        }
+    }
+}
+
+impl From<crate::compute::operation_configs::ProjectCurveProjection> for ProjectProjection {
+    fn from(p: crate::compute::operation_configs::ProjectCurveProjection) -> Self {
+        use crate::compute::operation_configs::ProjectCurveProjection as Config;
+        match p {
+            Config::Cutter => Self::Cutter,
+            Config::Point => Self::Point,
+        }
+    }
+}
+
 /// Parameters for the project-curve-on-surface operation.
 pub struct ProjectCurveParams {
     /// Cut depth below (or above) the mesh surface (positive = into material).
@@ -86,7 +117,8 @@ pub struct ProjectCurveParams {
     pub projection: ProjectProjection,
     /// When true, the mesh has already been Z-inverted by a bottom-facing setup
     /// transform. `FromBelow` should NOT apply its own Z-flip in this case
-    /// (it would double-flip, cancelling the setup transform).
+    /// (it would double-flip, cancelling the setup transform). The Curve
+    /// runner sets it from `ExecutionContext::z_flipped` (W6.5).
     pub setup_z_flipped: bool,
 }
 
@@ -179,27 +211,8 @@ fn sample_vertices_and_steps(points: &[P2], spacing: f64) -> Vec<P2> {
     out
 }
 
-/// Project 2D polygon paths onto a 3D mesh and produce an engraving toolpath.
-///
-/// Each ring of the polygon (exterior and each hole) is treated as a separate
-/// chain. Points that fall outside the mesh footprint (no triangle contact) are
-/// skipped, splitting the chain into sub-segments.
-///
-/// When `direction` is `FromBelow`, the mesh is Z-flipped so the drop cutter
-/// finds the bottom surface contact, then the result is flipped back.
-pub fn project_curve_toolpath(
-    polygon: &Polygon2,
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &ProjectCurveParams,
-) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        project_curve_toolpath_with_cancel(polygon, mesh, index, cutter, params, cancel)
-    })
-}
-
-/// Cancellable variant of [`project_curve_toolpath`]. Polls `cancel` every
+/// Project a curve onto the mesh: the kernel the Curve runner calls
+/// (`compute::execute::generate_project_curve`). Polls `cancel` every
 /// [`CANCEL_POLL_STRIDE`] resampled points inside the per-ring drop-cutter
 /// loop (planning/finishing_stack_review_2026-07.md S.5: "project_curve
 /// (drop-cutter per point)" — the worst per-op loop of the flat-2D family).
@@ -481,6 +494,19 @@ mod tests {
     /// The original surface: `z = CREASE_Z - WALL_SLOPE * |x|`. Seen from
     /// below, this is a sharp V groove whose walls are at 60°. The standalone
     /// `FromBelow` arm flips it, so the drop cutter sees a V valley.
+    /// The projected curve through the kernel the Curve runner calls.
+    fn project(
+        polygon: &Polygon2,
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+        cutter: &dyn MillingCutter,
+        params: &ProjectCurveParams,
+    ) -> Toolpath {
+        crate::interrupt::run_uncancellable(|cancel| {
+            project_curve_toolpath_with_cancel(polygon, mesh, index, cutter, params, cancel)
+        })
+    }
+
     fn original_surface_z(x: f64) -> f64 {
         CREASE_Z - WALL_SLOPE * x.abs()
     }
@@ -562,7 +588,7 @@ mod tests {
         let depth = -0.4;
 
         // From below, standalone: the case of the RivMap back-side V lines.
-        let point = project_curve_toolpath(
+        let point = project(
             &valley_curve(),
             &mesh,
             &index,
@@ -598,7 +624,7 @@ mod tests {
             assert!((w[1].x - w[0].x).hypot(w[1].y - w[0].y) <= 0.5 + 1e-12);
         }
 
-        let cutter = project_curve_toolpath(
+        let cutter = project(
             &valley_curve(),
             &mesh,
             &index,
@@ -626,7 +652,7 @@ mod tests {
         }
 
         // From above, the same rule: tip = surface - depth at every sample.
-        let above = project_curve_toolpath(
+        let above = project(
             &valley_curve(),
             &mesh,
             &index,
@@ -657,7 +683,7 @@ mod tests {
             (ProjectDirection::FromBelow, -2.2685),
         ] {
             let run = |projection| {
-                fed_points(&project_curve_toolpath(
+                fed_points(&project(
                     &curve,
                     &mesh,
                     &index,

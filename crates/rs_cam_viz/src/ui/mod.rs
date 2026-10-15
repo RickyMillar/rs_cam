@@ -32,7 +32,7 @@ pub mod toolpath_row_controls;
 pub mod viewport_overlay;
 pub mod workspace_bar;
 
-use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolConfig, ToolId, ToolType};
+use crate::state::job::{ModelId, ObstacleId, SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui_command::UiCommand;
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
@@ -151,11 +151,12 @@ pub enum AppEvent {
         use_tools: Vec<(f64, usize)>,
     },
 
-    // Fixtures and keep-out zones
-    AddFixture(SetupId),
-    RemoveFixture(SetupId, FixtureId),
-    AddKeepOut(SetupId),
-    RemoveKeepOut(SetupId, KeepOutId),
+    // Obstacles (K1: fixtures and keep-out zones are one concept)
+    AddObstacle(SetupId),
+    RemoveObstacle(SetupId, ObstacleId),
+    /// K2: the list-row checkbox. The controller applies the STORED record
+    /// with the new flag, so an open editor draft cannot ride along.
+    SetObstacleEnabled(SetupId, ObstacleId, bool),
 
     // Stock changes (S4): one intent per action of the setup panel's list.
     // The controller turns each into one S2 command.
@@ -181,6 +182,10 @@ pub enum AppEvent {
     MoveToolpathToSetup(ToolpathId, SetupId, Option<usize>),
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
+    /// Operator ruling 2026-10-15: generate the fresh twin of a rest
+    /// toolpath on request and record both cycle times
+    /// (`ProjectSession::compare_rest_with_fresh`).
+    CompareRestWithFresh(ToolpathId),
     GenerateAll,
     /// Write the ONE stored simulation resolution (G-RESTRES) through
     /// `Command::SetSimulationResolution`. The Simulation panel sends it once

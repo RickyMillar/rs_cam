@@ -84,7 +84,8 @@ fn every_config_field_is_published_driver_set_or_skipped() {
         }
     }
     // Non-vacuity anchors: the tables are the real ones (269 defs and four
-    // driver-set field names over six rows on 2026-10-15).
+    // driver-set field names over six rows on 2026-10-15; W6.5 deleted the
+    // Project Curve `setup_z_flipped`, so three names over five rows).
     assert!(
         field_total > 200,
         "only {field_total} config fields over 24 structs"
@@ -94,7 +95,7 @@ fn every_config_field_is_published_driver_set_or_skipped() {
         "only {def_total} param defs over 24 operations"
     );
     assert!(
-        driver_set_total >= 6,
+        driver_set_total >= 5,
         "only {driver_set_total} driver-set rows"
     );
 }
@@ -167,23 +168,12 @@ fn every_declared_range_holds_the_default() {
     assert!(ranged > 100, "only {ranged} ranged params");
 }
 
-/// CMP-08: every alias the registry publishes names a real def on the
-/// same operation, and no alias collides with a published name.
+/// Every name the setter publishes resolves to a def. D3 deleted the
+/// alias field from `ParamDef`, so a second name for one field cannot be
+/// declared (the compiler refuses it).
 #[test]
-fn every_alias_names_a_field_of_its_own_operation() {
-    let mut aliases_seen = 0;
+fn every_published_name_resolves_to_a_def() {
     for &op_type in OperationType::ALL {
-        let entry = op_type.registry_entry();
-        for def in entry.params.defs {
-            for alias in def.aliases {
-                aliases_seen += 1;
-                assert!(
-                    entry.params.defs.iter().all(|other| other.name != *alias),
-                    "{op_type:?}: `{alias}` is both an alias of `{}` and a param name of                      its own. One name, one field.",
-                    def.name
-                );
-            }
-        }
         for name in OperationConfig::param_names_for_type(op_type) {
             assert!(
                 OperationConfig::new_default(op_type)
@@ -193,12 +183,6 @@ fn every_alias_names_a_field_of_its_own_operation() {
             );
         }
     }
-    // The three the finding names: Waterline and RampFinish alias
-    // `depth_per_pass`, Pencil aliases `stepover`.
-    assert_eq!(
-        aliases_seen, 3,
-        "the alias population moved. Three alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
-    );
 }
 
 /// Phase 1 wildcard kill (architectural refactor T3, re-baselined

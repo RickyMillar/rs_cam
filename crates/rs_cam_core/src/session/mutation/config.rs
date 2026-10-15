@@ -397,7 +397,7 @@ impl ProjectSession {
     /// a `ModelOutline` boundary that names the model. A reload of the
     /// outline model moves the boundary, so the second door drops too.
     /// S2 adds a third reader: a setup stock change whose geometry names
-    /// the model.
+    /// the model. K1 adds a fourth: a setup obstacle that names it.
     fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
@@ -423,6 +423,23 @@ impl ProjectSession {
         });
         if let Some(from_setup) = first_reader {
             self.drop_stock_change_dependents(from_setup);
+        }
+        // K1: an enabled obstacle that reads the model moves where the
+        // tool may go in its setup.
+        let readers: Vec<usize> = self
+            .setups
+            .iter()
+            .enumerate()
+            .filter(|(_, setup)| {
+                setup
+                    .obstacles
+                    .iter()
+                    .any(|o| o.enabled && o.geometry.reads_model(crate::ids::ModelId(model_id)))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        for setup_index in readers {
+            self.drop_obstacle_dependents(setup_index);
         }
     }
 
@@ -576,9 +593,11 @@ impl ProjectSession {
     /// The link stage costs each link against a retract with
     /// `MachineProfile::link_kinematics`, so its emitted links can move
     /// with the envelope. `Capabilities::reads_link_kinematics` names those
-    /// operations. Every other operation reads the machine at simulation
-    /// time only and keeps its result. A change that leaves the envelope
-    /// equal (the name, the spindle, the power) drops nothing.
+    /// operations. The air-cut filter times each bridge with the same
+    /// envelope (operator ruling 2026-10-15), so a result whose generation
+    /// read a stock snapshot (`ToolpathStats::stock_snapshot`) reads it
+    /// too. Every other toolpath keeps its result. A change that leaves the
+    /// envelope equal (the name, the spindle, the power) drops nothing.
     fn drop_link_readers_if_moved(&mut self, before: &crate::machine::kinematics::LinkKinematics) {
         if self.machine.link_kinematics() == *before {
             return;
@@ -587,7 +606,13 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .enumerate()
-            .filter(|(_, tc)| tc.operation.capabilities().reads_link_kinematics())
+            .filter(|(index, tc)| {
+                tc.operation.capabilities().reads_link_kinematics()
+                    || self
+                        .results
+                        .get(index)
+                        .is_some_and(|r| r.stats.stock_snapshot.is_some())
+            })
             .map(|(index, _)| index)
             .collect();
         if !readers.is_empty() {

@@ -359,10 +359,6 @@ pub struct AlignmentPinDrillConfig {
                       the pin set instead"
     )]
     pub diameter: f64,
-    /// Pin hole XY positions: the pins of [`Self::diameter`], a snapshot
-    /// of `stock.alignment_pins` (`alignment_pins::pin_holes_of_diameter`).
-    #[serde(default)]
-    pub holes: Vec<[f64; 2]>,
     /// How far below stock bottom to drill into spoilboard (mm).
     #[param(
         help = "How far the drill penetrates into the spoilboard below the stock.",
@@ -380,7 +376,8 @@ pub struct AlignmentPinDrillConfig {
     pub spindle_rpm: Option<u32>,
     /// Extra drill locations (XY, mm) picked from the model — DXF POINT
     /// entities or circle/arc centres. These are drilled in addition to the
-    /// stock alignment pins in [`Self::holes`].
+    /// stock alignment pins of [`Self::diameter`], which the op reads live
+    /// (`ExecutionContext::alignment_pins`, W6.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
     pub selected_holes: Option<Vec<[f64; 2]>>,
@@ -420,7 +417,6 @@ impl Default for AlignmentPinDrillConfig {
     fn default() -> Self {
         Self {
             diameter: crate::compute::alignment_pins::NOMINAL_DOWEL_MM,
-            holes: Vec::new(),
             spoilboard_penetration: 2.0,
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
@@ -1243,7 +1239,7 @@ impl Adaptive3dConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
-    #[param(help = HELP_Z_STEP, range = 0.05..=20.0, alias = "depth_per_pass")]
+    #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
     pub z_step: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
@@ -1311,7 +1307,6 @@ pub struct PencilConfig {
     #[param(
         help = "Lateral step between offset cleanup passes around pencil traces.",
         range = 0.05..=10.0,
-        alias = "stepover",
     )]
     pub offset_stepover: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
@@ -1511,8 +1506,6 @@ impl PencilConfig {
             // measured pair needs (`planning/pencil_linking_2026-09-04.md`,
             // `planning/linking_2026-09-09/SPEC.md` §8).
             link_hop_distance_mm: self.link_hop_distance_mm,
-            // R1: the adapter sets it from the one link-ceiling builder.
-            link_fallback_top_z: None,
         }
     }
 }
@@ -2165,6 +2158,15 @@ pub struct SteepShallowConfig {
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// G-LINKSTAGE (W6.4.6): cap on the XY gap a link between two runs of
+    /// one half may span, in mm. **Ships at `0.0`, which is OFF**: the same
+    /// contract and the same reason as [`DropCutterConfig::hookup_mm`]. The
+    /// steep half links inside one Z level only, so its depth order stays.
+    /// On a rest pass each link reads the op's link ceiling
+    /// (`LinkCeilingNeed::WithRemainingStock`).
+    #[serde(default)]
+    #[param(optional)]
+    pub hookup_mm: f64,
 }
 
 impl Default for SteepShallowConfig {
@@ -2183,6 +2185,8 @@ impl Default for SteepShallowConfig {
             stock_to_leave: 0.0,
             tolerance: 0.05,
             spindle_rpm: None,
+            // OFF. See the field doc.
+            hookup_mm: 0.0,
         }
     }
 }
@@ -2214,7 +2218,6 @@ pub struct RampFinishConfig {
     #[param(
         help = "Maximum Z step between ramp passes.",
         range = 0.05..=10.0,
-        alias = "depth_per_pass",
     )]
     pub max_stepdown: f64,
     #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
@@ -2532,8 +2535,8 @@ pub struct ProjectCurveConfig {
     #[param(help = HELP_DEPTH, range = -20.0..=20.0)]
     pub depth: f64,
     #[param(
-        help = "Distance between sample points along curves. Smaller = smoother.",
-        range = 0.1..=5.0,
+        help = "Distance between sample points along curves. Smaller = smoother. Minimum 0.01 mm (operator ruling 2026-10-15).",
+        range = 0.01..=5.0,
     )]
     pub point_spacing: f64,
     pub feed_rate: f64,
@@ -2566,11 +2569,6 @@ pub struct ProjectCurveConfig {
                 or into material that is removed later."
     )]
     pub projection: ProjectCurveProjection,
-    /// Set by the compute pipeline when the mesh has already been Z-inverted
-    /// by a bottom-facing setup transform. Not persisted.
-    #[serde(skip)]
-    #[param(driver_set = "the setup transform writes this from the setup face")]
-    pub setup_z_flipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
     /// Cap (mm) on the XY gap between two projected chains that may be
@@ -2622,7 +2620,6 @@ impl Default for ProjectCurveConfig {
             direction: ProjectCurveDirection::FromAbove,
             side: ProjectCurveSide::Center,
             projection: ProjectCurveProjection::Cutter,
-            setup_z_flipped: false,
             spindle_rpm: None,
             chain_distance_mm: default_project_curve_chain_distance_mm(),
         }
@@ -2671,10 +2668,10 @@ macro_rules! depth_semantics_form {
 ///   so the plunge rate IS the feed rate.
 /// - `stepover:` the field behind `stepover` / `set_stepover`. Absent
 ///   means the config has no stepover and the trait default refuses the
-///   write. Pencil declares its alias `offset_stepover` here, and
-///   Waterline's `z_step` and RampFinish's `max_stepdown` are the same
-///   shape on `depth_per_pass` — which is what makes CMP-08's alias list
-///   greppable in one place.
+///   write. Pencil names `offset_stepover` here and RampFinish names
+///   `max_stepdown` on `depth_per_pass`. These feed the feeds accessors
+///   only: the setter accepts a name only when the registry publishes it
+///   (D2: no setter alias remains).
 /// - `depth_per_pass:` the field behind `depth_per_pass` /
 ///   `set_depth_per_pass`.
 /// - `total_depth:` the field behind `total_depth`.

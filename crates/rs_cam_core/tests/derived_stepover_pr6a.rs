@@ -349,7 +349,9 @@ fn the_derived_stepover_is_reported_as_a_diagnostic() {
 ///    failure mode assertion 2 alone would not catch.
 #[test]
 fn the_per_point_fan_spaces_passes_off_the_tip_whatever_scalar_the_caller_passes() {
-    use rs_cam_core::finish::pencil::{PencilDetector, PencilParams, pencil_toolpath};
+    use rs_cam_core::finish::pencil::{
+        PencilDetector, PencilParams, PencilStock, pencil_toolpath_structured_annotated_with_cancel,
+    };
     use rs_cam_core::mesh::SpatialIndex;
     use rs_cam_core::toolpath::MoveIntent;
 
@@ -375,7 +377,18 @@ fn the_per_point_fan_spaces_passes_off_the_tip_whatever_scalar_the_caller_passes
             num_offset_passes: 4,
             ..PencilParams::default()
         };
-        let tp = pencil_toolpath(&mesh, &index, &t, &params);
+        let tp = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+            pencil_toolpath_structured_annotated_with_cancel(
+                &mesh,
+                &index,
+                &t,
+                &params,
+                PencilStock::default(),
+                None,
+                cancel,
+            )
+        })
+        .0;
         let mut xs: Vec<f64> = tp
             .moves
             .iter()

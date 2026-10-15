@@ -110,6 +110,31 @@ pub struct FrameKey {
     pub stock: StockConfig,
 }
 
+/// Key for `RenderResources::obstacle_lines` (K2): the obstacle prisms,
+/// clearance rings and plane of the displayed setup.
+///
+/// Inputs: the display frame, each obstacle's id and `effect_digest` (the
+/// enabled flag, the clearance, the geometry), the geometry `Arc` of each
+/// model an obstacle reads (`None` for a missing one), the selection focus
+/// (the highlight and the plane follow it) and the overlay flag. The name
+/// is not an input: the lines do not print it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObstacleLinesKey {
+    pub frame: FrameKey,
+    pub obstacles: Vec<(rs_cam_core::ids::ObstacleId, u64)>,
+    pub models: Vec<ObstacleModelKey>,
+    pub focus: Option<(SetupId, Option<rs_cam_core::ids::ObstacleId>)>,
+    pub show: bool,
+}
+
+/// The geometry identity of one model an obstacle reads.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObstacleModelKey {
+    pub model_id: usize,
+    pub mesh: Option<ArcId<rs_cam_core::mesh::TriangleMesh>>,
+    pub polygons: Option<ArcId<Vec<rs_cam_core::polygon::Polygon2>>>,
+}
+
 /// Key for `RenderResources::mesh_data_list` — the indexed, smooth-normal
 /// STL path (`MeshGpuData::from_mesh`).
 ///

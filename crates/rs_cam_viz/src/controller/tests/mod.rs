@@ -422,6 +422,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
                 display_degrade: None,
                 group_starts: Vec::new(),
                 stock_change_volumes: Vec::new(),
+                obstacle_collisions: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,
@@ -738,6 +739,7 @@ impl ComputeBackend for RestChainBackend {
                     display_degrade: None,
                     group_starts: Vec::new(),
                     stock_change_volumes: Vec::new(),
+                    obstacle_collisions: Vec::new(),
                 },
                 playback_data: Vec::new(),
                 cut_trace_path: None,
@@ -1229,11 +1231,24 @@ name = "Setup 1"
 [[setups.toolpaths]]
 id = 1
 name = "Rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 1
 model_id = 1
 "#;
+    // C1: a toolpath needs its operation table to load. The default
+    // 3D Rough parameters, written as the saver writes them.
+    #[derive(serde::Serialize)]
+    struct OperationOnly {
+        operation: rs_cam_core::compute::catalog::OperationConfig,
+    }
+    let operation = toml::to_string(&OperationOnly {
+        operation: rs_cam_core::compute::catalog::OperationConfig::new_default(
+            rs_cam_core::compute::catalog::OperationType::Adaptive3d,
+        ),
+    })
+    .expect("serialize the operation")
+    .replace("[operation", "[setups.toolpaths.operation");
+    let toml = format!("{toml}{operation}");
     std::fs::write(dir.join("job.toml"), toml).expect("write fixture job");
     dir
 }

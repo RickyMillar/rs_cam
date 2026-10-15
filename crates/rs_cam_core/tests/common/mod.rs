@@ -37,6 +37,7 @@
 //! | [`reference_plate`] | **ARP-1**, the analytic reference plate: 16 non-blending closed-form zones with exact normals, curvatures, band areas and tool-reach floors, tessellated per zone in its own natural parameter |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
 //! | [`session`] | `LoadedModel` / `StockConfig` / the 18-field `ToolpathConfig` / one-op `ProjectSession` builders |
+//! | [`kernels`] | one level of Pocket, Profile and Zigzag through the kernels their Layered adapters call (D3) |
 //! | [`gcode_fixtures`] | the G-code golden corpus: one builder per fixture, the dialect list and the golden paths (G9) |
 //! | [`fingerprint`] | the single canonical FNV-1a-over-`Debug` toolpath fingerprint |
 //! | [`scallop_oracle`] | M4's analytic tool-envelope surface scorer + its ground-truth validation helpers |
@@ -64,6 +65,7 @@ pub mod bandmap;
 pub mod chain;
 pub mod fingerprint;
 pub mod gcode_fixtures;
+pub mod kernels;
 pub mod meshes;
 pub mod monge;
 pub mod offset_lab;
@@ -94,7 +96,6 @@ pub fn make_endmill_6mm() -> ToolConfig {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();

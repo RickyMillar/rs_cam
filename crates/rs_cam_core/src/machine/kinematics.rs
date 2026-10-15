@@ -837,6 +837,79 @@ pub fn retract_link_time(
     compute_cycle_time(&tp, kinematics, max_feed_mm_min, rapid_feed_mm_min)
 }
 
+/// How a retract link goes back down to the point where the cut resumes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RetractDescent {
+    /// A plunge at the given feed (mm/min) from `safe_z`: the run start of
+    /// an op that enters each run with a fed descent (Waterline).
+    Plunge { rate_mm_min: f64 },
+    /// A rapid all the way down: the resume point is in air (the air-cut
+    /// filter's bridge).
+    Rapid,
+}
+
+/// The one rule that decides between a feed through a stretch of air and a
+/// retract over it (W6.1, operator ruling 2026-10-15). Both sides come from
+/// the one cycle-time model:
+///
+/// - the feed: [`surface_link_time`] through `from → path` at `feed_rate`;
+/// - the retract: a rapid up to `safe_z`, a rapid across to above the end
+///   of `path`, and `descent` back down to it.
+///
+/// Returns true only when the retract is SHORTER. A tie keeps the feed: a
+/// retract that saves no time adds a re-entry for nothing. An empty `path`
+/// is no stretch, and returns false.
+///
+/// Two callers read it: the Waterline contour filter
+/// (`ops::waterline::bridge_air_stretches`) and the air-cut filter
+/// (`dressup::filter_air_cuts`).
+pub fn retract_saves_time(
+    from: P3,
+    path: &[P3],
+    feed_rate_mm_min: f64,
+    safe_z: f64,
+    descent: RetractDescent,
+    timing: &LinkKinematics,
+) -> bool {
+    let Some(&to) = path.last() else {
+        return false;
+    };
+    let feed_s = surface_link_time(
+        from,
+        path,
+        feed_rate_mm_min,
+        &timing.kinematics,
+        timing.max_feed_mm_min,
+        timing.rapid_feed_mm_min,
+    );
+    let retract_s = match descent {
+        RetractDescent::Plunge { rate_mm_min } => retract_link_time(
+            from,
+            to,
+            safe_z,
+            None,
+            rate_mm_min,
+            &timing.kinematics,
+            timing.max_feed_mm_min,
+            timing.rapid_feed_mm_min,
+        ),
+        RetractDescent::Rapid => {
+            let mut tp = Toolpath::new();
+            tp.rapid_to(from); // seed — move 0 contributes no segment
+            tp.rapid_to(P3::new(from.x, from.y, safe_z));
+            tp.rapid_to(P3::new(to.x, to.y, safe_z));
+            tp.rapid_to(to);
+            compute_cycle_time(
+                &tp,
+                &timing.kinematics,
+                timing.max_feed_mm_min,
+                timing.rapid_feed_mm_min,
+            )
+        }
+    };
+    retract_s < feed_s
+}
+
 /// P1 quantitative linker — integrated time of a surface-following feed
 /// link. `path` are the sampled link points (drop-cutter gouge-checked by
 /// the caller); `from` is the tool's current position (seed only).
@@ -1095,7 +1168,9 @@ pub fn compute_cycle_time_breakdown(
                     breakdown.entry_s += dt;
                 }
                 MI::Linking | MI::LeadOut => breakdown.linking_s += dt,
-                MI::Retract => breakdown.retract_s += dt,
+                // K3: the obstacle clearance is always a rapid (the arm
+                // above). A fed one lifts off the work, as a retract does.
+                MI::Retract | MI::ObstacleClearance => breakdown.retract_s += dt,
                 MI::Unknown => breakdown.unknown_s += dt,
             }
         }

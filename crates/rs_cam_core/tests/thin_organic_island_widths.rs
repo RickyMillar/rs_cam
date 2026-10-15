@@ -1340,6 +1340,7 @@ fn stage_g(
                 Some(&region),
             );
             let ceiling = fallback.map(|top| LinkCeiling {
+                obstacles: None,
                 stock: None,
                 tool_radius: tool_r,
                 fallback_top_z: top,
@@ -2666,6 +2667,7 @@ fn stage_l(input: &A3Inputs<'_>, regions: &[RegionCells]) {
     report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
 
     let machined_ceiling = LinkCeiling {
+        obstacles: None,
         stock: Some(&stock),
         tool_radius: input.fine.envelope_radius_mm(),
         fallback_top_z: block_top_z,
@@ -2895,6 +2897,7 @@ fn stage_l_region_one(
         "flat-top",
         safe_z,
         LinkCeiling {
+            obstacles: None,
             stock: None,
             tool_radius: input.fine.envelope_radius_mm(),
             fallback_top_z: input.mesh.bbox.max.z,
@@ -3869,6 +3872,7 @@ fn stage_m(input: &A3Inputs<'_>, regions: &[RegionCells]) {
     report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
 
     let machined_ceiling = LinkCeiling {
+        obstacles: None,
         stock: Some(&stock),
         tool_radius: input.fine.envelope_radius_mm(),
         fallback_top_z: block_top_z,
@@ -4814,6 +4818,7 @@ fn stage_n(input: &A3Inputs<'_>, regions: &[RegionCells]) {
     report_ceiling_population(&stock, input, &regions[0].boundary, safe_z);
 
     let machined_ceiling = LinkCeiling {
+        obstacles: None,
         stock: Some(&stock),
         tool_radius: input.fine.envelope_radius_mm(),
         fallback_top_z: block_top_z,

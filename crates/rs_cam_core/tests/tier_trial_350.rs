@@ -337,7 +337,6 @@ fn h1_tool() -> ToolConfig {
     t.shaft_diameter = 6.35;
     t.holder_diameter = 25.0;
     t.shank_diameter = 6.35;
-    t.shank_length = 20.0;
     t.stickout = 40.0;
     t.flute_count = 2;
     t.tool_number = 2;
@@ -1178,6 +1177,7 @@ impl EntryParts {
             name: self.name.clone(),
             annotated: Arc::clone(&self.annotated),
             tool: Arc::clone(&self.tool),
+            tool_id: rs_cam_core::compute::tool_config::ToolId(0),
             flute_count: self.flute_count,
             tool_summary: self.tool_summary.clone(),
             semantic_trace: self.semantic_trace.clone(),
@@ -1274,6 +1274,7 @@ fn simulate_window(ctx: &WindowCtx<'_>, cx: f64, cy: f64, cell: f64) -> WindowRu
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: bbox,
         stock_top_z: bbox.max.z,

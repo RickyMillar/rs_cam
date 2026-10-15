@@ -54,7 +54,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -84,6 +83,7 @@ fn entry(id: usize, annotated: Arc<AnnotatedToolpath>) -> SimToolpathEntry {
         name: format!("Pass{id}"),
         annotated,
         tool: Arc::new(tool()),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -120,6 +120,7 @@ fn the_on_demand_checkpoint_mesh_equals_the_eager_mesh_m2() {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,

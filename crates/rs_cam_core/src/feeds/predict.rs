@@ -862,7 +862,6 @@ mod tests {
             shaft_diameter: diameter,
             holder_diameter: 25.0,
             shank_diameter: diameter,
-            shank_length: 20.0,
             stickout,
             flute_count: 2,
             tool_material: ToolMaterial::Carbide,

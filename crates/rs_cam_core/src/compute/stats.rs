@@ -56,7 +56,6 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // only honestly say "not measured".
         dropped_band: None,
         tip_float: None,
-        deprecated_dial: None,
         derived_stepovers: Vec::new(),
         clipped_band: None,
         // PR-8b: same rule again — no ramp descent is visible from a move
@@ -67,6 +66,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // A4: same rule — a move list carries no reference stock to be
         // measured against, so this helper cannot answer the question.
         zero_removal: None,
+        // W6.5: same rule — the stock the curve was measured against is
+        // not in the move list.
+        buried_curve: None,
         // Checkpoint C: same rule again — whether an offset failed is a
         // generation-time event and leaves no trace on the moves. `None`
         // here means "this helper never watched an offset", never "no
@@ -112,6 +114,8 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         stock_snapshot: None,
         // G-RESTRES: the same rule as `stock_snapshot`.
         source_stock: None,
+        // The fresh twin: caller-owned, the same rule as `stock_snapshot`.
+        planned_cycle_time_s: None,
     }
 }
 
@@ -168,7 +172,8 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
 /// Pass `Some(StockSnapshotStamp::of(stock))` when this generation was
 /// handed a machined-stock snapshot, `None` when it was not.
 /// `source_stock` follows the same rule, for the same reason: it is the
-/// record of how that snapshot was made (G-RESTRES).
+/// record of how that snapshot was made (G-RESTRES). `planned_cycle_time_s`
+/// too: only the caller holds the machine envelope.
 #[must_use]
 pub fn stats_with_findings(
     tp: &Toolpath,
@@ -176,6 +181,7 @@ pub fn stats_with_findings(
     findings: GenerationFindings,
     stock_snapshot: Option<crate::compute::toolpath_stats::StockSnapshotStamp>,
     source_stock: Option<crate::compute::source_stock::SourceStock>,
+    planned_cycle_time_s: Option<f64>,
 ) -> ToolpathStats {
     // Guard 2: the move-derived half. Bound fields are measured from the
     // move list; `_` fields are generation-owned, and the helper's honest
@@ -190,12 +196,12 @@ pub fn stats_with_findings(
         reached_uncut_estimate_mm2: _,
         dropped_band: _,
         tip_float: _,
-        deprecated_dial: _,
         derived_stepovers: _,
         clipped_band: _,
         ramp_reach_clamp: _,
         claims_reference: _,
         zero_removal: _,
+        buried_curve: _,
         offset_library_failures: _,
         boundary_clip_dropped: _,
         waterline_ladder: _,
@@ -209,6 +215,7 @@ pub fn stats_with_findings(
         // is about to be replaced by the parameter.
         stock_snapshot: _,
         source_stock: _,
+        planned_cycle_time_s: _,
     } = compute_stats_with_spans(tp, spans);
 
     // Guard 1: the generation-owned half. No `..` — a new finding stops
@@ -220,11 +227,11 @@ pub fn stats_with_findings(
         dropped_band,
         clipped_band,
         tip_float,
-        deprecated_dial,
         derived_stepovers,
         ramp_reach_clamp,
         claims_reference,
         zero_removal,
+        buried_curve,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,
@@ -250,12 +257,12 @@ pub fn stats_with_findings(
         // pays a pointer and the short-lived findings do not.
         dropped_band: dropped_band.map(Box::new),
         tip_float,
-        deprecated_dial: deprecated_dial.map(Box::new),
         derived_stepovers,
         clipped_band: clipped_band.map(Box::new),
         ramp_reach_clamp: ramp_reach_clamp.map(Box::new),
         claims_reference,
         zero_removal,
+        buried_curve,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,
@@ -267,6 +274,7 @@ pub fn stats_with_findings(
         rest_levels,
         stock_snapshot,
         source_stock,
+        planned_cycle_time_s,
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
-use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupFrame, SetupId, StockConfig};
+use crate::state::job::{ModelId, ObstacleId, SetupFrame, SetupId, StockConfig};
 use crate::state::pin_view::pin_display_points;
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
@@ -23,15 +23,10 @@ pub enum PickHit {
     CollisionMarker { index: usize },
     /// Hit a stock-level alignment pin.
     AlignmentPin { pin_index: usize },
-    /// Hit a fixture bounding box.
-    Fixture {
+    /// Hit an obstacle bounding box (K1).
+    Obstacle {
         setup_id: SetupId,
-        fixture_id: FixtureId,
-    },
-    /// Hit a keep-out zone bounding box.
-    KeepOut {
-        setup_id: SetupId,
-        keep_out_id: KeepOutId,
+        obstacle_id: ObstacleId,
     },
     /// Hit the stock bounding box. `face_normal` indicates which face.
     StockFace { face_normal: [f32; 3] },
@@ -70,9 +65,10 @@ pub struct PickContext<'a> {
 /// cannot be picked, because the pick and the GPU upload read ONE function
 /// (`state::viewport::toolpaths_to_draw`).
 ///
-/// `display_frame` is the frame of the setup the viewport displays
-/// (`state::pin_view::active_display_setup`). The pins are picked where
-/// that frame draws them (C8).
+/// `display_setup` is the frame and the id of the setup the viewport
+/// displays (`state::pin_view::active_display_setup`). The pins are picked
+/// where that frame draws them (C8), and only that setup's obstacles are
+/// picked (K2).
 // SAFETY: one flat pick entry; each argument is a distinct input the
 // viewport already holds.
 #[allow(clippy::too_many_arguments)]
@@ -84,8 +80,9 @@ pub fn pick(
     workspace: Workspace,
     draw_filter: ToolpathDrawFilter,
     drill_pick_toolpath: Option<ToolpathId>,
-    display_frame: Option<&SetupFrame>,
+    display_setup: Option<&(SetupFrame, SetupId)>,
 ) -> Option<PickHit> {
+    let display_frame = display_setup.map(|(frame, _)| frame);
     // 1. Screen-space picks (small targets first)
     if workspace == Workspace::Simulation
         && let Some(hit) = pick_collision_markers(ctx, collision_positions)
@@ -125,44 +122,32 @@ pub fn pick(
 
     let stock = session.stock_config();
 
-    // Fixtures (Setup only)
-    if workspace == Workspace::Setup {
-        for setup in session.list_setups() {
-            for fixture in &setup.fixtures {
-                if !fixture.enabled {
-                    continue;
-                }
-                let clearance_bbox = fixture_clearance_bbox(fixture);
-                if let Some(t) = clearance_bbox.ray_intersect(&origin, &dir)
-                    && t < best_t
-                {
-                    best_t = t;
-                    best_hit = Some(PickHit::Fixture {
-                        setup_id: SetupId(setup.id),
-                        fixture_id: fixture.id,
-                    });
-                }
-            }
-        }
-    }
-
-    // Keep-outs (Setup only)
-    if workspace == Workspace::Setup {
-        for setup in session.list_setups() {
-            for keep_out in &setup.keep_out_zones {
-                if !keep_out.enabled {
-                    continue;
-                }
-                let bbox = keep_out_bbox(keep_out, stock);
-                if let Some(t) = bbox.ray_intersect(&origin, &dir)
-                    && t < best_t
-                {
-                    best_t = t;
-                    best_hit = Some(PickHit::KeepOut {
-                        setup_id: SetupId(setup.id),
-                        keep_out_id: keep_out.id,
-                    });
-                }
+    // Obstacles (Setup only). K2: the obstacles of the DISPLAYED setup
+    // only, the set the renderer draws (`active_display_setup`, the one
+    // selector). An obstacle is in its setup frame; the display frame is
+    // that frame moved by the setup's emission-to-display shift.
+    if workspace == Workspace::Setup
+        && let Some((frame, setup_id)) = display_setup
+        && let Some((_, setup)) = session.find_setup_by_id(setup_id.0)
+    {
+        let shift = frame.emission_to_display_shift(stock);
+        for obstacle in &setup.obstacles {
+            let Some(bb) = crate::state::job::obstacle_display_extent(obstacle, session.models())
+            else {
+                continue;
+            };
+            let bbox = BoundingBox3 {
+                min: P3::new(bb.min.x + shift.x, bb.min.y + shift.y, bb.min.z + shift.z),
+                max: P3::new(bb.max.x + shift.x, bb.max.y + shift.y, bb.max.z + shift.z),
+            };
+            if let Some(t) = bbox.ray_intersect(&origin, &dir)
+                && t < best_t
+            {
+                best_t = t;
+                best_hit = Some(PickHit::Obstacle {
+                    setup_id: *setup_id,
+                    obstacle_id: obstacle.id,
+                });
             }
         }
     }
@@ -368,34 +353,6 @@ fn pick_toolpaths(
     }
 
     best.map(|(id, move_index)| PickHit::Toolpath { id, move_index })
-}
-
-/// Compute a fixture's clearance bounding box for ray picking.
-fn fixture_clearance_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
-    let c = f.clearance;
-    BoundingBox3 {
-        min: P3::new(f.origin_x - c, f.origin_y - c, f.origin_z),
-        max: P3::new(
-            f.origin_x + f.size_x + c,
-            f.origin_y + f.size_y + c,
-            f.origin_z + f.size_z,
-        ),
-    }
-}
-
-/// Compute a keep-out zone's bounding box for ray picking.
-fn keep_out_bbox(
-    k: &rs_cam_core::session::KeepOutZone,
-    stock: &rs_cam_core::compute::stock_config::StockConfig,
-) -> BoundingBox3 {
-    BoundingBox3 {
-        min: P3::new(k.origin_x, k.origin_y, stock.origin_z),
-        max: P3::new(
-            k.origin_x + k.size_x,
-            k.origin_y + k.size_y,
-            stock.origin_z + stock.z,
-        ),
-    }
 }
 
 /// Determine which face of an AABB was hit based on the intersection point.

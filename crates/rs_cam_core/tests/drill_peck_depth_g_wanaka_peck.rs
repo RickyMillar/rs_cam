@@ -200,7 +200,6 @@ fn the_pin_drill_pecks_no_deeper_than_the_pin_hole() {
     let depth = STOCK_Z + SPOILBOARD;
     let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
         diameter: 6.0,
-        holes: vec![PIN],
         spoilboard_penetration: SPOILBOARD,
         cycle: DrillCycleType::Peck,
         peck_depth: 30.0,

@@ -79,7 +79,7 @@ use rs_cam_core::{
     compute::operation_configs::ScallopConfig,
     dexel_stock::{StockCutDirection, TriDexelStock},
     finish::horizontal_finish::HorizontalFinishParams,
-    finish::pencil::{PencilParams, pencil_toolpath},
+    finish::pencil::{PencilParams, PencilStock, pencil_toolpath_structured_annotated_with_cancel},
     finish::radial_finish::RadialFinishParams,
     finish::scallop::{ScallopDirection, ScallopParams},
     geo::{BoundingBox3, P2, P3},
@@ -87,13 +87,15 @@ use rs_cam_core::{
     ops::chamfer::{ChamferParams, chamfer_toolpath},
     ops::drill::{DrillCycle, DrillParams, drill_toolpath},
     ops::project_curve::{
-        ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath,
+        ProjectCurveParams, ProjectDirection, ProjectSide, project_curve_toolpath_with_cancel,
     },
     polygon::Polygon2,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
     toolpath::{MoveIntent, MoveType, Toolpath},
     trace::transform_provenance::ReconcileSet,
 };
+
+mod common;
 
 // ── FIN-11: the non-cancellable wrappers left the public API ─────────────
 //
@@ -281,6 +283,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
             prior_stock: /* prior_stock */ None,
+            link_kinematics: None,
             feed_opt_stock: /* feed_opt_stock */ None,
             cutter: /* cutter */ None,
             entry_surface: None,
@@ -318,6 +321,7 @@ fn dressup_with_caps(
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
             prior_stock: /* prior_stock */ None,
+            link_kinematics: None,
             feed_opt_stock: /* feed_opt_stock */ None,
             cutter: /* cutter */ None,
             entry_surface: None,
@@ -777,47 +781,51 @@ fn chamfer_link_moves_preserves_material_state() {
 fn pencil_link_moves_preserves_material_state() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
-    let raw = pencil_toolpath(
-        &mesh,
-        &index,
-        &cutter,
-        &PencilParams {
-            // Very high angle so the smooth hemisphere produces detectable
-            // chains for link_moves to act on. (175° matches the audit's
-            // empirical pencil row.)
-            bitangency_angle: 175.0,
-            min_cut_length: 1.0,
-            hookup_distance: 5.0,
-            num_offset_passes: 1,
-            offset_stepover: 0.5,
-            sampling: 0.5,
-            feed_rate: 800.0,
-            plunge_rate: 400.0,
-            safe_z: 30.0,
-            stock_to_leave: 0.0,
-            // 0 = keep any genuinely-bridged concavity (pre-gate behaviour); this
-            // suite exercises link_moves, not the reach-gap gate.
-            min_valley_depth: 0.0,
-            // 0 = no bisector shift; this suite exercises link_moves, not corner nestling.
-            bisector_strength: 0.0,
-            // 0 = self-referenced gap (no bigger reference tool); preserves the
-            // pre-reference-gate behaviour this link_moves suite was written against.
-            reference_tool_diameter: 0.0,
-            // Crease detector — this suite exercises link_moves on a synthetic
-            // V-groove, not the curvature path.
-            detector: rs_cam_core::finish::pencil::PencilDetector::Dihedral,
-            valley_saliency: 0.05,
-            curvature_smoothing: 3,
-            rest_cell_mm: 0.5,
-            reference_cutter: None,
-            link_kinematics: None,
-            // G-LINKSTAGE: `None` = the hop cap IS `hookup_distance`, i.e.
-            // the pre-stage emitter, which is what this suite measures.
-            link_hop_distance_mm: None,
-            // No op heights: no stock is in scope, so the lift never runs.
-            link_fallback_top_z: None,
-        },
-    );
+    let raw = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            &PencilParams {
+                // Very high angle so the smooth hemisphere produces detectable
+                // chains for link_moves to act on. (175° matches the audit's
+                // empirical pencil row.)
+                bitangency_angle: 175.0,
+                min_cut_length: 1.0,
+                hookup_distance: 5.0,
+                num_offset_passes: 1,
+                offset_stepover: 0.5,
+                sampling: 0.5,
+                feed_rate: 800.0,
+                plunge_rate: 400.0,
+                safe_z: 30.0,
+                stock_to_leave: 0.0,
+                // 0 = keep any genuinely-bridged concavity (pre-gate behaviour); this
+                // suite exercises link_moves, not the reach-gap gate.
+                min_valley_depth: 0.0,
+                // 0 = no bisector shift; this suite exercises link_moves, not corner nestling.
+                bisector_strength: 0.0,
+                // 0 = self-referenced gap (no bigger reference tool); preserves the
+                // pre-reference-gate behaviour this link_moves suite was written against.
+                reference_tool_diameter: 0.0,
+                // Crease detector — this suite exercises link_moves on a synthetic
+                // V-groove, not the curvature path.
+                detector: rs_cam_core::finish::pencil::PencilDetector::Dihedral,
+                valley_saliency: 0.05,
+                curvature_smoothing: 3,
+                rest_cell_mm: 0.5,
+                reference_cutter: None,
+                link_kinematics: None,
+                // G-LINKSTAGE: `None` = the hop cap IS `hookup_distance`, i.e.
+                // the pre-stage emitter, which is what this suite measures.
+                link_hop_distance_mm: None,
+            },
+            PencilStock::default(),
+            None,
+            cancel,
+        )
+    })
+    .0;
     if raw.moves.is_empty() {
         eprintln!(
             "pencil_link_moves_preserves_material_state: SKIPPED — \
@@ -1109,8 +1117,8 @@ fn project_curve_bad_order_path() -> Polygon2 {
 
 #[test]
 fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neutral() {
-    // Fixture note: this drives the REAL generator — `project_curve_toolpath`,
-    // the same function `compute/execute.rs::generate_project_curve` calls
+    // Fixture note: this drives the REAL generator — `project_curve_toolpath_with_cancel`,
+    // the kernel `compute/execute.rs::generate_project_curve` calls
     // per input polygon — rather than a hand-built Toolpath. The mesh is a
     // synthetic patchwork of 6 disconnected flat squares (not a real STL) so
     // the chain-per-patch structure is deterministic and reviewable, but the
@@ -1133,7 +1141,9 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
         projection: rs_cam_core::ops::project_curve::ProjectProjection::Cutter,
         setup_z_flipped: false,
     };
-    let raw = project_curve_toolpath(&poly, &mesh, &index, &cutter, &params);
+    let raw = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        project_curve_toolpath_with_cancel(&poly, &mesh, &index, &cutter, &params, cancel)
+    });
 
     // Sanity: the fixture must actually produce several retract-separated
     // chains (one per patch), or there's nothing for TSP to reorder and the
@@ -1173,7 +1183,7 @@ fn project_curve_capability_allows_tsp_reorder_reduces_rapid_and_is_material_neu
 
     // This exercises the UNBARRIERED fallback TSP call site
     // (compute/execute.rs ~2445-2464), not the barriered one (~2226-2247):
-    // `project_curve_toolpath` emits no `RapidOrderBarrier`/`DepthPass`
+    // `project_curve_toolpath_with_cancel` emits no `RapidOrderBarrier`/`DepthPass`
     // spans, and `dressup()` wraps the raw `Toolpath` in a fresh
     // `AnnotatedToolpath::new`, whose `rapid_order_barriers()` is therefore
     // empty — so the barriered branch's `!rapid_order_barriers.is_empty()`
@@ -1696,6 +1706,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");
@@ -1775,6 +1786,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
                 safe_z: /* safe_z */ 30.0,
                 stock_top: /* stock_top */ 0.0,
                 prior_stock: None,
+                link_kinematics: None,
                 feed_opt_stock: None,
                 cutter: None,
                 entry_surface: None,
@@ -1902,64 +1914,87 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
 
 #[test]
 fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
-    use rs_cam_core::finish::steep_shallow::{
-        STEEP_HALF_LABEL, SteepShallowParams, steep_shallow_spans,
-        steep_shallow_toolpath_split_with_cancel,
-    };
+    use rs_cam_core::compute::config::HeightMode;
+    use rs_cam_core::compute::operation_configs::SteepShallowConfig;
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::finish::steep_shallow::{SHALLOW_HALF_LABEL, STEEP_HALF_LABEL};
     use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
 
     // Four disconnected islands: on a single contiguous dome each Z level
     // holds one contour and the shallow half is one serpentine, so there is
     // nothing to reorder. Fragmented territory is where the transform earns
     // its keep — and is what Op B faces on real rest islands.
-    let (mesh, index) = scallop_island_mesh();
-    let cutter = BallEndmill::new(3.0, 25.0);
-    let params = SteepShallowParams {
-        safe_z: 30.0,
-        ..SteepShallowParams::default()
+    //
+    // D3: the op runs through the session door, so the spans are the ones
+    // production ships (`run_composed` builds them from the op's
+    // `order_constraints`) and the reorder runs in the production order.
+    // Before D3 this test rebuilt the spans with `steep_shallow_spans`,
+    // which no production path called, and dressed the kernel output.
+    let (mesh, _index) = scallop_island_mesh();
+    let (top, bottom) = (mesh.bbox.max.z, mesh.bbox.min.z);
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    tool.diameter = 3.0;
+    let stock = rs_cam_core::compute::StockConfig {
+        auto_from_model: true,
+        ..rs_cam_core::compute::StockConfig::default()
     };
-    let never_cancel = || false;
-    let (raw, split) = steep_shallow_toolpath_split_with_cancel(
-        &mesh,
-        &index,
-        &cutter,
-        &params,
-        None,
-        &never_cancel,
-    )
-    .expect("uncancelled generation");
+    // One session run per dressup config: the reorder runs where production
+    // runs it, after the op and before the session's entry split.
+    let run = |dressups: DressupConfig| -> AnnotatedToolpath {
+        common::op_fixtures::generated_op(
+            stock.clone(),
+            tool.clone(),
+            common::session::mesh_model(mesh.clone(), "islands"),
+            OperationConfig::SteepShallow(SteepShallowConfig::default()),
+            |tc| {
+                tc.dressups = dressups;
+                tc.heights = common::session::pinned_heights(top, bottom);
+                tc.heights.retract_z = HeightMode::Manual(30.0);
+                tc.heights.clearance_z = HeightMode::Manual(30.0);
+            },
+        )
+    };
+    let generated = run(common::op_fixtures::no_dressups());
+    let half = |label: &str| {
+        generated
+            .spans
+            .iter()
+            .find(|s| s.kind == SpanKind::Region && s.label == label)
+            .map(|s| s.start_move..s.end_move)
+            .unwrap_or_else(|| panic!("the production spans must label the `{label}` half"))
+    };
+    let (steep, shallow) = (half(STEEP_HALF_LABEL), half(SHALLOW_HALF_LABEL));
+    let raw = generated.toolpath.clone();
 
     assert!(!raw.moves.is_empty(), "fixture must generate a toolpath");
     assert!(
-        !split.steep.is_empty() && !split.shallow.is_empty(),
+        !steep.is_empty() && !shallow.is_empty(),
         "a hemisphere must produce BOTH halves or this test is half vacuous: \
-         steep={:?} shallow={:?}",
-        split.steep,
-        split.shallow
+         steep={steep:?} shallow={shallow:?}"
     );
-    let steep_levels = nominal_z_levels(&raw, split.steep.clone());
+    let steep_levels = nominal_z_levels(&raw, steep.clone());
     assert!(
         steep_levels.len() >= 2,
         "the steep half must ladder through several Z levels or the depth \
          assertion below is vacuous: {steep_levels:?}"
     );
 
-    // The spans production ships, from the function production calls.
-    let annotated = AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split));
+    // The spans production ships, from the session door.
+    let annotated = generated.clone();
     annotated
         .check_invariants()
         .expect("emitted spans must be well-formed");
     let barriers = annotated.rapid_order_barriers();
     println!(
         "SteepShallow: steep={:?} shallow={:?} levels={} barriers={}",
-        split.steep,
-        split.shallow,
+        steep,
+        shallow,
         steep_levels.len(),
         barriers.len()
     );
     // The half boundary must be a barrier, or the TSP could pull a shallow
     // raster row up into the steep pass.
-    let boundary = split.shallow.start.max(split.steep.start);
+    let boundary = shallow.start.max(steep.start);
     assert!(
         barriers.contains(&boundary),
         "the steep/shallow boundary at move {boundary} must be a barrier: {barriers:?}"
@@ -1983,34 +2018,11 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
          ignores the split and the Z barriers entirely"
     );
 
-    let dressed = |cfg: &DressupConfig| -> AnnotatedToolpath {
-        apply_dressups(
-            AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split)),
-            rs_cam_core::compute::execute::DressupContext {
-                ramp_feed_rate_mm_min: None,
-                cfg,
-                nominal_feed_rate: 1000.0,
-                plunge_rate_mm_min: None,
-                tool_diameter: /* tool_diameter */ 3.0,
-                safe_z: /* safe_z */ 30.0,
-                stock_top: /* stock_top */ 0.0,
-                prior_stock: None,
-                feed_opt_stock: None,
-                cutter: None,
-                entry_surface: None,
-                transform_capabilities: caps,
-                debug_ctx: None,
-                semantic_ctx: None,
-                entry_containment: None,
-            },
-            &mut ReconcileSet::empty(),
-        )
-    };
-    let baseline = dressed(&dressup_no_links());
-    let optimized = dressed(&DressupConfig {
+    // Vary only the reorder: every other dressup stays off on both arms.
+    let baseline = run(common::op_fixtures::no_dressups());
+    let optimized = run(DressupConfig {
         optimize_rapid_order: true,
-        link_moves: None,
-        ..DressupConfig::default()
+        ..common::op_fixtures::no_dressups()
     });
 
     println!(
@@ -2028,7 +2040,9 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
     // than the reorder saves: without the pass's no-regression guard
     // (`dressup/tsp.rs`) the total read 2850.4 -> 2860.7 mm. With it those
     // groups keep their own order and framing, and the rest reorder:
-    // 2850.4 -> 2725.3 mm. Kept strict.
+    // 2850.4 -> 2725.3 mm. Kept strict. D3 (2026-10-16) moved both arms to
+    // the session door (the session stages add their own rapids):
+    // 7056.2 -> 6928.7 mm, cut 3765.8 mm on both arms.
     assert!(
         rapid_distance(&optimized.toolpath) < rapid_distance(&baseline.toolpath),
         "the barriered TSP must reduce rapid travel, or this sentry is vacuous"

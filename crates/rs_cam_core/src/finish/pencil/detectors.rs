@@ -25,18 +25,6 @@ use super::chain_paths::{OffsetFan, paths_from_sampled};
 use super::emission::tip_contact_radius;
 use super::{PencilParams, PencilPath, gate_chains_by_depth, polyline_passes_depth};
 
-/// Diameter (mm) of the vanishingly small "surface probe" ball substituted
-/// when there's no real or nominal reference tool to compare against (the
-/// self-referenced-gap case, [`ResolvedReference::SelfReferenced`] /
-/// [`crate::surface::rest_field::RestReference`]'s `is_surface_probe` arm). Small
-/// enough to hug the raw surface without perturbing the rest-depth
-/// comparison. Shared with `rest_field`'s test hillshade harness, which
-/// probes the same way to render a DEM.
-pub(crate) const SURFACE_PROBE_BALL_DIAMETER_MM: f64 = 0.1;
-/// Overall tool length (mm) paired with [`SURFACE_PROBE_BALL_DIAMETER_MM`].
-/// Irrelevant to the rest-depth math (only the ball tip matters) — picked to
-/// be a plausible tool length rather than for any geometric reason.
-pub(crate) const SURFACE_PROBE_BALL_LENGTH_MM: f64 = 10.0;
 /// Overall tool length (mm) for a synthesized nominal reference ball
 /// ([`ResolvedReference::Nominal`]) when no real reference-tool geometry is
 /// set. Like the probe length above, irrelevant to the ball-tip rest height
@@ -196,13 +184,14 @@ pub(super) fn curvature_arm(
 /// pointwise over the whole grid) — skip it.
 ///
 /// Rest-field reference. R2: prefer the ACTUAL machined stock the prior
-/// toolpaths left (`initial_stock`, when this op cuts FromRemainingStock and
+/// toolpaths left (`rest_reference`, when this op cuts FromRemainingStock and
 /// a prior sim exists) — it captures the real prior toolpath pattern
 /// (scallop cusps, skipped boundaries, walls the finish never visited), not
-/// just a tool's shape. Frame guard (the F-024 lesson): the shared
-/// `surface::stock_reference::StockReference::resolve` (W2.1) accepts the
-/// stock only when its XY bbox overlaps the mesh. On no stock / non-overlap,
-/// fall back to the R1 cutter
+/// just a tool's shape. Frame guard (the F-024 lesson): the caller passes
+/// the stock only after the shared
+/// `surface::stock_reference::StockReference::resolve` (W2.1) accepted it,
+/// which the territory resolver does once per op (W6.2). On no stock /
+/// non-overlap, fall back to the R1 cutter
 /// resolution ([`resolve_reference_cutter`]): real reference tool or the
 /// bigger nominal ball (`is_surface_probe = false`), else a tiny
 /// bare-surface probe with the sign flipped. NOTE the sign-flip trap: a
@@ -214,56 +203,19 @@ pub(super) fn rest_depth_arm(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    rest_reference: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
     out: &mut super::PencilReport,
     float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
-    let stock_ref =
-        crate::surface::stock_reference::StockReference::resolve(initial_stock, &mesh.bbox).stock();
-    let probe_ball =
-        crate::tool::BallEndmill::new(SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM);
     let resolved = resolve_reference_cutter(params, cutter);
-    // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
-    // 2 = machined stock.
-    let (reference, probe_mode, rest_reference_mode): (
-        crate::surface::rest_field::RestReference<'_>,
-        bool,
-        u8,
-    ) = if let Some(stock) = stock_ref {
-        (
-            crate::surface::rest_field::RestReference::Stock(stock),
-            false,
-            2,
-        )
-    } else {
-        match &resolved {
-            ResolvedReference::Real(r) => (
-                crate::surface::rest_field::RestReference::Cutter {
-                    tool: *r,
-                    is_surface_probe: false,
-                },
-                false,
-                1,
-            ),
-            ResolvedReference::Nominal(b) => (
-                crate::surface::rest_field::RestReference::Cutter {
-                    tool: b as &dyn MillingCutter,
-                    is_surface_probe: false,
-                },
-                false,
-                0,
-            ),
-            ResolvedReference::SelfReferenced => (
-                crate::surface::rest_field::RestReference::Cutter {
-                    tool: &probe_ball as &dyn MillingCutter,
-                    is_surface_probe: true,
-                },
-                true,
-                0,
-            ),
-        }
+    // W6.4.1: pencil's POLICY is its tier list — the machined stock, else
+    // the real reference tool or the nominal ball. The stage owns the rule
+    // and the probe of last resort.
+    let choice = crate::finish::rest_detector::RestReferenceChoice {
+        stock: rest_reference,
+        tool: resolved.as_dyn(),
     };
     let rf_params = crate::surface::rest_field::RestFieldParams {
         cell_mm: params.rest_cell_mm,
@@ -279,8 +231,15 @@ pub(super) fn rest_depth_arm(
         // scope: derive region_polygons, not expose a new user-facing knob).
         ..Default::default()
     };
-    let rf =
-        crate::surface::rest_field::detect_rest_valleys(mesh, index, cutter, reference, &rf_params);
+    let rf = crate::finish::rest_detector::detect_rest(mesh, index, cutter, choice, &rf_params);
+    // reference-mode counter: 0 = nominal ball / probe, 1 = real tool,
+    // 2 = machined stock.
+    let probe_mode = rf.tier == crate::finish::rest_detector::RestTier::SelfProbe;
+    let rest_reference_mode: u8 = match (rf.tier, &resolved) {
+        (crate::finish::rest_detector::RestTier::Stock, _) => 2,
+        (crate::finish::rest_detector::RestTier::Tool, ResolvedReference::Real(_)) => 1,
+        _ => 0,
+    };
     let report = &rf.report;
     info!(
         rest_volume_mm3 = format!("{:.1}", report.total_rest_volume_mm3),
@@ -314,13 +273,11 @@ pub(super) fn rest_depth_arm(
             "Rest-depth detector: wide region routed to clearing (Phase D: adaptive3d)"
         );
     }
-    // Hand the rest-field grid to the caller for the GUI heatmap overlay
-    // (set even when no centreline survives the length gate below).
-    out.rest_grid = Some(rf.rest_grid);
-    // Same for the derived machining-region polygons (P2.2 selective-finishing
-    // boundary source) — set alongside the grid, independent of whether any
-    // centreline survives the length gate.
-    out.rest_regions = Some(rf.region_polygons);
+    // Hand the rest-field grid (the GUI heatmap overlay) and the derived
+    // machining-region polygons (the P2.2 selective-finishing boundary
+    // source) to the caller, also when no centreline survives the length
+    // gate below.
+    out.produced = rf.produced;
     // Length-gate + resample + width-capped offset-pass emission, factored
     // into `crease_paths::centerline_cut_paths` so the P2 finish planner's
     // future crease pass can reuse it without pencil's detector dispatch.

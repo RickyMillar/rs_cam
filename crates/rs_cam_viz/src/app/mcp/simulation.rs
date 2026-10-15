@@ -171,6 +171,29 @@ impl RsCamApp {
         }
     }
 
+    /// MCP `compare_rest_with_fresh`: the controller's one door, then both
+    /// times as JSON.
+    pub(super) fn mcp_compare_rest_with_fresh(&mut self, index: usize) -> Result<String, String> {
+        let tp_id = self
+            .controller
+            .state()
+            .session
+            .toolpath_configs()
+            .get(index)
+            .map(|tc| tc.id)
+            .ok_or_else(|| format!("no toolpath at index {index}"))?;
+        let times = self.controller.compare_rest_with_fresh(tp_id)?;
+        Ok(serde_json::json!({
+            "index": index,
+            "rest_s": times.rest_s,
+            "fresh_s": times.fresh_s,
+            "rest_slower": times.rest_s > times.fresh_s,
+            "measure": "cycle-time model (the simulator's integrator) at the commanded feeds \
+                        of each plan",
+        })
+        .to_string())
+    }
+
     pub(super) fn mcp_collision_check(
         &mut self,
         _index: usize,

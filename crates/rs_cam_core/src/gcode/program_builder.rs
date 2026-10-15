@@ -269,12 +269,20 @@ pub fn build_multi_setup_with(
 
     let mut state = ModalState::new(first_rpm, initial_tool.map(|t| t.id), first_coolant);
 
+    let mut setup_start = program.statements.len();
     for (setup_index, setup) in setups.iter().enumerate() {
         if setup_index > 0 {
             if state.current_coolant.is_active() {
                 program.push(Statement::Raw("M9\n".to_owned()));
             }
-            program.push(Statement::SafeZRetract { z: safe_z });
+            // K1: the post safe Z can be below an obstacle of the setup
+            // that ends here. That setup's own retracts clear its
+            // obstacles, so its highest Z is a safe floor.
+            let outgoing_max_z =
+                max_commanded_z(program.statements.get(setup_start..).unwrap_or(&[]));
+            program.push(Statement::SafeZRetract {
+                z: outgoing_max_z.map_or(safe_z, |z| z.max(safe_z)),
+            });
             let pause_text = setup.pause_message.map_or_else(
                 || format!("Setup change: {}", setup.setup_label),
                 |msg| msg.to_owned(),
@@ -307,6 +315,7 @@ pub fn build_multi_setup_with(
             state.current_coolant = next_coolant;
         }
 
+        setup_start = program.statements.len();
         program.push(Statement::Comment(format!("=== {} ===", setup.setup_label)));
 
         for phase in &setup.phases {
@@ -430,7 +439,19 @@ fn push_final_retract(program: &mut Program) {
 /// last motion is already there or the program has no motion yet. The
 /// final retract (C2) and the tool-change retract (G2) share it.
 fn push_retract_to_program_max_z(program: &mut Program) {
-    let z_of = |s: &Statement| match *s {
+    let Some(max_z) = max_commanded_z(&program.statements) else {
+        return; // no motion in the program — nothing to retract from
+    };
+    let last_z = program.statements.iter().rev().find_map(commanded_z);
+    if last_z == Some(max_z) {
+        return; // already at the program's highest height
+    }
+    program.push(Statement::SafeZRetract { z: max_z });
+}
+
+/// The Z a motion statement commands, or `None` for a non-motion statement.
+fn commanded_z(statement: &Statement) -> Option<f64> {
+    match *statement {
         Statement::Rapid { z, .. }
         | Statement::Linear { z, .. }
         | Statement::LinearModal { z, .. }
@@ -438,22 +459,17 @@ fn push_retract_to_program_max_z(program: &mut Program) {
         | Statement::ArcCcw { z, .. }
         | Statement::SafeZRetract { z } => Some(z),
         _ => None,
-    };
-    let max_z = program
-        .statements
+    }
+}
+
+/// The highest Z that `statements` command, or `None` with no motion.
+fn max_commanded_z(statements: &[Statement]) -> Option<f64> {
+    statements
         .iter()
-        .filter_map(z_of)
+        .filter_map(commanded_z)
         .fold(None, |acc: Option<f64>, z| {
             Some(acc.map_or(z, |a| a.max(z)))
-        });
-    let Some(max_z) = max_z else {
-        return; // no motion in the program — nothing to retract from
-    };
-    let last_z = program.statements.iter().rev().find_map(z_of);
-    if last_z == Some(max_z) {
-        return; // already at the program's highest height
-    }
-    program.push(Statement::SafeZRetract { z: max_z });
+        })
 }
 
 /// A2 — modal words in a user snippet that the emitter cannot track:
@@ -661,11 +677,23 @@ struct DrillHole {
 /// then only drilling feeds and rapids at the same XY, at or below R,
 /// ending with a rapid back to R. Every hole has the same start Z (the
 /// G98 return level) and one feed.
-fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<Vec<DrillHole>> {
+///
+/// K3: in a setup with an obstacle the toolpath starts with a rapid to
+/// the obstacle plane above the first hole. The reader knows that move
+/// by its intent ([`MoveIntent::ObstacleClearance`]), never by its shape:
+/// a rest drill starts with the same shape. The lead-in Z comes back with
+/// the holes.
+fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<(Option<f64>, Vec<DrillHole>)> {
     const EPS: f64 = 1e-9;
     let moves = &phase.toolpath.moves;
     let mut holes: Vec<DrillHole> = Vec::new();
-    let mut i = 0;
+    let lead_in = moves
+        .first()
+        .filter(|m| {
+            m.intent == MoveIntent::ObstacleClearance && matches!(m.move_type, MoveType::Rapid)
+        })
+        .map(|m| m.target.z);
+    let mut i = usize::from(lead_in.is_some());
     while i < moves.len() {
         let first = moves.get(i)?;
         let second = moves.get(i + 1)?;
@@ -723,7 +751,11 @@ fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<Vec<DrillHole>> {
         });
         i = j;
     }
-    if holes.is_empty() { None } else { Some(holes) }
+    if holes.is_empty() {
+        None
+    } else {
+        Some((lead_in, holes))
+    }
 }
 
 /// G7: write a drill phase as native canned cycles. Returns false (and
@@ -757,7 +789,7 @@ fn push_native_drill_cycles(
         }
         DrillCycle::Peck(_) | DrillCycle::ChipBreak(..) => return false,
     };
-    let Some(holes) = read_drill_holes(phase) else {
+    let Some((lead_in, holes)) = read_drill_holes(phase) else {
         program.push(Statement::Comment(
             "native drill cycles not used: the moves are not plain drill holes".to_owned(),
         ));
@@ -766,6 +798,10 @@ fn push_native_drill_cycles(
     let Some(first) = holes.first() else {
         return false;
     };
+    // K3: the lead-in reaches the first hole at the obstacle plane.
+    if let Some(z) = lead_in {
+        push_rapid(program, &mut state.prev_pos, first.x, first.y, z);
+    }
     // Reach the start level above the first hole: the G98 return level.
     push_rapid(
         program,
@@ -1606,5 +1642,63 @@ mod tests {
             "tool change must fire when the first tooled phase is not phase 0: {:?}",
             prog.statements
         );
+    }
+
+    /// K1: the retract before a setup-change pause clears the outgoing
+    /// setup's highest Z when the post safe Z is lower (an obstacle top).
+    #[test]
+    fn setup_change_retract_clears_the_outgoing_setups_highest_z() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 36.5));
+        tp.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+        tp.rapid_to(P3::new(10.0, 0.0, 36.5));
+        tp.rapid_to(P3::new(20.0, 0.0, 2.0));
+        let make_phases = |label: &'static str| {
+            vec![GcodePhase {
+                toolpath: &tp,
+                spindle_rpm: 18_000,
+                label,
+                pre_gcode: None,
+                post_gcode: None,
+                tool: Some(PhaseTool {
+                    id: 1,
+                    number: 1,
+                    label: "Tool One",
+                }),
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+                drill: None,
+                feeds: None,
+            }]
+        };
+        let setups = vec![
+            GcodeSetupPhase {
+                setup_label: "Top",
+                phases: make_phases("top"),
+                pause_message: None,
+            },
+            GcodeSetupPhase {
+                setup_label: "Bottom",
+                phases: make_phases("bottom"),
+                pause_message: None,
+            },
+        ];
+        let prog = build_multi_setup(&setups, 29.5);
+        let pause = prog
+            .statements
+            .iter()
+            .position(|s| matches!(s, Statement::ProgramPause { .. }))
+            .expect("a setup-change pause");
+        let retract_z = prog
+            .statements
+            .get(..pause)
+            .unwrap_or(&[])
+            .iter()
+            .rev()
+            .find_map(|s| match *s {
+                Statement::SafeZRetract { z } => Some(z),
+                _ => None,
+            });
+        assert_eq!(retract_z, Some(36.5), "{:?}", prog.statements);
     }
 }

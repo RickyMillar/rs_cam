@@ -201,6 +201,11 @@ impl ProjectSession {
             pin_wall_findings(pins, w, d, &local)
                 .into_iter()
                 .chain(self.pin_tool_mismatch_findings(pins))
+                .chain(if pins.is_empty() {
+                    Vec::new()
+                } else {
+                    self.pin_obstacle_findings()
+                })
                 .map(|f| f.text),
         );
 

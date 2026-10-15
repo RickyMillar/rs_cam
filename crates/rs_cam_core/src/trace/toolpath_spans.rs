@@ -4,16 +4,13 @@
 //! contributes only the types; wiring into `compute::execute` and dressups
 //! arrives in subsequent phases.
 
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::Range;
-use std::sync::Arc;
-
-use serde::{Deserialize, Serialize};
 
 use crate::geo::P3;
-use crate::polygon::Polygon2;
-use crate::surface::rest_field::RestGrid;
 use crate::toolpath::Toolpath;
+use crate::trace::produced::Produced;
 
 // ── SpanId ──────────────────────────────────────────────────────────────
 
@@ -462,43 +459,10 @@ pub struct AnnotatedToolpath {
     pub toolpath: Toolpath,
     pub spans: Vec<Span>,
     pub spans_valid: bool,
-    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
-    /// α/2π)` for adaptive ContourSpiral toolpaths; empty otherwise. The
-    /// feed modulator looks these up by `Move.target` position (the
-    /// samples are positional, so they survive simplify / arcfit / dressup
-    /// / TSP-reorder reshaping without per-move re-indexing). See
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md` §"Stage 4".
-    ///
-    /// Frame contract: emission-frame coordinates; must be re-framed
-    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
-    pub planner_engagement: Vec<(P3, f64)>,
-    /// Rest-depth heatmap grid for the GUI overlay — populated by the
-    /// pencil RestDepth detector, the generic post-generation rest
-    /// analysis, and UnifiedFinish's claims detector (v3 S1 §2.4
-    /// carry-through); `None` otherwise. `Arc` so cloning the annotated
-    /// toolpath (sim / result caching) stays cheap.
-    ///
-    /// Frame contract: emission-frame coordinates; must be re-framed
-    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
-    pub rest_grid: Option<Arc<RestGrid>>,
-    /// Machining-region polygons derived from the rest-depth field
-    /// ([`crate::surface::rest_field::RestFieldResult::region_polygons`]) — same
-    /// producers as [`Self::rest_grid`]; `None` otherwise. World-frame XY
-    /// polygons; `Arc` so cloning the annotated toolpath (sim / result
-    /// caching) stays cheap. This is the derived-boundary source for
-    /// selective finishing (P2.2 `BoundarySource::DerivedRestRegions`).
-    ///
-    /// Frame contract: emission-frame coordinates; must be re-framed
-    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
-    pub rest_regions: Option<Arc<Vec<Polygon2>>>,
-    /// The regions that a 3D Rough with By Area ordering detected (label
-    /// grid + region list), for the viewport overlay and MCP
-    /// `inspect_spans`. `None` for every other operation and for Global
-    /// ordering. Evidence only: no downstream stage reads it.
-    ///
-    /// Frame contract: emission-frame coordinates; must be re-framed
-    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
-    pub area_regions: Option<Arc<crate::adaptive3d::AreaRegionMap>>,
+    /// W6.2: what the kernel produced beside its moves (engagement, rest
+    /// grid, rest regions, area regions). Emission frame; re-framed by
+    /// [`Self::translated`].
+    pub produced: Produced,
 }
 
 impl AnnotatedToolpath {
@@ -509,10 +473,7 @@ impl AnnotatedToolpath {
             toolpath,
             spans: Vec::new(),
             spans_valid: true,
-            planner_engagement: Vec::new(),
-            rest_grid: None,
-            rest_regions: None,
-            area_regions: None,
+            produced: Produced::default(),
         }
     }
 
@@ -521,10 +482,7 @@ impl AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid: true,
-            planner_engagement: Vec::new(),
-            rest_grid: None,
-            rest_regions: None,
-            area_regions: None,
+            produced: Produced::default(),
         }
     }
 
@@ -542,18 +500,8 @@ impl AnnotatedToolpath {
     /// - `toolpath.moves` targets are shifted; arc center offsets (`i`/`j`
     ///   on `MoveType::ArcCW`/`ArcCCW`) are relative-to-start and are left
     ///   untouched.
-    /// - `planner_engagement` cut points are shifted; the stored angle
-    ///   fraction is untouched.
-    /// - `rest_grid` (if present) has `origin_x`/`origin_y` shifted and
-    ///   every `surface_z` cell shifted by `shift.z`; `NaN` cells stay
-    ///   `NaN` since `NaN + x == NaN`. `rest` values are untouched — rest
-    ///   depth is a scalar, not a coordinate.
-    /// - `rest_regions` (if present): every exterior/hole point of every
-    ///   polygon is shifted by `shift.x`/`shift.y` (XY-only — polygons carry
-    ///   no Z).
-    /// - `area_regions` (if present): the grid origin, the region boxes and
-    ///   anchors shift in XY; the top Z and the region Z ranges shift by
-    ///   `shift.z`. The labels are cell-indexed and are untouched.
+    /// - `produced` shifts by [`Produced::translated`], which states the
+    ///   rule for each of its fields.
     /// - `spans` / `spans_valid` are move-index-based, not coordinate-based,
     ///   and are copied unchanged.
     pub fn translated(&self, shift: P3) -> Self {
@@ -561,10 +509,7 @@ impl AnnotatedToolpath {
             toolpath,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         } = self;
 
         let mut toolpath = toolpath.clone();
@@ -574,53 +519,11 @@ impl AnnotatedToolpath {
             m.target.z += shift.z;
         }
 
-        let planner_engagement = planner_engagement
-            .iter()
-            .map(|(p, alpha)| (P3::new(p.x + shift.x, p.y + shift.y, p.z + shift.z), *alpha))
-            .collect();
-
-        let rest_grid = rest_grid.clone().map(|mut grid| {
-            let g = Arc::make_mut(&mut grid);
-            g.grid.origin_x += shift.x;
-            g.grid.origin_y += shift.y;
-            for z in &mut g.surface_z {
-                *z += shift.z as f32;
-            }
-            grid
-        });
-
-        let rest_regions = rest_regions.clone().map(|mut regions| {
-            let polys = Arc::make_mut(&mut regions);
-            for poly in polys.iter_mut() {
-                for p in &mut poly.exterior {
-                    p.x += shift.x;
-                    p.y += shift.y;
-                }
-                for hole in &mut poly.holes {
-                    for p in hole.iter_mut() {
-                        p.x += shift.x;
-                        p.y += shift.y;
-                    }
-                }
-                // `exterior` moved — see the mutation contract on `Polygon2`.
-                poly.invalidate_bbox();
-            }
-            regions
-        });
-
-        let area_regions = area_regions.clone().map(|mut map| {
-            Arc::make_mut(&mut map).translate(shift.x, shift.y, shift.z);
-            map
-        });
-
         Self {
             toolpath,
             spans: spans.clone(),
             spans_valid: *spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced: produced.translated(shift),
         }
     }
 
@@ -1554,9 +1457,13 @@ impl RemapIndex {
     clippy::indexing_slicing
 )]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::geo::P3;
     use crate::maps::grid::GridSpec;
+    use crate::polygon::Polygon2;
+    use crate::surface::rest_field::RestGrid;
     use crate::toolpath::Toolpath;
 
     fn toolpath_with_n_moves(n: usize) -> Toolpath {
@@ -1830,9 +1737,9 @@ mod tests {
         );
 
         let mut at = AnnotatedToolpath::new(tp);
-        at.planner_engagement = vec![(P3::new(1.0, 2.0, 3.0), 0.25)];
-        at.rest_grid = Some(Arc::new(rest_grid));
-        at.rest_regions = Some(Arc::new(vec![region]));
+        at.produced.planner_engagement = vec![(P3::new(1.0, 2.0, 3.0), 0.25)];
+        at.produced.rest_grid = Some(Arc::new(rest_grid));
+        at.produced.rest_regions = Some(Arc::new(vec![region]));
 
         let shift = P3::new(100.0, 200.0, 10.0);
         let shifted = at.translated(shift);
@@ -1842,11 +1749,15 @@ mod tests {
             P3::new(101.0, 202.0, 13.0)
         );
 
-        assert_eq!(shifted.planner_engagement.len(), 1);
-        assert_eq!(shifted.planner_engagement[0].0, P3::new(101.0, 202.0, 13.0));
-        assert_eq!(shifted.planner_engagement[0].1, 0.25);
+        assert_eq!(shifted.produced.planner_engagement.len(), 1);
+        assert_eq!(
+            shifted.produced.planner_engagement[0].0,
+            P3::new(101.0, 202.0, 13.0)
+        );
+        assert_eq!(shifted.produced.planner_engagement[0].1, 0.25);
 
         let grid = shifted
+            .produced
             .rest_grid
             .expect("rest_grid should survive translation");
         assert_eq!(grid.grid.origin_x, 110.0);
@@ -1859,6 +1770,7 @@ mod tests {
         assert_eq!(grid.rest, vec![0.1, 0.2, 0.3, 0.4]);
 
         let regions = shifted
+            .produced
             .rest_regions
             .expect("rest_regions should survive translation");
         assert_eq!(regions.len(), 1);
@@ -1868,9 +1780,12 @@ mod tests {
 
         // Original untouched.
         assert_eq!(at.toolpath.moves[0].target, P3::new(1.0, 2.0, 3.0));
-        assert_eq!(at.rest_grid.as_ref().map(|g| g.grid.origin_x), Some(10.0));
         assert_eq!(
-            at.rest_regions.as_ref().map(|r| r[0].exterior[0]),
+            at.produced.rest_grid.as_ref().map(|g| g.grid.origin_x),
+            Some(10.0)
+        );
+        assert_eq!(
+            at.produced.rest_regions.as_ref().map(|r| r[0].exterior[0]),
             Some(crate::geo::P2::new(0.0, 0.0))
         );
     }

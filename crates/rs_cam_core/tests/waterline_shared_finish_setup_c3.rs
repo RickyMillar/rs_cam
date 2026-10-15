@@ -52,7 +52,9 @@ mod common;
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::SpatialIndex;
-use rs_cam_core::ops::waterline::{WaterlineParams, waterline_toolpath, waterline_z_levels};
+use rs_cam_core::ops::waterline::{
+    WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels,
+};
 use rs_cam_core::toolpath::{MIN_EMITTED_SEGMENT_MM, Toolpath};
 
 use common::meshes::height_field;
@@ -122,15 +124,19 @@ fn ribbon_waterline() -> Toolpath {
     let mesh = mixed_slope_ribbon();
     let index = SpatialIndex::build(&mesh, 2.0);
     let cutter = wanaka_taper();
-    waterline_toolpath(
-        &mesh,
-        &index,
-        &cutter,
-        mesh.bbox.max.z,
-        mesh.bbox.min.z,
-        0.5,
-        &params(),
-    )
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        waterline_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            mesh.bbox.max.z,
+            mesh.bbox.min.z,
+            0.5,
+            &params(),
+            None,
+            cancel,
+        )
+    })
 }
 
 // ── 1. The inherited defect, fixed ───────────────────────────────────────
@@ -205,7 +211,19 @@ fn the_floor_is_inert_where_nothing_was_degenerate() {
     let mesh = height_field(HALF, 1.0, |_x, _y| 0.0);
     let index = SpatialIndex::build(&mesh, 2.0);
     let cutter = wanaka_taper();
-    let tp = waterline_toolpath(&mesh, &index, &cutter, 0.0, 0.0, 0.5, &params());
+    let tp = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        waterline_toolpath_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            0.0,
+            0.0,
+            0.5,
+            &params(),
+            None,
+            cancel,
+        )
+    });
     for d in cutting_segments(&tp) {
         assert!(
             d >= MIN_EMITTED_SEGMENT_MM,

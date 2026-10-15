@@ -15,9 +15,9 @@
 use super::GenerationFindings;
 use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use crate::compute::toolpath_stats::{
-    BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding, DerivedStepoverFinding,
-    DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding, SlopeDerateDetail,
-    TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
+    BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding, ClippedBandFinding,
+    DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding,
+    SlopeDerateDetail, TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 
 /// A report that writes itself into [`GenerationFindings`].
@@ -45,6 +45,12 @@ impl<T: RecordFindings> RecordFindings for Option<T> {
             report.record_into(findings);
         }
     }
+}
+
+/// A prepare that measures nothing (Waterline: its Z-free geometry is the
+/// surface itself) reports `()`, which writes nothing.
+impl RecordFindings for () {
+    fn record_into(&self, _findings: &mut GenerationFindings) {}
 }
 
 /// Each report of the list, in order. A Layered prepare that runs one
@@ -178,6 +184,14 @@ impl RecordFindings for crate::finish::unified_finish::UnifiedFinishReport {
     }
 }
 
+/// A Steep and Shallow pass: its link stage totals (G-LINKVISIBLE), `Some`
+/// exactly when the `hookup_mm` stage ran (W6.4.6).
+impl RecordFindings for crate::finish::steep_shallow::SteepShallowReport {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.record(&self.relink);
+    }
+}
+
 /// A pencil pass: its tip float (a centreline op always measures it, zero
 /// included) and its own link-stage report, `Some` exactly when the
 /// emitter ran.
@@ -295,8 +309,9 @@ impl RecordFindings for crate::geometry::region_mask::RegionCapReport {
 /// MEASUREMENT: record it even when every counter is zero, because "the
 /// pass ran and had no junction" differs from "the pass never ran".
 ///
-/// Four families reach here, each through its own hookup dial:
-/// `unified_finish`, `scallop`, `drop_cutter` and `waterline`. They share
+/// Five families reach here, each through its own hookup dial:
+/// `unified_finish`, `scallop`, `drop_cutter`, `waterline` and
+/// `steep_shallow` (W6.4.6). They share
 /// the slot because they share the kernel, and one toolpath is one
 /// operation. The pencil runs a different linker and has its own slot.
 impl RecordFindings for crate::finish::unified_finish::RelinkTotals {
@@ -348,6 +363,14 @@ impl RecordFindings for WaterlineLadderFinding {
 impl RecordFindings for ZeroRemovalFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
         findings.zero_removal = Some(*self);
+    }
+}
+
+/// W6.5: a projected curve that cuts deeper than its commanded depth.
+/// Build it with [`BuriedCurveFinding::measure`].
+impl RecordFindings for BuriedCurveFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.buried_curve = Some(*self);
     }
 }
 
@@ -439,6 +462,39 @@ impl ZeroRemovalFinding {
             deepest_engagement_mm: engagement.deepest_mm,
             sampled_positions: engagement.sampled_positions,
             cutting_distance_mm: toolpath.total_cutting_distance(),
+            floor_mm,
+        })
+    }
+}
+
+impl BuriedCurveFinding {
+    /// W6.5: measure the planned cutting moves of a curve op against the
+    /// stock it reads. `Some` when the tool tip reaches deeper below that
+    /// stock than `|commanded_depth_mm|` plus the sampling floor of the
+    /// stock ([`zero_removal_engagement_floor_mm`]).
+    ///
+    /// `None` without a stock (fresh stock: no measurement, no claim,
+    /// X-19), with nothing sampled, or when the cut is not deeper.
+    pub(crate) fn measure(
+        toolpath: &crate::toolpath::Toolpath,
+        commanded_depth_mm: f64,
+        stock: Option<&crate::dexel_stock::TriDexelStock>,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> Option<Self> {
+        let stock = stock?;
+        let engagement =
+            crate::dressup::reference_engagement_of_cutting_moves(toolpath, stock, cutter);
+        if engagement.sampled_positions == 0 {
+            return None;
+        }
+        let floor_mm = zero_removal_engagement_floor_mm(stock, cutter);
+        if engagement.deepest_mm <= commanded_depth_mm.abs() + floor_mm {
+            return None;
+        }
+        Some(Self {
+            deepest_engagement_mm: engagement.deepest_mm,
+            commanded_depth_mm,
+            sampled_positions: engagement.sampled_positions,
             floor_mm,
         })
     }

@@ -50,6 +50,14 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
                 }
+                UndoAction::ObstacleChange {
+                    setup_id,
+                    obstacle_id,
+                    old,
+                    ..
+                } => {
+                    self.apply_obstacle_snapshot(setup_id, obstacle_id, old);
+                }
             }
             // F2.5 (G-UNDOFRESH) — EVERY arm, at the one place all of them
             // pass through.
@@ -107,6 +115,14 @@ impl<B: ComputeBackend> AppController<B> {
                     });
                     let _ = self.apply_quietly(command);
                     self.invalidate_simulation();
+                }
+                UndoAction::ObstacleChange {
+                    setup_id,
+                    obstacle_id,
+                    new,
+                    ..
+                } => {
+                    self.apply_obstacle_snapshot(setup_id, obstacle_id, new);
                 }
             }
             // Redo carries the identical defect and takes the identical fix.

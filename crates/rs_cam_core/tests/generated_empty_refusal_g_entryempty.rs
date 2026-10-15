@@ -31,8 +31,9 @@
 //!
 //! The emptiness has to be produced by the shipped pipeline, not staged. A
 //! contour pocket whose first inward offset collapses returns an **empty
-//! toolpath with `Ok`** — `pocket_toolpath_at_levels_reported_with_cancel`
-//! maps only cancellation to an error — which is the exact "silent empty
+//! toolpath with `Ok`** — the pocket kernel
+//! (`pocket_contours_reported_with_cancel`) maps only cancellation to an
+//! error — which is the exact "silent empty
 //! success" shape `tests/adversarial_2d_campaign_r2.rs` names as a failure
 //! condition and the exact shape the live defect had. Offsetting a 40 mm
 //! square inward by a 30 mm tool radius collapses it by construction, so the

@@ -116,7 +116,6 @@ fn make_burn_fixture_tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(BallEndmill::new(6.0, 20.0)),
         6.0,
-        30.0,
         20.0,
         30.0,
         2,
@@ -129,7 +128,6 @@ fn make_endmill_6mm_tool_config() -> ToolConfig {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm (F-035 test)".to_owned();

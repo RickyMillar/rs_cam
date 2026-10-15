@@ -72,7 +72,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::dressup::AirBridgePolicy;
 use rs_cam_core::geo::P2;
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
@@ -178,7 +177,6 @@ fn live_dressups(base: DressupConfig) -> DressupConfig {
         segment_merge: Some(SegmentMergeParams { tolerance: 0.3 }),
         feed_optimization: true,
         optimize_rapid_order: true,
-        air_bridge_policy: AirBridgePolicy::Always,
         ..base
     }
 }

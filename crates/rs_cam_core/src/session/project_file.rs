@@ -6,17 +6,16 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DatumConfig, Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError,
-    SetupData, ToolpathConfig, XYDatum, ZDatum,
+    DatumConfig, LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig, XYDatum,
+    ZDatum,
 };
-use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geometry::enriched_mesh::FaceGroupId;
-use crate::ids::{FixtureId, KeepOutId};
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -58,6 +57,140 @@ fn check_format_version(project: &ProjectFile) -> Result<(), SessionError> {
     Err(SessionError::UnsupportedFormatVersion {
         found: project.format_version,
     })
+}
+
+/// One retired project-file key: the table that held it, its name, and
+/// what replaced it.
+///
+/// `table` is a path from the file root. The step `"[]"` enters every
+/// entry of an array of tables.
+struct RetiredKey {
+    table: &'static [&'static str],
+    key: &'static str,
+    replacement: &'static str,
+}
+
+const OBSTACLE_REPLACEMENT: &str = "Fixtures and keep-out zones are one concept now: write each \
+     one as an obstacle, [[setups.obstacles]] with an id, a name, a clearance and a geometry \
+     (kind = \"box\" with min and max, \"outline_extrude\" or \"model\"), with every value in \
+     the setup frame. Delete the old key, an empty list too";
+
+/// Every retired project-file key. The loader refuses a file that holds
+/// one of them, and the message names the key and what replaced it.
+///
+/// Nothing converts an old key, and nothing ignores one. Ruling of
+/// 2026-09-16: no legacy, breaking is acceptable. Ruling of 2026-10-15:
+/// old code that is left behind is retired. A key that the loader ignores
+/// hides an edit the operator thinks is live. Add a row here when a key
+/// leaves the file format.
+const RETIRED_KEYS: &[RetiredKey] = &[
+    RetiredKey {
+        table: &["setups", "[]"],
+        key: "fixtures",
+        replacement: OBSTACLE_REPLACEMENT,
+    },
+    RetiredKey {
+        table: &["setups", "[]"],
+        key: "keep_out_zones",
+        replacement: OBSTACLE_REPLACEMENT,
+    },
+    RetiredKey {
+        table: &["job", "stock"],
+        key: "flip_axis",
+        replacement: "Removed (P3): rs_cam derives the flip axis from the setups. Delete the key",
+    },
+    RetiredKey {
+        table: &["job", "stock"],
+        key: "workholding_rigidity",
+        replacement: "Removed (ruling R4 Q8): the machine aggressiveness dial is the one load \
+                      margin. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "dressups"],
+        key: "air_bridge_policy",
+        replacement: "Removed: one rule (retract_saves_time) bridges each air stretch with a \
+                      retract only when the retract is faster than the feed. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "operation", "params"],
+        key: "holes",
+        replacement: "Removed (W6.5, C1): the pin drill reads the live stock pins of its \
+                      diameter. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]"],
+        key: "type",
+        replacement: "Removed (C2): the op kind is `kind` in the toolpath's [operation] \
+                      table, the one source. Delete the key",
+    },
+    RetiredKey {
+        table: &["tools", "[]"],
+        key: "shank_length",
+        replacement: "Removed (B18): the holder face is at the stickout above the tip, and the \
+                      exposed shank is stickout - cutting_length. Set stickout. Delete the key",
+    },
+];
+
+/// Push the path of every `key` under the tables that `steps` names onto
+/// `found`.
+fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str, found: &mut Vec<String>) {
+    let join = |name: &str| {
+        if at.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{at}.{name}")
+        }
+    };
+    match steps.split_first() {
+        None => {
+            if value.as_table().is_some_and(|t| t.contains_key(key)) {
+                found.push(join(key));
+            }
+        }
+        Some((&"[]", rest)) => {
+            for (i, entry) in value.as_array().into_iter().flatten().enumerate() {
+                find_retired(entry, rest, key, &format!("{at}[{i}]"), found);
+            }
+        }
+        Some((step, rest)) => {
+            if let Some(next) = value.as_table().and_then(|t| t.get(*step)) {
+                find_retired(next, rest, key, &join(step), found);
+            }
+        }
+    }
+}
+
+/// Refuse a project file that holds a key from [`RETIRED_KEYS`]. C2: the
+/// refusal names EVERY retired key in the file, so one edit pass clears
+/// them all.
+fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
+    let mut found = Vec::new();
+    for retired in RETIRED_KEYS {
+        let mut paths = Vec::new();
+        find_retired(raw, retired.table, retired.key, "", &mut paths);
+        found.extend(paths.into_iter().map(|path| super::RetiredKeyFound {
+            path,
+            replacement: retired.replacement,
+        }));
+    }
+    if found.is_empty() {
+        Ok(())
+    } else {
+        Err(SessionError::RetiredKeys(found))
+    }
+}
+
+impl ProjectFile {
+    /// Parse a project file from its text. This is the one text door:
+    /// it refuses a retired key ([`RETIRED_KEYS`]) before it reads the
+    /// typed sections.
+    pub fn from_toml_str(text: &str) -> Result<Self, SessionError> {
+        let raw: toml::Value =
+            toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))?;
+        check_retired_keys(&raw)?;
+        // The second parse keeps the line and column in a typed error.
+        toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))
+    }
 }
 
 /// Something a project load noticed, kept for the operator to read.
@@ -269,8 +402,8 @@ pub struct ProjectStockConfig {
     pub origin_z: f64,
     #[serde(default = "default_stock_padding")]
     pub padding: f64,
-    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone; an old
-    // file's key is ignored on load.
+    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The
+    // loader refuses an old file's key (`RETIRED_KEYS`).
     #[serde(default = "default_true")]
     pub auto_from_model: bool,
     #[serde(default)]
@@ -282,7 +415,7 @@ pub struct ProjectStockConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pin_part_models: Option<Vec<usize>>,
     // P3 (2026-10-12): `flip_axis` is gone. The flip axis is derived from
-    // the setups; an old file's key is ignored on load.
+    // the setups. The loader refuses an old file's key (`RETIRED_KEYS`).
 }
 
 impl Default for ProjectStockConfig {
@@ -348,8 +481,6 @@ pub struct ProjectToolSection {
     pub holder_diameter: f64,
     #[serde(default = "default_shank_diameter")]
     pub shank_diameter: f64,
-    #[serde(default = "default_shank_length")]
-    pub shank_length: f64,
     #[serde(default = "default_stickout")]
     pub stickout: f64,
     #[serde(default = "default_flute_count")]
@@ -402,9 +533,6 @@ fn default_holder_diameter() -> f64 {
 }
 fn default_shank_diameter() -> f64 {
     6.35
-}
-fn default_shank_length() -> f64 {
-    20.0
 }
 fn default_stickout() -> f64 {
     45.0
@@ -463,10 +591,11 @@ pub struct ProjectSetupSection {
     /// Models in scope for this setup; empty = all (W9 / P-2).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub model_ids: Vec<usize>,
-    #[serde(default)]
-    pub fixtures: Vec<ProjectFixtureSection>,
-    #[serde(default)]
-    pub keep_out_zones: Vec<ProjectKeepOutSection>,
+    /// K1: `[[setups.obstacles]]`, the setup's obstacles (fixtures and
+    /// keep-out zones are one concept). Every value is in the setup frame.
+    /// An empty list writes no key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obstacles: Vec<crate::compute::obstacle::Obstacle>,
     /// S2: `[[setups.stock_changes]]`, the setup's stock changes in
     /// application order. Additive under `format_version = 3`: a file with
     /// no key loads an empty list, and an empty list writes no key, so a
@@ -475,78 +604,6 @@ pub struct ProjectSetupSection {
     pub stock_changes: Vec<crate::compute::stock_change::StockChange>,
     #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
-}
-
-/// Fixture section in the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectFixtureSection {
-    #[serde(default)]
-    pub id: Option<usize>,
-    #[serde(default = "default_fixture_name")]
-    pub name: String,
-    #[serde(default = "default_fixture_kind")]
-    pub kind: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    #[serde(default)]
-    pub origin_z: f64,
-    #[serde(default = "default_fixture_size_x")]
-    pub size_x: f64,
-    #[serde(default = "default_fixture_size_y")]
-    pub size_y: f64,
-    #[serde(default = "default_fixture_size_z")]
-    pub size_z: f64,
-    #[serde(default = "default_fixture_clearance")]
-    pub clearance: f64,
-}
-
-fn default_fixture_name() -> String {
-    "Fixture".to_owned()
-}
-fn default_fixture_kind() -> String {
-    "clamp".to_owned()
-}
-fn default_fixture_size_x() -> f64 {
-    30.0
-}
-fn default_fixture_size_y() -> f64 {
-    15.0
-}
-fn default_fixture_size_z() -> f64 {
-    20.0
-}
-fn default_fixture_clearance() -> f64 {
-    3.0
-}
-
-/// Keep-out zone section in the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectKeepOutSection {
-    #[serde(default)]
-    pub id: Option<usize>,
-    #[serde(default = "default_keep_out_name")]
-    pub name: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    #[serde(default = "default_keep_out_size")]
-    pub size_x: f64,
-    #[serde(default = "default_keep_out_size")]
-    pub size_y: f64,
-}
-
-fn default_keep_out_name() -> String {
-    "Keep-Out".to_owned()
-}
-fn default_keep_out_size() -> f64 {
-    20.0
 }
 
 fn default_setup_name() -> String {
@@ -563,8 +620,6 @@ pub struct ProjectToolpathSection {
     pub id: Option<crate::ids::ToolpathId>,
     #[serde(default)]
     pub name: String,
-    #[serde(rename = "type", default)]
-    pub op_type: Option<OperationType>,
     #[serde(default)]
     pub operation: Option<OperationConfig>,
     #[serde(default = "default_true")]
@@ -741,7 +796,6 @@ pub(crate) fn tool_from_project_section(
         shaft_diameter: ts.shaft_diameter,
         holder_diameter: ts.holder_diameter,
         shank_diameter: ts.shank_diameter,
-        shank_length: ts.shank_length,
         stickout: ts.stickout,
         flute_count: ts.flute_count,
         tool_material: parse_tool_material(&ts.tool_material),
@@ -940,44 +994,6 @@ fn datum_from_section(section: &ProjectSetupSection) -> DatumConfig {
         },
         notes: section.datum_notes.clone(),
     }
-}
-
-/// Convert TOML fixture sections into session `Fixture` values.
-fn build_fixtures(sections: &[ProjectFixtureSection]) -> Vec<Fixture> {
-    sections
-        .iter()
-        .enumerate()
-        .map(|(idx, fs)| Fixture {
-            id: FixtureId(fs.id.unwrap_or(idx)),
-            name: fs.name.clone(),
-            kind: FixtureKind::from_key(&fs.kind),
-            enabled: fs.enabled,
-            origin_x: fs.origin_x,
-            origin_y: fs.origin_y,
-            origin_z: fs.origin_z,
-            size_x: fs.size_x,
-            size_y: fs.size_y,
-            size_z: fs.size_z,
-            clearance: fs.clearance,
-        })
-        .collect()
-}
-
-/// Convert TOML keep-out sections into session `KeepOutZone` values.
-fn build_keep_out_zones(sections: &[ProjectKeepOutSection]) -> Vec<KeepOutZone> {
-    sections
-        .iter()
-        .enumerate()
-        .map(|(idx, ks)| KeepOutZone {
-            id: KeepOutId(ks.id.unwrap_or(idx)),
-            name: ks.name.clone(),
-            enabled: ks.enabled,
-            origin_x: ks.origin_x,
-            origin_y: ks.origin_y,
-            size_x: ks.size_x,
-            size_y: ks.size_y,
-        })
-        .collect()
 }
 
 /// Reject TOML that parses but contains no recognizable CAM content. Without
@@ -1179,26 +1195,20 @@ pub(super) fn build_session_from_project(
         for tp_section in &setup_section.toolpaths {
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
-            let operation = match &tp_section.operation {
-                Some(op) => op.clone(),
-                None => {
-                    let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
-                    tracing::warn!(
-                        toolpath_id = tp_id.0,
-                        ?op_type,
-                        "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
-                    );
-                    OperationConfig::new_default(op_type)
-                }
+            // A toolpath with no `[setups.toolpaths.operation]` table has no
+            // parameters. The loader refuses it: a default operation would
+            // cut with values the operator never set.
+            let Some(operation) = tp_section.operation.clone() else {
+                return Err(SessionError::MissingOperation {
+                    setup: setup_section.name.clone(),
+                    toolpath: tp_section.name.clone(),
+                });
             };
             toolpath_configs.push(toolpath_config_from_section(
                 tp_section, tp_id, &operation, warnings,
             ));
             tp_indices.push(tp_idx);
         }
-
-        let fixtures = build_fixtures(&setup_section.fixtures);
-        let keep_out_zones = build_keep_out_zones(&setup_section.keep_out_zones);
 
         setups.push(SetupData {
             id: setup_id,
@@ -1211,8 +1221,7 @@ pub(super) fn build_session_from_project(
                 .iter()
                 .map(|&id| crate::ids::ModelId(id))
                 .collect(),
-            fixtures,
-            keep_out_zones,
+            obstacles: setup_section.obstacles.clone(),
             stock_changes: setup_section.stock_changes.clone(),
             toolpath_indices: tp_indices,
             pause_message: setup_section.pause_message.clone(),
@@ -1293,6 +1302,7 @@ pub(super) fn build_session_from_project(
         setups,
         toolpath_configs,
         results: std::collections::HashMap::new(),
+        rest_fresh_comparisons: std::collections::HashMap::new(),
         toolpath_revision: std::collections::HashMap::new(),
         next_revision: 0,
         simulation_epoch: 0,

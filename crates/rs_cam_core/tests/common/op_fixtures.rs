@@ -43,8 +43,8 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::alignment_pins::AlignmentPin;
 use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
-use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, PocketConfig};
+use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, HeightMode, StockSource};
+use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, FaceConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::export::fingerprint::ToolpathFingerprint;
@@ -53,12 +53,15 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs,
     SimulationOptions, SimulationResolution, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::produced::Produced;
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use serde::{Deserialize, Serialize};
 
 use super::fingerprint::fnv1a_debug;
@@ -430,10 +433,6 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         (builder.add_model(place(outline_model())), None)
     };
 
-    if let OperationConfig::AlignmentPinDrill(cfg) = &mut op {
-        // The pin door snapshots the stock pins into the op; do the same.
-        cfg.holes = stock.alignment_pins.iter().map(|p| [p.x, p.y]).collect();
-    }
     if spec.prior == Prior::RestPrior {
         // The prior op: a flat end mill, which every fixture admits.
         let prior_tool_idx =
@@ -502,6 +501,91 @@ pub fn run_prior(session: &mut ProjectSession) {
     simulate(session);
 }
 
+// ── The one door for one op's toolpath (D3) ────────────────────────────
+
+/// Every dressup off: no entry, no link, no lead, no arc fit, no merge, no
+/// feed optimisation and no rapid reorder. A test that dresses the op
+/// output itself, or that reads the op output alone, starts from this.
+pub fn no_dressups() -> DressupConfig {
+    DressupConfig {
+        entry_style: DressupEntryStyle::None,
+        link_moves: None,
+        lead_in_out: None,
+        arc_fitting: None,
+        segment_merge: None,
+        dogbone: None,
+        feed_optimization: false,
+        optimize_rapid_order: false,
+        ..DressupConfig::default()
+    }
+}
+
+/// D3: the one door a test takes for the toolpath of one op. It builds a
+/// one-op session, generates through `ProjectSession::generate_toolpath`
+/// (the door the GUI, MCP and the CLI share) and returns the annotated
+/// result: the op's runner output after the session stages (dressups,
+/// boundary clip, entry split, obstacle step). `tweak` adjusts the
+/// `ToolpathConfig` first; pass `|tc| tc.dressups = no_dressups()` for the
+/// op output without dressups. D3 deleted the per-op public wrappers that
+/// tests called before.
+#[track_caller]
+pub fn generated_op(
+    stock: StockConfig,
+    tool: ToolConfig,
+    model: LoadedModel,
+    op: OperationConfig,
+    tweak: impl FnOnce(&mut ToolpathConfig),
+) -> AnnotatedToolpath {
+    let mut session = super::session::single_op_session_with(stock, tool, model, "op", op, tweak);
+    super::session::generate(&mut session, 0);
+    let annotated = session
+        .get_result(0)
+        .expect("the generated op has a result")
+        .annotated();
+    AnnotatedToolpath::clone(annotated)
+}
+
+/// The Face that the dressup sentries dress (`dressup_span_invariants`,
+/// `arcfit_intent_key_cost_f1`, `transform_provenance_fingerprints`): a
+/// 40 x 30 mm stock with its top at Z0, a 6 mm end mill, 4 mm stepover,
+/// `OneWay` rows, `depth` deep in passes of 2 mm, feed 1500, plunge 500,
+/// retract plane at Z 30. It comes through [`generated_op`] with
+/// [`no_dressups`], so it is the Face runner's output after the session
+/// stages. Before D3 these files called the deleted `face_toolpath` with
+/// the same dials.
+pub fn dressup_face(depth: f64) -> Toolpath {
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 6.0;
+    let stock = StockConfig {
+        x: 40.0,
+        y: 30.0,
+        z: 5.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        origin_z: -5.0,
+        auto_from_model: false,
+        alignment_pins: Vec::new(),
+        ..StockConfig::default()
+    };
+    let op = OperationConfig::Face(FaceConfig {
+        stepover: 4.0,
+        depth,
+        depth_per_pass: 2.0,
+        feed_rate: 1500.0,
+        plunge_rate: 500.0,
+        stock_offset: 0.0,
+        direction: FaceDirection::OneWay,
+        ..FaceConfig::default()
+    });
+    let model = polygon_model(vec![rectangle(0.0, 0.0, 40.0, 30.0)], "dressup_face");
+    generated_op(stock, tool, model, op, |tc| {
+        tc.dressups = no_dressups();
+        tc.heights.retract_z = HeightMode::Manual(30.0);
+        tc.heights.clearance_z = HeightMode::Manual(30.0);
+    })
+    .toolpath
+}
+
 /// The count of moves with `MoveIntent::Unknown` (B11; the W6 census rule
 /// that every emitted move carries a known intent).
 pub fn unknown_intents(tp: &Toolpath) -> usize {
@@ -558,10 +642,101 @@ pub struct Golden {
     pub bbox_max: [f64; 3],
     /// FNV-1a over the quantized moves, as hex (TOML holds only i64).
     pub moves_hash: String,
+    /// The count of the spans (W6.3.0).
+    pub span_count: usize,
+    /// FNV-1a over `spans_valid` and `(kind, label, start, end)` of each
+    /// span, in order, as hex. The payload is not in the hash (W6.3.0).
+    pub spans_hash: String,
+    /// W6.4.0: the digest of the rest output of a rest detector
+    /// (`Produced::rest_grid`, `Produced::rest_regions`). `None` when no
+    /// detector attached one, and then the record has no such field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub produced: Option<ProducedDigest>,
+}
+
+/// One polygon at the post precision: the exterior ring, then the holes.
+type QuantizedPolygon = (Vec<(i64, i64)>, Vec<Vec<(i64, i64)>>);
+
+/// The rest output of a rest detector, at the post precision (W6.4.0).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProducedDigest {
+    /// The cell count of the rest grid. 0 when there is no grid.
+    pub rest_grid_cells: usize,
+    /// FNV-1a over the grid spec, the quantized rest and surface Z of each
+    /// cell (`NaN` is its own value) and the threshold, as hex.
+    pub rest_grid_hash: String,
+    /// The count of the rest region polygons.
+    pub rest_region_count: usize,
+    /// FNV-1a over the quantized vertices of each region polygon, as hex.
+    pub rest_regions_hash: String,
+}
+
+impl ProducedDigest {
+    /// The digest of `produced`, or `None` when it holds no rest output.
+    pub fn of(produced: &Produced) -> Option<Self> {
+        if produced.rest_grid.is_none() && produced.rest_regions.is_none() {
+            return None;
+        }
+        let d = finest_decimals().xyz;
+        let q32 = |v: f32| {
+            if v.is_nan() {
+                i64::MIN
+            } else {
+                quantize(f64::from(v), d)
+            }
+        };
+        let (cells, grid_hash) = produced.rest_grid.as_deref().map_or_else(
+            || (0, String::new()),
+            |g| {
+                let spec = (
+                    g.grid.nx,
+                    g.grid.ny,
+                    quantize(g.grid.origin_x, d),
+                    quantize(g.grid.origin_y, d),
+                    quantize(g.grid.cell_mm, d),
+                    quantize(g.threshold, d),
+                );
+                let rest: Vec<i64> = g.rest.iter().map(|&v| q32(v)).collect();
+                let z: Vec<i64> = g.surface_z.iter().map(|&v| q32(v)).collect();
+                (
+                    g.rest.len(),
+                    format!("{:016x}", fnv1a_debug(&(spec, rest, z))),
+                )
+            },
+        );
+        let (count, regions_hash) = produced.rest_regions.as_deref().map_or_else(
+            || (0, String::new()),
+            |regions| {
+                let ring = |pts: &[P2]| -> Vec<(i64, i64)> {
+                    pts.iter()
+                        .map(|p| (quantize(p.x, d), quantize(p.y, d)))
+                        .collect()
+                };
+                let quantized: Vec<QuantizedPolygon> = regions
+                    .iter()
+                    .map(|poly| {
+                        (
+                            ring(&poly.exterior),
+                            poly.holes.iter().map(|h| ring(h)).collect(),
+                        )
+                    })
+                    .collect();
+                (regions.len(), format!("{:016x}", fnv1a_debug(&quantized)))
+            },
+        );
+        Some(Self {
+            rest_grid_cells: cells,
+            rest_grid_hash: grid_hash,
+            rest_region_count: count,
+            rest_regions_hash: regions_hash,
+        })
+    }
 }
 
 impl Golden {
-    pub fn of(tp: &Toolpath) -> Self {
+    /// The record of one generated result: its moves and its spans.
+    pub fn of(annotated: &AnnotatedToolpath) -> Self {
+        let tp = &annotated.toolpath;
         let d = finest_decimals();
         let fp = ToolpathFingerprint::from_toolpath(tp);
         let quantized: Vec<QuantizedMove> = tp
@@ -603,6 +778,12 @@ impl Golden {
             bbox_min: fp.bbox_min.map(|v| round_to(v, d.xyz)),
             bbox_max: fp.bbox_max.map(|v| round_to(v, d.xyz)),
             moves_hash: format!("{:016x}", fnv1a_debug(&quantized)),
+            span_count: annotated.spans.len(),
+            spans_hash: format!(
+                "{:016x}",
+                fnv1a_debug(&(annotated.spans_valid, span_digest(annotated)))
+            ),
+            produced: ProducedDigest::of(&annotated.produced),
         }
     }
 
@@ -618,6 +799,28 @@ impl Golden {
             bbox_min: [0.0; 3],
             bbox_max: [0.0; 3],
             moves_hash: String::new(),
+            span_count: 0,
+            spans_hash: String::new(),
+            produced: None,
         }
     }
+}
+
+/// One span as the golden hashes it: kind, label, start move, end move.
+type SpanKey = (String, String, usize, usize);
+
+/// The spans of a result as [`Golden::of`] hashes them, in order.
+fn span_digest(annotated: &AnnotatedToolpath) -> Vec<SpanKey> {
+    annotated
+        .spans
+        .iter()
+        .map(|s| {
+            (
+                format!("{:?}", s.kind),
+                s.label.to_string(),
+                s.start_move,
+                s.end_move,
+            )
+        })
+        .collect()
 }

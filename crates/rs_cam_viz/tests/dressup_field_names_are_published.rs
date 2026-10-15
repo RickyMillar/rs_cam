@@ -4,8 +4,8 @@
 //!
 //! The description was a hand-written prose list. It named 17 fields of 23. It
 //! omitted `dogbone_angle`, `lead_in_feed_rate`, `lead_out_feed_rate`,
-//! `segment_merge`, `segment_merge_tolerance` and `air_bridge_policy`, and two
-//! of those six change emitted motion on every roughing operation. In the
+//! `segment_merge`, `segment_merge_tolerance` and `air_bridge_policy` (a field
+//! deleted on 2026-10-15), and two of those six change emitted motion on every roughing operation. In the
 //! other direction it advertised `retract_strategy`, which no code read
 //! (G-RETRACTDIAL, deleted by CUT-03).
 //!

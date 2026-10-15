@@ -76,6 +76,9 @@ pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision";
 /// defect the `diagnostics/` contract names.
 pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed";
 pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
+/// K1: a move puts the tool (cutter, shank or holder) inside an obstacle
+/// of its setup: a fixture or a keep-out zone.
+pub const PROJECT_OBSTACLE_COLLISION: &str = "project.obstacle_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
@@ -144,6 +147,14 @@ pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
 /// generator fix it should be silent on the shipped fixtures — a monitor that
 /// speaks the day a generator regresses.
 pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load";
+/// Operator ruling 2026-10-15. After a simulation, a rest operation takes
+/// longer than the same operation on fresh stock (its fresh twin, generated
+/// on request by `ProjectSession::compare_rest_with_fresh`: one cycle-time
+/// model, commanded feeds). Only a comparison that is still current reports.
+/// Rest can take longer for a real reason (small islands need their own
+/// entries and rapids), so this is INFORMATIONAL: it names both times, and
+/// the operator decides.
+pub const PROJECT_REST_SLOWER_THAN_FRESH: &str = "project.rest_slower_than_fresh";
 /// Phase 4 (2026-09-07). The two-sided kinematic reading for one toolpath:
 /// what fraction of the commanded feed the machine actually achieves, which
 /// constraint binds each move (feed / accel / per-axis rate / junction), and
@@ -254,6 +265,8 @@ pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
 /// A REPORT, not a refusal. An operator may legitimately want a pass that
 /// finds nothing; what is not acceptable is nothing saying so.
 pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
+/// W6.5: a projected curve cuts deeper than its commanded depth.
+pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve";
 /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
 /// `cavalier_contours` panicked and was contained, or one of the offset
 /// module's own input guards refused the ring — rather than collapsing.
@@ -301,7 +314,6 @@ pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated";
 /// machined stock, so it cut the whole outline at every level. A REPORT:
 /// the fallback cuts more, never less.
 pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback";
-pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled
 /// number that used to be used there. Report-only: it says which number is
@@ -412,6 +424,7 @@ pub const ALL: &[&str] = &[
     PROJECT_HOLDER_COLLISION,
     PROJECT_HOLDER_CHECK_FAILED,
     PROJECT_RAPID_COLLISION,
+    PROJECT_OBSTACLE_COLLISION,
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,
@@ -425,6 +438,7 @@ pub const ALL: &[&str] = &[
     PROJECT_ENTRY_LOAD,
     PROJECT_LINK_CUTS_STOCK,
     PROJECT_PLUNGE_CLASS_LOAD,
+    PROJECT_REST_SLOWER_THAN_FRESH,
     PROJECT_KINEMATIC_UTILIZATION,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,
@@ -457,6 +471,7 @@ pub const ALL: &[&str] = &[
     GEOM_UNMACHINED_BAND,
     GEOM_TIP_FLOAT,
     GEOM_ZERO_REMOVAL,
+    GEOM_BURIED_CURVE,
     GEOM_REGION_CAP_TRUNCATED,
     GEOM_REST_LEVELS_FALLBACK,
     CONFIG_INERT_CLAIMS_DIAL,

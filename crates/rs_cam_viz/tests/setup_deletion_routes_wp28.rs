@@ -53,12 +53,9 @@ fn from_anchor<'a>(text: &'a str, start: &str, file: &str) -> &'a str {
 #[test]
 fn inspector_requests_shared_confirmation_and_disables_the_last_setup_route() {
     let source = strip_comments(INSPECTOR);
-    let draw = function_region(
-        &source,
-        "pub fn draw(",
-        "pub fn draw_fixture_properties(",
-        "src/ui/properties/setup.rs",
-    );
+    // K2: `draw` is the last function of the file; the obstacle editor
+    // moved to `obstacles.rs`.
+    let draw = from_anchor(&source, "pub fn draw(", "src/ui/properties/setup.rs");
     assert!(
         draw.contains("ui.heading(\"Setup Properties\")"),
         "the bounded region must be the setup inspector"

@@ -97,6 +97,7 @@ fn finding(trace: &SimulationCutTrace, step: Option<f64>) -> Option<Finding> {
         commanded_depth_per_pass_mm: &steps,
         kinematic_utilization: &BTreeMap::new(),
         region_of: None,
+        obstacle_collisions: &[],
     });
     triage
         .actions

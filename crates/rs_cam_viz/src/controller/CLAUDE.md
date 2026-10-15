@@ -37,4 +37,4 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 - `cargo test -p rs_cam_viz -q --test apply_contract_a3`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`
-- `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`
+- `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`, `--test a_no_op_feeds_apply_stales_nothing_b19` (B19: stamp only `Effects.stale`)

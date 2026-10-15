@@ -137,7 +137,6 @@ fn endmill(diameter: f64) -> ToolConfig {
     t.diameter = diameter;
     t.cutting_length = 25.0;
     t.shank_diameter = diameter;
-    t.shank_length = 20.0;
     t.stickout = 40.0;
     t.flute_count = 2;
     t.name = format!("End Mill {diameter}mm");
@@ -154,7 +153,6 @@ fn vbit() -> ToolConfig {
     t.cutting_length = 11.0;
     t.included_angle = 60.0;
     t.shank_diameter = 6.35;
-    t.shank_length = 20.0;
     t.stickout = 30.0;
     t.flute_count = 2;
     t.name = "V-bit 60deg".to_owned();
@@ -779,7 +777,7 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 ///
 /// This test was called `exactly_two_2d_families_ignore_a_pre_set_cancel_flag`
 /// and it pinned F-4: `generate_rest` built no `cancel_fn` and called the
-/// non-cancellable `depth::toolpath_at_levels`, and `generate_drill` never
+/// non-cancellable `depth::toolpath_at_levels` (deleted in D3), and `generate_drill` never
 /// touched `ctx.cancel` at all. Its own doc said what it was for — *"it pins
 /// the measured fact so the findings document cannot go stale silently and a
 /// future fix has a red-first target"* — and it did exactly that: making the
@@ -788,7 +786,8 @@ fn the_pocket_ring_cascade_is_bounded_only_by_collapse() {
 ///
 /// The fix (2026-08-05): `generate_rest` (retired 2026-10-14) polled
 /// `ctx.cancel` as its first statement and ran its levels through
-/// `toolpath_at_levels_with_cancel`; `generate_drill` polls as its first
+/// `toolpath_at_levels_with_cancel` (deleted in D3; `run_layered` polls per
+/// level now); `generate_drill` polls as its first
 /// statement. Both are also in
 /// `compute::execute`'s in-crate `cancellable_families_honour_a_preset_cancel_flag`
 /// case list, which is the coverage claim `ExecutionContext`'s doc says goes

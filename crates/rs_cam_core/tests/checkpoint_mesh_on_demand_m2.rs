@@ -68,7 +68,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -103,6 +102,7 @@ fn entry(index: usize) -> SimToolpathEntry {
         name: format!("Pass{index}"),
         annotated: pass(index),
         tool: Arc::new(tool()),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -123,6 +123,7 @@ fn simulate() -> SimulationResult {
             // The first pending rest operation sits after every carved one.
             phantom_prior_stock: Some((PASSES, PHANTOM_ID)),
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,

@@ -853,7 +853,7 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
 /// "Identically to Drill's" is asserted as an EQUALITY between the
 /// two families at the same hole depth, not as two numbers that
 /// happen to match a literal — so a future change to
-/// `clamp_peck_to_depth`'s 0.75 factor moves both or fails here.
+/// `peck_for_hole`'s 0.75 factor moves both or fails here.
 #[test]
 fn alignment_pin_drill_peck_is_clamped_like_drill() {
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
@@ -2573,4 +2573,103 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
                  (this net guards the suggest.rs (None,None,None) wildcard)"
         );
     }
+}
+
+/// B14 (W5): Suggest writes a peck that the schema accepts. The floor is
+/// read from the `peck_depth` `ParamDef` range of each drill family, not
+/// copied. Before the fix `clamp_peck_to_depth` wrote `0.75 × depth`
+/// under the floor on a shallow hole (0.45 mm on a 0.6 mm hole). A hole
+/// shallower than the floor takes the peck equal to its depth: one peck.
+#[test]
+fn a_suggested_peck_respects_the_schema_floor_b14() {
+    use crate::compute::catalog::OperationType;
+    use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
+    use crate::material::{Material, WoodSpecies};
+
+    let material = Material::SolidWood {
+        species: WoodSpecies::GenericSoftwood,
+    };
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 6.0;
+    let floor_of = |op_type: OperationType| {
+        let range = OperationConfig::param_range_for_type(op_type, "peck_depth")
+            .expect("non-vacuity: the schema declares a peck_depth range");
+        let floor = *range.inclusive_bounds().start();
+        assert!(
+            floor.is_finite() && floor > 0.0,
+            "the floor is a real bound: {floor}"
+        );
+        floor
+    };
+    let drill_floor = floor_of(OperationType::Drill);
+    let pin_floor = floor_of(OperationType::AlignmentPinDrill);
+    let peck_of = |op: &OperationConfig| match op {
+        OperationConfig::Drill(cfg) => cfg.peck_depth,
+        OperationConfig::AlignmentPinDrill(cfg) => cfg.peck_depth,
+        other => panic!("expected a drill family op, got {other:?}"),
+    };
+    let drill_at = |depth: f64| {
+        let mut op = OperationConfig::Drill(DrillConfig {
+            cycle: DrillCycleType::Peck,
+            depth,
+            ..DrillConfig::default()
+        });
+        apply_drill_defaults(&mut op, &tool, &material, None);
+        peck_of(&op)
+    };
+
+    // A shallow hole: 0.75 × depth lies under the floor, the depth does not.
+    let shallow = drill_floor / 0.75 * 0.9;
+    assert!(0.75 * shallow < drill_floor && shallow > drill_floor);
+    let peck = drill_at(shallow);
+    assert!(
+        (peck - drill_floor).abs() < 1e-12,
+        "a {shallow} mm hole takes the floor {drill_floor} mm, got {peck}"
+    );
+
+    // A hole shallower than the floor: one peck, equal to the depth.
+    let thin = 0.8 * drill_floor;
+    let peck = drill_at(thin);
+    assert!(
+        (peck - thin).abs() < 1e-12,
+        "a {thin} mm hole takes one peck of its depth, got {peck}"
+    );
+
+    // The pin family reads its own range, with and without a stock.
+    let pin = |stock_z: Option<f64>, diameter: f64| {
+        let mut op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+            diameter: 6.0,
+            spoilboard_penetration: 0.0,
+            cycle: DrillCycleType::Peck,
+            ..AlignmentPinDrillConfig::default()
+        });
+        let mut pin_tool = tool.clone();
+        pin_tool.diameter = diameter;
+        let stock = stock_z.map(|z| StockContext {
+            stock_top_z: 0.0,
+            stock_bottom_z: -z,
+            stock_z: z,
+            stock_padding: 0.0,
+        });
+        apply_drill_defaults(&mut op, &pin_tool, &material, stock.as_ref());
+        peck_of(&op)
+    };
+    let pin_shallow = pin_floor / 0.75 * 0.9;
+    let peck = pin(Some(pin_shallow), 6.0);
+    assert!(
+        (peck - pin_floor).abs() < 1e-12,
+        "a {pin_shallow} mm pin hole takes the floor {pin_floor} mm, got {peck}"
+    );
+    // No stock: no depth to cap at, but a tiny bit's raw peck still
+    // rises to the floor.
+    let raw = material.drill_default_peck_depth_mm(0.1);
+    assert!(
+        raw < pin_floor,
+        "fixture: the raw peck {raw} lies under the floor"
+    );
+    let peck = pin(None, 0.1);
+    assert!(
+        (peck - pin_floor).abs() < 1e-12,
+        "with no stock the peck rises to the floor {pin_floor} mm, got {peck}"
+    );
 }

@@ -62,10 +62,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     if toolpath.moves.len() < 2 || tolerance <= 0.0 {
@@ -73,10 +70,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
             toolpath,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -194,10 +188,7 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )

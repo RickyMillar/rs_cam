@@ -22,7 +22,7 @@ pub const PIN_MARK_LIFT_MM: f64 = 0.1;
 
 /// The setup whose frame the viewport displays, and its id.
 ///
-/// The selected setup, the setup of a selected fixture or keep-out, the
+/// The selected setup, the setup of a selected obstacle, the
 /// setup of a selected toolpath, else the first setup. `None` when the
 /// project has no setup.
 #[must_use]
@@ -32,7 +32,7 @@ pub fn active_display_setup(
 ) -> Option<(SetupFrame, SetupId)> {
     let setup_id = match selection {
         Selection::Setup(id) => Some(*id),
-        Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+        Selection::Obstacle(id, _) => Some(*id),
         Selection::Toolpath(tp_id) => session
             .setup_of_toolpath_id(*tp_id)
             .and_then(|idx| session.list_setups().get(idx))

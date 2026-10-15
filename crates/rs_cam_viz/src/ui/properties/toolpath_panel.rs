@@ -293,7 +293,7 @@ pub(super) fn draw_toolpath_panel(
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
-        ToolpathTab::Geometry => draw_geometry_tab(ui, entry, inputs, model_bbox),
+        ToolpathTab::Geometry => draw_geometry_tab(ui, entry, inputs, model_bbox, events),
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
 
@@ -460,12 +460,13 @@ pub(super) fn draw_toolpath_panel(
 // order and no egui id changed. Each function re-binds the `inputs` fields
 // it needs under the names its body already used.
 
-/// The Geometry tab: what to cut.
-fn draw_geometry_tab(
+/// The Geometry tab: what to cut. `properties::tests` renders it (D3).
+pub(super) fn draw_geometry_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
@@ -479,8 +480,6 @@ fn draw_geometry_tab(
     let material = &inputs.material;
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
-    let model_has_enriched = inputs.model_has_enriched;
-    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
     let height_ctx = inputs.height_ctx.as_ref();
     let drill_layers = inputs.drill_layers.as_slice();
     let drill_targets = inputs.drill_targets.as_slice();
@@ -491,14 +490,7 @@ fn draw_geometry_tab(
     // Faces and the stock source. It used to sit behind a `Geometry`
     // disclosure above the tab strip, which gave one name two homes
     // at one level. One name, one place (Rule A).
-    draw_geometry_wiring(
-        ui,
-        entry,
-        tools,
-        models,
-        model_has_enriched,
-        model_is_step_missing_brep,
-    );
+    draw_geometry_wiring(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
 
@@ -603,298 +595,310 @@ fn draw_geometry_tab(
     // ── Machining Boundary ─────────────────────────────────────
     // W3.2: the boundary defines *what region to cut*, so it lives
     // under Geometry (was on the old Dressups tab).
-    crate::ui::components::SectionHeader::new("Machining Boundary").show(ui);
-    ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
-        .on_hover_text(
-            "Restrict toolpath to a boundary polygon. \
-             Moves outside the boundary are converted to rapids at safe Z.",
-        );
-    if entry.boundary.enabled {
-        // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
-        // one generation uses (`session/compute.rs` clones
-        // `tc.boundary` unconditionally). Name it, then show the
-        // controls that drive it. The controller assigns the model
-        // silhouette on add for 3D ops on a mesh; that provenance is
-        // not stored, so the line never claims "(auto)".
-        ui.add(OneLine::new(boundary_summary_line(
-            &entry.boundary,
-            false,
-            models,
-        )));
-        // Source selector
-        ui.horizontal(|ui| {
-            ui.label("Source:");
-            egui::ComboBox::from_id_salt("boundary_source")
-                .truncate()
-                .selected_text(entry.boundary.source.label())
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(
-                            matches!(entry.boundary.source, BoundarySource::Stock),
-                            "Stock",
-                        )
-                        .on_hover_text("Use the stock bounding rectangle")
-                        .clicked()
-                    {
-                        entry.boundary.source = BoundarySource::Stock;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(entry.boundary.source, BoundarySource::ModelSilhouette),
-                            "Model Silhouette",
-                        )
-                        .on_hover_text(
-                            "XY projection of the 3D model. Only machines \
-                             where the model actually is.",
-                        )
-                        .clicked()
-                    {
-                        entry.boundary.source = BoundarySource::ModelSilhouette;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(entry.boundary.source, BoundarySource::FaceSelection),
-                            "Face Selection",
-                        )
-                        .on_hover_text("Boundary derived from selected STEP faces")
-                        .clicked()
-                    {
-                        entry.boundary.source = BoundarySource::FaceSelection;
-                    }
-                    let has_outline_models = !outline_models.is_empty();
-                    if ui
-                        .add_enabled(
-                            has_outline_models,
-                            egui::Button::selectable(
-                                matches!(
-                                    entry.boundary.source,
-                                    BoundarySource::ModelOutline { .. }
-                                ),
-                                "Model Outline",
-                            ),
-                        )
-                        .on_hover_text(if has_outline_models {
-                            "Use the closed 2D shapes of a DXF or SVG model as the \
-                             boundary. The model can be a different model from the \
-                             one this toolpath cuts. Holes in the shapes stay \
-                             uncut. Pick the model below."
-                        } else {
-                            "No model in this project has a closed 2D shape. \
-                             Import a DXF or SVG with closed shapes to use this source."
-                        })
-                        .clicked()
-                    {
-                        // Keep the current pick when the source is already
-                        // an outline; else take the first candidate.
-                        if !matches!(entry.boundary.source, BoundarySource::ModelOutline { .. })
-                            && let Some((first_id, _)) = outline_models.first()
-                        {
-                            entry.boundary.source = BoundarySource::ModelOutline {
-                                model_id: first_id.0,
-                                holes: false,
-                            };
-                        }
-                    }
-                    let has_rest_candidates = !boundary_source_candidates.is_empty();
-                    if ui
-                        .add_enabled(
-                            has_rest_candidates,
-                            egui::Button::selectable(
-                                matches!(
-                                    entry.boundary.source,
-                                    BoundarySource::DerivedRestRegions { .. }
-                                ),
-                                "Rest Regions",
-                            ),
-                        )
-                        .on_hover_text(if has_rest_candidates {
-                            "Boundary = rest regions computed by another \
-                             toolpath's rest analysis. Pick the source \
-                             toolpath below."
-                        } else {
-                            "No other toolpaths in this project yet — add \
-                             one and generate it to use as the source. Picking it here \
-                             switches its rest analysis on."
-                        })
-                        .clicked()
-                    {
-                        let default_source = boundary_source_candidates
-                            .first()
-                            .map(|(candidate_id, _, _, _, _)| *candidate_id)
-                            .unwrap_or(entry.id);
-                        entry.boundary.source = BoundarySource::DerivedRestRegions {
-                            source_toolpath_id: default_source,
-                        };
-                    }
-                });
-        });
-
-        // Outline model picker — only shown when `Source` above is
-        // `ModelOutline`. It lists the models with a closed 2D shape.
-        // A stored id that names no such model shows as "not found";
-        // generation then refuses and names the id.
-        if let BoundarySource::ModelOutline { model_id, holes } = &mut entry.boundary.source {
+    // D3: an op that no boundary moves (`TerritoryXy::SetupMap`, Pin
+    // Drill: its holes are absolute setup-map positions) draws no
+    // boundary controls. The panel reads the capability, not the op type.
+    if entry
+        .operation
+        .capabilities()
+        .territory_xy
+        .session_clip_applies()
+    {
+        crate::ui::components::SectionHeader::new("Machining Boundary").show(ui);
+        ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
+            .on_hover_text(
+                "Restrict toolpath to a boundary polygon. \
+                 Moves outside the boundary are converted to rapids at safe Z.",
+            );
+        if entry.boundary.enabled {
+            // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
+            // one generation uses (`session/compute.rs` clones
+            // `tc.boundary` unconditionally). Name it, then show the
+            // controls that drive it. The controller assigns the model
+            // silhouette on add for 3D ops on a mesh; that provenance is
+            // not stored, so the line never claims "(auto)".
+            ui.add(OneLine::new(boundary_summary_line(
+                &entry.boundary,
+                false,
+                models,
+            )));
+            // Source selector
             ui.horizontal(|ui| {
-                ui.label("Outline model:");
-                let current_label = outline_models
-                    .iter()
-                    .find(|(candidate_id, _)| candidate_id.0 == *model_id)
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_else(|| format!("(model id {model_id} not found)"));
-                egui::ComboBox::from_id_salt("boundary_outline_model")
+                ui.label("Source:");
+                egui::ComboBox::from_id_salt("boundary_source")
                     .truncate()
-                    .selected_text(current_label)
+                    .selected_text(entry.boundary.source.label())
                     .show_ui(ui, |ui| {
-                        for (candidate_id, name) in outline_models {
-                            let selected = *model_id == candidate_id.0;
-                            if ui.selectable_label(selected, name.as_str()).clicked() {
-                                *model_id = candidate_id.0;
+                        if ui
+                            .selectable_label(
+                                matches!(entry.boundary.source, BoundarySource::Stock),
+                                "Stock",
+                            )
+                            .on_hover_text("Use the stock bounding rectangle")
+                            .clicked()
+                        {
+                            entry.boundary.source = BoundarySource::Stock;
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(entry.boundary.source, BoundarySource::ModelSilhouette),
+                                "Model Silhouette",
+                            )
+                            .on_hover_text(
+                                "XY projection of the 3D model. Only machines \
+                                 where the model actually is.",
+                            )
+                            .clicked()
+                        {
+                            entry.boundary.source = BoundarySource::ModelSilhouette;
+                        }
+                        if ui
+                            .selectable_label(
+                                matches!(entry.boundary.source, BoundarySource::FaceSelection),
+                                "Face Selection",
+                            )
+                            .on_hover_text("Boundary derived from selected STEP faces")
+                            .clicked()
+                        {
+                            entry.boundary.source = BoundarySource::FaceSelection;
+                        }
+                        let has_outline_models = !outline_models.is_empty();
+                        if ui
+                            .add_enabled(
+                                has_outline_models,
+                                egui::Button::selectable(
+                                    matches!(
+                                        entry.boundary.source,
+                                        BoundarySource::ModelOutline { .. }
+                                    ),
+                                    "Model Outline",
+                                ),
+                            )
+                            .on_hover_text(if has_outline_models {
+                                "Use the closed 2D shapes of a DXF or SVG model as the \
+                                 boundary. The model can be a different model from the \
+                                 one this toolpath cuts. Holes in the shapes stay \
+                                 uncut. Pick the model below."
+                            } else {
+                                "No model in this project has a closed 2D shape. \
+                                 Import a DXF or SVG with closed shapes to use this source."
+                            })
+                            .clicked()
+                        {
+                            // Keep the current pick when the source is already
+                            // an outline; else take the first candidate.
+                            if !matches!(entry.boundary.source, BoundarySource::ModelOutline { .. })
+                                && let Some((first_id, _)) = outline_models.first()
+                            {
+                                entry.boundary.source = BoundarySource::ModelOutline {
+                                    model_id: first_id.0,
+                                    holes: false,
+                                };
                             }
                         }
-                    })
-                    .response
-                    .on_hover_text(
-                        "The model whose closed shapes bound this toolpath. \
-                         The toolpath cuts only inside the shapes and not in \
-                         their holes. Containment and offset below apply to \
-                         the outline.",
-                    );
-            });
-            // The holes option inverts the regions: the toolpath cuts
-            // inside the holes of the shapes and stays off the shapes.
-            ui.checkbox(holes, "Machine the holes").on_hover_text(
-                "The toolpath cuts inside the holes of the shapes, for example \
-                 the area inside an edge band, and stays off the shapes.",
-            );
-        }
-
-        // Rest-regions source-toolpath picker (P2.2) — only shown
-        // when `Source` above is set to `DerivedRestRegions`.
-        // Candidates are every other toolpath in the session;
-        // ones with a cached result whose rest regions are
-        // already non-empty are labelled "(regions ready)" and
-        // sorted first, but a not-yet-generated toolpath is
-        // still selectable — generation fails hard with a clear
-        // message if the source turns out unusable.
-        if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
-            &mut entry.boundary.source
-        {
-            ui.horizontal(|ui| {
-                ui.label("Rest source:");
-                let current_label = boundary_source_candidates
-                    .iter()
-                    .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id)
-                    .map(|(_, name, ready, _, _)| {
-                        if *ready {
-                            format!("{name} (regions ready)")
-                        } else {
-                            name.clone()
+                        let has_rest_candidates = !boundary_source_candidates.is_empty();
+                        if ui
+                            .add_enabled(
+                                has_rest_candidates,
+                                egui::Button::selectable(
+                                    matches!(
+                                        entry.boundary.source,
+                                        BoundarySource::DerivedRestRegions { .. }
+                                    ),
+                                    "Rest Regions",
+                                ),
+                            )
+                            .on_hover_text(if has_rest_candidates {
+                                "Boundary = rest regions computed by another \
+                                 toolpath's rest analysis. Pick the source \
+                                 toolpath below."
+                            } else {
+                                "No other toolpaths in this project yet — add \
+                                 one and generate it to use as the source. Picking it here \
+                                 switches its rest analysis on."
+                            })
+                            .clicked()
+                        {
+                            let default_source = boundary_source_candidates
+                                .first()
+                                .map(|(candidate_id, _, _, _, _)| *candidate_id)
+                                .unwrap_or(entry.id);
+                            entry.boundary.source = BoundarySource::DerivedRestRegions {
+                                source_toolpath_id: default_source,
+                            };
                         }
-                    })
-                    .unwrap_or_else(|| "(toolpath not found)".to_owned());
-                let mut sorted = boundary_source_candidates.to_vec();
-                sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
-                egui::ComboBox::from_id_salt("boundary_rest_source")
-                    .truncate()
-                    .selected_text(current_label)
-                    .show_ui(ui, |ui| {
-                        for (candidate_id, name, ready, _, _) in &sorted {
-                            let label = if *ready {
+                    });
+            });
+
+            // Outline model picker — only shown when `Source` above is
+            // `ModelOutline`. It lists the models with a closed 2D shape.
+            // A stored id that names no such model shows as "not found";
+            // generation then refuses and names the id.
+            if let BoundarySource::ModelOutline { model_id, holes } = &mut entry.boundary.source {
+                ui.horizontal(|ui| {
+                    ui.label("Outline model:");
+                    let current_label = outline_models
+                        .iter()
+                        .find(|(candidate_id, _)| candidate_id.0 == *model_id)
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_else(|| format!("(model id {model_id} not found)"));
+                    egui::ComboBox::from_id_salt("boundary_outline_model")
+                        .truncate()
+                        .selected_text(current_label)
+                        .show_ui(ui, |ui| {
+                            for (candidate_id, name) in outline_models {
+                                let selected = *model_id == candidate_id.0;
+                                if ui.selectable_label(selected, name.as_str()).clicked() {
+                                    *model_id = candidate_id.0;
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The model whose closed shapes bound this toolpath. \
+                             The toolpath cuts only inside the shapes and not in \
+                             their holes. Containment and offset below apply to \
+                             the outline.",
+                        );
+                });
+                // The holes option inverts the regions: the toolpath cuts
+                // inside the holes of the shapes and stays off the shapes.
+                ui.checkbox(holes, "Machine the holes").on_hover_text(
+                    "The toolpath cuts inside the holes of the shapes, for example \
+                     the area inside an edge band, and stays off the shapes.",
+                );
+            }
+
+            // Rest-regions source-toolpath picker (P2.2) — only shown
+            // when `Source` above is set to `DerivedRestRegions`.
+            // Candidates are every other toolpath in the session;
+            // ones with a cached result whose rest regions are
+            // already non-empty are labelled "(regions ready)" and
+            // sorted first, but a not-yet-generated toolpath is
+            // still selectable — generation fails hard with a clear
+            // message if the source turns out unusable.
+            if let BoundarySource::DerivedRestRegions { source_toolpath_id } =
+                &mut entry.boundary.source
+            {
+                ui.horizontal(|ui| {
+                    ui.label("Rest source:");
+                    let current_label = boundary_source_candidates
+                        .iter()
+                        .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id)
+                        .map(|(_, name, ready, _, _)| {
+                            if *ready {
                                 format!("{name} (regions ready)")
                             } else {
                                 name.clone()
-                            };
-                            let selected = *source_toolpath_id == *candidate_id;
-                            if ui.selectable_label(selected, label).clicked() {
-                                *source_toolpath_id = *candidate_id;
                             }
-                        }
+                        })
+                        .unwrap_or_else(|| "(toolpath not found)".to_owned());
+                    let mut sorted = boundary_source_candidates.to_vec();
+                    sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
+                    egui::ComboBox::from_id_salt("boundary_rest_source")
+                        .truncate()
+                        .selected_text(current_label)
+                        .show_ui(ui, |ui| {
+                            for (candidate_id, name, ready, _, _) in &sorted {
+                                let label = if *ready {
+                                    format!("{name} (regions ready)")
+                                } else {
+                                    name.clone()
+                                };
+                                let selected = *source_toolpath_id == *candidate_id;
+                                if ui.selectable_label(selected, label).clicked() {
+                                    *source_toolpath_id = *candidate_id;
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The toolpath whose rest analysis supplies the \
+                             rest regions. ANY operation produces them: picking it here \
+                             switches its analysis on, and the project needs a mesh. The \
+                             pencil rest-depth detector and the Unified Finish claims \
+                             pipeline attach their own.",
+                        );
+                });
+
+                // Sliver-storm / giant-region caption (2026-07-06
+                // incident): the SOURCE toolpath is who suffers the
+                // per-island generation explosion or the "barely
+                // restricts anything" giant-region case, so classify
+                // ITS cached regions (captured in
+                // `boundary_source_candidates` alongside `ready`),
+                // not this consumer's own (this toolpath has none —
+                // it's the one consuming the boundary).
+                //
+                // LH-2: the denominator is the SOURCE toolpath's own
+                // rest-grid footprint (captured alongside its
+                // regions), not this model's bounding rectangle.
+                let selected = boundary_source_candidates
+                    .iter()
+                    .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
+                let selected_regions = selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
+                // `None` twice over: no candidate selected, or the
+                // selected one has no rest grid. Both are "not
+                // measured", and `classify_rest_regions` stays silent.
+                let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
+                if let Some(regions) = selected_regions
+                    && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
+                        regions,
+                        source_footprint_area,
+                    )
+                {
+                    ui.add(rest_region_pathology_line(pathology));
+                }
+            }
+
+            // Containment mode
+            ui.horizontal(|ui| {
+                ui.label("Containment:");
+                egui::ComboBox::from_id_salt("boundary_contain")
+                    .truncate()
+                    .selected_text(match entry.boundary.containment {
+                        BoundaryContainment::Center => "Center",
+                        BoundaryContainment::Inside => "Inside",
+                        BoundaryContainment::Outside => "Outside",
                     })
-                    .response
-                    .on_hover_text(
-                        "The toolpath whose rest analysis supplies the \
-                         rest regions. ANY operation produces them: picking it here \
-                         switches its analysis on, and the project needs a mesh. The \
-                         pencil rest-depth detector and the Unified Finish claims \
-                         pipeline attach their own.",
-                    );
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut entry.boundary.containment,
+                            BoundaryContainment::Center,
+                            "Center",
+                        )
+                        .on_hover_text("Tool center stays inside boundary");
+                        ui.selectable_value(
+                            &mut entry.boundary.containment,
+                            BoundaryContainment::Inside,
+                            "Inside",
+                        )
+                        .on_hover_text(
+                            "Entire tool stays inside boundary (shrinks by tool radius)",
+                        );
+                        ui.selectable_value(
+                            &mut entry.boundary.containment,
+                            BoundaryContainment::Outside,
+                            "Outside",
+                        )
+                        .on_hover_text("Tool edge can extend outside boundary");
+                    });
             });
 
-            // Sliver-storm / giant-region caption (2026-07-06
-            // incident): the SOURCE toolpath is who suffers the
-            // per-island generation explosion or the "barely
-            // restricts anything" giant-region case, so classify
-            // ITS cached regions (captured in
-            // `boundary_source_candidates` alongside `ready`),
-            // not this consumer's own (this toolpath has none —
-            // it's the one consuming the boundary).
-            //
-            // LH-2: the denominator is the SOURCE toolpath's own
-            // rest-grid footprint (captured alongside its
-            // regions), not this model's bounding rectangle.
-            let selected = boundary_source_candidates
-                .iter()
-                .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
-            let selected_regions = selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
-            // `None` twice over: no candidate selected, or the
-            // selected one has no rest grid. Both are "not
-            // measured", and `classify_rest_regions` stays silent.
-            let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
-            if let Some(regions) = selected_regions
-                && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
-                    regions,
-                    source_footprint_area,
+            // Offset
+            ui.horizontal(|ui| {
+                ui.label("Offset:");
+                ui.add(
+                    egui::DragValue::new(&mut entry.boundary.offset)
+                        .speed(0.1)
+                        .suffix(" mm"),
                 )
-            {
-                ui.add(rest_region_pathology_line(pathology));
-            }
+                .on_hover_text(
+                    "Expand (positive) or shrink (negative) the boundary. \
+                     Applied before tool-radius containment.",
+                );
+            });
         }
-
-        // Containment mode
-        ui.horizontal(|ui| {
-            ui.label("Containment:");
-            egui::ComboBox::from_id_salt("boundary_contain")
-                .truncate()
-                .selected_text(match entry.boundary.containment {
-                    BoundaryContainment::Center => "Center",
-                    BoundaryContainment::Inside => "Inside",
-                    BoundaryContainment::Outside => "Outside",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut entry.boundary.containment,
-                        BoundaryContainment::Center,
-                        "Center",
-                    )
-                    .on_hover_text("Tool center stays inside boundary");
-                    ui.selectable_value(
-                        &mut entry.boundary.containment,
-                        BoundaryContainment::Inside,
-                        "Inside",
-                    )
-                    .on_hover_text("Entire tool stays inside boundary (shrinks by tool radius)");
-                    ui.selectable_value(
-                        &mut entry.boundary.containment,
-                        BoundaryContainment::Outside,
-                        "Outside",
-                    )
-                    .on_hover_text("Tool edge can extend outside boundary");
-                });
-        });
-
-        // Offset
-        ui.horizontal(|ui| {
-            ui.label("Offset:");
-            ui.add(
-                egui::DragValue::new(&mut entry.boundary.offset)
-                    .speed(0.1)
-                    .suffix(" mm"),
-            )
-            .on_hover_text(
-                "Expand (positive) or shrink (negative) the boundary. \
-                 Applied before tool-radius containment.",
-            );
-        });
     }
 
     // ── Rest analysis: a demand-titled disclosure ───────────────
@@ -936,7 +940,7 @@ fn draw_geometry_tab(
                 return;
             }
             if entry.stock_source == StockSource::Fresh {
-                // `resolve_rest_reference` prefers the machined stock
+                // `RestReferenceChoice::resolve` prefers the machined stock
                 // whenever it overlaps, so under "After previous ops"
                 // this combo is inert and naming it would be a lie.
                 ui.horizontal(|ui| {
@@ -1033,10 +1037,10 @@ fn draw_geometry_tab(
     // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
     // No grid ⇒ 0.0 ⇒ silence, never a guess.
     if let Some(result) = &entry.result
-        && let Some(regions) = result.annotated.rest_regions.as_ref()
+        && let Some(regions) = result.annotated.produced.rest_regions.as_ref()
         && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
             regions,
-            rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
+            rest_grid_footprint_area(result.annotated.produced.rest_grid.as_deref()),
         )
     {
         ui.add(rest_region_pathology_line(pathology));

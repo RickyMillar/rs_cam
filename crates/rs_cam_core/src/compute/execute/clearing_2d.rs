@@ -17,13 +17,16 @@ use crate::compute::operation_configs::{
     CompensationType, PocketConfig, PocketPattern, ProfileConfig, RegionOrdering, TraceConfig,
 };
 use crate::geo::P2;
+use crate::interrupt::CancelCheck;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, ReachBand, effective_levels, run_layered};
+use super::layered::{
+    LayerCtx, LayeredOp, LevelInfo, LevelRest, ReachBand, effective_levels, run_layered,
+};
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
 use super::standing_material::{LevelSeed, OffGrid, level_masks};
 use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
@@ -177,6 +180,7 @@ struct PocketContour<'a> {
 }
 
 impl LayeredOp for PocketContour<'_> {
+    type Input = Polygon2;
     type Geometry = Vec<Vec<P2>>;
     /// One report per piece. Each cascade adds its offset failures and,
     /// when a bound stopped it (Checkpoint C, Q3, F-10), the area it
@@ -216,9 +220,15 @@ impl LayeredOp for PocketContour<'_> {
         Ok((contours, reports))
     }
 
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _rest: &LevelRest<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
-        crate::ops::pocket::pocket_contours_to_toolpath(
+        Ok(crate::ops::pocket::pocket_contours_to_toolpath(
             geometry,
             &crate::ops::pocket::PocketParams {
                 tool_radius: feeds.tool_radius,
@@ -229,7 +239,7 @@ impl LayeredOp for PocketContour<'_> {
                 safe_z: feeds.safe_z,
                 climb: self.cfg.climb,
             },
-        )
+        ))
     }
 }
 
@@ -248,6 +258,7 @@ struct ZigzagRaster {
 }
 
 impl LayeredOp for ZigzagRaster {
+    type Input = Polygon2;
     type Geometry = Vec<[P2; 2]>;
     type Report = OffsetFailures;
 
@@ -291,9 +302,15 @@ impl LayeredOp for ZigzagRaster {
         Ok((lines, OffsetFailures(failures)))
     }
 
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _rest: &LevelRest<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
-        crate::ops::zigzag::lines_to_toolpath(
+        Ok(crate::ops::zigzag::lines_to_toolpath(
             geometry,
             &crate::ops::zigzag::ZigzagParams {
                 tool_radius: feeds.tool_radius,
@@ -304,7 +321,7 @@ impl LayeredOp for ZigzagRaster {
                 safe_z: feeds.safe_z,
                 angle: self.angle,
             },
-        )
+        ))
     }
 }
 
@@ -317,6 +334,7 @@ struct TracePass<'a> {
 }
 
 impl LayeredOp for TracePass<'_> {
+    type Input = Polygon2;
     type Geometry = Vec<Polygon2>;
     type Report = OffsetFailures;
 
@@ -362,8 +380,18 @@ impl LayeredOp for TracePass<'_> {
         Ok((rings, OffsetFailures(failures)))
     }
 
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
-        crate::ops::trace_path::trace_polygons_at_z(geometry, level.z, &self.params)
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _rest: &LevelRest<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
+        Ok(crate::ops::trace_path::trace_polygons_at_z(
+            geometry,
+            level.z,
+            &self.params,
+        ))
     }
 
     /// One region, and the depth runs inside it as chains (C8).
@@ -393,6 +421,7 @@ struct ProfilePass<'a> {
 }
 
 impl LayeredOp for ProfilePass<'_> {
+    type Input = Polygon2;
     type Geometry = Vec<Vec<P2>>;
     type Report = OffsetFailures;
 
@@ -444,7 +473,13 @@ impl LayeredOp for ProfilePass<'_> {
 
     /// Each contour at `level.z`, climb or conventional. On a level at the
     /// final Z each contour gets its own evenly spaced tabs.
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _rest: &LevelRest<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
         let params = crate::ops::profile::ProfileParams {
             cut_depth: level.z,
             ..self.base
@@ -461,7 +496,7 @@ impl LayeredOp for ProfilePass<'_> {
             };
             tp.moves.extend(pass.moves);
         }
-        tp
+        Ok(tp)
     }
 }
 
@@ -508,6 +543,7 @@ struct FacePass<'a> {
 }
 
 impl LayeredOp for FacePass<'_> {
+    type Input = Polygon2;
     type Geometry = Vec<[P2; 2]>;
     type Report = OffsetFailures;
 
@@ -533,7 +569,10 @@ impl LayeredOp for FacePass<'_> {
     fn outlines<'p>(
         &'p self,
         _prepared: &Prepared<'p>,
-    ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError> {
+    ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError>
+    where
+        Polygon2: 'p,
+    {
         Ok(std::borrow::Cow::Borrowed(std::slice::from_ref(&self.rect)))
     }
 
@@ -559,9 +598,15 @@ impl LayeredOp for FacePass<'_> {
         Ok((lines, OffsetFailures(failures)))
     }
 
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _rest: &LevelRest<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
-        crate::ops::zigzag::lines_to_toolpath(
+        Ok(crate::ops::zigzag::lines_to_toolpath(
             geometry,
             &crate::ops::zigzag::ZigzagParams {
                 tool_radius: feeds.tool_radius,
@@ -572,7 +617,7 @@ impl LayeredOp for FacePass<'_> {
                 safe_z: feeds.safe_z,
                 angle: crate::ops::face::FACE_ANGLE,
             },
-        )
+        ))
     }
 }
 
@@ -585,8 +630,12 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
-    let polys = prepared.polygons()?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    // K3: an area op plans around the obstacles (the territory rule).
+    let polys = prepared.territory().area_outlines(
+        std::borrow::Cow::Borrowed(prepared.polygons()?),
+        levels.iter().copied().fold(f64::INFINITY, f64::min),
+    );
     let cancel_fn = ctx.cancel_fn();
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();
@@ -613,25 +662,18 @@ pub(crate) fn generate_adaptive(
         // G-RESTLEVELS (`RestUse::LevelMask`): one stock read per level of
         // this piece. It skips a level with no material in reach and seeds
         // each other level's planner grid.
-        let seeds = match rest_use {
-            RestUse::LevelMask => {
-                let plan = level_masks(
-                    ctx.initial_stock,
-                    poly,
-                    &levels,
-                    ctx.tool_def.radius(),
-                    &cancel_fn,
-                )?;
-                ctx.record(&plan.finding);
-                plan.levels
-            }
-            RestUse::None
-            | RestUse::LevelClip
-            | RestUse::LevelSkip
-            | RestUse::StockColumn
-            | RestUse::Planner
-            | RestUse::Reference
-            | RestUse::LinkSafetyOnly => vec![LevelSeed::Fresh; levels.len()],
+        let seeds = if rest_use == RestUse::LevelMask {
+            let plan = level_masks(
+                prepared.territory().unguarded_stock(),
+                poly,
+                &levels,
+                ctx.tool_def.radius(),
+                &cancel_fn,
+            )?;
+            ctx.record(&plan.finding);
+            plan.levels
+        } else {
+            vec![LevelSeed::Fresh; levels.len()]
         };
         for ((level_i, &z), seed) in levels.iter().enumerate().zip(seeds) {
             let standing_material = match seed {
@@ -668,7 +710,7 @@ pub(crate) fn generate_adaptive(
             if level_tp.moves.is_empty() {
                 continue;
             }
-            // Inter-level retract (matching toolpath_at_levels behaviour)
+            // Inter-level retract: before each non-empty level but the first
             if level_i > 0 {
                 let offset_before = combined.moves.len();
                 combined.final_retract(safe_z);
@@ -697,13 +739,3 @@ pub(crate) fn generate_adaptive(
         ctx.semantic_ctx,
     ))
 }
-
-// ── Moved-in-crate sentries (WP12) ────────────────────────────────────
-//
-// The three generation entries above are `pub(crate)`, so a test that calls
-// one must live inside the crate. These four modules were integration tests
-// under `crates/rs_cam_core/tests/`. WP12 moved them here unchanged: every
-// assertion, every fixture and every raw pre-dressup expectation is the one
-// the integration file carried. The lint allows are the ones each file's
-// own header carried, because `#[cfg(test)]` exempts none of them by
-// itself. See `IMPLEMENTATION_PLAN.md` §23 ruling 2.

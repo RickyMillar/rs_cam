@@ -40,6 +40,20 @@ pub const STOCK_SOLID_FACE: [f32; 3] = [0.65, 0.50, 0.30];
 /// Collision point marker.
 pub const COLLISION_POINT: [f32; 3] = [1.0, 0.0, 0.0];
 
+// ── Obstacles (K2) ──────────────────────────────────────────────────────
+//
+// The line pipeline has no alpha, so a "faint" line is a darker colour.
+
+/// An obstacle's own geometry (the prism of its outline).
+pub const OBSTACLE: [f32; 3] = [0.9, 0.7, 0.2];
+/// The selected obstacle's geometry.
+pub const OBSTACLE_SELECTED: [f32; 3] = [1.0, 0.9, 0.4];
+/// The clearance ring: the footprint grown by the clearance, at the grown
+/// top. A dim, desaturated form of [`OBSTACLE`].
+pub const OBSTACLE_CLEARANCE: [f32; 3] = [0.5, 0.42, 0.24];
+/// The obstacle plane: the Z the tool crosses an obstacle at.
+pub const OBSTACLE_PLANE: [f32; 3] = [0.85, 0.5, 0.15];
+
 // ── Polygon / 2D geometry ───────────────────────────────────────────────
 
 /// DXF/SVG polygon outline.

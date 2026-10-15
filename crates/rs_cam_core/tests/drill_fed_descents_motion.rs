@@ -120,7 +120,6 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "drill sentry tool".to_owned();

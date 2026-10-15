@@ -76,8 +76,7 @@ pub fn diagnostics_from_preconditions(
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             // The generator drills the live stock pins plus the picked
-            // targets. `cfg.holes` is only a snapshot of the pins, and the
-            // generator overwrites it, so this check does not read it.
+            // targets, so this check reads the same two inputs.
             let has_picks = cfg.selected_holes.as_ref().is_some_and(|p| !p.is_empty());
             let has_pins_of_size = ctx
                 .stock_alignment_pin_diameters
@@ -213,11 +212,8 @@ mod tests {
         OperationConfig::ProjectCurve(ProjectCurveConfig::default())
     }
 
-    fn alignment_pin_drill_op(holes: Vec<[f64; 2]>) -> OperationConfig {
-        OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
-            holes,
-            ..AlignmentPinDrillConfig::default()
-        })
+    fn alignment_pin_drill_op() -> OperationConfig {
+        OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
     }
 
     #[test]
@@ -316,8 +312,7 @@ mod tests {
     #[test]
     fn alignment_pin_drill_no_holes_fires_without_stock_pins_or_picks() {
         let ctx = PreconditionContext::default();
-        let diags =
-            diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(vec![]), &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(
             diags[0].id.as_str(),
@@ -326,31 +321,16 @@ mod tests {
         assert_eq!(diags[0].severity, Severity::Blocking);
     }
 
-    /// The live case: two pins on the stock and an empty `holes` snapshot.
-    /// The generator drills the two stock pins, so the check stays silent.
+    /// The live case: two pins on the stock. The generator drills the two
+    /// stock pins, so the check stays silent.
     #[test]
-    fn alignment_pin_drill_silent_with_stock_pins_and_empty_holes() {
+    fn alignment_pin_drill_silent_with_stock_pins() {
         let ctx = PreconditionContext {
             stock_alignment_pin_diameters: vec![6.0, 6.0],
             ..Default::default()
         };
-        let diags =
-            diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(vec![]), &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
         assert!(diags.is_empty(), "got {diags:?}");
-    }
-
-    /// A stale `holes` snapshot does not count. The generator replaces it
-    /// with the live stock pins, and the stock has none.
-    #[test]
-    fn alignment_pin_drill_fires_on_a_stale_snapshot_without_stock_pins() {
-        let ctx = PreconditionContext::default();
-        let op = alignment_pin_drill_op(vec![[0.0, 0.0], [10.0, 10.0]]);
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &op, &ctx);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(
-            diags[0].id.as_str(),
-            ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES
-        );
     }
 
     #[test]

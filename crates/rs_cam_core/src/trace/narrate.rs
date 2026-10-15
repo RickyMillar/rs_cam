@@ -241,9 +241,13 @@ pub fn is_drill_cycle_for_narration(
             | MoveIntent::EntryRamp
             | MoveIntent::LeadIn
             | MoveIntent::LeadOut => return false,
-            // Plunges, links, retracts and unlabelled moves say nothing
-            // either way.
-            _ => {}
+            // Plunges, links, retracts, obstacle clearances and unlabelled
+            // moves say nothing either way.
+            MoveIntent::EntryPlunge
+            | MoveIntent::Linking
+            | MoveIntent::Retract
+            | MoveIntent::ObstacleClearance
+            | MoveIntent::Unknown => {}
         }
     }
     drilled
@@ -297,12 +301,12 @@ impl<'a> ToolpathNarrationContext<'a> {
 
             // NOT rendered by narration. Deliberate, and listed so the
             // omission is a decision on the record rather than an oversight:
-            //  - deprecated_dial:   surfaced as a load/diagnostic notice
             //  - derived_stepovers: an audit trail, not a part measurement
             //  - claims_reference:  surfaced by `get_toolpath_params.runtime`
-            deprecated_dial: _,
             derived_stepovers: _,
             claims_reference: _,
+            //  - buried_curve:      surfaced as a diagnostic (W6.5, Info)
+            buried_curve: _,
             //  - stock_snapshot:    S-4 provenance, not a part measurement.
             //    It answers "were these two generations handed the same
             //    stock", which is a question about a COMPARISON, not about
@@ -313,9 +317,12 @@ impl<'a> ToolpathNarrationContext<'a> {
             //  - source_stock:      G-RESTRES provenance, the same rule as
             //    `stock_snapshot`. The wires publish it.
             source_stock: _,
+            //  - planned_cycle_time_s: read by the rest-against-fresh
+            //    comparison, not a part measurement.
+            planned_cycle_time_s: _,
             //  - region_cap (F3):   surfaced as a diagnostic notice
             //    (`geom.region_cap_truncated`), on the same rule as
-            //    `deprecated_dial`. It is a statement about the rest-region
+            //    `zero_removal`. It is a statement about the rest-region
             //    ARTIFACTS a downstream boundary consumer will read, not
             //    about the moves this narration walks — and the healthy case
             //    is a line on every rest-analysis toolpath saying nothing
@@ -1070,8 +1077,9 @@ fn append_untouched_standing_split(
 /// the point: a reader must never infer "clean" from a line that is absent
 /// because nothing looked.
 fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    let plans_bands = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().plans_bands);
     match context.dropped_band {
         Some(f) => {
             output.push_str(&format!(
@@ -1225,8 +1233,9 @@ fn append_inert_claims_dial(
 /// worst-case lift DEPTH with no extent could mean one stray point or half
 /// the part and nothing said which.
 fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let ramps = matches!(context.operation_kind, Some(OperationType::RampFinish));
+    let ramps = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().ramp_descent);
     match context.ramp_reach_clamp {
         Some(f) if !f.is_inert() => {
             let area = match f.lifted_area() {
@@ -1280,8 +1289,9 @@ fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationConte
 /// operation that plans bands, and an explicit "not measured" on one that
 /// does not. Absence of a number is never a zero.
 fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    let plans_bands = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().plans_bands);
     match context.clipped_band {
         Some(f) => {
             output.push_str(&format!("Partly machined band: {}\n", f.message()));
@@ -1404,8 +1414,9 @@ fn append_relink_totals(
     let Some(r) = relink else {
         return;
     };
-    // Which hookup dial tunes this op's link stage. Four families write
-    // `ToolpathStats::relink` and each spells its dial differently, so one
+    // Which hookup dial tunes this op's link stage. Five families write
+    // `ToolpathStats::relink` (Project Curve since D2) and each spells its
+    // dial differently, so one
     // name for all sends three quarters of the readers to a field their op
     // does not have. The registry row states the dial
     // (`Capabilities::relink_dial`, W2.4). With no kind in scope the line

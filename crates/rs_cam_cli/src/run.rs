@@ -268,7 +268,7 @@ fn print_params(op_type: OperationType) {
 
 // ── Parsing helpers ───────────────────────────────────────────────
 
-fn parse_op_type(token: &str) -> Result<OperationType> {
+pub(crate) fn parse_op_type(token: &str) -> Result<OperationType> {
     OperationType::ALL
         .iter()
         .copied()

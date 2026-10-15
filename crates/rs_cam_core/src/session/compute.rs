@@ -61,6 +61,11 @@ pub struct ResolvedGenInputs {
     /// `selected_holes`, the generator maps them into the emission frame.
     drill_targets: Arc<Vec<crate::io::dxf_input::DrillTarget>>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
+    /// K1: the setup's obstacles, in the emission frame. Every op reads
+    /// them; the boundary does not gate them.
+    obstacles: Arc<crate::compute::obstacle::ObstacleSet>,
+    /// K1: [`Self::obstacles`] for this generation's tool.
+    obstacle_view: Arc<crate::compute::obstacle::ObstacleToolView>,
     boundary_config: crate::compute::config::BoundaryConfig,
     emission_stock_bbox: BoundingBox3,
     heights: crate::compute::config::ResolvedHeights,
@@ -81,13 +86,17 @@ pub struct ResolvedGenInputs {
     /// no tool list).
     reference_tool_cfg: Option<ToolConfig>,
     operation: crate::compute::OperationConfig,
+    /// W6.5 (C7): the stock alignment pins, stock-relative. The Alignment
+    /// Pin Drill reads the pins of its diameter through
+    /// `ExecutionContext::alignment_pins`; no config copy carries them.
+    alignment_pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
     pre_boundary: Option<crate::polygon::Polygon2>,
     /// P2.3: the per-region processed polygon set for a `DerivedRestRegions`
     /// boundary — the same set [`ProjectSession::apply_boundary_clip_multi`]
     /// re-derives for its post-generation clip (keep-outs subtracted, user
     /// offset applied, but NOT yet tool-radius inset). Resolved once here
     /// alongside `pre_boundary`'s union attempt and shared with the
-    /// mesh-finish family's pre-clip via `ExecutionContext::boundary_regions`
+    /// mesh-finish family's pre-clip via `TerritoryInputs::regions`
     /// — never re-derived just for this field. `PlannedTierRegions` and
     /// `ModelOutline` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
@@ -125,6 +134,9 @@ impl ResolvedGenInputs {
     ///
     /// An offset that fails yields no polygon for that region; the clip
     /// refuses the generation on the same failure.
+    ///
+    /// K3: the obstacles are not in it. The territory resolver
+    /// (`compute::execute::territory`) subtracts them, for every op.
     fn boundary_centre(&self) -> Option<Vec<crate::polygon::Polygon2>> {
         use crate::geometry::boundary::{ToolContainment, effective_boundary};
         if !self.boundary_config.enabled {
@@ -178,13 +190,14 @@ impl ResolvedGenInputs {
 /// recorder label, a dressup configuration and a post-clip region set
 /// are not executor inputs.
 ///
-/// **Five fields read the RAW operation, not the patched one.**
 /// `op_label`, `entry_probe_leave`, `feed_rate`, `plunge_rate` and
-/// `transform_capabilities` come from `ToolpathConfig::operation`, while
-/// the executor, the drill-op builder and the empty-generation gate read
-/// [`ResolvedGenInputs`]'s compute-time-patched copy. The tail made that
-/// split before WP10 split the function; reading these off the patched
-/// copy would change the answer.
+/// `transform_capabilities` come from `ToolpathConfig::operation`. Since
+/// W6.5 no session code patches the operation, so [`ResolvedGenInputs`]
+/// holds the same value.
+///
+/// `Clone`: the fresh twin of a rest generation reads a copy with
+/// `StockSource::Fresh` ([`fresh_twin_cycle_time`]).
+#[derive(Clone)]
 pub struct GenContext {
     /// `ToolpathConfig::name`. The recorder labels and the
     /// empty-generation refusal name the toolpath the operator sees.
@@ -221,13 +234,17 @@ pub struct GenContext {
     ramp_feed_rate: Option<f64>,
     /// The RAW operation's transform capabilities.
     transform_capabilities: crate::compute::catalog::OperationTransformCapabilities,
+    /// The RAW operation's XY territory rule. D2: the boundary clip of
+    /// `clip_and_split_entries` reads `session_clip_applies`.
+    territory_xy: crate::compute::catalog::TerritoryXy,
     /// The simulated machined-stock snapshot this toolpath's id names,
     /// read from `self.simulation.prior_stocks`.
     ///
-    /// S-4 (G-BYTE): this is the snapshot the generation CONSUMES in the
-    /// broadest true sense. `stock_source` gates the generator seed and
-    /// the entry-descent split, but the dressup air-cut filter reads the
-    /// same snapshot ungated. `None` means no machined stock at all.
+    /// B19: the capture reads `StockSource::reads_machined_stock`, so a
+    /// `Fresh` operation always holds `None` here. Every stage that reads
+    /// the machined stock reads this one field: the generator seed, the
+    /// entry-descent split, the entry replay, the air-cut filter and the
+    /// result stamp. `None` means no machined stock at all.
     prior_stock: Option<Arc<crate::dexel_stock::TriDexelStock>>,
     /// G-RESTRES: how `prior_stock` was made, for a `FromRemainingStock`
     /// operation. The result records it, and the session compares it with
@@ -256,15 +273,14 @@ pub struct GenContext {
 impl GenContext {
     /// The machined stock the GENERATOR is seeded with.
     ///
-    /// `stock_source` gates it: a `Fresh` operation starts from the board
-    /// whatever snapshot the simulation left. That is a narrower question
-    /// than [`Self::prior_stock`], which the dressup air-cut filter reads
-    /// ungated.
+    /// B19: the same predicate as the capture of [`Self::prior_stock`]
+    /// (`StockSource::reads_machined_stock`), so the generator and the
+    /// dressups cannot read two different stocks. A `Fresh` operation
+    /// starts from the board whatever snapshot the simulation left.
     fn generator_seed_stock(&self) -> Option<&crate::dexel_stock::TriDexelStock> {
-        match self.stock_source {
-            crate::session::StockSource::FromRemainingStock => self.prior_stock.as_deref(),
-            crate::session::StockSource::Fresh => None,
-        }
+        self.prior_stock
+            .as_deref()
+            .filter(|_| self.stock_source.reads_machined_stock())
     }
 }
 
@@ -498,9 +514,9 @@ impl<'a> GenObserver<'a> {
 /// nothing: the answer goes back to the session through step (iii),
 /// `apply(Command::AdoptResult { .. })`.
 ///
-/// SES-04: the body is four ordered calls on [`JobPhases`], one per phase
-/// the observer already names — the operation label, `Apply dressups`,
-/// `Clip to boundary` and `Compute stats`. Only the recorder lifecycle
+/// SES-04: the body calls [`JobPhases::run_stages`] (the operation label,
+/// `Apply dressups`, `Clip to boundary`) and then `finish` (`Compute
+/// stats`), the phases the observer already names. Only the recorder lifecycle
 /// and the refusal doors stay here, because each of them chooses what to
 /// do with the two traces.
 ///
@@ -547,8 +563,8 @@ pub fn execute_job(
         semantic_root: &semantic_root,
     };
 
-    let (annotated, mut findings) = match phases.generate(cancel) {
-        Ok(generated) => generated,
+    let (annotated, findings) = match phases.run_stages(cancel, &semantic_recorder) {
+        Ok(staged) => staged,
         Err(e) => {
             let _ = debug_recorder.finish();
             let _ = semantic_recorder.finish();
@@ -557,33 +573,100 @@ pub fn execute_job(
         }
     };
 
-    // C1: the index-carrying channels this call site owns. The session
-    // produces a semantic trace, so its recorder is registered here once
-    // and every transform below reconciles against it — dressups, the
-    // boundary clip and the entry-descent split alike.
-    let mut channels =
-        crate::trace::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+    // Operator ruling 2026-10-15: a rest operation keeps its planned cycle
+    // time for the on-demand comparison with its fresh twin. One
+    // integrator pass; the twin itself is generated only on request.
+    let planned_cycle_time_s = (context.stock_source
+        == crate::session::StockSource::FromRemainingStock)
+        .then_some(context.link_kinematics.as_ref())
+        .flatten()
+        .map(|link| {
+            crate::machine::kinematics::compute_cycle_time(
+                &annotated.toolpath,
+                &link.kinematics,
+                link.max_feed_mm_min,
+                link.rapid_feed_mm_min,
+            )
+        });
 
-    let annotated = phases.apply_dressups(annotated, &mut channels);
-    // Checkpoint C (Q2): the boundary clip can add a finding of its own,
-    // so the findings stay mutable until the join in `finish`.
-    //
-    // A refused clip propagates with the phase string still set and both
-    // recorders dropped unread, which is what this door did before the
-    // split.
-    let annotated = phases.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
+    // `run_stages` held the channels that borrow `semantic_recorder`;
+    // that borrow ended when it returned, so `finish` may consume it.
+    phases.finish(
+        annotated,
+        findings,
+        debug_recorder,
+        semantic_recorder,
+        planned_cycle_time_s,
+    )
+}
 
-    // `channels` borrows `semantic_recorder`, which `finish` consumes. The
-    // borrow ends at the line above, so no explicit drop is needed —
-    // `ReconcileSet` implements no `Drop` and `drop_non_drop` refuses one.
-    phases.finish(annotated, findings, debug_recorder, semantic_recorder)
+/// The fresh twin of a rest generation (operator ruling 2026-10-15): the
+/// cycle time (s) the same operation takes with `StockSource::Fresh`.
+///
+/// It runs the same four phases as [`execute_job`] on a copy of the
+/// context with `StockSource::Fresh` and no machined-stock snapshot: the
+/// generator, the dressups, the boundary clip and the entry split, as a
+/// fresh op on the board generates them. The time is the integrator the
+/// simulator uses
+/// (`machine::kinematics::compute_cycle_time` over
+/// `MachineProfile::link_kinematics`), on the commanded feeds.
+///
+/// **Cost.** One more generation of the operation, so it runs only on
+/// request ([`ProjectSession::compare_rest_with_fresh`]): a rest generator
+/// never plans the fresh motion it leaves out.
+///
+/// `None` for a `Fresh` operation, a context with no machine envelope, and
+/// a twin that fails, is cancelled or comes out empty. The twin's traces
+/// are dropped.
+pub(crate) fn fresh_twin_cycle_time(
+    handle: &GenerateToolpathHandle,
+    observer: &GenObserver<'_>,
+    cancel: &AtomicBool,
+) -> Option<f64> {
+    if handle.context.stock_source != crate::session::StockSource::FromRemainingStock {
+        return None;
+    }
+    let link = handle.context.link_kinematics.as_ref()?;
+    // Fresh stock is the board: no machined-stock snapshot at all (B19,
+    // the capture rule of `GenContext::prior_stock`), so the air-cut filter
+    // does not drop the motion over material an earlier op removed.
+    let context = GenContext {
+        stock_source: crate::session::StockSource::Fresh,
+        prior_stock: None,
+        source_stock: None,
+        ..handle.context.clone()
+    };
+    let debug_recorder =
+        ToolpathDebugRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let semantic_recorder =
+        ToolpathSemanticRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let debug_root = debug_recorder.root_context();
+    let semantic_root = semantic_recorder.root_context();
+    let phases = JobPhases {
+        inputs: &handle.inputs,
+        context: &context,
+        observer,
+        gen_initial_stock: context.generator_seed_stock(),
+        debug_root: &debug_root,
+        semantic_root: &semantic_root,
+    };
+    let (annotated, _) = phases.run_stages(cancel, &semantic_recorder).ok()?;
+    if annotated.toolpath.moves.is_empty() {
+        return None;
+    }
+    Some(crate::machine::kinematics::compute_cycle_time(
+        &annotated.toolpath,
+        &link.kinematics,
+        link.max_feed_mm_min,
+        link.rapid_feed_mm_min,
+    ))
 }
 
 /// The per-job state the four [`execute_job`] phases share (SES-04).
 ///
 /// It carries no output. Each phase takes the running toolpath and hands
-/// it back, so the phase order is the order of the four calls in
-/// [`execute_job`] and nothing else.
+/// it back, so the phase order is the order of the calls in
+/// [`JobPhases::run_stages`] and then `finish`, and nothing else.
 struct JobPhases<'a, 'o> {
     inputs: &'a ResolvedGenInputs,
     context: &'a GenContext,
@@ -602,6 +685,36 @@ impl JobPhases<'_, '_> {
     ///
     /// The phase string is the operation label, which is the first of the
     /// four seams `execute_job`'s doc names.
+    /// The stages of one generation up to `finish`, in order: the
+    /// dispatch (with the generic rest analysis, `generate`), the dressups,
+    /// then the boundary clip and the entry split. The ONE call site of
+    /// each stage; [`execute_job`] and [`fresh_twin_cycle_time`] both call
+    /// this.
+    ///
+    /// C1: the index-carrying channels are built here. The session
+    /// produces a semantic trace, so its recorder is registered once and
+    /// every transform reconciles against it. Checkpoint C (Q2): the
+    /// boundary clip can add a finding of its own, so the findings stay
+    /// mutable until the join in `finish`.
+    fn run_stages(
+        &self,
+        cancel: &AtomicBool,
+        semantic_recorder: &ToolpathSemanticRecorder,
+    ) -> Result<
+        (
+            crate::compute::execute::GeneratedToolpath,
+            crate::compute::execute::GenerationFindings,
+        ),
+        SessionError,
+    > {
+        let (annotated, mut findings) = self.generate(cancel)?;
+        let mut channels =
+            crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
+        let annotated = self.apply_dressups(annotated, &mut channels);
+        let annotated = self.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
+        Ok((annotated, findings))
+    }
+
     fn generate(
         &self,
         cancel: &AtomicBool,
@@ -747,6 +860,7 @@ impl JobPhases<'_, '_> {
                 safe_z: self.inputs.heights.retract_z,
                 stock_top: self.inputs.emission_stock_bbox.max.z,
                 prior_stock: prior_stock_ref,
+                link_kinematics: self.context.link_kinematics.as_ref(),
                 feed_opt_stock: feed_opt_stock.as_mut(),
                 cutter: Some(&self.inputs.tool_def as &dyn crate::tool::MillingCutter),
                 entry_surface,
@@ -786,8 +900,9 @@ impl JobPhases<'_, '_> {
         // After dressups, clip the toolpath to the machining boundary
         // (matching the GUI compute path). Spans are precisely
         // remapped through the clip via the input→output provenance
-        // map (S83) so spans_valid stays true.
-        if self.inputs.boundary_config.enabled {
+        // map (S83) so spans_valid stays true. D2: an op whose territory
+        // rule is `SetupMap` (Pin Drill) is never clipped.
+        if self.inputs.boundary_config.enabled && self.context.territory_xy.session_clip_applies() {
             self.observer.set_phase("Clip to boundary");
             let _boundary_scope = self.observer.records_dressup_items().then(|| {
                 self.debug_root
@@ -849,6 +964,29 @@ impl JobPhases<'_, '_> {
             };
         }
 
+        // ── K1: the obstacle step ─────────────────────────────
+        // For EVERY op, with no opt-in and with the boundary on or off: a
+        // move that would put the tool (cutter, shank or holder) inside an
+        // obstacle is split; the tool goes up to the obstacle plane,
+        // across, and back down. The shared clip walk does the split. It
+        // runs after the boundary clip, so a boundary re-entry descent is
+        // checked too, and before the entry-descent split, which reads the
+        // final descents.
+        if !self.inputs.obstacles.is_empty() {
+            let _obstacle_scope = self.observer.records_dressup_items().then(|| {
+                self.debug_root
+                    .start_span("obstacle_clip", "Keep out of obstacles")
+            });
+            annotated = crate::compute::obstacle::clip_annotated_to_obstacles(
+                annotated,
+                &self.inputs.obstacle_view,
+                self.inputs.heights.retract_z,
+                Some(self.context.plunge_rate),
+            )
+            .reconcile(channels)
+            .into_inner();
+        }
+
         // ── Entry-descent optimization ────────────────────────
         // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
         // by rapiding down to just above the INPUT STOCK's material
@@ -903,10 +1041,26 @@ impl JobPhases<'_, '_> {
             &self.inputs.tool_def,
             rest_entry_ramp.as_ref(),
         );
-        Ok(transformed.reconcile(channels).into_inner())
+        let annotated = transformed.reconcile(channels).into_inner();
+        // K1 backstop: the split above can turn a descent into a ramp
+        // (G-ISOCLIPENTRY), which moves in XY. The obstacle step runs once
+        // more; it changes nothing when every move already keeps out.
+        if self.inputs.obstacles.is_empty() {
+            return Ok(annotated);
+        }
+        Ok(crate::compute::obstacle::clip_annotated_to_obstacles(
+            annotated,
+            &self.inputs.obstacle_view,
+            self.inputs.heights.retract_z,
+            Some(self.context.plunge_rate),
+        )
+        .reconcile(channels)
+        .into_inner())
     }
 
     /// Phase 4 — the empty gate, then the stats and the result.
+    /// `planned_cycle_time_s` is a rest operation's planned cycle time; the
+    /// stats carry it.
     ///
     /// It consumes both recorders, so it is the last phase by
     /// construction: nothing can record after the traces are read.
@@ -921,6 +1075,7 @@ impl JobPhases<'_, '_> {
         findings: crate::compute::execute::GenerationFindings,
         debug_recorder: ToolpathDebugRecorder,
         semantic_recorder: ToolpathSemanticRecorder,
+        planned_cycle_time_s: Option<f64>,
     ) -> Result<ToolpathComputeResult, SessionError> {
         // ── G-ENTRYEMPTY: the empty-generation gate ───────────
         // The pipeline is finished; `annotated` is exactly what
@@ -1000,14 +1155,11 @@ impl JobPhases<'_, '_> {
         // having exactly four. The rapid distance and the
         // `compute_retract_trips` arguments were already identical.
         // S-4 (G-BYTE): stamp the machined-stock snapshot THIS
-        // generation consumed. `context.prior_stock` — not
-        // `gen_initial_stock` — is deliberately the subject: the
-        // source-gated `gen_initial_stock` seeds the generator and
-        // the entry-descent split, but the same `Arc` also reaches
-        // the dressup air-cut filter ungated, so it is the snapshot
-        // this generation consumed in the broadest true sense.
-        // `None` therefore means no machined stock was consumed at
-        // all, which is what the field documents.
+        // generation consumed: `context.prior_stock`, the one capture
+        // every stage reads. B19: a `Fresh` operation captures none, so
+        // its result records no snapshot dependency. `None` means no
+        // machined stock was consumed at all, which is what the field
+        // documents.
         let stats = crate::compute::stats::stats_with_findings(
             &annotated.toolpath,
             annotated.spans_valid.then_some(annotated.spans.as_slice()),
@@ -1017,6 +1169,7 @@ impl JobPhases<'_, '_> {
                 .as_deref()
                 .map(crate::compute::toolpath_stats::StockSnapshotStamp::of),
             self.context.source_stock.clone(),
+            planned_cycle_time_s,
         );
 
         let mut debug_trace = debug_recorder.finish();
@@ -1031,6 +1184,7 @@ impl JobPhases<'_, '_> {
         let drill_op = crate::compute::execute::build_drill_op_for_config(
             &self.inputs.operation,
             &self.inputs.drill_targets,
+            &self.inputs.alignment_pins,
             &self.inputs.tool_def,
             &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
@@ -1089,8 +1243,8 @@ pub fn execute_generation(
 > {
     // P2.3: `pre_boundary_regions` (resolved once, by the submit step,
     // alongside `pre_boundary`) reaches the mesh-finish family's pre-clip
-    // through `ExecutionContext::boundary_regions`. The advisor's probe
-    // below leaves that field at its constructor default, `None`.
+    // through `ExecutionContext::territory_inputs`. The advisor's probe
+    // below sets only the boundary outline there.
     let seed_stock = context.generator_seed_stock();
     let regions = inputs
         .pre_boundary_regions
@@ -1103,14 +1257,17 @@ pub fn execute_generation(
         index: inputs.spatial_index(),
         polygons: inputs.polygons.as_deref().map(|v| v.as_slice()),
         drill_targets: &inputs.drill_targets,
+        alignment_pins: &inputs.alignment_pins,
         setup_transform: inputs.setup_transform.as_ref(),
         reference_tool_cfg: inputs.reference_tool_cfg.clone(),
         debug_ctx: observer.debug_ctx(),
-        initial_stock: seed_stock,
         semantic_ctx: observer.semantic_ctx(),
-        boundary: inputs.pre_boundary.as_ref(),
-        boundary_regions: regions.as_ref(),
-        boundary_centre: boundary_centre.as_deref(),
+        territory_inputs: crate::compute::execute::TerritoryInputs::default()
+            .stock(seed_stock)
+            .boundary(inputs.pre_boundary.as_ref())
+            .regions(regions.as_ref())
+            .centre(boundary_centre.as_deref()),
+        obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
         segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),
@@ -1289,16 +1446,34 @@ impl RecommendClearingStrategyHandle {
 
     /// Whether the operation carries a clearing strategy at all.
     ///
-    /// Only `Adaptive3d` does. A caller that wants to know before it pays
-    /// for the ranking reads this; [`execute_recommend_clearing_strategy`]
-    /// answers `Ok(None)` for every other operation.
+    /// The op's `clearing_strategy_dial` capability answers (C2). A caller
+    /// that wants to know before it pays for the ranking reads this;
+    /// [`execute_recommend_clearing_strategy`] answers `Ok(None)` for every
+    /// other operation.
     #[must_use]
     pub(crate) fn has_clearing_strategy(&self) -> bool {
-        matches!(
-            self.inputs.operation,
-            crate::compute::OperationConfig::Adaptive3d(_)
-        )
+        self.inputs
+            .operation
+            .capabilities()
+            .clearing_strategy_dial
+            .is_some()
     }
+}
+
+/// A copy of `op` with `strategy` written to its clearing-strategy dial
+/// (C2). The dial is the config field that the op's
+/// `clearing_strategy_dial` capability names. The write is a serde round
+/// trip, the same one `set_toolpath_param` uses. `None` when the op has no
+/// dial or the round trip fails.
+fn with_clearing_strategy(
+    op: &crate::compute::OperationConfig,
+    strategy: ClearingStrategy,
+) -> Option<crate::compute::OperationConfig> {
+    let dial = op.capabilities().clearing_strategy_dial?;
+    let mut json = serde_json::to_value(op).ok()?;
+    let params = json.get_mut("params")?.as_object_mut()?;
+    let _ = params.insert(dial.to_owned(), serde_json::to_value(strategy).ok()?);
+    serde_json::from_value(json).ok()
 }
 
 /// Rank the clearing strategies from a handle — step (ii) of the
@@ -1355,10 +1530,9 @@ pub fn execute_recommend_clearing_strategy(
             break;
         }
         // Override the clearing strategy on a clone of the resolved op.
-        let mut op = resolved.operation.clone();
-        if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
-            cfg.clearing_strategy = strategy;
-        }
+        let Some(op) = with_clearing_strategy(&resolved.operation, strategy) else {
+            continue;
+        };
         // Back the params off to the load limit via Suggest.
         let suggested = crate::feeds::suggest::suggest_for_operation(
             crate::feeds::suggest::SuggestForOperationInput {
@@ -1407,7 +1581,8 @@ pub fn execute_recommend_clearing_strategy(
             mesh: resolved.mesh.as_deref(),
             index: resolved.spatial_index(),
             polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-            boundary: resolved.pre_boundary.as_ref(),
+            territory_inputs: crate::compute::execute::TerritoryInputs::default()
+                .boundary(resolved.pre_boundary.as_ref()),
             // Everything else stays at the constructor default. The probe
             // records no trace, seeds no stock, resolves no reference tool
             // (it plans clearing ops only, never pencil) and discards its
@@ -1655,29 +1830,15 @@ fn modulate_annotated_against_trace(
     // faster. Per move we take `max(sim, planner)` so any genuine
     // spike the simulator *does* resolve still wins — never feeding
     // above the higher of the two estimates. Gated strictly to the
-    // ContourSpiral strategy: the Agent / AgentSearch path has real
+    // ContourSpiral strategy (`planner_uniform_engagement`): the
+    // Agent / AgentSearch path has real
     // ~2.5× target engagement spikes that a planner floor would
     // dangerously over-feed. See
     // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
-    let is_contour_spiral = matches!(
-        operation,
-        crate::compute::OperationConfig::Adaptive3d(c)
-            if matches!(
-                c.clearing_strategy,
-                crate::compute::operation_configs::ClearingStrategy::ContourSpiral
-            )
-    ) || matches!(
-        operation,
-        crate::compute::OperationConfig::Adaptive(c)
-            if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
-    );
+    // C2: the `planner_uniform_engagement` capability states the gate.
+    let is_contour_spiral = operation.capabilities().planner_uniform_engagement;
     let planner_uniform_woc: Option<f64> = if is_contour_spiral {
-        let stepover = match operation {
-            crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
-            crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
-            _ => None,
-        };
-        stepover.and_then(|s| {
+        operation.as_params().stepover().and_then(|s| {
             let r = tool_cfg.diameter * 0.5;
             (r > 0.0 && s > 0.0).then(|| {
                 let f = crate::ops::adaptive_shared::target_engagement_fraction(s, r);
@@ -1697,8 +1858,9 @@ fn modulate_annotated_against_trace(
         )
     };
     let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
-        if is_contour_spiral && !annotated.planner_engagement.is_empty() {
+        if is_contour_spiral && !annotated.produced.planner_engagement.is_empty() {
             annotated
+                .produced
                 .planner_engagement
                 .iter()
                 .map(|(p, f)| (pos_key(p), *f))
@@ -2065,6 +2227,7 @@ fn simulate_candidate_isolated(
         name: context.toolpath_name.clone(),
         annotated,
         tool: tool_def,
+        tool_id: tool_cfg.id,
         flute_count,
         tool_summary,
         semantic_trace: None,
@@ -2084,6 +2247,9 @@ fn simulate_candidate_isolated(
         local_to_global: setup_ctx.local_to_global.clone(),
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        // K1: this run captures the engagement for the feed modulation
+        // only. The project simulation checks the obstacles.
+        obstacles: Ok(Arc::default()),
     }];
     let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
     // Deviation (model_mesh) is not needed for engagement capture;
@@ -2225,37 +2391,42 @@ impl ProjectSession {
             }
         }
 
+        self.capture_generate_handle(index, cancel)
+    }
+
+    /// Steps 3 to 5 of [`Self::start_generate_toolpath`]: resolve the
+    /// inputs, capture the context, stamp the revision. It reads the
+    /// session only, so the on-demand fresh twin
+    /// ([`Self::compare_rest_with_fresh`]) builds its handle here too and
+    /// keeps the stored result.
+    pub(crate) fn capture_generate_handle(
+        &self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<GenerateToolpathHandle, SessionError> {
         let inputs = self.resolve_generation_inputs(index, cancel)?;
 
         // Re-borrow the config for the recorder labels and for every dial
         // the generation tail reads. The resolved bundle owns everything
         // else; this borrow touches only `self.toolpath_configs`.
         //
-        // The five operation dials below come from the RAW `tc.operation`,
-        // never from `inputs.operation`, which the resolver patches at
-        // compute time. The monolith read them this way, and reading them
-        // off the patched copy would change the answer.
+        // The five operation dials below come from `tc.operation`. The
+        // resolver patches no config copy since W6.5, so it equals
+        // `inputs.operation`.
         let tc = self
             .toolpath_configs
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
-        // G-RESTSTALE: a snapshot that is not current is not read at all,
-        // by the generator or by the air-cut filter.
-        let current_snapshot = self.snapshot_is_current(tc.id).is_ok();
-        let prior_stock = self
-            .simulation
-            .as_ref()
-            .filter(|_| current_snapshot)
-            .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
-        let source_stock = self
-            .simulation
-            .as_ref()
-            .filter(|_| {
-                current_snapshot
-                    && tc.stock_source == crate::session::StockSource::FromRemainingStock
-            })
-            .and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
+        // B19: only an op that reads the machined stock captures a snapshot.
+        // A `Fresh` op reads only the board, so no stage of its generation
+        // sees the session history. G-RESTSTALE: a snapshot that is not
+        // current is not read at all.
+        let reads_snapshot =
+            tc.stock_source.reads_machined_stock() && self.snapshot_is_current(tc.id).is_ok();
+        let simulation = self.simulation.as_ref().filter(|_| reads_snapshot);
+        let prior_stock = simulation.and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+        let source_stock = simulation.and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
 
         // P1 W4a: the link stage's surface-link-vs-retract decision costs
         // candidates against the real machine envelope. The one builder;
@@ -2346,6 +2517,7 @@ impl ProjectSession {
             // G-RAMPCLAMP: the entry never runs faster than the cut feed.
             ramp_feed_rate: tc.operation.entry_feed_rate(),
             transform_capabilities: tc.operation.capabilities().transform,
+            territory_xy: tc.operation.capabilities().territory_xy,
             prior_stock,
             source_stock,
             link_kinematics,

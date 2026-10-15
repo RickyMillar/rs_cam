@@ -58,7 +58,10 @@
 //! `invalidate_toolpath_inputs` and `replace_setups_and_toolpaths`.
 //! Thirteen of them carry a production caller in `rs_cam_viz/src` or
 //! `rs_cam_cli/src`; eleven carry none. WP15a gives all 24 a row, so
-//! the property is total and no allowlist has to grow.
+//! the property is total and no allowlist has to grow. K1 later deleted
+//! `add_fixture`, `remove_fixture`, `add_keep_out` and `remove_keep_out`
+//! (one obstacle concept), and C1 deleted `set_alignment_pin_drill_holes`
+//! (the pin drill reads the live pins).
 //!
 //! # What this file does NOT measure
 //!

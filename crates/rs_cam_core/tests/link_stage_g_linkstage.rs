@@ -259,6 +259,7 @@ fn a_a_link_across_standing_stock_clears_it() {
     let stock = rest_stock();
     let params = RelinkParams {
         link_ceiling: Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: tool.envelope_radius_mm(),
             fallback_top_z: RIB_TOP_Z,
@@ -499,6 +500,7 @@ fn e_the_two_link_tiers_are_counted_apart() {
     }
     let params = RelinkParams {
         link_ceiling: Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: tool.envelope_radius_mm(),
             fallback_top_z: RIB_TOP_Z,

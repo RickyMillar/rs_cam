@@ -1,26 +1,26 @@
 {
   "pocket_L1": {
-    "moves": 11989,
-    "hash": "59cc2182761d9087"
+    "moves": 12068,
+    "hash": "c6cdcb2c67a32077"
   },
   "pocket_L8": {
-    "moves": 95912,
-    "hash": "4ba05b5102a51bff"
+    "moves": 96544,
+    "hash": "3f1ad26d10e5d09d"
   },
   "profile_L1": {
-    "moves": 2249,
-    "hash": "ab093c1debebbb8f"
+    "moves": 2250,
+    "hash": "e500c9a82e40cffc"
   },
   "profile_L8": {
-    "moves": 17992,
-    "hash": "fce9f14353bc184f"
+    "moves": 17993,
+    "hash": "07df0581e9645058"
   },
   "zigzag_L1": {
-    "moves": 76,
-    "hash": "1e1c37ac23d56b91"
+    "moves": 95,
+    "hash": "0f7c0e97d02de25a"
   },
   "zigzag_L8": {
-    "moves": 608,
-    "hash": "6c1e2d61c8a92387"
+    "moves": 760,
+    "hash": "a395b44301b727af"
   }
 }

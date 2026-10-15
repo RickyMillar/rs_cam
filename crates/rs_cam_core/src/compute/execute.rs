@@ -15,7 +15,6 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
-use crate::geometry::region_set::RegionSet;
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
@@ -116,10 +115,6 @@ pub struct GenerationFindings {
     /// operation emits no centrelines, so nothing was measured.
     /// See [`crate::compute::toolpath_stats::TipFloatFinding`].
     pub tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding>,
-    /// PR-5: a retired dial still set to a non-default value in the loaded
-    /// project. `None` = nothing retired is set.
-    /// See [`crate::compute::toolpath_stats::DeprecatedDialFinding`].
-    pub deprecated_dial: Option<crate::compute::toolpath_stats::DeprecatedDialFinding>,
     /// PR-6a: the offset stepovers this operation derived from the canonical
     /// reach policy. EMPTY = the operation derives none.
     ///
@@ -150,6 +145,10 @@ pub struct GenerationFindings {
     /// no cutting geometry) or it ran and found real engagement.
     /// See [`crate::compute::toolpath_stats::ZeroRemovalFinding`].
     pub zero_removal: Option<crate::compute::toolpath_stats::ZeroRemovalFinding>,
+    /// W6.5: a projected curve that cuts deeper than its commanded depth.
+    /// `None` = not measured, or not deeper. Written by `run_curve`. See
+    /// [`crate::compute::toolpath_stats::BuriedCurveFinding`].
+    pub buried_curve: Option<crate::compute::toolpath_stats::BuriedCurveFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
     /// calls came back with a [`crate::polygon::OffsetFailure`].
     ///
@@ -325,6 +324,13 @@ pub struct ExecutionContext<'a> {
     /// (G-DRILLCENTROID); every other family ignores it. Empty for meshes
     /// and SVG, and for callers that resolve no model.
     pub drill_targets: &'a [DrillTarget],
+    /// The live stock alignment pins, stock-relative (X0Y0 at the stock
+    /// min corner). The Alignment Pin Drill reads the pins of its own
+    /// diameter (`alignment_pins::pin_holes_of_diameter`, R1); every other
+    /// family ignores them. W6.5 (C7): the op reads them here; no session
+    /// patch writes them into a config copy. Empty for a caller with no
+    /// pins.
+    pub alignment_pins: &'a [crate::compute::alignment_pins::AlignmentPin],
     pub tool_def: &'a ToolDefinition,
     pub tool_cfg: &'a ToolConfig,
     pub heights: &'a ResolvedHeights,
@@ -333,7 +339,7 @@ pub struct ExecutionContext<'a> {
     /// The setup's world→local transform, or `None` for an identity setup.
     ///
     /// Everything else in this context arrives ALREADY in the emission
-    /// frame — `mesh`, `polygons` and `boundary` are transformed by the
+    /// frame — `mesh`, `polygons` and the boundary inputs are transformed by the
     /// driver before generation, `stock_bbox` is the emission-frame bbox.
     /// The one class of input that cannot be pre-transformed that way is
     /// config-carried geometry: coordinates that live inside the
@@ -354,26 +360,12 @@ pub struct ExecutionContext<'a> {
     pub reference_tool_cfg: Option<ToolConfig>,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub cancel: &'a AtomicBool,
-    pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
-    pub boundary: Option<&'a Polygon2>,
-    /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
-    /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
-    /// / waterline / drop_cutter) pre-clips generation to, so sampling never
-    /// wastes work outside the machining boundary and never has to be
-    /// discarded at post-clip. `boundary` remains the adaptive3d
-    /// single-polygon pre-clear path; the two carry independent semantics
-    /// today and consolidating them is deferred. Consolidated onto
-    /// `RegionSet` (region_set.rs) so containment tests share one
-    /// implementation across every family.
-    pub boundary_regions: Option<&'a RegionSet<'a>>,
-    /// G-BOUNDARYPHANTOM: the containment polygons the session's
-    /// post-generation boundary clip clips this toolpath to (the regions
-    /// after keep-outs, the user offset and the tool-radius containment).
-    /// The adaptive3d planner keeps its tool centre inside them so it stamps
-    /// only what the clip keeps. `None`: no boundary, or a caller that
-    /// applies no clip.
-    pub boundary_centre: Option<&'a [Polygon2]>,
+    /// W6.2 / C3: the remaining stock and the boundary inputs (the outline,
+    /// the region set, the centre containment). Only the territory resolver
+    /// (`execute/territory.rs`) can read them; an adapter reads the resolved
+    /// parts through `Prepared::territory`.
+    pub territory_inputs: TerritoryInputs<'a>,
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
     /// envelope the pencil generator (and, in future, other finishing
     /// families with a hookup/link decision) costs surface-link vs.
@@ -402,6 +394,10 @@ pub struct ExecutionContext<'a> {
     /// stamps that hole at every re-entry (G-ADAPTPASSLOAD). Only a
     /// generator whose planner models its entries reads it.
     pub entry_helix_radius: Option<f64>,
+    /// K1: the setup's obstacles for this tool. The link ceiling reads
+    /// them (`shared::link_ceiling_for`); the session clips every result
+    /// against them after the dressups. `None`: no obstacle.
+    pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -431,6 +427,15 @@ impl<'a> ExecutionContext<'a> {
         move || cancel.load(Ordering::SeqCst)
     }
 
+    /// W6.5: true when the setup transform inverts Z (a Bottom setup). The
+    /// one rule of the Z frame; `SetupTransformInfo::is_z_flipped` holds it.
+    /// `None` (an identity setup, or a caller with no setup) is not
+    /// flipped.
+    pub(crate) fn z_flipped(&self) -> bool {
+        self.setup_transform
+            .is_some_and(crate::compute::transform::SetupTransformInfo::is_z_flipped)
+    }
+
     /// One read of the cancel flag, for a poll between units of work.
     pub(crate) fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
@@ -458,6 +463,7 @@ impl<'a> ExecutionContext<'a> {
             index: None,
             polygons: None,
             drill_targets: &[],
+            alignment_pins: &[],
             tool_def,
             tool_cfg,
             heights,
@@ -467,15 +473,13 @@ impl<'a> ExecutionContext<'a> {
             reference_tool_cfg: None,
             debug_ctx: None,
             cancel,
-            initial_stock: None,
             semantic_ctx: None,
-            boundary: None,
-            boundary_regions: None,
-            boundary_centre: None,
+            territory_inputs: TerritoryInputs::default(),
             link_kinematics: None,
             rest_analysis: None,
             segment_merge_tolerance: None,
             entry_helix_radius: None,
+            obstacles: None,
         }
     }
 }
@@ -524,16 +528,22 @@ macro_rules! config_guard {
 // it, and every family child calls `config_guard!`.
 
 mod clearing_2d;
+mod composed;
+mod curve;
 mod curve_engrave;
 mod dressup_apply;
 mod drilling;
 mod findings;
 mod finish_3d;
 mod finish_raster;
+mod height_field;
 mod layered;
 mod prologue;
+mod rough_3d;
 mod shared;
-mod standing_material;
+pub(crate) mod standing_material;
+mod territory;
+mod volumetric;
 
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,
@@ -554,12 +564,14 @@ pub use drilling::{
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{
-    generate_adaptive3d, generate_horizontal_finish, generate_pencil, generate_radial_finish,
-    generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
+    generate_horizontal_finish, generate_pencil, generate_radial_finish, generate_ramp_finish,
+    generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
 pub use prologue::{MeshInput, Prepared};
+pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
+pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
 /// annotations.
@@ -608,8 +620,7 @@ pub(crate) fn execute_operation_annotated(
     // no terrain to rest-analyze.
     if let Some(ra) = ctx.rest_analysis
         && ra.enabled
-        && generated.rest_grid.is_none()
-        && generated.rest_regions.is_none()
+        && generated.produced.has_no_rest_output()
         && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
     {
         attach_generic_rest_analysis(
@@ -618,7 +629,8 @@ pub(crate) fn execute_operation_annotated(
             idx,
             ctx.tool_def,
             ctx.reference_tool_cfg.as_ref(),
-            ctx.initial_stock,
+            // W6.2: the territory ran the stock guard once for this op.
+            prepared.territory().reference_stock(),
             ra,
             ctx.findings,
         );

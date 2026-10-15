@@ -1,27 +1,9 @@
 use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
-use crate::state::selection::Selection;
 use crate::ui::AppEvent;
-use crate::ui::components::ValueRow;
-use crate::ui::components::{OneLine, SectionHeader, UiExt as _};
+use crate::ui::components::{OneLine, SectionHeader};
 use crate::ui_command::UiCommand;
-use rs_cam_core::session::{Corner, Fixture, FixtureKind, KeepOutZone, SetupData, XYDatum, ZDatum};
-
-fn fixture_kind_label(kind: FixtureKind) -> &'static str {
-    match kind {
-        FixtureKind::Clamp => "Clamp",
-        FixtureKind::Vise => "Vise",
-        FixtureKind::VacuumPod => "Vacuum Pod",
-        FixtureKind::Custom => "Custom",
-    }
-}
-
-const FIXTURE_KINDS: &[FixtureKind] = &[
-    FixtureKind::Clamp,
-    FixtureKind::Vise,
-    FixtureKind::VacuumPod,
-    FixtureKind::Custom,
-];
+use rs_cam_core::session::{Corner, SetupData, XYDatum, ZDatum};
 
 /// The four stock rotations, in degrees, for the Z Rotation row.
 const Z_ROTATIONS: &[(ZRotation, &str)] = &[
@@ -31,7 +13,9 @@ const Z_ROTATIONS: &[(ZRotation, &str)] = &[
     (ZRotation::Deg270, "270\u{00B0}"),
 ];
 
-/// Draw the setup overview panel (fixtures list, keep-out list, setup name).
+/// Draw the setup overview panel: the name, the orientation, the datum and
+/// the model scope. The caller draws the obstacle list (K2) and the stock
+/// changes (S4) after it.
 ///
 /// `pin_count` is the number of alignment pins on the stock (pins are now
 /// stock-level, not per-setup). `all_models` lists every loaded model for
@@ -308,194 +292,6 @@ pub fn draw(
             }
         }
     }
-
-    // ── Fixtures ──────────────────────────────────────────────────
-    ui.add_space(8.0);
-    SectionHeader::new("Fixtures").show(ui);
-
-    for fixture in &setup_data.fixtures {
-        let label = format!("{} [{}]", fixture.name, fixture_kind_label(fixture.kind));
-        let resp = ui.selectable_label(false, &label);
-        if resp.clicked() {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Fixture(
-                setup_id, fixture.id,
-            ))));
-        }
-        resp.context_menu(|ui| {
-            if ui.button("Delete").clicked() {
-                events.push(AppEvent::RemoveFixture(setup_id, fixture.id));
-                ui.close();
-            }
-        });
-    }
-    if ui.small_button("+ Add Fixture").clicked() {
-        events.push(AppEvent::AddFixture(setup_id));
-    }
-
-    ui.add_space(8.0);
-
-    SectionHeader::new("Keep-Out Zones").show(ui);
-
-    for zone in &setup_data.keep_out_zones {
-        let resp = ui.selectable_label(false, &zone.name);
-        if resp.clicked() {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::KeepOut(
-                setup_id, zone.id,
-            ))));
-        }
-        resp.context_menu(|ui| {
-            if ui.button("Delete").clicked() {
-                events.push(AppEvent::RemoveKeepOut(setup_id, zone.id));
-                ui.close();
-            }
-        });
-    }
-    if ui.small_button("+ Add Keep-Out Zone").clicked() {
-        events.push(AppEvent::AddKeepOut(setup_id));
-    }
-
-    edit
-}
-
-/// Draw fixture property editor over a SCRATCH copy (WP6).
-///
-/// The caller applies `Command::ReplaceFixture` when the returned
-/// [`PanelEdit`] reports a finished edit.
-pub fn draw_fixture_properties(
-    ui: &mut egui::Ui,
-    _setup_id: SetupId,
-    fixture: &mut Fixture,
-) -> PanelEdit {
-    ui.heading("Fixture Properties");
-    ui.separator();
-
-    let mut edit = PanelEdit::default();
-
-    ui.horizontal(|ui| {
-        ui.label("Name:");
-        edit.click(&ui.text_edit_singleline(&mut fixture.name));
-    });
-
-    ui.horizontal(|ui| {
-        ui.label("Type:");
-        egui::ComboBox::from_id_salt("fixture_kind")
-            .truncate()
-            .selected_text(fixture_kind_label(fixture.kind))
-            .show_ui(ui, |ui| {
-                for &kind in FIXTURE_KINDS {
-                    if ui
-                        .selectable_label(fixture.kind == kind, fixture_kind_label(kind))
-                        .clicked()
-                    {
-                        fixture.kind = kind;
-                        edit.commit();
-                    }
-                }
-            });
-    });
-
-    edit.click(&ui.checkbox(&mut fixture.enabled, "Enabled"));
-
-    ui.add_space(4.0);
-
-    ui.label(
-        egui::RichText::new("Position (mm)")
-            .strong()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
-    ui.param_grid("fixture_position", |ui| {
-        let out =
-            ValueRow::new("X:", &mut fixture.origin_x, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-        edit.drag(&out.value_response);
-        let out =
-            ValueRow::new("Y:", &mut fixture.origin_y, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-        edit.drag(&out.value_response);
-        let out =
-            ValueRow::new("Z:", &mut fixture.origin_z, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-        edit.drag(&out.value_response);
-    });
-
-    ui.add_space(4.0);
-
-    ui.label(
-        egui::RichText::new("Size (mm)")
-            .strong()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
-    ui.param_grid("fixture_size", |ui| {
-        let out = ValueRow::new("X:", &mut fixture.size_x, " mm", 0.5, 0.1..=10000.0).show(ui);
-        edit.drag(&out.value_response);
-        let out = ValueRow::new("Y:", &mut fixture.size_y, " mm", 0.5, 0.1..=10000.0).show(ui);
-        edit.drag(&out.value_response);
-        let out = ValueRow::new("Z:", &mut fixture.size_z, " mm", 0.5, 0.1..=10000.0).show(ui);
-        edit.drag(&out.value_response);
-    });
-
-    ui.add_space(4.0);
-
-    ui.horizontal(|ui| {
-        ui.label("Clearance:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut fixture.clearance)
-                    .speed(0.1)
-                    .range(0.0..=100.0)
-                    .suffix(" mm"),
-            ),
-        );
-    });
-
-    edit
-}
-
-/// Draw keep-out zone property editor over a SCRATCH copy (WP6).
-///
-/// The caller applies `Command::ReplaceKeepOut` when the returned
-/// [`PanelEdit`] reports a finished edit.
-pub fn draw_keep_out_properties(
-    ui: &mut egui::Ui,
-    _setup_id: SetupId,
-    zone: &mut KeepOutZone,
-) -> PanelEdit {
-    ui.heading("Keep-Out Zone Properties");
-    ui.separator();
-
-    let mut edit = PanelEdit::default();
-
-    ui.horizontal(|ui| {
-        ui.label("Name:");
-        edit.click(&ui.text_edit_singleline(&mut zone.name));
-    });
-
-    edit.click(&ui.checkbox(&mut zone.enabled, "Enabled"));
-
-    ui.add_space(4.0);
-
-    ui.label(
-        egui::RichText::new("Position (mm)")
-            .strong()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
-    ui.param_grid("keepout_position", |ui| {
-        let out = ValueRow::new("X:", &mut zone.origin_x, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-        edit.drag(&out.value_response);
-        let out = ValueRow::new("Y:", &mut zone.origin_y, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
-        edit.drag(&out.value_response);
-    });
-
-    ui.add_space(4.0);
-
-    ui.label(
-        egui::RichText::new("Size (mm)")
-            .strong()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
-    ui.param_grid("keepout_size", |ui| {
-        let out = ValueRow::new("X:", &mut zone.size_x, " mm", 0.5, 0.1..=10000.0).show(ui);
-        edit.drag(&out.value_response);
-        let out = ValueRow::new("Y:", &mut zone.size_y, " mm", 0.5, 0.1..=10000.0).show(ui);
-        edit.drag(&out.value_response);
-    });
 
     edit
 }

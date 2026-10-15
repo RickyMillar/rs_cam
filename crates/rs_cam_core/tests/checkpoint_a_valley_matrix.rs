@@ -140,7 +140,8 @@
 )]
 
 use rs_cam_core::finish::pencil::{
-    PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
+    PencilDetector, PencilParams, PencilRuntimeEvent, PencilStock,
+    pencil_toolpath_structured_annotated_with_cancel,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
@@ -1606,7 +1607,7 @@ fn coverage_cap_floor_never_binds_on_the_matrix() {
 //
 // Not the matrix — three cheap probes through the REAL routing path, to show
 // the analytic finding survives contact with `detect_rest_valleys` /
-// `pencil_toolpath_structured_annotated`.
+// `pencil_toolpath_structured_annotated_with_cancel`.
 
 /// A block 40 × 24 mm with its top at z = 0 and one straight trapezoidal
 /// groove along Y at x = 0: rim half-width 1.5 mm, walls at 70°, floor at
@@ -1654,8 +1655,17 @@ fn probe_reach_policy_emits_the_fan_the_envelope_baseline_suppressed() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let params = probe_params(12.0);
-    let (_tp, ann, _report) =
-        pencil_toolpath_structured_annotated(&mesh, &index, &cutter, &params, None, None);
+    let (_tp, ann, _report) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &index,
+            &cutter,
+            &params,
+            PencilStock::default(),
+            None,
+            cancel,
+        )
+    });
     let mut chains: std::collections::BTreeSet<usize> = Default::default();
     let mut max_offset_total = 0usize;
     for a in &ann {
@@ -1770,8 +1780,17 @@ fn probe_tapered_pencil_resolves_a_real_reference_at_the_default() {
 
     let count = |reference_diameter: f64| -> usize {
         let params = probe_params(reference_diameter);
-        let (_tp, ann, _report) =
-            pencil_toolpath_structured_annotated(&mesh, &index, &cutter, &params, None, None);
+        let (_tp, ann, _report) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+            pencil_toolpath_structured_annotated_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &params,
+                PencilStock::default(),
+                None,
+                cancel,
+            )
+        });
         let mut chains: std::collections::BTreeSet<usize> = Default::default();
         for a in &ann {
             let PencilRuntimeEvent::OffsetPass { chain_index, .. } = a.event;

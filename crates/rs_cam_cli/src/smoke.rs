@@ -36,50 +36,19 @@ use rs_cam_core::tool_load::{
 
 // ── CSV row types ───────────────────────────────────────────────────────
 
-/// Row in `cases_agent_smoke.csv`. Only some columns are consumed by the
-/// runner (case_id, operation_kind, project_template, tool_name,
-/// material_family, baseline_params); the rest are retained for schema
-/// fidelity and future extension.
+/// Row in `cases_agent_smoke.csv`: the columns the runner reads. The CSV
+/// holds more columns; the reader ignores them.
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 struct SmokeCase {
     case_id: String,
-    #[serde(default)]
-    case_group: String,
     operation_kind: String,
     project_template: String,
     #[serde(default)]
-    fixture: String,
-    #[serde(default)]
-    geometry_kind: String,
-    #[serde(default)]
-    setup_face: String,
-    #[serde(default)]
     tool_name: String,
-    #[serde(default)]
-    tool_type: String,
-    #[serde(default)]
-    tool_family: String,
-    #[serde(default)]
-    tool_diameter_mm: String,
-    #[serde(default)]
-    flute_count: String,
     #[serde(default)]
     material_family: String,
     #[serde(default)]
-    goal_id: String,
-    #[serde(default)]
-    goal_type: String,
-    #[serde(default)]
-    quality_tier: String,
-    #[serde(default)]
     baseline_params: String,
-    #[serde(default)]
-    variants: String,
-    #[serde(default)]
-    run_optimizer: String,
-    #[serde(default)]
-    notes: String,
     /// Comma-separated list of case_ids whose toolpaths must run first
     /// against this same project so the measured toolpath cuts from
     /// already-roughed stock (round-10 STATE.md methodology — AS015

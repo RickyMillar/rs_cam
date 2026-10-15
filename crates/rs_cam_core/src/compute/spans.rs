@@ -310,6 +310,10 @@ pub fn spans_from_move_intents(toolpath: &Toolpath) -> Vec<Span> {
             | MoveIntent::ClearingCut
             | MoveIntent::FinishingCut
             | MoveIntent::Retract
+            // K3: the obstacle step adds this rapid after generation, so
+            // this map never sees it. A rapid at the plane is air, as a
+            // retract is.
+            | MoveIntent::ObstacleClearance
             | MoveIntent::Unknown => None,
         }
     }

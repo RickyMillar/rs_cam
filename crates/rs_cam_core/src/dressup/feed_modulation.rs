@@ -442,6 +442,9 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
             // the operator's intent for these moves.
             | MoveIntent::LeadIn
             | MoveIntent::LeadOut
+            // K3: the obstacle step adds this rapid after the modulator;
+            // the modulator never changes it.
+            | MoveIntent::ObstacleClearance
     )
 }
 

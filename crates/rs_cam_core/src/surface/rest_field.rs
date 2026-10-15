@@ -2034,8 +2034,8 @@ pub(crate) mod hillshade_test_util {
     impl HillshadeDem {
         /// Build a DEM by dropping a `probe_diameter`mm / `probe_length`mm
         /// ball across `mesh`'s bbox on a `cell`mm grid (typically the
-        /// canonical [`crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM`] /
-        /// [`crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM`] pair).
+        /// canonical [`crate::finish::rest_detector::SURFACE_PROBE_BALL_DIAMETER_MM`] /
+        /// [`crate::finish::rest_detector::SURFACE_PROBE_BALL_LENGTH_MM`] pair).
         pub(crate) fn build(
             mesh: &TriangleMesh,
             index: &SpatialIndex,
@@ -2870,8 +2870,8 @@ mod tests {
         let probe_mode = refd <= pencild + 1e-6;
         let reference = if probe_mode {
             BallEndmill::new(
-                crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-                crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+                crate::finish::rest_detector::SURFACE_PROBE_BALL_DIAMETER_MM,
+                crate::finish::rest_detector::SURFACE_PROBE_BALL_LENGTH_MM,
             )
         } else {
             BallEndmill::new(
@@ -2902,8 +2902,8 @@ mod tests {
             &mesh,
             &index,
             cell,
-            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+            crate::finish::rest_detector::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::finish::rest_detector::SURFACE_PROBE_BALL_LENGTH_MM,
         );
         let (gnx, gny) = (dem.nx, dem.ny);
         let mut img = dem.render();

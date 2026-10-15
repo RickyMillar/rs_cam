@@ -357,6 +357,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -370,6 +371,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -407,6 +409,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -420,6 +423,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -968,6 +972,7 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
     let source_regions = std::sync::Arc::clone(
         source_result
             .annotated
+            .produced
             .rest_regions
             .as_ref()
             .expect("non-pencil op with rest_analysis enabled should produce rest_regions"),
@@ -978,7 +983,7 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
     );
 
     // Feed those exact regions into a downstream toolpath's boundary, same
-    // shape a controller would resolve from `source_result.annotated.rest_regions`.
+    // shape a controller would resolve from `source_result.annotated.produced.rest_regions`.
     let mut downstream_spec = pocket_spec(401);
     downstream_spec.boundary.enabled = true;
     downstream_spec.rest_source_regions = Some((*source_regions).clone());
@@ -1518,7 +1523,8 @@ fn analysis_requests_replace_stale_work() {
         )),
         tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
-        obstacles: Vec::new(),
+        obstacles: Arc::default(),
+        join: rs_cam_core::compute::obstacle::JoinStart::Unknown,
     });
 
     let snapshot = backend.lane_snapshot(ComputeLane::Analysis);
@@ -1620,6 +1626,7 @@ fn multi_setup_top_bottom_simulation() {
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
                         ),
                         tool: Arc::new(build_cutter(&tool)),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1633,6 +1640,7 @@ fn multi_setup_top_bottom_simulation() {
                     local_to_global: None,
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
@@ -1642,6 +1650,7 @@ fn multi_setup_top_bottom_simulation() {
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
                         ),
                         tool: Arc::new(build_cutter(&tool)),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1662,6 +1671,7 @@ fn multi_setup_top_bottom_simulation() {
                     }),
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
             ],
             stock_bbox,
@@ -1779,6 +1789,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
                         ),
                         tool: Arc::new(build_cutter(&tool)),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1792,6 +1803,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     local_to_global: None,
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
@@ -1801,6 +1813,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
                         ),
                         tool: Arc::new(build_cutter(&tool)),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1821,6 +1834,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     }),
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
             ],
             stock_bbox,
@@ -2040,6 +2054,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2053,6 +2068,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -2142,6 +2158,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2162,6 +2179,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                 }),
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -2248,6 +2266,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2268,6 +2287,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
                 }),
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 8.0,
@@ -2396,7 +2416,6 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
@@ -2433,6 +2452,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2450,6 +2470,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox: world_stock_bbox,
             stock_top_z: 0.0,

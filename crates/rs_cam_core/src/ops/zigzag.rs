@@ -31,38 +31,6 @@ pub struct ZigzagParams {
     pub angle: f64,
 }
 
-/// Generate a zigzag raster clearing toolpath inside a polygon boundary.
-///
-/// The tool is offset inward by `tool_radius` to avoid cutting the walls,
-/// then parallel scan lines fill the interior. Lines alternate direction
-/// (zigzag) to minimize rapids.
-///
-/// For clean pocket walls, combine with a profile or contour finish pass.
-#[tracing::instrument(skip(polygon, params), fields(
-    tool_radius = params.tool_radius,
-    stepover = params.stepover,
-    angle = params.angle,
-))]
-pub fn zigzag_toolpath(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
-    zigzag_toolpath_reported(polygon, params).0
-}
-
-/// [`zigzag_toolpath`] with Checkpoint C's offset failure channel attached:
-/// `1` when the wall inset failed rather than collapsed, `0` otherwise.
-///
-/// An empty result here is silent in a way the others are not: zigzag returns
-/// no passes at all, which reads exactly like "the pocket is narrower than
-/// the tool".
-#[must_use]
-pub(crate) fn zigzag_toolpath_reported(
-    polygon: &Polygon2,
-    params: &ZigzagParams,
-) -> (Toolpath, usize) {
-    let (lines, failures) =
-        zigzag_lines_reported(polygon, params.tool_radius, params.stepover, params.angle);
-    (lines_to_toolpath(&lines, params), failures)
-}
-
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate the 2D zigzag scan lines (no Z, no toolpath yet).
 ///
@@ -317,6 +285,21 @@ mod tests {
     use super::*;
     use crate::toolpath::MoveType;
 
+    /// One zigzag level through the kernels the Layered Zigzag adapter
+    /// calls: the rows on the lattice of the outline (`prepare`, B9), then
+    /// `lines_to_toolpath` (`emit_level`). D3 deleted the public wrapper.
+    fn zigzag_level(polygon: &Polygon2, params: &ZigzagParams) -> Toolpath {
+        let lattice = scan_lattice_origin(polygon, params.tool_radius, params.angle);
+        let (lines, _failures) = zigzag_lines_on_lattice_reported(
+            polygon,
+            params.tool_radius,
+            params.stepover,
+            params.angle,
+            lattice,
+        );
+        lines_to_toolpath(&lines, params)
+    }
+
     fn default_params() -> ZigzagParams {
         ZigzagParams {
             tool_radius: 3.175,
@@ -326,68 +309,6 @@ mod tests {
             plunge_rate: 500.0,
             safe_z: 10.0,
             angle: 0.0,
-        }
-    }
-
-    /// **G2, zigzag side.** The hoisted composition (`zigzag_lines_reported`
-    /// once, `lines_to_toolpath` per level) against the naive one
-    /// (`zigzag_toolpath` per level), bit for bit.
-    ///
-    /// A property rather than a pinned constant, so it cannot rot. See
-    /// `pocket::tests::the_hoisted_cascade_emits_exactly_what_the_per_level_one_did`
-    /// for why the Phase 0 golden cannot cover this seam on its own.
-    #[test]
-    fn the_hoisted_scan_lines_emit_exactly_what_the_per_level_build_did() {
-        let poly = Polygon2::rectangle(0.0, 0.0, 60.0, 40.0);
-        let base = ZigzagParams {
-            angle: 23.0,
-            ..default_params()
-        };
-        let levels: Vec<f64> = (1..=5).map(|i| -1.5 * i as f64).collect();
-
-        let naive = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
-            zigzag_toolpath(
-                &poly,
-                &ZigzagParams {
-                    cut_depth: z,
-                    ..base
-                },
-            )
-        });
-
-        let (lines, _failures) =
-            zigzag_lines_reported(&poly, base.tool_radius, base.stepover, base.angle);
-        let hoisted = crate::ops::depth::toolpath_at_levels(&levels, base.safe_z, |z| {
-            lines_to_toolpath(
-                &lines,
-                &ZigzagParams {
-                    cut_depth: z,
-                    ..base
-                },
-            )
-        });
-
-        assert!(
-            !naive.moves.is_empty(),
-            "the fixture emitted nothing — the comparison would be vacuous"
-        );
-        assert_eq!(hoisted.moves.len(), naive.moves.len());
-        for (i, (h, n)) in hoisted.moves.iter().zip(naive.moves.iter()).enumerate() {
-            assert_eq!(
-                (
-                    h.target.x.to_bits(),
-                    h.target.y.to_bits(),
-                    h.target.z.to_bits()
-                ),
-                (
-                    n.target.x.to_bits(),
-                    n.target.y.to_bits(),
-                    n.target.z.to_bits()
-                ),
-                "move {i} diverges between the hoisted and per-level builds"
-            );
-            assert_eq!(h.move_type, n.move_type, "move {i} type");
-            assert_eq!(h.intent, n.intent, "move {i} intent");
         }
     }
 
@@ -445,7 +366,7 @@ mod tests {
     fn test_zigzag_toolpath_basic() {
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params();
-        let tp = zigzag_toolpath(&sq, &params);
+        let tp = zigzag_level(&sq, &params);
 
         assert!(!tp.moves.is_empty());
 
@@ -481,7 +402,7 @@ mod tests {
         let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
         let params = default_params();
         let lines = zigzag_lines(&sq, params.tool_radius, params.stepover, params.angle);
-        let tp = zigzag_toolpath(&sq, &params);
+        let tp = zigzag_level(&sq, &params);
 
         // Each line produces: rapid + plunge + cut + retract = 4 moves
         assert_eq!(
@@ -497,7 +418,7 @@ mod tests {
     fn test_zigzag_too_small() {
         let tiny = Polygon2::rectangle(0.0, 0.0, 4.0, 4.0);
         let params = default_params(); // 3.175mm radius
-        let tp = zigzag_toolpath(&tiny, &params);
+        let tp = zigzag_level(&tiny, &params);
 
         assert!(
             tp.moves.is_empty(),
@@ -539,7 +460,7 @@ mod tests {
         let lines = zigzag_lines(&l_shape, 2.0, 2.0, 0.0);
         assert!(!lines.is_empty(), "L-shape should produce zigzag lines");
 
-        let tp = zigzag_toolpath(
+        let tp = zigzag_level(
             &l_shape,
             &ZigzagParams {
                 tool_radius: 2.0,

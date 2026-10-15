@@ -48,6 +48,9 @@
 //!    fresh and rest arms. This file runs the same counter
 //!    (`common::op_fixtures::unknown_intents`) on the arms only it
 //!    generates: flipped, nothing-to-cut, and the two rest-pair arms.
+//! 8. **Obstacles** (K1). A box strip across the stock, its top above the
+//!    stock top, on every op, top-up AND flipped. See
+//!    [`check8_no_op_puts_the_tool_inside_an_obstacle`].
 //!
 //! # The simulation cell
 //!
@@ -89,14 +92,21 @@ use rs_cam_core::compute::{OperationError, StockConfig};
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::feeds::CutterKind;
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::arc_util::linearize_arc;
+use rs_cam_core::machine::kinematics::compute_cycle_time;
 use rs_cam_core::session::{
-    Command, ProjectSession, ProjectSessionBuilder, SessionError, SetToolpathParamArgs,
+    AddObstacleArgs, Command, Obstacle, ObstacleGeometry, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetToolpathParamArgs, SetupEvalContext,
 };
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// The band (cells) at the edge of a cut that a cellwise claim skips: the
 /// simulator blends a cell the tool covers in part.
 const EDGE_CELLS: usize = 1;
+
+/// The float noise (mm) of two cut-length sums over the same moves.
+const CUT_LENGTH_EPS_MM: f64 = 1e-6;
 
 /// The material height (mm) the simulator reads as standing material
 /// (`FRESH_MATERIAL_THRESHOLD_MM`), as the `f32` of the stock grid.
@@ -108,8 +118,8 @@ fn threshold() -> f32 {
 
 /// What one generation gave.
 enum Outcome {
-    /// The adopted toolpath.
-    Done(Toolpath),
+    /// The adopted toolpath and its spans.
+    Done(AnnotatedToolpath),
     /// The session refused. Kept whole, so a check can read the variant.
     Refused(SessionError),
     /// The generation panicked. The text is the panic payload.
@@ -119,14 +129,14 @@ enum Outcome {
 impl Outcome {
     fn toolpath(&self) -> Option<&Toolpath> {
         match self {
-            Self::Done(tp) => Some(tp),
+            Self::Done(at) => Some(&at.toolpath),
             Self::Refused(_) | Self::Panicked(_) => None,
         }
     }
 
     fn golden(&self) -> Golden {
         match self {
-            Self::Done(tp) => Golden::of(tp),
+            Self::Done(at) => Golden::of(at),
             Self::Refused(e) => Golden::refused(&e.to_string()),
             Self::Panicked(p) => Golden::refused(&format!("panic: {p}")),
         }
@@ -134,7 +144,7 @@ impl Outcome {
 
     fn describe(&self) -> String {
         match self {
-            Self::Done(tp) => format!("done, {} moves", tp.moves.len()),
+            Self::Done(at) => format!("done, {} moves", at.toolpath.moves.len()),
             Self::Refused(e) => format!("refused: {e:?}"),
             Self::Panicked(p) => format!("panicked: {p}"),
         }
@@ -156,9 +166,9 @@ fn generate(session: &mut ProjectSession, index: usize) -> Outcome {
     match std::panic::catch_unwind(AssertUnwindSafe(|| {
         session
             .generate_toolpath(index, &cancel)
-            .map(|r| r.toolpath().clone())
+            .map(|r| AnnotatedToolpath::clone(r.annotated()))
     })) {
-        Ok(Ok(tp)) => Outcome::Done(tp),
+        Ok(Ok(at)) => Outcome::Done(at),
         Ok(Err(e)) => Outcome::Refused(e),
         Err(payload) => Outcome::Panicked(panic_text(payload.as_ref())),
     }
@@ -488,6 +498,70 @@ impl Stocks<'_> {
             .count()
     }
 
+    /// The geometric stock claim of `ContourFilter` (W6.1). A cell counts
+    /// where the Fresh tool covers it completely: its centre lies within
+    /// `R - cell` of a Fresh cutting move, sampled at half a cell (arcs
+    /// too). The lowest such move is the depth the Fresh cut takes the
+    /// cell to. Gives the most material (mm) the rest stock holds above
+    /// `max(fresh top, that depth)`, and the count of cells judged.
+    fn worst_left_under_cover(&self, fresh: &Toolpath, tool_radius: f64) -> (f32, usize) {
+        let g = &self.fresh.z_grid;
+        let cell = g.cell_size;
+        let reach = tool_radius - cell;
+        let span = (reach / cell).ceil() as isize + 1;
+        let mut cover = vec![f64::INFINITY; g.rows * g.cols];
+        let mut mark = |p: P3| {
+            let col = ((p.x - g.origin_u) / cell).round() as isize;
+            let row = ((p.y - g.origin_v) / cell).round() as isize;
+            for rr in row - span..=row + span {
+                for cc in col - span..=col + span {
+                    if rr < 0 || cc < 0 || rr as usize >= g.rows || cc as usize >= g.cols {
+                        continue;
+                    }
+                    let (x, y) = g.cell_to_world(rr as usize, cc as usize);
+                    if (x - p.x).hypot(y - p.y) <= reach {
+                        let i = rr as usize * g.cols + cc as usize;
+                        cover[i] = cover[i].min(p.z);
+                    }
+                }
+            }
+        };
+        let step = cell / 2.0;
+        let mut prev: Option<P3> = None;
+        for m in &fresh.moves {
+            if is_cut(m)
+                && let Some(a) = prev
+            {
+                let points = match m.move_type {
+                    MoveType::ArcCW { i, j, .. } => linearize_arc(a, m.target, i, j, true, step),
+                    MoveType::ArcCCW { i, j, .. } => linearize_arc(a, m.target, i, j, false, step),
+                    MoveType::Linear { .. } | MoveType::Rapid => {
+                        let n = ((m.target - a).norm() / step).ceil().max(1.0) as usize;
+                        (0..=n)
+                            .map(|k| a + (m.target - a) * (k as f64 / n as f64))
+                            .collect()
+                    }
+                };
+                for p in points {
+                    mark(p);
+                }
+            }
+            prev = Some(m.target);
+        }
+        let mut worst: f32 = 0.0;
+        let mut judged = 0;
+        for (r, c) in self.cells() {
+            let z = cover[r * g.cols + c];
+            if !z.is_finite() {
+                continue;
+            }
+            judged += 1;
+            let floor = self.top(self.fresh, r, c).max(z as f32);
+            worst = worst.max(self.top(self.rest, r, c) - floor);
+        }
+        (worst, judged)
+    }
+
     /// Inside the cut of `reach` (off its edge band): the most material
     /// (mm) the rest stock holds above the fresh stock, and the count of
     /// cells the claim judged.
@@ -525,6 +599,18 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 ///   cleared part of its region.
 /// - `LevelSkip`: the same stock claim; and the rest cutting moves are a
 ///   subset of the Fresh cutting moves (a skip never makes a new path).
+/// - `ContourFilter` (W6.1): a geometric stock claim
+///   ([`Stocks::worst_left_under_cover`]): in each cell the Fresh tool
+///   covers completely, the rest stock stands no higher than the Fresh
+///   stock (or the depth of that cover) plus the material threshold. The
+///   lowered-cell claim does not fit this rule: a split run starts where
+///   the Fresh loop does not, and the simulator blends a part-covered cell
+///   by its stamp count, so a Fresh plunge and a rest feed through one
+///   point leave that cell at different heights (measured 2026-10-15:
+///   0.3 to 0.55 mm, with the kept points bit for bit equal). And the rest
+///   op cuts no more (the length of its cutting moves) than the Fresh op:
+///   a filter only drops runs. The arc fit fits a split run again, so the
+///   moves themselves are not compared.
 /// - `Planner`: the stock claim inside the REST cut (the planner plans its
 ///   own paths, so the Fresh cut is no reference); and it cuts less.
 /// - `LinkSafetyOnly`: the cutting moves are the Fresh cutting moves. Only
@@ -545,6 +631,9 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 /// Non-vacuity: each rule the registry uses (other than `None` and
 /// `Reference`) has an op whose Fresh cut lowers some cells.
 #[test]
+// SAFETY: the W6.1 `ContourFilter` measurement (leftover, time, rapids) is
+// printed as the record of the arm.
+#[allow(clippy::print_stderr)]
 fn check2_rest_rule_per_op() {
     let mut reached: BTreeMap<String, usize> = BTreeMap::new();
     let mut defects = Vec::new();
@@ -597,6 +686,60 @@ fn check2_rest_rule_per_op() {
                 if !contains_all(&cut_targets(fresh), &cut_targets(rest)) {
                     defects.push(format!(
                         "{key}/rest (LevelSkip): the rest op cuts a move the Fresh op does not"
+                    ));
+                }
+            }
+            RestUse::ContourFilter => {
+                match stocks(op, pair) {
+                    None => defects.push(format!("{key}/rest (ContourFilter): no final stock")),
+                    Some(s) => {
+                        let r = tool_for(op).diameter / 2.0;
+                        // The record of W6.1: the lowered-cell leftover,
+                        // and the time and rapids of each arm on the one
+                        // cycle-time model (`MachineProfile::link_kinematics`).
+                        let (lowered_worst, lowered_judged) = s.worst_left_inside(s.fresh);
+                        let lk = rs_cam_core::machine::MachineProfile::default().link_kinematics();
+                        let time = |tp: &Toolpath| {
+                            compute_cycle_time(
+                                tp,
+                                &lk.kinematics,
+                                lk.max_feed_mm_min,
+                                lk.rapid_feed_mm_min,
+                            )
+                        };
+                        let rapids = |tp: &Toolpath| {
+                            tp.moves
+                                .iter()
+                                .filter(|m| m.move_type == MoveType::Rapid)
+                                .count()
+                        };
+                        eprintln!(
+                            "{key}/rest (ContourFilter): lowered-cell leftover {lowered_worst:.3} mm \
+                             over {lowered_judged} cells; time fresh {:.2} s, rest {:.2} s; \
+                             rapids fresh {} ({:.1} mm), rest {} ({:.1} mm)",
+                            time(fresh),
+                            time(rest),
+                            rapids(fresh),
+                            fresh.total_rapid_distance(),
+                            rapids(rest),
+                            rest.total_rapid_distance()
+                        );
+                        let (worst, judged) = s.worst_left_under_cover(fresh, r);
+                        if judged == 0 || worst > threshold() {
+                            defects.push(format!(
+                                "{key}/rest (ContourFilter): under the Fresh tool's full cover \
+                                 ({judged} cells) the rest stock stands {worst:.3} mm over the \
+                                 Fresh cut; the bound is {:.3} mm",
+                                threshold()
+                            ));
+                        }
+                        *reached.entry(format!("{rule:?}")).or_insert(0) += s.fresh_reach_cells();
+                    }
+                }
+                if rl > fl + CUT_LENGTH_EPS_MM {
+                    defects.push(format!(
+                        "{key}/rest (ContourFilter): the rest op cuts {rl:.2} mm, the Fresh \
+                         op {fl:.2} mm. A contour filter only drops runs."
                     ));
                 }
             }
@@ -716,8 +859,13 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
     let policy = op.registry_entry().policy;
     let exempt = policy.empty_is_feature_selective;
     match outcome {
-        Outcome::Done(tp) => {
-            if tp.moves.iter().any(|m| m.move_type != MoveType::Rapid) {
+        Outcome::Done(at) => {
+            if at
+                .toolpath
+                .moves
+                .iter()
+                .any(|m| m.move_type != MoveType::Rapid)
+            {
                 Ok("done")
             } else if exempt || rest || policy.kinematics == Kinematics::DrillZOnly {
                 Ok("done-empty")
@@ -1013,23 +1161,22 @@ fn check6_every_schema_default_round_trips_and_every_driver_field_is_refused() {
             }
         }
         for p in schema.params.iter().filter(|p| !p.default.is_null()) {
-            for name in std::iter::once(&p.name).chain(&p.aliases) {
-                set_count += 1;
-                match set_param(&mut session, name, p.default.clone()) {
-                    Err(e) => defects.push(format!(
-                        "{key}/schema: `{name}` = {} (the published default) is refused: {e}",
+            let name = &p.name;
+            set_count += 1;
+            match set_param(&mut session, name, p.default.clone()) {
+                Err(e) => defects.push(format!(
+                    "{key}/schema: `{name}` = {} (the published default) is refused: {e}",
+                    p.default
+                )),
+                Ok(()) if config(&session) != before => {
+                    defects.push(format!(
+                        "{key}/schema: `{name}` = {} (the published default) changed \
+                         the config",
                         p.default
-                    )),
-                    Ok(()) if config(&session) != before => {
-                        defects.push(format!(
-                            "{key}/schema: `{name}` = {} (the published default) changed \
-                             the config",
-                            p.default
-                        ));
-                        session = default_op_session(op);
-                    }
-                    Ok(()) => {}
+                    ));
+                    session = default_op_session(op);
                 }
+                Ok(()) => {}
             }
         }
         let held_debug = session.toolpath_configs()[0].debug_options.enabled;
@@ -1105,25 +1252,22 @@ fn check6b_every_null_schema_default_round_trips() {
         let key = op.kind_str();
         let schema = OperationConfig::schema_for_type(op);
         for p in schema.params.iter().filter(|p| p.default.is_null()) {
-            for name in std::iter::once(&p.name).chain(&p.aliases) {
-                set_count += 1;
-                let mut session = default_op_session(op);
-                let before = format!("{:?}", session.toolpath_configs()[0].operation);
-                match set_param(&mut session, name, serde_json::Value::Null) {
-                    Err(e) => defects.push(format!(
-                        "{key}/schema_null: `{name}` = null (the published default) is \
-                         refused: {e}"
-                    )),
-                    Ok(())
-                        if format!("{:?}", session.toolpath_configs()[0].operation) != before =>
-                    {
-                        defects.push(format!(
-                            "{key}/schema_null: `{name}` = null (the published default) \
-                             changed the config"
-                        ));
-                    }
-                    Ok(()) => {}
+            let name = &p.name;
+            set_count += 1;
+            let mut session = default_op_session(op);
+            let before = format!("{:?}", session.toolpath_configs()[0].operation);
+            match set_param(&mut session, name, serde_json::Value::Null) {
+                Err(e) => defects.push(format!(
+                    "{key}/schema_null: `{name}` = null (the published default) is \
+                     refused: {e}"
+                )),
+                Ok(()) if format!("{:?}", session.toolpath_configs()[0].operation) != before => {
+                    defects.push(format!(
+                        "{key}/schema_null: `{name}` = null (the published default) \
+                         changed the config"
+                    ));
                 }
+                Ok(()) => {}
             }
         }
     }
@@ -1161,6 +1305,253 @@ fn check7_every_move_of_every_arm_here_has_a_known_intent() {
     }
     assert!(judged > 0, "no move was judged");
     assert!(defects.is_empty(), "{}", defects.join("\n"));
+}
+
+// ── 8. Obstacles (K1) ───────────────────────────────────────────────────
+
+/// The strip (mm, world X) and its clearance. It crosses the cap of the mesh
+/// fixture and the outline of the flat fixture between the two drill
+/// targets, and stays clear of the pin (world X -25).
+const STRIP_X: [f64; 2] = [2.0, 6.0];
+const STRIP_CLEARANCE_MM: f64 = 1.0;
+/// How far (mm) the strip reaches past the stock in Y, below its bottom and
+/// above its top.
+const STRIP_MARGIN_MM: f64 = 5.0;
+/// The sample step (mm) of the analytic cutter test.
+const STRIP_SAMPLE_MM: f64 = 0.25;
+
+/// The strip of `stock` in the WORLD frame: `[min, max]`.
+fn strip_world(stock: &StockConfig) -> [[f64; 3]; 2] {
+    [
+        [
+            STRIP_X[0],
+            stock.origin_y - STRIP_MARGIN_MM,
+            stock.origin_z - STRIP_MARGIN_MM,
+        ],
+        [
+            STRIP_X[1],
+            stock.origin_y + stock.y + STRIP_MARGIN_MM,
+            stock.origin_z + stock.z + STRIP_MARGIN_MM,
+        ],
+    ]
+}
+
+/// The distance (mm) in XY from `(x, y)` to the box `[min, max]`.
+fn xy_distance_to_box(x: f64, y: f64, b: &[[f64; 3]; 2]) -> f64 {
+    let dx = (b[0][0] - x).max(0.0).max(x - b[1][0]);
+    let dy = (b[0][1] - y).max(0.0).max(y - b[1][1]);
+    dx.hypot(dy)
+}
+
+/// The tip points of `tp` every [`STRIP_SAMPLE_MM`], with each move's index
+/// and kind. An arc is linearised.
+fn tip_samples(tp: &Toolpath) -> Vec<(usize, bool, P3)> {
+    let mut out = Vec::new();
+    let mut prev: Option<P3> = None;
+    for (i, m) in tp.moves.iter().enumerate() {
+        let a = prev.unwrap_or(m.target);
+        prev = Some(m.target);
+        let points = match m.move_type {
+            MoveType::ArcCW { i: ci, j: cj, .. } => {
+                linearize_arc(a, m.target, ci, cj, true, STRIP_SAMPLE_MM)
+            }
+            MoveType::ArcCCW { i: ci, j: cj, .. } => {
+                linearize_arc(a, m.target, ci, cj, false, STRIP_SAMPLE_MM)
+            }
+            MoveType::Rapid | MoveType::Linear { .. } => vec![a, m.target],
+        };
+        let rapid = m.move_type == MoveType::Rapid;
+        for w in points.windows(2) {
+            let n = ((w[1] - w[0]).norm() / STRIP_SAMPLE_MM).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                out.push((i, rapid, w[0] + (w[1] - w[0]) * t));
+            }
+        }
+    }
+    out
+}
+
+/// The case session of `op` in `frame` with the strip added to the case
+/// op's setup, in that setup's frame. Returns the session, the op index and
+/// the strip as the setup frame holds it.
+fn strip_session(op: OperationType, frame: Frame) -> (ProjectSession, usize, [[f64; 3]; 2]) {
+    let (mut session, index) = case_session(CaseSpec {
+        frame,
+        ..spec(op.kind_str(), op)
+    });
+    let setup_index = session
+        .list_setups()
+        .iter()
+        .position(|s| s.toolpath_indices.contains(&index))
+        .expect("the case op has a setup");
+    let world = strip_world(session.stock_config());
+    let setup = &session.list_setups()[setup_index];
+    let ctx = SetupEvalContext::build_for_setup(&session, Some(setup));
+    // The flipped frame is the zero-rooted setup frame: map the corners.
+    let local = match ctx.local_to_global.as_ref() {
+        None => world,
+        Some(info) => {
+            let mut lo = [f64::INFINITY; 3];
+            let mut hi = [f64::NEG_INFINITY; 3];
+            for x in [world[0][0], world[1][0]] {
+                for y in [world[0][1], world[1][1]] {
+                    for z in [world[0][2], world[1][2]] {
+                        let p = info.world_to_local(P3::new(x, y, z));
+                        for (axis, v) in [p.x, p.y, p.z].into_iter().enumerate() {
+                            lo[axis] = lo[axis].min(v);
+                            hi[axis] = hi[axis].max(v);
+                        }
+                    }
+                }
+            }
+            [lo, hi]
+        }
+    };
+    let _ = session
+        .apply(Command::AddObstacle(AddObstacleArgs {
+            setup_index,
+            obstacle: Box::new(Obstacle {
+                id: rs_cam_core::ids::ObstacleId(0),
+                name: "W4 strip".to_owned(),
+                enabled: true,
+                clearance: STRIP_CLEARANCE_MM,
+                geometry: ObstacleGeometry::Box {
+                    min: local[0],
+                    max: local[1],
+                },
+            }),
+        }))
+        .expect("the strip is a valid obstacle");
+    (session, index, local)
+}
+
+/// K1: for every op, top-up and flipped, with a box strip across the stock
+/// whose top is above the stock top:
+///
+/// - the op generates, with at least one cut move (non-vacuity);
+/// - the strip meets the op's FRESH cut (the arm without the strip), so the
+///   claim tests a real crossing (non-vacuity), for every op whose fresh cut
+///   reaches it;
+/// - no feed move puts the cutter inside the grown strip below its grown
+///   top, and every rapid over the grown strip is above its grown top. This
+///   test is analytic and independent of the service: the box distance
+///   against the cutter radius;
+/// - the service's own check (cutter, shank and holder) finds no hit;
+/// - the simulation reports 0 obstacle collisions.
+#[test]
+fn check8_no_op_puts_the_tool_inside_an_obstacle() {
+    // The shared arms first, OUTSIDE the parallel loop: their `OnceLock`
+    // init runs a rayon loop itself, and a pool worker that blocks on the
+    // init from inside this loop can deadlock the pool.
+    let arms = arms();
+    let results: Vec<(String, Vec<String>, bool)> = OperationType::ALL
+        .par_iter()
+        .flat_map(|&op| [(op, Frame::TopUp), (op, Frame::Flipped)])
+        .map(|(op, frame)| {
+            let label = format!("{}/{frame:?}", op.kind_str());
+            let mut defects = Vec::new();
+            let (mut session, index, strip) = strip_session(op, frame);
+            let tp = match generate(&mut session, index) {
+                Outcome::Done(at) => at.toolpath,
+                other => {
+                    defects.push(format!("{label}/obstacle: {}", other.describe()));
+                    return (label, defects, false);
+                }
+            };
+            if cutting_moves(&tp).next().is_none() {
+                defects.push(format!("{label}/obstacle: no cut move is left (vacuous)"));
+            }
+            let tc = session.get_toolpath_config(index).expect("the case op");
+            let tool_cfg = session
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == tc.tool_id)
+                .expect("the case tool")
+                .clone();
+            let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+            let r = tool.to_assembly().cutter_radius;
+            let grown = [
+                strip[0].map(|v| v - STRIP_CLEARANCE_MM),
+                strip[1].map(|v| v + STRIP_CLEARANCE_MM),
+            ];
+            let top = grown[1][2];
+            for (i, rapid, p) in tip_samples(&tp) {
+                let d = xy_distance_to_box(p.x, p.y, &grown);
+                if !rapid && p.z < top - 1e-6 && d < r - 1e-6 {
+                    defects.push(format!(
+                        "{label}/obstacle: feed move {i} puts the cutter {:.3} mm into the strip \
+                         at ({:.3}, {:.3}, {:.3})",
+                        r - d,
+                        p.x,
+                        p.y,
+                        p.z
+                    ));
+                    break;
+                }
+                if rapid && d < r - 1e-6 && p.z < top - 1e-6 {
+                    defects.push(format!(
+                        "{label}/obstacle: rapid {i} crosses the strip at z {:.3}, below its top {top:.3}",
+                        p.z
+                    ));
+                    break;
+                }
+            }
+            let set = session
+                .obstacle_set_for_toolpath(index)
+                .expect("the strip resolves");
+            let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+            let join = session.obstacle_join_for_toolpath(index);
+            let hits = view.check_toolpath(&tp, join);
+            if let Some(hit) = hits.first() {
+                defects.push(format!(
+                    "{label}/obstacle: the service finds {} hits, first at move {} ({})",
+                    hits.len(),
+                    hit.move_index,
+                    hit.segment
+                ));
+            }
+            // Non-vacuity: the strip meets the fresh cut of this op.
+            let crossed = arms[op.kind_str()]
+                .fresh
+                .toolpath()
+                .is_some_and(|fresh| {
+                    let fresh_frame = match frame {
+                        Frame::TopUp => fresh.clone(),
+                        Frame::Flipped => return true,
+                    };
+                    !view.check_toolpath(&fresh_frame, join).is_empty()
+                });
+            simulate(&mut session);
+            let sim_hits = session
+                .simulation_result()
+                .map_or(usize::MAX, |sim| sim.obstacle_collisions.len());
+            if sim_hits != 0 {
+                defects.push(format!(
+                    "{label}/obstacle: the simulation reports {sim_hits} obstacle collisions"
+                ));
+            }
+            (label, defects, crossed)
+        })
+        .collect();
+    let defects: Vec<String> = results.iter().flat_map(|(_, d, _)| d.clone()).collect();
+    let uncrossed: Vec<&str> = results
+        .iter()
+        .filter(|(_, _, crossed)| !crossed)
+        .map(|(label, _, _)| label.as_str())
+        .collect();
+    assert!(defects.is_empty(), "{}", defects.join("\n"));
+    // The pin drill drills the one pin, at world X -25: the strip leaves it
+    // by design (it must not refuse the pin drill as empty). Every other op
+    // crosses the strip, so the claim tests a real crossing for each.
+    assert_eq!(
+        uncrossed,
+        [format!(
+            "{}/TopUp",
+            OperationType::AlignmentPinDrill.kind_str()
+        )],
+        "the strip must meet the fresh cut of every op but the pin drill"
+    );
 }
 
 /// The registry is the case list: every op is in `ALL` once, so each check

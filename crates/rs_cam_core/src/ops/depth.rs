@@ -8,9 +8,6 @@
 //! count. CUT-15 (2026-09-17) deleted the second distribution and the finish
 //! allowance; see [`DepthStepping`].
 
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::toolpath::Toolpath;
-
 /// Which of the two Z ladders this crate builds to walk.
 ///
 /// CUT-14: one operator dial — the step down — had two implementations with
@@ -255,119 +252,6 @@ impl DepthStepping {
         }
         levels
     }
-
-    /// Actual step size for each roughing pass. Every step is equal.
-    pub fn roughing_steps(&self) -> Vec<f64> {
-        let levels = self.roughing_levels();
-        if levels.is_empty() {
-            return Vec::new();
-        }
-
-        let mut steps = Vec::with_capacity(levels.len());
-        let mut prev_z = self.start_z;
-        for &z in &levels {
-            steps.push(prev_z - z);
-            prev_z = z;
-        }
-        steps
-    }
-}
-
-/// Generate a depth-stepped toolpath by applying a 2D operation at each Z level.
-///
-/// The `operation` closure receives the Z depth for each pass and returns
-/// the toolpath for that single pass. This function sequences the passes
-/// top-to-bottom with retracts between levels.
-///
-/// # Example
-/// ```ignore
-/// let depth = DepthStepping::new(0.0, -12.0, 3.0);
-/// let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-///     pocket_toolpath(&polygon, &PocketParams { cut_depth: z, ..params })
-/// });
-/// ```
-pub fn depth_stepped_toolpath<F>(depth: &DepthStepping, safe_z: f64, operation: F) -> Toolpath
-where
-    F: Fn(f64) -> Toolpath,
-{
-    crate::interrupt::run_uncancellable(|cancel| {
-        depth_stepped_toolpath_with_cancel(depth, safe_z, |z| Ok(operation(z)), cancel)
-    })
-}
-
-/// Cancellable variant of [`depth_stepped_toolpath`]. Polls `cancel` once per
-/// Z level via the shared [`toolpath_at_levels_with_cancel`] choke point
-/// (planning/finishing_stack_review_2026-07.md S.5) — this is the same
-/// primitive `toolpath_at_levels_with_cancel` uses, so every depth-stepped
-/// 2D operation (face, trace, pocket, profile, zigzag) shares one
-/// cancellation cadence.
-pub fn depth_stepped_toolpath_with_cancel<F>(
-    depth: &DepthStepping,
-    safe_z: f64,
-    operation: F,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled>
-where
-    F: Fn(f64) -> Result<Toolpath, Cancelled>,
-{
-    let levels = depth.all_levels();
-    toolpath_at_levels_with_cancel(&levels, safe_z, operation, cancel)
-}
-
-/// Generate a toolpath by applying a 2D operation at each pre-computed Z level.
-///
-/// Like [`depth_stepped_toolpath`] but takes a pre-computed slice of Z values
-/// instead of a [`DepthStepping`] configuration. Handles retract-between-levels.
-pub fn toolpath_at_levels<F>(levels: &[f64], safe_z: f64, operation: F) -> Toolpath
-where
-    F: Fn(f64) -> Toolpath,
-{
-    crate::interrupt::run_uncancellable(|cancel| {
-        toolpath_at_levels_with_cancel(levels, safe_z, |z| Ok(operation(z)), cancel)
-    })
-}
-
-/// Cancellable variant of [`toolpath_at_levels`] — the single choke point for
-/// flat-2D depth-stepping cancellation (planning/finishing_stack_review_2026-07.md
-/// S.5: "Zero of 10 flat 2D ops can be cancelled"). Checks `cancel` as its
-/// very first statement — matching the mesh-finish `*_with_cancel`
-/// convention (`slope.rs::from_mesh_with_cancel`, `scallop.rs`) — and again
-/// before each subsequent Z level, so a pre-set flag short-circuits
-/// regardless of whether `levels` is empty (e.g. a zero-depth pass).
-///
-/// `operation` itself may fail with [`Cancelled`] (e.g. pocket's own
-/// per-offset-ring poll deep inside `pocket_toolpath_with_cancel`) — that
-/// error propagates through this loop exactly like the level-boundary
-/// check does, so callers get ONE failure mode regardless of which
-/// granularity detected the cancellation.
-pub fn toolpath_at_levels_with_cancel<F>(
-    levels: &[f64],
-    safe_z: f64,
-    operation: F,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled>
-where
-    F: Fn(f64) -> Result<Toolpath, Cancelled>,
-{
-    check_cancel(cancel)?;
-    let mut tp = Toolpath::new();
-
-    for (i, &z) in levels.iter().enumerate() {
-        check_cancel(cancel)?;
-        let level_tp = operation(z)?;
-        if level_tp.moves.is_empty() {
-            continue;
-        }
-
-        // Ensure retract between levels (not before first)
-        if i > 0 {
-            tp.final_retract(safe_z);
-        }
-
-        tp.moves.extend(level_tp.moves);
-    }
-
-    Ok(tp)
 }
 
 #[cfg(test)]
@@ -544,13 +428,22 @@ mod tests {
         );
         assert_eq!(levels, vec![10.0]);
     }
-    use crate::ops::pocket::{PocketParams, pocket_toolpath};
-    use crate::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
-    use crate::ops::zigzag::{ZigzagParams, zigzag_toolpath};
-    use crate::polygon::Polygon2;
-    use crate::toolpath::MoveType;
 
     // --- Z-level calculation tests ---
+
+    /// The step of each roughing pass, from `start_z` down. D3 moved this
+    /// from a `cfg(test)` method to the test module that reads it.
+    fn roughing_steps(ds: &DepthStepping) -> Vec<f64> {
+        let mut prev_z = ds.start_z;
+        ds.roughing_levels()
+            .into_iter()
+            .map(|z| {
+                let step = prev_z - z;
+                prev_z = z;
+                step
+            })
+            .collect()
+    }
 
     #[test]
     fn test_even_distribution_exact() {
@@ -576,7 +469,7 @@ mod tests {
         assert!((levels[3] - -10.0).abs() < 1e-10);
 
         // All steps should be equal
-        let steps = ds.roughing_steps();
+        let steps = roughing_steps(&ds);
         for step in &steps {
             assert!((*step - 2.5).abs() < 1e-10);
         }
@@ -639,7 +532,7 @@ mod tests {
     #[test]
     fn test_roughing_steps_sum_to_depth() {
         let ds = DepthStepping::new(0.0, -10.0, 3.0);
-        let steps = ds.roughing_steps();
+        let steps = roughing_steps(&ds);
         let total: f64 = steps.iter().sum();
         assert!((total - 10.0).abs() < 1e-10, "Steps sum {} != 10.0", total);
     }
@@ -647,7 +540,7 @@ mod tests {
     #[test]
     fn test_even_steps_never_exceed_max() {
         let ds = DepthStepping::new(0.0, -10.0, 3.0);
-        let steps = ds.roughing_steps();
+        let steps = roughing_steps(&ds);
         for (i, step) in steps.iter().enumerate() {
             assert!(
                 *step <= ds.max_step_down + 1e-10,
@@ -676,183 +569,4 @@ mod tests {
     }
 
     // --- Integration with operations ---
-
-    #[test]
-    fn test_multipass_pocket() {
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let depth = DepthStepping::new(0.0, -9.0, 3.0);
-
-        let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-            pocket_toolpath(
-                &sq,
-                &PocketParams {
-                    tool_radius: 3.175,
-                    stepover: 2.0,
-                    cut_depth: z,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
-                    safe_z: 10.0,
-                    climb: false,
-                },
-            )
-        });
-
-        assert!(!tp.moves.is_empty());
-
-        // Collect all unique Z levels of cutting moves
-        let mut cut_zs: Vec<f64> = tp
-            .moves
-            .iter()
-            .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
-            .map(|m| (m.target.z * 1000.0).round() / 1000.0) // round to 3 decimals
-            .collect();
-        cut_zs.sort_by(|a, b| b.total_cmp(a));
-        cut_zs.dedup();
-
-        assert_eq!(cut_zs.len(), 3, "Expected 3 depth levels, got {:?}", cut_zs);
-        assert!((cut_zs[0] - -3.0).abs() < 0.01);
-        assert!((cut_zs[1] - -6.0).abs() < 0.01);
-        assert!((cut_zs[2] - -9.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_multipass_profile() {
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let depth = DepthStepping::new(0.0, -6.0, 2.0);
-
-        let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-            profile_toolpath(
-                &sq,
-                &ProfileParams {
-                    tool_radius: 3.175,
-                    side: ProfileSide::Outside,
-                    cut_depth: z,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
-                    safe_z: 10.0,
-                    climb: false,
-                    compensate_in_controller: false,
-                },
-            )
-        });
-
-        assert!(!tp.moves.is_empty());
-
-        // Should have 3 depth levels: -2, -4, -6
-        let mut cut_zs: Vec<f64> = tp
-            .moves
-            .iter()
-            .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
-            .map(|m| (m.target.z * 100.0).round() / 100.0)
-            .collect();
-        cut_zs.sort_by(|a, b| b.total_cmp(a));
-        cut_zs.dedup();
-
-        assert_eq!(cut_zs.len(), 3, "Expected 3 levels, got {:?}", cut_zs);
-    }
-
-    #[test]
-    fn test_multipass_zigzag() {
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let depth = DepthStepping::new(0.0, -8.0, 4.0);
-
-        let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-            zigzag_toolpath(
-                &sq,
-                &ZigzagParams {
-                    tool_radius: 3.175,
-                    stepover: 2.0,
-                    cut_depth: z,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
-                    safe_z: 10.0,
-                    angle: 0.0,
-                },
-            )
-        });
-
-        assert!(!tp.moves.is_empty());
-
-        let mut cut_zs: Vec<f64> = tp
-            .moves
-            .iter()
-            .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
-            .map(|m| (m.target.z * 100.0).round() / 100.0)
-            .collect();
-        cut_zs.sort_by(|a, b| b.total_cmp(a));
-        cut_zs.dedup();
-
-        assert_eq!(cut_zs.len(), 2, "Expected 2 levels, got {:?}", cut_zs);
-    }
-
-    #[test]
-    fn test_multipass_all_rapids_at_safe_z() {
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let depth = DepthStepping::new(0.0, -9.0, 3.0);
-
-        let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-            pocket_toolpath(
-                &sq,
-                &PocketParams {
-                    tool_radius: 3.175,
-                    stepover: 2.0,
-                    cut_depth: z,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
-                    safe_z: 10.0,
-                    climb: false,
-                },
-            )
-        });
-
-        for m in &tp.moves {
-            if m.move_type == MoveType::Rapid {
-                assert!(
-                    (m.target.z - 10.0).abs() < 1e-10,
-                    "Rapid at z={}, expected safe_z=10.0",
-                    m.target.z
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_multipass_monotonic_depth() {
-        // Verify that Z levels in the toolpath are non-increasing
-        // (we never cut shallower after going deeper, except via rapids)
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let depth = DepthStepping::new(0.0, -12.0, 3.0);
-
-        let tp = depth_stepped_toolpath(&depth, 10.0, |z| {
-            pocket_toolpath(
-                &sq,
-                &PocketParams {
-                    tool_radius: 3.175,
-                    stepover: 2.0,
-                    cut_depth: z,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
-                    safe_z: 10.0,
-                    climb: false,
-                },
-            )
-        });
-
-        // Track deepest cutting Z seen so far
-        let mut deepest_cut_z = 0.0_f64;
-        for m in &tp.moves {
-            if let MoveType::Linear { feed_rate } = m.move_type
-                && (feed_rate - 1000.0).abs() < 1e-10
-            {
-                // This is a cutting move
-                assert!(
-                    m.target.z <= deepest_cut_z + 0.01,
-                    "Cutting at z={} after already reaching z={}",
-                    m.target.z,
-                    deepest_cut_z
-                );
-                deepest_cut_z = deepest_cut_z.min(m.target.z);
-            }
-        }
-    }
 }

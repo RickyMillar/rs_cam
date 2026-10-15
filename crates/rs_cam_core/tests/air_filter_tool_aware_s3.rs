@@ -40,7 +40,7 @@
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::dressup::without_provenance;
-use rs_cam_core::dressup::{AirBridgePolicy, filter_air_cuts};
+use rs_cam_core::dressup::{AirBridgeTiming, filter_air_cuts};
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::collision::RapidClearanceCheck;
@@ -117,13 +117,17 @@ fn link_and_pass(x: f64) -> Toolpath {
 }
 
 fn filtered(tp: &Toolpath, stock: &TriDexelStock, cutter: &dyn MillingCutter) -> Toolpath {
+    let link = rs_cam_core::machine::MachineProfile::default().link_kinematics();
     without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
         stock,
         cutter,
         SAFE_Z,
         TOLERANCE_MM,
-        AirBridgePolicy::Always,
+        AirBridgeTiming {
+            feed_rate_mm_min: 900.0,
+            link: &link,
+        },
     ))
     .toolpath
 }

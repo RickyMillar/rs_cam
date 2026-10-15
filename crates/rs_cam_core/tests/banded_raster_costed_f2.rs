@@ -843,6 +843,7 @@ fn wanaka_banded_raster_costed_f2() {
     let regime = LinkRegime {
         safe_z,
         ceiling: Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: r10.envelope_radius_mm(),
             fallback_top_z: block_top_z,

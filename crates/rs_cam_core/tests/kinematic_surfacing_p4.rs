@@ -180,6 +180,7 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
         commanded_depth_per_pass_mm: &BTreeMap::new(),
         kinematic_utilization: &populated,
         region_of: None,
+        obstacle_collisions: &[],
     });
     assert!(
         with_reading
@@ -201,6 +202,7 @@ fn the_triage_surfaces_the_finding_and_an_empty_map_surfaces_nothing() {
         commanded_depth_per_pass_mm: &BTreeMap::new(),
         kinematic_utilization: &empty,
         region_of: None,
+        obstacle_collisions: &[],
     });
     assert!(
         without_reading

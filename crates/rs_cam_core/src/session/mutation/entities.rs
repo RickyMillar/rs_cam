@@ -1,4 +1,4 @@
-//! Model, tool, setup, fixture, keep-out and alignment-pin CRUD.
+//! Model, tool, setup, obstacle and alignment-pin CRUD.
 //!
 //! Split out of `session/mutation.rs` by P4. Every method here is an
 //! inherent method on [`ProjectSession`], so its path does not change.
@@ -6,15 +6,14 @@
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
+use crate::compute::obstacle::{Obstacle, validate_obstacle};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geometry::enriched_mesh::FaceGroupId;
-use crate::ids::{FixtureId, KeepOutId};
-use crate::session::{
-    Effects, Fixture, KeepOutZone, ProjectSession, SessionError, SetupData, SimulationDropCause,
-};
+use crate::ids::ObstacleId;
+use crate::session::{Effects, ProjectSession, SessionError, SetupData, SimulationDropCause};
 
-use super::{fixture_collision_inputs_moved, keep_out_collision_inputs_moved, polygons_bbox};
+use super::{obstacle_effects, polygons_bbox};
 
 impl ProjectSession {
     // ── Model CRUD ────────────────────────────────────────────────
@@ -232,8 +231,7 @@ impl ProjectSession {
             z_rotation: ZRotation::default(),
             datum: crate::session::DatumConfig::default(),
             model_ids: Vec::new(),
-            fixtures: Vec::new(),
-            keep_out_zones: Vec::new(),
+            obstacles: Vec::new(),
             stock_changes: Vec::new(),
             toolpath_indices: Vec::new(),
             pause_message: None,
@@ -260,36 +258,6 @@ impl ProjectSession {
         })
     }
 
-    /// Update the alignment pin drill holes for a toolpath.
-    ///
-    /// Errors if the toolpath's operation is not `AlignmentPinDrill`.
-    #[instrument(skip(self, holes))]
-    pub(crate) fn set_alignment_pin_drill_holes(
-        &mut self,
-        index: usize,
-        holes: Vec<[f64; 2]>,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
-            let tc = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            match tc.operation {
-                OperationConfig::AlignmentPinDrill(ref mut cfg) => {
-                    cfg.holes = holes;
-                }
-                _ => {
-                    return Err(SessionError::InvalidParam(
-                        "Toolpath is not an AlignmentPinDrill operation".to_owned(),
-                    ));
-                }
-            }
-            let enabled = tc.enabled;
-            session.invalidate_result_chain(index, enabled);
-            Ok(())
-        })
-    }
-
     /// Set the explicitly-selected drill holes (DXF point / circle-centre
     /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
     /// cached result and the results of every operation downstream of it.
@@ -298,9 +266,8 @@ impl ProjectSession {
     ///
     /// A pick changes which holes the operation cuts, so it changes the
     /// stock a downstream `StockSource::FromRemainingStock` operation
-    /// reads. This called `drop_result` alone until WP8 (N6), while its
-    /// sibling [`Self::set_alignment_pin_drill_holes`] 30 lines above
-    /// walked the chain. The two now answer alike.
+    /// reads. This called `drop_result` alone until WP8 (N6). It walks the
+    /// chain now.
     ///
     /// Errors if the toolpath's operation is not a drilling op.
     #[instrument(skip(self, selected_holes))]
@@ -432,167 +399,108 @@ impl ProjectSession {
         })
     }
 
-    /// Replace one fixture of a setup, keeping its position in the list.
-    ///
-    /// The door of the `ReplaceFixture` command row. The GUI fixture
-    /// panel edits every field of one fixture, so the payload is the
-    /// whole record.
-    ///
-    /// **The write is unconditional; the DROP is gated**, on the
-    /// `ReplaceToolpathConfig` precedent. The panel applies one command
-    /// per finished edit, and the name is not a collision input — so a
-    /// ten-character rename would otherwise drop the setup's results ten
-    /// times. Every OTHER field moves the obstacle the holder must
-    /// clear, so it drops the setup's results exactly as
-    /// [`Self::add_fixture`] and [`Self::remove_fixture`] do.
-    ///
-    /// **This is a behaviour change.** The panel wrote the fixture in
-    /// place and dropped nothing, so a clamp could move under a cached
-    /// holder-clearance verdict (G-FRESHSTATE).
-    #[instrument(skip(self, fixture))]
-    pub(crate) fn replace_fixture(
+    /// K1: check an obstacle against the project models, for the three
+    /// obstacle doors.
+    fn check_obstacle(&self, obstacle: &Obstacle) -> Result<(), SessionError> {
+        validate_obstacle(obstacle, |id| {
+            crate::compute::obstacle::model_geometry_facts(&self.models, id)
+        })
+        .map_err(|e| SessionError::InvalidParam(e.to_string()))
+    }
+
+    /// Add an obstacle to the end of a setup's list (K1). The door of the
+    /// `AddObstacle` command row. An enabled obstacle drops the setup's
+    /// results and their dependents.
+    #[instrument(skip(self, obstacle))]
+    pub(crate) fn add_obstacle(
         &mut self,
         setup_index: usize,
-        fixture_id: FixtureId,
-        fixture: Fixture,
+        obstacle: Obstacle,
     ) -> Result<Effects, SessionError> {
+        self.check_obstacle(&obstacle)?;
         self.try_with_effects(None, move |session| {
             let setup = session
                 .setups
                 .get_mut(setup_index)
                 .ok_or(SessionError::SetupNotFound(setup_index))?;
-            let Some(slot) = setup.fixtures.iter_mut().find(|f| f.id == fixture_id) else {
+            if setup.obstacles.iter().any(|o| o.id == obstacle.id) {
+                return Err(SessionError::InvalidParam(
+                    crate::compute::obstacle::ObstacleRefusal::DuplicateId { id: obstacle.id }
+                        .to_string(),
+                ));
+            }
+            let moved = obstacle.enabled;
+            setup.obstacles.push(obstacle);
+            if moved {
+                session.drop_obstacle_dependents(setup_index);
+            }
+            Ok(())
+        })
+    }
+
+    /// Replace one obstacle of a setup, keeping its position (K1). The
+    /// door of the `ReplaceObstacle` command row (`edit_obstacle`).
+    ///
+    /// The write is unconditional; the DROP is gated on the list's effect,
+    /// so a rename drops nothing.
+    #[instrument(skip(self, obstacle))]
+    pub(crate) fn replace_obstacle(
+        &mut self,
+        setup_index: usize,
+        obstacle_id: ObstacleId,
+        obstacle: Obstacle,
+    ) -> Result<Effects, SessionError> {
+        if obstacle.id != obstacle_id {
+            return Err(SessionError::InvalidParam(format!(
+                "the replacement obstacle carries id {}, and the command names id {}",
+                obstacle.id.0, obstacle_id.0
+            )));
+        }
+        self.check_obstacle(&obstacle)?;
+        self.try_with_effects(None, move |session| {
+            let setup = session
+                .setups
+                .get_mut(setup_index)
+                .ok_or(SessionError::SetupNotFound(setup_index))?;
+            let before = obstacle_effects(&setup.obstacles);
+            let Some(slot) = setup.obstacles.iter_mut().find(|o| o.id == obstacle_id) else {
                 return Err(SessionError::InvalidParam(format!(
-                    "setup {setup_index} carries no fixture with id {}",
-                    fixture_id.0
+                    "setup {setup_index} carries no obstacle with id {}",
+                    obstacle_id.0
                 )));
             };
-            let moved = fixture_collision_inputs_moved(slot, &fixture);
-            *slot = fixture;
+            *slot = obstacle;
+            let moved = obstacle_effects(&setup.obstacles) != before;
             if moved {
-                session.drop_setup_results(setup_index);
+                session.drop_obstacle_dependents(setup_index);
             }
             Ok(())
         })
     }
 
-    /// Replace one keep-out zone of a setup, keeping its position.
-    ///
-    /// The door of the `ReplaceKeepOut` command row, and the twin of
-    /// [`Self::replace_fixture`]. It writes unconditionally and drops
-    /// the setup's results only when a field other than the name moved,
-    /// for the same reason.
-    #[instrument(skip(self, zone))]
-    pub(crate) fn replace_keep_out(
+    /// Remove an obstacle from a setup by its id (K1). The door of the
+    /// `RemoveObstacle` command row.
+    #[instrument(skip(self))]
+    pub(crate) fn remove_obstacle(
         &mut self,
         setup_index: usize,
-        zone_id: KeepOutId,
-        zone: KeepOutZone,
+        obstacle_id: ObstacleId,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let setup = session
                 .setups
                 .get_mut(setup_index)
                 .ok_or(SessionError::SetupNotFound(setup_index))?;
-            let Some(slot) = setup.keep_out_zones.iter_mut().find(|z| z.id == zone_id) else {
+            let Some(position) = setup.obstacles.iter().position(|o| o.id == obstacle_id) else {
                 return Err(SessionError::InvalidParam(format!(
-                    "setup {setup_index} carries no keep-out zone with id {}",
-                    zone_id.0
+                    "setup {setup_index} carries no obstacle with id {}",
+                    obstacle_id.0
                 )));
             };
-            let moved = keep_out_collision_inputs_moved(slot, &zone);
-            *slot = zone;
-            if moved {
-                session.drop_setup_results(setup_index);
+            let removed = setup.obstacles.remove(position);
+            if removed.enabled {
+                session.drop_obstacle_dependents(setup_index);
             }
-            Ok(())
-        })
-    }
-
-    /// Add a fixture to a setup, invalidating all toolpath results in that setup.
-    #[instrument(skip(self, fixture))]
-    pub(crate) fn add_fixture(
-        &mut self,
-        setup_index: usize,
-        fixture: Fixture,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            let setup = session
-                .setups
-                .get_mut(setup_index)
-                .ok_or(SessionError::SetupNotFound(setup_index))?;
-            setup.fixtures.push(fixture);
-            let indices: Vec<usize> = setup.toolpath_indices.clone();
-            for &tp_idx in &indices {
-                session.drop_result(tp_idx);
-            }
-            session.drop_simulation(SimulationDropCause::Fixtures);
-            Ok(())
-        })
-    }
-
-    /// Remove a fixture from a setup by its ID.
-    #[instrument(skip(self))]
-    pub(crate) fn remove_fixture(
-        &mut self,
-        setup_index: usize,
-        fixture_id: FixtureId,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            let setup = session
-                .setups
-                .get_mut(setup_index)
-                .ok_or(SessionError::SetupNotFound(setup_index))?;
-            setup.fixtures.retain(|f| f.id != fixture_id);
-            let indices: Vec<usize> = setup.toolpath_indices.clone();
-            for &tp_idx in &indices {
-                session.drop_result(tp_idx);
-            }
-            session.drop_simulation(SimulationDropCause::Fixtures);
-            Ok(())
-        })
-    }
-
-    /// Add a keep-out zone to a setup, invalidating all toolpath results in that setup.
-    #[instrument(skip(self, zone))]
-    pub(crate) fn add_keep_out(
-        &mut self,
-        setup_index: usize,
-        zone: KeepOutZone,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            let setup = session
-                .setups
-                .get_mut(setup_index)
-                .ok_or(SessionError::SetupNotFound(setup_index))?;
-            setup.keep_out_zones.push(zone);
-            let indices: Vec<usize> = setup.toolpath_indices.clone();
-            for &tp_idx in &indices {
-                session.drop_result(tp_idx);
-            }
-            session.drop_simulation(SimulationDropCause::Fixtures);
-            Ok(())
-        })
-    }
-
-    /// Remove a keep-out zone from a setup by its ID.
-    #[instrument(skip(self))]
-    pub(crate) fn remove_keep_out(
-        &mut self,
-        setup_index: usize,
-        zone_id: KeepOutId,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(None, move |session| {
-            let setup = session
-                .setups
-                .get_mut(setup_index)
-                .ok_or(SessionError::SetupNotFound(setup_index))?;
-            setup.keep_out_zones.retain(|z| z.id != zone_id);
-            let indices: Vec<usize> = setup.toolpath_indices.clone();
-            for &tp_idx in &indices {
-                session.drop_result(tp_idx);
-            }
-            session.drop_simulation(SimulationDropCause::Fixtures);
             Ok(())
         })
     }

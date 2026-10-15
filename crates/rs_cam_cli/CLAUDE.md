@@ -29,6 +29,12 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   add a CLI-only spelling.
 - A machine profile comes from `io::machine_library`, the library the
   GUI and MCP share. Do not hardcode a preset in a subcommand.
+- C2: a job `[[operation]]` reads the W5 schema. `type` is the registry
+  token, every other key that is not in `OperationDef::JOB_KEYS` is a
+  schema parameter, and `[operation.dressups]` holds `DressupConfig::FIELD_DEFS`
+  names. The core setters apply them in schema order. Do not add a CLI
+  spelling, a per-op map or a default number: an unset key keeps the
+  registry default, and `parse_job_file` refuses an unknown key.
 
 ## Verification and sweeps
 

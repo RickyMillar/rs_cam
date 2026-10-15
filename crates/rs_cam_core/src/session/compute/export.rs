@@ -315,15 +315,7 @@ impl ProjectSession {
             (Some(b), None) => Some(b),
             _ => None,
         };
-        let heights_bbox = ctx.heights_stock_bbox;
-        crate::compute::config::HeightContext {
-            safe_z: ctx.safe_z,
-            op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: heights_bbox.max.z,
-            stock_bottom_z: heights_bbox.min.z,
-            model_top_z: mb.map(|b| b.max.z),
-            model_bottom_z: mb.map(|b| b.min.z),
-        }
+        ctx.height_context(tc.operation.default_depth_for_heights(), mb.as_ref())
     }
 
     /// Run the feeds calculator for a single toolpath against the session's

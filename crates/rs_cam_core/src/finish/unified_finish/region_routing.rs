@@ -3,13 +3,15 @@
 //!
 //! Split out of `finish/unified_finish.rs` by P4; every item is unchanged
 //! apart from its visibility. The orchestrator that calls them
-//! ([`super::unified_finish_toolpath_with_cancel_and_ceiling`]) and the
+//! ([`super::UnifiedFinishOp`], W6.4) and the
 //! parameter/report types they read stay in the parent.
 
 use crate::finish::finish_planner::FinishBand;
 use crate::finish::finish_setup::FinishSurface;
 use crate::finish::scallop::ScallopRuntimeAnnotation;
-use crate::finish::surface_link::build_surface_link;
+use crate::finish::surface_link::{
+    CeilingShape, LinkCeiling, LinkLanding, build_surface_link, shape_under_ceiling,
+};
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -17,7 +19,7 @@ use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::surface::dropcutter::{
-    DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel,
+    DropCutterGrid, LatticeSampling, batch_drop_cutter_windowed_with_cancel, point_is_over_mesh_xy,
 };
 #[cfg(test)]
 use crate::surface::rest_field::RestGrid;
@@ -30,7 +32,7 @@ use super::UnifiedFinishParams;
 /// needs: where the tool ENTERS the surface (its plunge target), where it
 /// LEAVES it (last cut before the trailing retracts), and how many moves
 /// each end contributes so a surface link can strip them.
-pub(super) struct RegionPath {
+pub(crate) struct RegionPath {
     /// Index into the decomposition's `planned.regions`.
     pub(super) region_index: usize,
     pub(super) band: FinishBand,
@@ -82,9 +84,9 @@ pub(super) fn build_shallow_raster_grid(
     window: Option<[f64; 4]>,
     cancel: &dyn CancelCheck,
 ) -> Result<DropCutterGrid, Cancelled> {
-    // Mesh-bottom floor, mirroring `generate_drop_cutter`'s
-    // `effective_min_z` (compute::execute.rs). The stock-bbox floor
-    // (`ctx.stock_bbox.min.z - 1.0` there) is the op-adapter's job — this
+    // Mesh-bottom floor, mirroring the floor of
+    // `surface::dropcutter::finish_raster_grid` (the Drop Cutter op). Its
+    // stock-bbox floor (`stock_bottom_z - 1.0` there) is the op's job — this
     // pure-core function only sees a mesh, not a stock model, so callers
     // needing that extra floor should pre-max it into `bottom_z` before
     // calling in.
@@ -111,26 +113,14 @@ pub(super) fn build_shallow_raster_grid(
         },
         &never_cancel,
     )?;
-    // Drop grid points whose vertical ray misses every triangle in the mesh.
-    // Replicated from `compute::execute::generate_drop_cutter`'s identical
-    // guard: `point_drop_cutter` marks a point contacted whenever the cutter
-    // (which has radius) touches ANY nearby triangle — including the rim of
-    // a mesh that doesn't cover that XY. Without this check the tool rides
-    // the edge and carves a trench around the part.
+    // Drop grid points whose vertical ray misses every triangle in the mesh,
+    // with the predicate of `surface::dropcutter::finish_raster_grid`:
+    // `point_drop_cutter` marks a point contacted whenever the cutter (which
+    // has radius) touches ANY nearby triangle — including the rim of a mesh
+    // that doesn't cover that XY. Without this check the tool rides the edge
+    // and carves a trench around the part.
     for pt in &mut grid.points {
-        let mut over = false;
-        for &tri_idx in &index.query(pt.x, pt.y, 0.0) {
-            // SAFETY: tri_idx comes from `index.query`, which only ever
-            // returns indices into `mesh.faces` (mirrors
-            // `generate_drop_cutter`'s identical loop in compute::execute.rs).
-            #[allow(clippy::indexing_slicing)]
-            let tri = &mesh.faces[tri_idx];
-            if tri.contains_point_xy(pt.x, pt.y) {
-                over = true;
-                break;
-            }
-        }
-        if !over {
+        if !point_is_over_mesh_xy(pt.x, pt.y, mesh, index) {
             pt.z = effective_min_z;
             pt.contacted = false;
         }
@@ -278,6 +268,9 @@ pub(super) struct JunctionChoice {
     /// Interior surface-link points (empty for a retract junction, and for
     /// a zero-length surface junction).
     pub(super) pts: Vec<P3>,
+    /// How the link reaches the next region's entry (B20). `Ride` for a
+    /// retract junction, which emits its own `EntryPlunge`.
+    pub(super) landing: LinkLanding,
     pub(super) cost_s: f64,
     pub(super) alt_cost_s: Option<f64>,
 }
@@ -339,6 +332,10 @@ pub(super) fn trailing_retracts(tp: &Toolpath) -> (usize, Option<P3>) {
 /// and the winning junction choice for each consecutive pair. 2-opt is
 /// deliberately absent: the design doc's P0 discipline is measure first —
 /// it only gets built if the A/B says greedy leaves >5% on the table.
+///
+/// `link_ceiling` (B16, W6.4) is the op's ceiling from the one builder
+/// (`compute::execute::link_ceiling_for`): each surface candidate takes its
+/// shape under it ([`choose_link`]).
 #[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
 pub(super) fn route_greedy(
     paths: &[RegionPath],
@@ -347,6 +344,7 @@ pub(super) fn route_greedy(
     cutter: &dyn MillingCutter,
     params: &UnifiedFinishParams,
     machining_boundary: Option<&RegionSet<'_>>,
+    link_ceiling: Option<LinkCeiling<'_>>,
     lk: &LinkKinematics,
     cancel: &dyn CancelCheck,
 ) -> Result<(Vec<usize>, Vec<Option<JunctionChoice>>), Cancelled> {
@@ -388,6 +386,7 @@ pub(super) fn route_greedy(
                 cutter,
                 params,
                 machining_boundary,
+                link_ceiling,
                 lk,
             );
             // Strict `<` keeps the earliest candidate on exact ties —
@@ -416,6 +415,14 @@ pub(super) fn route_greedy(
 /// never feed across excluded islands), and only available when the
 /// follower has a strippable entry. Ties go to the surface link, matching
 /// pencil's `surface_t <= retract_t`.
+///
+/// B16 (W6.4): with a `link_ceiling` in scope (the op cuts remaining stock)
+/// the candidate takes its shape under the ceiling through the ONE ceiling
+/// arm of the relink ([`shape_under_ceiling`], finishing prior
+/// `flush_ride: true`): it rides the surface only where the stock is flush
+/// with it, else it lifts clear of the standing material, and a lift that
+/// reaches `safe_z` leaves the retract. The cost model then prices the
+/// geometry that is emitted.
 #[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
 fn choose_link(
     from: P3,
@@ -425,6 +432,7 @@ fn choose_link(
     cutter: &dyn MillingCutter,
     params: &UnifiedFinishParams,
     machining_boundary: Option<&RegionSet<'_>>,
+    link_ceiling: Option<LinkCeiling<'_>>,
     lk: &LinkKinematics,
 ) -> JunctionChoice {
     let entry_surface = (to.head_strip > 0).then_some(to.entry).flatten();
@@ -468,6 +476,27 @@ fn choose_link(
         {
             return None;
         }
+        // B16: the shape under the op's ceiling. A lifted link keeps the XY
+        // of the surface candidate, so the boundary test above holds for it.
+        let (pts, landing) = match link_ceiling {
+            None => (pts, LinkLanding::Ride),
+            Some(ceiling) => match shape_under_ceiling(
+                &ceiling,
+                from,
+                pts,
+                entry,
+                mesh,
+                index,
+                cutter,
+                params.stock_to_leave,
+                params.safe_z,
+                true,
+            ) {
+                CeilingShape::Flush(pts) => (pts, LinkLanding::Ride),
+                CeilingShape::Lifted { pts, landing } => (pts, landing),
+                CeilingShape::AboveSafeZ => return None,
+            },
+        };
         let mut costed_path = pts.clone();
         costed_path.push(entry);
         let surface_t = surface_link_time(
@@ -478,25 +507,28 @@ fn choose_link(
             lk.max_feed_mm_min,
             lk.rapid_feed_mm_min,
         );
-        Some((pts, surface_t))
+        Some((pts, landing, surface_t))
     });
 
     match surface_candidate {
-        Some((pts, surface_t)) if surface_t <= retract_t => JunctionChoice {
+        Some((pts, landing, surface_t)) if surface_t <= retract_t => JunctionChoice {
             surface: true,
             pts,
+            landing,
             cost_s: surface_t,
             alt_cost_s: Some(retract_t),
         },
-        Some((_, surface_t)) => JunctionChoice {
+        Some((_, _, surface_t)) => JunctionChoice {
             surface: false,
             pts: Vec::new(),
+            landing: LinkLanding::Ride,
             cost_s: retract_t,
             alt_cost_s: Some(surface_t),
         },
         None => JunctionChoice {
             surface: false,
             pts: Vec::new(),
+            landing: LinkLanding::Ride,
             cost_s: retract_t,
             alt_cost_s: None,
         },

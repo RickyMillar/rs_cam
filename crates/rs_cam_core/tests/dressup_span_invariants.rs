@@ -41,6 +41,8 @@ use rs_cam_core::{
     trace::transform_provenance::ReconcileSet,
 };
 
+mod common;
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn assert_invariants(out: &AnnotatedToolpath, label: &str) {
@@ -140,6 +142,7 @@ fn run_full_pipeline(
             safe_z: /* safe_z */ 30.0,
             stock_top: /* stock_top */ 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
@@ -202,6 +205,7 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
                 safe_z: 10.0,
                 stock_top: 0.0,
                 prior_stock: None,
+                link_kinematics: None,
                 feed_opt_stock: None,
                 cutter: None,
                 entry_surface: None,
@@ -249,6 +253,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
             safe_z: 10.0,
             stock_top: 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
@@ -312,6 +317,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
             safe_z: 10.0,
             stock_top: 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
@@ -333,26 +339,9 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
 
 #[test]
 fn face_op_dressup_pipeline_preserves_invariants() {
-    use rs_cam_core::geo::BoundingBox3;
-    use rs_cam_core::ops::face::{FaceParams, face_toolpath};
-
-    let bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(40.0, 30.0, 5.0),
-    };
-    let params = FaceParams {
-        tool_radius: 3.0,
-        stepover: 4.0,
-        depth: 2.0,
-        depth_per_pass: 2.0,
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
-        safe_z: 30.0,
-        stock_offset: 0.0,
-        direction: rs_cam_core::ops::face::FaceDirection::OneWay,
-        stock_top_z: 0.0,
-    };
-    let raw = face_toolpath(&bbox, &params);
+    // D3: the Face runner's output through the session door (the deleted
+    // `face_toolpath` took the same dials).
+    let raw = common::op_fixtures::dressup_face(2.0);
     assert!(!raw.moves.is_empty(), "face fixture should produce moves");
     let n = raw.moves.len();
     let annotated = AnnotatedToolpath::with_spans(raw, vec![Span::new(0, n, SpanKind::Operation)]);
@@ -366,31 +355,11 @@ fn face_op_dressup_pipeline_preserves_invariants() {
 
 #[test]
 fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
-    use rs_cam_core::{
-        compute::{config::ArcFitParams, spans::spans_from_depth_runs},
-        geo::BoundingBox3,
-        ops::face::{FaceDirection, FaceParams, face_toolpath},
-    };
+    use rs_cam_core::compute::{config::ArcFitParams, spans::spans_from_depth_runs};
 
-    let bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(40.0, 30.0, 5.0),
-    };
-    let raw = face_toolpath(
-        &bbox,
-        &FaceParams {
-            tool_radius: 3.0,
-            stepover: 4.0,
-            depth: 4.0,
-            depth_per_pass: 2.0,
-            feed_rate: 1500.0,
-            plunge_rate: 500.0,
-            safe_z: 30.0,
-            stock_offset: 0.0,
-            direction: FaceDirection::OneWay,
-            stock_top_z: 0.0,
-        },
-    );
+    // D3: the Face runner's output through the session door, two 2 mm
+    // levels (the deleted `face_toolpath` took the same dials).
+    let raw = common::op_fixtures::dressup_face(4.0);
     let rows_before: Vec<_> = raw
         .moves
         .iter()
@@ -436,6 +405,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
             safe_z: 30.0,
             stock_top: 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
@@ -512,6 +482,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
             safe_z: 30.0,
             stock_top: 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,

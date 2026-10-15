@@ -903,6 +903,7 @@ mod tests {
             name: format!("tp{id}"),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::clone(tool),
+            tool_id: rs_cam_core::compute::tool_config::ToolId(0),
             flute_count: 2,
             tool_summary: "6mm Flat".into(),
             semantic_trace: None,
@@ -929,7 +930,6 @@ mod tests {
         let tool = Arc::new(ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -955,6 +955,7 @@ mod tests {
                     local_to_global: None,
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
                 SimGroupEntry {
                     toolpaths: vec![entry(2, cut(25.0, 25.0, 19.0), &tool)],
@@ -963,6 +964,7 @@ mod tests {
                     local_to_global: Some(bottom),
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
             ],
             stock_bbox: bbox,

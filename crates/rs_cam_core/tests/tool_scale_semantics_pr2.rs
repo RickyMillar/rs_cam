@@ -74,7 +74,7 @@ fn shape(name: &str) -> Box<dyn MillingCutter> {
 }
 
 fn wrap(cutter: Box<dyn MillingCutter>) -> ToolDefinition {
-    ToolDefinition::new(cutter, 6.0, 30.0, 25.0, 40.0, 2, ToolMaterial::Carbide)
+    ToolDefinition::new(cutter, 6.0, 25.0, 40.0, 2, ToolMaterial::Carbide)
 }
 
 /// Depths / radii sampled by the property tests. Chosen to straddle every

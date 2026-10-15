@@ -1,15 +1,14 @@
 //! Core collision checking wrapper -- runs holder/shank collision detection
-//! against the workpiece mesh and the setup's fixtures, without any GUI
-//! dependencies.
+//! against the workpiece mesh and the setup's obstacles (K1), without any
+//! GUI dependencies.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::compute::obstacle::{JoinStart, ObstacleSet};
 use crate::interrupt::Cancelled;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::stock::collision::{
-    CollisionObstacle, CollisionReport, check_collisions_interpolated_with_cancel,
-    check_obstacle_collisions_with_cancel,
-};
+use crate::stock::collision::{CollisionReport, check_collisions_interpolated_with_cancel};
 use crate::tool::ToolDefinition;
 use crate::toolpath::Toolpath;
 
@@ -22,11 +21,17 @@ pub struct CollisionCheckRequest<'a> {
     /// fixture half below still runs, because a holder can crash a clamp
     /// over a drawing as easily as over a model (CMP-14 follow-up).
     pub mesh: Option<&'a TriangleMesh>,
-    /// Workholding fixtures (clearance-expanded boxes, in the toolpath's
-    /// frame) the assembly must also clear. Empty when the setup has no
-    /// enabled fixtures. W0.1 / P6-003: without these, a holder crashing
-    /// a clamp is never flagged.
-    pub obstacles: Vec<CollisionObstacle>,
+    /// K1: the setup's obstacles, in the toolpath's frame. The check runs
+    /// the one obstacle kernel the simulation runs
+    /// ([`crate::compute::obstacle::ObstacleToolView::check_toolpath`]):
+    /// every move class, the cutter included. Empty when the setup has no
+    /// enabled obstacle.
+    pub obstacles: Arc<ObstacleSet>,
+    /// K1: where the tool is before the first move, for the obstacle check
+    /// of the join from the previous toolpath of the setup
+    /// ([`crate::compute::obstacle::JoinStart`]). The session door
+    /// `ProjectSession::obstacle_join_for_toolpath` gives it.
+    pub join: JoinStart,
     /// A spatial index the caller already built over `mesh`. `None` makes
     /// this call build its own, and a `None` `mesh` ignores it.
     ///
@@ -49,12 +54,15 @@ pub struct CollisionCheckResult {
 pub enum CollisionCheckError {
     /// The check was cancelled via the cancel flag.
     Cancelled,
+    /// K1: the obstacles could not be grown for this tool.
+    Obstacles(String),
 }
 
 impl std::fmt::Display for CollisionCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Collision check cancelled"),
+            Self::Obstacles(text) => f.write_str(text),
         }
     }
 }
@@ -118,19 +126,21 @@ pub fn run_collision_check(
         },
     };
 
-    // W0.1 — also test the assembly against workholding fixtures. The mesh
-    // check above can only see the workpiece, so a holder/shank crashing a
-    // clamp would otherwise go unflagged. Same 1mm interpolation; fixture
-    // hits are merged into the report's collision list.
-    let fixture_hits = check_obstacle_collisions_with_cancel(
-        request.toolpath,
-        &assembly,
-        &request.obstacles,
-        1.0,
-        &cancel_check,
-    )
-    .map_err(|_cancelled| CollisionCheckError::Cancelled)?;
-    report.collisions.extend(fixture_hits);
+    // K1: the obstacle half, the same kernel the simulation runs. An
+    // obstacle hit raises no stickout remedy: a longer tool does not clear
+    // a clamp.
+    if !request.obstacles.is_empty() {
+        let view = request
+            .obstacles
+            .for_tool(&assembly)
+            .map_err(|e| CollisionCheckError::Obstacles(e.to_string()))?;
+        if cancel_check() {
+            return Err(CollisionCheckError::Cancelled);
+        }
+        report
+            .collisions
+            .extend(view.check_toolpath(request.toolpath, request.join));
+    }
 
     Ok(CollisionCheckResult {
         collision_report: report,
@@ -159,7 +169,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -170,7 +179,8 @@ mod tests {
             toolpath: &tp,
             tool,
             mesh: Some(&mesh),
-            obstacles: Vec::new(),
+            obstacles: Arc::default(),
+            join: JoinStart::Unknown,
             index: None,
         };
         let cancel = AtomicBool::new(false);
@@ -191,7 +201,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -205,7 +214,8 @@ mod tests {
                 toolpath: &tp,
                 tool: tool(),
                 mesh: Some(&mesh),
-                obstacles: Vec::new(),
+                obstacles: Arc::default(),
+                join: JoinStart::Unknown,
                 index: None,
             },
             &cancel,
@@ -218,7 +228,8 @@ mod tests {
                 toolpath: &tp,
                 tool: tool(),
                 mesh: Some(&mesh),
-                obstacles: Vec::new(),
+                obstacles: Arc::default(),
+                join: JoinStart::Unknown,
                 index: Some(&index),
             },
             &cancel,
@@ -241,7 +252,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -252,7 +262,8 @@ mod tests {
             toolpath: &tp,
             tool,
             mesh: Some(&mesh),
-            obstacles: Vec::new(),
+            obstacles: Arc::default(),
+            join: JoinStart::Unknown,
             index: None,
         };
         let cancel = AtomicBool::new(true);

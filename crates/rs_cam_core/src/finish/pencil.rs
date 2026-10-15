@@ -31,7 +31,6 @@ pub(crate) use chain_paths::{OffsetFan, paths_from_sampled, reach_gap_threshold}
 /// module, so the re-export is `cfg(test)` to keep the lib build warning-free.
 #[cfg(test)]
 pub(crate) use detectors::NOMINAL_REFERENCE_BALL_LENGTH_MM;
-pub(crate) use detectors::{SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM};
 pub use emission::{
     ENTRY_RAMP_MIN_BITE_MM, PencilLinkReport, entry_bite_budget_mm, entry_ramp_window_mm,
     tip_contact_radius,
@@ -44,7 +43,6 @@ use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -215,12 +213,6 @@ pub struct PencilParams {
     /// keeps the at-depth tier, which is the control arm that measures what
     /// each tier is worth on its own.
     pub link_hop_distance_mm: Option<f64>,
-    /// The `fallback_top_z` of the op's link ceiling, from the one builder
-    /// (`compute::execute::link_ceiling_for`, ruling R1). The link lift
-    /// ([`emission::plan_link_lift`]) reads it where the dexel query has no
-    /// answer. `None`: no op heights are in scope (a library caller), and
-    /// the lift reads the stock snapshot's own top.
-    pub link_fallback_top_z: Option<f64>,
 }
 
 /// Sensible test/prototyping defaults, sourced from the field-level
@@ -256,7 +248,6 @@ impl Default for PencilParams {
             link_kinematics: None,
             // "Same cap as `hookup_distance`" — byte-identical.
             link_hop_distance_mm: None,
-            link_fallback_top_z: None,
         }
     }
 }
@@ -507,20 +498,6 @@ fn order_paths_nearest(paths: &mut [PencilPath]) {
     }
 }
 
-/// Generate pencil finishing toolpath.
-///
-/// Detects concave mesh edges (creases) and generates toolpaths that
-/// follow them, cleaning material that standard finishing passes miss.
-pub fn pencil_toolpath(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &PencilParams,
-) -> Toolpath {
-    let (tp, _, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
-    tp
-}
-
 impl crate::compute::spans::RuntimeLabel for PencilRuntimeAnnotation {
     fn move_index(&self) -> usize {
         self.move_index
@@ -592,13 +569,12 @@ fn polyline_passes_depth(
 /// `None` is **not measured**, never a measured zero.
 #[derive(Debug, Clone, Default)]
 pub struct PencilReport {
-    /// The `RestDepth` detector's rest-field grid, for the GUI heatmap
-    /// overlay. `None` for every other detector — no rest field was built.
-    pub rest_grid: Option<crate::surface::rest_field::RestGrid>,
-    /// The `RestDepth` detector's derived machining-region polygons (P2.2
-    /// selective-finishing boundary source). `None` for every other
-    /// detector.
-    pub rest_regions: Option<Vec<Polygon2>>,
+    /// W6.2: what the `RestDepth` detector produced. `rest_grid` is its
+    /// rest-field grid (the GUI heatmap overlay); `rest_regions` is its
+    /// derived machining-region polygons (the P2.2 selective-finishing
+    /// boundary source). Both `None` for every other detector — no rest
+    /// field was built.
+    pub produced: crate::trace::produced::Produced,
     /// Wave D1: the centreline TIP-FLOAT tally. Always `Some` from the
     /// cancellable entry point — a detector that emitted no centreline
     /// still measured zero points, which is a different statement from
@@ -611,33 +587,27 @@ pub struct PencilReport {
     pub link: Option<PencilLinkReport>,
 }
 
-#[allow(clippy::expect_used)]
-pub fn pencil_toolpath_structured_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &PencilParams,
-    // R2: the actual machined stock left by prior toolpaths, when this pencil op
-    // cuts `FromRemainingStock` and a prior simulation exists. The RestDepth
-    // detector prefers it as the rest reference (it captures the real prior
-    // toolpath pattern). `None` ⇒ fall back to the tool/nominal reference (R1).
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
-    debug: Option<&ToolpathDebugContext>,
-) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        pencil_toolpath_structured_annotated_with_cancel(
-            mesh,
-            index,
-            cutter,
-            params,
-            initial_stock,
-            debug,
-            cancel,
-        )
-    })
+/// The stock a pencil pass reads (W6.2). `Default` is a fresh-stock pass.
+#[derive(Clone, Copy, Default)]
+pub struct PencilStock<'a> {
+    /// The actual machined stock left by prior toolpaths, when this pencil
+    /// op cuts `FromRemainingStock` and a prior simulation exists. The entry
+    /// ramps read it as is (G-ENTRYLOAD).
+    pub remaining: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// R2: the same stock after the W2.1 stock-vs-mesh guard
+    /// (`compute::execute::Territory::reference_stock`). The RestDepth
+    /// detector prefers it as the rest reference (it captures the real prior
+    /// toolpath pattern). `None` ⇒ fall back to the tool/nominal reference
+    /// (R1).
+    pub rest_reference: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// The op's link ceiling from the one builder
+    /// (`compute::execute::link_ceiling_for`, ruling R1; leftover-audit item
+    /// C8). The link lift reads its fallback top and its obstacles. `None`
+    /// on fresh stock, where the lift never runs, and for a library caller.
+    pub link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'a>>,
 }
 
-/// Cancellable variant of [`pencil_toolpath_structured_annotated`]. Polls
+/// The pencil kernel (`compute::execute::generate_pencil` calls it). Polls
 /// `cancel` between the major phases (detector dispatch → path ordering →
 /// emission) and once per line/chain inside each detector arm's own sampling
 /// loop (see [`dihedral_arm`], [`curvature_arm`], [`rest_depth_arm`]). Does
@@ -650,7 +620,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    stock: PencilStock<'_>,
     debug: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport), Cancelled> {
@@ -669,7 +639,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
             index,
             cutter,
             params,
-            initial_stock,
+            stock.rest_reference,
             debug,
             &mut report,
             &mut float,
@@ -698,7 +668,8 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
         index,
         cutter,
         params,
-        initial_stock,
+        stock.remaining,
+        stock.link_ceiling,
     );
     // G-LINKVISIBLE: recorded even when every counter is zero — the emitter
     // ran, so the measurement exists.

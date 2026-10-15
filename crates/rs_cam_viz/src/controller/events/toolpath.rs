@@ -48,13 +48,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .list_setups()
                 .iter()
                 .position(|s| s.id == setup_id.0),
-            Selection::Fixture(setup_id, _) => self
-                .state
-                .session
-                .list_setups()
-                .iter()
-                .position(|s| s.id == setup_id.0),
-            Selection::KeepOut(setup_id, _) => self
+            Selection::Obstacle(setup_id, _) => self
                 .state
                 .session
                 .list_setups()

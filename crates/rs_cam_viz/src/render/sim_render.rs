@@ -500,16 +500,24 @@ pub struct ToolGeometry {
     pub taper_half_angle: f32,
 }
 
+/// The holder has no length in the tool model: it starts at the holder
+/// face and continues upward (`rs_cam_core::stock::collision::ToolAssembly`).
+/// A drawing must stop somewhere, so it draws the holder this many holder
+/// diameters tall. A drawing choice, not a model value.
+pub(crate) const HOLDER_DRAW_LENGTH_OVER_DIAMETER: f32 = 1.0;
+
 /// Full tool assembly dimensions for wireframe rendering (shank + holder above cutter).
 /// All lengths in mm.
 pub struct ToolAssemblyInfo {
     /// Shank cylinder radius (shank_diameter / 2).
     pub shank_radius: f32,
-    /// Shank cylinder length above cutter.
+    /// Exposed shank length between the flutes and the holder face
+    /// (`ToolDefinition::exposed_shank_length`).
     pub shank_length: f32,
     /// Holder cylinder radius (holder_diameter / 2).
     pub holder_radius: f32,
-    /// Total stickout from holder face to tool tip; holder length = stickout - cutting_length - shank_length.
+    /// Length from the holder face to the tool tip. The holder face is at
+    /// this height above the tip.
     pub stickout: f32,
 }
 
@@ -545,7 +553,7 @@ impl ToolAssemblyInfo {
     pub fn from_tool_definition(td: &rs_cam_core::tool::ToolDefinition) -> Self {
         Self {
             shank_radius: (td.shank_diameter / 2.0) as f32,
-            shank_length: td.shank_length as f32,
+            shank_length: td.exposed_shank_length() as f32,
             holder_radius: (td.holder_diameter / 2.0) as f32,
             stickout: td.stickout as f32,
         }
@@ -632,9 +640,11 @@ impl ToolModelGpuData {
         }
 
         // --- Holder cylinder ---
-        // Holder extends from top of shank upward by the remaining stickout distance
-        let holder_bottom_z = cutter_top_z + info.shank_length;
-        let holder_length = (info.stickout - geom.cutting_length - info.shank_length).max(0.0);
+        // The holder face is at the stickout above the tip, always. The
+        // holder has no top in the model; the drawing stops at
+        // `HOLDER_DRAW_LENGTH_OVER_DIAMETER` holder diameters.
+        let holder_bottom_z = tip_z + info.stickout;
+        let holder_length = 2.0 * info.holder_radius * HOLDER_DRAW_LENGTH_OVER_DIAMETER;
         if info.holder_radius > 0.01 && holder_length > 0.01 {
             let holder_top_z = holder_bottom_z + holder_length;
             let hr = info.holder_radius;

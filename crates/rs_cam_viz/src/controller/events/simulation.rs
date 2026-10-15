@@ -258,6 +258,7 @@ impl<B: ComputeBackend> AppController<B> {
                     name: tc.name.clone(),
                     annotated: Arc::clone(result.annotated()),
                     tool: tool_def,
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(tc.tool_id),
                     flute_count,
                     tool_summary,
                     semantic_trace,
@@ -298,6 +299,12 @@ impl<B: ComputeBackend> AppController<B> {
                     setup.z_rotation,
                 );
 
+                // K1: the sixth shared decision, the same call as the core
+                // builder.
+                let obstacles = rs_cam_core::compute::simulate::group_obstacles(
+                    setup,
+                    self.state.session.models(),
+                );
                 groups.push(SimGroupEntry {
                     toolpaths,
                     direction: group_stock_cut_direction(setup.face_up),
@@ -311,6 +318,7 @@ impl<B: ComputeBackend> AppController<B> {
                     local_to_global: setup_ctx.local_to_global,
                     phantom_prior_stock,
                     stock_changes,
+                    obstacles,
                 });
             }
 
@@ -546,6 +554,34 @@ impl<B: ComputeBackend> AppController<B> {
         );
     }
 
+    /// Operator ruling 2026-10-15: generate the fresh twin of rest
+    /// toolpath `tp_id` and record both cycle times through
+    /// `Command::AdoptRestFreshComparison`. The GUI button and the MCP
+    /// `compare_rest_with_fresh` tool both take this door. It runs on the
+    /// frame loop: one generation of the operation, on request only.
+    pub(crate) fn compare_rest_with_fresh(
+        &mut self,
+        tp_id: ToolpathId,
+    ) -> Result<rs_cam_core::compute::toolpath_stats::FreshTwinTime, String> {
+        let (index, _) = self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id)
+            .ok_or_else(|| format!("no toolpath with id {}", tp_id.0))?;
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let args = self
+            .state
+            .session
+            .compare_rest_with_fresh(index, &cancel)
+            .map_err(|e| e.to_string())?;
+        let times = args.times;
+        self.apply_quietly(rs_cam_core::session::Command::AdoptRestFreshComparison(
+            args,
+        ))
+        .map(|_effects| times)
+        .ok_or_else(|| "the session refused the fresh comparison".to_owned())
+    }
+
     /// Submit the holder/shank clearance check.
     ///
     /// **It examines ONE toolpath** — the first that has a result, a cutter
@@ -599,9 +635,6 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|m| m.id == tc.model_id)
                     .and_then(|m| m.mesh.clone())?;
-                // W0.1 — carry the setup's fixtures so the GUI check
-                // flags holder-vs-clamp crashes, not just mesh hits.
-                let obstacles = self.state.session.collision_obstacles_for_toolpath(index);
                 Some((
                     index,
                     tc.id,
@@ -609,12 +642,24 @@ impl<B: ComputeBackend> AppController<B> {
                     Arc::clone(&result.annotated),
                     tool,
                     mesh,
-                    obstacles,
                 ))
             });
 
-        if let Some((index, toolpath_id, enabled, annotated, tool, mesh, obstacles)) = toolpath_data
-        {
+        if let Some((index, toolpath_id, enabled, annotated, tool, mesh)) = toolpath_data {
+            // K1: carry the setup's obstacles so the GUI check runs the
+            // obstacle kernel too. An obstacle that cannot be resolved
+            // REFUSES the check and names the obstacle; a check with no
+            // obstacles would read as clear.
+            let obstacles = match self.state.session.obstacle_set_for_toolpath(index) {
+                Ok(obstacles) => obstacles,
+                Err(e) => {
+                    let text = format!("Collision check refused: {e}");
+                    tracing::warn!("{text}");
+                    self.push_notification(text, super::super::Severity::Error);
+                    return;
+                }
+            };
+            let join = self.state.session.obstacle_join_for_toolpath(index);
             // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
             // stands at SUBMIT, and only on the branch that really submits.
             // The `else` arm below reaches the lane with nothing, and a stamp
@@ -647,6 +692,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tool,
                 mesh,
                 obstacles,
+                join,
             });
         } else {
             tracing::warn!("No toolpath with STL mesh available for collision check");
@@ -780,6 +826,7 @@ mod release_for_new_run_m1 {
             display_degrade: None,
             group_starts: Vec::new(),
             stock_change_volumes: Vec::new(),
+            obstacle_collisions: Vec::new(),
         };
         let epoch = controller.state.session.simulation_epoch();
         let _ = controller

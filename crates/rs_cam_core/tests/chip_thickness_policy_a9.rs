@@ -70,7 +70,6 @@ fn carbide_ball(diameter_mm: f64) -> ToolDefinition {
     ToolDefinition::new(
         Box::new(BallEndmill::new(diameter_mm, 30.0)),
         diameter_mm,
-        10.0,
         25.0,
         30.0,
         2,
@@ -83,7 +82,6 @@ fn carbide_tapered_ball() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0)),
         6.0,
-        10.0,
         25.0,
         35.0,
         2,

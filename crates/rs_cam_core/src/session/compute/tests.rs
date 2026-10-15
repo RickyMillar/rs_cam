@@ -105,6 +105,58 @@ fn set_toolpath_param_depth_per_pass() {
     }
 }
 
+/// C1: Waterline has no `depth_per_pass` alias. The name refuses and the
+/// Z step stays; `z_step` is the one name. D2: RampFinish refuses the
+/// same name the same way; `max_stepdown` is its one name.
+#[test]
+fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
+    use crate::compute::catalog::OperationType;
+    let mut s = make_session();
+    let mut tc = make_tc(s.tools()[0].id.0);
+    tc.operation = OperationConfig::new_default(OperationType::Waterline);
+    let _ = s.add_toolpath(0, tc).unwrap();
+    let z_step = |s: &ProjectSession| match &s.toolpath_configs()[0].operation {
+        OperationConfig::Waterline(cfg) => cfg.z_step,
+        _ => panic!("expected Waterline"),
+    };
+    let before = z_step(&s);
+    let refusal = s.set_toolpath_param(0, "depth_per_pass", json!(before + 0.5));
+    assert!(
+        matches!(refusal, Err(SessionError::InvalidParam(_))),
+        "{refusal:?}"
+    );
+    assert!(
+        (z_step(&s) - before).abs() < 1e-12,
+        "the refused value is not applied"
+    );
+    let _ = s
+        .set_toolpath_param(0, "z_step", json!(before + 0.5))
+        .unwrap();
+    assert!((z_step(&s) - (before + 0.5)).abs() < 1e-12);
+
+    let mut ramp = make_tc(s.tools()[0].id.0);
+    ramp.operation = OperationConfig::new_default(OperationType::RampFinish);
+    let _ = s.add_toolpath(0, ramp).unwrap();
+    let stepdown = |s: &ProjectSession| match &s.toolpath_configs()[1].operation {
+        OperationConfig::RampFinish(cfg) => cfg.max_stepdown,
+        _ => panic!("expected RampFinish"),
+    };
+    let before = stepdown(&s);
+    let refusal = s.set_toolpath_param(1, "depth_per_pass", json!(before + 0.25));
+    assert!(
+        matches!(refusal, Err(SessionError::InvalidParam(_))),
+        "{refusal:?}"
+    );
+    assert!(
+        (stepdown(&s) - before).abs() < 1e-12,
+        "the refused value is not applied"
+    );
+    let _ = s
+        .set_toolpath_param(1, "max_stepdown", json!(before + 0.25))
+        .unwrap();
+    assert!((stepdown(&s) - (before + 0.25)).abs() < 1e-12);
+}
+
 /// **DR-LIVE sentry.** `peck_depth`'s `ParamDef` now declares the
 /// domain its emitter actually accepts, and `set_toolpath_param`
 /// refuses outside it.
@@ -847,6 +899,53 @@ fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
     }
 }
 
+/// B19: the generation context of a `Fresh` op holds no prior stock, also
+/// when the session holds a current snapshot under its id. A
+/// `FromRemainingStock` op in the same position holds the snapshot, so the
+/// test reads the predicate from both sides.
+#[test]
+fn a_fresh_op_captures_no_prior_stock_b19() {
+    let mut s = make_session_with_pocket_model();
+    let tool_id = s.tools()[0].id.0;
+    let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
+    let cancel = AtomicBool::new(false);
+    for index in [0, 1] {
+        s.generate_toolpath(index, &cancel)
+            .expect("a Fresh pocket generates");
+    }
+    s.run_simulation(&SimulationOptions::default(), &cancel)
+        .expect("the simulation runs");
+    let id = s.toolpath_configs()[1].id;
+    assert!(
+        s.snapshot_is_current(id).is_ok(),
+        "fixture: TP1 must hold a current snapshot"
+    );
+
+    let fresh = s.capture_generate_handle(1, &cancel).unwrap();
+    assert!(
+        fresh.context.prior_stock.is_none(),
+        "B19: a Fresh op captured the simulated prior stock"
+    );
+    assert!(fresh.context.generator_seed_stock().is_none());
+    assert!(fresh.context.source_stock.is_none());
+
+    // The other side: the same position as a rest op reads the snapshot.
+    let mut rest = s.toolpath_configs()[1].clone();
+    rest.stock_source = crate::session::StockSource::FromRemainingStock;
+    s.toolpath_configs[1] = rest;
+    assert!(
+        s.snapshot_is_current(id).is_ok(),
+        "fixture: the stock-source edit leaves the snapshot current"
+    );
+    let rest = s.capture_generate_handle(1, &cancel).unwrap();
+    assert!(
+        rest.context.prior_stock.is_some(),
+        "a FromRemainingStock op must capture the current snapshot"
+    );
+    assert!(rest.context.generator_seed_stock().is_some());
+}
+
 // ── diagnostics ──────────────────────────────────────────────
 
 #[test]
@@ -1290,6 +1389,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         display_degrade: None,
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
+        obstacle_collisions: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -1371,6 +1471,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         display_degrade: None,
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
+        obstacle_collisions: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -1951,7 +2052,8 @@ fn advisor_modulates_candidate_feeds_before_timing() {
         mesh: resolved.mesh.as_deref(),
         index: resolved.spatial_index(),
         polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
-        boundary: resolved.pre_boundary.as_ref(),
+        territory_inputs: crate::compute::execute::TerritoryInputs::default()
+            .boundary(resolved.pre_boundary.as_ref()),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,
             &resolved.tool_def,
@@ -2122,7 +2224,7 @@ fn fake_result_with_regions(
 ) -> ToolpathComputeResult {
     let mut at =
         crate::trace::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
-    at.rest_regions = regions.map(Arc::new);
+    at.produced.rest_regions = regions.map(Arc::new);
     ToolpathComputeResult {
         op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(at)),
         stats: ToolpathStats {
@@ -2136,12 +2238,12 @@ fn fake_result_with_regions(
             reached_uncut_estimate_mm2: None,
             dropped_band: None,
             tip_float: None,
-            deprecated_dial: None,
             derived_stepovers: Vec::new(),
             clipped_band: None,
             ramp_reach_clamp: None,
             claims_reference: None,
             zero_removal: None,
+            buried_curve: None,
             offset_library_failures: None,
             boundary_clip_dropped: None,
             // Nor a waterline ladder (R3 / R4).
@@ -2161,6 +2263,7 @@ fn fake_result_with_regions(
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,
+            planned_cycle_time_s: None,
         },
         debug_trace: None,
         semantic_trace: None,

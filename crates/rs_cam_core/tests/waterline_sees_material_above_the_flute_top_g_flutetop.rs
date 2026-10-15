@@ -39,7 +39,9 @@ use rs_cam_core::dressup::{EntrySurfaceProbe, OffMeshEntry};
 use rs_cam_core::geo::{P3, Triangle};
 use rs_cam_core::geometry::fiber::Fiber;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::ops::waterline::{WaterlineParams, waterline_contours, waterline_toolpath};
+use rs_cam_core::ops::waterline::{
+    WaterlineParams, waterline_contours, waterline_toolpath_with_cancel,
+};
 use rs_cam_core::surface::pushcutter::{push_cutter_fiber, push_cutter_triangle};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
@@ -122,7 +124,11 @@ fn a_waterline_level_closes_no_contour_inside_a_hill() {
         safe_z: HILL_H + 5.0,
         stock_to_leave: 0.0,
     };
-    let tp = waterline_toolpath(&mesh, &index, &tool, LEVEL, LEVEL, 1.0, &params);
+    let tp = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        waterline_toolpath_with_cancel(
+            &mesh, &index, &tool, LEVEL, LEVEL, 1.0, &params, None, cancel,
+        )
+    });
     assert!(!tp.moves.is_empty(), "non-vacuity: the level emits moves");
     let probe = EntrySurfaceProbe {
         mesh: &mesh,

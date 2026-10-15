@@ -19,18 +19,44 @@ use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 use super::{GeneratedToolpath, GenerationFindings};
 
+/// THE map from the `rest_analysis` dials to the rest detector's params.
+/// The generic rest analysis below and the Unified Finish claims pipeline
+/// (`finish_3d.rs`) both read it.
+///
+/// - `cell_mm`, `min_valley_depth` and `region_margin_mm` are the dials.
+/// - `num_offset_passes_cap` is the dial, else the detector default.
+/// - `offset_stepover_mm` is the detector default. The generic stage sets
+///   its own routing stepover; Unified Finish routes on its own fan.
+/// - `min_cut_length` has no dial: the detector default.
+pub(super) fn rest_field_params(
+    cfg: &crate::compute::config::RestAnalysisConfig,
+) -> crate::surface::rest_field::RestFieldParams {
+    let defaults = crate::surface::rest_field::RestFieldParams::default();
+    crate::surface::rest_field::RestFieldParams {
+        cell_mm: cfg.cell_mm,
+        min_valley_depth: cfg.min_valley_depth,
+        region_margin_mm: cfg.region_margin_mm,
+        num_offset_passes_cap: cfg
+            .num_offset_passes
+            .unwrap_or(defaults.num_offset_passes_cap),
+        ..defaults
+    }
+}
+
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
 /// rest-depth detector `pencil::rest_depth_arm` uses
 /// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
 /// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
-/// no centerline toolpath is emitted, only the analysis artifacts. Reference
-/// resolution: prefer the actual machined stock (when the shared W2.1 guard
-/// accepts it), else the configured real
-/// reference tool (`reference_tool_cfg`, resolved upstream from
+/// no centerline toolpath is emitted, only the analysis artifacts. The rest
+/// detector stage (`finish::rest_detector`, W6.4.1) resolves the reference:
+/// the actual machined stock (`rest_reference`: the territory's stock after
+/// the shared W2.1 guard, W6.2), else the configured real reference tool
+/// (`reference_tool_cfg`, resolved upstream from
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
-/// `reference_tool_id` is resolved), else a self-referenced bare-surface
-/// probe. Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
-#[allow(clippy::too_many_arguments)] // post-generation attach point; every
+/// `reference_tool_id` is resolved), else the stage's bare-surface probe.
+/// Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
+#[allow(clippy::too_many_arguments)]
+// post-generation attach point; every
 // argument is a distinct upstream source (geometry, tool, reference, stock,
 // dials, findings sink)
 pub(super) fn attach_generic_rest_analysis(
@@ -39,22 +65,18 @@ pub(super) fn attach_generic_rest_analysis(
     index: &SpatialIndex,
     tool_def: &ToolDefinition,
     reference_tool_cfg: Option<&ToolConfig>,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    rest_reference: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
     findings: &std::cell::RefCell<GenerationFindings>,
 ) {
     let reference_tool = reference_tool_cfg.map(build_cutter);
-    let probe_ball = crate::tool::BallEndmill::new(
-        crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-        crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
-    );
-    let reference = resolve_rest_reference(
-        mesh,
-        reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
-        initial_stock,
-        &probe_ball,
-    );
-    let defaults = crate::surface::rest_field::RestFieldParams::default();
+    // W6.4.1: this pass's POLICY is its tier list — the machined stock, else
+    // the configured reference tool. It offers no nominal ball; the stage
+    // falls back to its own probe.
+    let choice = crate::finish::rest_detector::RestReferenceChoice {
+        stock: rest_reference,
+        tool: reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+    };
     // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
     //
     // Wave A left this taking `RestFieldParams::default()` — a literal
@@ -73,14 +95,8 @@ pub(super) fn attach_generic_rest_analysis(
         crate::surface::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
     });
     let rf_params = crate::surface::rest_field::RestFieldParams {
-        cell_mm: cfg.cell_mm,
-        min_valley_depth: cfg.min_valley_depth,
-        region_margin_mm: cfg.region_margin_mm,
         offset_stepover_mm,
-        num_offset_passes_cap: cfg
-            .num_offset_passes
-            .unwrap_or(defaults.num_offset_passes_cap),
-        min_cut_length: defaults.min_cut_length,
+        ..rest_field_params(cfg)
     };
     // Same audit trail as the `UnifiedFinish` claims pipeline (PR-6a): the
     // number steers a routing decision and appears in no dial the operator
@@ -98,9 +114,12 @@ pub(super) fn attach_generic_rest_analysis(
                 slope_derate: None,
             });
     }
-    let rf = crate::surface::rest_field::detect_rest_valleys(
-        mesh, index, tool_def, reference, &rf_params,
-    );
+    let rf = crate::finish::rest_detector::detect_rest(mesh, index, tool_def, choice, &rf_params);
+    let regions = rf
+        .produced
+        .rest_regions
+        .as_deref()
+        .map_or(&[][..], Vec::as_slice);
     // F3: the regions these artifacts carry are what a `DerivedRestRegions`
     // consumer will be confined to, and the MAX_REST_REGIONS cap can have
     // silently dropped some of them. Record the pre-cap count alongside —
@@ -110,21 +129,15 @@ pub(super) fn attach_generic_rest_analysis(
     // and no headless output carries its polygons — this line is the one
     // place the numbers are observable off the GUI (multitool Phase T).
     tracing::info!(
-        regions = rf.region_polygons.len(),
+        regions = regions.len(),
         pre_cap = rf.region_cap.total_before_cap,
-        total_area_mm2 = format!(
-            "{:.1}",
-            rf.region_polygons
-                .iter()
-                .map(|p| p.area().abs())
-                .sum::<f64>()
-        ),
+        total_area_mm2 = format!("{:.1}", regions.iter().map(|p| p.area().abs()).sum::<f64>()),
         cell_mm = rf_params.cell_mm,
         min_valley_depth = rf_params.min_valley_depth,
         "generic rest analysis attached region set"
     );
-    generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
-    generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+    generated.produced.rest_grid = rf.produced.rest_grid;
+    generated.produced.rest_regions = rf.produced.rest_regions;
 }
 
 /// Why [`attach_generic_rest_analysis`] sizes the reach policy at
@@ -136,35 +149,6 @@ const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth
 /// depth-keyed, and its `reference_depth_mm` is a fixed 0.0.
 pub(super) const SHALLOW_SLOPE_DERATE_BASIS: &str =
     "slope-keyed — cos(theta_max) of the region's covered cells, not a depth";
-
-/// Resolve the rest-depth reference (P2.5 chain): the machined stock when
-/// the shared guard (`surface::stock_reference::StockReference::resolve`,
-/// W2.1) accepts it → a configured real reference tool → a self-referenced
-/// bare-surface probe. The guard is the one the unified finish claims and
-/// the pencil `RestDepth` detector also call; the tool tier after it is this
-/// pass's own dial.
-fn resolve_rest_reference<'a>(
-    mesh: &TriangleMesh,
-    reference_tool: Option<&'a dyn MillingCutter>,
-    initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
-    probe_ball: &'a crate::tool::BallEndmill,
-) -> crate::surface::rest_field::RestReference<'a> {
-    if let Some(stock) =
-        crate::surface::stock_reference::StockReference::resolve(initial_stock, &mesh.bbox).stock()
-    {
-        crate::surface::rest_field::RestReference::Stock(stock)
-    } else if let Some(tool) = reference_tool {
-        crate::surface::rest_field::RestReference::Cutter {
-            tool,
-            is_surface_probe: false,
-        }
-    } else {
-        crate::surface::rest_field::RestReference::Cutter {
-            tool: probe_ball,
-            is_surface_probe: true,
-        }
-    }
-}
 
 // ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
 
@@ -357,8 +341,9 @@ fn apply_dressup_traced(
 /// (`RapidOrderBarrier` + `DepthPass` span starts) — see
 /// [`AnnotatedToolpath::rapid_order_barriers`].
 ///
-/// `prior_stock` + `cutter` enable the air-cut filter step (S3: the filter
-/// judges air for the whole cutter, so it refuses to run without one — see
+/// `prior_stock` + `cutter` + `link_kinematics` enable the air-cut filter
+/// step (S3: the filter judges air for the whole cutter, so it refuses to
+/// run without one; it times a bridge with the envelope — see
 /// [`crate::dressup::filter_air_cuts`]). `feed_opt_stock` + `cutter`
 /// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
 /// per-step tracing scopes — the GUI passes them through to populate the
@@ -461,7 +446,14 @@ pub struct DressupContext<'a> {
     pub tool_diameter: f64,
     pub safe_z: f64,
     pub stock_top: f64,
+    /// The machined stock before this op. The session passes `Some` only
+    /// for a `FromRemainingStock` op (B19); a `Fresh` op reads only the
+    /// board, so the air-cut filter and the entry replay see `None`.
     pub prior_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// The machine envelope (`MachineProfile::link_kinematics`) the
+    /// air-cut filter times a bridge with. `None` skips the filter, as a
+    /// missing cutter does: nothing becomes a rapid.
+    pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
     pub feed_opt_stock: Option<&'a mut crate::dexel_stock::TriDexelStock>,
     pub cutter: Option<&'a dyn MillingCutter>,
     /// G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
@@ -494,6 +486,7 @@ pub fn apply_dressups(
         safe_z,
         stock_top,
         prior_stock,
+        link_kinematics,
         feed_opt_stock,
         cutter,
         entry_surface,
@@ -860,11 +853,16 @@ pub fn apply_dressups(
     }
 
     // 7. Air-cut filter. S3: the filter classifies each sample for the whole
-    // cutter, so it needs the cutter — a `prior_stock` without one cannot be
-    // served. Skipping is the conservative arm (nothing becomes a rapid that
-    // was not one), and it is unreachable from the two production callers,
-    // which both pass a cutter unconditionally.
-    if let (Some(stock), Some(cut)) = (prior_stock, cutter) {
+    // cutter, so it needs the cutter; it times each bridge against the feed
+    // with the machine envelope (operator ruling 2026-10-15). A
+    // `prior_stock` without both cannot be served. Skipping is the
+    // conservative arm (nothing becomes a rapid that was not one), and it is
+    // unreachable from the session, which passes both.
+    if let (Some(stock), Some(cut), Some(link)) = (prior_stock, cutter, link_kinematics) {
+        let timing = crate::dressup::AirBridgeTiming {
+            feed_rate_mm_min: nominal_feed_rate,
+            link,
+        };
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -875,14 +873,12 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::ToolRadius, tool_radius);
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| {
-                crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, cfg.air_bridge_policy)
-            },
+            |at| crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, timing),
         );
     } else if prior_stock.is_some() {
         tracing::warn!(
-            "air-cut filter skipped: prior stock present but no cutter was \
-             supplied to apply_dressups"
+            "air-cut filter skipped: prior stock present but no cutter or no \
+             machine envelope was supplied to apply_dressups"
         );
     }
 
@@ -937,11 +933,6 @@ pub fn apply_dressups(
         toolpath: current.toolpath,
         spans: current.spans,
         spans_valid: input_valid && current.spans_valid,
-        planner_engagement: current.planner_engagement,
-        rest_grid: current.rest_grid,
-        rest_regions: current.rest_regions,
-        area_regions: current.area_regions,
+        produced: current.produced,
     }
 }
-
-// ── Internal helpers ──────────────────────────────────────────────────

@@ -66,7 +66,6 @@ fn the_bending_section_does_not_depend_on_the_flute_count_g_bendeq() {
         let td = ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 60.0)),
             6.0,
-            100.0,
             25.0,
             45.0,
             flutes,
@@ -114,7 +113,6 @@ fn the_fraction_actually_reaches_the_integrator_g_bendeq() {
     let td = ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 60.0)),
         6.0,
-        100.0,
         25.0,
         45.0,
         2,

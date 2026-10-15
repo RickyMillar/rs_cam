@@ -197,10 +197,7 @@ pub fn clip_annotated_to_boundary_set(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     let (clipped, mapping) = if boundaries.is_empty() {
@@ -227,10 +224,7 @@ pub fn clip_annotated_to_boundary_set(
             toolpath: clipped,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         mapping,
     )
@@ -341,6 +335,61 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
     safe_z: f64,
     plunge_rate_mm_min: Option<f64>,
 ) -> (Toolpath, Vec<usize>) {
+    clip_walk(
+        tp,
+        &BoundaryPermit { boundaries },
+        safe_z,
+        plunge_rate_mm_min,
+    )
+}
+
+/// Where the clip walk may keep motion (K1).
+///
+/// The machining boundary and the obstacles of a setup share ONE walk
+/// ([`clip_walk`]). Each states its rule through this trait: the boundary
+/// keeps the motion inside a polygon set
+/// ([`BoundaryPermit`]); the obstacle step keeps the tool out of each
+/// obstacle (`compute::obstacle::ObstaclePermit`).
+pub(crate) trait ClipPermit {
+    /// May the tool tip stand at `p`?
+    fn point_allowed(&self, p: P3) -> bool;
+    /// The maximal parameter intervals of the linear `start`→`end` move
+    /// on which the tool may travel, sorted and disjoint, in `[0, 1]`.
+    fn allowed_intervals(&self, start: P3, end: P3) -> Vec<(f64, f64)>;
+    /// May the arc move `m`, from `start`, be kept whole?
+    fn arc_allowed(&self, start: P3, m: &crate::toolpath::Move) -> bool;
+}
+
+/// The machining boundary as a [`ClipPermit`]: XY membership in the union
+/// of `boundaries`. An arc is kept when both ends are inside.
+struct BoundaryPermit<'b> {
+    boundaries: &'b [Polygon2],
+}
+
+impl ClipPermit for BoundaryPermit<'_> {
+    fn point_allowed(&self, p: P3) -> bool {
+        let xy = P2::new(p.x, p.y);
+        self.boundaries.iter().any(|b| b.contains_point(&xy))
+    }
+
+    fn allowed_intervals(&self, start: P3, end: P3) -> Vec<(f64, f64)> {
+        maximal_inside_intervals(start, end, self.boundaries)
+    }
+
+    fn arc_allowed(&self, start: P3, m: &crate::toolpath::Move) -> bool {
+        self.point_allowed(m.target) && self.point_allowed(start)
+    }
+}
+
+/// THE clip walk. [`clip_toolpath_to_boundary_set_with_provenance`] and
+/// the K1 obstacle step call it; the doc of the first states the move
+/// rules, the provenance map and the re-entry feed.
+pub(crate) fn clip_walk(
+    tp: &Toolpath,
+    permit: &dyn ClipPermit,
+    safe_z: f64,
+    plunge_rate_mm_min: Option<f64>,
+) -> (Toolpath, Vec<usize>) {
     let mut result = Toolpath::new();
     let mut mapping: Vec<usize> = Vec::with_capacity(tp.moves.len() + 1);
 
@@ -362,13 +411,10 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
     // crossing move's own feed, which is what this walk always did.
     let usable_plunge_rate = plunge_rate_mm_min.filter(|rate| rate.is_finite() && *rate > 1e-9);
 
-    let inside_any = |p: &P2| boundaries.iter().any(|b| b.contains_point(p));
-
     for m in &tp.moves {
         mapping.push(result.moves.len());
 
-        let target_xy = P2::new(m.target.x, m.target.y);
-        let target_inside = inside_any(&target_xy);
+        let target_inside = permit.point_allowed(m.target);
         let Some(start) = prev_pos else {
             // The first move has no input segment. Preserve an in-boundary
             // target; otherwise establish the same safe outside position as
@@ -391,7 +437,7 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
             // A rapid is not a cutting segment. Preserve it only when the
             // entire chord stays in the union; otherwise retract and link at
             // safe Z across holes, concavities, and gaps between regions.
-            let intervals = maximal_inside_intervals(start, m.target, boundaries);
+            let intervals = permit.allowed_intervals(start, m.target);
             let entirely_inside = matches!(intervals.as_slice(), [(a, b)]
                 if *a <= CLIP_PARAMETER_EPSILON
                     && *b >= 1.0 - CLIP_PARAMETER_EPSILON);
@@ -425,7 +471,7 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
             // cutting intervals from it: retain an arc only when both of its
             // endpoints are contained, otherwise replace it with the same
             // safe retract/link/re-entry sequence as the former endpoint walk.
-            if target_inside && inside_any(&P2::new(start.x, start.y)) {
+            if target_inside && permit.arc_allowed(start, m) {
                 result.moves.push(m.clone());
                 at_source_target = true;
             } else {
@@ -452,7 +498,7 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
             continue;
         }
 
-        let intervals = maximal_inside_intervals(start, m.target, boundaries);
+        let intervals = permit.allowed_intervals(start, m.target);
         if intervals.is_empty() {
             // Preserve one contiguous, non-empty provenance range even when
             // no part of the source segment may cut.
@@ -628,7 +674,7 @@ fn feed_rate_of(mt: &MoveType) -> Option<f64> {
 }
 
 /// Default silhouette grid resolution in mm.
-const SILHOUETTE_CELL_SIZE: f64 = 0.5;
+pub(crate) const SILHOUETTE_CELL_SIZE: f64 = 0.5;
 
 /// Compute the 2D silhouette (XY projection) of a 3D mesh.
 ///

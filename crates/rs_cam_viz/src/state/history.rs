@@ -1,9 +1,9 @@
-use super::job::{FixtureId, KeepOutId, PostConfig, SetupId, StockConfig, ToolConfig, ToolId};
+use super::job::{ObstacleId, PostConfig, SetupId, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 use rs_cam_core::feeds::FeedsProvenance;
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::session::{Fixture, KeepOutZone, SetupData};
+use rs_cam_core::session::{Obstacle, SetupData};
 
 /// A snapshot of undoable state.
 // SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig +
@@ -50,6 +50,15 @@ pub enum UndoAction {
     MachineChange {
         old: rs_cam_core::machine::MachineProfile,
         new: rs_cam_core::machine::MachineProfile,
+    },
+    /// One obstacle add, edit, toggle or remove (K2). `None` means "the
+    /// setup holds no obstacle with this id": an add is `(None, Some)`, a
+    /// remove is `(Some, None)`, an edit or a toggle is `(Some, Some)`.
+    ObstacleChange {
+        setup_id: SetupId,
+        obstacle_id: ObstacleId,
+        old: Option<Obstacle>,
+        new: Option<Obstacle>,
     },
 }
 
@@ -98,12 +107,6 @@ pub struct UndoHistory {
     /// to. The id is part of the draft because the panel draws whichever
     /// setup is selected.
     pub setup_draft: Option<(SetupId, SetupData)>,
-    /// WP6 — the fixture panel's scratch copy, with the setup and the
-    /// fixture it belongs to.
-    pub fixture_draft: Option<(SetupId, FixtureId, Fixture)>,
-    /// WP6 — the keep-out panel's scratch copy, with the setup and the
-    /// zone it belongs to.
-    pub keep_out_draft: Option<(SetupId, KeepOutId, KeepOutZone)>,
     /// TOO-003 — pending draft for the selected tool. The properties panel
     /// edits this clone; it is committed to the session on an explicit Apply
     /// (or auto-committed when the user navigates away). `None` when no tool
@@ -127,8 +130,6 @@ impl UndoHistory {
             stock_draft: None,
             machine_draft: None,
             setup_draft: None,
-            fixture_draft: None,
-            keep_out_draft: None,
             tool_draft: None,
             post_snapshot: None,
             machine_snapshot: None,

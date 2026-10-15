@@ -57,10 +57,9 @@
 //!    on a mesh-less project refuses — and the message names the workaround
 //!    the operator would physically use (a Top setup with the edge as the
 //!    stock face).
-//! 5. The keep-out refusal (G-LATERALKEEPOUT): a world-XY footprint has no
-//!    extent in a vertical work plane, so letting it project would DELETE a
-//!    keep-out silently. That is a safety regression, so generation refuses
-//!    instead.
+//! 5. K1 closed G-LATERALKEEPOUT: an obstacle is a solid in the SETUP
+//!    frame, so a lateral setup reads it as a Top setup does. Generation
+//!    runs, and no move puts the tool inside the obstacle.
 
 #![allow(
     clippy::unwrap_used,
@@ -82,13 +81,13 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
-use rs_cam_core::ids::FixtureId;
+use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AddFixtureArgs, AddModelArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, Fixture,
-    FixtureKind, LoadedModel, ProjectSession, ProjectSessionBuilder, SessionError,
+    AddModelArgs, AddObstacleArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, LoadedModel,
+    Obstacle, ObstacleGeometry, ProjectSession, ProjectSessionBuilder, SessionError,
     SetStockConfigArgs, SetupData, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveType};
@@ -253,8 +252,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
             z_rotation: ZRotation::default(),
             datum: DatumConfig::default(),
             model_ids: Vec::new(),
-            fixtures: Vec::new(),
-            keep_out_zones: Vec::new(),
+            obstacles: Vec::new(),
             stock_changes: Vec::new(),
             toolpath_indices: Vec::new(),
             pause_message: None,
@@ -301,25 +299,24 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
         .expect("add_model reports the new model id");
 
     if with_fixture {
-        let clamp = Fixture {
-            id: FixtureId(0),
+        // In the lateral setup frame: a clamp over the low-X end of the
+        // face, from below the stock to above its top.
+        let clamp = Obstacle {
+            id: ObstacleId(0),
             name: "Clamp".to_owned(),
-            kind: FixtureKind::Clamp,
             enabled: true,
-            origin_x: 0.0,
-            origin_y: 0.0,
-            origin_z: 0.0,
-            size_x: 20.0,
-            size_y: 20.0,
-            size_z: 20.0,
             clearance: 2.0,
+            geometry: ObstacleGeometry::Box {
+                min: [-10.0, -10.0, -10.0],
+                max: [12.0, 200.0, 200.0],
+            },
         };
         let _ = session
-            .apply(Command::AddFixture(AddFixtureArgs {
+            .apply(Command::AddObstacle(AddObstacleArgs {
                 setup_index: 0,
-                fixture: Box::new(clamp),
+                obstacle: Box::new(clamp),
             }))
-            .expect("add fixture");
+            .expect("add obstacle");
     }
 
     let _ = session
@@ -526,24 +523,23 @@ fn a_lateral_setup_with_no_mesh_refuses_and_names_the_workaround() {
     );
 }
 
-// ── 5. The keep-out refusal (G-LATERALKEEPOUT) ───────────────────────
+// ── 5. An obstacle on a lateral setup (K1, closes G-LATERALKEEPOUT) ──
 
 #[test]
-fn a_lateral_setup_carrying_a_keep_out_refuses_rather_than_deleting_it() {
+fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
     let mut session = build_session(true, true);
     let cancel = AtomicBool::new(false);
-    let Err(err) = session.generate_toolpath(0, &cancel) else {
-        panic!(
-            "a fixture footprint is a world-XY rectangle and has no extent in a \
-             vertical work plane; projecting it would silently DELETE the \
-             keep-out, which is a safety regression, so generation must refuse"
-        )
-    };
-    let SessionError::UnsupportedSetup(msg) = &err else {
-        panic!("expected SessionError::UnsupportedSetup, got {err:?}");
-    };
-    assert!(
-        msg.to_lowercase().contains("keep-out") || msg.to_lowercase().contains("fixture"),
-        "the refusal must say what it is refusing, but says: {msg}"
-    );
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("an obstacle no longer refuses a lateral setup");
+    let toolpath = session.get_result(0).expect("a result").toolpath().clone();
+    assert!(!toolpath.moves.is_empty());
+    let set = session
+        .obstacle_set_for_toolpath(0)
+        .expect("the obstacle resolves");
+    assert!(!set.is_empty());
+    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
+    let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+    let hits = view.check_toolpath(&toolpath, session.obstacle_join_for_toolpath(0));
+    assert!(hits.is_empty(), "no move enters the obstacle: {hits:?}");
 }

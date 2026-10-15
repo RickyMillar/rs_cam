@@ -133,6 +133,11 @@ pub struct LinkCeiling<'a> {
     /// Ceiling to assume where the dexel query has no answer (off-grid, or
     /// no snapshot at all). The analytic fresh-stock top.
     pub fallback_top_z: f64,
+    /// K1: the setup's obstacles for this tool. Where a band of the tool
+    /// would reach an obstacle at `(x, y)`, the ceiling rises to the tip Z
+    /// that clears it, so a stay-down link goes over the obstacle. `None`:
+    /// no obstacle.
+    pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 }
 
 // Hand-written: `TriDexelStock` is not `Debug`, and printing a whole dexel
@@ -144,6 +149,7 @@ impl std::fmt::Debug for LinkCeiling<'_> {
             .field("stock", &self.stock.is_some())
             .field("tool_radius", &self.tool_radius)
             .field("fallback_top_z", &self.fallback_top_z)
+            .field("obstacles", &self.obstacles.is_some())
             .finish()
     }
 }
@@ -172,6 +178,14 @@ impl LinkCeiling<'_> {
         self.stock
             .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
             .unwrap_or(self.fallback_top_z)
+            .max(self.obstacle_tip_z(x, y))
+    }
+
+    /// K1: the lowest tip Z at `(x, y)` that keeps every band of the tool
+    /// above the obstacles. `NEG_INFINITY` where no band reaches one.
+    fn obstacle_tip_z(&self, x: f64, y: f64) -> f64 {
+        self.obstacles
+            .map_or(f64::NEG_INFINITY, |view| view.required_tip_z_at(x, y))
     }
 
     /// Lowest tool TIP Z at `(x, y)` that nothing standing under the cutter
@@ -206,6 +220,7 @@ impl LinkCeiling<'_> {
         self.stock
             .and_then(|s| s.max_clearance_tip_z_for_profile(x, y, self.tool_radius, cutter))
             .unwrap_or(self.fallback_top_z)
+            .max(self.obstacle_tip_z(x, y))
     }
 
     /// Clearance height for a link sample at `(x, y)` whose mesh surface
@@ -223,6 +238,150 @@ impl LinkCeiling<'_> {
         surface_z: f64,
     ) -> f64 {
         surface_z.max(self.required_tip_z(cutter, x, y)) + crate::toolpath::PLUNGE_CLEARANCE_MM
+    }
+}
+
+/// The shape a link candidate takes under a [`LinkCeiling`]: the ONE
+/// ceiling arm of every finishing link (G-LINKLOAD). The relink inside a
+/// fragment set ([`relink_fragments`]) and the Unified Finish router link
+/// between regions (B16, W6.4) both read it.
+pub(crate) enum CeilingShape {
+    /// The stock is already AT the surface along the whole hop: the mesh IS
+    /// the material, so the surface-riding candidate is correct. Only with
+    /// `flush_ride`.
+    Flush(Vec<P3>),
+    /// The exit lift, the interior samples and the re-entry lift, all at
+    /// clearance: nothing standing between the two ends is crossed at cut
+    /// depth. `landing` states how the last vertical leg reaches the entry
+    /// (B20).
+    Lifted { pts: Vec<P3>, landing: LinkLanding },
+    /// The clearance reaches `safe_z`: the caller keeps the retract.
+    AboveSafeZ,
+}
+
+/// How a link reaches the entry of the next cut (B20, C2).
+///
+/// A lifted link ends with a vertical leg from the clearance height down to
+/// the entry. Where material stands above the entry, that leg is a plunge
+/// into stock, so it takes the plunge feed and the `EntryPlunge` intent, as
+/// a retract junction does. [`push_link_landing`] emits the leg for every
+/// emitter, so the two link emitters cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkLanding {
+    /// The last leg rides the surface or descends in air: a `Linking` feed
+    /// at the cut feed.
+    Ride,
+    /// The last leg descends into standing material: an `EntryPlunge` at
+    /// the plunge feed.
+    Plunge,
+}
+
+/// Emit the last leg of a link onto `entry` (B20). See [`LinkLanding`].
+pub(crate) fn push_link_landing(
+    out: &mut crate::toolpath::Toolpath,
+    entry: P3,
+    landing: LinkLanding,
+    feed_rate: f64,
+    plunge_rate: f64,
+) {
+    use crate::toolpath::MoveIntent;
+    match landing {
+        LinkLanding::Ride => out.feed_to_with_intent(entry, feed_rate, MoveIntent::Linking),
+        LinkLanding::Plunge => {
+            out.feed_to_with_intent(entry, plunge_rate, MoveIntent::EntryPlunge);
+        }
+    }
+}
+
+/// Shape the surface-link candidate `pts` from `from` to `entry` under
+/// `ceiling`. See [`CeilingShape`].
+///
+/// # The flush arm
+///
+/// Pencil's prior, applied PER JUNCTION (operator-observed 2026-08-27):
+/// where the dexel says the stock is already AT the surface along the whole
+/// hop, the mesh IS the material — the legacy surface-riding link is correct
+/// and strictly cheaper than a lift (on the wanaka tier-1 raster, 2,569
+/// links each paid two clearance legs for a sub-millimetre row hop: a hedge
+/// of staples along every raster edge).
+///
+/// `material_top` is a conservative MAX over the tool disc, so on sloped
+/// ground it reads above the centre surface even with zero standing stock —
+/// there the test fails and the safe lifted shape stays. Deliberate: the
+/// flush ride is a flat-ground optimisation, never a slope gamble.
+///
+/// This one stays the FLAT-CYLINDER read on purpose. The profile-aware
+/// ceiling (`required_tip_z`, used by `clear_z` below) reads LOWER wherever
+/// the tool rises above its tip, and a lower reading here would widen the
+/// flush arm — i.e. ride the surface more often. Relaxing the LIFT HEIGHT
+/// is provably safe; relaxing the decision to lift at all is not the same
+/// question.
+///
+/// # The lifted arm
+///
+/// Exit lift, then the interior samples, then the re-entry lift: the
+/// traverse is entirely at clearance and both ends of it are vertical. The
+/// degenerate case — a gap shorter than one sample spacing, where
+/// `build_surface_link` yields no interior points at all — is the same rule
+/// with an empty middle, not a special case that feeds across at depth.
+#[allow(clippy::too_many_arguments)] // SAFETY: the candidate, the surface and the ceiling are separate inputs
+pub(crate) fn shape_under_ceiling(
+    ceiling: &LinkCeiling<'_>,
+    from: P3,
+    pts: Vec<P3>,
+    entry: P3,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    stock_to_leave: f64,
+    safe_z: f64,
+    flush_ride: bool,
+) -> CeilingShape {
+    let surface_z_at = |x: f64, y: f64| {
+        let cl = point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.contacted {
+            cl.z
+        } else {
+            f64::NEG_INFINITY
+        }
+    };
+    let samples: Vec<(f64, f64, f64)> =
+        std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
+            .chain(pts.iter().map(|p| (p.x, p.y, p.z - stock_to_leave)))
+            .chain(std::iter::once((
+                entry.x,
+                entry.y,
+                surface_z_at(entry.x, entry.y),
+            )))
+            .collect();
+    const FLUSH_EPS_MM: f64 = 0.15;
+    let flush = flush_ride
+        && samples
+            .iter()
+            .all(|&(x, y, sz)| sz.is_finite() && ceiling.material_top(x, y) <= sz + FLUSH_EPS_MM);
+    if flush {
+        return CeilingShape::Flush(pts);
+    }
+    let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
+    for &(x, y, surface_z) in &samples {
+        let z = ceiling.clear_z(cutter, x, y, surface_z);
+        if z >= safe_z - 1e-6 {
+            return CeilingShape::AboveSafeZ;
+        }
+        lifted.push(P3::new(x, y, z));
+    }
+    // B20: the last lifted sample stands over the entry, at the material
+    // top plus clearance. The leg down to the entry plunges into stock
+    // when the conservative material top over the tool disc stands above
+    // the entry.
+    let landing = if ceiling.material_top(entry.x, entry.y) > entry.z + 1e-6 {
+        LinkLanding::Plunge
+    } else {
+        LinkLanding::Ride
+    };
+    CeilingShape::Lifted {
+        pts: lifted,
+        landing,
     }
 }
 
@@ -702,7 +861,7 @@ pub fn relink_fragments(
 /// purpose: `RelinkParams` is spelled out as an exhaustive struct literal at
 /// 27 sites across the crate and its tests, and a new field would rewrite
 /// every one of them for a value that only two callers can supply.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // SAFETY: the relink inputs plus the fragment kinds, which ride a parameter (see above)
 pub fn relink_fragments_with_kinds(
     annotated: AnnotatedToolpath,
     mesh: &TriangleMesh,
@@ -717,10 +876,7 @@ pub fn relink_fragments_with_kinds(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let n_in = toolpath.moves.len();
 
@@ -735,8 +891,9 @@ pub fn relink_fragments_with_kinds(
         /// (a) Arrives at cutting depth. Removes the next fragment's entry.
         AtDepth,
         /// (b) Lifts to the local stock ceiling and descends again. Cheaper
-        /// than a safe-Z retract; the entry survives.
-        ClearanceHop,
+        /// than a safe-Z retract; the entry survives, and `landing` says
+        /// whether the descent is an entry plunge (B20).
+        ClearanceHop { landing: LinkLanding },
     }
     let mut frags: Vec<Fragment> = Vec::new();
     let mut cur: Vec<(usize, crate::toolpath::Move)> = Vec::new();
@@ -765,10 +922,7 @@ pub fn relink_fragments_with_kinds(
                 toolpath,
                 spans,
                 spans_valid,
-                planner_engagement,
-                rest_grid,
-                rest_regions,
-                area_regions,
+                produced,
             }),
             report,
         );
@@ -982,57 +1136,25 @@ pub fn relink_fragments_with_kinds(
             // reads flush, and otherwise the lifted clearance hop (b).
             let (pts, tier) = match params.link_ceiling {
                 None => (pts, LinkTier::AtDepth),
-                Some(ceiling) => {
-                    let surface_z_at = |x: f64, y: f64| {
-                        let cl = point_drop_cutter(x, y, mesh, index, cutter);
-                        if cl.contacted {
-                            cl.z
-                        } else {
-                            f64::NEG_INFINITY
-                        }
-                    };
-                    let samples: Vec<(f64, f64, f64)> =
-                        std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
-                            .chain(pts.iter().map(|p| (p.x, p.y, p.z - params.stock_to_leave)))
-                            .chain(std::iter::once((
-                                entry.x,
-                                entry.y,
-                                surface_z_at(entry.x, entry.y),
-                            )))
-                            .collect();
-                    // Pencil's prior, applied PER JUNCTION (operator-observed
-                    // 2026-08-27): where the dexel says the stock is already
-                    // AT the surface along the whole hop, the mesh IS the
-                    // material — the legacy surface-riding link is correct
-                    // and strictly cheaper than a lift (on the wanaka tier-1
-                    // raster, 2,569 links each paid two clearance legs for a
-                    // sub-millimetre row hop: a hedge of staples along every
-                    // raster edge). A surface-riding link is a CUTTING feed,
-                    // so the territory veto — which
-                    // `airborne_links_may_leave_territory` can waive only for
-                    // LIFTED links — applies here after all, and is re-run
-                    // below because the exemption above may have skipped it.
-                    //
-                    // `material_top` is a conservative MAX over the tool
-                    // disc, so on sloped ground it reads above the centre
-                    // surface even with zero standing stock — there the test
-                    // fails and the safe lifted shape stays. Deliberate: the
-                    // flush ride is a flat-ground optimisation, never a
-                    // slope gamble.
-                    //
-                    // This one stays the FLAT-CYLINDER read on purpose. The
-                    // profile-aware ceiling (`required_tip_z`, used by
-                    // `clear_z` below) reads LOWER wherever the tool rises
-                    // above its tip, and a lower reading here would widen the
-                    // flush arm — i.e. ride the surface more often. Relaxing
-                    // the LIFT HEIGHT is provably safe; relaxing the decision
-                    // to lift at all is not the same question.
-                    const FLUSH_EPS_MM: f64 = 0.15;
-                    let flush = params.flush_ride
-                        && samples.iter().all(|&(x, y, sz)| {
-                            sz.is_finite() && ceiling.material_top(x, y) <= sz + FLUSH_EPS_MM
-                        });
-                    if flush {
+                Some(ceiling) => match shape_under_ceiling(
+                    &ceiling,
+                    from,
+                    pts,
+                    entry,
+                    mesh,
+                    index,
+                    cutter,
+                    params.stock_to_leave,
+                    params.safe_z,
+                    params.flush_ride,
+                ) {
+                    CeilingShape::Flush(pts) => {
+                        // A surface-riding link is a CUTTING feed, so the
+                        // territory veto — which
+                        // `airborne_links_may_leave_territory` can waive
+                        // only for LIFTED links — applies here after all,
+                        // and is re-run because the exemption above may
+                        // have skipped it.
                         if let Some(boundary) = params.boundary
                             && !pts
                                 .iter()
@@ -1042,32 +1164,18 @@ pub fn relink_fragments_with_kinds(
                             return None;
                         }
                         (pts, LinkTier::AtDepth)
-                    } else {
-                        // Exit lift, then the interior samples, then the
-                        // re-entry lift: the traverse is entirely at
-                        // clearance and both ends of it are vertical, so
-                        // nothing standing between the two fragments is
-                        // crossed at cut depth. The degenerate case — a gap
-                        // shorter than one sample spacing, where
-                        // `build_surface_link` yields no interior points at
-                        // all — is the same rule with an empty middle, not a
-                        // special case that feeds across at depth.
-                        let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
-                        for &(x, y, surface_z) in &samples {
-                            let z = ceiling.clear_z(cutter, x, y, surface_z);
-                            if z >= params.safe_z - 1e-6 {
-                                // Clearing the standing material costs the
-                                // whole retract anyway — keep the rapid,
-                                // which is faster than feeding to the same
-                                // height.
-                                report.ceiling_above_safe_z += 1;
-                                return None;
-                            }
-                            lifted.push(P3::new(x, y, z));
-                        }
-                        (lifted, LinkTier::ClearanceHop)
                     }
-                }
+                    CeilingShape::Lifted { pts, landing } => {
+                        (pts, LinkTier::ClearanceHop { landing })
+                    }
+                    CeilingShape::AboveSafeZ => {
+                        // Clearing the standing material costs the whole
+                        // retract anyway — keep the rapid, which is faster
+                        // than feeding to the same height.
+                        report.ceiling_above_safe_z += 1;
+                        return None;
+                    }
+                },
             };
             match params.link_kinematics {
                 Some(lk) => {
@@ -1107,14 +1215,25 @@ pub fn relink_fragments_with_kinds(
                 report.surface_links += 1;
                 match tier {
                     LinkTier::AtDepth => report.at_depth_links += 1,
-                    LinkTier::ClearanceHop => report.clearance_hops += 1,
+                    LinkTier::ClearanceHop { .. } => report.clearance_hops += 1,
                 }
                 for p in &pts {
                     out.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
                 }
                 // The fragment's own first move lands on `entry`; re-emit it
-                // as a link so the run reads as one stay-down chain.
-                out.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
+                // as a link so the run reads as one stay-down chain. B20: a
+                // hop that lands in standing stock lands as an entry.
+                let landing = match tier {
+                    LinkTier::AtDepth => LinkLanding::Ride,
+                    LinkTier::ClearanceHop { landing } => landing,
+                };
+                push_link_landing(
+                    &mut out,
+                    entry,
+                    landing,
+                    params.feed_rate,
+                    params.plunge_rate,
+                );
             }
             (_, Some(from)) => {
                 report.retract_links += 1;
@@ -1219,10 +1338,7 @@ pub fn relink_fragments_with_kinds(
         toolpath: out,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     };
     // A reorder needs the drop rule a plain remap cannot state — see
     // `MoveProvenance::Permutation`.
@@ -1688,6 +1804,7 @@ mod tests {
             reorder: false,
             boundary: Some(&region),
             link_ceiling: Some(LinkCeiling {
+                obstacles: None,
                 stock: None,
                 tool_radius: 1.0,
                 fallback_top_z: 0.0,
@@ -1780,6 +1897,7 @@ mod tests {
             reorder: false,
             boundary: Some(&region),
             link_ceiling: Some(LinkCeiling {
+                obstacles: None,
                 stock: None,
                 tool_radius: 1.0,
                 fallback_top_z: 0.0,
@@ -1829,6 +1947,7 @@ mod tests {
         let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
 
         let flush_ceiling = LinkCeiling {
+            obstacles: None,
             stock: None,
             tool_radius: 1.0,
             fallback_top_z: -50.0,

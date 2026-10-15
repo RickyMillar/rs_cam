@@ -300,48 +300,64 @@ pub(super) fn apply_setup_draft(
     }
 }
 
-/// Apply the fixture panel's draft through `Command::ReplaceFixture`.
+/// Apply the obstacle editor's draft through `Command::ReplaceObstacle`
+/// (K1, K2).
 ///
-/// G-FRESHSTATE: the row drops every result in the setup, because a
-/// fixture is a collision input of every operation in it. The panel
-/// wrote the fixture in place and dropped nothing, so a clamp could move
-/// under a cached holder-clearance verdict.
-pub(crate) fn apply_fixture_draft(
+/// `stored` is the record the setup holds. A draft equal to it applies
+/// nothing. The draft keeps the STORED `enabled` flag: the list-row
+/// checkbox is the one control for that field, so an open editor cannot
+/// undo a row toggle.
+///
+/// G-FRESHSTATE: an edit that moves the obstacle drops every result in the
+/// setup and its dependents, because every operation in the setup keeps
+/// out of it. A rename drops nothing.
+///
+/// # Errors
+/// The core refusal text. The draw site writes it into the editor's
+/// banner (S4 refusal contract) and keeps the draft.
+pub(crate) fn apply_obstacle_draft(
     state: &mut AppState,
     setup_index: usize,
-    fixture_id: crate::state::job::FixtureId,
-    fixture: rs_cam_core::session::Fixture,
-) {
-    use rs_cam_core::session::{Command, ReplaceFixtureArgs};
-    let command = Command::ReplaceFixture(ReplaceFixtureArgs {
-        setup_index,
-        fixture_id,
-        fixture: Box::new(fixture),
-    });
-    if apply_panel_command(state, command) {
-        state.gui.mark_edited();
-        state.panel_side_effects.upload = true;
+    stored: &rs_cam_core::session::Obstacle,
+    mut obstacle: rs_cam_core::session::Obstacle,
+) -> Result<(), String> {
+    use rs_cam_core::session::{Command, ReplaceObstacleArgs};
+    obstacle.enabled = stored.enabled;
+    if obstacle == *stored {
+        return Ok(());
     }
-}
-
-/// Apply the keep-out panel's draft through `Command::ReplaceKeepOut`.
-///
-/// The twin of [`apply_fixture_draft`], and it drops the same set.
-pub(super) fn apply_keep_out_draft(
-    state: &mut AppState,
-    setup_index: usize,
-    zone_id: crate::state::job::KeepOutId,
-    zone: rs_cam_core::session::KeepOutZone,
-) {
-    use rs_cam_core::session::{Command, ReplaceKeepOutArgs};
-    let command = Command::ReplaceKeepOut(ReplaceKeepOutArgs {
+    let Some(setup_id) = state
+        .session
+        .list_setups()
+        .get(setup_index)
+        .map(|s| crate::state::job::SetupId(s.id))
+    else {
+        return Err(format!("no setup at index {setup_index}"));
+    };
+    let command = Command::ReplaceObstacle(ReplaceObstacleArgs {
         setup_index,
-        zone_id,
-        zone: Box::new(zone),
+        obstacle_id: stored.id,
+        obstacle: Box::new(obstacle.clone()),
     });
-    if apply_panel_command(state, command) {
-        state.gui.mark_edited();
-        state.panel_side_effects.upload = true;
+    match state.session.apply(command) {
+        Ok(effects) => {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
+            state
+                .history
+                .push(crate::state::history::UndoAction::ObstacleChange {
+                    setup_id,
+                    obstacle_id: stored.id,
+                    old: Some(stored.clone()),
+                    new: Some(obstacle),
+                });
+            state.gui.mark_edited();
+            state.panel_side_effects.upload = true;
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
     }
 }
 

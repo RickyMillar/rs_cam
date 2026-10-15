@@ -1,8 +1,8 @@
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
-    AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, Command, Fixture, KeepOutZone,
-    RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs,
-    SetAlignmentPinsArgs, SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
+    AddObstacleArgs, AddSetupArgs, AddToolArgs, Command, Obstacle, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveToolArgs, ReplaceObstacleArgs, SetAlignmentPinsArgs,
+    SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -18,13 +18,13 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_select(&mut self, selection: &Selection) {
         let old_setup = match &self.state.selection {
             Selection::Setup(id) => Some(*id),
-            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Obstacle(id, _) => Some(*id),
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
         let new_setup = match selection {
             Selection::Setup(id) => Some(*id),
-            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Obstacle(id, _) => Some(*id),
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
@@ -530,128 +530,207 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    pub(crate) fn handle_add_fixture(&mut self, setup_id: SetupId) {
-        // Generate a fixture ID based on existing max
-        let max_id = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .flat_map(|s| s.fixtures.iter())
-            .map(|f| f.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        let fixture_id = crate::state::job::FixtureId(max_id);
-
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            // C02: the six numbers this used to spell out are core's
-            // serde defaults. A file that omitted `size_y` restored a
-            // fixture the GUI would never have drawn.
-            let fixture = Fixture::new_default(fixture_id);
-            let command = Command::AddFixture(AddFixtureArgs {
-                setup_index: idx,
-                fixture: Box::new(fixture),
-            });
-            let _ = self.apply_quietly(command);
-            self.state.selection = Selection::Fixture(setup_id, fixture_id);
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
+    /// K1: add a new box obstacle to the setup, with the default spans
+    /// and clearance (`Obstacle::new_default_box`), and select it.
+    ///
+    /// K2: the door reads the `Effects`. Only an applied add selects the
+    /// new record, opens the editor on it, pushes the undo entry and
+    /// marks the project edited.
+    pub(crate) fn handle_add_obstacle(&mut self, setup_id: SetupId) {
+        let Some((idx, obstacle_id)) =
+            self.state
+                .session
+                .find_setup_by_id(setup_id.0)
+                .map(|(idx, s)| {
+                    (
+                        idx,
+                        rs_cam_core::compute::obstacle::next_obstacle_id(&s.obstacles),
+                    )
+                })
+        else {
+            return;
+        };
+        let record = Obstacle::new_default_box(obstacle_id);
+        let command = Command::AddObstacle(AddObstacleArgs {
+            setup_index: idx,
+            obstacle: Box::new(record.clone()),
+        });
+        if self.apply_quietly(command).is_none() {
+            return;
         }
+        self.state.selection = Selection::Obstacle(setup_id, obstacle_id);
+        self.state.panels.obstacle_editor = Some(crate::state::panels::ObstacleEditor {
+            setup_id,
+            obstacle_id,
+            draft: record.clone(),
+            refusal: None,
+        });
+        self.state
+            .history
+            .push(crate::state::history::UndoAction::ObstacleChange {
+                setup_id,
+                obstacle_id,
+                old: None,
+                new: Some(record),
+            });
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
     }
 
-    pub(crate) fn handle_remove_fixture(
+    /// K1: remove one obstacle of the setup. K2: an applied remove pushes
+    /// the undo entry and closes an editor open on the obstacle.
+    pub(crate) fn handle_remove_obstacle(
         &mut self,
         setup_id: SetupId,
-        fixture_id: crate::state::job::FixtureId,
+        obstacle_id: crate::state::job::ObstacleId,
     ) {
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            let command = Command::RemoveFixture(RemoveFixtureArgs {
-                setup_index: idx,
-                fixture_id,
-            });
-            let _ = self.apply_quietly(command);
-            if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
-                self.state.selection = Selection::Setup(setup_id);
-            }
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
+        let Some(stored) = self.stored_obstacle(setup_id, obstacle_id) else {
+            return;
+        };
+        let Some((idx, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+            return;
+        };
+        let command = Command::RemoveObstacle(RemoveObstacleArgs {
+            setup_index: idx,
+            obstacle_id,
+        });
+        if self.apply_quietly(command).is_none() {
+            return;
         }
+        self.state
+            .history
+            .push(crate::state::history::UndoAction::ObstacleChange {
+                setup_id,
+                obstacle_id,
+                old: Some(stored),
+                new: None,
+            });
+        self.forget_obstacle_view(setup_id, obstacle_id);
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
     }
 
-    pub(crate) fn handle_add_keep_out(&mut self, setup_id: SetupId) {
-        let max_id = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .flat_map(|s| s.keep_out_zones.iter())
-            .map(|k| k.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        let keep_out_id = crate::state::job::KeepOutId(max_id);
-
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            let zone = KeepOutZone {
-                id: keep_out_id,
-                name: format!("Keep-Out {}", keep_out_id.0 + 1),
-                enabled: true,
-                origin_x: 0.0,
-                origin_y: 0.0,
-                size_x: 20.0,
-                size_y: 20.0,
-            };
-            let command = Command::AddKeepOut(AddKeepOutArgs {
-                setup_index: idx,
-                zone: Box::new(zone),
-            });
-            let _ = self.apply_quietly(command);
-            self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
-        }
-    }
-
-    pub(crate) fn handle_remove_keep_out(
+    /// K2: the list-row checkbox. The door applies `ReplaceObstacle` with
+    /// the STORED record and the new flag (the S4 `SetEnabled` shape), so
+    /// an unapplied editor draft cannot ride along.
+    pub(crate) fn handle_set_obstacle_enabled(
         &mut self,
         setup_id: SetupId,
-        keep_out_id: crate::state::job::KeepOutId,
+        obstacle_id: crate::state::job::ObstacleId,
+        enabled: bool,
     ) {
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            let command = Command::RemoveKeepOut(RemoveKeepOutArgs {
-                setup_index: idx,
-                zone_id: keep_out_id,
-            });
-            let _ = self.apply_quietly(command);
-            if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
-                self.state.selection = Selection::Setup(setup_id);
-            }
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
+        let Some(stored) = self.stored_obstacle(setup_id, obstacle_id) else {
+            return;
+        };
+        if stored.enabled == enabled {
+            return;
         }
+        let Some((idx, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+            return;
+        };
+        let mut record = stored.clone();
+        record.enabled = enabled;
+        let command = Command::ReplaceObstacle(ReplaceObstacleArgs {
+            setup_index: idx,
+            obstacle_id,
+            obstacle: Box::new(record.clone()),
+        });
+        if self.apply_quietly(command).is_none() {
+            return;
+        }
+        // An open editor keeps its draft, but takes the new flag: Apply
+        // writes the draft, and the draft must not undo this toggle.
+        if let Some(editor) = self.state.panels.obstacle_editor.as_mut()
+            && editor.setup_id == setup_id
+            && editor.obstacle_id == obstacle_id
+        {
+            editor.draft.enabled = enabled;
+        }
+        self.state
+            .history
+            .push(crate::state::history::UndoAction::ObstacleChange {
+                setup_id,
+                obstacle_id,
+                old: Some(stored),
+                new: Some(record),
+            });
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
+    }
+
+    /// K2: put the obstacle `obstacle_id` of the setup into the state
+    /// `target` (an undo or a redo). `None` is "absent". The present record
+    /// decides the command: remove, add or replace. Every write goes
+    /// through `apply_quietly`, so the view mirrors the `Effects`.
+    ///
+    /// An undo of a remove adds the record again at the END of the list
+    /// (core `AddObstacle` appends). The order has no effect on the keep-out.
+    pub(crate) fn apply_obstacle_snapshot(
+        &mut self,
+        setup_id: SetupId,
+        obstacle_id: crate::state::job::ObstacleId,
+        target: Option<Obstacle>,
+    ) {
+        let Some((setup_index, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+            return;
+        };
+        let present = self.stored_obstacle(setup_id, obstacle_id);
+        let command = match (present, target) {
+            (Some(_), None) => Command::RemoveObstacle(RemoveObstacleArgs {
+                setup_index,
+                obstacle_id,
+            }),
+            (None, Some(record)) => Command::AddObstacle(AddObstacleArgs {
+                setup_index,
+                obstacle: Box::new(record),
+            }),
+            (Some(_), Some(record)) => Command::ReplaceObstacle(ReplaceObstacleArgs {
+                setup_index,
+                obstacle_id,
+                obstacle: Box::new(record),
+            }),
+            (None, None) => return,
+        };
+        let _ = self.apply_quietly(command);
+        if self.stored_obstacle(setup_id, obstacle_id).is_none() {
+            self.forget_obstacle_view(setup_id, obstacle_id);
+        } else if let Some(editor) = self.state.panels.obstacle_editor.as_ref()
+            && editor.setup_id == setup_id
+            && editor.obstacle_id == obstacle_id
+        {
+            // The editor draft predates the undo; it re-seeds from the
+            // restored record on the next frame.
+            self.state.panels.obstacle_editor = None;
+        }
+        self.pending_upload = true;
+    }
+
+    /// The stored record of one obstacle, or `None`.
+    fn stored_obstacle(
+        &self,
+        setup_id: SetupId,
+        obstacle_id: crate::state::job::ObstacleId,
+    ) -> Option<Obstacle> {
+        self.state
+            .session
+            .find_setup_by_id(setup_id.0)
+            .and_then(|(_, setup)| setup.obstacles.iter().find(|o| o.id == obstacle_id))
+            .cloned()
+    }
+
+    /// The obstacle is gone: close an editor open on it, and move a
+    /// selection of it to its setup.
+    pub(crate) fn forget_obstacle_view(
+        &mut self,
+        setup_id: SetupId,
+        obstacle_id: crate::state::job::ObstacleId,
+    ) {
+        crate::state::panels::forget_obstacle(
+            &mut self.state.panels,
+            &mut self.state.selection,
+            setup_id,
+            obstacle_id,
+        );
     }
 
     /// Run one stock-change action of the setup panel (S4) as one S2

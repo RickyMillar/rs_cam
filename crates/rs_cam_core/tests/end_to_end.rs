@@ -9,14 +9,17 @@
     clippy::print_stderr
 )]
 
+use rs_cam_core::compute::StockConfig;
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::{PocketConfig, ProfileConfig};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{emit_gcode, post},
     geo::{BoundingBox3, P3},
     io::svg_input::load_svg_data,
     mesh::{SpatialIndex, TriangleMesh},
-    ops::pocket::{PocketParams, pocket_toolpath},
-    ops::profile::{ProfileParams, ProfileSide, profile_toolpath},
+    ops::profile::ProfileSide,
     polygon::Polygon2,
     surface::dropcutter::batch_drop_cutter,
     tool::{BallEndmill, FlatEndmill, MillingCutter},
@@ -24,6 +27,58 @@ use rs_cam_core::{
 };
 use std::path::Path;
 use std::sync::Arc;
+
+mod common;
+
+/// A 2.5D op on `polygon` through the session door (D3), dressups off, so
+/// the feeds in the G-code are the op's own. A flat end mill of
+/// `tool_diameter`; the stock hangs below Z0 with 10 mm of margin and its
+/// top at Z0. D3 deleted the public `pocket_toolpath` and
+/// `profile_toolpath` that this file called before.
+fn op_on(polygon: &Polygon2, op: OperationConfig, tool_diameter: f64) -> Toolpath {
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = tool_diameter;
+    let [min_x, min_y, max_x, max_y] = polygon.bbox();
+    let stock = StockConfig {
+        x: max_x - min_x + 20.0,
+        y: max_y - min_y + 20.0,
+        z: 10.0,
+        origin_x: min_x - 10.0,
+        origin_y: min_y - 10.0,
+        origin_z: -10.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    };
+    let model = common::session::polygon_model(vec![polygon.clone()], "e2e");
+    common::op_fixtures::generated_op(stock, tool, model, op, |tc| {
+        tc.dressups = common::op_fixtures::no_dressups();
+    })
+    .toolpath
+}
+
+/// One pocket level, `depth` deep, through the session.
+fn pocket_on(
+    polygon: &Polygon2,
+    tool_diameter: f64,
+    stepover: f64,
+    depth: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+) -> Toolpath {
+    op_on(
+        polygon,
+        OperationConfig::Pocket(PocketConfig {
+            stepover,
+            depth,
+            depth_per_pass: depth,
+            feed_rate,
+            plunge_rate,
+            climb: false,
+            ..PocketConfig::default()
+        }),
+        tool_diameter,
+    )
+}
 
 #[test]
 fn test_terrain_stl_to_gcode() {
@@ -147,33 +202,26 @@ fn pocket_and_profile_on_same_polygon() {
     let polygon = make_test_rectangle();
 
     // ---- Pocket ----
-    let pocket_params = PocketParams {
-        tool_radius: 3.175,
-        stepover: 2.0,
-        cut_depth: -3.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        climb: false,
-    };
-    let pocket_tp = pocket_toolpath(&polygon, &pocket_params);
+    let pocket_tp = pocket_on(&polygon, 6.35, 2.0, 3.0, 1000.0, 500.0);
     assert!(
         !pocket_tp.moves.is_empty(),
         "Pocket toolpath should be non-empty"
     );
 
     // ---- Profile (outside) ----
-    let profile_params = ProfileParams {
-        tool_radius: 3.175,
-        side: ProfileSide::Outside,
-        cut_depth: -3.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        climb: false,
-        compensate_in_controller: false,
-    };
-    let profile_tp = profile_toolpath(&polygon, &profile_params);
+    let profile_tp = op_on(
+        &polygon,
+        OperationConfig::Profile(ProfileConfig {
+            side: ProfileSide::Outside,
+            depth: 3.0,
+            depth_per_pass: 3.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            climb: false,
+            ..ProfileConfig::default()
+        }),
+        6.35,
+    );
     assert!(
         !profile_tp.moves.is_empty(),
         "Profile toolpath should be non-empty"
@@ -255,16 +303,7 @@ fn svg_import_pocket_gcode() {
     );
 
     // Run pocket operation
-    let pocket_params = PocketParams {
-        tool_radius: 2.0,
-        stepover: 1.5,
-        cut_depth: -2.0,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
-        safe_z: 5.0,
-        climb: false,
-    };
-    let pocket_tp = pocket_toolpath(polygon, &pocket_params);
+    let pocket_tp = pocket_on(polygon, 4.0, 1.5, 2.0, 800.0, 400.0);
     assert!(
         !pocket_tp.moves.is_empty(),
         "Pocket toolpath from SVG polygon should be non-empty"
@@ -321,16 +360,7 @@ fn svg_fixture_file_import_pocket_gcode() {
     );
 
     // Run pocket on the first polygon
-    let pocket_params = PocketParams {
-        tool_radius: 2.0,
-        stepover: 1.5,
-        cut_depth: -2.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        climb: false,
-    };
-    let pocket_tp = pocket_toolpath(&polygons[0], &pocket_params);
+    let pocket_tp = pocket_on(&polygons[0], 4.0, 1.5, 2.0, 1000.0, 500.0);
     assert!(!pocket_tp.moves.is_empty());
 
     let gcode = emit_gcode(&pocket_tp, post::grbl(), 18000);

@@ -11,7 +11,6 @@ origin_x = 0.0
 origin_y = -109.31554412841797
 origin_z = 0.0
 padding = 5.0
-workholding_rigidity = "Medium"
 auto_from_model = true
 alignment_pins = []
 
@@ -67,7 +66,6 @@ taper_half_angle = 0.0
 shaft_diameter = 0.0
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -90,7 +88,6 @@ taper_half_angle = 0.0
 shaft_diameter = 0.0
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -114,13 +111,10 @@ name = "Setup 1"
 face_up = "top"
 z_rotation = "0"
 model_ids = [1]
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 1
 name = "3D Rough 1"
-type = "adaptive3d"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -175,7 +169,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -224,7 +217,6 @@ reference = "amana-flat-softwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 3
 name = "3D Rough 1 (copy)"
-type = "adaptive3d"
 enabled = true
 tool_id = 1
 model_id = 1
@@ -279,7 +271,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -327,7 +318,6 @@ reference = "amana-zrn-flat-softwood-pocket-3175-2f"
 [[setups.toolpaths]]
 id = 4
 name = "Waterline 3"
-type = "waterline"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -367,7 +357,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -414,6 +403,4 @@ name = "Setup 2"
 face_up = "top"
 z_rotation = "0"
 model_ids = [1]
-fixtures = []
-keep_out_zones = []
 toolpaths = []

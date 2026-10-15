@@ -10,14 +10,14 @@ pub use rs_cam_core::compute::tool_config::{
 };
 pub use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 pub use rs_cam_core::gcode::{PostConfig, PostFormat};
-pub use rs_cam_core::ids::{FixtureId, KeepOutId, ModelId, SetupId};
+pub use rs_cam_core::ids::{ModelId, ObstacleId, SetupId};
 
 // LoadedModel is now the single core type — viz re-exports it directly.
 pub use rs_cam_core::session::LoadedModel;
 
 // ToolConfig, ToolType, ToolMaterial, BitCutDirection, PostConfig, PostFormat,
-// StockConfig, AlignmentPin, ModelId, ToolId, SetupId, FixtureId,
-// KeepOutId, ModelKind, ModelUnits are now re-exported from core above.
+// StockConfig, AlignmentPin, ModelId, ToolId, SetupId, ObstacleId,
+// ModelKind, ModelUnits are now re-exported from core above.
 
 // FaceUp and ZRotation are now re-exported from core::compute::transform above.
 
@@ -168,9 +168,7 @@ impl Default for SetupFrame {
     }
 }
 
-// ── Helpers for session fixture/keep-out bbox computation ──
-// The core session `Fixture` and `KeepOutZone` lack bbox methods, so we
-// provide free functions here that mirror the viz-local equivalents.
+// ── Helper for the setup-local model bbox ──
 
 /// Transform an axis-aligned bbox through a setup transform by mapping all 8
 /// corners to the setup-local frame and taking min/max. face_up + z_rotation
@@ -246,58 +244,81 @@ pub fn height_context_from_session(
         (Some(b), None) => Some(b),
         _ => None,
     };
-    let heights_bbox = ctx.heights_stock_bbox;
-    rs_cam_core::compute::config::HeightContext {
-        safe_z: ctx.safe_z,
-        op_depth: tc.operation.default_depth_for_heights(),
-        stock_top_z: heights_bbox.max.z,
-        stock_bottom_z: heights_bbox.min.z,
-        model_top_z: mb.map(|b| b.max.z),
-        model_bottom_z: mb.map(|b| b.min.z),
-    }
+    ctx.height_context(tc.operation.default_depth_for_heights(), mb.as_ref())
 }
 
-/// Bounding box of a session `Fixture` (physical extents, no clearance).
-pub fn session_fixture_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+/// K2: the extent of an obstacle with its clearance, in its setup frame
+/// (the frame the setup's toolpaths emit in). Picking reads it.
+///
+/// The XY range is the raw section's bounding box grown by the clearance:
+/// an outward offset by `d` grows a bounding box by exactly `d`, so this is
+/// the bounding box of the resolver's footprint without the offset work
+/// (the hover pick asks it each frame). A mesh takes its bounding box plus
+/// the one raster cell the resolver adds. `None` for a disabled obstacle
+/// and for a model the obstacle reads that is missing or holds no geometry
+/// of the kind it needs.
+pub fn obstacle_display_extent(
+    o: &rs_cam_core::session::Obstacle,
+    models: &[rs_cam_core::session::LoadedModel],
+) -> Option<BoundingBox3> {
+    use rs_cam_core::compute::obstacle::SILHOUETTE_CELL_MM;
+    use rs_cam_core::compute::stock_change::is_closed_outline;
     use rs_cam_core::geo::P3;
-    BoundingBox3 {
-        min: P3::new(f.origin_x, f.origin_y, f.origin_z),
-        max: P3::new(
-            f.origin_x + f.size_x,
-            f.origin_y + f.size_y,
-            f.origin_z + f.size_z,
-        ),
+    use rs_cam_core::session::ObstacleGeometry;
+    if !o.enabled {
+        return None;
     }
-}
-
-/// Clearance bounding box of a session `Fixture` (inflated by clearance margin).
-pub fn session_fixture_clearance_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
-    use rs_cam_core::geo::P3;
-    let c = f.clearance;
-    BoundingBox3 {
-        min: P3::new(f.origin_x - c, f.origin_y - c, f.origin_z),
-        max: P3::new(
-            f.origin_x + f.size_x + c,
-            f.origin_y + f.size_y + c,
-            f.origin_z + f.size_z,
-        ),
-    }
-}
-
-/// Bounding box of a session `KeepOutZone` (full Z extent of stock).
-pub fn session_keep_out_bbox(
-    ko: &rs_cam_core::session::KeepOutZone,
-    stock: &StockConfig,
-) -> BoundingBox3 {
-    use rs_cam_core::geo::P3;
-    BoundingBox3 {
-        min: P3::new(ko.origin_x, ko.origin_y, stock.origin_z),
-        max: P3::new(
-            ko.origin_x + ko.size_x,
-            ko.origin_y + ko.size_y,
-            stock.origin_z + stock.z,
-        ),
-    }
+    let find = |id: rs_cam_core::ids::ModelId| models.iter().find(|m| m.id == id.0);
+    let (xy, z0, z1, grow) = match &o.geometry {
+        ObstacleGeometry::Box { min, max } => {
+            ([min[0], min[1], max[0], max[1]], min[2], max[2], 0.0)
+        }
+        ObstacleGeometry::OutlineExtrude {
+            model_ids,
+            z_bottom,
+            z_top,
+        } => {
+            let mut xy = [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ];
+            for id in model_ids {
+                let polygons = find(*id)?.polygons.as_ref()?;
+                for p in polygons.iter().filter(|p| is_closed_outline(p)) {
+                    for v in &p.exterior {
+                        xy = [
+                            xy[0].min(v.x),
+                            xy[1].min(v.y),
+                            xy[2].max(v.x),
+                            xy[3].max(v.y),
+                        ];
+                    }
+                }
+            }
+            if !(xy[0] < xy[2] && xy[1] < xy[3]) {
+                return None;
+            }
+            (xy, *z_bottom, *z_top, 0.0)
+        }
+        ObstacleGeometry::Model { model_id } => {
+            let mesh = find(*model_id)?.mesh.as_ref()?;
+            let b = &mesh.bbox;
+            (
+                [b.min.x, b.min.y, b.max.x, b.max.y],
+                b.min.z,
+                b.max.z,
+                SILHOUETTE_CELL_MM,
+            )
+        }
+    };
+    let c = o.clearance.max(0.0);
+    let d = c + grow;
+    Some(BoundingBox3 {
+        min: P3::new(xy[0] - d, xy[1] - d, z0 - c),
+        max: P3::new(xy[2] + d, xy[3] + d, z1 + c),
+    })
 }
 
 /// Transform a mesh into a setup's local coordinate frame.

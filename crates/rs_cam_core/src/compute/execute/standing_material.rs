@@ -2,7 +2,7 @@
 //! Z level of the ladder.
 //!
 //! A 2.5D operation with `StockSource::FromRemainingStock` receives the
-//! machined stock as `ExecutionContext::initial_stock`. Before this module,
+//! machined stock on `ExecutionContext::territory_inputs`. Before this module,
 //! Pocket planned every level from `top_z` down and cut air where an
 //! upstream operation had already cleared the material (op Z23 re-cut 112
 //! levels that op Z22 had cleared; 93.5 % of its cut time was air).
@@ -26,7 +26,8 @@
 //!   material over one point.
 //!
 //! [`level_masks`] (`RestUse::LevelMask`, 2D Adaptive) reads the same mask
-//! per level. It skips a level with no material in the footprint, and it
+//! per level. [`standing_near`] (`RestUse::ContourFilter`, Waterline, W6.1)
+//! reads the same floor around each contour point. It skips a level with no material in the footprint, and it
 //! gives each other level the raw mask, which seeds the planner's grid.
 //!
 //! # The geometry
@@ -53,6 +54,7 @@
 //! region extraction that hits `MAX_REST_REGIONS`, and a window too large
 //! for the grid. The finding records which one.
 
+use crate::compute::catalog::RestUse;
 use crate::compute::toolpath_stats::{RestLevelsFallback, RestLevelsFinding};
 use crate::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use crate::geo::P2;
@@ -514,6 +516,146 @@ pub(crate) fn level_masks(
         fallback: None,
     });
     Ok(plan)
+}
+
+/// `RestUse::ContourFilter` (W6.1): which points of a contour at one level
+/// pass material. See [`standing_near`].
+pub(crate) struct StandingNear<'s> {
+    grid: &'s crate::stock::dexel::DexelGrid,
+    /// [`standing_floor`] of the level.
+    floor: f32,
+    /// The reach (mm) from a contour point: `R + cell`.
+    band: f64,
+}
+
+/// `RestUse::ContourFilter` (W6.1): the rule that keeps a contour point at
+/// level `z`, or `None` for a fresh op (`stock == None`), which keeps
+/// every point.
+///
+/// A point is kept when a cell whose centre lies within `R + cell` of it
+/// holds material above `z + FRESH_MATERIAL_THRESHOLD_MM`. A finishing
+/// pass must never leave material (lead ruling, 2026-10-15), so the band
+/// takes in every cell the tool touches, a part-covered one too. The
+/// narrower band of [`levels_in_reach`] (`R - cell / 2`) left 0.05 to
+/// 0.13 mm in the W4 cap terraces. A point is also kept when the band
+/// holds a cell off the grid: the grid holds no answer there, so the op
+/// cuts more, never less.
+pub(crate) fn standing_near(
+    stock: Option<&TriDexelStock>,
+    z: f64,
+    tool_radius: f64,
+) -> Option<StandingNear<'_>> {
+    Some(ContourFilterRule::new(stock?, tool_radius, None).at(z))
+}
+
+impl StandingNear<'_> {
+    /// True when the contour point `p` passes material, or when the grid
+    /// holds no answer in its band. See [`standing_near`].
+    pub(crate) fn keeps(&self, p: P2) -> bool {
+        let grid = self.grid;
+        let cell = grid.cell_size;
+        let index = |u: f64, origin: f64| ((u - origin) / cell).floor() as isize;
+        let (c0, c1) = (
+            index(p.x - self.band, grid.origin_u),
+            index(p.x + self.band, grid.origin_u) + 1,
+        );
+        let (r0, r1) = (
+            index(p.y - self.band, grid.origin_v),
+            index(p.y + self.band, grid.origin_v) + 1,
+        );
+        let mut seen = false;
+        for r in r0..=r1 {
+            for c in c0..=c1 {
+                let (x, y) = (
+                    grid.origin_u + c as f64 * cell,
+                    grid.origin_v + r as f64 * cell,
+                );
+                if (x - p.x).hypot(y - p.y) > self.band {
+                    continue;
+                }
+                seen = true;
+                let on_grid =
+                    r >= 0 && c >= 0 && (r as usize) < grid.rows && (c as usize) < grid.cols;
+                if !on_grid || grid.has_material_above(r as usize, c as usize, self.floor) {
+                    return true;
+                }
+            }
+        }
+        !seen
+    }
+}
+
+/// `RestUse::ContourFilter` (W6.1, W6.4.6): the rule a runner owns. The
+/// Layered runner (`layered::run_layered`, Waterline) and the composed
+/// runner (`composed::run_composed`, both halves of Steep and Shallow)
+/// resolve it once from the territory ([`Self::resolve`]) and give it to
+/// the op. The op folds [`Self::keeps`] into its per-point keep; it does
+/// not read the stock itself.
+#[derive(Clone, Copy)]
+pub(crate) struct ContourFilterRule<'s> {
+    /// The remaining stock after the W2.1 guard
+    /// (`Territory::reference_stock`, C3).
+    stock: &'s TriDexelStock,
+    /// The cutter radius (mm), the `R` of [`standing_near`].
+    tool_radius: f64,
+    /// The machine envelope that times a stretch the rule drops
+    /// (`ops::waterline::bridge_air_stretches`). `None`: no time model, so
+    /// the rule drops no stretch between two kept points.
+    split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+}
+
+impl<'s> ContourFilterRule<'s> {
+    /// The rule of an op whose rest rule is `rest_use`. `Some` only for
+    /// `RestUse::ContourFilter` with a remaining stock that the territory
+    /// accepted as the rest reference; `None` for a fresh op, which keeps
+    /// every point.
+    pub(crate) fn resolve(
+        rest_use: RestUse,
+        territory: &super::territory::Territory<'s>,
+        tool_radius: f64,
+        split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+    ) -> Option<Self> {
+        if rest_use != RestUse::ContourFilter {
+            return None;
+        }
+        territory
+            .reference_stock()
+            .map(|stock| Self::new(stock, tool_radius, split_timing))
+    }
+
+    /// The rule over `stock`. A runner calls [`Self::resolve`];
+    /// [`standing_near`] (the Pencil entry check) calls this.
+    pub(crate) fn new(
+        stock: &'s TriDexelStock,
+        tool_radius: f64,
+        split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+    ) -> Self {
+        Self {
+            stock,
+            tool_radius,
+            split_timing,
+        }
+    }
+
+    /// The rule at level `z` ([`standing_near`]).
+    pub(crate) fn at(&self, z: f64) -> StandingNear<'s> {
+        StandingNear {
+            grid: &self.stock.z_grid,
+            floor: standing_floor(z),
+            band: self.tool_radius + self.stock.z_grid.cell_size,
+        }
+    }
+
+    /// True when material stands in the reach of the tool at `p`; `p.z` is
+    /// the tool tip Z.
+    pub(crate) fn keeps(&self, p: crate::geo::P3) -> bool {
+        self.at(p.z).keeps(P2::new(p.x, p.y))
+    }
+
+    /// The machine envelope that times a dropped stretch.
+    pub(crate) fn split_timing(&self) -> Option<&'s crate::machine::kinematics::LinkKinematics> {
+        self.split_timing
+    }
 }
 
 /// What the stock column over one point holds (`RestUse::StockColumn`).

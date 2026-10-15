@@ -20,7 +20,8 @@
 )]
 
 use rs_cam_core::finish::pencil::{
-    PencilDetector, PencilParams, PencilRuntimeEvent, pencil_toolpath_structured_annotated,
+    PencilDetector, PencilParams, PencilRuntimeEvent, PencilStock,
+    pencil_toolpath_structured_annotated_with_cancel,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -112,8 +113,17 @@ fn pencil_params(num_offset_passes: usize) -> PencilParams {
 fn run_pencil(mesh: &TriangleMesh, params: &PencilParams) -> (usize, usize, Vec<i64>) {
     let index = SpatialIndex::build(mesh, 4.0);
     let cutter = wanaka_taper();
-    let (_tp, ann, _report) =
-        pencil_toolpath_structured_annotated(mesh, &index, &cutter, params, None, None);
+    let (_tp, ann, _report) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            mesh,
+            &index,
+            &cutter,
+            params,
+            PencilStock::default(),
+            None,
+            cancel,
+        )
+    });
     let mut chains: std::collections::BTreeSet<usize> = Default::default();
     let mut offsets: std::collections::BTreeSet<i64> = Default::default();
     let mut max_total = 0usize;
@@ -369,18 +379,21 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
     // stream as several runs carrying the SAME `(chain_index, offset_index)`.
     // A dropped pass would carry none, and an untruncated one exactly one.
     let index2 = SpatialIndex::build(&mesh, 4.0);
-    let (_tp, ann, _report) = pencil_toolpath_structured_annotated(
-        &mesh,
-        &index2,
-        &cutter,
-        &PencilParams {
-            rest_cell_mm: 0.25,
-            num_offset_passes: 6,
-            ..pencil_params(6)
-        },
-        None,
-        None,
-    );
+    let (_tp, ann, _report) = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        pencil_toolpath_structured_annotated_with_cancel(
+            &mesh,
+            &index2,
+            &cutter,
+            &PencilParams {
+                rest_cell_mm: 0.25,
+                num_offset_passes: 6,
+                ..pencil_params(6)
+            },
+            PencilStock::default(),
+            None,
+            cancel,
+        )
+    });
     let mut runs_per_pass: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
     let mut declared: std::collections::BTreeMap<usize, usize> = Default::default();
     for a in &ann {

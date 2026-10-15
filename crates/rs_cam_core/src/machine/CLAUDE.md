@@ -14,17 +14,17 @@ principal type is `MachineProfile` in `mod.rs`.
 
 - The per-axis maximum rate is per axis. A single scalar rate over-estimates
   a diagonal move.
-- Machine acceleration decides parallel against spiral. The advisor reads the
-  profile; do not hard-code a strategy preference.
+- Machine acceleration decides parallel against spiral. The advisor reads the profile; do not hard-code a strategy preference.
 - The cycle time and the predicted feed come from ONE pass: `digest_moves`
   then `walk_junctions`, over the one physics site `solve_move`. Do not add a
   second digest loop or a second junction walk (EDG-07).
-- A junction reads each move's end tangent (`move_end_tangents`; an arc's
-  own tangent, a helix's with its slope), never an arc's chord.
-- `MachineProfile::link_kinematics` is the one link-envelope builder. A machine
-  edit compares it before and after, and stales the link-stage ops (B7).
-- An arc is timed at its arc length (`move_length`, `hypot(r * sweep, dz)`),
-  never its chord; both integrators read `move_length` / `move_directions`.
+- A junction reads each move's end tangent (`move_end_tangents`; an arc's own tangent, a helix's
+  with its slope), never an arc's chord.
+- `MachineProfile::link_kinematics` is the one link-envelope builder. A machine edit compares it
+  and stales the link-stage ops and each result that read a stock snapshot (B7, the air filter).
+  `retract_saves_time` is the ONE feed-or-retract rule (W6.1 Waterline, the air-cut filter).
+- An arc is timed at its arc length (`move_length`, `hypot(r * sweep, dz)`), never its chord;
+  both integrators read `move_length` / `move_directions`.
 
 ## Sentries
 

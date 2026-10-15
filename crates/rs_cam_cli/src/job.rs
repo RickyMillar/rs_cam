@@ -25,7 +25,15 @@
 //! feed_rate = 1000
 //! plunge_rate = 500
 //! pattern = "zigzag"
+//!
+//! [operation.dressups]
+//! entry_style = "helix"
 //! ```
+//!
+//! C2: `type` is the registry token (`run --list-ops`), and every other
+//! operation key that is not a job key is a schema parameter
+//! (`run --list-params <op>`). A parameter that the file does not set
+//! keeps the registry default.
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -37,9 +45,7 @@ use tracing::{debug, info, warn};
 use rs_cam_core::{
     compute::ModelUnits,
     compute::catalog::{OperationConfig, OperationType},
-    compute::config::{
-        BoundaryConfig, DressupConfig, DressupEntryStyle, HeightsConfig, StockSource,
-    },
+    compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource},
     compute::tool_config::{ToolConfig, ToolId, ToolType},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
@@ -49,7 +55,8 @@ use rs_cam_core::{
     geo::BoundingBox3,
     session::{
         AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
-        SetPostConfigArgs, SetStockConfigArgs, SetToolpathParamArgs, ToolpathConfig,
+        SetDressupFieldArgs, SetPostConfigArgs, SetStockConfigArgs, SetToolpathParamArgs,
+        ToolpathConfig,
     },
     stock::simulation_cut::{
         AirCutRatios as _, SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace,
@@ -132,7 +139,11 @@ fn default_sim_resolution() -> f64 {
     0.25
 }
 
+/// One `[tools.<key>]` table. An unknown key refuses to parse: C1 (B18)
+/// deleted `shank_length` and `holder_length`, and a silent ignore would
+/// hide the edit.
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToolDef {
     /// Cutter shape. CLI-08: one vocabulary for every surface — the
     /// canonical [`ToolType`] serde token, the same token `run --tool`
@@ -161,122 +172,111 @@ pub struct ToolDef {
     /// Shank diameter above the cutting flutes (mm).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shank_diameter: Option<f64>,
-    /// Shank length above the cutting flutes (mm).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shank_length: Option<f64>,
+    /// The length from the holder face to the tip (mm). Default: the
+    /// cutting length, so the holder face sits at the top of the flutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stickout: Option<f64>,
     /// Holder diameter (mm).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub holder_diameter: Option<f64>,
-    /// Holder length (mm).
-    #[allow(dead_code)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub holder_length: Option<f64>,
 }
 
+/// One `[[operation]]` table.
+///
+/// C2: the job file reads the W5 operation schema. `type` is the registry
+/// token of the op (`run --list-ops`). A key that is not one of the job
+/// keys below ([`OperationDef::JOB_KEYS`]) is an operation parameter by
+/// its schema name (`run --list-params <op>`), and the core setter
+/// applies it. A parameter that the file does not set keeps the registry
+/// default (`OperationConfig::new_default`). The `[operation.dressups]`
+/// table holds dressup fields by their `DressupConfig::FIELD_DEFS` name.
+/// [`parse_job_file`] refuses an unknown key.
 #[derive(Deserialize, Serialize)]
 pub struct OperationDef {
+    /// The registry token of the op (`OperationType::kind_str`).
     #[serde(rename = "type")]
     pub op_type: String,
     pub input: PathBuf,
     pub tool: String,
     /// Which setup this operation belongs to. If absent, belongs to a default setup.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub setup: Option<String>,
-
-    // Common parameters (override job defaults if present)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stepover: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depth: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depth_per_pass: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub feed_rate: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plunge_rate: Option<f64>,
-    /// Feed (mm/min) of a helix or ramp entry through material. Empty uses
-    /// the plunge rate. A drill cycle has no entry and ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ramp_feed_rate: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup: Option<String>,
+    /// The post safe Z for this operation. Empty: the `[job]` value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safe_z: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spindle_speed: Option<u32>,
     #[serde(default)]
     pub coolant: CoolantMode,
-
-    // Pocket-specific
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pattern: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub angle: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub climb: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entry: Option<String>,
-
-    // Profile-specific
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub side: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tabs: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tab_width: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tab_height: Option<f64>,
-
-    // Dogbone
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dogbone: Option<bool>,
-
-    // Adaptive-specific
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub slot_clearing: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_cutting_radius: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub z_blend: Option<bool>,
-
-    // STL scaling
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The model scale (`ModelUnits::Custom`). Empty: the file units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
-
-    // 3D adaptive-specific
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The stock top Z. Empty: the session stock, which the model sizes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stock_top_z: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stock_to_leave: Option<f64>,
-    /// Entry style for 3D ops. CLI-01: the `entry_style` alias is
-    /// deleted; the key is `entry_3d`, and the 2D `entry` key is still
-    /// the fallback.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entry_3d: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detect_flat_areas: Option<bool>,
-    /// Region order: `global` (level-first) or `by_area` (region-first).
-    /// The default is `global` for 3D Rough and `by_area` for Pocket and
-    /// Profile (R4).
-    /// Another value is refused, not read as a default (F7).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_by: Option<String>,
-    /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strategy: Option<String>,
-    /// F-038: minimum forecast cut length (mm) for a marching-squares region
-    /// to be retained in AgentSearch. Default 5.0 mm. Set to 0.0 to disable.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_region_cut_length_mm: Option<f64>,
-    /// F-038b: maximum XY stay-down link distance (mm) between cut groups.
-    /// `None` ⇒ planner defaults to 8 × tool diameter. `Some(0.0)` disables.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_stay_down_distance_mm: Option<f64>,
-    /// F-038b: vertical clearance (mm) above the heightfield sample max
-    /// when emitting a keep-tool-down link. Default 0.5 mm.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stay_down_clearance_mm: Option<f64>,
+    /// Dressup fields by their `DressupConfig::FIELD_DEFS` name.
+    #[serde(default, skip_serializing_if = "toml::Table::is_empty")]
+    pub dressups: toml::Table,
+    /// Operation parameters by their schema name.
+    #[serde(flatten)]
+    pub params: toml::Table,
+}
+
+impl OperationDef {
+    /// The keys that the job file reads itself. Every other key of an
+    /// `[[operation]]` table is an operation parameter.
+    pub(crate) const JOB_KEYS: &'static [&'static str] = &[
+        "type",
+        "input",
+        "tool",
+        "setup",
+        "safe_z",
+        "coolant",
+        "scale",
+        "stock_top_z",
+        "dressups",
+    ];
+
+    /// The registry op that `type` names, after the C2 check of every key.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an unknown `type`, a parameter that the op's schema does not
+    /// publish and a dressup key that `DressupConfig::FIELD_DEFS` does not
+    /// name. The refusal names each bad key and the valid set.
+    pub(crate) fn operation_type(&self) -> Result<OperationType> {
+        let op_type = crate::run::parse_op_type(&self.op_type)?;
+        let defs = op_type.registry_entry().params.defs;
+        let unknown: Vec<&str> = self
+            .params
+            .keys()
+            .map(String::as_str)
+            .filter(|key| !defs.iter().any(|d| d.name == *key))
+            .collect();
+        if !unknown.is_empty() {
+            let valid: Vec<&str> = defs.iter().map(|d| d.name).collect();
+            bail!(
+                "operation '{}' has no parameter {}. Its parameters are: {}. The job keys are: {}",
+                op_type.kind_str(),
+                unknown.join(", "),
+                valid.join(", "),
+                Self::JOB_KEYS.join(", ")
+            );
+        }
+        let unknown: Vec<&str> = self
+            .dressups
+            .keys()
+            .map(String::as_str)
+            .filter(|key| !DressupConfig::FIELD_DEFS.iter().any(|d| d.name == *key))
+            .collect();
+        if !unknown.is_empty() {
+            let valid: Vec<&str> = DressupConfig::FIELD_DEFS.iter().map(|d| d.name).collect();
+            bail!(
+                "[operation.dressups] has no field {}. The dressup fields are: {}",
+                unknown.join(", "),
+                valid.join(", ")
+            );
+        }
+        Ok(op_type)
+    }
 }
 
 // ── The `job` subcommand ───────────────────────────────────────────────
@@ -810,6 +810,10 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
     }
     // Validate all tools referenced by operations exist
     for (i, op) in job.operation.iter().enumerate() {
+        // C2: every key is a job key, a schema parameter or a dressup field.
+        let _ = op
+            .operation_type()
+            .with_context(|| format!("operation {i} ({})", op.op_type))?;
         if !job.tools.contains_key(&op.tool) {
             bail!(
                 "Operation {} references unknown tool '{}'. Available: {:?}",
@@ -877,9 +881,10 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
     Ok(ToolDefinition::new(
         cutter,
         def.shank_diameter.unwrap_or(d),
-        def.shank_length.unwrap_or(0.0),
         def.holder_diameter.unwrap_or(d * 2.0),
-        def.shank_length.unwrap_or(0.0) + cl + 20.0, // default stickout
+        // The stickout is the holder face height above the tip. The
+        // default puts the face at the top of the flutes.
+        def.stickout.unwrap_or(cl),
         def.flute_count.unwrap_or(2),
         rs_cam_core::compute::ToolMaterial::Carbide,
     ))
@@ -978,6 +983,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         }
         let tp = output.toolpath;
         let drill = output.drill;
+        let spindle_speed = output.spindle_rpm.unwrap_or(job.job.spindle_speed);
 
         info!(
             moves = tp.moves.len(),
@@ -1001,7 +1007,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             toolpath: tp,
             cutter: phase_cutter,
             label,
-            spindle_speed: op.spindle_speed.unwrap_or(job.job.spindle_speed),
+            spindle_speed,
             tool_id,
             tool_number,
             tool_name: op.tool.clone(),
@@ -1035,23 +1041,8 @@ struct SessionOpOutput {
     trace: Option<ToolpathTraceArtifact>,
     /// G7: the drill cycle, for the G82 dwell and native cycles.
     drill: Option<rs_cam_core::gcode::PhaseDrill>,
-}
-
-/// The job-file operation vocabulary. Anything else points the user at
-/// the generic registry-driven `run` subcommand (every op in the registry).
-fn op_type_for(token: &str) -> Result<OperationType> {
-    Ok(match token {
-        "pocket" => OperationType::Pocket,
-        "profile" => OperationType::Profile,
-        "adaptive" => OperationType::Adaptive,
-        "adaptive3d" => OperationType::Adaptive3d,
-        "drop-cutter" | "drop_cutter" | "finish" => OperationType::DropCutter,
-        other => bail!(
-            "Unknown operation type '{other}'. Job files support: pocket, profile, adaptive, \
-             adaptive3d, drop-cutter. For other operations use `rs_cam_cli run <op>` \
-             (see `run --list-ops`)."
-        ),
-    })
+    /// The op's own `spindle_rpm`. Empty: the `[job]` spindle speed.
+    spindle_rpm: Option<u32>,
 }
 
 /// Build a session `ToolConfig` from a job-file tool definition.
@@ -1081,8 +1072,8 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
     if let Some(sd) = def.shank_diameter {
         tc.shank_diameter = sd;
     }
-    if let Some(sl) = def.shank_length {
-        tc.shank_length = sl;
+    if let Some(stickout) = def.stickout {
+        tc.stickout = stickout;
     }
     if let Some(hd) = def.holder_diameter {
         tc.holder_diameter = hd;
@@ -1098,7 +1089,7 @@ fn execute_op_via_session(
     tool_def: &ToolDef,
     debug_trace: bool,
 ) -> Result<SessionOpOutput> {
-    let op_type = op_type_for(&op.op_type)?;
+    let op_type = op.operation_type()?;
     let mut session = ProjectSession::new_empty();
 
     // \u{2500}\u{2500} Model \u{2500}\u{2500}
@@ -1107,7 +1098,6 @@ fn execute_op_via_session(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| format!("op_{i}_model"));
-    // Pre-T9 only the STL ops honored `scale`; keep that scoping.
     let units = op.scale.map(ModelUnits::Custom);
     let model = LoadedModel::from_file(0, &model_name, &op.input, None, units, job_dir)
         .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
@@ -1118,22 +1108,17 @@ fn execute_op_via_session(
         }),
     )?;
 
-    // Adaptive3d stock-frame fidelity: the pre-T9 router defaulted the
-    // stock top to `model_top + 5.0` when `stock_top_z` was unset.
-    if op_type == OperationType::Adaptive3d {
-        let bbox = session.models().first().and_then(LoadedModel::bbox);
-        if let Some(bbox) = bbox {
-            let top = op.stock_top_z.unwrap_or(bbox.max.z + 5.0);
-            let mut stock = session.stock_config().clone();
-            stock.auto_from_model = false;
-            stock.z = (top - stock.origin_z).max(0.0);
-            let _ = crate::command::apply_command(
-                &mut session,
-                Command::SetStockConfig(SetStockConfigArgs {
-                    stock: Box::new(stock),
-                }),
-            )?;
-        }
+    // \u{2500}\u{2500} Stock: a set top only; the session sizes the rest \u{2500}\u{2500}
+    if let Some(top) = op.stock_top_z {
+        let mut stock = session.stock_config().clone();
+        stock.auto_from_model = false;
+        stock.z = (top - stock.origin_z).max(0.0);
+        let _ = crate::command::apply_command(
+            &mut session,
+            Command::SetStockConfig(SetStockConfigArgs {
+                stock: Box::new(stock),
+            }),
+        )?;
     }
 
     // \u{2500}\u{2500} Tools \u{2500}\u{2500}
@@ -1145,33 +1130,6 @@ fn execute_op_via_session(
     )?
     .created
     .context("add_tool reports no new tool index")?;
-
-    // \u{2500}\u{2500} Dressups (entry / dogbone were post-passes pre-T9) \u{2500}\u{2500}
-    let mut dressups = DressupConfig::default();
-    if matches!(
-        op_type,
-        OperationType::Pocket | OperationType::Profile | OperationType::Adaptive
-    ) && let Some(entry) = op.entry.as_deref()
-    {
-        match entry {
-            "plunge" => {}
-            // G10: the named repo rules the GUI default reads; the helix
-            // radius is the rule 0.3 x D (`None`), capped at the flat bottom.
-            "ramp" => {
-                dressups.entry_style = DressupEntryStyle::Ramp;
-                dressups.ramp_angle = rs_cam_core::compute::config::DRESSUP_RAMP_ANGLE_DEG;
-            }
-            "helix" => {
-                dressups.entry_style = DressupEntryStyle::Helix;
-                dressups.helix_radius = None;
-                dressups.helix_pitch = rs_cam_core::compute::config::DRESSUP_HELIX_PITCH_MM;
-            }
-            other => bail!("Unknown entry style '{other}'. Supported: plunge, ramp, helix"),
-        }
-    }
-    if op.dogbone.unwrap_or(false) {
-        dressups.dogbone = Some(rs_cam_core::compute::config::DogboneParams { angle: 170.0 });
-    }
 
     let debug_options = ToolpathDebugOptions {
         enabled: debug_trace,
@@ -1192,7 +1150,7 @@ fn execute_op_via_session(
                 name: format!("op_{}_{}", i, op_type.kind_str()),
                 enabled: true,
                 operation: OperationConfig::new_default(op_type),
-                dressups,
+                dressups: DressupConfig::default(),
                 heights: HeightsConfig::default(),
                 tool_id,
                 model_id: 0,
@@ -1214,38 +1172,40 @@ fn execute_op_via_session(
     .created
     .context("add_toolpath reports no new toolpath index")?;
 
-    // \u{2500}\u{2500} Parameters: registry-validated serde round-trip \u{2500}\u{2500}
-    let drop_cutter_min_z = (op_type == OperationType::DropCutter)
-        .then(|| session.models().first().and_then(LoadedModel::bbox))
-        .flatten()
-        .map(|bbox| bbox.min.z);
-    let params = job_params_for(op, op_type, drop_cutter_min_z)?;
-    let table = op_type.registry_entry().params.defs;
-    for (key, value) in params {
-        if table.iter().any(|d| d.name == key) {
-            let command = Command::SetToolpathParam(SetToolpathParamArgs {
-                index: tp_index,
-                param: key.to_owned(),
-                value,
-            });
-            let _ = crate::command::apply_command(&mut session, command)
-                .map_err(|e| anyhow::anyhow!("param '{key}': {e}"))?;
-        } else {
-            // Pre-T9 the flat OperationDef silently ignored fields the
-            // op didn't read; keep that leniency but say so.
-            warn!(
-                param = key,
-                op = op_type.kind_str(),
-                "job param not applicable to this operation \u{2014} skipped"
-            );
-        }
+    // \u{2500}\u{2500} Parameters and dressups: the core setters, in schema order \u{2500}\u{2500}
+    // C2: the schema order, not the file order. A dressup value field
+    // refuses while its dressup is off, and `FIELD_DEFS` names each
+    // enable key before its value fields.
+    for def in op_type.registry_entry().params.defs {
+        let Some(value) = op.params.get(def.name) else {
+            continue;
+        };
+        let command = Command::SetToolpathParam(SetToolpathParamArgs {
+            index: tp_index,
+            param: def.name.to_owned(),
+            value: serde_json::to_value(value)?,
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("param '{}': {e}", def.name))?;
+    }
+    for def in DressupConfig::FIELD_DEFS {
+        let Some(value) = op.dressups.get(def.name) else {
+            continue;
+        };
+        let command = Command::SetDressupField(SetDressupFieldArgs {
+            index: tp_index,
+            key: def.name.to_owned(),
+            value: serde_json::to_value(value)?,
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("dressup '{}': {e}", def.name))?;
     }
 
     let mut post = session.post_config().clone();
     post.format = rs_cam_core::gcode::PostFormat::from_token(&job.job.post)
         .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
     post.safe_z = op.safe_z.unwrap_or(job.job.safe_z);
-    post.spindle_speed = op.spindle_speed.unwrap_or(job.job.spindle_speed);
+    post.spindle_speed = job.job.spindle_speed;
     let _ = crate::command::apply_command(
         &mut session,
         Command::SetPostConfig(SetPostConfigArgs {
@@ -1294,176 +1254,15 @@ fn execute_op_via_session(
         None
     };
 
-    let drill = session
-        .get_toolpath_config(tp_index)
-        .and_then(rs_cam_core::gcode::phase_drill_for);
+    let config = session.get_toolpath_config(tp_index);
+    let drill = config.and_then(rs_cam_core::gcode::phase_drill_for);
+    let spindle_rpm = config.and_then(|tc| tc.operation.spindle_rpm());
     Ok(SessionOpOutput {
         toolpath,
         trace,
         drill,
+        spindle_rpm,
     })
-}
-
-/// The `region_ordering` token of `op.order_by`, or `default` when the job
-/// names none. F7: an unknown value is refused. It was read as `global` in
-/// silence, so a typo ran the other order with no message. The tokens are
-/// the `region_ordering` tokens of the GUI and MCP.
-fn region_ordering(op: &OperationDef, default: &'static str) -> Result<&'static str> {
-    Ok(match op.order_by.as_deref() {
-        None => default,
-        Some("global") => "global",
-        Some("by_area") => "by_area",
-        Some(other) => {
-            bail!("order_by = \"{other}\" is not a region order. Use \"global\" or \"by_area\".")
-        }
-    })
-}
-
-/// Map the flat job-file fields onto registry param names, preserving
-/// the pre-T9 router's per-op defaults verbatim.
-fn job_params_for(
-    op: &OperationDef,
-    op_type: OperationType,
-    drop_cutter_min_z: Option<f64>,
-) -> Result<Vec<(&'static str, serde_json::Value)>> {
-    use serde_json::json;
-    let mut p: Vec<(&'static str, serde_json::Value)> = vec![
-        ("feed_rate", json!(op.feed_rate.unwrap_or(1000.0))),
-        ("plunge_rate", json!(op.plunge_rate.unwrap_or(500.0))),
-    ];
-    if let Some(rpm) = op.spindle_speed {
-        p.push(("spindle_rpm", json!(rpm)));
-    }
-    if let Some(ramp) = op.ramp_feed_rate
-        && !matches!(
-            op_type,
-            OperationType::Drill | OperationType::AlignmentPinDrill
-        )
-    {
-        p.push(("ramp_feed_rate", json!(ramp)));
-    }
-    match op_type {
-        OperationType::Pocket => {
-            p.push(("depth", json!(op.depth.context("Pocket requires 'depth'")?)));
-            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
-            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
-            p.push(("climb", json!(op.climb.unwrap_or(false))));
-            p.push(("angle", json!(op.angle.unwrap_or(0.0))));
-            p.push(("pattern", json!(op.pattern.as_deref().unwrap_or("contour"))));
-            // R4: a Layered op is region-first by default.
-            p.push(("region_ordering", json!(region_ordering(op, "by_area")?)));
-        }
-        OperationType::Profile => {
-            p.push((
-                "depth",
-                json!(op.depth.context("Profile requires 'depth'")?),
-            ));
-            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
-            p.push(("climb", json!(op.climb.unwrap_or(false))));
-            let side = match op.side.as_deref().unwrap_or("outside") {
-                "inside" | "in" => "inside",
-                _ => "outside",
-            };
-            p.push(("side", json!(side)));
-            p.push(("tab_count", json!(op.tabs.unwrap_or(0))));
-            p.push(("tab_width", json!(op.tab_width.unwrap_or(5.0))));
-            p.push(("tab_height", json!(op.tab_height.unwrap_or(2.0))));
-            // R4: a Layered op is region-first by default.
-            p.push(("region_ordering", json!(region_ordering(op, "by_area")?)));
-        }
-        OperationType::Adaptive => {
-            p.push((
-                "depth",
-                json!(op.depth.context("Adaptive requires 'depth'")?),
-            ));
-            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
-            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
-            p.push(("tolerance", json!(op.tolerance.unwrap_or(0.1))));
-            p.push(("slot_clearing", json!(op.slot_clearing.unwrap_or(false))));
-            p.push((
-                "min_cutting_radius",
-                json!(op.min_cutting_radius.unwrap_or(0.0)),
-            ));
-            // Pre-T9 router hardcoded the hybrid cleanup strategy.
-            p.push(("cleanup_strategy", json!("ContourParallelHybrid")));
-        }
-        OperationType::Adaptive3d => {
-            p.push(("stepover", json!(op.stepover.unwrap_or(2.0))));
-            p.push(("depth_per_pass", json!(op.depth_per_pass.unwrap_or(3.0))));
-            // L2 deleted the inert radial leave. The job file's single
-            // `stock_to_leave` key now feeds the axial dial alone,
-            // which is the only one the planner reads.
-            let stl = op.stock_to_leave.unwrap_or(0.5);
-            p.push(("stock_to_leave_axial", json!(stl)));
-            p.push(("tolerance", json!(op.tolerance.unwrap_or(0.1))));
-            p.push((
-                "min_cutting_radius",
-                json!(op.min_cutting_radius.unwrap_or(0.0)),
-            ));
-            // entry_3d falls back to the shared 2D `entry` field,
-            // matching the pre-T9 router.
-            let entry = op
-                .entry_3d
-                .as_deref()
-                .or(op.entry.as_deref())
-                .unwrap_or("plunge");
-            match entry {
-                // G10 D4 (operator decision 2026-09-25): one Adaptive3d
-                // entry rule, the GUI's, read from the named repo rules.
-                "helix" => {
-                    p.push(("entry_style", json!("helix")));
-                    p.push((
-                        "helix_radius_factor",
-                        json!(rs_cam_core::compute::config::HELIX_RADIUS_OVER_D),
-                    ));
-                    p.push((
-                        "helix_pitch",
-                        json!(rs_cam_core::compute::operation_configs::ADAPTIVE3D_HELIX_PITCH_MM),
-                    ));
-                }
-                "ramp" => {
-                    p.push(("entry_style", json!("ramp")));
-                    p.push((
-                        "ramp_angle_deg",
-                        json!(rs_cam_core::compute::operation_configs::ADAPTIVE3D_RAMP_ANGLE_DEG),
-                    ));
-                }
-                _ => p.push(("entry_style", json!("plunge"))),
-            }
-            p.push(("region_ordering", json!(region_ordering(op, "global")?)));
-            let strategy = match op.strategy.as_deref().unwrap_or("contour") {
-                "adaptive" => "adaptive",
-                "agent" | "agent_search" => "agent_search",
-                "spiral" | "contour_spiral" => "contour_spiral",
-                _ => "contour_parallel",
-            };
-            p.push(("clearing_strategy", json!(strategy)));
-            p.push(("z_blend", json!(op.z_blend.unwrap_or(false))));
-            p.push((
-                "detect_flat_areas",
-                json!(op.detect_flat_areas.unwrap_or(false)),
-            ));
-            p.push((
-                "min_region_cut_length_mm",
-                json!(op.min_region_cut_length_mm.unwrap_or(15.0)),
-            ));
-            if let Some(d) = op.max_stay_down_distance_mm {
-                p.push(("max_stay_down_distance_mm", json!(d)));
-            }
-            p.push((
-                "stay_down_clearance_mm",
-                json!(op.stay_down_clearance_mm.unwrap_or(0.5)),
-            ));
-        }
-        OperationType::DropCutter => {
-            p.push(("stepover", json!(op.stepover.unwrap_or(1.0))));
-            if let Some(min_z) = drop_cutter_min_z {
-                p.push(("min_z", json!(min_z)));
-            }
-        }
-        other => bail!("op_type_for returned unsupported {other:?}"),
-    }
-    Ok(p)
 }
 
 /// Best-effort typed JSON from a CLI parameter string: integer, then float,
@@ -1521,9 +1320,8 @@ mod tests {
             taper_angle: None,
             shaft_diameter: None,
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let cutter = build_tool(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -1538,9 +1336,8 @@ mod tests {
             taper_angle: None,
             shaft_diameter: None,
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let ball_cutter = build_tool(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -1558,9 +1355,8 @@ mod tests {
             taper_angle: Some(10.0),
             shaft_diameter: Some(12.0),
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let tapered_cutter = build_tool(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0
@@ -1608,150 +1404,152 @@ mod tests {
         }
     }
 
-    /// CLI-01 sentry: the job file has ONE stay-down key, and the
-    /// deleted one no longer feeds it.
-    ///
-    /// `OperationDef` carried both `max_stay_down_dist` and
-    /// `max_stay_down_distance_mm`, and `job_params_for` coalesced them
-    /// with `.or()`. A job file setting BOTH silently lost one of them,
-    /// with no warning. The same string also named an unrelated, dead
-    /// `Adaptive3dParams` field, so the two could not be told apart by
-    /// name. Only `max_stay_down_distance_mm` — the name every
-    /// `OperationConfig` registry, the GUI and MCP `set_toolpath_param`
-    /// use — reaches the core now.
-    #[test]
-    fn the_job_file_has_one_stay_down_key() {
-        let with_live_key: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_distance_mm = 18.0\n",
-        )
-        .unwrap();
-        let params = job_params_for(&with_live_key, OperationType::Adaptive3d, None).unwrap();
-        assert_eq!(
-            params
-                .iter()
-                .find(|(k, _)| *k == "max_stay_down_distance_mm")
-                .map(|(_, v)| v.clone()),
-            Some(serde_json::json!(18.0)),
-            "the live key must still reach the core"
-        );
-
-        // The deleted key is not a second door into the same param.
-        let with_deleted_key: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_dist = 30.0\n",
-        )
-        .unwrap();
-        let params = job_params_for(&with_deleted_key, OperationType::Adaptive3d, None).unwrap();
-        assert!(
-            !params
-                .iter()
-                .any(|(k, _)| *k == "max_stay_down_distance_mm"),
-            "the deleted key still sets the param; the coalesce survived"
-        );
+    /// Parse one `[[operation]]` table and run the C2 check.
+    fn checked(source: &str) -> Result<OperationType> {
+        let op: OperationDef = toml::from_str(source).unwrap();
+        op.operation_type()
     }
 
-    /// G10 D4 (operator decision 2026-09-25): one Adaptive3d entry rule, the
-    /// GUI's. `entry_3d = "ramp"` writes the 10° repo rule and `"helix"`
-    /// writes 0.3 x D at pitch 2 mm (it was 3°, 0.4 x D and pitch 1).
+    /// C2: every op in the registry is a job op. The `type` token is the
+    /// registry token, so no op needs CLI code.
     #[test]
-    fn the_adaptive3d_entry_is_the_gui_rule_g10() {
-        use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
-        let gui = Adaptive3dConfig::default();
-        let value = |params: &[(&'static str, serde_json::Value)], key: &str| {
-            params
-                .iter()
-                .find(|(k, _)| *k == key)
-                .and_then(|(_, v)| v.as_f64())
-                .unwrap_or_else(|| panic!("no {key}"))
-        };
-        let ramp: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"ramp\"\n",
-        )
-        .unwrap();
-        let params = job_params_for(&ramp, OperationType::Adaptive3d, None).unwrap();
-        assert!((value(&params, "ramp_angle_deg") - 10.0).abs() < 1e-12);
-        assert!((value(&params, "ramp_angle_deg") - gui.ramp_angle_deg).abs() < 1e-12);
-
-        let helix: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"helix\"\n",
-        )
-        .unwrap();
-        let params = job_params_for(&helix, OperationType::Adaptive3d, None).unwrap();
-        assert!((value(&params, "helix_radius_factor") - gui.helix_radius_factor).abs() < 1e-12);
-        assert!((value(&params, "helix_pitch") - gui.helix_pitch).abs() < 1e-12);
+    fn every_registry_op_is_a_job_op() {
+        for &op in OperationType::ALL {
+            let source = format!(
+                "type = \"{}\"\ninput = \"m.stl\"\ntool = \"a\"\n",
+                op.kind_str()
+            );
+            assert_eq!(checked(&source).unwrap(), op);
+        }
+        let err = checked("type = \"drop-cutter\"\ninput = \"m.stl\"\ntool = \"a\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("drop-cutter"), "{err}");
     }
 
-    /// The step ladder was removed on 2026-09-24 (operator ruling). A job
-    /// file that sets `coarse_steps` still parses; the key is ignored and
-    /// no ladder reaches the core.
+    /// C2: a key that the op's schema does not publish refuses, and the
+    /// refusal names EVERY such key. The pre-C2 job spellings are in this
+    /// set: `order_by`, `strategy`, `tabs`, `entry_3d`, `stock_to_leave` on
+    /// 3D Rough, the deleted `max_stay_down_dist` and `coarse_steps`.
     #[test]
-    fn the_coarse_steps_key_is_ignored() {
-        let op: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\ncoarse_steps = [10.0]\n",
+    fn a_key_the_schema_does_not_publish_refuses() {
+        let err = checked(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\n\
+             order_by = \"global\"\nstrategy = \"contour\"\nentry_3d = \"helix\"\n\
+             stock_to_leave = 0.5\nmax_stay_down_dist = 30.0\ncoarse_steps = [10.0]\n",
         )
-        .unwrap();
-        let params = job_params_for(&op, OperationType::Adaptive3d, None).unwrap();
-        assert!(!params.iter().any(|(k, _)| *k == "coarse_steps"));
-        assert!(
-            !OperationType::Adaptive3d
-                .registry_entry()
-                .params
-                .defs
-                .iter()
-                .any(|d| d.name == "coarse_steps"),
-            "the registry still names coarse_steps"
-        );
-    }
-
-    /// F7: an unknown `order_by` is refused with a message that names the
-    /// value and the two tokens. It was read as `global` in silence.
-    #[test]
-    fn an_unknown_order_by_is_refused() {
-        // R4: a Pocket or Profile job with no `order_by` is region-first.
-        for (token, op_type) in [
-            ("pocket", OperationType::Pocket),
-            ("profile", OperationType::Profile),
+        .unwrap_err()
+        .to_string();
+        for key in [
+            "order_by",
+            "strategy",
+            "entry_3d",
+            "stock_to_leave",
+            "max_stay_down_dist",
+            "coarse_steps",
         ] {
-            let def: OperationDef = toml::from_str(&format!(
-                "type = \"{token}\"\ninput = \"m.dxf\"\ntool = \"a\"\ndepth = 3.0\n"
-            ))
-            .unwrap();
-            let params = job_params_for(&def, op_type, None).unwrap();
-            assert_eq!(
-                params
-                    .iter()
-                    .find(|(k, _)| *k == "region_ordering")
-                    .map(|(_, v)| v.clone()),
-                Some(serde_json::json!("by_area")),
-                "{token}"
-            );
+            assert!(err.contains(key), "the refusal must name {key}: {err}");
         }
-        for (value, expected) in [("global", "global"), ("by_area", "by_area")] {
-            let op: OperationDef = toml::from_str(&format!(
-                "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
-            ))
-            .unwrap();
-            let params = job_params_for(&op, OperationType::Adaptive3d, None).unwrap();
-            assert_eq!(
-                params
-                    .iter()
-                    .find(|(k, _)| *k == "region_ordering")
-                    .map(|(_, v)| v.clone()),
-                Some(serde_json::json!(expected))
-            );
+        assert!(
+            err.contains("region_ordering"),
+            "the refusal lists the schema: {err}"
+        );
+        let err = checked("type = \"profile\"\ninput = \"m.dxf\"\ntool = \"a\"\ntabs = 4\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tabs") && err.contains("tab_count"), "{err}");
+    }
+
+    /// C2: the schema names pass, and a dressup field rides its own table.
+    #[test]
+    fn schema_names_and_dressup_fields_pass() {
+        assert_eq!(
+            checked(
+                "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\n\
+                 region_ordering = \"global\"\nclearing_strategy = \"contour_parallel\"\n\
+                 entry_style = \"helix\"\nstock_to_leave_axial = 0.5\n\
+                 max_stay_down_distance_mm = 18.0\n",
+            )
+            .unwrap(),
+            OperationType::Adaptive3d
+        );
+        assert_eq!(
+            checked(
+                "type = \"pocket\"\ninput = \"m.svg\"\ntool = \"a\"\ndepth = 3.0\n\
+                 [dressups]\nentry_style = \"helix\"\ndogbone = true\n",
+            )
+            .unwrap(),
+            OperationType::Pocket
+        );
+        let err = checked(
+            "type = \"pocket\"\ninput = \"m.svg\"\ntool = \"a\"\n\
+             [dressups]\nentry = \"ramp\"\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("entry") && err.contains("entry_style"),
+            "{err}"
+        );
+    }
+
+    /// C2: a job key never shadows a parameter. If an op published a
+    /// parameter with a job-key name, the job file could not set it.
+    #[test]
+    fn no_job_key_is_a_parameter_name() {
+        for &op in OperationType::ALL {
+            for def in op.registry_entry().params.defs {
+                assert!(
+                    !OperationDef::JOB_KEYS.contains(&def.name),
+                    "{}: the parameter {} is also a job key",
+                    op.kind_str(),
+                    def.name
+                );
+            }
         }
-        for value in ["depth", "by-area", "byarea"] {
-            let op: OperationDef = toml::from_str(&format!(
-                "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
-            ))
-            .unwrap();
-            let err = job_params_for(&op, OperationType::Adaptive3d, None)
-                .unwrap_err()
-                .to_string();
-            assert!(
-                err.contains(value) && err.contains("by_area") && err.contains("global"),
-                "the refusal must name the value and the two tokens: {err}"
+    }
+
+    /// C2: the job files in the repo parse and pass the check, and the
+    /// demo job runs. `fixtures/debug_adaptive/job.toml` reads a model
+    /// outside the repo, so this test only parses it.
+    #[test]
+    fn the_job_files_in_the_repo_parse_and_the_demo_runs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let _ = parse_job_file(&root.join("debug_adaptive/job.toml")).unwrap();
+        let demo = parse_job_file(&root.join("demo_job.toml")).unwrap();
+        let result = execute_job(&demo, &root, false).unwrap();
+        assert_eq!(result.phases.len(), demo.operation.len());
+        assert!(result.phases.iter().all(|p| !p.toolpath.moves.is_empty()));
+    }
+
+    /// C2: a parameter and a dressup field of the job file reach the
+    /// generated toolpath through the core setters.
+    #[test]
+    fn job_parameters_and_dressups_reach_the_toolpath() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let run = |extra: &str| {
+            let source = format!(
+                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
+                 [[operation]]\ntype = \"pocket\"\ninput = \"demo_pocket.svg\"\ntool = \"t\"\n\
+                 depth = 3.0\n{extra}"
             );
-        }
+            let job: JobFile = toml::from_str(&source).unwrap();
+            let _ = job.operation.first().unwrap().operation_type().unwrap();
+            execute_job(&job, &root, false).unwrap().combined
+        };
+        let plain = run("");
+        assert!(!plain.moves.is_empty());
+        let deeper = run("depth_per_pass = 0.5\n");
+        assert!(
+            deeper.moves.len() > plain.moves.len(),
+            "depth_per_pass did not reach the op"
+        );
+        let helix = run("[operation.dressups]\nentry_style = \"helix\"\n");
+        assert_ne!(
+            helix.moves.len(),
+            plain.moves.len(),
+            "the helix entry did not reach the op"
+        );
     }
 
     /// `--set name=[10]` and `=[]` reach the core as JSON arrays. They
@@ -1773,23 +1571,6 @@ mod tests {
             param_value_from_str("by_area"),
             serde_json::json!("by_area")
         );
-    }
-
-    /// CLI-01 sentry: `entry_style` is not a second spelling of
-    /// `entry_3d` any more.
-    #[test]
-    fn the_entry_style_alias_is_gone() {
-        let op: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_style = \"helix\"\n",
-        )
-        .unwrap();
-        assert_eq!(op.entry_3d, None, "the deleted alias still fills entry_3d");
-
-        let op: OperationDef = toml::from_str(
-            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"helix\"\n",
-        )
-        .unwrap();
-        assert_eq!(op.entry_3d.as_deref(), Some("helix"));
     }
 
     /// CLI-08 teeth: the five job-only spellings are gone, not aliased.

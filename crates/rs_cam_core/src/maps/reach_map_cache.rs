@@ -267,7 +267,6 @@ mod tests {
             Box::new(BallEndmill::new(diameter, 25.0)),
             6.0,
             20.0,
-            20.0,
             40.0,
             2,
             ToolMaterial::Carbide,

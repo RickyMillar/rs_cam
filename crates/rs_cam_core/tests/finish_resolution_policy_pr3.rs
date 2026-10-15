@@ -91,9 +91,10 @@ fn steep_shallow_toolpath(
     params: &SteepShallowParams,
 ) -> rs_cam_core::toolpath::Toolpath {
     rs_cam_core::interrupt::run_uncancellable(|cancel| {
-        rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_with_cancel(
+        rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_split_with_cancel(
             mesh, index, cutter, params, None, cancel,
         )
+        .map(|(tp, _)| tp)
     })
 }
 

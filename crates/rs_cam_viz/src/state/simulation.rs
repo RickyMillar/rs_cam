@@ -1122,6 +1122,9 @@ pub struct SimulationChecks {
     pub rapid_collisions: Vec<RapidCollision>,
     /// Move indices with rapid collisions (for timeline markers).
     pub rapid_collision_move_indices: Vec<usize>,
+    /// K1: the obstacle hits of the last simulation
+    /// (`SimulationResult::obstacle_collisions`). Each is a collision.
+    pub obstacle_collisions: Vec<rs_cam_core::compute::obstacle::ObstacleCollision>,
     /// Full collision report from last dedicated collision check.
     pub collision_report: Option<CollisionReport>,
     /// Number of holder collisions from last dedicated collision check.
@@ -1525,6 +1528,7 @@ impl SimulationState {
         playback.tool_gpu_move = None;
         self.checks.rapid_collisions = Vec::new();
         self.checks.rapid_collision_move_indices = Vec::new();
+        self.checks.obstacle_collisions = Vec::new();
     }
 }
 

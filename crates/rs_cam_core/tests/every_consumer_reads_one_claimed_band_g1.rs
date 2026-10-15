@@ -312,7 +312,6 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     let tool = ToolDefinition::new(
         Box::new(FlatEndmill::new(1.0, 6.0)),
         1.0,
-        12.0,
         6.0,
         12.0,
         2,

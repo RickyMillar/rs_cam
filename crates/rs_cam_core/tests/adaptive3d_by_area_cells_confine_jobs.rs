@@ -128,6 +128,7 @@ fn by_area_jobs_cut_only_their_own_cells() {
         )
         .unwrap();
         let map = out
+            .produced
             .area_regions
             .as_ref()
             .expect("By Area records its regions");

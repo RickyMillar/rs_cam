@@ -334,6 +334,7 @@ fn run_shipped(
         /* link_kinematics */ None,
         /* claims */ None,
         /* debug */ None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");

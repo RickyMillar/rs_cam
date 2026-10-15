@@ -500,6 +500,42 @@ pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &Spatia
     })
 }
 
+/// The drop-cutter grid of the Drop Cutter finish op, and the floor it
+/// used (W6.3: this was adapter code in `compute/execute/finish_raster.rs`).
+///
+/// The floor is `min_z` raised to 0.1 mm under the mesh bottom and to 1 mm
+/// under `stock_bottom_z`. A 3D finish only tip-tracks the mesh surface:
+/// anything lower is a non-contact clamp or the taper of the tool forcing
+/// the tip below the real surface, which gouges. The stock-bottom floor is
+/// a safety check.
+///
+/// A grid point whose vertical ray misses every triangle drops to the floor
+/// and loses its contact ([`point_is_over_mesh_xy`]). `point_drop_cutter`
+/// marks a contact whenever the cutter touches ANY nearby triangle, the rim
+/// of a mesh that does not cover that XY too; without this the tool rides
+/// the edge and carves a trench around the part. The raster then filters
+/// the points at the floor, so the finish never cuts past the mesh edge.
+pub fn finish_raster_grid<C: MillingCutter + ?Sized>(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &C,
+    step_over: f64,
+    min_z: f64,
+    stock_bottom_z: f64,
+    cancel: &(dyn CancelCheck + Sync),
+) -> Result<(DropCutterGrid, f64), Cancelled> {
+    let floor_z = min_z.max(mesh.bbox.min.z - 0.1).max(stock_bottom_z - 1.0);
+    let mut grid =
+        batch_drop_cutter_with_cancel(mesh, index, cutter, step_over, 0.0, floor_z, cancel)?;
+    for pt in &mut grid.points {
+        if !point_is_over_mesh_xy(pt.x, pt.y, mesh, index) {
+            pt.z = floor_z;
+            pt.contacted = false;
+        }
+    }
+    Ok((grid, floor_z))
+}
+
 /// One grid cell's CL point (clamped to `min_z`) and, when requested,
 /// whether its vertical ray passes through a mesh triangle footprint —
 /// the `covered` predicate `SurfaceHeightmap` needs and `DropCutterGrid`

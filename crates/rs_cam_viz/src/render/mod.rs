@@ -250,6 +250,11 @@ pub struct RenderResources {
     /// is held, which is also a cacheable state — so toggling the overlay's
     /// visibility checkbox rebuilds nothing.
     pub reach_overlay_upload_key: Option<upload_cache::ReachOverlayUploadKey>,
+    /// Inputs `obstacle_lines` was last built from (K2).
+    pub obstacle_lines_key: Option<upload_cache::ObstacleLinesKey>,
+    /// The obstacle lines of the displayed setup. The reference-line
+    /// buffer appends them on each upload; only a key change rebuilds them.
+    pub obstacle_lines: Vec<LineVertex>,
     /// Lifetime counts of upload passes and per-resource buffer builds.
     pub upload_stats: upload_cache::UploadStats,
 }
@@ -762,6 +767,8 @@ impl RenderResources {
             tier_preview_upload_key: None,
             area_regions_upload_key: None,
             reach_overlay_upload_key: None,
+            obstacle_lines_key: None,
+            obstacle_lines: Vec::new(),
             upload_stats: upload_cache::UploadStats::default(),
         }
     }
@@ -849,11 +856,11 @@ pub struct ViewportCallback {
     pub show_model: bool,
     pub show_grid: bool,
     pub show_stock: bool,
-    /// The one line buffer that carries fixtures, keep-outs, alignment pins,
+    /// The one line buffer that carries the obstacles, the alignment pins,
     /// the flip axis and the datum crosshair. Each kind is filtered INTO the
     /// buffer at upload time by its own registry flag, so this gate is "did
     /// any kind contribute".
-    pub show_fixtures: bool,
+    pub show_line_marks: bool,
     pub show_polygons: bool,
     pub show_solid_stock: bool,
     pub show_height_planes: bool,
@@ -1117,8 +1124,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.draw(0..axes.vertex_count, 0..1);
             }
 
-            // Draw fixture and keep-out wireframes
-            if self.show_fixtures
+            // Draw the reference lines: obstacles, pins, flip axis, datum.
+            if self.show_line_marks
                 && let Some(fixture) = &resources.fixture_data
             {
                 pass.set_pipeline(&resources.line_pipeline);

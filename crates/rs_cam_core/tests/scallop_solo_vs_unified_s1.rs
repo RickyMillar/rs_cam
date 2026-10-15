@@ -401,6 +401,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
         Some(&link_kinematics),
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("unified finish");

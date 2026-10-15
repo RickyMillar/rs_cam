@@ -76,7 +76,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -99,7 +98,6 @@ taper_half_angle = 5.7
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 8
@@ -122,7 +120,6 @@ taper_half_angle = 10.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 10
@@ -145,7 +142,6 @@ taper_half_angle = 2.9
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 11
@@ -177,13 +173,10 @@ id = 0
 name = "Setup 1"
 face_up = "top"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 7
 name = "Face 5"
-type = "face"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -225,7 +218,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -275,7 +267,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 1
 name = "3D Rough ladder 8 > 2"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -331,7 +322,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -376,7 +366,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 2
 name = "Scallop Finish"
-type = "scallop"
 enabled = false
 tool_id = 6
 model_id = 1
@@ -422,7 +411,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -464,7 +452,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 3
 name = "Project Curve"
-type = "project_curve"
 enabled = false
 tool_id = 11
 model_id = 2
@@ -507,7 +494,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -545,7 +531,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 8
 name = "Finish tier 0 (R2.0)"
-type = "unified_finish"
 enabled = true
 tool_id = 12
 model_id = 1
@@ -597,7 +582,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -647,7 +631,6 @@ tier_count = 2
 [[setups.toolpaths]]
 id = 9
 name = "Finish tier 1 (R1.0)"
-type = "unified_finish"
 enabled = true
 tool_id = 6
 model_id = 1
@@ -699,7 +682,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"

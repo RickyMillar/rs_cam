@@ -71,7 +71,6 @@ fn taper_config() -> ToolConfig {
         shaft_diameter: SHAFT_DIAMETER,
         cutting_length: L_C,
         shank_diameter: SHANK_DIAMETER,
-        shank_length: 20.0,
         holder_diameter: 25.0,
         stickout: 45.0,
         ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)

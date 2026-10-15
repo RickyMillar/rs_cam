@@ -12,7 +12,6 @@ origin_x = -20.0
 origin_y = -25.0
 origin_z = -18.0
 padding = 5.0
-workholding_rigidity = "Medium"
 auto_from_model = false
 
 [job.stock.material.SolidWood]
@@ -87,7 +86,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -110,7 +108,6 @@ taper_half_angle = 7.1
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 6
@@ -133,7 +130,6 @@ taper_half_angle = 5.7
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 8
@@ -156,7 +152,6 @@ taper_half_angle = 2.8
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 45.5
 flute_count = 2
 tool_number = 15
@@ -179,7 +174,6 @@ taper_half_angle = 2.9
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 10
@@ -202,7 +196,6 @@ taper_half_angle = 10.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 20
@@ -252,13 +245,10 @@ id = 0
 name = "Setup 1"
 face_up = "bottom"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 0
 name = "1 Pin Drill"
-type = "alignment_pin_drill"
 enabled = false
 tool_id = 0
 model_id = 0
@@ -271,16 +261,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = [
-    [
-    2.5,
-    2.5,
-],
-    [
-    237.5,
-    247.5,
-],
-]
 spoilboard_penetration = 2.0
 cycle = "peck"
 peck_depth = 3.0
@@ -309,7 +289,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -347,7 +326,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 1
 name = "2 Back Rough"
-type = "adaptive3d"
 enabled = false
 tool_id = 0
 model_id = 0
@@ -404,7 +382,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -453,7 +430,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 2
 name = "3 Holes (6mm pilot)"
-type = "drill"
 enabled = false
 tool_id = 0
 model_id = 3
@@ -495,7 +471,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -533,7 +508,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 3
 name = "4 Rivers (back, V-bit)"
-type = "project_curve"
 enabled = false
 tool_id = 5
 model_id = 1
@@ -576,7 +550,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -614,7 +587,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 4
 name = "5 Lakes (back)"
-type = "project_curve"
 enabled = false
 tool_id = 2
 model_id = 2
@@ -657,7 +629,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -700,13 +671,10 @@ id = 1
 name = "Setup 2 — front"
 face_up = "top"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 5
 name = "6 3D Rough (front)"
-type = "adaptive3d"
 enabled = true
 tool_id = 0
 model_id = 0
@@ -763,7 +731,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -812,7 +779,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 8
 name = "7 3D Finish (R1.5 drop_cutter)"
-type = "drop_cutter"
 enabled = false
 tool_id = 3
 model_id = 0
@@ -853,7 +819,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -897,7 +862,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 9
 name = "8 Pencil detail (R0.5)"
-type = "pencil"
 enabled = false
 tool_id = 1
 model_id = 0
@@ -950,7 +914,6 @@ feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
 retract_strategy = "full"
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"

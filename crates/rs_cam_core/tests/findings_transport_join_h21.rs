@@ -42,8 +42,8 @@
 use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::toolpath_stats::{
-    BandHeightClip, BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding,
-    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
+    BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
+    ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
     InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding, TipFloatFinding,
     ToolpathStats, WaterlineLadderFinding, ZeroRemovalFinding,
 };
@@ -137,12 +137,6 @@ fn every_finding_recorded() -> GenerationFindings {
             floating_points: 7,
             max_float_mm: 0.25,
         }),
-        deprecated_dial: Some(DeprecatedDialFinding {
-            dial: "route_width_factor",
-            value: 1.5,
-            default_value: 1.0,
-            replaced_by: "the canonical reach policy",
-        }),
         derived_stepovers: vec![
             DerivedStepoverFinding {
                 site: "UnifiedFinish crease/pencil claims",
@@ -177,6 +171,13 @@ fn every_finding_recorded() -> GenerationFindings {
             deepest_engagement_mm: 0.004,
             sampled_positions: 250,
             cutting_distance_mm: 900.0,
+            floor_mm: 0.01,
+        }),
+        // W6.5. Recorded by the curve runner on a remaining stock.
+        buried_curve: Some(BuriedCurveFinding {
+            deepest_engagement_mm: 2.1,
+            commanded_depth_mm: 1.0,
+            sampled_positions: 120,
             floor_mm: 0.01,
         }),
         // Checkpoint C (Q1 / D-2). `Some(2)` rather than `Some(0)` on
@@ -282,7 +283,7 @@ fn every_recorded_finding_survives_the_single_join() {
     let tp = traced_toolpath();
     let findings = every_finding_recorded();
 
-    let stats = stats_with_findings(&tp, None, findings.clone(), None, None);
+    let stats = stats_with_findings(&tp, None, findings.clone(), None, None, None);
 
     let ToolpathStats {
         // Move-derived — pinned separately by
@@ -297,12 +298,12 @@ fn every_recorded_finding_survives_the_single_join() {
         reached_uncut_estimate_mm2,
         dropped_band,
         tip_float,
-        deprecated_dial,
         derived_stepovers,
         clipped_band,
         ramp_reach_clamp,
         claims_reference,
         zero_removal,
+        buried_curve,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,
@@ -320,6 +321,8 @@ fn every_recorded_finding_survives_the_single_join() {
         stock_snapshot,
         // G-RESTRES: the same caller-owned rule as `stock_snapshot`.
         source_stock: _,
+        // The fresh twin's time: caller-owned, the same rule.
+        planned_cycle_time_s: _,
     } = stats;
     assert_eq!(
         stock_snapshot, None,
@@ -339,10 +342,6 @@ fn every_recorded_finding_survives_the_single_join() {
     );
     assert_eq!(tip_float, findings.tip_float);
     assert_eq!(
-        deprecated_dial.as_deref().copied(),
-        findings.deprecated_dial
-    );
-    assert_eq!(
         derived_stepovers, findings.derived_stepovers,
         "a Vec channel: both derivations must survive, in firing order"
     );
@@ -353,6 +352,7 @@ fn every_recorded_finding_survives_the_single_join() {
     );
     assert_eq!(claims_reference, findings.claims_reference);
     assert_eq!(zero_removal, findings.zero_removal);
+    assert_eq!(buried_curve, findings.buried_curve);
     assert_eq!(offset_library_failures, findings.offset_library_failures);
     assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
     assert_eq!(waterline_ladder, findings.waterline_ladder);
@@ -377,7 +377,7 @@ fn every_recorded_finding_survives_the_single_join() {
 fn the_join_leaves_the_move_derived_half_alone() {
     let tp = traced_toolpath();
     let moves_only = compute_stats_with_spans(&tp, None);
-    let joined = stats_with_findings(&tp, None, every_finding_recorded(), None, None);
+    let joined = stats_with_findings(&tp, None, every_finding_recorded(), None, None, None);
 
     assert_eq!(joined.move_count, moves_only.move_count);
     assert_eq!(joined.move_count, 4);
@@ -400,7 +400,7 @@ fn the_join_leaves_the_move_derived_half_alone() {
 #[test]
 fn an_unrecorded_generation_still_reads_as_not_measured() {
     let tp = traced_toolpath();
-    let stats = stats_with_findings(&tp, None, GenerationFindings::default(), None, None);
+    let stats = stats_with_findings(&tp, None, GenerationFindings::default(), None, None, None);
 
     assert_eq!(stats.truncated_core_mm2, None);
     assert_eq!(stats.untouched_material_mm2, None);
@@ -408,7 +408,6 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert!(stats.dropped_band.is_none());
     assert!(stats.clipped_band.is_none());
     assert_eq!(stats.tip_float, None);
-    assert!(stats.deprecated_dial.is_none());
     assert!(
         stats.derived_stepovers.is_empty(),
         "the documented Vec exception: empty means nothing derived"
@@ -416,6 +415,7 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert!(stats.ramp_reach_clamp.is_none());
     assert_eq!(stats.claims_reference, None);
     assert_eq!(stats.zero_removal, None);
+    assert_eq!(stats.buried_curve, None);
     assert_eq!(
         stats.offset_library_failures, None,
         "an operation that ran no reporting offset has measured nothing — \

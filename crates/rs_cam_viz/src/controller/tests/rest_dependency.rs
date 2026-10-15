@@ -22,9 +22,10 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
     );
 
     let mut annotated = rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(Toolpath::new());
-    annotated.rest_regions = Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
-        -5.0, -5.0, 5.0, 5.0,
-    )]));
+    annotated.produced.rest_regions =
+        Some(Arc::new(vec![rs_cam_core::polygon::Polygon2::rectangle(
+            -5.0, -5.0, 5.0, 5.0,
+        )]));
     controller
         .compute
         .drained

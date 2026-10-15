@@ -29,7 +29,7 @@ use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
 
-pub(crate) use research::scallop_toolpath_research_with_stage;
+pub(crate) use research::{RingLink, scallop_toolpath_research_with_link};
 pub use research::{
     ScallopRingBudget, scallop_toolpath_iso_field_with_cancel, scallop_toolpath_research,
     scallop_toolpath_structured_annotated_with_resolution_and_ring_budget,
@@ -194,7 +194,7 @@ impl Default for ScallopParams {
 /// statement of what shipped, and the unit tests below pin it — deleting it
 /// would leave `ScallopStepoverPolicy::SHIPPED` as the only description of
 /// the shipped behaviour, which is a worse place for it to live.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 fn ring_stepover(
     ring: &[P2],
     slope_map: &crate::surface::slope::SlopeMap,
@@ -1084,7 +1084,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 /// The shape this op takes for `planning/linking_2026-09-09/SPEC.md` §3.1,
 /// decided and recorded here: the stage RUNS INSIDE THE GENERATOR and its
 /// configuration is threaded in as a parameter, exactly as
-/// `unified_finish_toolpath_with_cancel_and_ceiling` threads its ceiling. The
+/// `unified_finish_toolpath_with_cancel` threads its ceiling. The
 /// alternative — run the stage in the `execute.rs` adapter — would have to
 /// expose the per-ring annotations as a provenance channel, and the
 /// annotation reconcile already lives beside the relink call. The stage is
@@ -1093,9 +1093,8 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 /// multitool planner and a dozen tests, and a borrowed field would put a
 /// lifetime on every one of them.
 ///
-/// `None` is the legacy relink, byte for byte: `reorder: false`,
-/// `link_ceiling: None`, no loop rotation. That is what the ISO-FIELD entry
-/// point passes, so the field's fingerprint does not move.
+/// `None` is the ring-order relink ([`RingLink::RingOrder`]) with no
+/// ceiling: `reorder: false`, `link_ceiling: None`, no loop rotation.
 #[allow(clippy::too_many_arguments)]
 pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
     mesh: &TriangleMesh,
@@ -1107,7 +1106,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
     link_stage: Option<&crate::finish::surface_link::FinishingLinkStage<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
-    let (tp, anns, report, _trace) = scallop_toolpath_research_with_stage(
+    let (tp, anns, report, _trace) = scallop_toolpath_research_with_link(
         mesh,
         index,
         cutter,
@@ -1117,7 +1116,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
         scallop_generation_resolution(cutter, params.tolerance),
         ScallopRingBudget::FlatGroundStepover,
         ScallopStepoverPolicy::SHIPPED,
-        link_stage,
+        link_stage.map_or(RingLink::RingOrder { ceiling: None }, RingLink::Stage),
         cancel,
     )?;
     Ok((tp, anns, report))

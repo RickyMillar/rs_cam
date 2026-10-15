@@ -13,7 +13,6 @@ origin_x = -20.0
 origin_y = -25.0
 origin_z = -20.0
 padding = 5.0
-workholding_rigidity = "Medium"
 auto_from_model = false
 
 [job.stock.material.SolidWood]
@@ -84,7 +83,6 @@ taper_half_angle = 7.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 2
@@ -107,7 +105,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -130,7 +127,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 20.0
 flute_count = 3
 tool_number = 1
@@ -153,7 +149,6 @@ taper_half_angle = 2.9
 shaft_diameter = 6.026312585724034
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 10
@@ -176,7 +171,6 @@ taper_half_angle = 5.7
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 8
@@ -199,7 +193,6 @@ taper_half_angle = 7.1
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 6
@@ -222,7 +215,6 @@ taper_half_angle = 2.8
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 45.5
 flute_count = 2
 tool_number = 15
@@ -245,7 +237,6 @@ taper_half_angle = 45.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 27.7
 flute_count = 2
 tool_number = 6
@@ -268,7 +259,6 @@ taper_half_angle = 30.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 27.7
 flute_count = 2
 tool_number = 5
@@ -291,7 +281,6 @@ taper_half_angle = 10.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 10
@@ -314,7 +303,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 40.0
 flute_count = 2
 tool_number = 2
@@ -337,7 +325,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 27.0
 flute_count = 3
 tool_number = 3
@@ -387,13 +374,10 @@ id = 0
 name = "Setup 1"
 face_up = "bottom"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 14
 name = "Pin Drill"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -406,16 +390,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = [
-    [
-    2.5,
-    2.5,
-],
-    [
-    137.5,
-    147.5,
-],
-]
 spoilboard_penetration = 2.0
 cycle = "peck"
 peck_depth = 3.0
@@ -479,7 +453,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 4
 name = "Back Rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -602,7 +575,6 @@ reference = "amana-flat-hardwood-adaptive-6000-2f"
 [[setups.toolpaths]]
 id = 7
 name = "Holes"
-type = "drill"
 enabled = true
 tool_id = 3
 model_id = 3
@@ -679,7 +651,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 12
 name = "Rivers (back) (copy)"
-type = "project_curve"
 enabled = false
 tool_id = 3
 model_id = 5
@@ -747,7 +718,6 @@ enabled = true
 [[setups.toolpaths]]
 id = 5
 name = "Rivers (back)"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 5
@@ -824,7 +794,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 6
 name = "Lakes (back, inside)"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 2
@@ -903,13 +872,10 @@ id = 1
 name = "Setup 2"
 face_up = "top"
 z_rotation = "90"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 10
 name = "3D Rough 6"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -1012,7 +978,6 @@ reference = "amana-flat-hardwood-adaptive-6000-2f"
 [[setups.toolpaths]]
 id = 11
 name = "3D Finish 6"
-type = "drop_cutter"
 enabled = true
 tool_id = 2
 model_id = 1

@@ -48,6 +48,10 @@ pub struct SimToolpathEntry {
     /// and is not `Clone`, and the GUI's viewport playback needs the same
     /// cutter this entry simulates with. An `Arc` hands it over for free.
     pub tool: Arc<ToolDefinition>,
+    /// The tool's config id. The G-code builder fires a tool change when
+    /// it differs from the previous entry's; the obstacle join check
+    /// (K1, [`crate::compute::obstacle::JoinStart`]) reads it the same way.
+    pub tool_id: crate::compute::tool_config::ToolId,
     /// Number of cutting flutes (for metric sampling).
     pub flute_count: u32,
     /// Short description of the tool for boundary labels.
@@ -136,6 +140,30 @@ pub struct SimGroupEntry {
     /// it per group (`sim_prefix`), and `snapshot_sources` lists it in every
     /// rest record of the group and of the groups that carry from it.
     pub stock_changes: Vec<crate::compute::stock_change::ResolvedStockChange>,
+    /// K1: the setup's obstacles in the setup frame, from
+    /// [`group_obstacles`], or the reason they could not be resolved. The
+    /// run refuses an `Err` before it carves anything, and checks every
+    /// move of every entry against an `Ok` set
+    /// ([`SimulationResult::obstacle_collisions`]).
+    pub obstacles: GroupObstacles,
+}
+
+/// The obstacles of one simulation group (K1). See
+/// [`SimGroupEntry::obstacles`].
+pub type GroupObstacles = Result<
+    Arc<crate::compute::obstacle::ObstacleSet>,
+    crate::compute::obstacle::ObstacleResolveError,
+>;
+
+/// The obstacles a setup's simulation group carries (K1): the sixth shared
+/// decision of the request. The set is in the setup frame, the frame the
+/// group's toolpaths emit in. An obstacle is fixed to the table, so no
+/// setup transform applies (`compute::obstacle` module doc).
+pub fn group_obstacles(
+    setup: &crate::session::SetupData,
+    models: &[crate::session::LoadedModel],
+) -> GroupObstacles {
+    crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, models).map(Arc::new)
 }
 
 /// The stock changes a setup's simulation group carries: every ENABLED
@@ -737,10 +765,11 @@ pub struct SimulationResult {
     /// `SimCheckpointMesh::mesh_stock` of toolpath k in the same group (M3).
     ///
     /// Every generated toolpath keeps an entry, not only a rest consumer.
-    /// `ProjectSession`'s generation reads `prior_stocks[id]` for every
-    /// toolpath, ungated by its stock source, because the dressup air-cut
-    /// filter and the entry stock replay read it for a `Fresh` operation too.
-    /// A pruned entry would change the moves a regeneration emits.
+    /// B19: `ProjectSession`'s generation reads `prior_stocks[id]` only for
+    /// an operation whose `StockSource::reads_machined_stock` is true. A
+    /// `Fresh` operation reads only the board, so its entry here does not
+    /// change the moves it emits. The entry of toolpath k+1 shares its
+    /// `Arc` with checkpoint k (M3), so the entry costs no extra stock.
     pub prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
     /// How each `prior_stocks` snapshot was made: the cell the request
     /// asked for and the toolpaths carved before the consumer. Same keys
@@ -763,6 +792,12 @@ pub struct SimulationResult {
     /// group order and, within a group, in list order. Empty for a run with
     /// no stock change. See [`crate::compute::stock_change_apply`].
     pub stock_change_volumes: Vec<crate::compute::stock_change_apply::StockChangeVolume>,
+    /// K1: every move that puts the tool inside an obstacle of its setup,
+    /// at most one per move, in run order. Every move class is checked,
+    /// the rapids included, with the cutter, the shank and the holder, in
+    /// the setup frame. Each is a collision: the diagnostics add them to
+    /// `collision_count`.
+    pub obstacle_collisions: Vec<crate::compute::obstacle::ObstacleCollision>,
 }
 
 impl SimulationResult {
@@ -794,6 +829,9 @@ pub enum SimulationError {
         /// The limit, in bytes.
         limit_bytes: u64,
     },
+    /// K1: an obstacle of a setup cannot be resolved (a missing model).
+    /// The simulation does not run: it would not check that obstacle.
+    ObstacleRefused(String),
     /// S3: a stock change of the request cannot apply (a missing model, a
     /// mesh that is not closed, a full material slot table, ...). The
     /// simulation applies no partial result.
@@ -813,6 +851,7 @@ impl std::fmt::Display for SimulationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Simulation cancelled"),
+            Self::ObstacleRefused(text) => f.write_str(text),
             Self::OverBudget {
                 need_bytes,
                 limit_bytes,
@@ -935,7 +974,6 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
                     hash_f64(hasher, entry.tool.diameter());
                     hash_f64(hasher, entry.tool.length());
                     hash_f64(hasher, entry.tool.shank_diameter);
-                    hash_f64(hasher, entry.tool.shank_length);
                     hash_f64(hasher, entry.tool.holder_diameter);
                     hash_f64(hasher, entry.tool.stickout);
                     entry.tool.flute_count.hash(hasher);
@@ -1866,6 +1904,10 @@ where
 {
     set_phase("Initialize stock");
 
+    // K1: an obstacle that cannot be resolved stops the run before it
+    // carves: a simulation that skipped it would report a clean run.
+    let obstacle_views = group_obstacle_views(request)?;
+
     // Detect whether the grid will be coarsened beyond the requested
     // resolution — and record what the cell size actually ends up being, so
     // deviation populations carry their own resolution (M1 / X-9: column
@@ -2272,6 +2314,10 @@ where
     let prior_stock_sources =
         crate::compute::source_stock::snapshot_sources(request, &prior_stocks);
 
+    // K1: the obstacle check. It reads only the request and the
+    // boundaries, so a memo resume gives the same list as a full replay.
+    let obstacle_collisions = obstacle_collisions(request, &obstacle_views, &boundaries);
+
     Ok(SimulationResult {
         mesh,
         total_moves,
@@ -2289,7 +2335,87 @@ where
         display_degrade: DisplayMeshDegrade::for_stride(request.display_stride),
         group_starts,
         stock_change_volumes,
+        obstacle_collisions,
     })
+}
+
+/// K1: per group, per entry, the obstacle view for the entry's tool. An
+/// empty group set gives an empty inner list.
+fn group_obstacle_views(
+    request: &SimulationRequest,
+) -> Result<Vec<Vec<crate::compute::obstacle::ObstacleToolView>>, SimulationError> {
+    request
+        .groups
+        .iter()
+        .map(|group| {
+            let set = group
+                .obstacles
+                .as_ref()
+                .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))?;
+            if set.is_empty() {
+                return Ok(Vec::new());
+            }
+            group
+                .toolpaths
+                .iter()
+                .map(|entry| {
+                    set.for_tool(&entry.tool.to_assembly())
+                        .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// K1: check every entry's moves against its group's obstacles. The
+/// global move index reads the entry's boundary (by toolpath id, in run
+/// order). The join into an entry's first move starts from the previous
+/// entry of the group ([`crate::compute::obstacle::JoinStart`]); a hit on
+/// the join is reported at the entry's move 0.
+fn obstacle_collisions(
+    request: &SimulationRequest,
+    views: &[Vec<crate::compute::obstacle::ObstacleToolView>],
+    boundaries: &[SimBoundary],
+) -> Vec<crate::compute::obstacle::ObstacleCollision> {
+    let mut out = Vec::new();
+    let mut next_boundary = 0usize;
+    for (group, group_views) in request.groups.iter().zip(views) {
+        for (k, entry) in group.toolpaths.iter().enumerate() {
+            // The boundaries are pushed one per entry, in this order.
+            let position = boundaries
+                .iter()
+                .skip(next_boundary)
+                .position(|b| b.id == entry.id)
+                .map(|p| p + next_boundary);
+            if let Some(p) = position {
+                next_boundary = p + 1;
+            }
+            let Some(view) = group_views.get(k) else {
+                continue;
+            };
+            let start_move = position
+                .and_then(|p| boundaries.get(p))
+                .map_or(0, |b| b.start_move);
+            // The join from the previous entry of this group (this setup)
+            // into this one, as the G-code builder emits it.
+            let join = crate::compute::obstacle::JoinStart::after_previous(
+                group
+                    .toolpaths
+                    .iter()
+                    .take(k)
+                    .map(|e| (e.tool_id, &e.annotated.toolpath)),
+                &entry.tool_id,
+            );
+            for event in view.check_toolpath(&entry.annotated.toolpath, join) {
+                out.push(crate::compute::obstacle::ObstacleCollision {
+                    toolpath_id: entry.id,
+                    global_move: start_move + event.move_index,
+                    event,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// F-034: walk every toolpath in the request, recompute its runtime
@@ -2609,7 +2735,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -2621,6 +2746,7 @@ mod tests {
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool),
+            tool_id: crate::compute::tool_config::ToolId(0),
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
@@ -2637,6 +2763,7 @@ mod tests {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         SimulationRequest {
@@ -2863,14 +2990,16 @@ mod tests {
     ///
     /// This test exercises the full chain:
     ///   2D polygon bbox → update_from_bbox → stock at [−z, 0]
-    ///   → pocket_toolpath at cut_depth=−3 → run_simulation with
+    ///   → the pocket kernels at cut_depth=−3 → run_simulation with
     ///     the cut trace → average_engagement > 0
     ///
     /// See planning/adaptive_review_2026-04.md F-2.
     #[test]
     fn two_d_pocket_simulation_reports_engagement() {
         use crate::compute::stock_config::StockConfig;
-        use crate::ops::pocket::{PocketParams, pocket_toolpath};
+        use crate::ops::pocket::{
+            PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_toolpath,
+        };
         use crate::polygon::Polygon2;
 
         // 30×30 mm square polygon at z=0 — the 2D pocket geometry.
@@ -2915,8 +3044,17 @@ mod tests {
 
         // Generate a pocket toolpath. cut_depth is negative: the pocket
         // cuts from z=0 down to z=-3, staying inside the stock.
-        let tp = pocket_toolpath(
+        // The two kernels the Layered Pocket adapter calls (D3 deleted the
+        // public wrapper).
+        let (rings, _report) = pocket_contours_reported_with_cancel(
             &polygon,
+            3.175,
+            2.0,
+            &crate::interrupt::NeverCancel,
+        )
+        .expect("never cancelled");
+        let tp = pocket_contours_to_toolpath(
+            &rings,
             &PocketParams {
                 tool_radius: 3.175,
                 stepover: 2.0,
@@ -2932,7 +3070,6 @@ mod tests {
         let tool_def = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.35, 25.0)),
             6.35,
-            20.0,
             25.0,
             45.0,
             2,
@@ -2944,6 +3081,7 @@ mod tests {
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool_def),
+            tool_id: crate::compute::tool_config::ToolId(0),
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
@@ -2960,6 +3098,7 @@ mod tests {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let req = SimulationRequest {
@@ -3010,7 +3149,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -3047,6 +3185,7 @@ mod tests {
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
                 tool: Arc::new(make_tool()),
+                tool_id: crate::compute::tool_config::ToolId(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -3060,6 +3199,7 @@ mod tests {
             local_to_global: None, // identity setup
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let bottom_group = SimGroupEntry {
@@ -3068,6 +3208,7 @@ mod tests {
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
                 tool: Arc::new(make_tool()),
+                tool_id: crate::compute::tool_config::ToolId(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -3091,6 +3232,7 @@ mod tests {
             }),
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let req = SimulationRequest {

@@ -90,7 +90,6 @@ fn endmill_6mm() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -104,6 +103,7 @@ fn entry(id: usize, name: &str, tp: Toolpath) -> SimToolpathEntry {
         name: name.to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: std::sync::Arc::new(endmill_6mm()),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -142,6 +142,7 @@ fn non_identity_group() -> SimGroupEntry {
         }),
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 
@@ -162,6 +163,7 @@ fn identity_group() -> SimGroupEntry {
         local_to_global: None,
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 

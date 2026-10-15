@@ -17,8 +17,8 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
-    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, LutRoute,
+    MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -805,6 +805,22 @@ impl OperationConfig {
                 },
                 ..row
             },
+            // C2: a contour-spiral planner holds the engagement of its
+            // stepover; the other strategies have real engagement spikes.
+            OperationConfig::Adaptive3d(c) => Capabilities {
+                planner_uniform_engagement: matches!(
+                    c.clearing_strategy,
+                    super::operation_configs::ClearingStrategy::ContourSpiral
+                ),
+                ..row
+            },
+            OperationConfig::Adaptive(c) => Capabilities {
+                planner_uniform_engagement: matches!(
+                    c.path_strategy,
+                    crate::adaptive::PathStrategy2d::ContourSpiral
+                ),
+                ..row
+            },
             // No field of these configs changes a capability beyond the
             // entry probe, which `entry_probe` resolved above.
             OperationConfig::Pencil(_)
@@ -814,14 +830,12 @@ impl OperationConfig {
             | OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
-            | OperationConfig::Adaptive3d(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_) => row,
         }
@@ -839,6 +853,50 @@ impl OperationConfig {
                 // CL surface is the side that cannot gouge the part.
                 None => EntryProbe::Surface { leave_mm: 0.0 },
             },
+        }
+    }
+
+    /// W6.2: the surface cell mask this config states, or `None` when the
+    /// op masks no cell by slope. The match names every variant, so a new
+    /// op states whether it masks. `compute::execute::Territory` reads it.
+    pub fn surface_mask(&self) -> Option<crate::compute::execute::SurfaceMask> {
+        use crate::compute::execute::SurfaceMask;
+        let band = |from_deg: f64, to_deg: f64| {
+            crate::finish::finish_setup::slope_filter_active(from_deg, to_deg)
+                .then_some(SurfaceMask::SlopeBand { from_deg, to_deg })
+        };
+        match self {
+            OperationConfig::DropCutter(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::Scallop(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::RampFinish(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::SteepShallow(c) => Some(SurfaceMask::SteepShallowSplit {
+                threshold_deg: c.threshold_angle,
+            }),
+            OperationConfig::HorizontalFinish(c) => Some(SurfaceMask::Flat {
+                max_slope_deg: c.angle_threshold,
+            }),
+            OperationConfig::UnifiedFinish(c) => Some(SurfaceMask::Bands {
+                steep_threshold_deg: c.steep_threshold_deg,
+                waterline_threshold_deg: c.waterline_threshold_deg,
+            }),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
         }
     }
 
@@ -1077,14 +1135,13 @@ impl OperationConfig {
 
     /// Schema-backed settable param names for an operation type.
     ///
-    /// Every def's own name, then every alias it declares (CMP-08). The
-    /// refusal message of `set_toolpath_param` prints this list, so a
-    /// name the setter accepts and this list omits is a lie told to the
-    /// caller that just got refused.
+    /// Every def's own name. The refusal message of `set_toolpath_param`
+    /// prints this list. A def has one name only (D3 deleted the alias
+    /// field), so the setter accepts exactly this list.
     pub fn param_names_for_type(op_type: OperationType) -> Vec<&'static str> {
         param_defs_for_type(op_type)
             .iter()
-            .flat_map(|def| std::iter::once(def.name).chain(def.aliases.iter().copied()))
+            .map(|def| def.name)
             .collect()
     }
 
@@ -1112,7 +1169,6 @@ impl OperationConfig {
                     .unwrap_or(serde_json::Value::Null),
                 range: def.range.map(ParamRange::to_json),
                 description: def.help.map(str::to_owned),
-                aliases: def.aliases.iter().map(|a| (*a).to_owned()).collect(),
             })
             .collect();
         OperationSchema {
@@ -1128,7 +1184,6 @@ impl OperationConfig {
                     default: serde_json::Value::Null,
                     range: def.range.map(ParamRange::to_json),
                     description: def.help.map(str::to_owned),
-                    aliases: Vec::new(),
                 })
                 .collect(),
             tool_constraints: tool_constraints_for_type(op_type),
@@ -1136,12 +1191,11 @@ impl OperationConfig {
     }
 }
 
-/// The def one settable NAME resolves to — its own name, or an alias it
-/// declares (CMP-08).
+/// The def one settable NAME resolves to: the def with that name.
 fn param_def_for_type(op_type: OperationType, param: &str) -> Option<&'static ParamDef> {
     param_defs_for_type(op_type)
         .iter()
-        .find(|def| def.name == param || def.aliases.contains(&param))
+        .find(|def| def.name == param)
 }
 
 fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {

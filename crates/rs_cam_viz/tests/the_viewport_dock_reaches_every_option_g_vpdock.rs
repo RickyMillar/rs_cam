@@ -99,8 +99,9 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         "View holds the orientation gizmo"
     );
     // 15 since the wrong-orientation pin ghost (P7, 2026-10-12) joined
-    // Scene beside the pins and the flip axis.
-    assert_eq!(count(DockSection::Scene), 15, "Scene holds 15 rows");
+    // Scene beside the pins and the flip axis; 14 since K2 (2026-10-16)
+    // merged the Fixtures and Keep-out rows into one Obstacles row.
+    assert_eq!(count(DockSection::Scene), 14, "Scene holds 14 rows");
     assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
     // 12 since the By Area regions row (2026-09-24) joined Inspect.
     assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");

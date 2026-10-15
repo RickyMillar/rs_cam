@@ -206,13 +206,12 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = self.apply_pin_wizard(pins, &add_drills, &use_tools);
             }
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
-            AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
-            AppEvent::RemoveFixture(setup_id, fixture_id) => {
-                self.handle_remove_fixture(setup_id, fixture_id);
+            AppEvent::AddObstacle(setup_id) => self.handle_add_obstacle(setup_id),
+            AppEvent::RemoveObstacle(setup_id, obstacle_id) => {
+                self.handle_remove_obstacle(setup_id, obstacle_id);
             }
-            AppEvent::AddKeepOut(setup_id) => self.handle_add_keep_out(setup_id),
-            AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
-                self.handle_remove_keep_out(setup_id, keep_out_id);
+            AppEvent::SetObstacleEnabled(setup_id, obstacle_id, enabled) => {
+                self.handle_set_obstacle_enabled(setup_id, obstacle_id, enabled);
             }
             AppEvent::EditStockChanges(setup_id, intent) => {
                 self.handle_stock_change_intent(setup_id, intent);
@@ -281,6 +280,14 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
+            AppEvent::CompareRestWithFresh(tp_id) => {
+                if let Err(error) = self.compare_rest_with_fresh(tp_id) {
+                    self.push_notification(
+                        format!("Could not compare with fresh stock: {error}"),
+                        super::Severity::Warning,
+                    );
+                }
+            }
 
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {
@@ -806,9 +813,8 @@ impl<B: ComputeBackend> AppController<B> {
             self.invalidate_simulation();
         }
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
+        // B19: `stamp_stale` above is the only stamp. An Apply that changes
+        // no generation input stales nothing, so auto-regen submits nothing.
         Ok(effects)
     }
 
@@ -928,10 +934,8 @@ impl<B: ComputeBackend> AppController<B> {
         if !self.apply_controller_command(command, "the scallop target") {
             return;
         }
+        // B19: `apply_controller_command` stamps the stale set core returns.
         self.state.gui.mark_edited();
-        if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-            rt.stale_since = Some(std::time::Instant::now());
-        }
     }
 
     /// Apply Feeds recommendations to every toolpath whose row is

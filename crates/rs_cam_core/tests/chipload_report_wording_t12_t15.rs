@@ -106,7 +106,6 @@ fn tool() -> ToolDefinition {
             20.0,
         )),
         SHANK_DIAMETER_MM,
-        30.0,
         20.0,
         40.0,
         FLUTES,

@@ -498,58 +498,85 @@ fn draw_editor(
 /// the outline kinds. Only the models the kind can use are offered.
 fn draw_model_pick(ui: &mut egui::Ui, geometry: &mut StockGeometry, models: &[ModelChoice]) {
     match geometry {
-        StockGeometry::Model { model_id } => {
-            let meshes: Vec<&ModelChoice> = models.iter().filter(|m| m.has_mesh).collect();
-            if meshes.is_empty() {
-                ui.label(
-                    egui::RichText::new("No mesh models loaded")
-                        .italics()
-                        .color(tokens::TEXT_MUTED),
-                );
-                return;
-            }
-            let selected = meshes
-                .iter()
-                .find(|m| m.id == *model_id)
-                .map_or_else(|| "Pick a model".to_owned(), |m| m.name.clone());
-            ui.horizontal(|ui| {
-                ui.label("Model:");
-                egui::ComboBox::from_id_salt("stock_change_mesh")
-                    .truncate()
-                    .selected_text(selected)
-                    .show_ui(ui, |ui| {
-                        for m in &meshes {
-                            if ui.selectable_label(m.id == *model_id, &m.name).clicked() {
-                                *model_id = m.id;
-                            }
-                        }
-                    })
-                    .response
-                    .on_hover_text("A closed mesh model, in this setup's frame.");
-            });
-        }
+        StockGeometry::Model { model_id } => draw_mesh_pick(
+            ui,
+            "stock_change_mesh",
+            model_id,
+            models,
+            "A closed mesh model, in this setup's frame.",
+        ),
         StockGeometry::OutlineFill { model_ids, .. }
-        | StockGeometry::OutlineExtrude { model_ids, .. } => {
-            let outlines: Vec<&ModelChoice> =
-                models.iter().filter(|m| m.has_closed_outline).collect();
-            ui.label("Outlines:")
-                .on_hover_text("The 2D models whose closed outlines bound the change.");
-            if outlines.is_empty() {
-                ui.label(
-                    egui::RichText::new("No 2D models with a closed outline")
-                        .italics()
-                        .color(tokens::TEXT_MUTED),
-                );
-            }
-            for m in outlines {
-                let mut checked = model_ids.contains(&m.id);
-                if ui.checkbox(&mut checked, m.name.as_str()).changed() {
-                    if checked {
-                        model_ids.push(m.id);
-                    } else {
-                        model_ids.retain(|id| *id != m.id);
+        | StockGeometry::OutlineExtrude { model_ids, .. } => draw_outline_pick(
+            ui,
+            model_ids,
+            models,
+            "The 2D models whose closed outlines bound the change.",
+        ),
+    }
+}
+
+/// One mesh model, as a combo box. `salt` keeps the egui id apart when two
+/// editors (the stock change and the obstacle, K2) are on screen.
+pub(crate) fn draw_mesh_pick(
+    ui: &mut egui::Ui,
+    salt: &str,
+    model_id: &mut ModelId,
+    models: &[ModelChoice],
+    hover: &str,
+) {
+    let meshes: Vec<&ModelChoice> = models.iter().filter(|m| m.has_mesh).collect();
+    if meshes.is_empty() {
+        ui.label(
+            egui::RichText::new("No mesh models loaded")
+                .italics()
+                .color(tokens::TEXT_MUTED),
+        );
+        return;
+    }
+    let selected = meshes
+        .iter()
+        .find(|m| m.id == *model_id)
+        .map_or_else(|| "Pick a model".to_owned(), |m| m.name.clone());
+    ui.horizontal(|ui| {
+        ui.label("Model:");
+        egui::ComboBox::from_id_salt(salt)
+            .truncate()
+            .selected_text(selected)
+            .show_ui(ui, |ui| {
+                for m in &meshes {
+                    if ui.selectable_label(m.id == *model_id, &m.name).clicked() {
+                        *model_id = m.id;
                     }
                 }
+            })
+            .response
+            .on_hover_text(hover);
+    });
+}
+
+/// A set of 2D models with a closed outline, as checkboxes.
+pub(crate) fn draw_outline_pick(
+    ui: &mut egui::Ui,
+    model_ids: &mut Vec<ModelId>,
+    models: &[ModelChoice],
+    hover: &str,
+) {
+    let outlines: Vec<&ModelChoice> = models.iter().filter(|m| m.has_closed_outline).collect();
+    ui.label("Outlines:").on_hover_text(hover);
+    if outlines.is_empty() {
+        ui.label(
+            egui::RichText::new("No 2D models with a closed outline")
+                .italics()
+                .color(tokens::TEXT_MUTED),
+        );
+    }
+    for m in outlines {
+        let mut checked = model_ids.contains(&m.id);
+        if ui.checkbox(&mut checked, m.name.as_str()).changed() {
+            if checked {
+                model_ids.push(m.id);
+            } else {
+                model_ids.retain(|id| *id != m.id);
             }
         }
     }

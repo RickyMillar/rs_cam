@@ -17,18 +17,18 @@ auto_from_model = false
 species = "WhiteOak"
 
 [[job.stock.alignment_pins]]
-x = 59.0
-y = 32.5
+x = 32.5
+y = 6.8
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 7.511
-y = 9.0
+x = 47.5
+y = 58.2
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 7.511
-y = 56.0
+x = 17.5
+y = 58.2
 diameter = 6.0
 
 [job.post]
@@ -112,7 +112,6 @@ taper_half_angle = 0.0
 shaft_diameter = 3.0
 holder_diameter = 25.0
 shank_diameter = 3.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 1
@@ -135,7 +134,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 25.0
 flute_count = 2
 tool_number = 2
@@ -158,7 +156,6 @@ taper_half_angle = 0.0
 shaft_diameter = 3.175
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 15.0
 flute_count = 2
 tool_number = 3
@@ -181,7 +178,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 4
@@ -204,7 +200,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 1
 tool_number = 5
@@ -228,7 +223,6 @@ taper_half_angle = 0.0
 shaft_diameter = 3.1
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 27.0
 flute_count = 1
 tool_number = 6
@@ -252,7 +246,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 20.0
 flute_count = 2
 tool_number = 7
@@ -276,7 +269,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 36.0
 flute_count = 1
 tool_number = 8
@@ -357,13 +349,48 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 1. North to +X. Z0 = spoilboard."
-fixtures = []
-keep_out_zones = []
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
 
 [[setups.toolpaths]]
 id = 0
 name = "Face back to T1"
-type = "face"
 enabled = true
 tool_id = 4
 model_id = 1
@@ -405,7 +432,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -458,7 +484,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 10
 name = "Pin Drill"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 7
 model_id = 0
@@ -471,20 +496,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = [
-    [
-    59.0,
-    32.5,
-],
-    [
-    7.511,
-    9.0,
-],
-    [
-    7.511,
-    56.0,
-],
-]
 spoilboard_penetration = 6.3
 cycle = "peck"
 peck_depth = 6.0
@@ -512,7 +523,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -547,7 +557,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 6
 name = "Back cavity Z9.00"
-type = "pocket"
 enabled = true
 tool_id = 4
 model_id = 5
@@ -570,6 +579,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -591,7 +601,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -643,7 +652,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 2
 name = "Channel BACK_CHANNEL_Z22.00"
-type = "pocket"
 enabled = true
 tool_id = 5
 model_id = 3
@@ -666,6 +674,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -687,7 +696,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -740,7 +748,6 @@ reference = "amana-flat-hardwood-pocket-3175-2f-spektra"
 [[setups.toolpaths]]
 id = 3
 name = "Channel BACK_CHANNEL_Z23.00"
-type = "pocket"
 enabled = true
 tool_id = 5
 model_id = 4
@@ -763,6 +770,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -784,7 +792,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -842,8 +849,44 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 3, after the pour and the cure. Same zero."
-fixtures = []
-keep_out_zones = []
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
 
 [[setups.stock_changes]]
 id = 0
@@ -867,7 +910,6 @@ feed_scale_factor = 1.0
 [[setups.toolpaths]]
 id = 5
 name = "Face back overfill"
-type = "face"
 enabled = false
 tool_id = 4
 model_id = 1
@@ -909,7 +951,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -962,7 +1003,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 11
 name = "Cavity floor skim (epoxy overfill)"
-type = "pocket"
 enabled = true
 tool_id = 4
 model_id = 5
@@ -985,6 +1025,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -1006,7 +1047,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1059,17 +1099,52 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 id = 2
 name = "3 Front"
 face_up = "bottom"
-z_rotation = "0"
+z_rotation = "180"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 4: flipped on the dowels. Local Z = block Z."
-fixtures = []
-keep_out_zones = []
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
 
 [[setups.toolpaths]]
 id = 7
 name = "Face front to T"
-type = "face"
 enabled = true
 tool_id = 4
 model_id = 1
@@ -1111,7 +1186,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1163,7 +1237,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 8
 name = "Front 3D rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 4
 model_id = 0
@@ -1218,7 +1291,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1270,7 +1342,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 9
 name = "Front finish parallel N-S"
-type = "drop_cutter"
 enabled = true
 tool_id = 6
 model_id = 0
@@ -1311,7 +1382,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"

@@ -96,11 +96,12 @@ fn edit_the_stock(controller: &mut AppController<ScriptedBackend>) {
 }
 
 fn add_a_fixture(controller: &mut AppController<ScriptedBackend>) {
-    controller.handle_internal_event(AppEvent::AddFixture(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
 }
 
 fn add_a_keep_out_zone(controller: &mut AppController<ScriptedBackend>) {
-    controller.handle_internal_event(AppEvent::AddKeepOut(SetupId(0)));
+    // K1: a keep-out zone is an obstacle; the GUI adds one door.
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
 }
 
 fn toggle_the_operation_off(controller: &mut AppController<ScriptedBackend>) {

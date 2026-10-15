@@ -105,6 +105,7 @@ fn land_run(controller: &mut AppController<ScriptedBackend>, artifacts: &LaneArt
                 display_degrade: None,
                 group_starts: Vec::new(),
                 stock_change_volumes: Vec::new(),
+                obstacle_collisions: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

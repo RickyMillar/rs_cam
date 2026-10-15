@@ -412,7 +412,6 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
         tool.helix_deg(),
         tool.corner_radius_mm(),
         tool.shank_diameter,
-        tool.shank_length,
         tool.holder_diameter,
         tool.stickout,
     ] {
@@ -482,6 +481,9 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
         annotated: _,
         semantic_trace: _,
         drill_op: _,
+        // K1: the tool id moves no stock. Only the obstacle join check
+        // reads it, and that check runs at the tail from the live request.
+        tool_id: _,
     } = entry;
 
     let mut hasher = DefaultHasher::new();
@@ -508,6 +510,9 @@ fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
         stock_changes,
         toolpaths: _,
         phantom_prior_stock: _,
+        // K1: the obstacles move no stock. The run checks them at its
+        // tail from the live request, so a resume needs no key for them.
+        obstacles: _,
     } = group;
 
     let mut hasher = DefaultHasher::new();
@@ -1025,6 +1030,7 @@ mod tests {
                     change,
                     sources: vec![StockChangeSource::Outlines(Arc::clone(polys))],
                 }],
+                obstacles: Ok(Default::default()),
             };
         let base = group_with(change.clone(), &outlines);
         let key = GroupKey::new(&base, 0, true);

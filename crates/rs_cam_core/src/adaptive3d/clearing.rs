@@ -65,17 +65,11 @@ fn quantize_coord(v: f64) -> i64 {
 // ── Region detection ──────────────────────────────────────────────────
 
 /// A connected region of material detected by flood fill on the heightmap.
-#[allow(dead_code)] // Some fields are strategy-specific and only read by some strategies.
 pub(super) struct MaterialRegion {
     pub(super) row_min: usize,
     pub(super) row_max: usize,
     pub(super) col_min: usize,
     pub(super) col_max: usize,
-    /// World-space bounding box (expanded by tool_radius for direction search).
-    pub(super) world_x_min: f64,
-    pub(super) world_x_max: f64,
-    pub(super) world_y_min: f64,
-    pub(super) world_y_max: f64,
     pub(super) cell_count: usize,
     pub(super) surface_z_min: f64,
     pub(super) surface_z_max: f64,
@@ -97,9 +91,8 @@ pub(super) fn detect_material_regions(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
-    tool_radius: f64,
 ) -> Vec<MaterialRegion> {
-    detect_material_regions_labeled(material_stock, surface_hm, stock_to_leave, tool_radius).0
+    detect_material_regions_labeled(material_stock, surface_hm, stock_to_leave).0
 }
 
 /// [`detect_material_regions`] and its flood-fill label grid (row-major,
@@ -111,7 +104,6 @@ pub(super) fn detect_material_regions_labeled(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
-    tool_radius: f64,
 ) -> (Vec<MaterialRegion>, Vec<usize>) {
     let rows = material_stock.z_grid.rows;
     let cols = material_stock.z_grid.cols;
@@ -187,16 +179,11 @@ pub(super) fn detect_material_regions_labeled(
             }
 
             if count >= min_cells {
-                let cs = material_stock.z_grid.cell_size;
                 regions.push(MaterialRegion {
                     row_min: rmin,
                     row_max: rmax,
                     col_min: cmin,
                     col_max: cmax,
-                    world_x_min: material_stock.z_grid.origin_u + cmin as f64 * cs - tool_radius,
-                    world_x_max: material_stock.z_grid.origin_u + cmax as f64 * cs + tool_radius,
-                    world_y_min: material_stock.z_grid.origin_v + rmin as f64 * cs - tool_radius,
-                    world_y_max: material_stock.z_grid.origin_v + rmax as f64 * cs + tool_radius,
                     cell_count: count,
                     surface_z_min: sz_min,
                     surface_z_max: sz_max,
@@ -361,13 +348,11 @@ fn level_gate(
 
 /// Parameters for a single Z-level clearing pass, extracted to avoid
 /// threading dozens of locals through the helper.
-#[allow(dead_code)] // Some fields are strategy-specific (ContourParallel, Adaptive, AgentSearch-2d).
 pub(super) struct ClearZLevelContext<'a> {
     pub(super) mesh: &'a TriangleMesh,
     pub(super) index: &'a SpatialIndex,
     pub(super) cutter: &'a dyn MillingCutter,
     pub(super) lut: &'a RadialProfileLUT,
-    pub(super) slope_map: &'a SlopeMap,
     pub(super) debug: Option<ToolpathDebugContext>,
     pub(super) tool_radius: f64,
     pub(super) stepover: f64,
@@ -391,10 +376,6 @@ pub(super) struct ClearZLevelContext<'a> {
     /// clearing layer so the planner can mirror those plunge stamps in
     /// its internal dexel state (parity with the simulator replay).
     pub(super) safe_z: f64,
-    pub(super) bbox_x_min: f64,
-    pub(super) bbox_x_max: f64,
-    pub(super) bbox_y_min: f64,
-    pub(super) bbox_y_max: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
     /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
     /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value

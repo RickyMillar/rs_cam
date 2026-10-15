@@ -55,7 +55,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -90,6 +89,7 @@ fn entry(index: usize, annotated: &Arc<AnnotatedToolpath>) -> SimToolpathEntry {
         name: format!("Pass{index}"),
         annotated: Arc::clone(annotated),
         tool: std::sync::Arc::new(tool()),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -115,6 +115,7 @@ fn request(chain: &[Arc<AnnotatedToolpath>], count: usize) -> SimulationRequest 
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,
@@ -450,7 +451,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -462,7 +462,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(BallEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -474,7 +473,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(VBitEndmill::new(6.0, 90.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -486,7 +484,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 60.0,
                 2,
@@ -498,7 +495,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 3,
@@ -550,7 +546,6 @@ fn clone_tool(src: &ToolDefinition) -> ToolDefinition {
     ToolDefinition::new(
         cutter,
         src.shank_diameter,
-        src.shank_length,
         src.holder_diameter,
         src.stickout,
         src.flute_count,
@@ -736,6 +731,7 @@ fn a_multi_group_prefix_resumes_inside_the_last_group() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),
@@ -778,6 +774,7 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
                 local_to_global: None,
                 phantom_prior_stock: if g == 0 { phantom } else { None },
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),
@@ -821,6 +818,7 @@ fn layout_request(chain: &[Arc<AnnotatedToolpath>], layout: &[&[usize]]) -> Simu
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),

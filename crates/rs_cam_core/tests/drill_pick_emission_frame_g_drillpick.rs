@@ -39,7 +39,8 @@
 //! | pin-drill pick, `Bottom` | **(50, 185)** | (30, 40) |
 //!
 //! The two pin rows are not incidental. The pin-drill op mixes two
-//! differently-framed hole sources in one operation: `cfg.holes` are
+//! differently-framed hole sources in one operation: the alignment pins
+//! (`ExecutionContext::alignment_pins`; C1 deleted the `cfg.holes` copy) are
 //! STOCK-RELATIVE and take a translation by the emission-frame stock
 //! origin (G-PINDRILL-FRAME, fixed 2026-08-21), while `selected_holes` are
 //! WORLD and take the setup transform. Applying either correction to the
@@ -133,7 +134,6 @@ fn hole_drill_op() -> OperationConfig {
 fn pin_drill_op() -> OperationConfig {
     OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
         diameter: 6.0,
-        holes: vec![PIN],
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,

@@ -77,12 +77,13 @@ pub struct SetupEvalContext {
 
     /// Effective safe_z. Floored at `heights_stock_bbox.max.z +
     /// SAFE_Z_CLEARANCE_MM` — the frame the toolpath emits in
-    /// (G-SAFEZ-LOCAL).
+    /// (G-SAFEZ-LOCAL). K3: the obstacles of the setup do not raise it;
+    /// the per-op obstacle step lifts only the moves that cross one.
     pub safe_z: f64,
 
     /// Setup orientation. Kept here so consumers don't have to plumb
-    /// the raw enum through alongside the context (e.g. ProjectCurve's
-    /// `setup_z_flipped` flag, AS-style cut-direction selection).
+    /// the raw enum through alongside the context (e.g. AS-style
+    /// cut-direction selection).
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
 
@@ -147,18 +148,30 @@ impl SetupEvalContext {
         ctx
     }
 
+    /// THE height context of a toolpath in this setup: the one builder the
+    /// generation, the session diagnostics and the GUI read, so all three
+    /// resolve the same heights. `model_bbox` is the model box in this
+    /// setup's frame (`None` when the toolpath binds no model).
+    #[must_use]
+    pub fn height_context(
+        &self,
+        op_depth: f64,
+        model_bbox: Option<&BoundingBox3>,
+    ) -> crate::compute::config::HeightContext {
+        crate::compute::config::HeightContext {
+            safe_z: self.safe_z,
+            op_depth,
+            stock_top_z: self.heights_stock_bbox.max.z,
+            stock_bottom_z: self.heights_stock_bbox.min.z,
+            model_top_z: model_bbox.map(|b| b.max.z),
+            model_bottom_z: model_bbox.map(|b| b.min.z),
+        }
+    }
+
     /// `true` when the setup applies a non-identity face_up / z_rotation
     /// transform. Equivalent to `self.local_to_global.is_some()`.
     pub fn needs_transform(&self) -> bool {
         self.local_to_global.is_some()
-    }
-
-    /// `true` when the setup transform Z-inverts the toolpath
-    /// (`face_up == Bottom`). Drives `ProjectCurve::setup_z_flipped`.
-    pub fn is_z_flipped(&self) -> bool {
-        self.local_to_global
-            .as_ref()
-            .is_some_and(|info| info.is_z_flipped())
     }
 
     /// Translation applied to this setup's emitted toolpath so every

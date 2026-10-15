@@ -449,11 +449,14 @@ const START_FROM_HOVER: &str = concat!(
 pub(super) fn draw_geometry_wiring(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
-    tools: &[(crate::state::job::ToolId, String, f64)],
-    models: &[(crate::state::job::ModelId, String)],
-    model_has_enriched: bool,
-    model_is_step_missing_brep: bool,
+    inputs: &super::ToolpathPanelInputs,
+    events: &mut Vec<crate::ui::AppEvent>,
 ) {
+    let tools = inputs.tools.as_slice();
+    let models = inputs.models.as_slice();
+    let model_has_enriched = inputs.model_has_enriched;
+    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
+    let rest_fresh = inputs.rest_fresh;
     // Tool selector
     ui.horizontal(|ui| {
         ui.label("Tool:");
@@ -559,4 +562,33 @@ pub(super) fn draw_geometry_wiring(
     if resp.changed() {
         entry.stale_since = Some(std::time::Instant::now());
     }
+
+    // Operator ruling 2026-10-15: a rest op compares itself with the same
+    // op on fresh stock ON REQUEST. The twin is one more generation, so it
+    // never runs on its own.
+    if entry.stock_source == StockSource::FromRemainingStock {
+        ui.horizontal(|ui| {
+            if ui
+                .small_button("Compare with fresh")
+                .on_hover_text(COMPARE_WITH_FRESH_HOVER)
+                .clicked()
+            {
+                events.push(crate::ui::AppEvent::CompareRestWithFresh(entry.id));
+            }
+            if let Some(times) = rest_fresh {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "rest {:.1} s \u{00B7} fresh {:.1} s",
+                        times.rest_s, times.fresh_s
+                    ))
+                    .color(crate::ui::tokens::TEXT_FAINT),
+                );
+            }
+        });
+    }
 }
+
+/// The hover of the "Compare with fresh" button.
+const COMPARE_WITH_FRESH_HOVER: &str = "Generate this operation once more on fresh stock and \
+    compare the two cycle times (the simulator's model, at the planned feeds). Rest can take \
+    longer: each island needs its own entry. The answer stays until the operation changes.";

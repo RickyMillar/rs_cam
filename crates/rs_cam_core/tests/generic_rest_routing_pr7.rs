@@ -433,10 +433,12 @@ fn the_attached_artifacts_do_not_move_with_the_routing_verdict() {
         let result = session.get_result(0).expect("a generated result");
         let annotated = result.annotated();
         let regions = annotated
+            .produced
             .rest_regions
             .as_ref()
             .expect("the generic pass must attach region polygons");
         let grid_cells = annotated
+            .produced
             .rest_grid
             .as_ref()
             .expect("the generic pass must attach a rest grid")

@@ -179,7 +179,6 @@ pub struct ToolConfig {
     // Holder / collision detection
     pub holder_diameter: f64,
     pub shank_diameter: f64,
-    pub shank_length: f64,
     pub stickout: f64,
     // Cutting parameters (for feeds calculation)
     pub flute_count: u32,
@@ -223,7 +222,6 @@ impl ToolConfig {
             shaft_diameter: 6.35,
             holder_diameter: 25.0,
             shank_diameter: 6.35,
-            shank_length: 20.0,
             stickout: 45.0,
             flute_count: 2,
             tool_material: ToolMaterial::Carbide,
@@ -675,7 +673,6 @@ impl ToolConfig {
             self.envelope_diameter(),
             self.cutting_length,
             self.shank_diameter,
-            self.shank_length,
             self.stickout,
             self.holder_diameter,
         ];
@@ -1424,7 +1421,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 20.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 40.0
 flute_count = 2
 tool_material = "carbide"
@@ -1607,7 +1603,6 @@ product_id = ""
         tool.diameter = 3.175;
         tool.cutting_length = 25.0;
         tool.shank_diameter = 3.175;
-        tool.shank_length = 20.0;
 
         let found = tool.name_geometry_mismatches();
         assert_eq!(found.len(), 1, "expected one mismatch, got {found:?}");
@@ -1739,7 +1734,6 @@ product_id = ""
             tool.shank_diameter = 6.0;
             tool.shaft_diameter = 6.0_f64.max(agrees);
             tool.cutting_length = 20.0;
-            tool.shank_length = 20.0;
             tool.stickout = 35.0;
             tool.holder_diameter = 25.0;
             assert!(

@@ -6,6 +6,7 @@
 //! no caller's path changes.
 
 use crate::finish::finish_setup::FinishResolutionPolicy;
+use crate::finish::surface_link::{FinishingLinkStage, LinkCeiling, RelinkParams};
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -73,6 +74,13 @@ pub enum ScallopRingBudget {
 /// CUSP radius, not the shank; on the R1.5 evidence tool that is 0.375 mm,
 /// matching the measured M8b probe. Evidence:
 /// `planning/metrology_2026-09-02/FINDINGS.md` §M7–M8.
+///
+/// `link_ceiling` is the ceiling of the one builder (`link_ceiling_for`,
+/// ruling R1): the op adapter reads it from the runner's link stage. The
+/// rings keep their emitted order ([`RingLink::RingOrder`]).
+// SAFETY: each argument is a distinct kernel input (mesh, index, cutter,
+// params, debug, regions, ceiling, cancel); a struct adds no safety.
+#[allow(clippy::too_many_arguments)]
 pub fn scallop_toolpath_iso_field_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -80,6 +88,7 @@ pub fn scallop_toolpath_iso_field_with_cancel(
     params: &ScallopParams,
     debug: Option<&ToolpathDebugContext>,
     boundary_regions: Option<&RegionSet<'_>>,
+    link_ceiling: Option<LinkCeiling<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, ScallopReport), Cancelled> {
     let policy = ScallopStepoverPolicy {
@@ -87,7 +96,7 @@ pub fn scallop_toolpath_iso_field_with_cancel(
         geometry: StepoverGeometry::CosineSlope,
         ..ScallopStepoverPolicy::SHIPPED
     };
-    let (tp, annotations, report, _) = scallop_toolpath_research(
+    let (tp, annotations, report, _) = scallop_toolpath_research_with_link(
         mesh,
         index,
         cutter,
@@ -100,6 +109,9 @@ pub fn scallop_toolpath_iso_field_with_cancel(
         // reintroduce the truncation class.
         ScallopRingBudget::LoopClampFloor,
         policy,
+        RingLink::RingOrder {
+            ceiling: link_ceiling,
+        },
         cancel,
     )?;
     Ok((tp, annotations, report))
@@ -168,7 +180,7 @@ pub fn scallop_toolpath_research(
     ),
     Cancelled,
 > {
-    scallop_toolpath_research_with_stage(
+    scallop_toolpath_research_with_link(
         mesh,
         index,
         cutter,
@@ -178,17 +190,29 @@ pub fn scallop_toolpath_research(
         resolution,
         ring_budget,
         stepover_policy,
-        None,
+        RingLink::RingOrder { ceiling: None },
         cancel,
     )
 }
 
-/// [`scallop_toolpath_research`] with the shared finishing link stage.
-///
-/// `link_stage: None` is the legacy intra-pass relink, byte for byte — which
-/// is what every research seam and the iso-field entry point pass.
+/// How the scallop kernel links its rings (`intra_pass_hookup_mm > 0`, not
+/// `continuous`).
+#[derive(Clone, Copy)]
+pub(crate) enum RingLink<'s> {
+    /// The shared finishing link stage (G-LINKSTAGE): reorder, loop
+    /// rotation, flush ride. The contour cascade of the op adapter.
+    Stage(&'s FinishingLinkStage<'s>),
+    /// The ring-order relink: the rings keep their emitted order, with no
+    /// reorder and no loop rotation. The iso field and every research seam.
+    /// `ceiling` comes from the one builder (`link_ceiling_for`, ruling R1);
+    /// `None` is the fresh-stock arm, where the mesh is the material.
+    RingOrder { ceiling: Option<LinkCeiling<'s>> },
+}
+
+/// [`scallop_toolpath_research`] with the link configuration of the caller
+/// ([`RingLink`]).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn scallop_toolpath_research_with_stage(
+pub(crate) fn scallop_toolpath_research_with_link(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -198,7 +222,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     resolution: FinishResolutionPolicy,
     ring_budget: ScallopRingBudget,
     stepover_policy: ScallopStepoverPolicy,
-    link_stage: Option<&crate::finish::surface_link::FinishingLinkStage<'_>>,
+    link: RingLink<'_>,
     cancel: &dyn CancelCheck,
 ) -> Result<
     (
@@ -720,22 +744,21 @@ pub(crate) fn scallop_toolpath_research_with_stage(
     // written exactly where the pass is, so the two cannot disagree.
     let mut relink_totals: Option<crate::finish::unified_finish::RelinkTotals> = None;
     if params.intra_pass_hookup_mm > 0.0 && !params.continuous {
-        // G-LINKSTAGE. Two configurations, and the caller picks by handing a
-        // stage or not.
+        // G-LINKSTAGE. Two configurations ([`RingLink`]), and the caller
+        // picks one.
         //
-        // With a stage (the shipped contour scallop): the ONE finishing
+        // `Stage` (the shipped contour scallop): the ONE finishing
         // configuration, built in `FinishingLinkStage::params` — `reorder`
         // and loop rotation, which is what turns a breadth-first ring list
         // into a candidate set at all (of 600 wanaka ring junctions the
-        // legacy arm rejected 493 as `too_far` and ZERO on the surface or
-        // kinematics tests), plus the stock ceiling, whose absence here was
-        // the defect: on a `FromRemainingStock` island pass a surface-riding
-        // link rides the MESH, which sits BELOW the standing material, so the
-        // link is a lateral cutting feed through rest stock — the
-        // G-ISOCLIPRAPID shape — and no lifted hop was ever reachable.
+        // ring-order arm rejected 493 as `too_far` and ZERO on the surface or
+        // kinematics tests), plus the stock ceiling.
         //
-        // Without one (the iso field, every research seam, every existing
-        // test): the legacy literal below, byte for byte.
+        // `RingOrder` (the iso field, every research seam): the literal
+        // below. Its ceiling is the caller's. On a `FromRemainingStock` pass
+        // a surface-riding link rides the MESH, which sits BELOW the standing
+        // material, so without the ceiling the link is a lateral cutting feed
+        // through rest stock (D1: `a_scallop_iso_field_link_clears_standing_stock_d1`).
         let geom = crate::finish::surface_link::LinkGeometry {
             stock_to_leave: params.stock_to_leave,
             sampling: params.tolerance.max(0.01),
@@ -745,7 +768,11 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             // G-TIERBURIAL: the rings' own tolerance.
             link_tolerance: Some(params.tolerance),
         };
-        let legacy = crate::finish::surface_link::RelinkParams {
+        let ceiling = match link {
+            RingLink::RingOrder { ceiling } => ceiling,
+            RingLink::Stage(_) => None,
+        };
+        let ring_order = RelinkParams {
             link_tolerance: geom.link_tolerance,
             hookup_distance: params.intra_pass_hookup_mm,
             stock_to_leave: geom.stock_to_leave,
@@ -764,25 +791,22 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             // documents. On a dendritic rest island a straight line between
             // two rings of the SAME region leaves that region constantly.
             boundary: boundary_regions,
-            // Scallop is a FINISHING pass: everything above the mesh has
-            // already been cleared, so the mesh IS the material and a link
-            // that rides it is riding the workpiece. `None` keeps that
-            // behaviour byte-identical.
-            link_ceiling: None,
+            // The caller's ceiling (ruling R1). `None` on fresh stock: the
+            // mesh IS the material, and a link that rides it rides the
+            // workpiece.
+            link_ceiling: ceiling,
             flush_ride: false,
-            // Inert while `link_ceiling` is `None` (the exemption is
-            // conjunctive), and `false` is the conservative value regardless:
-            // every link this pass emits rides the surface and is a cutting
-            // feed, so the territory veto stands.
+            // `false` is the conservative value: a lifted link stays inside
+            // the territory too.
             airborne_links_may_leave_territory: false,
         };
         // The ON/OFF gate above is `intra_pass_hookup_mm`, and a stage carries
         // its own copy of the same number (the adapter builds it from the same
         // config field, and `finishing_link_stage` returns `None` at `0.0`),
         // so the two cannot disagree about whether the pass runs.
-        let (rp, kinds) = match link_stage {
-            Some(stage) => (stage.params(&geom), Some(fragment_kinds.as_slice())),
-            None => (legacy, None),
+        let (rp, kinds) = match link {
+            RingLink::Stage(stage) => (stage.params(&geom), Some(fragment_kinds.as_slice())),
+            RingLink::RingOrder { .. } => (ring_order, None),
         };
         let (linked, rep) = crate::finish::surface_link::relink_fragments_with_kinds(
             crate::trace::toolpath_spans::AnnotatedToolpath::new(tp),
@@ -793,7 +817,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             kinds,
         );
         info!(
-            staged = link_stage.is_some(),
+            staged = matches!(link, RingLink::Stage(_)),
             fragments = rep.fragments,
             surface_links = rep.surface_links,
             // The acceptance measure: only an AT-DEPTH link removes the next

@@ -162,7 +162,6 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     let tool_idx = builder.add_tool(tool);

@@ -26,11 +26,12 @@ use std::collections::BTreeSet;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
+use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
+use crate::compute::operation_configs::{PencilConfig, PocketConfig};
 use crate::compute::toolpath_stats::ToolpathStats;
 use crate::gcode::CoolantMode;
-use crate::ids::FixtureId;
-use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathComputeResult};
+use crate::ids::ObstacleId;
+use crate::session::ToolpathComputeResult;
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 fn make_session() -> ProjectSession {
@@ -754,137 +755,78 @@ fn rename_setup_not_found() {
     ));
 }
 
-// ── Fixture CRUD ─────────────────────────────────────────────
+// ── Obstacle CRUD (K1) ───────────────────────────────────────
 
-#[test]
-fn add_fixture_invalidates_setup_toolpaths() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-    s.results.insert(0, fake_result());
-
-    let fixture = Fixture {
-        id: FixtureId(0),
-        name: "Clamp 1".to_owned(),
-        kind: FixtureKind::Clamp,
+fn clamp(id: usize) -> Obstacle {
+    Obstacle {
+        id: ObstacleId(id),
+        name: format!("Clamp {id}"),
         enabled: true,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        origin_z: 0.0,
-        size_x: 30.0,
-        size_y: 15.0,
-        size_z: 20.0,
         clearance: 3.0,
-    };
-    let _ = s.add_fixture(0, fixture).unwrap();
-
-    assert_eq!(s.list_setups()[0].fixtures.len(), 1);
-    assert!(!s.results.contains_key(&0));
-    assert!(s.simulation.is_none());
-}
-
-#[test]
-fn remove_fixture_by_id() {
-    let mut s = make_session();
-    let fixture = Fixture {
-        id: FixtureId(42),
-        name: "Clamp".to_owned(),
-        kind: FixtureKind::Clamp,
-        enabled: true,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        origin_z: 0.0,
-        size_x: 10.0,
-        size_y: 10.0,
-        size_z: 10.0,
-        clearance: 1.0,
-    };
-    let _ = s.add_fixture(0, fixture).unwrap();
-    assert_eq!(s.list_setups()[0].fixtures.len(), 1);
-
-    let _ = s.remove_fixture(0, FixtureId(42)).unwrap();
-    assert!(s.list_setups()[0].fixtures.is_empty());
-}
-
-// ── Keep-out CRUD ────────────────────────────────────────────
-
-#[test]
-fn add_keep_out_invalidates_setup_toolpaths() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-    s.results.insert(0, fake_result());
-
-    let zone = KeepOutZone {
-        id: crate::ids::KeepOutId(0),
-        name: "Zone 1".to_owned(),
-        enabled: true,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        size_x: 20.0,
-        size_y: 20.0,
-    };
-    let _ = s.add_keep_out(0, zone).unwrap();
-
-    assert_eq!(s.list_setups()[0].keep_out_zones.len(), 1);
-    assert!(!s.results.contains_key(&0));
-    assert!(s.simulation.is_none());
-}
-
-#[test]
-fn remove_keep_out_by_id() {
-    let mut s = make_session();
-    let zone = KeepOutZone {
-        id: crate::ids::KeepOutId(7),
-        name: "Zone".to_owned(),
-        enabled: true,
-        origin_x: 0.0,
-        origin_y: 0.0,
-        size_x: 10.0,
-        size_y: 10.0,
-    };
-    let _ = s.add_keep_out(0, zone).unwrap();
-    assert_eq!(s.list_setups()[0].keep_out_zones.len(), 1);
-
-    let _ = s.remove_keep_out(0, crate::ids::KeepOutId(7)).unwrap();
-    assert!(s.list_setups()[0].keep_out_zones.is_empty());
-}
-
-// ── Alignment pin drill ──────────────────────────────────────
-
-#[test]
-fn set_alignment_pin_drill_holes() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-
-    let tc = ToolpathConfig {
-        operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
-        ..make_tc(s.tools()[0].id.0, 0)
-    };
-    let _ = s.add_toolpath(0, tc).unwrap();
-    s.results.insert(0, fake_result());
-
-    let holes = vec![[10.0, 20.0], [90.0, 20.0]];
-    let _ = s.set_alignment_pin_drill_holes(0, holes).unwrap();
-
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::AlignmentPinDrill(cfg) => {
-            assert_eq!(cfg.holes.len(), 2);
-            assert_eq!(cfg.holes[0], [10.0, 20.0]);
-        }
-        _ => panic!("Expected AlignmentPinDrill"),
+        geometry: ObstacleGeometry::Box {
+            min: [0.0, 0.0, 0.0],
+            max: [30.0, 15.0, 20.0],
+        },
     }
-    assert!(!s.results.contains_key(&0));
 }
 
 #[test]
-fn set_alignment_pin_drill_holes_wrong_op() {
+fn add_obstacle_invalidates_setup_toolpaths() {
     let mut s = make_session();
     let _ = s.add_tool(make_tool());
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+    s.results.insert(0, fake_result());
 
-    let result = s.set_alignment_pin_drill_holes(0, vec![]);
-    assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+    let _ = s.add_obstacle(0, clamp(0)).unwrap();
+
+    assert_eq!(s.list_setups()[0].obstacles.len(), 1);
+    assert!(!s.results.contains_key(&0));
+    assert!(s.simulation.is_none());
+}
+
+#[test]
+fn a_rename_keeps_the_results_and_a_move_drops_them() {
+    let mut s = make_session();
+    let _ = s.add_tool(make_tool());
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+    let _ = s.add_obstacle(0, clamp(0)).unwrap();
+    s.results.insert(0, fake_result());
+
+    let mut renamed = clamp(0);
+    renamed.name = "Left clamp".to_owned();
+    let _ = s
+        .replace_obstacle(0, ObstacleId(0), renamed.clone())
+        .unwrap();
+    assert!(s.results.contains_key(&0), "a rename drops nothing");
+
+    let mut moved = renamed;
+    moved.geometry = ObstacleGeometry::Box {
+        min: [1.0, 0.0, 0.0],
+        max: [31.0, 15.0, 20.0],
+    };
+    let _ = s.replace_obstacle(0, ObstacleId(0), moved).unwrap();
+    assert!(!s.results.contains_key(&0), "a move drops the result");
+}
+
+#[test]
+fn remove_obstacle_by_id_and_refuse_a_bad_box() {
+    let mut s = make_session();
+    let _ = s.add_obstacle(0, clamp(42)).unwrap();
+    assert_eq!(s.list_setups()[0].obstacles.len(), 1);
+    assert!(
+        s.add_obstacle(0, clamp(42)).is_err(),
+        "a duplicate id refuses"
+    );
+
+    let mut empty = clamp(7);
+    empty.geometry = ObstacleGeometry::Box {
+        min: [0.0, 0.0, 5.0],
+        max: [10.0, 10.0, 5.0],
+    };
+    assert!(s.add_obstacle(0, empty).is_err(), "an empty box refuses");
+
+    let _ = s.remove_obstacle(0, ObstacleId(42)).unwrap();
+    assert!(s.list_setups()[0].obstacles.is_empty());
 }
 
 // ── Invalidation helpers ─────────────────────────────────────

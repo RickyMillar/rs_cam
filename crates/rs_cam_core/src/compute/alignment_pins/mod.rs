@@ -286,6 +286,9 @@ pub enum PinFindingKind {
     /// The pin diameter differs from the tool that drills the pin holes
     /// (P6).
     PinToolMismatch,
+    /// K1: an obstacle of a setup cannot be resolved, so the pin walls do
+    /// not include it. The wall to that obstacle is not measured.
+    ObstacleUnresolved,
 }
 
 impl PinFindingKind {
@@ -320,6 +323,10 @@ impl PinFindingKind {
             PinFindingKind::PinToolMismatch => {
                 "In the stock panel's pin section, choose the drill of the dowel size for that \
                  pin size, or add a drill of that size there."
+            }
+            PinFindingKind::ObstacleUnresolved => {
+                "Fix or disable the obstacle (load its model, or choose another model). Until \
+                 then the pin check does not measure the wall to it."
             }
         }
     }

@@ -156,7 +156,7 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         .add_toolpath(0, toolpath(0))
         .expect("the fixture project takes one operation");
     controller.state.session = builder.build();
-    controller.handle_internal_event(AppEvent::AddFixture(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
     land_a_result_for(&mut controller, ToolpathId(0));
     controller
 }
@@ -266,38 +266,38 @@ fn edit_stock_height(controller: &mut AppController<ScriptedLane>) {
 }
 
 fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
-    // WP6: the GUI route is `Command::ReplaceFixture` through the
-    // fixture panel's apply funnel.
+    // WP6, K1: the GUI route is `Command::ReplaceObstacle` through the
+    // obstacle panel's apply funnel.
     let found = controller
         .state
         .session
         .list_setups()
         .first()
-        .and_then(|setup| {
-            setup
-                .fixtures
-                .first()
-                .map(|fixture| (fixture.id, fixture.clone()))
-        });
-    if let Some((fixture_id, mut fixture)) = found {
+        .and_then(|setup| setup.obstacles.first().cloned());
+    if let Some(stored) = found {
         let setup_index = 0;
-        fixture.origin_z += 12.0;
-        fixture.size_z += 12.0;
-        crate::ui::properties::apply_fixture_draft(
+        let mut fixture = stored.clone();
+        if let rs_cam_core::session::ObstacleGeometry::Box { min, max } = &mut fixture.geometry {
+            min[2] += 12.0;
+            max[2] += 24.0;
+        }
+        crate::ui::properties::apply_obstacle_draft(
             &mut controller.state,
             setup_index,
-            fixture_id,
+            &stored,
             fixture,
-        );
+        )
+        .expect("the obstacle edit applies");
     }
 }
 
 fn add_another_fixture(controller: &mut AppController<ScriptedLane>) {
-    controller.handle_internal_event(AppEvent::AddFixture(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
 }
 
 fn add_a_keep_out_zone(controller: &mut AppController<ScriptedLane>) {
-    controller.handle_internal_event(AppEvent::AddKeepOut(SetupId(0)));
+    // K1: a keep-out zone is an obstacle; the GUI adds one door.
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
 }
 
 fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {

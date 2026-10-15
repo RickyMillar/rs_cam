@@ -12,7 +12,7 @@ processing. The server lives here, not in `rs_cam_mcp`.
   `simulation.rs` (run, scrub, cut trace), `view.rs` (reach map, screenshots).
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.
-- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins) — the frame and the GPU upload.
+- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins), `obstacle_marks.rs` (K2) — the frame and the GPU upload.
 - `input.rs` — keyboard and mouse handling at the application level.
 
 ## Invariants
@@ -28,15 +28,8 @@ processing. The server lives here, not in `rs_cam_mcp`.
   queue a second generation behind an unknown first one.
 - An MCP screenshot is visual evidence, not a replacement for a core test.
   Capture only after the frame has applied the requested view state.
-- `.mcp.json` launches `scripts/gui_logged.sh --mcp`; the wrapper validates its
-  stderr log and `exec`s the release GUI so the gateway owns the real GUI PID.
-  Clean MCP stdio completion signals the winit host to exit directly; failures
-  exit nonzero. A two-second process watchdog bounds shutdown if winit is
-  blocked, and is disarmed only when the host acknowledges immediately before
-  `ActiveEventLoop::exit`. The completion guard covers returns and panics that
-  unwind the outer `mcp-server` thread closure; it does **not** claim panics in
-  detached handler tasks. This path bypasses interactive unsaved-close. Rebuild
-  the release binary BEFORE an MCP live test, or the server runs old code.
+- The MCP launch, the host exit and the shutdown watchdog: read `mcp/CLAUDE.md`
+  before you change the pump, the `mcp-server` thread or the winit host exit.
 
 ## Sentries
 

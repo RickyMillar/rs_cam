@@ -63,7 +63,6 @@ fn tool() -> Arc<ToolDefinition> {
     Arc::new(ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -77,6 +76,7 @@ fn entry(id: usize, toolpath: Toolpath) -> SimToolpathEntry {
         name: format!("tp{id}"),
         annotated: Arc::new(AnnotatedToolpath::new(toolpath)),
         tool: tool(),
+        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
         flute_count: 2,
         tool_summary: "6mm Flat".into(),
         semantic_trace: None,
@@ -119,6 +119,7 @@ fn top_group(entries: Vec<SimToolpathEntry>, changes: Vec<ResolvedStockChange>) 
         local_to_global: None,
         phantom_prior_stock: None,
         stock_changes: changes,
+        obstacles: Ok(Default::default()),
     }
 }
 
@@ -134,6 +135,7 @@ fn bottom_group(
         local_to_global: Some(info),
         phantom_prior_stock: None,
         stock_changes: changes,
+        obstacles: Ok(Default::default()),
     }
 }
 

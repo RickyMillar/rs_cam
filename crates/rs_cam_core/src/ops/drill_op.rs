@@ -62,7 +62,7 @@ pub struct DrillHole {
 /// project-IO round-trip.
 ///
 /// - `Snapshot`: XY positions captured into the operation config at
-///   submit time (e.g. `AlignmentPinDrillConfig.holes`). Survives
+///   submit time. Survives
 ///   project save/load directly as part of the `OperationConfig` TOML.
 /// - `ModelDerived`: positions are the model's drill targets (DXF points
 ///   and circle/arc centres) resolved at generate-time and discarded after

@@ -37,13 +37,11 @@ pub struct ModelId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SetupId(pub usize);
 
-/// Unique identifier for a fixture within a setup.
+/// Unique identifier for an obstacle within a setup (K1). An obstacle is
+/// a fixture or a keep-out zone: the two are one concept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FixtureId(pub usize);
-
-/// Unique identifier for a keep-out zone within a setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct KeepOutId(pub usize);
+#[serde(transparent)]
+pub struct ObstacleId(pub usize);
 
 /// Unique identifier for a stock change within a setup (S2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

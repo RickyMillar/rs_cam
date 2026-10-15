@@ -116,7 +116,6 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
         ops.push(tc(
             "Pin Drill",
             OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
-                holes: DOWEL_CIRCLES.iter().map(|&(x, y)| [x, y]).collect(),
                 ..AlignmentPinDrillConfig::default()
             }),
         ));

@@ -1,0 +1,31 @@
+# W6.5: blessed digests of the 3D Rough side channel (`Produced`).
+# Written by tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs with
+# RS_CAM_BLESS_PRODUCED_W6_5=1. Do not edit by hand.
+
+["adaptive3d/by_area_helix_spiral"]
+outcome = "ok"
+engagement_samples = 1067
+engagement_hash = "440fbe3b4d49a3e6"
+area_region_count = 1
+area_regions_hash = "696d58d12090296c"
+
+["adaptive3d/fresh"]
+outcome = "ok"
+engagement_samples = 0
+engagement_hash = "09612b07b5ecb5a5"
+area_region_count = 0
+area_regions_hash = ""
+
+["adaptive3d/ramp_agent"]
+outcome = "ok"
+engagement_samples = 0
+engagement_hash = "09612b07b5ecb5a5"
+area_region_count = 0
+area_regions_hash = ""
+
+["adaptive3d/rest"]
+outcome = "ok"
+engagement_samples = 0
+engagement_hash = "09612b07b5ecb5a5"
+area_region_count = 0
+area_regions_hash = ""

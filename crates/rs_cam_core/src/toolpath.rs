@@ -77,6 +77,12 @@ pub enum MoveIntent {
     LeadIn,
     /// F-040: lead-out arc / tangent exit after the last cut move of a pass.
     LeadOut,
+    /// K3: the rapid that the obstacle step puts at the start of a
+    /// toolpath, to the obstacle plane above the first move
+    /// (`compute::obstacle::clip_annotated_to_obstacles`). No other
+    /// stage writes it. A reader that must skip this move reads this
+    /// intent, not the move shape.
+    ObstacleClearance,
     /// Fallback for legacy / unaware generators. Deprecation marker.
     #[default]
     Unknown,

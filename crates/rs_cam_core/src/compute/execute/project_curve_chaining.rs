@@ -9,7 +9,7 @@
 //! hundreds of those across dozens of entities. Finishing/engraving air is
 //! **count-bound** — every hop pays two full safe-Z legs whatever its XY
 //! length — so on this family the round trips, not the cutting, set the wall
-//! clock. `compute::execute::chain_project_curve` applies
+//! clock. The Project Curve link body (`ProjectCurveOp::link`, W6.5) applies
 //! `surface_link::relink_fragments` to the COMBINED path (not per polygon),
 //! so chains from different DXF entities can join.
 //!
@@ -49,7 +49,8 @@ use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{DressupConfig, ResolvedHeights};
 use crate::compute::cutter::build_cutter;
 use crate::compute::execute::{
-    ExecutionContext, GenerationFindings, apply_dressups, execute_operation_annotated,
+    ExecutionContext, GenerationFindings, TerritoryInputs, apply_dressups,
+    execute_operation_annotated,
 };
 use crate::compute::operation_configs::{ProjectCurveConfig, ProjectCurveDirection};
 use crate::compute::stats::compute_retract_trips;
@@ -148,8 +149,8 @@ fn heights(safe_z: f64) -> ResolvedHeights {
         retract_z: safe_z,
         feed_z: 1.0,
         // Stock top == mesh top: the fallback ceiling a run with no dexel
-        // snapshot uses is then the mesh itself, so the `initial_stock:
-        // None` arms measure the link against the surface and nothing else.
+        // snapshot uses is then the mesh itself, so the stock
+        // `None` arms measure the link against the surface and nothing else.
         top_z: 0.0,
         bottom_z: -12.0,
         top_pinned: true,
@@ -175,6 +176,16 @@ fn generate_with(
     stock: Option<&TriDexelStock>,
     boundary_regions: Option<&[Polygon2]>,
 ) -> AnnotatedToolpath {
+    generate_with_findings(cfg, safe_z, stock, boundary_regions).0
+}
+
+/// [`generate_with`], and the findings the run recorded.
+fn generate_with_findings(
+    cfg: ProjectCurveConfig,
+    safe_z: f64,
+    stock: Option<&TriDexelStock>,
+    boundary_regions: Option<&[Polygon2]>,
+) -> (AnnotatedToolpath, GenerationFindings) {
     let (mesh, index) = plate();
     let polys = curves();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
@@ -191,8 +202,9 @@ fn generate_with(
         mesh: Some(&mesh),
         index: Some(&index),
         polygons: Some(polys.as_slice()),
-        initial_stock: stock,
-        boundary_regions: regions.as_ref(),
+        territory_inputs: TerritoryInputs::default()
+            .stock(stock)
+            .regions(regions.as_ref()),
         ..ExecutionContext::new(
             &findings,
             &tool_def,
@@ -203,8 +215,9 @@ fn generate_with(
             &cancel,
         )
     };
-    execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
-        .expect("project_curve generates on the flat-plate fixture")
+    let generated = execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
+        .expect("project_curve generates on the flat-plate fixture");
+    (generated, findings.into_inner())
 }
 
 fn generate(chain_distance_mm: f64) -> AnnotatedToolpath {
@@ -329,9 +342,11 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
     };
     let mut raw = Toolpath::new();
     for poly in curves() {
-        let tp = crate::ops::project_curve::project_curve_toolpath(
-            &poly, &mesh, &index, &tool_def, &params,
-        );
+        let tp = crate::interrupt::run_uncancellable(|cancel| {
+            crate::ops::project_curve::project_curve_toolpath_with_cancel(
+                &poly, &mesh, &index, &tool_def, &params, cancel,
+            )
+        });
         raw.moves.extend(tp.moves);
     }
 
@@ -350,6 +365,31 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
 }
 
 // ── 2. The air it is supposed to remove ──────────────────────────────────
+
+/// G-LINKVISIBLE (D2): the curve runner records the chain-link totals
+/// only when the link stage ran. With chaining off nothing is recorded;
+/// with chaining on, the totals count every fragment and the links.
+#[test]
+fn the_chain_link_totals_are_recorded_only_when_the_stage_ran() {
+    let (_, off) = generate_with_findings(project_curve_config(0.0), SAFE_Z_MM, None, None);
+    assert!(off.relink.is_none(), "no stage, no link totals");
+
+    let (_, on) = generate_with_findings(
+        project_curve_config(CANDIDATE_CHAIN_MM),
+        SAFE_Z_MM,
+        None,
+        None,
+    );
+    let totals = on.relink.expect("a stage that ran records its totals");
+    assert_eq!(
+        totals.fragments, CHAIN_COUNT,
+        "one fragment per projected chain"
+    );
+    assert!(
+        totals.surface_links + totals.retract_links > 0,
+        "the stage decided at least one junction: {totals:?}"
+    );
+}
 
 /// Two independent readings of the same claim: the production channel
 /// (`compute_retract_trips`, what the diagnostics surfaces report) and a
@@ -730,6 +770,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
             &tool_def,
             0.0,
             heights(SAFE_Z_MM).top_z,
+            None,
         ),
         flush_ride: false,
         // project_curve's own prior, mirrored: its boundary is machining
@@ -798,6 +839,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
             safe_z: SAFE_Z_MM,
             stock_top: 0.0,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: Some(&tool_def as &dyn MillingCutter),
             entry_surface: None,
@@ -850,13 +892,14 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
 /// the wrong surface. The adapter refuses to chain there — it emits the
 /// unchained path rather than geometry from two frames.
 ///
-/// (The GUI/session pipeline never reaches this: a bottom-facing setup sets
-/// `setup_z_flipped`, which takes the other arm.)
+/// (The session never reaches this: on a bottom-facing setup the runner
+/// reads a flipped frame from `ExecutionContext::z_flipped`, which takes the
+/// other arm. This context has no setup transform, so the frame is not
+/// flipped.)
 #[test]
 fn standalone_from_below_refuses_to_chain() {
     let mut cfg = project_curve_config(CANDIDATE_CHAIN_MM);
     cfg.direction = ProjectCurveDirection::FromBelow;
-    cfg.setup_z_flipped = false;
     let chained = generate_with(cfg.clone(), SAFE_Z_MM, None, None);
 
     let mut off = cfg;

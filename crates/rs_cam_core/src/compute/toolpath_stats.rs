@@ -148,22 +148,6 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub tip_float: Option<TipFloatFinding>,
-    /// PR-5: a loaded project carries a RETIRED dial at a non-default value,
-    /// so the number the operator set is no longer the one steering the
-    /// operation.
-    ///
-    /// `None` = **nothing retired is set** (the overwhelming majority of
-    /// toolpaths, and every project that never touched the dial). It is not
-    /// a measurement, it is a compatibility notice: the field is still
-    /// deserialized so old projects load unchanged, and this is what stops
-    /// that from being silent.
-    ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
-    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
-    /// since C5, because of `clippy::large_enum_variant`.
-    ///
-    /// Report-only: no gate consumes it, and generation is unaffected.
-    pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
     /// PR-6a (H2.3): an offset stepover this operation DERIVED from the
     /// canonical reach policy instead of taking from a dial, together with
     /// the envelope-scaled number that used to be used there.
@@ -260,6 +244,10 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it and generation is unaffected.
     pub zero_removal: Option<ZeroRemovalFinding>,
+    /// W6.5: a projected curve that cuts deeper than its commanded depth
+    /// ([`BuriedCurveFinding`]). `None` = not measured (fresh stock, or not
+    /// a curve op) or the cut is not deeper. Report-only.
+    pub buried_curve: Option<BuriedCurveFinding>,
     /// Checkpoint C (Q1 / D-2): how many times this generation's 2D offsets
     /// came back with a [`crate::polygon::OffsetFailure`] instead of a
     /// result — a `cavalier_contours` panic the chokepoint contained, or an
@@ -323,7 +311,7 @@ pub struct ToolpathStats {
     /// non-default rest-CLAIMS dial that its own configuration never applies.
     /// See [`InertClaimsDialFinding`].
     ///
-    /// `None` = **nothing inert is set**. Like [`Self::deprecated_dial`] this
+    /// `None` = **nothing inert is set**. Like a config notice this
     /// is not a measurement of the part, it is a statement about the config,
     /// so the two-valued reading is the honest one — there is no "measured
     /// zero" for "the operator set nothing unusual".
@@ -404,6 +392,18 @@ pub struct ToolpathStats {
     /// project state after every command, and drops a result whose record
     /// no longer matches (`ProjectSession::rest_results_out_of_date`).
     pub source_stock: Option<crate::compute::source_stock::SourceStock>,
+    /// Operator ruling 2026-10-15: a rest operation's cycle time (s) at the
+    /// feeds it was planned with, one integrator pass at generation
+    /// (`machine::kinematics::compute_cycle_time` over
+    /// `MachineProfile::link_kinematics`). A later feed modulation rewrites
+    /// the feeds of the stored moves; this number stays the planned one.
+    /// The on-demand rest-against-fresh comparison
+    /// (`ProjectSession::compare_rest_with_fresh`) reads it.
+    ///
+    /// `None` = not measured: a `Fresh` operation, a context with no
+    /// machine envelope, or a stats struct that never went through a real
+    /// generation. Caller-owned, as `stock_snapshot` is.
+    pub planned_cycle_time_s: Option<f64>,
     /// F3 (2026-08-23): what the
     /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this operation's
     /// rest-region extraction. See [`crate::geometry::region_mask::RegionCapReport`].
@@ -841,6 +841,22 @@ impl WaterlineLadderFinding {
 /// bit-for-bit in [`crate::compute::stats::compute_retract_trips`] so the
 /// production channel and that harness can never disagree about what counts
 /// as one trip.
+/// A rest operation's cycle time and its fresh twin's (operator ruling
+/// 2026-10-15). On request (`ProjectSession::compare_rest_with_fresh`) the
+/// session generates the same operation with `StockSource::Fresh` (the
+/// fresh twin). Both times are ONE measure: the integrator the simulator uses
+/// (`machine::kinematics::compute_cycle_time` over
+/// `MachineProfile::link_kinematics`), at the commanded feeds of each
+/// dressed plan. A simulated time under feed modulation reads other feeds,
+/// so the comparison does not use it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FreshTwinTime {
+    /// The rest operation's cycle time (s).
+    pub rest_s: f64,
+    /// The fresh twin's cycle time (s).
+    pub fresh_s: f64,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RetractTripCount {
     /// Total retract round trips. Always populated once a stats struct has
@@ -955,6 +971,57 @@ impl ZeroRemovalFinding {
             deepest = self.deepest_engagement_mm,
             floor = self.floor_mm,
             cutting = self.cutting_distance_mm,
+        )
+    }
+}
+
+/// W6.5: a projected curve whose tool cuts deeper than its commanded depth,
+/// because stock stands above the surface it was projected on.
+///
+/// Project Curve projects onto the MESH. On a remaining stock (after a
+/// rough that leaves an allowance or terraces), the tool tip at
+/// `surface - depth` is deeper below the stock than `depth`. The feeds and
+/// the chip load were chosen for `depth`. The finding states the measured
+/// depth. It does not change a move.
+///
+/// Measured on the planned moves, before the link, against the stock the
+/// op reads (`Territory::unguarded_stock`). Only on a remaining stock:
+/// on fresh stock nothing is measured, and an absent measurement is not a
+/// claim (X-19). Lead ruling (W6.5): severity Info; it fires also after a
+/// normal rough, because it states a measured fact.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BuriedCurveFinding {
+    /// The deepest the tool tip reaches below the stock surface, mm, over
+    /// every sampled cutting position.
+    pub deepest_engagement_mm: f64,
+    /// The commanded cut depth below the projection surface, mm.
+    pub commanded_depth_mm: f64,
+    /// The positions the verdict rests on. Never `0` on a recorded finding.
+    pub sampled_positions: usize,
+    /// The sampling floor of the stock, mm
+    /// (`zero_removal_engagement_floor_mm`): the finding fires only when the
+    /// tool cuts deeper than the commanded depth plus this floor.
+    pub floor_mm: f64,
+}
+
+impl BuriedCurveFinding {
+    /// The operator-facing sentence. The diagnostic adapter adds the id and
+    /// the severity.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "The tool cuts {deepest:.3} mm into the stock, not the commanded \
+             {commanded:.3} mm: stock stands above the surface the curve is \
+             projected on. The feeds and the chip load are for the commanded \
+             depth. Rough the stock nearer to the surface first, or set the \
+             feeds for the deeper cut. [Tool tip below the remaining stock, \
+             mm; measured at generation over {samples} sampled cutting \
+             positions against the stock this operation reads, {floor:.4} mm \
+             sampling floor. Report-only: no gate consumes this.]",
+            deepest = self.deepest_engagement_mm,
+            commanded = self.commanded_depth_mm,
+            samples = self.sampled_positions,
+            floor = self.floor_mm,
         )
     }
 }
@@ -1117,27 +1184,6 @@ impl InertClaimsDialFinding {
             why = self.why(),
         )
     }
-}
-
-/// A user-facing dial that a project still sets but the code no longer
-/// reads (PR-5, H2.2).
-///
-/// The alternative to reporting is one of the two failure modes this
-/// programme keeps finding: silently ignore the value (the operator's
-/// setting stops doing anything, with no way to tell), or refuse to load
-/// the project (breaks every saved job for a dial that was never
-/// load-bearing). Deserialize it, ignore it, and SAY SO.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DeprecatedDialFinding {
-    /// The dial's name as it appears in the project file and the GUI.
-    pub dial: &'static str,
-    /// The value the project carries.
-    pub value: f64,
-    /// The value that used to be the default — anything else means the
-    /// operator deliberately tuned it.
-    pub default_value: f64,
-    /// One sentence naming what replaced it.
-    pub replaced_by: &'static str,
 }
 
 /// An offset stepover an operation sized from [`crate::surface::reach`] rather than

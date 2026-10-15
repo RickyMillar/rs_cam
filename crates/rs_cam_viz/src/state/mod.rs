@@ -417,9 +417,7 @@ impl AppState {
         let by_id =
             |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id.0) };
         match &self.selection {
-            Selection::Setup(id) | Selection::Fixture(id, _) | Selection::KeepOut(id, _) => {
-                by_id(*id)
-            }
+            Selection::Setup(id) | Selection::Obstacle(id, _) => by_id(*id),
             Selection::Toolpath(tp_id) => self.session.setup_of_toolpath_id(*tp_id),
             _ => {
                 if setups.is_empty() {

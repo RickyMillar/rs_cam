@@ -346,3 +346,70 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         );
     }
 }
+
+/// D3: the Geometry tab draws no boundary controls for an op whose
+/// capability is `TerritoryXy::SetupMap` (Pin Drill). No boundary moves
+/// its holes, so a boundary control would claim an effect that generation
+/// never applies. A Pocket (`ClipAfter`) still draws them, which is the
+/// non-vacuity anchor.
+#[test]
+fn a_setup_map_op_draws_no_boundary_controls_d3() {
+    use crate::state::toolpath::{OperationType, ToolpathEntry};
+    use rs_cam_core::compute::catalog::TerritoryXy;
+
+    fn rendered(op: OperationType) -> Vec<String> {
+        let (session, _mesh) = one_pocket_session();
+        let tc = &session.toolpath_configs()[0];
+        let inputs = super::toolpath_panel_inputs(
+            tc.id,
+            &session,
+            &crate::state::runtime::GuiState::default(),
+            None,
+            Some(ToolpathTab::Geometry),
+            false,
+        );
+        let mut entry = ToolpathEntry::for_operation(
+            tc.id,
+            "Case".to_owned(),
+            crate::state::job::ToolId(tc.tool_id),
+            crate::state::job::ModelId(tc.model_id),
+            op,
+        );
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+        warmup.textures_delta.clear();
+        let mut events = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            super::toolpath_panel::draw_geometry_tab(ui, &mut entry, &inputs, None, &mut events);
+        });
+        let mut texts = Vec::new();
+        for clipped in &out.shapes {
+            if let egui::epaint::Shape::Text(text) = &clipped.shape {
+                texts.push(text.galley.job.text.clone());
+            }
+        }
+        out.textures_delta.clear();
+        texts
+    }
+
+    assert_eq!(
+        crate::state::toolpath::OperationConfig::new_default(OperationType::AlignmentPinDrill)
+            .capabilities()
+            .territory_xy,
+        TerritoryXy::SetupMap,
+        "the case op must be the SetupMap op"
+    );
+    let pocket = rendered(OperationType::Pocket);
+    assert!(
+        pocket.iter().any(|t| t.contains("Machining Boundary")),
+        "a Pocket must draw the boundary controls; it rendered {pocket:?}"
+    );
+    let pin = rendered(OperationType::AlignmentPinDrill);
+    assert!(
+        !pin.iter()
+            .any(|t| t.contains("Machining Boundary") || t.contains("Enable boundary")),
+        "a Pin Drill must draw no boundary controls; it rendered {pin:?}"
+    );
+}

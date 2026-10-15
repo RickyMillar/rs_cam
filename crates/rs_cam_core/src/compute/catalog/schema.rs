@@ -38,11 +38,6 @@ pub struct OperationParamSchema {
     pub default: serde_json::Value,
     pub range: Option<serde_json::Value>,
     pub description: Option<String>,
-    /// Other names the setter accepts for this same field (CMP-08).
-    /// Usually empty. An alias writes the field this row names; it is not
-    /// a second dial.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub aliases: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,21 +333,6 @@ pub struct ParamDef {
     /// Declared numeric domain, or `None` for "no domain stated" — see
     /// [`ParamRange`], which spells out why those are different claims.
     pub range: Option<ParamRange>,
-    /// Other names `set_toolpath_param` accepts for this same field.
-    ///
-    /// CMP-08: three alias setters existed in
-    /// `session/compute/params.rs` and the registry published none of
-    /// them — Waterline maps `depth_per_pass` onto `z_step`, RampFinish
-    /// onto `max_stepdown`, and Pencil maps `stepover` onto
-    /// `offset_stepover`. So `get_operation_schema` was wrong in both
-    /// directions for those three ops: it omitted a name the setter
-    /// takes, and the refusal message for a genuinely unknown name
-    /// listed a valid set that did not include it.
-    ///
-    /// An alias is a second NAME, never a second field. It is published
-    /// beside its def and it never becomes a key of its own in
-    /// `params_value_including_nulls` or `param_schema_hints`.
-    pub aliases: &'static [&'static str],
     /// The field is an absolute coordinate in the setup frame (an absolute
     /// Z, `#[param(frame_dependent)]`). A setup-local frame can put the
     /// stock at positive Z, so the valid values depend on the frame and the
@@ -368,7 +348,6 @@ impl ParamDef {
             optional: false,
             help: None,
             range: None,
-            aliases: &[],
             frame_dependent: false,
         }
     }

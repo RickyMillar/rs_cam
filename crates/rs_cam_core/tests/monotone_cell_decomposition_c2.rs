@@ -287,6 +287,7 @@ fn run_unified(f: &Fixture, dial: bool) -> UnifiedRun {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("the flat U plateau must generate");

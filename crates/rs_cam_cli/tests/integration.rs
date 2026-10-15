@@ -15,7 +15,6 @@
 // and duplicating the minimal parsing logic that the CLI uses.
 
 use rs_cam_core::gcode::{emit_gcode, get_post_definition};
-use rs_cam_core::ops::pocket::{PocketParams, pocket_toolpath};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, VBitEndmill,
@@ -195,21 +194,96 @@ fn test_parse_tool_spec_invalid() {
 // Test 7: Run a pocket operation and verify G-code output
 // ---------------------------------------------------------------------------
 
+/// One 3 mm Pocket level on `polygon` through `ProjectSession`, the door
+/// the CLI `run` and `job` commands use. A 6.35 mm end mill, stepover 2,
+/// conventional, and the stock top at Z0. Its own dressups stay on. D3
+/// deleted the public `pocket_toolpath` that this test called before.
+fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath {
+    use rs_cam_core::compute::StockConfig;
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+    use rs_cam_core::compute::operation_configs::PocketConfig;
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+    use std::sync::Arc;
+
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 6.35;
+    let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
+        x: 60.0,
+        y: 50.0,
+        z: 10.0,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        origin_z: -10.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    });
+    let tool_idx = builder.add_tool(tool);
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(LoadedModel {
+        id: 0,
+        name: "rect".to_owned(),
+        mesh: None,
+        polygons: Some(Arc::new(vec![polygon])),
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        path: std::path::PathBuf::from("synthetic://rect.svg"),
+        kind: None,
+        units: None,
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+    });
+    let operation = OperationConfig::Pocket(PocketConfig {
+        stepover: 2.0,
+        depth: 3.0,
+        depth_per_pass: 3.0,
+        feed_rate: 1000.0,
+        plunge_rate: 500.0,
+        climb: false,
+        ..PocketConfig::default()
+    });
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                id: rs_cam_core::ToolpathId(0),
+                name: "Pocket".to_owned(),
+                enabled: true,
+                operation,
+                dressups: rs_cam_core::compute::config::DressupConfig::for_op(
+                    OperationType::Pocket,
+                ),
+                heights: rs_cam_core::compute::config::HeightsConfig::default(),
+                tool_id,
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: rs_cam_core::compute::config::BoundaryConfig::default(),
+                boundary_inherit: true,
+                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+                stock_source: rs_cam_core::compute::config::StockSource::default(),
+                coolant: rs_cam_core::gcode::CoolantMode::Off,
+                face_selection: None,
+                debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
+                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+                planner_origin: None,
+            },
+        )
+        .expect("add the pocket");
+    let mut session = builder.build();
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("the pocket generates");
+    session.get_result(0).expect("a result").toolpath().clone()
+}
+
 #[test]
 fn test_pocket_operation_produces_gcode() {
     // Simple rectangular polygon
     let polygon = Polygon2::rectangle(0.0, 0.0, 40.0, 30.0);
-    let params = PocketParams {
-        tool_radius: 3.175,
-        stepover: 2.0,
-        cut_depth: -3.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
-        safe_z: 10.0,
-        climb: false,
-    };
-
-    let tp = pocket_toolpath(&polygon, &params);
+    let tp = pocket_through_session(polygon);
     assert!(
         !tp.moves.is_empty(),
         "Pocket toolpath should have moves for a 40x30mm rectangle"

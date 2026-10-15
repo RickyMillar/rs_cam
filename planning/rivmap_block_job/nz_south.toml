@@ -24,7 +24,6 @@ origin_y = -8.0
 origin_z = 0.0
 padding = 0.0
 auto_from_model = false
-flip_axis = "horizontal"
 
 [job.stock.material.SolidWoodByJanka]
 janka_lbf = 1290.0
@@ -104,7 +103,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 1
@@ -129,7 +127,6 @@ taper_half_angle = 0.0
 shaft_diameter = 3.0
 holder_diameter = 25.0
 shank_diameter = 3.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 2
@@ -154,7 +151,6 @@ taper_half_angle = 10.0
 shaft_diameter = 3.175
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 25.0
 flute_count = 1
 tool_number = 3
@@ -179,7 +175,6 @@ taper_half_angle = 30.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 25.0
 flute_count = 2
 tool_number = 4
@@ -204,7 +199,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 5
@@ -229,7 +223,6 @@ taper_half_angle = 2.2
 shaft_diameter = 3.175
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 6
@@ -527,8 +520,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Back up. Z0 = spoilboard (MachineTable). XY0 = stock corner = pin 1 - (5.0, 177.0)."
-fixtures = []
-keep_out_zones = []
 
 
 # Face from the raw top 27.0 to T1 25.5 (the model stock is T1 thick: the sim cuts air).
@@ -537,7 +528,6 @@ keep_out_zones = []
 [[setups.toolpaths]]
 id = 0
 name = "Face back to T1"
-type = "face"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -579,7 +569,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -603,7 +592,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 1
 name = "Pin drill, flip pins"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -616,7 +604,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = []
 spoilboard_penetration = 4.5
 cycle = "peck"
 peck_depth = 6.0
@@ -644,7 +631,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -666,7 +652,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 2
 name = "Cavity rough D8.80"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 3
@@ -710,7 +695,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -733,7 +717,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 3
 name = "Rough slot Z10.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 5
@@ -777,7 +760,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -802,7 +784,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 4
 name = "Rough slot Z11.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 6
@@ -846,7 +827,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -871,7 +851,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 5
 name = "Rough slot Z12.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 7
@@ -915,7 +894,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -940,7 +918,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 6
 name = "Rough slot Z13.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 8
@@ -984,7 +961,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1009,7 +985,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 7
 name = "Rough slot Z14.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 9
@@ -1053,7 +1028,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1078,7 +1052,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 8
 name = "Rough slot Z15.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 10
@@ -1122,7 +1095,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1146,7 +1118,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 9
 name = "Light holes Z15.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 11
@@ -1190,7 +1161,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1214,7 +1184,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 10
 name = "Light holes Z16.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 12
@@ -1258,7 +1227,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1282,7 +1250,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 11
 name = "Light holes Z17.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 13
@@ -1326,7 +1293,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1353,7 +1319,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 12
 name = "V river pre-pass"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 14
@@ -1396,7 +1361,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1422,7 +1386,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 13
 name = "V river final"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 14
@@ -1465,7 +1428,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1491,7 +1453,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 14
 name = "V lake pre-pass"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 15
@@ -1534,7 +1495,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1560,7 +1520,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 15
 name = "V lake final"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 15
@@ -1603,7 +1562,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1626,7 +1584,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 16
 name = "Mech ANTENNA_D5.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 16
@@ -1670,7 +1627,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1693,7 +1649,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 17
 name = "Mech WIRE_D5.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 17
@@ -1737,7 +1692,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1760,7 +1714,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 18
 name = "Mech BOARD_POCKET_D14.50"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 18
@@ -1804,7 +1757,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1827,7 +1779,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 19
 name = "Mech PARTS_RELIEF_D17.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 19
@@ -1871,7 +1822,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1894,7 +1844,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 20
 name = "Mech STRIP_CHANNEL_F6_D17.10"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 20
@@ -1938,7 +1887,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1961,7 +1909,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 21
 name = "Mech SLIT_SLOT_F6_D20.67"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 21
@@ -2005,7 +1952,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2028,7 +1974,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 22
 name = "Mech ESP_RELIEF_D20.70"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 22
@@ -2072,7 +2017,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2095,7 +2039,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 23
 name = "Mech ANTENNA_D21.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 23
@@ -2139,7 +2082,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2162,7 +2104,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 24
 name = "Mech CONTROL_RELIEF_D21.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 24
@@ -2206,7 +2147,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2229,7 +2169,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 25
 name = "Mech CONTROL_RELIEF_D22.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 25
@@ -2273,7 +2212,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2296,7 +2234,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 26
 name = "Mech THROUGH holes helix"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 26
@@ -2340,7 +2277,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2363,7 +2299,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 27
 name = "Day strip slit V60"
-type = "trace"
 enabled = true
 tool_id = 3
 model_id = 27
@@ -2402,7 +2337,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2429,8 +2363,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Back up, on the pins, after the cure. Same zero as setup 1."
-fixtures = []
-keep_out_zones = []
 
 
 # CAVITY_SKIM_D9.00: one pass 16.7 -> 16.5. Generation does not read the stock
@@ -2438,7 +2370,6 @@ keep_out_zones = []
 [[setups.toolpaths]]
 id = 28
 name = "Cavity skim D9.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 4
@@ -2482,7 +2413,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2509,15 +2439,12 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. Local Z = block Z."
-fixtures = []
-keep_out_zones = []
 
 
 # Face the front from 25.5 to the block front face 25.0.
 [[setups.toolpaths]]
 id = 29
 name = "Face front to T"
-type = "face"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -2559,7 +2486,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2582,7 +2508,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 30
 name = "Front 3D rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 4
 model_id = 0
@@ -2636,7 +2561,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2667,7 +2591,6 @@ holes = false
 [[setups.toolpaths]]
 id = 31
 name = "Front scallop finish"
-type = "scallop"
 enabled = true
 tool_id = 5
 model_id = 0
@@ -2712,7 +2635,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2744,7 +2666,6 @@ holes = false
 [[setups.toolpaths]]
 id = 32
 name = "Outline profile with tabs"
-type = "profile"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -2790,7 +2711,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"

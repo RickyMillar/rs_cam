@@ -648,7 +648,7 @@ fn test_detect_regions_single_block() {
         -10.0,
     );
 
-    let regions = detect_material_regions(&material_stock, &surface_hm, 0.5, 3.175);
+    let regions = detect_material_regions(&material_stock, &surface_hm, 0.5);
     assert!(
         !regions.is_empty(),
         "Full material should produce at least 1 region"
@@ -694,7 +694,7 @@ fn test_detect_regions_two_islands() {
         }
     }
 
-    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5);
     assert!(
         regions.len() >= 2,
         "Should detect at least 2 separate regions, got {}",
@@ -731,7 +731,7 @@ fn test_detect_regions_diagonal_connected() {
         cell_size,
     );
 
-    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5);
     assert_eq!(
         regions.len(),
         1,
@@ -763,7 +763,7 @@ fn test_detect_regions_small_filtered() {
         cell_size,
     );
 
-    let regions = detect_material_regions(&hm, &surface_hm, 0.5, 3.175);
+    let regions = detect_material_regions(&hm, &surface_hm, 0.5);
     assert!(
         regions.is_empty(),
         "Tiny regions (< 4 cells) should be filtered out, got {} regions",
@@ -2478,6 +2478,7 @@ fn by_area_exports_two_pocket_region_map() {
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
     let map = out
+        .produced
         .area_regions
         .as_ref()
         .expect("By Area records its regions");
@@ -2541,5 +2542,5 @@ fn by_area_exports_two_pocket_region_map() {
     let global =
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
-    assert!(global.area_regions.is_none());
+    assert!(global.produced.area_regions.is_none());
 }

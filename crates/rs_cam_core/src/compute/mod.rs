@@ -12,6 +12,7 @@ pub mod config;
 pub mod cutter;
 pub mod execute;
 pub mod generated_empty;
+pub mod obstacle;
 pub mod operation_configs;
 pub mod sim_prefix;
 pub mod simulate;

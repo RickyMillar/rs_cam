@@ -338,6 +338,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             safe_z: RETRACT_Z,
             stock_top: STOCK_TOP_Z,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: Some(&cutter),
             entry_surface: None,

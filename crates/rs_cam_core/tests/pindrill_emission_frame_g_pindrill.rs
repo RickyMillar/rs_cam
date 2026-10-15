@@ -72,7 +72,6 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 
     let cfg = AlignmentPinDrillConfig {
         diameter: 6.0,
-        holes: vec![PIN, [237.5, 2.5]],
         spoilboard_penetration: 1.0,
         cycle: DrillCycleType::Simple,
         peck_depth: 3.0,

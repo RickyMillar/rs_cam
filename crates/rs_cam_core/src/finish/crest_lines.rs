@@ -961,8 +961,8 @@ mod tests {
             &mesh,
             &index,
             cell,
-            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
+            crate::finish::rest_detector::SURFACE_PROBE_BALL_DIAMETER_MM,
+            crate::finish::rest_detector::SURFACE_PROBE_BALL_LENGTH_MM,
         );
         let (nx, ny) = (dem.nx, dem.ny);
 

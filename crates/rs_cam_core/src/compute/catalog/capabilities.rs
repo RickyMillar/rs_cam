@@ -12,6 +12,17 @@
 //! in `feeds/suggest/axial_envelope.rs` and three in `trace/narrate.rs`.
 //! A consumer now reads the field. A consumer that maps a class to its own
 //! numbers or words matches on the class enum, which is exhaustive.
+//!
+//! C2 moved six more answers here: the two narrate lists (`plans_bands`,
+//! `ramp_descent`), the validation and static-check lists
+//! (`adaptive_woc`, `flat_floor_clearing`), the advisor guard
+//! (`clearing_strategy_dial`), the modulation planner floor
+//! (`planner_uniform_engagement`) and two height checks
+//! (`top_on_stock_box`, `floor_inside_stock`).
+//!
+//! D2 moved the vendor-table routing of the feeds lookup here
+//! (`lut_route`, read by `feeds::vendor_normalize::lut_query_for` and the
+//! explain payload).
 
 use super::{FeedsHints, OperationTransformCapabilities};
 use crate::compute::execute::LinkCeilingNeed;
@@ -73,6 +84,50 @@ pub struct Capabilities<P = EntryProbe> {
     /// How the op uses the remaining stock when its stock source is
     /// `FromRemainingStock` (W3.4, AUDIT.md "Rest is not one thing").
     pub rest_use: RestUse,
+    /// The XY containment the op reads while it plans (W6.2, AUDIT.md
+    /// "Territory is three concepts"), and whether the session boundary
+    /// clip applies after generation (D2). `compute::execute::Territory`
+    /// resolves it once per op.
+    pub territory_xy: TerritoryXy,
+    /// The op plans finish bands (C2). The narration then states a
+    /// measured "none" for the dropped-band and clipped-band lines,
+    /// instead of "does not apply". Unified Finish.
+    pub plans_bands: bool,
+    /// The op descends by a ramp (C2). The narration then states that a
+    /// missing ramp reach clamp is "not measured" for this run. Ramp
+    /// Finish.
+    pub ramp_descent: bool,
+    /// The stepover is the narrow WOC of an adaptive planner (C2). The
+    /// static validation then applies the 0.15 x D wood floor to it.
+    /// 2D Adaptive and 3D Rough.
+    pub adaptive_woc: bool,
+    /// The op clears a flat floor (C2). A ball nose leaves scallops on
+    /// that floor, so the static check gives a hint. Pocket, Face,
+    /// Zigzag.
+    pub flat_floor_clearing: bool,
+    /// The config field of the clearing strategy that the strategy
+    /// advisor compares (C2), or `None` when the op has no such dial.
+    /// The advisor writes each candidate through this field name.
+    pub clearing_strategy_dial: Option<&'static str>,
+    /// The planner holds a uniform engagement equal to the target of its
+    /// stepover (C2), so feed modulation may read that target as a floor
+    /// under the simulated engagement. A row states `false`;
+    /// `OperationConfig::capabilities` sets it for a contour-spiral
+    /// strategy, which is a config value.
+    pub planner_uniform_engagement: bool,
+    /// The op starts at the stock box top and ignores a pinned Top Z
+    /// (C2). A pinned bottom is then compared with the stock top. 3D
+    /// Rough (`VolumetricOp::HEIGHTS.top`).
+    pub top_on_stock_box: bool,
+    /// The op's depth dial is a floor that must stay inside the stock
+    /// (C2), so the depth-beyond-stock check applies. Project Curve
+    /// measures its depth below the mesh, and Pin Drill goes into the
+    /// spoilboard on purpose: both state `false`.
+    pub floor_inside_stock: bool,
+    /// How the feeds lookup routes the op's (family, role) query to the
+    /// vendor table rows (D2). Read by
+    /// `feeds::vendor_normalize::lut_query_for` and `feeds::explain`.
+    pub lut_route: LutRoute,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -111,6 +166,16 @@ impl<P> Capabilities<P> {
             relink_dial: self.relink_dial,
             axial_envelope: self.axial_envelope,
             rest_use: self.rest_use,
+            territory_xy: self.territory_xy,
+            plans_bands: self.plans_bands,
+            ramp_descent: self.ramp_descent,
+            adaptive_woc: self.adaptive_woc,
+            flat_floor_clearing: self.flat_floor_clearing,
+            clearing_strategy_dial: self.clearing_strategy_dial,
+            planner_uniform_engagement: self.planner_uniform_engagement,
+            top_on_stock_box: self.top_on_stock_box,
+            floor_inside_stock: self.floor_inside_stock,
+            lut_route: self.lut_route,
         }
     }
 }
@@ -118,7 +183,8 @@ impl<P> Capabilities<P> {
 /// How an operation uses the remaining stock (W3.4, AUDIT.md "Rest is not
 /// one thing"). A rest pass reads the machined stock; each kind says what
 /// the op does with it. The Layered runner (`compute/execute/layered.rs`)
-/// acts on the three `Level*` kinds of a Layered op.
+/// acts on `LevelClip` and `LevelSkip`; a `ContourFilter` op filters in its
+/// own `emit_level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestUse {
     /// The op ignores the remaining stock: a rest pass cuts what a fresh
@@ -140,6 +206,16 @@ pub enum RestUse {
     /// Each hole starts at the remaining stock top over the hole, not at
     /// the stock box top (D8). Drill.
     StockColumn,
+    /// A contour op keeps, at each level, only the contour runs that pass
+    /// material: a point stays when material stands above
+    /// `z + FRESH_MATERIAL_THRESHOLD_MM` within `R + cell` of it, or when
+    /// the stock grid holds no answer there. A stretch in air is dropped
+    /// only when a retract and a re-entry take less time than the feed
+    /// through it. The op splits a contour into runs as its boundary
+    /// filter does (W6.1). Waterline; both halves of Steep and Shallow
+    /// (W6.4.6: the contours of the steep half, the raster rows of the
+    /// shallow half, each point at its own tool tip Z).
+    ContourFilter,
     /// The planner owns the stock: it plans each run against its own
     /// dexel stock, seeded from the remaining stock. 3D Rough.
     Planner,
@@ -149,6 +225,89 @@ pub enum RestUse {
     /// The remaining stock only builds the link ceiling of the op's links
     /// (ruling R1). The cut paths do not read it.
     LinkSafetyOnly,
+}
+
+impl RestUse {
+    /// True when the rule compares the remaining stock with the surface,
+    /// so the territory resolves the stock through the W2.1 guard
+    /// (`Territory::reference_stock`): `Reference` and `ContourFilter`.
+    /// Every other rule reads the stock without the guard, or not at all.
+    ///
+    /// A new rule must answer here and in the Layered runner's
+    /// `prepare_outline` (both matches are exhaustive). An adapter that
+    /// owns one rule compares with `==`.
+    #[must_use]
+    pub const fn reads_reference_stock(self) -> bool {
+        match self {
+            Self::Reference | Self::ContourFilter => true,
+            Self::None
+            | Self::LevelClip
+            | Self::LevelSkip
+            | Self::LevelMask
+            | Self::StockColumn
+            | Self::Planner
+            | Self::LinkSafetyOnly => false,
+        }
+    }
+}
+
+/// The XY containment an operation reads while it plans (W6.2). The
+/// session clips the result to the machining boundary after generation,
+/// except for [`Self::SetupMap`] ([`Self::session_clip_applies`], D2);
+/// this states what the op reads BEFORE that clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerritoryXy {
+    /// The op reads no XY containment while it plans. The session clip
+    /// after generation is its only boundary. Pencil and the 2D ops.
+    ClipAfter,
+    /// The op pre-clips its sampling and its link stage to the boundary
+    /// region set (the regions input of `TerritoryInputs`, P2.3). The 3D
+    /// finishes, Waterline and Project Curve (its link stage).
+    Regions,
+    /// The planner reads the boundary outline (the pre-clear) and the
+    /// centre containment (G-BOUNDARYPHANTOM), both inputs of
+    /// `TerritoryInputs`. 3D Rough.
+    PlannerBounds,
+    /// No XY territory applies, before or after generation (D2 ruling).
+    /// The op's positions are absolute setup-map positions that go
+    /// through the whole stock, so a boundary must not move or drop them.
+    /// The obstacle step still applies. Pin Drill.
+    SetupMap,
+}
+
+impl TerritoryXy {
+    /// True when the session clips the generated toolpath to the
+    /// machining boundary (`clip_and_split_entries`). Every rule except
+    /// [`Self::SetupMap`].
+    #[must_use]
+    pub const fn session_clip_applies(self) -> bool {
+        match self {
+            Self::ClipAfter | Self::Regions | Self::PlannerBounds => true,
+            Self::SetupMap => false,
+        }
+    }
+}
+
+/// How the feeds lookup routes an op's (family, role) query to the vendor
+/// table rows (D2). Before D2 this was three op-type compares in
+/// `feeds::vendor_normalize::lut_query_for` and one in `feeds::explain`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LutRoute {
+    /// The query reads the rows of the op's own family and role.
+    AsStated,
+    /// An `Adaptive` family query reads the `Pocket` rows of the same
+    /// role. 3D Rough.
+    AdaptiveAsPocket,
+    /// G-DCFLAT: a flat end mill on a `Parallel` query reads the
+    /// (`Pocket`, `Roughing`) rows, as the 3D Rough does. The table has no
+    /// flat-end `Parallel` row. Every other query reads as stated. Drop
+    /// Cutter.
+    FlatParallelAsRoughPocket,
+    /// The cutter class picks the rows, not the op's family (operator
+    /// ruling 2026-09-25): ball, tapered ball and bull nose read
+    /// (`Parallel`, `Finish`), a flat end (`Contour`, `Finish`), a V-bit
+    /// (`Trace`, `Finish`), and a facing bit refuses. Project Curve.
+    ByCutter,
 }
 
 /// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster

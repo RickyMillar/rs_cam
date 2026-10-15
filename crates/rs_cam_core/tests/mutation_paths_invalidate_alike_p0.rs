@@ -76,7 +76,6 @@
 //!   arm the set of indices whose result went away equals the set whose
 //!   `toolpath_revision` moved. `drop_result` (`mutation.rs:1328`) is the
 //!   only bump site on these four paths.
-//! - `n6_set_alignment_pin_drill_holes_invalidates_the_chain`.
 //! - `n14_undo_and_the_setter_invalidate_alike` — WP8 closed N14.
 //! - `n6_a_drill_pick_invalidates_the_chain` — WP8 closed N6.
 //! - `the_fixture_is_live`, the non-vacuity guard.
@@ -126,14 +125,13 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
+use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AdoptModelGeometryArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession,
     ProjectSessionBuilder, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
-    SetAlignmentPinDrillHolesArgs, SetDrillSelectedHolesArgs, SetToolParamArgs,
-    SetToolpathParamArgs, ToolpathConfig,
+    SetDrillSelectedHolesArgs, SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
@@ -620,33 +618,6 @@ fn n6_a_drill_pick_invalidates_the_chain() {
          before WP8."
     );
     assert_eq!(obs.bumped, obs.dropped, "one event, as above");
-}
-
-/// CONTRACT, and the sibling of N6. `set_alignment_pin_drill_holes`
-/// (`mutation.rs:891`) sits beside the drill-pick setter above and calls
-/// `invalidate_result_chain`. It always did. The answer it gives is the
-/// answer WP8 gave the drill-pick setter.
-#[test]
-fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
-    let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
-    let mut s = fixture(op);
-    let before = revisions(&s);
-    let _ = s
-        .apply(Command::SetAlignmentPinDrillHoles(
-            SetAlignmentPinDrillHolesArgs {
-                index: 0,
-                holes: vec![[1.0, 2.0]],
-            },
-        ))
-        .expect("index 0 is an AlignmentPinDrill operation");
-    let obs = observe(&s, &before);
-
-    assert_eq!(
-        obs.dropped,
-        set(&[0, 1]),
-        "the pin-hole setter walks the chain. This is the answer the \
-         drill-pick setter above reaches too, since WP8."
-    );
 }
 
 /// CONTRACT — SES-07. A tool edit walks the chain the toolpath edit walks.

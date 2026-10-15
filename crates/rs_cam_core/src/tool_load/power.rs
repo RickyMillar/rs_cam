@@ -657,7 +657,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(6.35, 20.0)),
             6.35,
-            30.0,
             20.0,
             30.0,
             2,
@@ -669,7 +668,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
             6.35,
-            30.0,
             20.0,
             30.0,
             2,

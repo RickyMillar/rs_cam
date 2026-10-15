@@ -8,7 +8,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::compute::config::HeightContext;
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
 use crate::geo::BoundingBox3;
@@ -22,7 +21,7 @@ impl ProjectSession {
     /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
     /// spatial index, resolved heights, cutting levels, emission-frame stock
     /// bbox, keep-outs, boundary + pre-clip polygon, rest-machining prev-tool
-    /// radius, and the compute-time-patched operation. A pure read of `self`
+    /// radius, and the operation. A pure read of `self`
     /// returning a fully-owned [`ResolvedGenInputs`] so callers can generate
     /// one or many toolpaths off a single resolution (the strategy advisor's
     /// per-strategy candidates) without re-deriving frame-sensitive values.
@@ -150,20 +149,19 @@ impl ProjectSession {
         let face_up = ctx.face_up;
         let z_rotation = ctx.z_rotation;
 
-        // Collect keep-out footprints from setup fixtures and keep-out zones
-        let mut keep_out_footprints: Vec<crate::polygon::Polygon2> = Vec::new();
-        if let Some(s) = setup {
-            for fixture in &s.fixtures {
-                if fixture.enabled {
-                    keep_out_footprints.push(fixture.footprint());
-                }
-            }
-            for keep_out in &s.keep_out_zones {
-                if keep_out.enabled {
-                    keep_out_footprints.push(keep_out.footprint());
-                }
-            }
-        }
+        // K1: the obstacles of the setup, resolved ONCE in the setup frame
+        // (the emission frame). A missing model refuses the generation and
+        // names the obstacle; an obstacle never vanishes in silence.
+        let obstacles = Arc::new(
+            crate::compute::obstacle::ObstacleSet::resolve(
+                setup.map(|s| s.obstacles.as_slice()).unwrap_or_default(),
+                &self.models,
+            )
+            .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+        );
+        // The grown footprints also leave the machining boundary, when one
+        // is on, as the keep-outs always did.
+        let keep_out_footprints: Vec<crate::polygon::Polygon2> = obstacles.footprints();
 
         // Clone boundary config before we lose the borrow on tc
         let boundary_config = tc.boundary.clone();
@@ -208,14 +206,6 @@ impl ProjectSession {
                     .into_iter()
                     .next();
             }
-            // Keep-out footprints are world-anchored hardware, not drawings,
-            // so they keep the orthographic world→local projection.
-            // (Unreachable with a non-empty list on a lateral setup —
-            // `check_lateral_setup_support` refuses that above.)
-            if !keep_out_footprints.is_empty() {
-                keep_out_footprints =
-                    self.transform_footprints_to_setup(&keep_out_footprints, face_up, z_rotation);
-            }
         }
 
         // Stock bbox in the frame the toolpath is emitted in (world for
@@ -248,14 +238,10 @@ impl ProjectSession {
         let safe_z = ctx.safe_z;
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
-        let height_ctx = HeightContext {
-            safe_z,
-            op_depth: tc.operation.default_depth_for_heights(),
-            stock_top_z: emission_stock_bbox.max.z,
-            stock_bottom_z: emission_stock_bbox.min.z,
-            model_top_z: model_bbox.map(|b| b.max.z),
-            model_bottom_z: model_bbox.map(|b| b.min.z),
-        };
+        // K3: the heights do not read the obstacles. The obstacle step
+        // after the dressups lifts only the moves that cross one.
+        let height_ctx = ctx.height_context(tc.operation.default_depth_for_heights(), model_bbox);
+        debug_assert_eq!(height_ctx.safe_z, safe_z);
         let mut heights = tc.heights.resolve(&height_ctx);
         // N12 item 1: an AUTO top follows the picked faces. The GUI
         // controller applied this override and the resolver did not. A
@@ -327,30 +313,11 @@ impl ProjectSession {
                 None
             };
 
-        // Clone operation so we can patch `setup_z_flipped` on ProjectCurve.
-        // This flag is #[serde(skip)] and set at compute time — single source of
-        // truth is the setup transform's `is_z_flipped()`.
-        let mut operation = tc.operation.clone();
-        if let crate::compute::OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            // F-030: `SetupEvalContext::is_z_flipped()` returns false for
-            // identity setups and `xform.is_z_flipped()` otherwise — same
-            // combined predicate as the previous `needs_transform && xform.is_z_flipped()`.
-            cfg.setup_z_flipped = ctx.is_z_flipped();
-        }
-        // N12 item 9: the alignment-pin drill's holes come from the LIVE
-        // stock, never from the stored config. The GUI controller
-        // refreshed them at submit and this resolver did not, so the two
-        // doors drilled different holes after a pin edit. Patched on the
-        // compute-time copy beside `setup_z_flipped`, for the same reason:
-        // the stored config records the operator's intent and this is a
-        // derived value.
-        if let crate::compute::OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
-            // R1: the operation drills the pins of its own diameter only.
-            cfg.holes = crate::compute::alignment_pins::pin_holes_of_diameter(
-                &self.stock.alignment_pins,
-                cfg.diameter,
-            );
-        }
+        // W6.5: the resolver patches no config copy. The setup frame reaches
+        // an op through `ExecutionContext::setup_transform` and the stock
+        // pins through `ExecutionContext::alignment_pins`.
+        let operation = tc.operation.clone();
+        let alignment_pins = self.stock.alignment_pins.clone();
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
         // pre-clip its internal stock. `apply_boundary_clip` (below) resolves
@@ -486,8 +453,18 @@ impl ProjectSession {
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?
             }
         } else {
+            // K3: with the boundary off, the territory resolver gives the
+            // 3D Rough planner its obstacle outline
+            // (`compute::execute::territory`).
             None
         };
+
+        // K1: the obstacles for this tool, one footprint per assembly band.
+        let obstacle_view = Arc::new(
+            obstacles
+                .for_tool(&tool_def.to_assembly())
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+        );
 
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
@@ -498,6 +475,8 @@ impl ProjectSession {
                 .map(|m| Arc::clone(&m.drill_targets))
                 .unwrap_or_default(),
             keep_out_footprints,
+            obstacles,
+            obstacle_view,
             boundary_config,
             emission_stock_bbox,
             heights,
@@ -506,6 +485,7 @@ impl ProjectSession {
             cutting_levels,
             reference_tool_cfg,
             operation,
+            alignment_pins,
             pre_boundary,
             pre_boundary_regions,
             face_boundary,
@@ -564,7 +544,7 @@ impl ProjectSession {
             )));
         };
 
-        match result.annotated().rest_regions.as_ref() {
+        match result.annotated().produced.rest_regions.as_ref() {
             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
             _ => Err(SessionError::OperationFailed(format!(
                 "'{source_name}' produced no rest regions. Its rest analysis found no material \

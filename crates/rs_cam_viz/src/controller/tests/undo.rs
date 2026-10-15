@@ -72,6 +72,22 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                 },
             ),
         ),
+        // K2: `old: Some` on a setup that holds no obstacle 0. The undo
+        // ADDS an enabled obstacle and the redo removes it, so both
+        // mutate. (`old: None` would apply nothing on this fixture.)
+        (
+            "ObstacleChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::ObstacleChange {
+                    setup_id: crate::state::job::SetupId(c.state.session.list_setups()[0].id),
+                    obstacle_id: crate::state::job::ObstacleId(0),
+                    old: Some(rs_cam_core::session::Obstacle::new_default_box(
+                        crate::state::job::ObstacleId(0),
+                    )),
+                    new: None,
+                },
+            ),
+        ),
     ];
 
     for (name, build) in arms {
@@ -697,10 +713,10 @@ mod pin_edit_one_door_p5 {
     }
 
     /// What a toolpath list says, by row: the operation, the setup index and
-    /// the pin-drill holes.
+    /// the pin-drill diameter.
     fn toolpath_list(
         controller: &AppController<ScriptedBackend>,
-    ) -> Vec<(String, Option<usize>, Vec<[f64; 2]>)> {
+    ) -> Vec<(String, Option<usize>, Option<f64>)> {
         let session = &controller.state.session;
         session
             .toolpath_configs()
@@ -711,11 +727,11 @@ mod pin_edit_one_door_p5 {
                     .list_setups()
                     .iter()
                     .position(|s| s.toolpath_indices.contains(&index));
-                let holes = match &tc.operation {
-                    OperationConfig::AlignmentPinDrill(c) => c.holes.clone(),
-                    _ => Vec::new(),
+                let diameter = match &tc.operation {
+                    OperationConfig::AlignmentPinDrill(c) => Some(c.diameter),
+                    _ => None,
                 };
-                (format!("{:?}", tc.operation.op_type()), setup, holes)
+                (format!("{:?}", tc.operation.op_type()), setup, diameter)
             })
             .collect()
     }
@@ -774,23 +790,41 @@ mod pin_edit_one_door_p5 {
             "the MCP door created the pin drill in setup 1, got {:?}",
             edit.pin_drill
         );
-        let (label, setup, holes) = after.last().expect("the pin drill").clone();
+        let (label, setup, diameter) = after.last().expect("the pin drill").clone();
         assert_eq!(label, "AlignmentPinDrill");
         assert_eq!(
             setup,
             Some(1),
             "C7: the pin drill goes in the first Top setup, not in setup index 0"
         );
-        assert_eq!(holes, vec![[pin.x, pin.y]]);
+        assert_eq!(diameter, Some(pin.diameter));
 
-        // A second edit moves the holes the same way on both routes.
+        // A second edit stales the pin drill the same way on both routes.
+        // C1: the op reads the live pins (W6.5), so the door leaves it
+        // `Unchanged`; the pin row's stale set (P4) names it.
         let moved = AlignmentPin::new(30.0, 20.0, 6.0);
+        // Non-vacuity: the GUI pin drill starts the move with no stale stamp.
+        let first_drill_id = gui.state.session.toolpath_configs()[after.len() - 1].id;
+        gui.state
+            .gui
+            .toolpath_rt_or_default(first_drill_id)
+            .stale_since = None;
         gui_add_pin(&mut gui, moved.clone());
         let edit = mcp_add_pin(&mut mcp, &moved);
         assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
         let drill_index = toolpath_list(&mcp).len() - 1;
+        // The GUI route (the stock draft) stales the pin drill too.
+        let gui_drill_id = gui.state.session.toolpath_configs()[drill_index].id;
         assert!(
-            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Updated { .. })),
+            gui.state
+                .gui
+                .toolpath_rt
+                .get(&gui_drill_id)
+                .is_some_and(|rt| rt.stale_since.is_some()),
+            "the stock draft's pin move stales the pin drill on the GUI route"
+        );
+        assert!(
+            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Unchanged)),
             "{:?}",
             edit.pin_drill
         );
@@ -959,9 +993,9 @@ mod pin_edit_one_door_p5 {
         assert_eq!(controller.state.session.toolpath_configs().len(), count);
     }
 
-    /// The pin-drill operations of the project: (diameter, tool diameter,
-    /// holes), in toolpath order.
-    fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64, Vec<[f64; 2]>)> {
+    /// The pin-drill operations of the project: (diameter, tool diameter),
+    /// in toolpath order.
+    fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64)> {
         let session = &controller.state.session;
         session
             .toolpath_configs()
@@ -973,7 +1007,7 @@ mod pin_edit_one_door_p5 {
                         .iter()
                         .find(|t| t.id.0 == tc.tool_id)
                         .map_or(0.0, |t| t.diameter);
-                    Some((c.diameter, tool, c.holes.clone()))
+                    Some((c.diameter, tool))
                 }
                 _ => None,
             })
@@ -1008,10 +1042,7 @@ mod pin_edit_one_door_p5 {
             edit.outcome_of(8.0),
             Some(&PinDrillSync::Refused(pin_drill_needs_tool(8.0)))
         );
-        assert_eq!(
-            pin_drills(&controller),
-            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
 
         // The wizard's "Add a 8.00 mm drill", then Apply: one tool, and the
         // 8 mm operation with it.
@@ -1035,21 +1066,26 @@ mod pin_edit_one_door_p5 {
         assert!((tool.diameter - 8.0).abs() < 1e-12, "{tool:?}");
         assert_eq!(
             pin_drills(&controller),
-            vec![
-                (6.0, 6.0, vec![[10.0, 20.0]]),
-                (8.0, 8.0, vec![[40.0, 20.0]]),
-            ],
-            "one operation per size, each with its own holes and a tool of its size"
+            vec![(6.0, 6.0), (8.0, 8.0)],
+            "one operation per size, each with a tool of its size"
         );
 
-        // A pin move updates only the holes of its size.
+        // A pin move leaves both operations in place. The 8 mm operation
+        // reads the live pins (W6.5); the pin row stales it (P4).
         let moved = AlignmentPin::new(42.0, 20.0, 8.0);
         let edit = set_pins(&mut controller, vec![small.clone(), moved]);
         assert_eq!(edit.outcome_of(6.0), Some(&PinDrillSync::Unchanged));
-        assert!(matches!(
-            edit.outcome_of(8.0),
-            Some(PinDrillSync::Updated { .. })
-        ));
+        assert_eq!(edit.outcome_of(8.0), Some(&PinDrillSync::Unchanged));
+        let large_index = controller
+            .state
+            .session
+            .pin_drill_op_for(8.0)
+            .expect("the 8 mm operation stays");
+        assert!(
+            edit.stale.contains(&large_index),
+            "the pin move stales the 8 mm pin drill: {:?}",
+            edit.stale
+        );
 
         // The 8 mm pin goes: its operation goes, the 6 mm one stays.
         let edit = set_pins(&mut controller, vec![small]);
@@ -1057,10 +1093,7 @@ mod pin_edit_one_door_p5 {
             edit.outcome_of(8.0),
             Some(PinDrillSync::Removed { .. })
         ));
-        assert_eq!(
-            pin_drills(&controller),
-            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
     }
 
     /// R2, round 2: the wizard's per-size tool chooser queues a tool; Apply
@@ -1135,13 +1168,7 @@ mod pin_edit_one_door_p5 {
             "{edit:?}"
         );
         assert_eq!(controller.state.session.stock_config().alignment_pins, pins);
-        assert_eq!(
-            pin_drills(&controller),
-            vec![
-                (6.0, 6.0, vec![[10.0, 20.0]]),
-                (8.0, 8.0, vec![[40.0, 20.0]]),
-            ]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0), (8.0, 8.0)]);
         assert_eq!(
             controller.state.history.undo_len(),
             undo_before + 1,
@@ -1325,8 +1352,8 @@ mod pin_edit_one_door_p5 {
     }
 
     /// The mini test piece (`planning/rivmap_block_job/testpiece_mini.toml`)
-    /// still loads with ONE pin-drill operation of 6 mm and the same three
-    /// holes. A pin edit that keeps the pins leaves it unchanged.
+    /// still loads with ONE pin-drill operation of 6 mm and its three pins.
+    /// A pin edit that keeps the pins leaves it unchanged.
     #[test]
     fn the_mini_project_keeps_one_pin_drill_r1() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1335,11 +1362,10 @@ mod pin_edit_one_door_p5 {
         controller
             .open_job_from_path(&path)
             .expect("the mini project loads");
-        let expected = vec![[59.0, 32.5], [7.511, 9.0], [7.511, 56.0]];
         assert_eq!(
             pin_drills(&controller),
-            vec![(6.0, 6.0, expected.clone())],
-            "one 6 mm pin drill with the three holes"
+            vec![(6.0, 6.0)],
+            "one 6 mm pin drill"
         );
         let pins = controller
             .state
@@ -1347,6 +1373,12 @@ mod pin_edit_one_door_p5 {
             .stock_config()
             .alignment_pins
             .clone();
+        let xys: Vec<[f64; 2]> = pins.iter().map(|p| [p.x, p.y]).collect();
+        assert_eq!(
+            xys,
+            vec![[32.5, 6.8], [47.5, 58.2], [17.5, 58.2]],
+            "the three stock pins the drill reads"
+        );
         let edit = set_pins(&mut controller, pins);
         assert!(
             edit.pin_drill
@@ -1354,6 +1386,70 @@ mod pin_edit_one_door_p5 {
                 .all(|s| s.outcome == PinDrillSync::Unchanged),
             "{edit:?}"
         );
-        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0, expected)]);
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
     }
+}
+
+/// K2: an obstacle add, edit and remove each undo and redo, and every undo
+/// stales the setup's toolpaths, as the same edit made by hand does.
+#[test]
+fn an_obstacle_add_edit_remove_each_undo_and_redo_k2() {
+    use crate::state::job::ObstacleId;
+    use rs_cam_core::session::Obstacle;
+
+    let (mut controller, tp_id) = controller_ready_for_undo();
+    let setup = SetupId(controller.state.session.list_setups()[0].id);
+    let id = ObstacleId(0);
+    let stored = |c: &AppController<ScriptedBackend>| -> Option<Obstacle> {
+        c.state.session.list_setups()[0]
+            .obstacles
+            .iter()
+            .find(|o| o.id == id)
+            .cloned()
+    };
+    let reset = |c: &mut AppController<ScriptedBackend>| {
+        generate_all_for_test(c);
+        assert!(c.state.gui.toolpath_rt[&tp_id].stale_since.is_none());
+    };
+    let stale = |c: &AppController<ScriptedBackend>| -> bool {
+        c.state.gui.toolpath_rt[&tp_id].stale_since.is_some()
+    };
+
+    // Add.
+    controller.handle_internal_event(AppEvent::AddObstacle(setup));
+    let added = stored(&controller).expect("added");
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller), None, "the undo removes the add");
+    assert!(stale(&controller), "the undo stales the setup");
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(
+        stored(&controller),
+        Some(added.clone()),
+        "the redo adds it back"
+    );
+
+    // Edit the clearance 3 to 5.
+    let mut edited = added.clone();
+    edited.clearance = 5.0;
+    crate::ui::properties::apply_obstacle_draft(&mut controller.state, 0, &added, edited)
+        .expect("the edit applies");
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller).map(|o| o.clearance), Some(3.0));
+    assert!(stale(&controller));
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(stored(&controller).map(|o| o.clearance), Some(5.0));
+
+    // Remove. The undo adds the record back (at the end of the list; the
+    // assert reads it by id).
+    let before_remove = stored(&controller).expect("present");
+    controller.handle_internal_event(AppEvent::RemoveObstacle(setup, id));
+    assert_eq!(stored(&controller), None);
+    reset(&mut controller);
+    controller.handle_internal_event(AppEvent::Undo);
+    assert_eq!(stored(&controller), Some(before_remove), "the same record");
+    assert!(stale(&controller));
+    controller.handle_internal_event(AppEvent::Redo);
+    assert_eq!(stored(&controller), None);
 }

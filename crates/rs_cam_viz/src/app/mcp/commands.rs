@@ -63,7 +63,9 @@ use crate::ui_command::UiCommand;
 
 use super::RestAnalysisDials;
 
+mod obstacles;
 mod stock_changes;
+pub(crate) use obstacles::obstacle_json;
 pub(crate) use stock_changes::stock_change_json;
 
 /// What one command carries from before the mutation into its reply.
@@ -224,6 +226,17 @@ impl RsCamApp {
             | CoreRequest::RemoveStockChange(rs_cam_mcp::server::RemoveStockChangeParam {
                 setup_index,
                 ..
+            })
+            | CoreRequest::AddObstacle(rs_cam_mcp::server::AddObstacleParam {
+                setup_index, ..
+            })
+            | CoreRequest::EditObstacle(rs_cam_mcp::server::EditObstacleParam {
+                setup_index,
+                ..
+            })
+            | CoreRequest::RemoveObstacle(rs_cam_mcp::server::RemoveObstacleParam {
+                setup_index,
+                ..
             }) => {
                 // The setup panel shows the stock-change list, so the
                 // operator sees the edit land.
@@ -346,6 +359,9 @@ impl RsCamApp {
             CoreRequest::EditStockChange(p) => self.plan_edit_stock_change(&p, before),
             CoreRequest::MoveStockChange(p) => self.plan_move_stock_change(&p, before),
             CoreRequest::RemoveStockChange(p) => self.plan_remove_stock_change(&p, before),
+            CoreRequest::AddObstacle(p) => self.plan_add_obstacle(&p, before),
+            CoreRequest::EditObstacle(p) => self.plan_edit_obstacle(&p, before),
+            CoreRequest::RemoveObstacle(p) => self.plan_remove_obstacle(&p, before),
             CoreRequest::RemoveAlignmentPin(p) => {
                 before.index = Some(p.index);
                 CorePlan::Apply(
@@ -1629,6 +1645,17 @@ impl RsCamApp {
                 "MCP: Remove stock change {} of setup {}",
                 p.change_id, p.setup_index
             )),
+            CoreRequest::AddObstacle(p) => {
+                Some(format!("MCP: Add an obstacle to setup {}", p.setup_index))
+            }
+            CoreRequest::EditObstacle(p) => Some(format!(
+                "MCP: Edit obstacle {} of setup {}",
+                p.obstacle_id, p.setup_index
+            )),
+            CoreRequest::RemoveObstacle(p) => Some(format!(
+                "MCP: Remove obstacle {} of setup {}",
+                p.obstacle_id, p.setup_index
+            )),
             CoreRequest::SetSetupFace(p) => {
                 let setup_index = p.setup_index;
                 let face_up = &p.face_up;
@@ -1825,6 +1852,7 @@ impl RsCamApp {
             | CommandId::MoveToolpathToSetup
             | CommandId::SetToolpathParam
             | CommandId::AdoptResult
+            | CommandId::AdoptRestFreshComparison
             | CommandId::SetToolParam
             | CommandId::SetToolpathHeights
             | CommandId::SetToolpathDebugOptions
@@ -1846,8 +1874,7 @@ impl RsCamApp {
             | CommandId::SetToolpathEnabled
             | CommandId::SetSimulationResolution
             | CommandId::ReplaceTool
-            | CommandId::ReplaceFixture
-            | CommandId::ReplaceKeepOut
+            | CommandId::ReplaceObstacle
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
             | CommandId::RestoreToolpathSnapshot
@@ -1857,17 +1884,14 @@ impl RsCamApp {
             | CommandId::PreviewTierMap
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so no
-            // wire tool builds one. The GUI dispatches thirteen of them;
+            // wire tool builds one. The GUI dispatches twelve of them;
             // eleven carry no caller at all.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
-            | CommandId::SetAlignmentPinDrillHoles
             | CommandId::SetDrillSelectedHoles
-            | CommandId::AddFixture
-            | CommandId::RemoveFixture
-            | CommandId::AddKeepOut
-            | CommandId::RemoveKeepOut
+            | CommandId::AddObstacle
+            | CommandId::RemoveObstacle
             | CommandId::AddStockChange
             | CommandId::ReplaceStockChange
             | CommandId::MoveStockChange
@@ -1915,6 +1939,9 @@ impl RsCamApp {
             CommandId::RemoveStockChange => {
                 self.describe_stock_change("Removed", &effects, before)
             }
+            CommandId::AddObstacle => self.describe_obstacle("Added", &effects, before),
+            CommandId::ReplaceObstacle => self.describe_obstacle("Edited", &effects, before),
+            CommandId::RemoveObstacle => self.describe_obstacle("Removed", &effects, before),
             CommandId::AddAlignmentPin => {
                 let pin_count = self
                     .controller
@@ -2726,6 +2753,7 @@ impl RsCamApp {
             // is what this arm answers about. No MCP arm applies
             // `SetToolpathDebugOptions` (U4, 2026-10-01).
             CommandId::AdoptResult
+            | CommandId::AdoptRestFreshComparison
             | CommandId::AdoptModelGeometry
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum
@@ -2733,8 +2761,6 @@ impl RsCamApp {
             | CommandId::SetSetupPauseMessage
             | CommandId::SetToolpathDebugOptions
             | CommandId::ReplaceTool
-            | CommandId::ReplaceFixture
-            | CommandId::ReplaceKeepOut
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
             | CommandId::RestoreToolpathSnapshot
@@ -2745,17 +2771,12 @@ impl RsCamApp {
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so
             // `CoreRequest` names no variant for any of them either. The
-            // GUI dispatches thirteen of them; eleven carry no caller.
+            // GUI dispatches twelve of them; eleven carry no caller.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
-            | CommandId::SetAlignmentPinDrillHoles
             | CommandId::SetPinPartModels
             | CommandId::SetDrillSelectedHoles
-            | CommandId::AddFixture
-            | CommandId::RemoveFixture
-            | CommandId::AddKeepOut
-            | CommandId::RemoveKeepOut
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation

@@ -12,6 +12,7 @@
 //! folder.
 
 pub mod classify_probe;
+pub(crate) mod composed;
 #[cfg(feature = "research")]
 pub mod conformal_spiral;
 pub mod crease_paths;
@@ -25,6 +26,7 @@ pub mod pencil;
 pub mod pencil_dihedral;
 pub mod radial_finish;
 pub mod ramp_finish;
+pub mod rest_detector;
 pub mod scallop;
 pub mod scallop_isofield;
 pub mod scallop_math;

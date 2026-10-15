@@ -45,7 +45,6 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
@@ -77,6 +76,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool)),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -92,6 +92,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox: world_stock_bbox,
             stock_top_z: world_stock_bbox.max.z,
@@ -175,7 +176,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();

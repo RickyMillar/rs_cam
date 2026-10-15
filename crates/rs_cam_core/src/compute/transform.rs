@@ -558,9 +558,9 @@ impl SetupTransformInfo {
 
     /// Whether this setup inverts the Z axis (i.e. `FaceUp::Bottom`).
     ///
-    /// This is the single source of truth for project_curve's `setup_z_flipped`
-    /// flag — if the setup transform has already Z-inverted the mesh, the
-    /// operation must not apply its own Z flip.
+    /// The one rule of the Z frame. `ExecutionContext::z_flipped` reads it:
+    /// when the setup transform has already Z-inverted the mesh, Project
+    /// Curve must not apply its own Z flip (W6.5).
     pub fn is_z_flipped(&self) -> bool {
         matches!(self.face_up, FaceUp::Bottom)
     }

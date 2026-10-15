@@ -141,6 +141,17 @@ macro_rules! for_each_command {
                      "the CLI generates synchronously and never adopts a completion",
                  ),
              }),
+            (Command, AdoptRestFreshComparison, "adopt_rest_fresh_comparison",
+             AdoptRestFreshComparisonArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the compare_rest_with_fresh tool records its own answer; no wire mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, SetAlignmentPins, "set_alignment_pins", SetAlignmentPinsArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -507,26 +518,6 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, ReplaceFixture, "replace_fixture", ReplaceFixtureArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a fixture; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
-            (Command, ReplaceKeepOut, "replace_keep_out", ReplaceKeepOutArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,
              GetOperationSchemaAnswer,
              Surfaces {
@@ -573,17 +564,6 @@ macro_rules! for_each_command {
                      "the batch CLI picks no faces",
                  ),
              }),
-            (Command, SetAlignmentPinDrillHoles, "set_alignment_pin_drill_holes",
-             SetAlignmentPinDrillHolesArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes the pin holes; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Command, SetDrillSelectedHoles, "set_drill_selected_holes",
              SetDrillSelectedHolesArgs, Effects,
              Surfaces {
@@ -595,42 +575,26 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, AddFixture, "add_fixture", AddFixtureArgs, Effects,
+            (Command, AddObstacle, "add_obstacle", AddObstacleArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a fixture; the wire has no such mutation",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, RemoveFixture, "remove_fixture", RemoveFixtureArgs, Effects,
+            (Command, ReplaceObstacle, "edit_obstacle", ReplaceObstacleArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a fixture; the wire has no such mutation",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
                  ),
              }),
-            (Command, AddKeepOut, "add_keep_out", AddKeepOutArgs, Effects,
+            (Command, RemoveObstacle, "remove_obstacle", RemoveObstacleArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
-            (Command, RemoveKeepOut, "remove_keep_out", RemoveKeepOutArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes a keep-out zone; the wire has no such mutation",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
                  ),
@@ -918,6 +882,23 @@ pub struct AdoptResultArgs {
     pub revision: u64,
     /// The computed result.
     pub result: Box<ToolpathComputeResult>,
+}
+
+/// The arguments of the `adopt_rest_fresh_comparison` command (operator
+/// ruling 2026-10-15): the answer of
+/// [`ProjectSession::compare_rest_with_fresh`](super::ProjectSession::compare_rest_with_fresh).
+///
+/// The command records the comparison for the toolpath. It refuses a
+/// stale revision, as `adopt_result` does. It stales nothing and keeps the
+/// simulation: recording two times moves no generation input.
+#[derive(Debug, Clone)]
+pub struct AdoptRestFreshComparisonArgs {
+    /// The index of the rest toolpath.
+    pub index: usize,
+    /// The revision the fresh twin was generated at.
+    pub revision: u64,
+    /// The rest time and the fresh twin's time, one measure.
+    pub times: crate::compute::toolpath_stats::FreshTwinTime,
 }
 
 /// The arguments of the `adopt_simulation` command.
@@ -1401,34 +1382,6 @@ pub struct ReplaceToolArgs {
     pub config: Box<crate::compute::tool_config::ToolConfig>,
 }
 
-/// The arguments of the `replace_fixture` command.
-///
-/// The GUI fixture panel edits every field of one fixture, so the
-/// payload is the whole record. `fixture_id` names which fixture of the
-/// setup it replaces; the position in the list does not move.
-#[derive(Debug, Clone)]
-pub struct ReplaceFixtureArgs {
-    /// The index of the setup that holds the fixture.
-    pub setup_index: usize,
-    /// The id of the fixture to replace.
-    pub fixture_id: crate::ids::FixtureId,
-    /// The fixture to install.
-    pub fixture: Box<super::Fixture>,
-}
-
-/// The arguments of the `replace_keep_out` command.
-///
-/// The keep-out twin of [`ReplaceFixtureArgs`].
-#[derive(Debug, Clone)]
-pub struct ReplaceKeepOutArgs {
-    /// The index of the setup that holds the zone.
-    pub setup_index: usize,
-    /// The id of the zone to replace.
-    pub zone_id: crate::ids::KeepOutId,
-    /// The zone to install.
-    pub zone: Box<super::KeepOutZone>,
-}
-
 /// The arguments of the `set_toolpath_tool` command.
 ///
 /// `tool_id` is the project-assigned id of a tool, NOT its position in
@@ -1749,18 +1702,6 @@ pub struct SetFaceSelectionArgs {
     pub face_ids: Option<Vec<FaceGroupId>>,
 }
 
-/// The arguments of the `set_alignment_pin_drill_holes` command.
-///
-/// The command refuses a toolpath whose operation is not
-/// `AlignmentPinDrill`.
-#[derive(Debug, Clone)]
-pub struct SetAlignmentPinDrillHolesArgs {
-    /// The index of the toolpath the command writes.
-    pub index: usize,
-    /// The hole centres, in millimetres.
-    pub holes: Vec<[f64; 2]>,
-}
-
 /// The arguments of the `set_drill_selected_holes` command.
 ///
 /// `selected_holes` is `None` when a `Drill` operation reverts to every
@@ -1774,50 +1715,45 @@ pub struct SetDrillSelectedHolesArgs {
     pub selected_holes: Option<Vec<[f64; 2]>>,
 }
 
-/// The arguments of the `add_fixture` command.
+/// The arguments of the `add_obstacle` command (K1).
 ///
-/// The fixture is boxed, as [`ReplaceFixtureArgs`] boxes its own.
+/// The obstacle joins the end of the setup's list. The record is boxed.
 #[derive(Debug, Clone)]
-pub struct AddFixtureArgs {
-    /// The index of the setup the fixture joins.
+pub struct AddObstacleArgs {
+    /// The index of the setup the obstacle joins.
     pub setup_index: usize,
-    /// The fixture to add.
-    pub fixture: Box<super::Fixture>,
+    /// The obstacle to add. Its id must be new in the setup.
+    pub obstacle: Box<crate::compute::obstacle::Obstacle>,
 }
 
-/// The arguments of the `remove_fixture` command.
-#[derive(Debug, Clone)]
-pub struct RemoveFixtureArgs {
-    /// The index of the setup that holds the fixture.
-    pub setup_index: usize,
-    /// The id of the fixture to remove.
-    pub fixture_id: crate::ids::FixtureId,
-}
-
-/// The arguments of the `add_keep_out` command.
+/// The arguments of the `edit_obstacle` command (K1; the row is
+/// `ReplaceObstacle`).
 ///
-/// The keep-out twin of [`AddFixtureArgs`].
+/// The edit door, the enable and disable flip included. The payload is
+/// the whole record; the position in the list does not move.
 #[derive(Debug, Clone)]
-pub struct AddKeepOutArgs {
-    /// The index of the setup the zone joins.
+pub struct ReplaceObstacleArgs {
+    /// The index of the setup that holds the obstacle.
     pub setup_index: usize,
-    /// The zone to add.
-    pub zone: Box<super::KeepOutZone>,
+    /// The id of the obstacle to replace.
+    pub obstacle_id: crate::ids::ObstacleId,
+    /// The obstacle to install. Its id must be `obstacle_id`.
+    pub obstacle: Box<crate::compute::obstacle::Obstacle>,
 }
 
-/// The arguments of the `remove_keep_out` command.
+/// The arguments of the `remove_obstacle` command (K1).
 #[derive(Debug, Clone)]
-pub struct RemoveKeepOutArgs {
-    /// The index of the setup that holds the zone.
+pub struct RemoveObstacleArgs {
+    /// The index of the setup that holds the obstacle.
     pub setup_index: usize,
-    /// The id of the zone to remove.
-    pub zone_id: crate::ids::KeepOutId,
+    /// The id of the obstacle to remove.
+    pub obstacle_id: crate::ids::ObstacleId,
 }
 
 /// The arguments of the `add_stock_change` command (S2).
 ///
 /// The change joins the END of the setup's list. The record is boxed, as
-/// [`AddFixtureArgs`] boxes its fixture.
+/// [`AddObstacleArgs`] boxes its obstacle.
 #[derive(Debug, Clone)]
 pub struct AddStockChangeArgs {
     /// The index of the setup the change joins.
@@ -2363,6 +2299,31 @@ impl ProjectSession {
                     Ok(())
                 })
             }
+            Command::AdoptRestFreshComparison(args) => {
+                let AdoptRestFreshComparisonArgs {
+                    index,
+                    revision,
+                    times,
+                } = args;
+                let id = self
+                    .toolpath_configs
+                    .get(index)
+                    .ok_or(SessionError::ToolpathNotFound(index))?
+                    .id;
+                let current = self.toolpath_revision(index);
+                if current != revision {
+                    return Err(SessionError::StaleCompletion {
+                        index,
+                        submitted: revision,
+                        current,
+                    });
+                }
+                Ok(self.with_effects(None, move |session| {
+                    let _ = session
+                        .rest_fresh_comparisons
+                        .insert(id, super::rest_fresh::RestFreshRecord { revision, times });
+                }))
+            }
             Command::AdoptSimulation(args) => {
                 let AdoptSimulationArgs { result, epoch } = args;
                 // D7. The same guard `AdoptResult` makes, for the same
@@ -2446,12 +2407,6 @@ impl ProjectSession {
                 self.set_tool_param(args.index, &args.param, &args.value)
             }
             Command::ReplaceTool(args) => self.replace_tool(args.tool_id, *args.config),
-            Command::ReplaceFixture(args) => {
-                self.replace_fixture(args.setup_index, args.fixture_id, *args.fixture)
-            }
-            Command::ReplaceKeepOut(args) => {
-                self.replace_keep_out(args.setup_index, args.zone_id, *args.zone)
-            }
             Command::SetToolpathTool(args) => self.set_toolpath_tool(args.index, args.tool_id),
             Command::SetToolpathModel(args) => self.set_toolpath_model(args.index, args.model_id),
             Command::SetToolpathHeights(args) => self.set_heights_config(args.index, args.heights),
@@ -2494,16 +2449,16 @@ impl ProjectSession {
             Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
             Command::RemoveModel(args) => self.remove_model(args.index),
             Command::SetFaceSelection(args) => self.set_face_selection(args.index, args.face_ids),
-            Command::SetAlignmentPinDrillHoles(args) => {
-                self.set_alignment_pin_drill_holes(args.index, args.holes)
-            }
             Command::SetDrillSelectedHoles(args) => {
                 self.set_drill_selected_holes(args.index, args.selected_holes)
             }
-            Command::AddFixture(args) => self.add_fixture(args.setup_index, *args.fixture),
-            Command::RemoveFixture(args) => self.remove_fixture(args.setup_index, args.fixture_id),
-            Command::AddKeepOut(args) => self.add_keep_out(args.setup_index, *args.zone),
-            Command::RemoveKeepOut(args) => self.remove_keep_out(args.setup_index, args.zone_id),
+            Command::AddObstacle(args) => self.add_obstacle(args.setup_index, *args.obstacle),
+            Command::ReplaceObstacle(args) => {
+                self.replace_obstacle(args.setup_index, args.obstacle_id, *args.obstacle)
+            }
+            Command::RemoveObstacle(args) => {
+                self.remove_obstacle(args.setup_index, args.obstacle_id)
+            }
             Command::AddStockChange(args) => self.add_stock_change(args.setup_index, *args.change),
             Command::ReplaceStockChange(args) => {
                 self.replace_stock_change(args.setup_index, args.change_id, *args.change)

@@ -1069,7 +1069,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(FlatEndmill::new(6.35, 20.0)),
             6.35,
-            30.0,
             20.0,
             30.0,
             2,
@@ -1081,7 +1080,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
             6.35,
-            30.0,
             20.0,
             30.0,
             2,
@@ -1515,7 +1513,6 @@ mod tests {
         let ball = ToolDefinition::new(
             Box::new(BallEndmill::new(3.175, 12.0)),
             3.175,
-            10.0,
             25.0,
             35.0,
             2,
@@ -1993,7 +1990,6 @@ mod tests {
         ToolDefinition::new(
             Box::new(BallEndmill::new(6.0, 20.0)),
             6.0,
-            30.0,
             20.0,
             30.0,
             2,

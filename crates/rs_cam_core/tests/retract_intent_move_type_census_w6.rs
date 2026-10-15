@@ -299,7 +299,6 @@ fn add_tool(
     tool.diameter = diameter;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = name.to_owned();
@@ -691,7 +690,6 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
-                    holes: vec![[15.0, 15.0], [65.0, 45.0]],
                     ..AlignmentPinDrillConfig::default()
                 })
             },

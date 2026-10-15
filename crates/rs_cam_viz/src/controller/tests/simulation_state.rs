@@ -673,6 +673,7 @@ mod stock_material_legend_s5 {
                     display_degrade: None,
                     group_starts: Vec::new(),
                     stock_change_volumes,
+                    obstacle_collisions: Vec::new(),
                 },
                 playback_data: Vec::new(),
                 cut_trace_path: None,

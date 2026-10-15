@@ -6,11 +6,15 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use rs_cam_core::geo::P2;
-use rs_cam_core::ops::pocket::{PocketParams, pocket_toolpath};
-use rs_cam_core::ops::profile::{ProfileParams, ProfileSide, profile_toolpath};
-use rs_cam_core::ops::zigzag::{ZigzagParams, zigzag_toolpath};
+use rs_cam_core::ops::pocket::PocketParams;
+use rs_cam_core::ops::profile::{ProfileParams, ProfileSide};
+use rs_cam_core::ops::zigzag::ZigzagParams;
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
 use rs_cam_core::toolpath::MoveType;
+
+mod common;
+
+use common::kernels::{pocket_level, profile_level, zigzag_level};
 
 /// Helper: create a regular polygon (approximating a circle) with given center,
 /// radius, and number of vertices. Winding is CCW.
@@ -81,7 +85,7 @@ fn test_pocket_toolpath_within_bounds() {
             climb: false,
         };
 
-        let tp = pocket_toolpath(&polygon, &params);
+        let tp = pocket_level(&polygon, &params);
         if tp.moves.is_empty() {
             continue; // polygon too small for tool, which is fine
         }
@@ -143,7 +147,7 @@ fn test_no_nan_in_pocket_toolpath() {
                 climb: false,
             };
 
-            let tp = pocket_toolpath(&polygon, &params);
+            let tp = pocket_level(&polygon, &params);
             for (i, m) in tp.moves.iter().enumerate() {
                 assert!(
                     !m.target.x.is_nan() && !m.target.y.is_nan() && !m.target.z.is_nan(),
@@ -175,7 +179,7 @@ fn test_no_nan_in_profile_toolpath() {
                 compensate_in_controller: false,
             };
 
-            let tp = profile_toolpath(&polygon, &params);
+            let tp = profile_level(&polygon, &params);
             for (i, m) in tp.moves.iter().enumerate() {
                 assert!(
                     !m.target.x.is_nan() && !m.target.y.is_nan() && !m.target.z.is_nan(),
@@ -207,7 +211,7 @@ fn test_no_nan_in_zigzag_toolpath() {
                 angle,
             };
 
-            let tp = zigzag_toolpath(&polygon, &params);
+            let tp = zigzag_level(&polygon, &params);
             for (i, m) in tp.moves.iter().enumerate() {
                 assert!(
                     !m.target.x.is_nan() && !m.target.y.is_nan() && !m.target.z.is_nan(),
@@ -319,7 +323,7 @@ fn test_zigzag_toolpath_within_bounds() {
             angle: 0.0,
         };
 
-        let tp = zigzag_toolpath(&polygon, &params);
+        let tp = zigzag_level(&polygon, &params);
         if tp.moves.is_empty() {
             continue;
         }

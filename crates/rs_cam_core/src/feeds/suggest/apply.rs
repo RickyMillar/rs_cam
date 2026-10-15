@@ -7,7 +7,7 @@
 //! Split out of `feeds/suggest.rs` by P4; every item is unchanged apart from
 //! its visibility and the `use` lines.
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut};
 use crate::machine::MachineProfile;
@@ -925,9 +925,9 @@ pub fn feeds_preview_for_operation(
 /// ([`crate::session::ProjectSession::cutter_op_profile`]) populates
 /// [`SuggestContext::stock`], the strategy-advisor probe in
 /// `session::compute` passes `SuggestContext::default()`. **`None` means
-/// the pin clamp cannot be applied**, not that it was applied and found
-/// nothing to do — the value is left at the unclamped Suggest default,
-/// exactly as before, and generation's own emitter guard
+/// the pin depth cap cannot be applied**, not that it was applied and
+/// found nothing to do. The value is the Suggest default inside the
+/// schema range ([`peck_for_hole`]), and generation's own emitter guard
 /// ([`crate::ops::drill::fed_descents`]) remains the last line.
 pub fn apply_drill_defaults(
     operation: &mut OperationConfig,
@@ -949,7 +949,7 @@ pub fn apply_drill_defaults(
             // drill_depth values (e.g. 12 mm bit + 25 mm hole gives
             // 36 mm peck before clamping). Without this guard the
             // matrix `drill_no_peck_cycle` anti-pattern fires.
-            cfg.peck_depth = clamp_peck_to_depth(peck, cfg.depth);
+            cfg.peck_depth = peck_for_hole(OperationType::Drill, peck, Some(cfg.depth));
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             // Same clamp, same ceiling factor, against the depth this
@@ -957,27 +957,42 @@ pub fn apply_drill_defaults(
             // pin_drill`'s `let depth = stock_z + cfg.spoilboard_
             // penetration;` — if that expression moves, this one has to
             // move with it.
-            cfg.peck_depth = match stock {
-                Some(ctx) => clamp_peck_to_depth(peck, ctx.stock_z + cfg.spoilboard_penetration),
-                None => peck,
-            };
+            cfg.peck_depth = peck_for_hole(
+                OperationType::AlignmentPinDrill,
+                peck,
+                stock.map(|ctx| ctx.stock_z + cfg.spoilboard_penetration),
+            );
         }
         _ => {}
     }
 }
 
-/// Ensure the Suggest-default peck depth still produces a real peck
-/// cycle. If `peck >= depth` the operator gets a single-shot drill
-/// with no chip evacuation; clamp to a fixed fraction of the hole
-/// depth so the cycle always pecks at least twice. Chosen factor:
-/// 0.75 — keeps the peck count low (2 pecks for typical holes) while
-/// staying strictly below `drill_depth`.
-fn clamp_peck_to_depth(peck: f64, drill_depth: f64) -> f64 {
-    if !drill_depth.is_finite() || drill_depth <= 0.0 {
-        return peck;
+/// The peck Suggest writes for a hole of `drill_depth` (`None`: the depth
+/// is not known). One rule for every drill family:
+///
+/// 1. The peck is at most `0.75 × drill_depth`, so the cycle pecks at
+///    least twice. Chosen factor: 0.75, which keeps the peck count low
+///    (2 pecks for typical holes).
+/// 2. The peck stays inside the `peck_depth` range of the op's schema
+///    (`ParamDef`, B14). The setter refuses a value outside it, so Suggest
+///    does not write one. Where rule 1 gives less than the floor, the
+///    peck is the floor.
+/// 3. A hole shallower than the floor takes one peck equal to its depth.
+///    This is the only case that writes a peck under the floor.
+///
+/// A non-positive or non-finite depth counts as not known.
+fn peck_for_hole(op_type: OperationType, peck: f64, drill_depth: Option<f64>) -> f64 {
+    let depth = drill_depth.filter(|d| d.is_finite() && *d > 0.0);
+    let capped = depth.map_or(peck, |d| peck.min(d * 0.75));
+    let Some(range) = OperationConfig::param_range_for_type(op_type, "peck_depth") else {
+        return capped;
+    };
+    let bounds = range.inclusive_bounds();
+    let in_range = capped.max(*bounds.start()).min(*bounds.end());
+    match depth {
+        Some(d) if *bounds.start() > d => d,
+        _ => in_range,
     }
-    let ceiling = drill_depth * 0.75;
-    peck.min(ceiling)
 }
 
 /// Apply stock-aware overrides to defaults that require stock context.
