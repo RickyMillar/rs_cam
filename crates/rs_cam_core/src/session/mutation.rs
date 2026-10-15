@@ -23,11 +23,6 @@ use crate::polygon::Polygon2;
 // `pub(super)` binding would publish these names into `session` as well,
 // which the split does not need.
 use super::{DatumConfig, LoadedModel, ToolpathComputeResult};
-// `Command` and `RestoreToolpathSnapshotArgs` carry no code reference. Only
-// a doc link in `mutation/toolpath.rs` names them, and rustc does not count
-// a doc link as a use.
-#[allow(unused_imports)]
-use super::{Command, RestoreToolpathSnapshotArgs};
 
 mod config;
 mod entities;

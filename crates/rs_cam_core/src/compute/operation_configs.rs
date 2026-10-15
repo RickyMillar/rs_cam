@@ -1307,7 +1307,6 @@ pub struct PencilConfig {
     #[param(
         help = "Lateral step between offset cleanup passes around pencil traces.",
         range = 0.05..=10.0,
-        alias = "stepover",
     )]
     pub offset_stepover: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
@@ -2219,7 +2218,6 @@ pub struct RampFinishConfig {
     #[param(
         help = "Maximum Z step between ramp passes.",
         range = 0.05..=10.0,
-        alias = "depth_per_pass",
     )]
     pub max_stepdown: f64,
     #[param(help = HELP_SLOPE_FROM, range = 0.0..=90.0)]
@@ -2670,10 +2668,10 @@ macro_rules! depth_semantics_form {
 ///   so the plunge rate IS the feed rate.
 /// - `stepover:` the field behind `stepover` / `set_stepover`. Absent
 ///   means the config has no stepover and the trait default refuses the
-///   write. Pencil declares its alias `offset_stepover` here, and
-///   Waterline's `z_step` and RampFinish's `max_stepdown` are the same
-///   shape on `depth_per_pass` — which is what makes CMP-08's alias list
-///   greppable in one place.
+///   write. Pencil names `offset_stepover` here and RampFinish names
+///   `max_stepdown` on `depth_per_pass`. These feed the feeds accessors
+///   only: the setter accepts a name only when the registry publishes it
+///   (D2: no setter alias remains).
 /// - `depth_per_pass:` the field behind `depth_per_pass` /
 ///   `set_depth_per_pass`.
 /// - `total_depth:` the field behind `total_depth`.

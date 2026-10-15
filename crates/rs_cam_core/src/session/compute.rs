@@ -190,13 +190,10 @@ impl ResolvedGenInputs {
 /// recorder label, a dressup configuration and a post-clip region set
 /// are not executor inputs.
 ///
-/// **Five fields read the RAW operation, not the patched one.**
 /// `op_label`, `entry_probe_leave`, `feed_rate`, `plunge_rate` and
-/// `transform_capabilities` come from `ToolpathConfig::operation`, while
-/// the executor, the drill-op builder and the empty-generation gate read
-/// [`ResolvedGenInputs`]'s compute-time-patched copy. The tail made that
-/// split before WP10 split the function; reading these off the patched
-/// copy would change the answer.
+/// `transform_capabilities` come from `ToolpathConfig::operation`. Since
+/// W6.5 no session code patches the operation, so [`ResolvedGenInputs`]
+/// holds the same value.
 ///
 /// `Clone`: the fresh twin of a rest generation reads a copy with
 /// `StockSource::Fresh` ([`fresh_twin_cycle_time`]).
@@ -237,6 +234,9 @@ pub struct GenContext {
     ramp_feed_rate: Option<f64>,
     /// The RAW operation's transform capabilities.
     transform_capabilities: crate::compute::catalog::OperationTransformCapabilities,
+    /// The RAW operation's XY territory rule. D2: the boundary clip of
+    /// `clip_and_split_entries` reads `session_clip_applies`.
+    territory_xy: crate::compute::catalog::TerritoryXy,
     /// The simulated machined-stock snapshot this toolpath's id names,
     /// read from `self.simulation.prior_stocks`.
     ///
@@ -514,9 +514,9 @@ impl<'a> GenObserver<'a> {
 /// nothing: the answer goes back to the session through step (iii),
 /// `apply(Command::AdoptResult { .. })`.
 ///
-/// SES-04: the body is four ordered calls on [`JobPhases`], one per phase
-/// the observer already names — the operation label, `Apply dressups`,
-/// `Clip to boundary` and `Compute stats`. Only the recorder lifecycle
+/// SES-04: the body calls [`JobPhases::run_stages`] (the operation label,
+/// `Apply dressups`, `Clip to boundary`) and then `finish` (`Compute
+/// stats`), the phases the observer already names. Only the recorder lifecycle
 /// and the refusal doors stay here, because each of them chooses what to
 /// do with the two traces.
 ///
@@ -563,8 +563,8 @@ pub fn execute_job(
         semantic_root: &semantic_root,
     };
 
-    let (annotated, mut findings) = match phases.generate(cancel) {
-        Ok(generated) => generated,
+    let (annotated, findings) = match phases.run_stages(cancel, &semantic_recorder) {
+        Ok(staged) => staged,
         Err(e) => {
             let _ = debug_recorder.finish();
             let _ = semantic_recorder.finish();
@@ -572,22 +572,6 @@ pub fn execute_job(
             return Err(e);
         }
     };
-
-    // C1: the index-carrying channels this call site owns. The session
-    // produces a semantic trace, so its recorder is registered here once
-    // and every transform below reconciles against it — dressups, the
-    // boundary clip and the entry-descent split alike.
-    let mut channels =
-        crate::trace::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
-
-    let annotated = phases.apply_dressups(annotated, &mut channels);
-    // Checkpoint C (Q2): the boundary clip can add a finding of its own,
-    // so the findings stay mutable until the join in `finish`.
-    //
-    // A refused clip propagates with the phase string still set and both
-    // recorders dropped unread, which is what this door did before the
-    // split.
-    let annotated = phases.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
 
     // Operator ruling 2026-10-15: a rest operation keeps its planned cycle
     // time for the on-demand comparison with its fresh twin. One
@@ -605,9 +589,8 @@ pub fn execute_job(
             )
         });
 
-    // `channels` borrows `semantic_recorder`, which `finish` consumes. The
-    // borrow ends at the line above, so no explicit drop is needed —
-    // `ReconcileSet` implements no `Drop` and `drop_non_drop` refuses one.
+    // `run_stages` held the channels that borrow `semantic_recorder`;
+    // that borrow ended when it returned, so `finish` may consume it.
     phases.finish(
         annotated,
         findings,
@@ -667,13 +650,7 @@ pub(crate) fn fresh_twin_cycle_time(
         debug_root: &debug_root,
         semantic_root: &semantic_root,
     };
-    let (annotated, mut findings) = phases.generate(cancel).ok()?;
-    let mut channels =
-        crate::trace::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
-    let annotated = phases.apply_dressups(annotated, &mut channels);
-    let annotated = phases
-        .clip_and_split_entries(annotated, &mut channels, &mut findings)
-        .ok()?;
+    let (annotated, _) = phases.run_stages(cancel, &semantic_recorder).ok()?;
     if annotated.toolpath.moves.is_empty() {
         return None;
     }
@@ -688,8 +665,8 @@ pub(crate) fn fresh_twin_cycle_time(
 /// The per-job state the four [`execute_job`] phases share (SES-04).
 ///
 /// It carries no output. Each phase takes the running toolpath and hands
-/// it back, so the phase order is the order of the four calls in
-/// [`execute_job`] and nothing else.
+/// it back, so the phase order is the order of the calls in
+/// [`JobPhases::run_stages`] and then `finish`, and nothing else.
 struct JobPhases<'a, 'o> {
     inputs: &'a ResolvedGenInputs,
     context: &'a GenContext,
@@ -708,6 +685,36 @@ impl JobPhases<'_, '_> {
     ///
     /// The phase string is the operation label, which is the first of the
     /// four seams `execute_job`'s doc names.
+    /// The stages of one generation up to `finish`, in order: the
+    /// dispatch (with the generic rest analysis, `generate`), the dressups,
+    /// then the boundary clip and the entry split. The ONE call site of
+    /// each stage; [`execute_job`] and [`fresh_twin_cycle_time`] both call
+    /// this.
+    ///
+    /// C1: the index-carrying channels are built here. The session
+    /// produces a semantic trace, so its recorder is registered once and
+    /// every transform reconciles against it. Checkpoint C (Q2): the
+    /// boundary clip can add a finding of its own, so the findings stay
+    /// mutable until the join in `finish`.
+    fn run_stages(
+        &self,
+        cancel: &AtomicBool,
+        semantic_recorder: &ToolpathSemanticRecorder,
+    ) -> Result<
+        (
+            crate::compute::execute::GeneratedToolpath,
+            crate::compute::execute::GenerationFindings,
+        ),
+        SessionError,
+    > {
+        let (annotated, mut findings) = self.generate(cancel)?;
+        let mut channels =
+            crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
+        let annotated = self.apply_dressups(annotated, &mut channels);
+        let annotated = self.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
+        Ok((annotated, findings))
+    }
+
     fn generate(
         &self,
         cancel: &AtomicBool,
@@ -893,8 +900,9 @@ impl JobPhases<'_, '_> {
         // After dressups, clip the toolpath to the machining boundary
         // (matching the GUI compute path). Spans are precisely
         // remapped through the clip via the input→output provenance
-        // map (S83) so spans_valid stays true.
-        if self.inputs.boundary_config.enabled {
+        // map (S83) so spans_valid stays true. D2: an op whose territory
+        // rule is `SetupMap` (Pin Drill) is never clipped.
+        if self.inputs.boundary_config.enabled && self.context.territory_xy.session_clip_applies() {
             self.observer.set_phase("Clip to boundary");
             let _boundary_scope = self.observer.records_dressup_items().then(|| {
                 self.debug_root
@@ -2509,6 +2517,7 @@ impl ProjectSession {
             // G-RAMPCLAMP: the entry never runs faster than the cut feed.
             ramp_feed_rate: tc.operation.entry_feed_rate(),
             transform_capabilities: tc.operation.capabilities().transform,
+            territory_xy: tc.operation.capabilities().territory_xy,
             prior_stock,
             source_stock,
             link_kinematics,

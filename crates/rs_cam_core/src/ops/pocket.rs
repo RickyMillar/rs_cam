@@ -101,6 +101,10 @@ pub(crate) fn pocket_toolpath_reported_with_cancel(
 /// per level.
 ///
 /// `params.cut_depth` is ignored — `levels` supplies the Z for every pass.
+///
+/// D2: only the G2 unit test below calls it; production steps Z in
+/// `compute::execute::layered::run_layered`.
+#[cfg(test)]
 pub fn pocket_toolpath_at_levels_reported_with_cancel(
     polygon: &Polygon2,
     levels: &[f64],

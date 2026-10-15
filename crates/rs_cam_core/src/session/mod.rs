@@ -564,8 +564,8 @@ pub use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
 // save dropped it: set "Z Datum = Machine Table", reload, and the panel
 // read "Stock Top" again with nothing in the file to say otherwise. It
 // is operator-set and safety-relevant, so it belongs to the project, not
-// to a window. `to_key`/`from_key` follow `FixtureKind`'s convention and
-// use the same spellings the viz fallback schema already wrote.
+// to a window. `to_key`/`from_key` use the same spellings the viz
+// fallback schema already wrote.
 
 /// Which corner of the stock the operator probes for the XY datum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

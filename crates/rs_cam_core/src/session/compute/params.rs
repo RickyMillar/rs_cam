@@ -40,11 +40,9 @@ fn unknown_param_error(
     operation: &crate::compute::catalog::OperationConfig,
     param: &str,
 ) -> SessionError {
-    // CMP-08: `param_names` carries the aliases this module's named arms
-    // write (RampFinish `depth_per_pass`, Pencil `stepover`), and the
-    // toolpath-level names follow it. Before that the list omitted a name
-    // this setter accepts, so the message told the caller a name was
-    // invalid while the setter took it.
+    // CMP-08: `param_names` is every name this setter accepts, and the
+    // toolpath-level names follow it. D2: no op publishes a setter alias,
+    // so the named arms accept a name only when the op publishes it.
     SessionError::InvalidParam(format!(
         "unknown parameter '{param}' for {} operation. Valid parameters: {}. \
          Toolpath parameters: {}",
@@ -215,8 +213,11 @@ impl ProjectSession {
                 // the field. On `false` nothing was written, so the
                 // caller gets the serde arm's own refusal. The
                 // provenance stamp below and the result invalidation at
-                // the end of this function are never reached.
-                if !tc.operation.set_stepover(v) {
+                // the end of this function are never reached. The feeds
+                // accessor also reaches Pencil `offset_stepover`; D2: the
+                // arm accepts only a name the registry publishes, so
+                // `stepover` refuses on Pencil.
+                if !tc.operation.param_names().contains(&param) || !tc.operation.set_stepover(v) {
                     return Err(unknown_param_error(&tc.operation, param));
                 }
                 tc.feeds_provenance.set(
@@ -231,11 +232,11 @@ impl ProjectSession {
                 check_param_range(&tc.operation, param, v)?;
                 // N5, as for `stepover` above. This arm writes through the
                 // feeds accessor, which also reaches a field with another
-                // name: RampFinish `max_stepdown` (an alias the registry
-                // publishes, CMP-08) and Waterline `z_step` (C1: no alias,
-                // so the name refuses here). The arm accepts only a name
-                // the registry publishes for the op, so the setter and
-                // the schema agree.
+                // name: RampFinish `max_stepdown` (D2) and Waterline
+                // `z_step` (C1). Neither publishes `depth_per_pass`, so the
+                // name refuses here. The arm accepts only a name the
+                // registry publishes for the op, so the setter and the
+                // schema agree.
                 if !tc.operation.param_names().contains(&param)
                     || !tc.operation.set_depth_per_pass(v)
                 {

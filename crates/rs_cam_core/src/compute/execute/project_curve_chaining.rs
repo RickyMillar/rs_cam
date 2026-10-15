@@ -176,6 +176,16 @@ fn generate_with(
     stock: Option<&TriDexelStock>,
     boundary_regions: Option<&[Polygon2]>,
 ) -> AnnotatedToolpath {
+    generate_with_findings(cfg, safe_z, stock, boundary_regions).0
+}
+
+/// [`generate_with`], and the findings the run recorded.
+fn generate_with_findings(
+    cfg: ProjectCurveConfig,
+    safe_z: f64,
+    stock: Option<&TriDexelStock>,
+    boundary_regions: Option<&[Polygon2]>,
+) -> (AnnotatedToolpath, GenerationFindings) {
     let (mesh, index) = plate();
     let polys = curves();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
@@ -205,8 +215,9 @@ fn generate_with(
             &cancel,
         )
     };
-    execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
-        .expect("project_curve generates on the flat-plate fixture")
+    let generated = execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
+        .expect("project_curve generates on the flat-plate fixture");
+    (generated, findings.into_inner())
 }
 
 fn generate(chain_distance_mm: f64) -> AnnotatedToolpath {
@@ -352,6 +363,31 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
 }
 
 // ── 2. The air it is supposed to remove ──────────────────────────────────
+
+/// G-LINKVISIBLE (D2): the curve runner records the chain-link totals
+/// only when the link stage ran. With chaining off nothing is recorded;
+/// with chaining on, the totals count every fragment and the links.
+#[test]
+fn the_chain_link_totals_are_recorded_only_when_the_stage_ran() {
+    let (_, off) = generate_with_findings(project_curve_config(0.0), SAFE_Z_MM, None, None);
+    assert!(off.relink.is_none(), "no stage, no link totals");
+
+    let (_, on) = generate_with_findings(
+        project_curve_config(CANDIDATE_CHAIN_MM),
+        SAFE_Z_MM,
+        None,
+        None,
+    );
+    let totals = on.relink.expect("a stage that ran records its totals");
+    assert_eq!(
+        totals.fragments, CHAIN_COUNT,
+        "one fragment per projected chain"
+    );
+    assert!(
+        totals.surface_links + totals.retract_links > 0,
+        "the stage decided at least one junction: {totals:?}"
+    );
+}
 
 /// Two independent readings of the same claim: the production channel
 /// (`compute_retract_trips`, what the diagnostics surfaces report) and a

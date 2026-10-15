@@ -6,6 +6,7 @@
 //! 1. XY containment: the boundary region set of the finishes, or the
 //!    outline and the centre containment of the 3D Rough planner. Pencil and
 //!    the 2D ops read none; the session clips their result after generation.
+//!    Pin Drill reads none and the session does not clip it (D2, `SetupMap`).
 //! 2. A surface cell mask: the slope band, the steep/shallow threshold, the
 //!    flat-area threshold or the unified bands.
 //! 3. Material presence: the remaining stock, through the W2.1 guard
@@ -43,6 +44,9 @@
 //! - An area op (Pocket, Zigzag, Face, 2D Adaptive) removes the cutter
 //!   material footprints from its outlines ([`Territory::area_outlines`]);
 //!   it insets the result by the cutter radius as it insets any outline.
+//! - A [`XyTerritory::SetupMap`] op (Pin Drill, D2) reads no XY territory
+//!   and gets no pre-clip: its holes are absolute setup-map positions. The
+//!   session's obstacle step still applies to it.
 //!
 //! The pre-clip reads the CUTTER band only. The shank and holder bands
 //! reach an obstacle only below their own ceilings, which depend on the
@@ -74,6 +78,9 @@ pub enum XyTerritory<'a> {
     /// The op reads no XY containment while it plans. The session clips the
     /// result after generation.
     ClipAfter,
+    /// The op reads no XY containment, and the session does not clip the
+    /// result (D2: absolute setup-map positions, Pin Drill).
+    SetupMap,
     /// The boundary region set the op pre-clips to. `None`: no boundary and
     /// no obstacle in reach.
     Regions(Option<RegionSet<'a>>),
@@ -202,6 +209,7 @@ impl<'a> Territory<'a> {
         let obstacles = ctx.obstacles.filter(|view| !view.is_empty());
         let xy = match caps.territory_xy {
             TerritoryXy::ClipAfter => XyTerritory::ClipAfter,
+            TerritoryXy::SetupMap => XyTerritory::SetupMap,
             TerritoryXy::Regions => {
                 XyTerritory::Regions(regions_less_obstacles(ctx, &inputs, obstacles))
             }
@@ -247,7 +255,9 @@ impl<'a> Territory<'a> {
     pub fn regions(&self) -> Option<&RegionSet<'a>> {
         match &self.xy {
             XyTerritory::Regions(regions) => regions.as_ref(),
-            XyTerritory::ClipAfter | XyTerritory::PlannerBounds { .. } => None,
+            XyTerritory::ClipAfter | XyTerritory::SetupMap | XyTerritory::PlannerBounds { .. } => {
+                None
+            }
         }
     }
 
@@ -259,7 +269,9 @@ impl<'a> Territory<'a> {
             XyTerritory::PlannerBounds { outline, centre } => {
                 (outline.as_deref(), centre.as_deref())
             }
-            XyTerritory::ClipAfter | XyTerritory::Regions(_) => (None, None),
+            XyTerritory::ClipAfter | XyTerritory::SetupMap | XyTerritory::Regions(_) => {
+                (None, None)
+            }
         }
     }
 

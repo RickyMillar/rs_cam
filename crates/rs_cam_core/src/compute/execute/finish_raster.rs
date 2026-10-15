@@ -483,4 +483,3 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         })
     }
 }
-// ── Public API ────────────────────────────────────────────────────────

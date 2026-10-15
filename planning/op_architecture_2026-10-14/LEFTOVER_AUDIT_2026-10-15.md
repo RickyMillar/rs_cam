@@ -1,5 +1,7 @@
 # Operation architecture: what is not done (leftover audit, 2026-10-15)
 
+> **CLOSED** by W6.2-W6.5, C1-C3, D1 (321615b1) and D2. `FINAL_AUDIT_2026-10-16.md` re-audited every item; `PLAN.md` holds the status.
+
 Baseline: branch `op-arch` at `ad370323`. The working tree has no edits under
 `crates/` (only `.mcp.json`, `planning/rivmap_block_job/testpiece.toml`,
 `.pi/`). So no W6.3 code is in the tree yet. The W6.3 marks below come from

@@ -928,7 +928,7 @@ fn draw_geometry_tab(
                 return;
             }
             if entry.stock_source == StockSource::Fresh {
-                // `resolve_rest_reference` prefers the machined stock
+                // `RestReferenceChoice::resolve` prefers the machined stock
                 // whenever it overlaps, so under "After previous ops"
                 // this combo is inert and naming it would be a lie.
                 ui.horizontal(|ui| {

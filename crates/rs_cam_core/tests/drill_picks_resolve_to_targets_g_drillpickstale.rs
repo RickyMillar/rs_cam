@@ -173,8 +173,8 @@ fn drill_op(picks: &[[f64; 2]]) -> OperationConfig {
     })
 }
 
-/// A pin drill whose ONLY holes are picks — `holes` (the stock alignment
-/// pin snapshot) is empty, so the emitted columns are exactly the picks.
+/// A pin drill whose ONLY holes are picks — the setup has no alignment
+/// pins, so the emitted columns are exactly the picks.
 fn pin_drill_op(picks: &[[f64; 2]]) -> OperationConfig {
     OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
         diameter: 6.0,

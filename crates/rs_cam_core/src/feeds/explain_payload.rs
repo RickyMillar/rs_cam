@@ -19,7 +19,7 @@
 use super::vendor_lookup::{LookupQuery, MatchedRow, find_best_row_for_geometry};
 use super::vendor_lut::ToolFamily;
 use super::{FeedsInput, FeedsResult, calculate, vendor_normalize};
-use crate::compute::catalog::OperationType;
+use crate::compute::catalog::LutRoute;
 use crate::machine::{MachineProfile, PowerModel};
 
 /// Snapshot of the machine envelope used by the nomogram chart.
@@ -155,9 +155,11 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
         .vendor_lut
         .and(vendor_normalize::to_lookup_query(input));
     // Operator ruling 2026-09-25: a `ProjectCurve` on a V-bit routes to the
-    // printed Trace rows. Named here, once, for the field below.
-    let project_curve_vbit_routed_to_trace = input.operation_kind
-        == Some(OperationType::ProjectCurve)
+    // printed Trace rows. Named here, once, for the field below. D2: the
+    // row's `lut_route` says the cutter picks the rows.
+    let project_curve_vbit_routed_to_trace = input
+        .operation_kind
+        .is_some_and(|op| op.capabilities().lut_route == LutRoute::ByCutter)
         && input.tool_geometry.cutter_kind().lut_family() == ToolFamily::ChamferVbit;
     let (query, matched_row) = match (input.vendor_lut, routed_query) {
         (Some(lut), Some(query)) => {

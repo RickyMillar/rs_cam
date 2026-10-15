@@ -31,16 +31,15 @@
 //!    Every operation that does not gets the generic arm's own
 //!    `unknown parameter '<name>'` refusal. The two populations come
 //!    from the registry, never from a literal list, and the reject
-//!    counts (11 and 14) are asserted, so the test cannot pass
+//!    counts (12 and 16) are asserted, so the test cannot pass
 //!    vacuously.
 //! 2. A refusal has no side effect: the cached result survives and the
 //!    provenance record does not move.
-//! 3. The three ALIAS setters keep working. `stepover` on Pencil writes
-//!    `offset_stepover`, `depth_per_pass` on Waterline writes `z_step`,
-//!    and `depth_per_pass` on RampFinish writes `max_stepdown`. The named
-//!    arm is their only route. A fix that deletes the arms breaks them.
-//!    Since CMP-08 the registry publishes all three names as `ParamDef`
-//!    aliases, so assertion 1's two populations read the registry alone.
+//! 3. No setter alias remains (C1, D2). `stepover` on Pencil and
+//!    `depth_per_pass` on RampFinish refuse, and the field behind the
+//!    feeds accessor (`offset_stepover`, `max_stepdown`) does not move.
+//!    Each field takes its published name. Assertion 1's two populations
+//!    read the registry alone.
 //! 4. Positive control: Pocket accepts `stepover` and stamps `Manual`.
 //! 5. The five numeric named arms and the generic arm call one shared
 //!    range helper, read from the source text.
@@ -87,31 +86,29 @@ use serde_json::json;
 /// `params` child. The needle is the method, so this path follows it.
 const SESSION_COMPUTE_SRC: &str = include_str!("../src/session/compute/params.rs");
 
-/// Operations whose config has no `stepover` field.
-const EXPECTED_STEPOVER_REJECTS: usize = 11;
+/// Operations that publish no `stepover`. D2 deleted the Pencil alias of
+/// `offset_stepover`, so Pencil joined this set (12).
+const EXPECTED_STEPOVER_REJECTS: usize = 12;
 
-/// Operations whose config has no `depth_per_pass` field. C1 deleted the
-/// Waterline alias of `z_step`, so Waterline joined this set (15).
-const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 15;
+/// Operations that publish no `depth_per_pass`. C1 deleted the Waterline
+/// alias of `z_step` and D2 the RampFinish alias of `max_stepdown`, so
+/// both joined this set (16).
+const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 16;
 
 // ── the two populations, from the registry ───────────────────────
 
 /// `stepover` reaches a field on this operation.
 ///
-/// The registry's `param_defs` is now the record for EVERY operation.
-/// This used to carry `|| op == OperationType::Pencil`, because Pencil's
-/// named arm wrote `offset_stepover` under a name the registry did not
-/// publish. CMP-08 publishes it as a `ParamDef` alias, so the hand-written
-/// escape is gone and this predicate derives.
+/// The registry's `param_defs` is the record for EVERY operation, so
+/// this predicate derives. Pencil's `offset_stepover` has no alias (D2).
 fn accepts_stepover(op: OperationType) -> bool {
     OperationConfig::param_names_for_type(op).contains(&"stepover")
 }
 
 /// `depth_per_pass` reaches a field on this operation.
 ///
-/// Waterline writes `z_step` and RampFinish writes `max_stepdown`. Both
-/// were alias-only escapes here, like Pencil above, and both are registry
-/// aliases since CMP-08.
+/// Waterline `z_step` (C1) and RampFinish `max_stepdown` (D2) have no
+/// alias, so both refuse this name.
 fn accepts_depth_per_pass(op: OperationType) -> bool {
     OperationConfig::param_names_for_type(op).contains(&"depth_per_pass")
 }
@@ -287,7 +284,7 @@ fn a_refused_write_keeps_the_cached_result_and_the_provenance() {
     );
 }
 
-// ── 3. the three alias setters ───────────────────────────────────
+// ── 3. no setter alias ───────────────────────────────────────────
 
 fn pencil_offset_stepover(op: &OperationConfig) -> f64 {
     let OperationConfig::Pencil(cfg) = op else {
@@ -303,11 +300,13 @@ fn ramp_finish_max_stepdown(op: &OperationConfig) -> f64 {
     cfg.max_stepdown
 }
 
-/// Write `param` on a default `op` and read the aliased field back.
+/// Write the retired `alias` on a default `op`: the setter refuses and
+/// the field does not move. Then the published `name` writes the field.
 #[track_caller]
-fn alias_writes_through(
+fn alias_refuses_and_name_writes(
     op: OperationType,
-    param: &str,
+    alias: &str,
+    name: &str,
     value: f64,
     read: fn(&OperationConfig) -> f64,
 ) {
@@ -318,20 +317,35 @@ fn alias_writes_through(
     );
 
     let mut session = single_op("N5 alias", OperationConfig::new_default(op));
-    let outcome = session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
-        index: 0,
-        param: param.to_owned(),
-        value: json!(value),
-    }));
-    if let Err(e) = outcome {
-        panic!("{op:?} aliases `{param}` onto a real field: {e}");
-    }
+    let write = |session: &mut ProjectSession, param: &str| {
+        session.apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: param.to_owned(),
+            value: json!(value),
+        }))
+    };
+    let Err(err) = write(&mut session, alias) else {
+        panic!("{op:?} accepted the retired alias `{alias}`");
+    };
+    assert!(
+        err.to_string()
+            .contains(&format!("unknown parameter '{alias}'")),
+        "{op:?}: the refusal must reuse the generic arm's wording: {err}"
+    );
+    let tc = session.get_toolpath_config(0).expect("config exists");
+    assert!(
+        (read(&tc.operation) - before).abs() < 1e-12,
+        "{op:?}: the refused `{alias}` moved the field"
+    );
 
-    let tc = session.get_toolpath_config(0).expect("alias config exists");
+    if let Err(e) = write(&mut session, name) {
+        panic!("{op:?} must accept its published `{name}`: {e}");
+    }
+    let tc = session.get_toolpath_config(0).expect("config exists");
     let after = read(&tc.operation);
     assert!(
         (after - value).abs() < 1e-12,
-        "{op:?}: `{param}` must reach the aliased field; got {after}"
+        "{op:?}: `{name}` must reach its field; got {after}"
     );
 }
 
@@ -432,21 +446,22 @@ fn every_name_the_setter_accepts_is_published() {
     );
 }
 
-/// Assertion 3. The named arms are the only route to these two fields;
-/// since CMP-08 the registry publishes both names as `ParamDef` aliases
-/// of the field each one writes. C1 deleted the third alias (Waterline
-/// `depth_per_pass` onto `z_step`); the reject count above holds it.
+/// Assertion 3. C1 deleted the Waterline alias (`depth_per_pass` onto
+/// `z_step`); D2 deleted the last two. The feeds accessor still reaches
+/// these fields, but the setter accepts only the published name.
 #[test]
-fn the_alias_setters_still_write_through_the_named_arms() {
-    alias_writes_through(
+fn a_retired_alias_refuses_and_the_published_name_writes() {
+    alias_refuses_and_name_writes(
         OperationType::Pencil,
         "stepover",
+        "offset_stepover",
         0.37,
         pencil_offset_stepover,
     );
-    alias_writes_through(
+    alias_refuses_and_name_writes(
         OperationType::RampFinish,
         "depth_per_pass",
+        "max_stepdown",
         0.41,
         ramp_finish_max_stepdown,
     );

@@ -635,7 +635,7 @@ impl ProjectSession {
     ///
     /// **This has no production caller.** A caller that also writes the
     /// values takes
-    /// [`RestoreToolpathSnapshotArgs`](super::RestoreToolpathSnapshotArgs),
+    /// [`RestoreToolpathSnapshotArgs`](crate::session::RestoreToolpathSnapshotArgs),
     /// so one command writes the values and the stamp together.
     pub(crate) fn set_feeds_provenance(
         &mut self,
@@ -871,7 +871,7 @@ impl ProjectSession {
     /// `FromRemainingStock` chain was never invalidated either.
     ///
     /// The GUI inspector was the other such caller until WP5. It takes
-    /// [`Command::ReplaceToolpathConfig`](super::Command) now, which
+    /// [`Command::ReplaceToolpathConfig`](crate::session::Command) now, which
     /// carries the same gate inside core. The funnel keeps this door
     /// until §15 ruling 4 folds `ApplyFeeds` into a row of its own.
     pub(crate) fn invalidate_toolpath_inputs(&mut self, index: usize) -> Effects {

@@ -1414,8 +1414,9 @@ fn append_relink_totals(
     let Some(r) = relink else {
         return;
     };
-    // Which hookup dial tunes this op's link stage. Four families write
-    // `ToolpathStats::relink` and each spells its dial differently, so one
+    // Which hookup dial tunes this op's link stage. Five families write
+    // `ToolpathStats::relink` (Project Curve since D2) and each spells its
+    // dial differently, so one
     // name for all sends three quarters of the readers to a field their op
     // does not have. The registry row states the dial
     // (`Capabilities::relink_dial`, W2.4). With no kind in scope the line

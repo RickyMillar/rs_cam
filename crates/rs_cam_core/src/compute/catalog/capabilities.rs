@@ -19,6 +19,10 @@
 //! (`clearing_strategy_dial`), the modulation planner floor
 //! (`planner_uniform_engagement`) and two height checks
 //! (`top_on_stock_box`, `floor_inside_stock`).
+//!
+//! D2 moved the vendor-table routing of the feeds lookup here
+//! (`lut_route`, read by `feeds::vendor_normalize::lut_query_for` and the
+//! explain payload).
 
 use super::{FeedsHints, OperationTransformCapabilities};
 use crate::compute::execute::LinkCeilingNeed;
@@ -81,7 +85,8 @@ pub struct Capabilities<P = EntryProbe> {
     /// `FromRemainingStock` (W3.4, AUDIT.md "Rest is not one thing").
     pub rest_use: RestUse,
     /// The XY containment the op reads while it plans (W6.2, AUDIT.md
-    /// "Territory is three concepts"). `compute::execute::Territory`
+    /// "Territory is three concepts"), and whether the session boundary
+    /// clip applies after generation (D2). `compute::execute::Territory`
     /// resolves it once per op.
     pub territory_xy: TerritoryXy,
     /// The op plans finish bands (C2). The narration then states a
@@ -119,6 +124,10 @@ pub struct Capabilities<P = EntryProbe> {
     /// measures its depth below the mesh, and Pin Drill goes into the
     /// spoilboard on purpose: both state `false`.
     pub floor_inside_stock: bool,
+    /// How the feeds lookup routes the op's (family, role) query to the
+    /// vendor table rows (D2). Read by
+    /// `feeds::vendor_normalize::lut_query_for` and `feeds::explain`.
+    pub lut_route: LutRoute,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -166,6 +175,7 @@ impl<P> Capabilities<P> {
             planner_uniform_engagement: self.planner_uniform_engagement,
             top_on_stock_box: self.top_on_stock_box,
             floor_inside_stock: self.floor_inside_stock,
+            lut_route: self.lut_route,
         }
     }
 }
@@ -223,9 +233,9 @@ impl RestUse {
     /// (`Territory::reference_stock`): `Reference` and `ContourFilter`.
     /// Every other rule reads the stock without the guard, or not at all.
     ///
-    /// The ONE exhaustive match on the rule outside the registry. A
-    /// runner or an adapter that owns one rule compares with `==`; a new
-    /// rule must answer here first.
+    /// A new rule must answer here and in the Layered runner's
+    /// `prepare_outline` (both matches are exhaustive). An adapter that
+    /// owns one rule compares with `==`.
     #[must_use]
     pub const fn reads_reference_stock(self) -> bool {
         match self {
@@ -242,7 +252,8 @@ impl RestUse {
 }
 
 /// The XY containment an operation reads while it plans (W6.2). The
-/// session clips every result to the machining boundary after generation;
+/// session clips the result to the machining boundary after generation,
+/// except for [`Self::SetupMap`] ([`Self::session_clip_applies`], D2);
 /// this states what the op reads BEFORE that clip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerritoryXy {
@@ -257,6 +268,46 @@ pub enum TerritoryXy {
     /// centre containment (G-BOUNDARYPHANTOM), both inputs of
     /// `TerritoryInputs`. 3D Rough.
     PlannerBounds,
+    /// No XY territory applies, before or after generation (D2 ruling).
+    /// The op's positions are absolute setup-map positions that go
+    /// through the whole stock, so a boundary must not move or drop them.
+    /// The obstacle step still applies. Pin Drill.
+    SetupMap,
+}
+
+impl TerritoryXy {
+    /// True when the session clips the generated toolpath to the
+    /// machining boundary (`clip_and_split_entries`). Every rule except
+    /// [`Self::SetupMap`].
+    #[must_use]
+    pub const fn session_clip_applies(self) -> bool {
+        match self {
+            Self::ClipAfter | Self::Regions | Self::PlannerBounds => true,
+            Self::SetupMap => false,
+        }
+    }
+}
+
+/// How the feeds lookup routes an op's (family, role) query to the vendor
+/// table rows (D2). Before D2 this was three op-type compares in
+/// `feeds::vendor_normalize::lut_query_for` and one in `feeds::explain`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LutRoute {
+    /// The query reads the rows of the op's own family and role.
+    AsStated,
+    /// An `Adaptive` family query reads the `Pocket` rows of the same
+    /// role. 3D Rough.
+    AdaptiveAsPocket,
+    /// G-DCFLAT: a flat end mill on a `Parallel` query reads the
+    /// (`Pocket`, `Roughing`) rows, as the 3D Rough does. The table has no
+    /// flat-end `Parallel` row. Every other query reads as stated. Drop
+    /// Cutter.
+    FlatParallelAsRoughPocket,
+    /// The cutter class picks the rows, not the op's family (operator
+    /// ruling 2026-09-25): ball, tapered ball and bull nose read
+    /// (`Parallel`, `Finish`), a flat end (`Contour`, `Finish`), a V-bit
+    /// (`Trace`, `Finish`), and a facing bit refuses. Project Curve.
+    ByCutter,
 }
 
 /// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster

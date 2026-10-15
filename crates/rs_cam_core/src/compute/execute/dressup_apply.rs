@@ -936,5 +936,3 @@ pub fn apply_dressups(
         produced: current.produced,
     }
 }
-
-// ── Internal helpers ──────────────────────────────────────────────────

@@ -5,7 +5,7 @@ use super::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
 use super::{FeedsInput, OperationFamily, PassRole};
-use crate::compute::catalog::OperationType;
+use crate::compute::catalog::{LutRoute, OperationType};
 use crate::material::{Material, PlasticHardness};
 
 /// **The single site that decides which vendor-LUT family a query names.**
@@ -78,23 +78,34 @@ pub fn lut_query_for(
     operation_family: LutOperationFamily,
     pass_role: LutPassRole,
 ) -> Option<(LutOperationFamily, LutPassRole)> {
-    if operation_kind == OperationType::Adaptive3d
-        && operation_family == LutOperationFamily::Adaptive
-    {
-        return Some((LutOperationFamily::Pocket, pass_role));
+    // D2: the op's registry row states its route (`Capabilities::lut_route`).
+    match operation_kind.capabilities().lut_route {
+        LutRoute::AsStated => Some((operation_family, pass_role)),
+        LutRoute::AdaptiveAsPocket => {
+            if operation_family == LutOperationFamily::Adaptive {
+                Some((LutOperationFamily::Pocket, pass_role))
+            } else {
+                Some((operation_family, pass_role))
+            }
+        }
+        // G-DCFLAT: a flat end mill on a drop-cutter raster is a roughing
+        // use. Route it to the roughing pocket row the Adaptive3d rough
+        // resolves; the LUT has no flat-end Parallel row to answer with.
+        LutRoute::FlatParallelAsRoughPocket => {
+            if tool_family == ToolFamily::FlatEnd
+                && operation_family == LutOperationFamily::Parallel
+            {
+                Some((LutOperationFamily::Pocket, LutPassRole::Roughing))
+            } else {
+                Some((operation_family, pass_role))
+            }
+        }
+        LutRoute::ByCutter => lut_query_by_cutter(tool_family),
     }
-    // G-DCFLAT: a flat end mill on a drop-cutter raster is a roughing
-    // use. Route it to the roughing pocket row the Adaptive3d rough
-    // resolves; the LUT has no flat-end Parallel row to answer with.
-    if operation_kind == OperationType::DropCutter
-        && tool_family == ToolFamily::FlatEnd
-        && operation_family == LutOperationFamily::Parallel
-    {
-        return Some((LutOperationFamily::Pocket, LutPassRole::Roughing));
-    }
-    if operation_kind != OperationType::ProjectCurve {
-        return Some((operation_family, pass_role));
-    }
+}
+
+/// The rows a [`LutRoute::ByCutter`] op reads for each cutter class.
+fn lut_query_by_cutter(tool_family: ToolFamily) -> Option<(LutOperationFamily, LutPassRole)> {
     match tool_family {
         ToolFamily::BallNose | ToolFamily::TaperedBallNose | ToolFamily::BullNose => {
             Some((LutOperationFamily::Parallel, LutPassRole::Finish))

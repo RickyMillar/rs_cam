@@ -34,10 +34,9 @@
 //!   format bump.
 //! - **D3.** A new 2D Adaptive toolpath is Helix; an operator Ramp survives a
 //!   dressup write and a project save and load.
-//! - **D4.** The named repo rules are the defaults the configs read. The
-//!   CLI half (`entry_3d = "ramp"` writes 10°) is a `rs_cam_cli` unit test,
-//!   `job::tests::the_adaptive3d_entry_is_the_gui_rule_g10`: core cannot
-//!   depend on the CLI.
+//! - **D4.** The named repo rules are the defaults the configs read. C2
+//!   moved the CLI jobs onto the W5 schema, so a CLI job reads the same
+//!   config defaults and has no separate entry rule to test.
 
 #![allow(
     clippy::unwrap_used,

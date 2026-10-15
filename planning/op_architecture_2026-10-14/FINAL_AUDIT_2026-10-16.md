@@ -1,5 +1,7 @@
 # Operation architecture: final audit (2026-10-16)
 
+> **CLOSED** by D1 (321615b1, section 5 items 1-4, 11) and D2 (items 5, 7-10, 12, 13, 15; B18). Partial: item 6 (three test-only items under `cfg(test)`; the test callers of the old 2.5D entry points and finish wrappers still need a move onto the session path, see the D2 report), item 14 (`session/mutation.rs` only; `finish/pencil/emission.rs:503` and `finish/surface_link.rs:327` keep no `SAFETY:` line). Open: B1, B2, B4, B15, G-TIERBURIAL, the Waterline fragment kinds.
+
 Baseline: branch `op-arch`, HEAD `d508ffaa`. Read-only: no cargo, no edits.
 Notation: `C(n)` is a lead ruling in the PLAN.md C row; `commit Cn` is
 the commit with that tag. Paths are under `crates/rs_cam_core/src/` unless the line names another

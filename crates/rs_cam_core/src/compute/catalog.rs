@@ -17,8 +17,8 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
-    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, LutRoute,
+    MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{

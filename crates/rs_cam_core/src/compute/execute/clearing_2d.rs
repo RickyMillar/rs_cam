@@ -739,13 +739,3 @@ pub(crate) fn generate_adaptive(
         ctx.semantic_ctx,
     ))
 }
-
-// ── Moved-in-crate sentries (WP12) ────────────────────────────────────
-//
-// The three generation entries above are `pub(crate)`, so a test that calls
-// one must live inside the crate. These four modules were integration tests
-// under `crates/rs_cam_core/tests/`. WP12 moved them here unchanged: every
-// assertion, every fixture and every raw pre-dressup expectation is the one
-// the integration file carried. The lint allows are the ones each file's
-// own header carried, because `#[cfg(test)]` exempts none of them by
-// itself. See `IMPLEMENTATION_PLAN.md` §23 ruling 2.

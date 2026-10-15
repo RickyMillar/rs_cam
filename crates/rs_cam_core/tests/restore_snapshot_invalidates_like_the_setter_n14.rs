@@ -18,6 +18,7 @@
 //!   its sibling `set_alignment_pin_drill_holes`, 30 lines away in the
 //!   same file, walked the chain. A drill pick changes which holes the
 //!   operation cuts, so it changes the stock the downstream row reads.
+//!   (C1 later deleted `set_alignment_pin_drill_holes`.)
 //!
 //! The optimizer kept a narrow path, `apply_toolpath_param_snapshot_narrow`.
 //! The optimizer cull (2026-10-13) deleted it.

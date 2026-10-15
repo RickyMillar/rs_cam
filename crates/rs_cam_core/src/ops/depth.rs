@@ -257,6 +257,8 @@ impl DepthStepping {
     }
 
     /// Actual step size for each roughing pass. Every step is equal.
+    /// D2: only the unit tests below read it.
+    #[cfg(test)]
     pub fn roughing_steps(&self) -> Vec<f64> {
         let levels = self.roughing_levels();
         if levels.is_empty() {
@@ -286,6 +288,10 @@ impl DepthStepping {
 ///     pocket_toolpath(&polygon, &PocketParams { cut_depth: z, ..params })
 /// });
 /// ```
+///
+/// D2: only the unit tests below call it; production steps Z in
+/// `compute::execute::layered::run_layered`.
+#[cfg(test)]
 pub fn depth_stepped_toolpath<F>(depth: &DepthStepping, safe_z: f64, operation: F) -> Toolpath
 where
     F: Fn(f64) -> Toolpath,

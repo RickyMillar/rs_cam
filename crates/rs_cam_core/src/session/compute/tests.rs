@@ -106,7 +106,8 @@ fn set_toolpath_param_depth_per_pass() {
 }
 
 /// C1: Waterline has no `depth_per_pass` alias. The name refuses and the
-/// Z step stays; `z_step` is the one name. RampFinish keeps its alias.
+/// Z step stays; `z_step` is the one name. D2: RampFinish refuses the
+/// same name the same way; `max_stepdown` is its one name.
 #[test]
 fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
     use crate::compute::catalog::OperationType;
@@ -136,9 +137,24 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
     let mut ramp = make_tc(s.tools()[0].id.0);
     ramp.operation = OperationConfig::new_default(OperationType::RampFinish);
     let _ = s.add_toolpath(0, ramp).unwrap();
+    let stepdown = |s: &ProjectSession| match &s.toolpath_configs()[1].operation {
+        OperationConfig::RampFinish(cfg) => cfg.max_stepdown,
+        _ => panic!("expected RampFinish"),
+    };
+    let before = stepdown(&s);
+    let refusal = s.set_toolpath_param(1, "depth_per_pass", json!(before + 0.25));
+    assert!(
+        matches!(refusal, Err(SessionError::InvalidParam(_))),
+        "{refusal:?}"
+    );
+    assert!(
+        (stepdown(&s) - before).abs() < 1e-12,
+        "the refused value is not applied"
+    );
     let _ = s
-        .set_toolpath_param(1, "depth_per_pass", json!(0.7))
-        .expect("RampFinish keeps its published alias");
+        .set_toolpath_param(1, "max_stepdown", json!(before + 0.25))
+        .unwrap();
+    assert!((stepdown(&s) - (before + 0.25)).abs() < 1e-12);
 }
 
 /// **DR-LIVE sentry.** `peck_depth`'s `ParamDef` now declares the

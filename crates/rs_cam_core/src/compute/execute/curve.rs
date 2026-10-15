@@ -6,7 +6,8 @@
 //! - [`CurveOp::plan`]: one curve, projected through the height query, in
 //!   the frame of the setup;
 //! - [`CurveOp::link`]: its own link body (the op chooses the relink
-//!   policy). The default links nothing.
+//!   policy). The default links nothing. The body returns the link
+//!   totals when its stage ran.
 //!
 //! [`run_curve`] owns, for every curve op:
 //!
@@ -19,11 +20,14 @@
 //!   (`op_link_ceiling`, G-LINKCEIL) and the link kinematics;
 //! - the engagement guard ([`BuriedCurveFinding`]), on the planned moves
 //!   before the link;
+//! - the record of the link totals, only when the link stage ran
+//!   (G-LINKVISIBLE, D2);
 //! - the cut-run spans and the depth-run annotation.
 
 use crate::compute::catalog::OperationType;
 use crate::compute::toolpath_stats::BuriedCurveFinding;
 use crate::finish::surface_link::LinkCeiling;
+use crate::finish::unified_finish::RelinkTotals;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
 use crate::machine::kinematics::LinkKinematics;
@@ -70,15 +74,17 @@ pub(crate) trait CurveOp {
         cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError>;
 
-    /// Join the planned curves. The default links nothing.
+    /// Join the planned curves. The totals are `Some` only when the link
+    /// stage ran; the runner records them (G-LINKVISIBLE). The default
+    /// links nothing.
     fn link(
         &self,
         planned: Toolpath,
         _query: HeightQuery<'_>,
         _frame: CurveFrame,
         _link: &CurveLink<'_>,
-    ) -> Toolpath {
-        planned
+    ) -> (Toolpath, Option<RelinkTotals>) {
+        (planned, None)
     }
 }
 
@@ -117,7 +123,8 @@ pub(crate) fn run_curve<O: CurveOp>(
         ceiling: op_link_ceiling(op_type, ctx, prepared.territory()),
         kinematics: ctx.link_kinematics.as_ref(),
     };
-    let linked = op.link(planned, query, frame, &link);
+    let (linked, totals) = op.link(planned, query, frame, &link);
+    ctx.record(&totals);
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(linked, O::SPAN_LABEL),
         ctx.semantic_ctx,

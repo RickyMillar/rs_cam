@@ -168,9 +168,7 @@ impl Default for SetupFrame {
     }
 }
 
-// ── Helpers for session fixture/keep-out bbox computation ──
-// The core session `Fixture` and `KeepOutZone` lack bbox methods, so we
-// provide free functions here that mirror the viz-local equivalents.
+// ── Helper for the setup-local model bbox ──
 
 /// Transform an axis-aligned bbox through a setup transform by mapping all 8
 /// corners to the setup-local frame and taking min/max. face_up + z_rotation

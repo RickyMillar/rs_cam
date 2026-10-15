@@ -571,6 +571,9 @@ fn prepare_outline<O: LayeredOp>(
         ctx.record(&report);
         Ok::<_, OperationError>(geometry)
     };
+    // Every rule decides here, so a new `RestUse` does not compile until
+    // the Layered runner states what it does with it.
+    let whole_plan = || LevelPlan::whole(levels.len(), None);
     let mut plan = match (op.rest_use(), outline.outline()) {
         (RestUse::LevelClip, Some(polygon)) => regions_per_level(
             unguarded,
@@ -599,10 +602,26 @@ fn prepare_outline<O: LayeredOp>(
                 clipped: Vec::new(),
             });
         }
-        // Every other kind cuts the whole input at each level, and so does
-        // an input with no outline. A `ContourFilter` op gets the rule per
-        // level ([`LevelRest`]).
-        _ => LevelPlan::whole(levels.len(), None),
+        // An input with no outline has no region to clip or band to read:
+        // it cuts the whole input at each level.
+        (RestUse::LevelClip | RestUse::LevelSkip, None) => whole_plan(),
+        // A `ContourFilter` op cuts the whole input at each level and gets
+        // the rule per level ([`LevelRest`]).
+        (RestUse::ContourFilter, _) => whole_plan(),
+        // A Layered op that ignores the remaining stock cuts every level.
+        (RestUse::None, _) => whole_plan(),
+        // No Layered op has these rules: 2D Adaptive (`LevelMask`) and
+        // Drill (`StockColumn`) keep their own loops (ruling C9), 3D Rough
+        // (`Planner`) is Volumetric, and `Reference` and `LinkSafetyOnly`
+        // are finish rules. The runner cuts every level for them.
+        (
+            RestUse::LevelMask
+            | RestUse::StockColumn
+            | RestUse::Planner
+            | RestUse::Reference
+            | RestUse::LinkSafetyOnly,
+            _,
+        ) => whole_plan(),
     };
     ctx.record(&plan.finding);
     let whole = if plan.needs_whole() {

@@ -42,6 +42,21 @@
 //! - `floor_inside_stock`: the depth-beyond-stock check.
 //!
 //! Before C2 changed each consumer, the old lists gave the same sets.
+//!
+//! D2 changed three answers on purpose:
+//!
+//! - `lut_route` (a third table, [`frozen_d2`]): the vendor-table routing
+//!   of the feeds lookup. It replaced three op-type compares in
+//!   `feeds::vendor_normalize::lut_query_for` and one in
+//!   `feeds::explain`, with the same routes: 3D Rough `AdaptiveAsPocket`,
+//!   Drop Cutter `FlatParallelAsRoughPocket`, Project Curve `ByCutter`,
+//!   every other op `AsStated`.
+//! - Project Curve `relink_dial`: `None` -> `chain_distance_mm`. Its runner
+//!   now records the chain-link totals, and the narration names this dial
+//!   as their lever.
+//! - Pin Drill `territory_xy`: `ClipAfter` -> `SetupMap` (lead ruling: the
+//!   pin holes are absolute setup-map positions through the whole stock,
+//!   so no territory clip applies; the obstacle step still does).
 
 #![allow(
     clippy::unwrap_used,
@@ -51,8 +66,8 @@
 )]
 
 use rs_cam_core::compute::catalog::{
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
-    OperationConfig, OperationType, RestUse, RowCapabilities, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, LutRoute,
+    MoveCountModel, OperationConfig, OperationType, RestUse, RowCapabilities, TerritoryXy,
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
 
@@ -142,8 +157,8 @@ fn frozen() -> Vec<Row> {
     row((OperationType::SpiralFinish, [true, false, false, true, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
     row((OperationType::RadialFinish, [true, false, false, false, true, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
     row((OperationType::HorizontalFinish, [true, false, false, false, true, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
-    row((OperationType::ProjectCurve, [true, true, false, false, true, false, false, false], Some(3), Some(60.0), false, EntryProbeRule::Prism, LinkCeilingNeed::Always, MoveCountModel::FeatureDriven, DocBasis::CurveOnSurface, AirCutHint::CurveFollowing, None, AxialEnvelope::CurveRough, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
-    row((OperationType::AlignmentPinDrill, [true, true, false, false, true, false, false, false], None, None, false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
+    row((OperationType::ProjectCurve, [true, true, false, false, true, false, false, false], Some(3), Some(60.0), false, EntryProbeRule::Prism, LinkCeilingNeed::Always, MoveCountModel::FeatureDriven, DocBasis::CurveOnSurface, AirCutHint::CurveFollowing, Some("chain_distance_mm"), AxialEnvelope::CurveRough, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
+    row((OperationType::AlignmentPinDrill, [true, true, false, false, true, false, false, false], None, None, false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::SetupMap)),
     ]
 }
 
@@ -531,4 +546,68 @@ fn every_named_dial_is_a_schema_parameter() {
         }
     }
     assert!(named >= 5, "non-vacuity: {named} named dials");
+}
+
+/// D2: the `lut_route` column, frozen per op kind.
+#[rustfmt::skip]
+fn frozen_d2() -> Vec<(OperationType, LutRoute)> {
+    use OperationType as O;
+    vec![
+    (O::Face, LutRoute::AsStated),
+    (O::Pocket, LutRoute::AsStated),
+    (O::Profile, LutRoute::AsStated),
+    (O::Adaptive, LutRoute::AsStated),
+    (O::VCarve, LutRoute::AsStated),
+    (O::Inlay, LutRoute::AsStated),
+    (O::InlayPlug, LutRoute::AsStated),
+    (O::Zigzag, LutRoute::AsStated),
+    (O::Trace, LutRoute::AsStated),
+    (O::Drill, LutRoute::AsStated),
+    (O::Chamfer, LutRoute::AsStated),
+    (O::DropCutter, LutRoute::FlatParallelAsRoughPocket),
+    (O::Adaptive3d, LutRoute::AdaptiveAsPocket),
+    (O::Waterline, LutRoute::AsStated),
+    (O::Pencil, LutRoute::AsStated),
+    (O::Scallop, LutRoute::AsStated),
+    (O::UnifiedFinish, LutRoute::AsStated),
+    (O::SteepShallow, LutRoute::AsStated),
+    (O::RampFinish, LutRoute::AsStated),
+    (O::SpiralFinish, LutRoute::AsStated),
+    (O::RadialFinish, LutRoute::AsStated),
+    (O::HorizontalFinish, LutRoute::AsStated),
+    (O::ProjectCurve, LutRoute::ByCutter),
+    (O::AlignmentPinDrill, LutRoute::AsStated),
+    ]
+}
+
+/// D2: the row of each op kind and its default config give the frozen
+/// `lut_route`. No config overrides it.
+#[test]
+fn every_op_keeps_its_lut_route_d2() {
+    let table = frozen_d2();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for (op, route) in table {
+        assert_eq!(op.capabilities().lut_route, route, "{op:?} (kind)");
+        assert_eq!(
+            OperationConfig::new_default(op).capabilities().lut_route,
+            route,
+            "{op:?} (config)"
+        );
+    }
+}
+
+/// D2: only the Pin Drill escapes the session boundary clip, and it is
+/// the only `SetupMap` row.
+#[test]
+fn only_the_pin_drill_escapes_the_boundary_clip_d2() {
+    for &op in OperationType::ALL {
+        let xy = op.capabilities().territory_xy;
+        assert_eq!(
+            xy == TerritoryXy::SetupMap,
+            op == OperationType::AlignmentPinDrill,
+            "{op:?}: {xy:?}"
+        );
+        assert_eq!(xy.session_clip_applies(), xy != TerritoryXy::SetupMap);
+    }
 }

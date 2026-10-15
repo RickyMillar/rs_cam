@@ -14,6 +14,7 @@ use crate::compute::operation_configs::{
     ProjectCurveConfig, ProjectCurveDirection, RegionOrdering,
 };
 use crate::compute::tool_config::ToolConfig;
+use crate::finish::unified_finish::RelinkTotals;
 use crate::geo::P2;
 use crate::interrupt::CancelCheck;
 use crate::ops::project_curve::ProjectCurveParams;
@@ -426,10 +427,10 @@ impl CurveOp for ProjectCurveOp<'_> {
         query: HeightQuery<'_>,
         frame: CurveFrame,
         link: &CurveLink<'_>,
-    ) -> Toolpath {
+    ) -> (Toolpath, Option<RelinkTotals>) {
         let cfg = self.cfg;
         if cfg.chain_distance_mm <= 0.0 {
-            return planned;
+            return (planned, None);
         }
         // Frame guard. The standalone `FromBelow` arm projects against a
         // Z-FLIPPED copy of the mesh it builds internally and flips the
@@ -445,12 +446,12 @@ impl CurveOp for ProjectCurveOp<'_> {
                  against an internally Z-flipped mesh, so a link costed against \
                  the un-flipped mesh would be geometrically wrong"
             );
-            return planned;
+            return (planned, None);
         }
         let Ok((MeshInput { mesh, index }, cutter)) = query.mesh(OperationType::ProjectCurve)
         else {
             // `plan` read the same query, so this arm is not reached.
-            return planned;
+            return (planned, None);
         };
         let rp = crate::finish::surface_link::RelinkParams {
             link_tolerance: None,
@@ -514,13 +515,16 @@ impl CurveOp for ProjectCurveOp<'_> {
             ceiling_above_safe_z = rep.ceiling_above_safe_z,
             "Project-curve chaining"
         );
+        let mut totals = RelinkTotals::default();
+        totals.add(&rep);
         // Spans are built from the RESULT (the runner builds them after
         // this), and this op owns no other index-carrying channel, so there
         // is nothing to reconcile — but the type still has to be told so,
         // rather than the provenance being dropped by convention.
-        linked
+        let toolpath = linked
             .reconcile(&mut ReconcileSet::empty())
             .into_inner()
-            .toolpath
+            .toolpath;
+        (toolpath, Some(totals))
     }
 }

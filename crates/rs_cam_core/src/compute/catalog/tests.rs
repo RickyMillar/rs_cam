@@ -194,11 +194,13 @@ fn every_alias_names_a_field_of_its_own_operation() {
             );
         }
     }
-    // RampFinish aliases `depth_per_pass`, Pencil aliases `stepover`. C1
-    // deleted the Waterline `depth_per_pass` alias.
+    // C1 deleted the Waterline `depth_per_pass` alias; D2 deleted the
+    // RampFinish `depth_per_pass` and Pencil `stepover` aliases. The
+    // setter accepts only published names.
     assert_eq!(
-        aliases_seen, 2,
-        "the alias population moved. Two alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
+        aliases_seen, 0,
+        "a setter alias came back. The setter accepts only published names \
+         (C1, D2); publish the field under its own name instead."
     );
 }
 

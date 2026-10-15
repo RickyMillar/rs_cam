@@ -21,10 +21,10 @@ use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole
 
 use super::capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, MoveCountModel, RestUse,
-    TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D, TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS,
-    TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE, TRANSFORM_ORDERED_LINKABLE, TRANSFORM_V_WIDTH,
-    TRANSFORM_XY_INDEPENDENT, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, LutRoute, MoveCountModel,
+    RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D, TRANSFORM_BARRIERED_NODES,
+    TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE, TRANSFORM_ORDERED_LINKABLE,
+    TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT, TerritoryXy,
 };
 use super::schema::{
     DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
@@ -74,6 +74,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_face,
 };
@@ -118,6 +119,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_pocket,
 };
@@ -162,6 +164,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_profile,
 };
@@ -209,6 +212,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_adaptive,
 };
@@ -265,6 +269,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_vcarve,
 };
@@ -319,6 +324,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_inlay,
 };
@@ -373,6 +379,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_inlay_plug,
 };
@@ -417,6 +424,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_zigzag,
 };
@@ -462,6 +470,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_trace,
 };
@@ -509,6 +518,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_drill,
 };
@@ -556,6 +566,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_chamfer,
 };
@@ -606,6 +617,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::FlatParallelAsRoughPocket,
     },
     generate: crate::compute::execute::generate_drop_cutter,
 };
@@ -656,6 +668,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: true,
         floor_inside_stock: true,
+        lut_route: LutRoute::AdaptiveAsPocket,
     },
     generate: crate::compute::execute::generate_adaptive3d,
 };
@@ -700,6 +713,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_waterline,
 };
@@ -749,6 +763,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_pencil,
 };
@@ -796,6 +811,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_scallop,
 };
@@ -858,6 +874,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_unified_finish,
 };
@@ -905,6 +922,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_steep_shallow,
 };
@@ -949,6 +967,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_ramp_finish,
 };
@@ -1000,6 +1019,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_spiral_finish,
 };
@@ -1044,6 +1064,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_radial_finish,
 };
@@ -1095,6 +1116,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_horizontal_finish,
 };
@@ -1131,7 +1153,9 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         move_count: MoveCountModel::FeatureDriven,
         doc_basis: DocBasis::CurveOnSurface,
         air_cut_hint: AirCutHint::CurveFollowing,
-        relink_dial: None,
+        // D2: the curve runner records the chain-link totals, and the
+        // narration names this dial as their lever.
+        relink_dial: Some("chain_distance_mm"),
         axial_envelope: AxialEnvelope::CurveRough,
         rest_use: RestUse::LinkSafetyOnly,
         territory_xy: TerritoryXy::Regions,
@@ -1143,6 +1167,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: false,
+        lut_route: LutRoute::ByCutter,
     },
     generate: crate::compute::execute::generate_project_curve,
 };
@@ -1185,7 +1210,10 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         relink_dial: None,
         axial_envelope: AxialEnvelope::NotApplied,
         rest_use: RestUse::None,
-        territory_xy: TerritoryXy::ClipAfter,
+        // D2 ruling: the pin holes are absolute setup-map positions
+        // through the whole stock. No territory XY clip applies, before
+        // or after generation; the obstacle step still applies.
+        territory_xy: TerritoryXy::SetupMap,
         plans_bands: false,
         ramp_descent: false,
         adaptive_woc: false,
@@ -1194,6 +1222,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: false,
+        lut_route: LutRoute::AsStated,
     },
     generate: crate::compute::execute::generate_alignment_pin_drill,
 };

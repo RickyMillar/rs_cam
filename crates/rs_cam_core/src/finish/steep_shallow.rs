@@ -543,9 +543,9 @@ pub struct SteepShallowSplit {
     pub shallow: Range<usize>,
 }
 
-/// Spans for a [`steep_shallow_toolpath_split_with_cancel`] result, shared
-/// by the op adapter and the capability sentry so neither can drift from
-/// the other. Per-run `Region` spans as before, plus a labelled `Region`
+/// Spans for a [`steep_shallow_toolpath_split_with_cancel`] result. The op
+/// does not call it: since W6.4 `run_composed` builds the op's spans from
+/// `order_constraints`. The capability sentry reads it. Per-run `Region` spans, plus a labelled `Region`
 /// span for each half (so the halves stay identifiable after the TSP
 /// remaps spans), plus the rapid-order barriers that make the reorder safe:
 /// one at each half's start, and one per Z level inside the steep half

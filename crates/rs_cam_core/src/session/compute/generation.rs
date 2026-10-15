@@ -21,7 +21,7 @@ impl ProjectSession {
     /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
     /// spatial index, resolved heights, cutting levels, emission-frame stock
     /// bbox, keep-outs, boundary + pre-clip polygon, rest-machining prev-tool
-    /// radius, and the compute-time-patched operation. A pure read of `self`
+    /// radius, and the operation. A pure read of `self`
     /// returning a fully-owned [`ResolvedGenInputs`] so callers can generate
     /// one or many toolpaths off a single resolution (the strategy advisor's
     /// per-strategy candidates) without re-deriving frame-sensitive values.
