@@ -194,6 +194,7 @@ fn toolpath_config(
 ) -> ToolpathConfig {
     let op_type = operation.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,
@@ -539,7 +540,12 @@ fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
         .expect("the obstacle resolves");
     assert!(!set.is_empty());
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
-    let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+    let view = set
+        .for_tool(
+            &tool.to_assembly(&session.head_fit_for_toolpath(0)),
+            Some(&session.setup_stock_box_for_toolpath(0)),
+        )
+        .expect("a tool view");
     let hits = view.check_toolpath(&toolpath, session.obstacle_join_for_toolpath(0));
     assert!(hits.is_empty(), "no move enters the obstacle: {hits:?}");
 }

@@ -106,6 +106,7 @@ fn state_for(
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "G10 card fixture".to_owned(),
         enabled: true,

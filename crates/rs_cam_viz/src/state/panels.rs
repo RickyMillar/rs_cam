@@ -119,6 +119,17 @@ pub struct ObstacleEditor {
     pub refusal: Option<String>,
 }
 
+/// H2: the machine head editor's draft. The draft is the whole head; Apply
+/// writes it through `Command::SetMachineHead`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadEditor {
+    /// The head the operator edits.
+    pub draft: rs_cam_core::machine::head::MachineHead,
+    /// The refusal of the last apply, in the core's words. `None` before
+    /// an apply, and after the operator edits the draft again.
+    pub refusal: Option<String>,
+}
+
 /// K2: the obstacle `obstacle_id` of the setup is gone. Close an editor
 /// open on it, and move a selection of it to its setup (the S4 rule). The
 /// controller door, the undo and the MCP remove all call it.
@@ -157,6 +168,12 @@ pub struct PanelDrafts {
     pub stock_change_editor: Option<StockChangeEditor>,
     /// The obstacle editor (K2), when an obstacle is selected.
     pub obstacle_editor: Option<ObstacleEditor>,
+    /// The machine head editor (H2), while a draft differs from the stored
+    /// head or holds a refusal.
+    pub head_editor: Option<HeadEditor>,
+    /// The head part whose rows show in the Head section (H2). A view
+    /// choice, but typed here beside the draft it indexes.
+    pub head_part_open: Option<(crate::ui::properties::head::PartList, usize)>,
     /// The pin the operator clicked in the viewport (index into the stock
     /// pins). The viewport draws its circle twice, and the wizard marks it
     /// on the plan view. A pin count below the index clears it.

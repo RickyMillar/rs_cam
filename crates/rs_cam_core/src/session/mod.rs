@@ -30,6 +30,8 @@ mod rest_fresh;
 mod rest_stock;
 mod result_provenance;
 mod save;
+mod shoe;
+pub use shoe::ShoePlanRow;
 mod stock_change_report;
 
 pub use builder::ProjectSessionBuilder;
@@ -47,13 +49,13 @@ pub use command::{
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
     SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
-    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetMachineHeadArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs,
+    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces,
+    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
@@ -837,6 +839,10 @@ pub struct ToolpathConfig {
     /// [`PlannerOrigin`]; `None` means the operator built it, and is what
     /// every pre-Phase-O project file loads as.
     pub planner_origin: Option<PlannerOrigin>,
+    /// H1: the dust shoe setting (Auto, a stated gap, raised, off). It
+    /// moves no toolpath: the check and the export read it through the
+    /// shoe plan (`ProjectSession::shoe_plan`).
+    pub shoe: crate::machine::head::ShoeSetting,
 }
 
 impl ToolpathConfig {
@@ -2033,6 +2039,7 @@ mod tests {
                 obstacles: Vec::new(),
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
+                    shoe: Default::default(),
                     id: Some(ToolpathId(0)),
                     name: "Bare".to_owned(),
                     operation: None,
@@ -2311,7 +2318,6 @@ mod tests {
                 included_angle: 90.0,
                 taper_half_angle: 15.0,
                 shaft_diameter: 6.35,
-                holder_diameter: 25.0,
                 shank_diameter: 6.35,
                 stickout: 45.0,
                 flute_count: 2,
@@ -2336,6 +2342,7 @@ mod tests {
                 obstacles: Vec::new(),
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
+                    shoe: Default::default(),
                     id: Some(ToolpathId(0)),
                     name: "Test Pocket".to_owned(),
                     operation: Some(OperationConfig::new_default(
@@ -2470,6 +2477,7 @@ mod tests {
         assert_eq!(session.toolpath_count(), 1);
 
         let new_tp = ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0), // will be overwritten by add_toolpath
             name: "New Profile".to_owned(),
             enabled: true,

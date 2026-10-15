@@ -38,15 +38,63 @@ impl HolderSegment {
     }
 }
 
-/// Describes the physical tool assembly: cutter + shank + holder.
+/// One hard band of the machine head above the tool (H1): a part with a
+/// diameter, or a shelf with no width limit. The machine head builds it
+/// (`machine::head::MachineHead::bands`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadBand {
+    /// The assembly segment a hit names: [`AssemblySegment::Holder`] for a
+    /// fixed head part, [`AssemblySegment::Shoe`] for a shoe part.
+    pub segment: AssemblySegment,
+    /// The part name.
+    pub name: String,
+    /// The bottom of the band, in mm above the tool tip.
+    pub offset_mm: f64,
+    /// The radius (mm). `None`: a shelf, a band with no width limit.
+    pub radius_mm: Option<f64>,
+}
+
+impl HeadBand {
+    /// One hard holder band of `diameter` (mm) at the holder face, for a
+    /// tool of `stickout`: the band of the unmodelled head
+    /// (`machine::head::MachineHead::unmodelled`). Tests and probes build an
+    /// assembly with it; production reads `MachineHead::bands`.
+    #[must_use]
+    pub fn holder_at_face(diameter: f64, stickout: f64) -> Self {
+        Self {
+            segment: AssemblySegment::Holder,
+            name: "Holder".to_owned(),
+            offset_mm: stickout,
+            radius_mm: Some(diameter / 2.0),
+        }
+    }
+}
+
+/// One band of the assembly above the flutes that has a width: the shank
+/// or a hard head part. Both collision kernels read it from its bottom
+/// offset upward.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BodyBand {
+    /// The part a hit names.
+    pub segment: AssemblySegment,
+    /// The bottom of the band, in mm above the tip.
+    pub z_offset: f64,
+    /// The radius (mm).
+    pub radius: f64,
+}
+
+/// Describes the physical tool assembly: cutter, shank and the machine
+/// head above the holder face.
 ///
 /// The model has one length rule: `stickout` is the length from the
 /// holder face to the tool tip. The holder face is therefore at
 /// `stickout` above the tip, always. The cutter occupies the first
 /// `cutter_length`; the exposed shank is the rest of the stickout,
-/// `max(stickout - cutter_length, 0)`. The holder (and the spindle above
-/// it) starts at the face and extends upward with no top: both collision
-/// kernels read a band from its bottom offset upward.
+/// `max(stickout - cutter_length, 0)`. Above the face, the machine head
+/// (H1) gives the hard bands: the collet nut, a shelf, and the shoe parts
+/// at the gap of the check. Both collision kernels read a band from its
+/// bottom offset upward.
+#[derive(Debug, Clone)]
 pub struct ToolAssembly {
     /// Radius of the cutting tool (from MillingCutter::radius())
     pub cutter_radius: f64,
@@ -54,10 +102,10 @@ pub struct ToolAssembly {
     pub cutter_length: f64,
     /// Shank diameter above the cutting flutes (mm).
     pub shank_diameter: f64,
-    /// Holder diameter (mm) — the collet/holder body.
-    pub holder_diameter: f64,
     /// Length from the holder face to the cutter tip (mm).
     pub stickout: f64,
+    /// H1: the hard bands of the machine head, offsets above the tip.
+    pub head: Vec<HeadBand>,
 }
 
 impl ToolAssembly {
@@ -72,22 +120,9 @@ impl ToolAssembly {
         (self.stickout - self.cutter_length).max(0.0)
     }
 
-    /// Which assembly part a collision at `radius` belongs to.
-    ///
-    /// STK-10: both collision classifiers open-coded this comparison. The
-    /// tolerance keeps a segment exactly at the shank radius on the shank
-    /// side, which is the behaviour the two copies had.
-    pub fn segment_at(&self, radius: f64) -> AssemblySegment {
-        if radius > self.shank_diameter / 2.0 - 0.01 {
-            AssemblySegment::Holder
-        } else {
-            AssemblySegment::Shank
-        }
-    }
-
     /// The body directly above the flutes, as `(z_offset, radius)`: the
-    /// shank when the assembly has one, else the holder. `None` when the
-    /// assembly models neither.
+    /// shank when the assembly has one, else the first head part with a
+    /// width. `None` when the assembly models neither.
     ///
     /// This is the part a wall taller than the flutes meets first. Its
     /// radius is taken as is, with no comparison against the cutter's
@@ -95,33 +130,41 @@ impl ToolAssembly {
     /// shaft diameter the two are equal, and the skip in
     /// [`check_collisions`] then tests no shank at all.
     pub fn non_fluted_body(&self) -> Option<(f64, f64)> {
-        self.segments()
-            .first()
-            .map(|&(z_offset, radius, _length)| (z_offset, radius))
+        self.segments().first().map(|b| (b.z_offset, b.radius))
     }
 
-    /// Segments of the assembly from tip upward, as (z_offset, max_radius, length).
-    ///
-    /// The shank segment runs from the top of the flutes to the holder
-    /// face; there is none when the flutes reach the face. The holder
-    /// segment starts at the face (`stickout`) and its length is
-    /// `f64::INFINITY`: the holder and the spindle continue upward. The
-    /// kernels read the offset and the radius only.
-    pub(crate) fn segments(&self) -> Vec<(f64, f64, f64)> {
+    /// The bands of the assembly above the flutes that have a width, from
+    /// the tip upward: the shank (from the top of the flutes to the holder
+    /// face; none when the flutes reach the face), then every hard head
+    /// part with a diameter. A shelf is not in it: read
+    /// [`Self::shelf_offset`].
+    pub fn segments(&self) -> Vec<BodyBand> {
         let mut segs = Vec::new();
-
-        // Shank: from the top of the flutes to the holder face.
-        let shank = self.exposed_shank_length();
-        if shank > 0.0 {
-            segs.push((self.cutter_length, self.shank_diameter / 2.0, shank));
+        if self.exposed_shank_length() > 0.0 {
+            segs.push(BodyBand {
+                segment: AssemblySegment::Shank,
+                z_offset: self.cutter_length,
+                radius: self.shank_diameter / 2.0,
+            });
         }
-
-        // Holder: from the holder face upward, always.
-        if self.holder_diameter > 0.0 {
-            segs.push((self.stickout, self.holder_diameter / 2.0, f64::INFINITY));
-        }
-
+        segs.extend(self.head.iter().filter_map(|band| {
+            band.radius_mm.map(|radius| BodyBand {
+                segment: band.segment,
+                z_offset: band.offset_mm,
+                radius,
+            })
+        }));
         segs
+    }
+
+    /// The lowest hard shelf of the head, in mm above the tip, with the
+    /// segment it belongs to. `None` when the head has no shelf.
+    pub fn shelf_offset(&self) -> Option<(f64, AssemblySegment)> {
+        self.head
+            .iter()
+            .filter(|band| band.radius_mm.is_none())
+            .map(|band| (band.offset_mm, band.segment))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
     }
 
     /// Build segments from a multi-segment holder profile.
@@ -154,21 +197,27 @@ pub enum CollisionKind {
     /// An obstacle of the setup (K1: a fixture or a keep-out zone),
     /// identified by its name.
     Obstacle { name: String },
+    /// H1: the fresh stock box of the setup, which a hard shoe part or a
+    /// shelf of the head struck.
+    Stock,
 }
 
 /// Which part of the assembly above the flutes collided.
 ///
 /// STK-10: this was a `String` that both classifiers built from the same
 /// open-coded radius comparison. A stringly-typed door invites a fourth
-/// spelling; the rule now lives once, in [`ToolAssembly::segment_at`].
+/// spelling. H1: each band carries its own segment ([`BodyBand`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblySegment {
     /// The cutter itself (K1: the obstacle check includes the cutter).
     Cutter,
     /// The shank, immediately above the cutting flutes.
     Shank,
-    /// The collet or holder body, above the shank.
+    /// The collet or holder body, above the shank: a fixed part of the
+    /// machine head (H1).
     Holder,
+    /// A hard part of the dust shoe (H1).
+    Shoe,
 }
 
 impl AssemblySegment {
@@ -178,6 +227,7 @@ impl AssemblySegment {
             Self::Cutter => "cutter",
             Self::Shank => "shank",
             Self::Holder => "holder",
+            Self::Shoe => "shoe",
         }
     }
 }
@@ -387,7 +437,8 @@ pub fn check_collisions_interpolated_with_cancel(
 
         for tip in &sample_points {
             check_cancel(cancel)?;
-            for &(z_offset, seg_radius, _seg_length) in &segments {
+            for band in &segments {
+                let (z_offset, seg_radius) = (band.z_offset, band.radius);
                 if seg_radius <= assembly.cutter_radius + 1e-6 {
                     continue;
                 }
@@ -402,7 +453,7 @@ pub fn check_collisions_interpolated_with_cancel(
                         move_index: move_idx,
                         position: *tip,
                         penetration_depth: penetration,
-                        segment: assembly.segment_at(seg_radius),
+                        segment: band.segment,
                         kind: CollisionKind::Workpiece,
                     });
 
@@ -767,7 +818,9 @@ mod tests {
             cutter_radius: 3.0, // 6mm ball endmill
             cutter_length: 25.0,
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 35.0,
+            )],
             stickout: 35.0,
         }
     }
@@ -784,11 +837,11 @@ mod tests {
         let segs = asm.segments();
         assert_eq!(segs.len(), 2);
         // Shank at z_offset=25, radius=3
-        assert!((segs[0].0 - 25.0).abs() < 0.01);
-        assert!((segs[0].1 - 3.0).abs() < 0.01);
+        assert!((segs[0].z_offset - 25.0).abs() < 0.01);
+        assert!((segs[0].radius - 3.0).abs() < 0.01);
         // Holder at z_offset=35, radius=17.5
-        assert!((segs[1].0 - 35.0).abs() < 0.01);
-        assert!((segs[1].1 - 17.5).abs() < 0.01);
+        assert!((segs[1].z_offset - 35.0).abs() < 0.01);
+        assert!((segs[1].radius - 17.5).abs() < 0.01);
     }
 
     #[test]
@@ -818,7 +871,9 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0, // short cutter
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 15.0,
+            )],
             stickout: 15.0,
         };
 
@@ -852,7 +907,9 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 15.0,
+            )],
             stickout: 15.0,
         };
 
@@ -912,7 +969,9 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 40.0, // 40mm cutter length
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 60.0,
+            )],
             stickout: 60.0,
         };
 
@@ -938,7 +997,9 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 10.0,
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 15.0,
+            )],
             stickout: 15.0,
         };
 

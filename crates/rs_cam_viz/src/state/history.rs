@@ -3,6 +3,7 @@ use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
 use rs_cam_core::feeds::FeedsProvenance;
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::machine::head::{MachineHead, ShoeSetting};
 use rs_cam_core::session::{Obstacle, SetupData};
 
 /// A snapshot of undoable state.
@@ -59,6 +60,19 @@ pub enum UndoAction {
         obstacle_id: ObstacleId,
         old: Option<Obstacle>,
         new: Option<Obstacle>,
+    },
+    /// One machine head edit (H2): a preset, or an applied editor draft.
+    /// The undo writes the old head through `SetMachineHead`, not the whole
+    /// machine profile, so a later kinematics edit stays.
+    HeadChange {
+        old: Box<MachineHead>,
+        new: Box<MachineHead>,
+    },
+    /// One toolpath shoe setting edit (H2).
+    ToolpathShoeChange {
+        tp_id: ToolpathId,
+        old: ShoeSetting,
+        new: ShoeSetting,
     },
 }
 
@@ -160,6 +174,24 @@ impl UndoHistory {
         self.undo_stack.push(action);
         self.redo_stack.clear();
         self.trim();
+    }
+
+    /// H2: one drag of the toolpath panel's shoe gap is one undo step. When
+    /// the newest step is a shoe edit of `tp_id`, its `new` side takes
+    /// `shoe` and the call returns true; else it changes nothing.
+    pub fn merge_shoe_edit(
+        &mut self,
+        tp_id: ToolpathId,
+        shoe: rs_cam_core::machine::head::ShoeSetting,
+    ) -> bool {
+        match self.undo_stack.last_mut() {
+            Some(UndoAction::ToolpathShoeChange { tp_id: id, new, .. }) if *id == tp_id => {
+                *new = shoe;
+                self.redo_stack.clear();
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn can_undo(&self) -> bool {

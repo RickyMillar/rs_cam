@@ -82,6 +82,7 @@ fn toolpath_config(
 ) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(id),
         name: name.to_owned(),
         enabled: true,

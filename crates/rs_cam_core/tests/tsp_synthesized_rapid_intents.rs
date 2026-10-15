@@ -193,6 +193,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         .add_toolpath(
             0,
             ToolpathConfig {
+                shoe: Default::default(),
                 id: ToolpathId(0),
                 name: format!("{op_type:?}"),
                 enabled: true,

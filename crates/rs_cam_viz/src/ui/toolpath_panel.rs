@@ -594,7 +594,12 @@ fn draw_toolpath_card(
                 }
             }
 
-            // Click anywhere on the card to select.
+            // Click anywhere on the card to select. This sense is
+            // registered BEFORE the row, so egui places it BELOW every
+            // widget in the row: the swatch drag, the dot, the eye and the
+            // `…` menu keep their own clicks. A label in the row must not
+            // sense a click, or it takes the click from the card
+            // (`draw_name_and_tool`).
             let card_resp = ui.interact(
                 ui.max_rect(),
                 egui::Id::new("tp_card_click").with(tc.id),
@@ -869,13 +874,17 @@ fn draw_name_and_tool(ui: &mut egui::Ui, name: &str, tool_summary: Option<&str>,
     } else {
         tokens::TEXT_STRONG
     };
+    // `selectable(false)`: a selectable label senses click-and-drag for
+    // text selection, and it sits ABOVE the card's click sense, so a click
+    // on the name selected nothing (operator, 2026-10-16). The setup cards
+    // use the same rule.
     let name_text = egui::RichText::new(name).color(text_color);
-    ui.add(egui::Label::new(name_text).truncate());
+    ui.add(egui::Label::new(name_text).truncate().selectable(false));
     if let Some(summary) = tool_summary {
         let tool_text = egui::RichText::new(summary)
             .small()
             .color(tokens::TEXT_MUTED);
-        ui.add(egui::Label::new(tool_text).truncate());
+        ui.add(egui::Label::new(tool_text).truncate().selectable(false));
     }
 }
 

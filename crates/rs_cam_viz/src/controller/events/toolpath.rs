@@ -161,6 +161,7 @@ impl<B: ComputeBackend> AppController<B> {
             return None;
         }
         let tc = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0), // will be assigned by session
             name: format!(
                 "{} {}",
@@ -240,6 +241,7 @@ impl<B: ComputeBackend> AppController<B> {
             .find_toolpath_config_by_id(tp_id)
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
+                    shoe: src.shoe,
                     id: rs_cam_core::ToolpathId(0), // will be assigned by session
                     name: format!("{} (copy)", src.name),
                     enabled: src.enabled,
@@ -399,6 +401,49 @@ impl<B: ComputeBackend> AppController<B> {
             self.pending_upload = true;
             self.state.gui.mark_edited();
         }
+    }
+
+    /// H2: the toolpath panel's dust shoe row. One `SetToolpathShoe`; an
+    /// applied edit pushes the undo step and marks the project edited. The
+    /// row moves no toolpath; the core drops the simulation, and
+    /// `apply_quietly` mirrors that. `merge` joins a later frame of one gap
+    /// drag to the newest undo step.
+    pub(crate) fn handle_set_toolpath_shoe(
+        &mut self,
+        tp_id: ToolpathId,
+        shoe: rs_cam_core::machine::head::ShoeSetting,
+        merge: bool,
+    ) {
+        let Some((index, old)) = self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id)
+            .map(|(index, tc)| (index, tc.shoe))
+        else {
+            return;
+        };
+        if old == shoe {
+            return;
+        }
+        let command =
+            Command::SetToolpathShoe(rs_cam_core::session::SetToolpathShoeArgs { index, shoe });
+        if self.apply_quietly(command).is_none() {
+            self.push_notification(
+                "The dust shoe setting was refused: a gap must be 0 mm or more.".to_owned(),
+                super::super::Severity::Warning,
+            );
+            return;
+        }
+        if !(merge && self.state.history.merge_shoe_edit(tp_id, shoe)) {
+            self.state
+                .history
+                .push(crate::state::history::UndoAction::ToolpathShoeChange {
+                    tp_id,
+                    old,
+                    new: shoe,
+                });
+        }
+        self.state.gui.mark_edited();
     }
 
     pub(crate) fn handle_remove_toolpath(&mut self, tp_id: ToolpathId) {

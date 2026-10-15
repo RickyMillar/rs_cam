@@ -100,7 +100,6 @@ fn endmill_6mm() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        25.0,
         45.0,
         2,
         ToolMaterial::Carbide,
@@ -123,6 +122,7 @@ fn mill_entry() -> SimToolpathEntry {
     tp.rapid_to(P3::new(80.0, 40.0, STOCK_Z + 5.0));
 
     SimToolpathEntry {
+        head: Default::default(),
         id: MILL,
         name: "Groove".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
@@ -178,6 +178,7 @@ fn drill_entry() -> SimToolpathEntry {
     };
 
     SimToolpathEntry {
+        head: Default::default(),
         id: DRILL,
         name: "Holes".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),

@@ -312,6 +312,10 @@ pub struct GuiState {
     /// `GuiState` is the argument every export door already takes, so
     /// `io::export::overlay_for` reads it without a new parameter.
     pub wizard: crate::state::wizard::WizardState,
+    /// H2: the memo of the core shoe plan. The toolpath panel and the run
+    /// sheet read the plan on every frame; the memo builds it once per
+    /// change of an input.
+    pub shoe_plan: crate::state::shoe_plan::ShoePlanMemo,
 }
 
 impl GuiState {
@@ -329,6 +333,7 @@ impl GuiState {
             pending_toolpath_tab: None,
             reach_overlay: ReachOverlayState::new(),
             wizard: crate::state::wizard::WizardState::default(),
+            shoe_plan: crate::state::shoe_plan::ShoePlanMemo::default(),
         }
     }
 

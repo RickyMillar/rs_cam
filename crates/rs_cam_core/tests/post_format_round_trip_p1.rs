@@ -162,6 +162,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         .expect("add_model reports the new model id");
 
     let pocket = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

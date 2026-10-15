@@ -94,6 +94,7 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 
 fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(id as usize),
         name: name.to_owned(),
         enabled: true,

@@ -440,6 +440,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         let prior_tool_id = builder.tools()[prior_tool_idx].id.0;
         let prior: ToolpathConfig = if mesh {
             ToolpathConfig {
+                shoe: Default::default(),
                 heights: pinned_heights(MESH_STOCK_Z, 0.0),
                 ..toolpath_config(
                     "prior",

@@ -62,7 +62,6 @@ corner_radius = 0.0
 included_angle = 90.0
 taper_half_angle = 15.0
 shaft_diameter = 6.35
-holder_diameter = 25.0
 shank_diameter = 6.35
 stickout = 45.0
 flute_count = 2

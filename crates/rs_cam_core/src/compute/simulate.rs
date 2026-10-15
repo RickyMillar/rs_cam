@@ -83,6 +83,23 @@ pub struct SimToolpathEntry {
     /// alter move geometry) that should invalidate cached load
     /// verdicts.
     pub operation_config_hash: u64,
+    /// H1: the machine head and the shoe position this entry runs with,
+    /// from [`entry_head_fit`]. The obstacle check of the run reads it.
+    pub head: crate::machine::head::HeadFit,
+}
+
+/// H1, the seventh shared decision of the request: the head fit of one
+/// entry. The machine head with the shoe at the gap the toolpath's shoe
+/// setting resolves to (`compute::shoe`). Both request builders call it.
+#[must_use]
+pub fn entry_head_fit(
+    head: &crate::machine::head::MachineHead,
+    shoe: crate::machine::head::ResolvedShoe,
+) -> crate::machine::head::HeadFit {
+    crate::machine::head::HeadFit {
+        head: Arc::new(head.clone()),
+        shoe: shoe.position(),
+    }
 }
 
 /// A group of toolpaths from one setup, sharing a cut direction.
@@ -974,7 +991,6 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
                     hash_f64(hasher, entry.tool.diameter());
                     hash_f64(hasher, entry.tool.length());
                     hash_f64(hasher, entry.tool.shank_diameter);
-                    hash_f64(hasher, entry.tool.holder_diameter);
                     hash_f64(hasher, entry.tool.stickout);
                     entry.tool.flute_count.hash(hasher);
                 }),
@@ -2352,14 +2368,14 @@ fn group_obstacle_views(
                 .obstacles
                 .as_ref()
                 .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))?;
-            if set.is_empty() {
-                return Ok(Vec::new());
-            }
+            // H1: the fresh stock box of the setup, in the setup frame,
+            // for the shoe parts and the shelf floor.
+            let stock = group.local_stock_bbox.unwrap_or(request.stock_bbox);
             group
                 .toolpaths
                 .iter()
                 .map(|entry| {
-                    set.for_tool(&entry.tool.to_assembly())
+                    set.for_tool(&entry.tool.to_assembly(&entry.head), Some(&stock))
                         .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
                 })
                 .collect()
@@ -2735,13 +2751,13 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let entry = SimToolpathEntry {
+            head: Default::default(),
             id: ToolpathId(1),
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
@@ -3070,13 +3086,13 @@ mod tests {
         let tool_def = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.35, 25.0)),
             6.35,
-            25.0,
             45.0,
             2,
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let entry = SimToolpathEntry {
+            head: Default::default(),
             id: ToolpathId(1),
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
@@ -3149,7 +3165,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                25.0,
                 45.0,
                 2,
                 crate::compute::tool_config::ToolMaterial::Carbide,
@@ -3181,6 +3196,7 @@ mod tests {
 
         let top_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
+                head: Default::default(),
                 id: ToolpathId(1),
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
@@ -3204,6 +3220,7 @@ mod tests {
 
         let bottom_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
+                head: Default::default(),
                 id: ToolpathId(2),
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),

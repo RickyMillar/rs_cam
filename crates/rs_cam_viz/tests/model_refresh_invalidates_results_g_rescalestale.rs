@@ -130,6 +130,7 @@ fn stub_result() -> ToolpathComputeResult {
 
 fn toolpath(name: &str, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

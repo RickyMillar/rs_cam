@@ -63,6 +63,7 @@ fn drill(id: usize, diameter: f64) -> ToolConfig {
 
 fn pin_drill_op(diameter: f64, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: format!("Pin Drill {diameter:.2} mm"),
         enabled: true,

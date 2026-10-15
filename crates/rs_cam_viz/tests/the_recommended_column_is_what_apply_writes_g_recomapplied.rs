@@ -106,6 +106,7 @@ fn controller() -> AppController<SilentBackend> {
     };
 
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Recommended column fixture".to_owned(),
         enabled: true,

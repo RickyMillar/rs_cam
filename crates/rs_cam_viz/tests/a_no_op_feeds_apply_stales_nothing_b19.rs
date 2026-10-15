@@ -106,6 +106,7 @@ fn viz_result() -> ToolpathResult {
 
 fn pocket() -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

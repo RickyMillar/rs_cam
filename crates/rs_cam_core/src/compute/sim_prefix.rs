@@ -412,7 +412,6 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
         tool.helix_deg(),
         tool.corner_radius_mm(),
         tool.shank_diameter,
-        tool.holder_diameter,
         tool.stickout,
     ] {
         hash_f64_bits(hasher, value);
@@ -484,6 +483,9 @@ fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
         // K1: the tool id moves no stock. Only the obstacle join check
         // reads it, and that check runs at the tail from the live request.
         tool_id: _,
+        // H1: the head moves no stock. Only the obstacle check reads it,
+        // at the tail from the live request, like the tool id.
+        head: _,
     } = entry;
 
     let mut hasher = DefaultHasher::new();

@@ -280,6 +280,7 @@ fn state_for_recipe(
     };
 
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Chip verdict fixture".to_owned(),
         enabled: true,

@@ -228,6 +228,7 @@ fn pocket_op(rpm: u32) -> OperationConfig {
 /// coolant BEFORE `add_toolpath` — see the module doc on ordering.
 fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

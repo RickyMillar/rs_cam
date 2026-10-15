@@ -2223,6 +2223,9 @@ fn simulate_candidate_isolated(
     let (tool_def, flute_count, tool_summary) =
         crate::compute::simulate::entry_tool_fields(tool_cfg);
     let entry = SimToolpathEntry {
+        // H1: a candidate reads no shoe plan; the advisor reads no
+        // collision either. The fixed head keeps the entry honest.
+        head: crate::machine::head::HeadFit::fixed(&context.machine.head),
         id: context.toolpath_id,
         name: context.toolpath_name.clone(),
         annotated,

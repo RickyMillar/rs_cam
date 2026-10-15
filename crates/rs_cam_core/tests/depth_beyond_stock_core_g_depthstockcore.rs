@@ -300,6 +300,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         load_error: None,
     });
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

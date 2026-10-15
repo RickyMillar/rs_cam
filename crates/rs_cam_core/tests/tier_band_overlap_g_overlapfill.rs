@@ -640,7 +640,7 @@ fn rivmap100_tiered_finish_step0() {
         .unwrap()
         .clone();
     let def = build_cutter(&tool);
-    let assembly = def.to_assembly();
+    let assembly = def.to_assembly(&rs_cam_core::machine::head::HeadFit::default());
     let mesh = session
         .models()
         .iter()
@@ -664,7 +664,11 @@ fn rivmap100_tiered_finish_step0() {
         tool.name,
         assembly.cutter_length,
         assembly.shank_diameter / 2.0,
-        assembly.holder_diameter / 2.0,
+        assembly
+            .head
+            .first()
+            .and_then(|b| b.radius_mm)
+            .unwrap_or(0.0),
         assembly.cutter_radius,
     );
 

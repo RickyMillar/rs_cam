@@ -1470,7 +1470,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
                 .expect("the case tool")
                 .clone();
             let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
-            let r = tool.to_assembly().cutter_radius;
+            let r = tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()).cutter_radius;
             let grown = [
                 strip[0].map(|v| v - STRIP_CLEARANCE_MM),
                 strip[1].map(|v| v + STRIP_CLEARANCE_MM),
@@ -1500,7 +1500,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
             let set = session
                 .obstacle_set_for_toolpath(index)
                 .expect("the strip resolves");
-            let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+            let view = set.for_tool(&tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()), None).expect("a tool view");
             let join = session.obstacle_join_for_toolpath(index);
             let hits = view.check_toolpath(&tp, join);
             if let Some(hit) = hits.first() {

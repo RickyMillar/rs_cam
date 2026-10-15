@@ -74,6 +74,7 @@ fn model() -> LoadedModel {
 
 fn toolpath(id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(id),
         name: name.to_owned(),
         enabled: true,

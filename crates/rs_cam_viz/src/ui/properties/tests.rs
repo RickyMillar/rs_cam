@@ -174,6 +174,7 @@ fn one_pocket_session() -> (
         .add_toolpath(
             0,
             ToolpathConfig {
+                shoe: Default::default(),
                 id: rs_cam_core::compute::ToolpathId(0),
                 name: "Pocket".to_owned(),
                 enabled: true,

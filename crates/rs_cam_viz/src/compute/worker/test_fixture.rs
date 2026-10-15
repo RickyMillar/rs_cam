@@ -202,6 +202,7 @@ fn toolpath_config(
     boundary: BoundaryConfig,
 ) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id,
         name: name.to_owned(),
         enabled: true,

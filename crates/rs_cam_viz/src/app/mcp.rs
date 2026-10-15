@@ -5,7 +5,7 @@
 pub(crate) mod commands;
 mod diagnostics;
 mod generation;
-mod project;
+pub(crate) mod project;
 mod simulation;
 mod view;
 

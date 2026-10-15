@@ -72,6 +72,7 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 
 fn tc(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

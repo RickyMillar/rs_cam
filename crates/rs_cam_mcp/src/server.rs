@@ -516,8 +516,7 @@ pub struct SetToolParamInput {
     /// refused): "diameter", "flute_count", "stickout", "corner_radius"
     /// (bull-nose corner), "cutting_length", "included_angle" (V-bit,
     /// degrees), "taper_half_angle" (tapered ball nose, degrees),
-    /// "shaft_diameter", "shank_diameter",
-    /// "holder_diameter", "size_units" (display unit: "metric" or
+    /// "shaft_diameter", "shank_diameter", "size_units" (display unit: "metric" or
     /// "imperial"; changes no length and invalidates nothing).
     pub param: String,
     /// New value (numeric — `flute_count` must be a whole number;
@@ -700,8 +699,6 @@ pub struct AddToolParam {
     /// Tool stickout from the holder in mm — drives the deflection
     /// model. Default 45.0.
     pub stickout: Option<f64>,
-    /// Holder diameter in mm (holder-collision check). Default 25.0.
-    pub holder_diameter: Option<f64>,
     /// G-code tool number for M6 output. Omit to auto-allocate the
     /// next free number in the project (distinct numbers are what make
     /// an M6 tool change re-trigger — identical numbers silently
@@ -1060,6 +1057,102 @@ pub struct SetSimulationResolutionParam {
     /// simulation and every rest result recorded at the old cell.
     #[serde(default)]
     pub resolution_mm: Option<f64>,
+}
+
+/// H1: the head presets, as a wire enum. Source of the preset numbers:
+/// `planning/op_architecture_2026-10-14/PLAN.md`, section H.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum HeadPresetParam {
+    /// The collet nut (20 mm diameter, 30 mm tall) and the spindle shelf.
+    BareCollet,
+    /// The bare collet plus the dust shoe: a soft brush (80 mm, 25 mm
+    /// long), a hard plate (80 mm, 5 mm), then a shelf. Normal gap 25 mm.
+    DustShoe,
+    /// The head of a project with no `head` table: one hard 25 mm part at
+    /// the holder face, no shelf, no shoe.
+    Unmodelled,
+}
+
+/// H1: hard or soft, as a wire enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum HeadPartKindParam {
+    /// A rigid part. It blocks a move.
+    Hard,
+    /// A flexible part (a brush). It never blocks a move.
+    Soft,
+}
+
+/// H1: one head or shoe part, from its bottom upward.
+#[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct HeadPartParam {
+    /// The part name.
+    pub name: String,
+    /// The diameter in mm. Omit it for a SHELF (no width limit); a shelf
+    /// must be the last part.
+    pub diameter_mm: Option<f64>,
+    /// The height in mm. It places the next part.
+    #[serde(default)]
+    pub height_mm: f64,
+    /// Hard (blocks a move) or soft (never blocks).
+    pub kind: HeadPartKindParam,
+}
+
+/// `set_machine_head` (H1): write the machine head and its dust shoe.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+pub struct SetMachineHeadParam {
+    /// Start from a preset. Omit it to start from the current head.
+    pub preset: Option<HeadPresetParam>,
+    /// Replace the fixed parts above the holder face (bottom first).
+    pub parts: Option<Vec<HeadPartParam>>,
+    /// The fixed mount in mm: from the holder face up to the first part.
+    pub mount_mm: Option<f64>,
+    /// Replace the shoe parts (brush end first). Needs a shoe: start from
+    /// the `dust_shoe` preset or a head that has one.
+    pub shoe_parts: Option<Vec<HeadPartParam>>,
+    /// The normal shoe gap in mm (brush end above the bit end). The shoe
+    /// solver gives no gap below it.
+    pub normal_gap_mm: Option<f64>,
+    /// The lowest brush-end position in mm from the holder face, positive
+    /// up. Give it with `travel_max_mm`; omit both for an unknown range.
+    pub travel_min_mm: Option<f64>,
+    /// The highest brush-end position in mm from the holder face.
+    pub travel_max_mm: Option<f64>,
+    /// `true` removes the shoe from the head.
+    #[serde(default)]
+    pub remove_shoe: bool,
+}
+
+/// H1: the shoe setting of one toolpath, as a wire enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ShoeModeParam {
+    /// The shoe solver sets the gap.
+    #[default]
+    Auto,
+    /// The operator states the gap (`gap_mm`).
+    Gap,
+    /// The shoe is raised clear.
+    Raised,
+    /// The shoe is removed.
+    Off,
+}
+
+/// `set_toolpath_shoe` (H1): the dust shoe setting of one toolpath.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+pub struct SetToolpathShoeParam {
+    /// Toolpath index (0-based).
+    pub index: usize,
+    /// auto, gap, raised or off.
+    pub mode: ShoeModeParam,
+    /// The gap in mm (brush end above the bit end). Required for `gap`,
+    /// refused for the other modes.
+    pub gap_mm: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -1823,7 +1916,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     apply_f64!(shaft_diameter, "shaft_diameter");
     apply_f64!(shank_diameter, "shank_diameter");
     apply_f64!(stickout, "stickout");
-    apply_f64!(holder_diameter, "holder_diameter");
 
     match spec.flute_count {
         Some(0) => return Err("flute_count must be at least 1.".to_owned()),
@@ -1955,6 +2047,10 @@ pub fn build_info() -> serde_json::Value {
             // - `set_machine_kinematics` writes accel + junction
             //   deviation without a GRBL `$$` dump.
             "set_machine_kinematics",
+            // H1: `set_machine_head` writes the head and the dust shoe,
+            // `set_toolpath_shoe` the per-toolpath shoe setting, and
+            // `inspect_machine` returns the head and the solved shoe plan.
+            "machine_head_and_shoe",
             // - `set_setup_rotation` writes a setup's in-plane Z
             //   rotation (0/90/180/270).
             "set_setup_rotation",
@@ -2552,7 +2648,6 @@ mod tests {
             "shaft_diameter",
             "shank_diameter",
             "stickout",
-            "holder_diameter",
             "flute_count",
         ] {
             assert!(

@@ -96,6 +96,7 @@ fn square_model(id: usize, name: &str, side_mm: f64, targets: Vec<DrillTarget>) 
 
 fn toolpath(id: usize, name: &str, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(id),
         name: name.to_owned(),
         enabled: true,

@@ -148,6 +148,7 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
     });
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Collision population pocket".to_owned(),
         enabled: true,

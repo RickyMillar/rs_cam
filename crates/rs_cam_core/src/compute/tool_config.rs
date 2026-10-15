@@ -176,8 +176,7 @@ pub struct ToolConfig {
     // Tapered Ball Nose (half-angle in degrees)
     pub taper_half_angle: f64,
     pub shaft_diameter: f64,
-    // Holder / collision detection
-    pub holder_diameter: f64,
+    // Shank / collision detection (H1: the holder is the machine head)
     pub shank_diameter: f64,
     pub stickout: f64,
     // Cutting parameters (for feeds calculation)
@@ -220,7 +219,6 @@ impl ToolConfig {
             included_angle: 90.0,
             taper_half_angle: 15.0,
             shaft_diameter: 6.35,
-            holder_diameter: 25.0,
             shank_diameter: 6.35,
             stickout: 45.0,
             flute_count: 2,
@@ -674,7 +672,6 @@ impl ToolConfig {
             self.cutting_length,
             self.shank_diameter,
             self.stickout,
-            self.holder_diameter,
         ];
         // Plus the length geometry this type owns — which is exactly
         // what `normalize_geometry` leaves behind.
@@ -1419,7 +1416,6 @@ corner_radius = 2.0
 included_angle = 90.0
 taper_half_angle = 15.0
 shaft_diameter = 6.0
-holder_diameter = 20.0
 shank_diameter = 6.0
 stickout = 40.0
 flute_count = 2
@@ -1735,7 +1731,6 @@ product_id = ""
             tool.shaft_diameter = 6.0_f64.max(agrees);
             tool.cutting_length = 20.0;
             tool.stickout = 35.0;
-            tool.holder_diameter = 25.0;
             assert!(
                 tool.name_tip_size_mismatch().is_none(),
                 "{name}: agreeing geometry raised {:?}",

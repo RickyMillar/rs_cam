@@ -122,7 +122,12 @@ fn plane_lifts(tp: &Toolpath) -> usize {
 fn assert_no_hit(session: &mut ProjectSession, tp: &Toolpath, label: &str) {
     let set = session.obstacle_set_for_toolpath(0).expect("the clamp");
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
-    let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+    let view = set
+        .for_tool(
+            &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),
+            None,
+        )
+        .expect("a tool view");
     let hits = view.check_toolpath(tp, JoinStart::Unknown);
     assert!(hits.is_empty(), "{label}: {hits:?}");
     simulate(session);
@@ -201,7 +206,12 @@ fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
     let tp = generate(&mut free);
     let set = clamped.obstacle_set_for_toolpath(0).expect("the clamp");
     let tool = rs_cam_core::compute::cutter::build_cutter(&clamped.tools()[0]);
-    let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+    let view = set
+        .for_tool(
+            &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),
+            None,
+        )
+        .expect("a tool view");
     let tc = &free.toolpath_configs()[0];
     let retract = tc
         .heights
@@ -329,7 +339,6 @@ fn the_pre_clip_keeps_the_cells_the_holder_does_not_reach_k3() {
     let tool = ToolConfig {
         cutting_length: 8.0,
         shank_diameter: 6.0,
-        holder_diameter: 2.0 * HOLDER_R,
         stickout: 10.0,
         ..ball_tool_config(6.0)
     };

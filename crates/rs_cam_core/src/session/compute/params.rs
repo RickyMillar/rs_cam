@@ -502,7 +502,7 @@ impl ProjectSession {
     ///
     /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
     /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
-    /// `shank_diameter`, `holder_diameter`, and `size_units`
+    /// `shank_diameter`, and `size_units`
     /// (`"metric"` or `"imperial"`).
     ///
     /// Invalidates cached results for all toolpaths that reference this tool.
@@ -583,11 +583,6 @@ impl ProjectSession {
             "shank_diameter" => {
                 tool.shank_diameter = value.as_f64().ok_or_else(|| {
                     SessionError::InvalidParam("shank_diameter must be a number".to_owned())
-                })?;
-            }
-            "holder_diameter" => {
-                tool.holder_diameter = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("holder_diameter must be a number".to_owned())
                 })?;
             }
             "size_units" => {

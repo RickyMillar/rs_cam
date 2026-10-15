@@ -144,6 +144,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
     });
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

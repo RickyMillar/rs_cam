@@ -70,6 +70,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(1),
                     name: "AS001 Pocket Pass 1".to_owned(),
                     annotated: Arc::new(
@@ -244,6 +245,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     };
 
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,

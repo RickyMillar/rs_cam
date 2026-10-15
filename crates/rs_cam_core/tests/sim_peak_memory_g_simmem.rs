@@ -87,13 +87,13 @@ fn rapid_heavy_entry() -> SimToolpathEntry {
     tp.feed_to(P3::new(0.0, 1.0, -1.0), 600.0);
     tp.feed_to(P3::new(30.0, 1.0, -1.0), 600.0);
     SimToolpathEntry {
+        head: Default::default(),
         id: ToolpathId(1),
         name: "rapids".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: Arc::new(ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             ToolMaterial::Carbide,

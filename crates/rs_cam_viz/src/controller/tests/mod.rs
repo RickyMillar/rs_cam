@@ -222,6 +222,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     });
 
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Scallop".to_owned(),
         enabled: true,
@@ -288,6 +289,7 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         .max()
         .unwrap_or(0);
     let cfg = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(next),
         name: name.to_owned(),
         enabled: true,
@@ -475,6 +477,7 @@ fn add_derived_rest_dependent(
     source_id: ToolpathId,
 ) -> ToolpathId {
     let dependent_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
         name: "Rest scallop".to_owned(),
         enabled: true,

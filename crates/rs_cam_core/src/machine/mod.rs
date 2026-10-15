@@ -6,6 +6,7 @@
 //! The folder holds the machine model: this profile, the kinematics, the
 //! utilisation instrument and the strategy advisor that reads them.
 
+pub mod head;
 pub mod kinematic_utilization;
 pub mod kinematics;
 pub mod strategy_advisor;
@@ -233,6 +234,12 @@ pub struct MachineProfile {
     /// dump is imported. Every built-in preset ships `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<ControllerSettings>,
+    /// H1: the head above the holder face and the dust shoe. A file
+    /// without the table reads [`head::MachineHead::unmodelled`], the band
+    /// every tool had before H1; the writer leaves that head out, so an
+    /// old file saves as it loaded.
+    #[serde(default, skip_serializing_if = "head::MachineHead::is_unmodelled")]
+    pub head: head::MachineHead,
 }
 
 /// The controller firmware a `$$` / `$I` dump came from (G10).
@@ -504,6 +511,7 @@ impl MachineProfile {
             // this field on the active profile.
             kinematics: None,
             controller: None,
+            head: head::MachineHead::default(),
         }
     }
 
@@ -535,6 +543,7 @@ impl MachineProfile {
             aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
             controller: None,
+            head: head::MachineHead::default(),
         }
     }
 
@@ -562,6 +571,7 @@ impl MachineProfile {
             aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
             controller: None,
+            head: head::MachineHead::default(),
         }
     }
 

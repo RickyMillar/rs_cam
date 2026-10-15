@@ -163,6 +163,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
         load_error: None,
     });
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

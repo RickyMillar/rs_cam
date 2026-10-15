@@ -133,6 +133,7 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
     });
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

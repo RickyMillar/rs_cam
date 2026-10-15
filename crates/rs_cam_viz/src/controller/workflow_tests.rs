@@ -183,6 +183,7 @@ fn find_vertical_face(enriched: &EnrichedMesh) -> FaceGroupId {
 fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
     use rs_cam_core::compute::catalog::OperationConfig;
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,
@@ -525,6 +526,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
 
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

@@ -581,10 +581,51 @@ impl ProjectSession {
     pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
             let before = session.machine.link_kinematics();
+            let head_before = session.machine.head.fixed_digest();
             session.machine = machine;
             session.drop_simulation(SimulationDropCause::Machine);
             session.drop_link_readers_if_moved(&before);
+            session.drop_head_readers_if_moved(head_before);
         })
+    }
+
+    /// Write the machine head (H1).
+    ///
+    /// The door of the `SetMachineHead` command row. It refuses a head that
+    /// breaks a rule of [`crate::machine::head::MachineHead::validate`]. It
+    /// clears the simulation: the check reads the head. A change of the
+    /// FIXED parts also drops every result, because the obstacle step of
+    /// every operation reads them ([`Self::drop_head_readers_if_moved`]).
+    /// A shoe-only change moves no toolpath.
+    ///
+    /// # Errors
+    /// [`SessionError::InvalidParam`] with the refusal text.
+    #[instrument(skip(self, head))]
+    pub(crate) fn set_machine_head(
+        &mut self,
+        head: crate::machine::head::MachineHead,
+    ) -> Result<Effects, SessionError> {
+        head.validate()
+            .map_err(|e| SessionError::InvalidParam(e.to_string()))?;
+        Ok(self.with_effects(None, move |session| {
+            let head_before = session.machine.head.fixed_digest();
+            session.machine.head = head;
+            session.drop_simulation(SimulationDropCause::Machine);
+            session.drop_head_readers_if_moved(head_before);
+        }))
+    }
+
+    /// H1: drop every result when the fixed head moved. The obstacle step,
+    /// the link ceiling and the shelf floor of each operation read the
+    /// fixed parts, so any result can move with them.
+    fn drop_head_readers_if_moved(&mut self, before: u64) {
+        if self.machine.head.fixed_digest() == before {
+            return;
+        }
+        let all: Vec<usize> = self.results.keys().copied().collect();
+        if !all.is_empty() {
+            self.drop_results_and_their_dependents(&all);
+        }
     }
 
     /// B7: drop the result of every toolpath whose generation read the

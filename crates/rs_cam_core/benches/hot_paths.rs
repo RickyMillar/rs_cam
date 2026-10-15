@@ -781,6 +781,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     let mut add = |name: &str, op: OperationConfig| {
         let op_type = op.op_type();
         let cfg = ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0),
             name: name.to_owned(),
             enabled: true,
@@ -936,7 +937,6 @@ fn ladder_request(
         rs_cam_core::tool::ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             rs_cam_core::compute::tool_config::ToolMaterial::Carbide,
@@ -949,6 +949,7 @@ fn ladder_request(
                 .take(count)
                 .enumerate()
                 .map(|(i, tp)| SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(i + 1),
                     name: format!("Pass{i}"),
                     annotated: std::sync::Arc::clone(tp),

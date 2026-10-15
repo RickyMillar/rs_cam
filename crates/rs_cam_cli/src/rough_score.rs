@@ -532,6 +532,7 @@ mod tests {
             Command::AddToolpath(AddToolpathArgs {
                 setup_index: 0,
                 config: Box::new(ToolpathConfig {
+                    shoe: Default::default(),
                     id: ToolpathId(0),
                     name: "Pocket (rough-score test)".to_owned(),
                     enabled: true,

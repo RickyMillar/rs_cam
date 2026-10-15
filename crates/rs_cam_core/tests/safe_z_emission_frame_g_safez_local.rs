@@ -117,6 +117,7 @@ fn build_session(origin_z: f64) -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Rough".to_owned(),
         enabled: true,

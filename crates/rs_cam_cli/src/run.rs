@@ -131,6 +131,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(ToolpathConfig {
+                shoe: Default::default(),
                 id: rs_cam_core::ToolpathId(0),
                 name: format!("{} (cli run)", op_type.label()),
                 enabled: true,

@@ -238,6 +238,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
         stock: rs_cam_core::compute::config::StockSource,
     ) -> ToolpathConfig {
         ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(id),
             name: format!("Op {id}"),
             enabled: true,

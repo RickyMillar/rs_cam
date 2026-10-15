@@ -611,6 +611,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
     dressups.ramp_angle = RAMP_ANGLE_DEG;
     dressups.arc_fitting = None;
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

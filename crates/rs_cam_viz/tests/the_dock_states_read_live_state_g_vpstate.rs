@@ -121,6 +121,7 @@ fn fresh_state() -> AppState {
 
 fn config(name: &str) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

@@ -117,7 +117,6 @@ fn endmill() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(TOOL_DIAMETER, 25.0)),
         TOOL_DIAMETER,
-        25.0,
         45.0,
         2,
         ToolMaterial::Carbide,
@@ -126,6 +125,7 @@ fn endmill() -> ToolDefinition {
 
 fn entry(id: usize, name: &str, tp: Toolpath) -> SimToolpathEntry {
     SimToolpathEntry {
+        head: Default::default(),
         id: ToolpathId(id),
         name: name.to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),

@@ -343,14 +343,6 @@
             "null"
           ]
         },
-        "holder_diameter": {
-          "description": "Holder diameter in mm (holder-collision check). Default 25.0.",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
         "included_angle": {
           "description": "**Required for `v_bit`** — the full included angle in degrees\n(a \"20 degree V-bit\" is 20.0). Must be > 0 and < 180. There is\nno honest default: the angle IS the tool, so an omitted angle is\nrefused rather than guessed.",
           "format": "double",
@@ -2601,6 +2593,182 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`set_machine_head` (H1): write the machine head and its dust shoe.",
+      "properties": {
+        "mount_mm": {
+          "description": "The fixed mount in mm: from the holder face up to the first part.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "normal_gap_mm": {
+          "description": "The normal shoe gap in mm (brush end above the bit end). The shoe\nsolver gives no gap below it.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "parts": {
+          "description": "Replace the fixed parts above the holder face (bottom first).",
+          "items": {
+            "description": "H1: one head or shoe part, from its bottom upward.",
+            "properties": {
+              "diameter_mm": {
+                "description": "The diameter in mm. Omit it for a SHELF (no width limit); a shelf\nmust be the last part.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "height_mm": {
+                "default": 0.0,
+                "description": "The height in mm. It places the next part.",
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "description": "Hard (blocks a move) or soft (never blocks).",
+                "oneOf": [
+                  {
+                    "const": "hard",
+                    "description": "A rigid part. It blocks a move.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "soft",
+                    "description": "A flexible part (a brush). It never blocks a move.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "name": {
+                "description": "The part name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "description": "H1: the head presets, as a wire enum. Source of the preset numbers:\n`planning/op_architecture_2026-10-14/PLAN.md`, section H.",
+              "oneOf": [
+                {
+                  "const": "bare_collet",
+                  "description": "The collet nut (20 mm diameter, 30 mm tall) and the spindle shelf.",
+                  "type": "string"
+                },
+                {
+                  "const": "dust_shoe",
+                  "description": "The bare collet plus the dust shoe: a soft brush (80 mm, 25 mm\nlong), a hard plate (80 mm, 5 mm), then a shelf. Normal gap 25 mm.",
+                  "type": "string"
+                },
+                {
+                  "const": "unmodelled",
+                  "description": "The head of a project with no `head` table: one hard 25 mm part at\nthe holder face, no shelf, no shoe.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Start from a preset. Omit it to start from the current head."
+        },
+        "remove_shoe": {
+          "default": false,
+          "description": "`true` removes the shoe from the head.",
+          "type": "boolean"
+        },
+        "shoe_parts": {
+          "description": "Replace the shoe parts (brush end first). Needs a shoe: start from\nthe `dust_shoe` preset or a head that has one.",
+          "items": {
+            "description": "H1: one head or shoe part, from its bottom upward.",
+            "properties": {
+              "diameter_mm": {
+                "description": "The diameter in mm. Omit it for a SHELF (no width limit); a shelf\nmust be the last part.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "height_mm": {
+                "default": 0.0,
+                "description": "The height in mm. It places the next part.",
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "description": "Hard (blocks a move) or soft (never blocks).",
+                "oneOf": [
+                  {
+                    "const": "hard",
+                    "description": "A rigid part. It blocks a move.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "soft",
+                    "description": "A flexible part (a brush). It never blocks a move.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "name": {
+                "description": "The part name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "travel_max_mm": {
+          "description": "The highest brush-end position in mm from the holder face.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "travel_min_mm": {
+          "description": "The lowest brush-end position in mm from the holder face, positive\nup. Give it with `travel_max_mm`; omit both for an unknown range.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "title": "SetMachineHeadParam",
+      "type": "object"
+    },
+    "name": "set_machine_head"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
       "properties": {
         "acceleration_mm_s2": {
@@ -2972,7 +3140,7 @@
           "type": "integer"
         },
         "param": {
-          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
+          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
           "type": "string"
         },
         "value": {
@@ -3142,6 +3310,60 @@
       "type": "object"
     },
     "name": "set_toolpath_param"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`set_toolpath_shoe` (H1): the dust shoe setting of one toolpath.",
+      "properties": {
+        "gap_mm": {
+          "description": "The gap in mm (brush end above the bit end). Required for `gap`,\nrefused for the other modes.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "description": "auto, gap, raised or off.",
+          "oneOf": [
+            {
+              "const": "auto",
+              "description": "The shoe solver sets the gap.",
+              "type": "string"
+            },
+            {
+              "const": "gap",
+              "description": "The operator states the gap (`gap_mm`).",
+              "type": "string"
+            },
+            {
+              "const": "raised",
+              "description": "The shoe is raised clear.",
+              "type": "string"
+            },
+            {
+              "const": "off",
+              "description": "The shoe is removed.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "mode"
+      ],
+      "title": "SetToolpathShoeParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_shoe"
   },
   {
     "inputSchema": {

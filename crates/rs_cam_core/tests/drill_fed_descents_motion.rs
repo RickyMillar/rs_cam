@@ -153,6 +153,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         .add_toolpath(
             0,
             ToolpathConfig {
+                shoe: Default::default(),
                 id: ToolpathId(0),
                 name: "drill sentry".to_owned(),
                 enabled: true,

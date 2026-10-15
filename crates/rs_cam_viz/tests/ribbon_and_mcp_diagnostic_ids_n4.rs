@@ -108,6 +108,7 @@ fn toolpath(
     heights: HeightsConfig,
 ) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0), // assigned by session.add_toolpath
         name: name.to_owned(),
         enabled: true,

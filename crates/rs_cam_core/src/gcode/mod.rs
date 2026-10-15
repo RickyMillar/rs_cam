@@ -1657,6 +1657,7 @@ mod tests {
         operation: crate::compute::OperationConfig,
     ) -> crate::session::ToolpathConfig {
         crate::session::ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0),
             name: "Test Op".to_owned(),
             enabled: true,

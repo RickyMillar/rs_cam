@@ -40,6 +40,7 @@ fn make_session() -> ProjectSession {
 
 fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "test".to_owned(),
         enabled: true,
@@ -403,6 +404,7 @@ fn set_boundary_derived_rest_regions_skips_rest_depth_pencil_source() {
     let tool_id = s.tools()[0].id.0;
 
     let source_tc = ToolpathConfig {
+        shoe: Default::default(),
         operation: OperationConfig::Pencil(PencilConfig {
             detector: crate::finish::pencil::PencilDetector::RestDepth,
             ..PencilConfig::default()

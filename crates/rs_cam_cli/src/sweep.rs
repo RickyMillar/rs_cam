@@ -543,7 +543,6 @@ included_angle = 60.0
 taper_angle = 4.0
 shaft_diameter = 3.0
 shank_diameter = 6.0
-holder_diameter = 40.0
 stickout = 45.0
 
 [[setup]]
@@ -587,7 +586,6 @@ dogbone = true
 
         let tool = back.tools.get("flat_6mm").unwrap();
         assert_eq!(tool.shank_diameter, Some(6.0));
-        assert_eq!(tool.holder_diameter, Some(40.0));
         assert_eq!(tool.stickout, Some(45.0));
         assert_eq!(tool.number, Some(3));
         assert_eq!(tool.flute_count, Some(3));

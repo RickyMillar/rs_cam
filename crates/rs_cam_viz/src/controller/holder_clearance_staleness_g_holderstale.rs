@@ -106,6 +106,7 @@ impl ComputeBackend for ScriptedLane {
 
 pub(super) fn toolpath(id: usize) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(id),
         name: format!("Op {id}"),
         enabled: true,
@@ -312,16 +313,26 @@ fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
     crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
 }
 
-fn edit_holder_diameter(controller: &mut AppController<ScriptedLane>) {
-    let mut draft = controller
+/// H1: the holder is the machine head now. A wider collet nut is the edit
+/// that moves the holder's own geometry.
+fn edit_machine_head(controller: &mut AppController<ScriptedLane>) {
+    let mut head = controller.state.session.machine().head.clone();
+    if let Some(part) = head.parts.first_mut() {
+        part.diameter_mm = part.diameter_mm.map(|d| d + 10.0);
+    }
+    let effects = controller
         .state
         .session
-        .tools()
-        .first()
-        .expect("the fixture project carries one tool")
-        .clone();
-    draft.holder_diameter += 10.0;
-    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
+        .apply(rs_cam_core::session::Command::SetMachineHead(
+            rs_cam_core::session::SetMachineHeadArgs {
+                head: Box::new(head),
+            },
+        ))
+        .expect("the head edit applies");
+    crate::state::stale::stamp_stale(&mut controller.state, &effects.stale);
+    if effects.simulation_cleared {
+        controller.invalidate_simulation();
+    }
 }
 
 fn disable_the_operation(controller: &mut AppController<ScriptedLane>) {
@@ -363,9 +374,9 @@ fn edit_classes() -> Vec<EditClass> {
             apply: edit_tool_stickout,
         },
         EditClass {
-            name: "holder diameter",
+            name: "machine head (collet diameter)",
             input: "the holder's own geometry",
-            apply: edit_holder_diameter,
+            apply: edit_machine_head,
         },
         EditClass {
             name: "operation switched off",

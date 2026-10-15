@@ -85,6 +85,7 @@ fn fixture() -> AppState {
         config.spindle_rpm = Some(18_000);
     }
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Speed control fixture".to_owned(),
         enabled: true,

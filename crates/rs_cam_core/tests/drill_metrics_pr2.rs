@@ -41,6 +41,7 @@ fn make_drill_tool(diameter: f64) -> ToolConfig {
 
 fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pin Drill".to_owned(),
         enabled: true,

@@ -239,6 +239,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             }
         });
 
+        // H2: the run sheet. It reads no simulation, so it stands outside
+        // the freshness gate. It replaces the shoe prompts the G-code does
+        // not carry (operator ruling 2026-10-16).
+        ui.add_space(12.0);
+        crate::ui::shoe_list::draw_run_sheet(ui, state);
+
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(crate::ui::tokens::SPACE_3);

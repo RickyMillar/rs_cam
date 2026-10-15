@@ -445,6 +445,7 @@ fn session_builders_drive_a_real_generation() {
 
     // The struct-update override idiom the module documents.
     let cfg = rs_cam_core::session::ToolpathConfig {
+        shoe: Default::default(),
         heights: pinned_heights(0.0, -9.0),
         enabled: false,
         ..toolpath_config(

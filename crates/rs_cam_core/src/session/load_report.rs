@@ -283,6 +283,7 @@ mod tests {
 
     fn pocket_config(tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0),
             name: "memo".to_owned(),
             enabled: true,

@@ -91,6 +91,7 @@ fn fixture() -> AppState {
         config.spindle_rpm = Some(17_000);
     }
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Hover bound fixture".to_owned(),
         enabled: true,

@@ -368,7 +368,9 @@ fn draw_detail_panel(
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
-        crate::ui::properties::tool::draw_tool_preview(ui, &tool);
+        // A library tool is not bound to a project; the preview draws the
+        // unmodelled head.
+        crate::ui::properties::tool::draw_tool_preview(ui, &tool, None);
         ui.add_space(8.0);
         draw_readonly_grid(ui, &tool);
 
@@ -531,7 +533,7 @@ fn draw_edit_form(
     let mut save = false;
     let mut cancel = false;
     egui::ScrollArea::vertical().show(ui, |ui| {
-        crate::ui::properties::tool::draw_tool_fields(ui, draft);
+        crate::ui::properties::tool::draw_tool_fields(ui, draft, None);
         ui.add_space(8.0);
         ui.separator();
         ui.horizontal(|ui| {

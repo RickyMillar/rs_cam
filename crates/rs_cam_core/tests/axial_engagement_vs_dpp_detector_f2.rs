@@ -114,6 +114,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
     for (i, (name, op)) in matrix.iter().enumerate() {
         let op_type = op.op_type();
         let tc = ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(i),
             name: format!("detector {name}"),
             enabled: true,

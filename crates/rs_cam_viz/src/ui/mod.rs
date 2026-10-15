@@ -17,6 +17,7 @@ pub mod readiness;
 pub mod readiness_panel;
 pub mod setup_deletion_modal;
 pub mod setup_panel;
+pub mod shoe_list;
 pub mod shortcuts_window;
 pub mod sim_debug;
 pub mod sim_diagnostics;
@@ -157,6 +158,14 @@ pub enum AppEvent {
     /// K2: the list-row checkbox. The controller applies the STORED record
     /// with the new flag, so an open editor draft cannot ride along.
     SetObstacleEnabled(SetupId, ObstacleId, bool),
+    /// H2: the toolpath panel's dust shoe row. The controller applies one
+    /// `SetToolpathShoe` and pushes the undo step. `merge`: the edit is a
+    /// later frame of one gap drag, so it joins the newest undo step.
+    SetToolpathShoe {
+        tp_id: ToolpathId,
+        shoe: rs_cam_core::machine::head::ShoeSetting,
+        merge: bool,
+    },
 
     // Stock changes (S4): one intent per action of the setup panel's list.
     // The controller turns each into one S2 command.

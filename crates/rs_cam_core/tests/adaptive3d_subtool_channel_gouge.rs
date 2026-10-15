@@ -211,6 +211,7 @@ fn build_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "subtool rough".to_owned(),
         enabled: true,

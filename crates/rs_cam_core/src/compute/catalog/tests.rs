@@ -926,6 +926,7 @@ fn coarse_steps_is_gone_from_the_wire() {
     let mut s = ProjectSession::new_empty();
     let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: crate::ToolpathId(0),
         name: "rough".to_owned(),
         enabled: true,

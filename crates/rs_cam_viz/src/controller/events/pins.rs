@@ -600,6 +600,7 @@ impl<B: ComputeBackend> AppController<B> {
             "Pin Drill".to_owned()
         };
         let tc = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0), // will be assigned by session
             name,
             enabled: true,

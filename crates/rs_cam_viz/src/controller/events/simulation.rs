@@ -174,6 +174,9 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_bbox = build_world_stock_bbox(&self.state.session);
 
         let mut groups: Vec<SimGroupEntry> = Vec::new();
+        // H1: the shoe of every entry, from the one core shoe plan (the
+        // seventh shared decision, `entry_head_fit`).
+        let shoe_of = self.state.session.resolved_shoe_lookup();
         let mut all_tools_flat: Vec<ToolConfig> = Vec::new();
 
         for (i, setup) in self.state.session.list_setups().iter().enumerate() {
@@ -254,6 +257,10 @@ impl<B: ComputeBackend> AppController<B> {
                 let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
                 tools.push(tool.clone());
                 toolpaths.push(SimToolpathEntry {
+                    head: rs_cam_core::compute::simulate::entry_head_fit(
+                        &self.state.session.machine().head,
+                        shoe_of(tp_idx),
+                    ),
                     id: tc.id,
                     name: tc.name.clone(),
                     annotated: Arc::clone(result.annotated()),
@@ -660,6 +667,10 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             };
             let join = self.state.session.obstacle_join_for_toolpath(index);
+            // H1: the head and the shoe of this toolpath, and the stock box
+            // of its setup, from the doors the core check reads.
+            let head = self.state.session.head_fit_for_toolpath(index);
+            let stock = self.state.session.setup_stock_box_for_toolpath(index);
             // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
             // stands at SUBMIT, and only on the branch that really submits.
             // The `else` arm below reaches the lane with nothing, and a stamp
@@ -693,6 +704,8 @@ impl<B: ComputeBackend> AppController<B> {
                 mesh,
                 obstacles,
                 join,
+                head,
+                stock: Some(stock),
             });
         } else {
             tracing::warn!("No toolpath with STL mesh available for collision check");

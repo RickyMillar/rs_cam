@@ -107,6 +107,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Rough".to_owned(),
         enabled: true,

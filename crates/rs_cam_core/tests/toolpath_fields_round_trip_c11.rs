@@ -90,6 +90,7 @@ fn run(session: &mut ProjectSession, command: Command) {
 /// starting record states what "default" means for each of them.
 fn default_config(tool_id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

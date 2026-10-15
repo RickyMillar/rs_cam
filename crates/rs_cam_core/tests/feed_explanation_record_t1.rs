@@ -106,7 +106,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(BallEndmill::new(BALL_DIAMETER_MM, 20.0)),
         SHANK_DIAMETER_MM,
-        20.0,
         40.0,
         FLUTES,
         ToolMaterial::Carbide,

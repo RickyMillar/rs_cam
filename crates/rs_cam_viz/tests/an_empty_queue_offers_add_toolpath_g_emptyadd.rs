@@ -67,6 +67,7 @@ fn empty_state() -> AppState {
 /// The same project with one Pocket.
 fn state_with_a_toolpath() -> AppState {
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

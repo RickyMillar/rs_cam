@@ -123,6 +123,7 @@ fn build_vcarve_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "VCarve".to_owned(),
         enabled: true,

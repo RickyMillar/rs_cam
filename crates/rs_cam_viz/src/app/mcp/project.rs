@@ -585,8 +585,12 @@ impl RsCamApp {
             }),
         };
 
+        // H1: the head and the solved shoe setting of each toolpath.
+        let shoe_plan = shoe_plan_wire(session);
         let r = &machine.rigidity;
         json_str(serde_json::json!({
+            "head": machine.head,
+            "shoe_plan": shoe_plan,
             "name": machine.name,
             "max_feed_mm_min": machine.max_feed_mm_min,
             "cutting_feed_ceiling_mm_min": machine.cutting_feed_ceiling_mm_min(),
@@ -973,4 +977,30 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
         "preset": preset,
         "findings": report.findings,
     })
+}
+
+/// The `shoe_plan` value of `inspect_machine` (H1). One row per toolpath in
+/// run order; `run_start` marks a tool change, a setup start or a change
+/// of the shoe setting. H2: the GUI run sheet reads the same core plan, and
+/// `controller::tests::crud::machine_head_h2` pins the two against each other.
+pub(crate) fn shoe_plan_wire(session: &rs_cam_core::session::ProjectSession) -> serde_json::Value {
+    match session.shoe_plan() {
+        Ok(rows) => serde_json::Value::Array(
+            rows.iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "toolpath_index": row.toolpath_index,
+                        "toolpath": row.toolpath_name,
+                        "tool_id": row.tool_id,
+                        "run_start": row.run_start,
+                        "setting": row.setting,
+                        "resolved": row.resolved.label(),
+                        "needed_gap_mm": row.needed_gap_mm,
+                        "gap_too_low": row.gap_too_low(),
+                    })
+                })
+                .collect(),
+        ),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    }
 }

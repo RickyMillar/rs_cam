@@ -69,6 +69,7 @@ impl ComputeBackend for RecordingBackend {
 
 fn toolpath(id: usize, enabled: bool) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(id),
         name: format!("Op {id}"),
         enabled,

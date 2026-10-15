@@ -162,6 +162,7 @@ fn state_with(
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Why-row fixture".to_owned(),
         enabled: true,

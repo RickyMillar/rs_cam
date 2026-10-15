@@ -184,7 +184,6 @@ impl ProjectSession {
                 included_angle: t.included_angle,
                 taper_half_angle: t.taper_half_angle,
                 shaft_diameter: t.shaft_diameter,
-                holder_diameter: t.holder_diameter,
                 shank_diameter: t.shank_diameter,
                 stickout: t.stickout,
                 flute_count: t.flute_count,
@@ -242,6 +241,7 @@ impl ProjectSession {
                         feeds_provenance: tc.feeds_provenance.clone(),
                         rest_analysis: tc.rest_analysis.clone(),
                         planner_origin: tc.planner_origin.clone(),
+                        shoe: tc.shoe,
                     })
                     .collect();
 
@@ -306,6 +306,7 @@ mod tests {
     fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
         ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0),
             name: "Test Op".to_owned(),
             enabled: true,
@@ -513,6 +514,12 @@ mod tests {
                 "stickout",
             ),
             (
+                "[[tools]]\n",
+                "holder_diameter = 25.0\n",
+                "tools[0].holder_diameter",
+                "[job.machine.head]",
+            ),
+            (
                 "[setups.toolpaths.operation.params]\n",
                 "holes = [[1.0, 2.0]]\n",
                 "setups[0].toolpaths[0].operation.params.holes",
@@ -539,6 +546,68 @@ mod tests {
             assert!(message.contains(&format!("'{key_path}'")), "{message}");
             assert!(message.contains(replacement), "{message}");
         }
+        cleanup(&path);
+    }
+
+    /// H1: the head, the shoe and a toolpath's shoe setting survive a save
+    /// and a load. A project with the unmodelled head writes no `head`
+    /// table and no `shoe` key, so an old file saves as it loaded.
+    #[test]
+    fn the_machine_head_and_the_shoe_setting_round_trip_h1() {
+        use crate::machine::head::{MachineHead, ShoeSetting, ShoeTravel};
+        let mut s = ProjectSession::new_empty();
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let path = temp_path("head_round_trip_h1");
+        s.save(&path).unwrap();
+        let plain = std::fs::read_to_string(&path).unwrap();
+        assert!(!plain.contains("[job.machine.head]"), "{plain}");
+        assert!(!plain.contains("shoe"), "{plain}");
+
+        let mut head = MachineHead::dust_shoe();
+        if let Some(shoe) = head.shoe.as_mut() {
+            shoe.travel_mm = Some(ShoeTravel {
+                min_mm: -40.0,
+                max_mm: 10.0,
+            });
+        }
+        let _ = s
+            .apply(crate::session::Command::SetMachineHead(
+                crate::session::SetMachineHeadArgs {
+                    head: Box::new(head.clone()),
+                },
+            ))
+            .unwrap();
+        let _ = s
+            .apply(crate::session::Command::SetToolpathShoe(
+                crate::session::SetToolpathShoeArgs {
+                    index: 0,
+                    shoe: ShoeSetting::Gap { gap_mm: 32.0 },
+                },
+            ))
+            .unwrap();
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[job.machine.head]"), "{text}");
+        let loaded = ProjectSession::load(&path).unwrap();
+        assert_eq!(loaded.machine().head, head);
+        assert_eq!(
+            loaded.toolpath_configs()[0].shoe,
+            ShoeSetting::Gap { gap_mm: 32.0 }
+        );
+        // A bad head refuses and writes nothing.
+        let mut bad = MachineHead::bare_collet();
+        bad.parts.push(bad.parts[0].clone());
+        assert!(
+            s.apply(crate::session::Command::SetMachineHead(
+                crate::session::SetMachineHeadArgs {
+                    head: Box::new(bad)
+                },
+            ))
+            .is_err()
+        );
+        assert_eq!(s.machine().head, head);
         cleanup(&path);
     }
 

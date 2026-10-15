@@ -84,6 +84,8 @@ impl ProjectSession {
     /// (`compute/CLAUDE.md`); the GUI controller builds the other.
     pub(crate) fn simulation_groups(&self, opts: &SimulationOptions) -> Vec<SimGroupEntry> {
         let mut groups = Vec::new();
+        // H1: the shoe of every entry, from one shoe plan.
+        let shoe_of = self.resolved_shoe_lookup();
         for setup in &self.setups {
             let direction = group_stock_cut_direction(setup.face_up);
 
@@ -150,6 +152,10 @@ impl ProjectSession {
                         tc.operation.op_type(),
                     );
                     entries.push(SimToolpathEntry {
+                        head: crate::compute::simulate::entry_head_fit(
+                            &self.machine.head,
+                            shoe_of(tp_idx),
+                        ),
                         id: tc.id,
                         name: tc.name.clone(),
                         annotated: Arc::clone(result.annotated()),

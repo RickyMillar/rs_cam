@@ -973,3 +973,264 @@ mod obstacle_panel_k2 {
         assert!(controller.state.history.undo().is_none(), "no undo entry");
     }
 }
+
+// H2 (`planning/op_architecture_2026-10-14/PLAN.md`, item H): the GUI head
+// editor, the toolpath shoe row and the run sheet.
+//
+// - A head edit goes through `Command::SetMachineHead` with one undo step;
+//   a refusal comes back in core's words and writes nothing.
+// - A shoe edit goes through `Command::SetToolpathShoe` with one undo step
+//   per edit, and one per drag of the gap.
+// - The run sheet and the toolpath panel read the plan that
+//   `inspect_machine` prints as `shoe_plan` (the surface number parity
+//   rule).
+mod machine_head_h2 {
+    use super::*;
+    use rs_cam_core::machine::head::{HeadPart, MachineHead, PartKind, ShoeSetting};
+    use rs_cam_core::session::{ReplaceToolsArgs, SetToolpathShoeArgs, SetToolpathToolArgs};
+
+    /// The sample project with a second tool and three toolpaths: two on
+    /// tool 1, then one on tool 2. Toolpath 1 states a shoe gap of 10 mm, so
+    /// it is a run of its own and its gap is below the solver gap. Every
+    /// toolpath has a result.
+    fn shoe_controller() -> AppController<ScriptedBackend> {
+        let mut controller = sample_controller();
+        let mut second = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
+        second.name = "Second tool".to_owned();
+        let mut tools = controller.state.session.tools().to_vec();
+        tools.push(second);
+        let _ = controller
+            .state
+            .session
+            .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
+            .unwrap();
+        let _ = push_toolpath(&mut controller, "Second");
+        let _ = push_toolpath(&mut controller, "Third");
+        let _ = controller
+            .state
+            .session
+            .apply(Command::SetToolpathTool(SetToolpathToolArgs {
+                index: 2,
+                tool_id: 2,
+            }))
+            .unwrap();
+        let _ = controller
+            .state
+            .session
+            .apply(Command::SetToolpathShoe(SetToolpathShoeArgs {
+                index: 1,
+                shoe: ShoeSetting::Gap { gap_mm: 10.0 },
+            }))
+            .unwrap();
+        crate::ui::properties::apply_head(&mut controller.state, MachineHead::dust_shoe()).unwrap();
+        generate_all_for_test(&mut controller);
+        controller
+    }
+
+    #[test]
+    fn a_head_preset_applies_and_undoes_through_set_machine_head_h2() {
+        let mut controller = sample_controller();
+        let before = controller.state.session.machine().head.clone();
+        let steps = controller.state.history.undo_len();
+        crate::ui::properties::apply_head(&mut controller.state, MachineHead::dust_shoe()).unwrap();
+        assert_eq!(
+            controller.state.session.machine().head,
+            MachineHead::dust_shoe()
+        );
+        assert_eq!(
+            controller.state.history.undo_len(),
+            steps + 1,
+            "one undo step"
+        );
+        assert!(
+            controller.state.gui.dirty,
+            "the door marks the project edited"
+        );
+
+        // An equal head applies nothing and pushes nothing.
+        crate::ui::properties::apply_head(&mut controller.state, MachineHead::dust_shoe()).unwrap();
+        assert_eq!(controller.state.history.undo_len(), steps + 1);
+
+        controller.undo();
+        assert_eq!(controller.state.session.machine().head, before);
+        controller.redo();
+        assert_eq!(
+            controller.state.session.machine().head,
+            MachineHead::dust_shoe()
+        );
+    }
+
+    #[test]
+    fn a_refused_head_shows_core_words_and_writes_nothing_h2() {
+        let mut controller = sample_controller();
+        let before = controller.state.session.machine().head.clone();
+        let steps = controller.state.history.undo_len();
+        let mut head = MachineHead::bare_collet();
+        head.parts.push(HeadPart {
+            name: "Lid".to_owned(),
+            diameter_mm: Some(10.0),
+            height_mm: 5.0,
+            kind: PartKind::Hard,
+        });
+        let refusal = head.validate().unwrap_err().to_string();
+        let error = crate::ui::properties::apply_head(&mut controller.state, head).unwrap_err();
+        assert!(
+            error.contains(&refusal),
+            "the banner text carries core's words: {error}"
+        );
+        assert_eq!(controller.state.session.machine().head, before);
+        assert_eq!(controller.state.history.undo_len(), steps);
+    }
+
+    #[test]
+    fn the_shoe_row_is_one_command_and_one_undo_step_per_edit_h2() {
+        let mut controller = shoe_controller();
+        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        let shoe = |c: &AppController<ScriptedBackend>| c.state.session.toolpath_configs()[0].shoe;
+        let steps = controller.state.history.undo_len();
+        let event =
+            |shoe: ShoeSetting, merge: bool| AppEvent::SetToolpathShoe { tp_id, shoe, merge };
+
+        controller.handle_internal_event(event(ShoeSetting::Raised, false));
+        assert_eq!(shoe(&controller), ShoeSetting::Raised);
+        assert_eq!(controller.state.history.undo_len(), steps + 1);
+
+        // A gap drag: the first frame pushes, the later frames join it.
+        controller.handle_internal_event(event(ShoeSetting::Gap { gap_mm: 30.0 }, false));
+        controller.handle_internal_event(event(ShoeSetting::Gap { gap_mm: 31.0 }, true));
+        controller.handle_internal_event(event(ShoeSetting::Gap { gap_mm: 32.0 }, true));
+        assert_eq!(shoe(&controller), ShoeSetting::Gap { gap_mm: 32.0 });
+        assert_eq!(controller.state.history.undo_len(), steps + 2);
+
+        // A bad gap is refused and pushes nothing.
+        controller.handle_internal_event(event(ShoeSetting::Gap { gap_mm: -1.0 }, false));
+        assert_eq!(shoe(&controller), ShoeSetting::Gap { gap_mm: 32.0 });
+        assert_eq!(controller.state.history.undo_len(), steps + 2);
+
+        controller.undo();
+        assert_eq!(shoe(&controller), ShoeSetting::Raised);
+        controller.undo();
+        assert_eq!(shoe(&controller), ShoeSetting::Auto);
+        controller.redo();
+        assert_eq!(shoe(&controller), ShoeSetting::Raised);
+    }
+
+    /// The surface number parity rule: the run sheet, the toolpath panel and
+    /// `inspect_machine`'s `shoe_plan` read one plan and print one text.
+    #[test]
+    fn the_run_sheet_and_the_panel_match_inspect_machine_h2() {
+        let controller = shoe_controller();
+        let session = &controller.state.session;
+        let wire = crate::app::mcp::project::shoe_plan_wire(session);
+        let wire_rows = wire.as_array().expect("the plan builds");
+        assert_eq!(wire_rows.len(), 3, "every toolpath has a result: {wire}");
+
+        let plan = controller.state.gui.shoe_plan.plan(session);
+        let lines = crate::state::shoe_plan::run_lines(session, plan.rows());
+        let starts: Vec<&serde_json::Value> = wire_rows
+            .iter()
+            .filter(|row| row["run_start"] == serde_json::json!(true))
+            .collect();
+        assert_eq!(
+            lines.len(),
+            starts.len(),
+            "one line per run: tool 1 Auto, tool 1 Gap, tool 2 Auto"
+        );
+        assert_eq!(lines.len(), 3);
+        for (line, start) in lines.iter().zip(&starts) {
+            assert_eq!(serde_json::json!(line.tool_id), start["tool_id"]);
+            assert_eq!(serde_json::json!(line.toolpaths[0]), start["toolpath"]);
+            assert_eq!(
+                serde_json::json!(crate::ui::shoe_list::line_value(line)),
+                start["resolved"],
+                "the run sheet prints the MCP resolved text"
+            );
+            assert_eq!(
+                serde_json::json!(line.needed_gap_mm),
+                start["needed_gap_mm"]
+            );
+            assert_eq!(serde_json::json!(line.gap_too_low), start["gap_too_low"]);
+        }
+        assert_eq!(
+            lines.iter().map(|line| line.toolpaths.len()).sum::<usize>(),
+            wire_rows.len()
+        );
+        assert!(
+            lines[1].gap_too_low,
+            "the stated 10 mm is below the solver gap"
+        );
+
+        // The panel's Auto text is the MCP resolved text.
+        for (index, row) in wire_rows.iter().enumerate() {
+            let id = session.toolpath_configs()[index].id;
+            let inputs = crate::ui::properties::toolpath_panel_inputs(
+                id,
+                session,
+                &controller.state.gui,
+                None,
+                None,
+                false,
+            );
+            let shoe = inputs.shoe.expect("the head has a shoe");
+            if row["setting"]["mode"] == serde_json::json!("auto") {
+                let resolved = row["resolved"].as_str().unwrap();
+                assert_eq!(shoe.auto_text, format!("Auto: {resolved}"));
+            }
+            assert_eq!(
+                shoe.finding.is_some(),
+                row["gap_too_low"] == serde_json::json!(true),
+                "the footer finding shows where the wire says the gap is too low"
+            );
+        }
+
+        // The finding text is the project verdict's text.
+        let id = session.toolpath_configs()[1].id;
+        let inputs = crate::ui::properties::toolpath_panel_inputs(
+            id,
+            session,
+            &controller.state.gui,
+            None,
+            None,
+            false,
+        );
+        let message = inputs.shoe.unwrap().finding.unwrap().message;
+        let verdict = plan.row(1).unwrap().gap_too_low_verdict().unwrap();
+        assert!(message.starts_with(&verdict.headline), "{message}");
+    }
+
+    #[test]
+    fn the_memo_rebuilds_when_an_input_moves_h2() {
+        let mut controller = shoe_controller();
+        let first = controller
+            .state
+            .gui
+            .shoe_plan
+            .plan(&controller.state.session);
+        let again = controller
+            .state
+            .gui
+            .shoe_plan
+            .plan(&controller.state.session);
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "an unchanged project hits the memo"
+        );
+
+        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        controller.handle_internal_event(AppEvent::SetToolpathShoe {
+            tp_id,
+            shoe: ShoeSetting::Off,
+            merge: false,
+        });
+        let after = controller
+            .state
+            .gui
+            .shoe_plan
+            .plan(&controller.state.session);
+        assert!(!Arc::ptr_eq(&first, &after));
+        assert_eq!(
+            after.row(0).map(|row| row.resolved.label()),
+            Some(Some("remove".to_owned()))
+        );
+    }
+}
