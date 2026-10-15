@@ -73,6 +73,10 @@ pub struct Capabilities<P = EntryProbe> {
     /// How the op uses the remaining stock when its stock source is
     /// `FromRemainingStock` (W3.4, AUDIT.md "Rest is not one thing").
     pub rest_use: RestUse,
+    /// The XY containment the op reads while it plans (W6.2, AUDIT.md
+    /// "Territory is three concepts"). `compute::execute::Territory`
+    /// resolves it once per op.
+    pub territory_xy: TerritoryXy,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -111,6 +115,7 @@ impl<P> Capabilities<P> {
             relink_dial: self.relink_dial,
             axial_envelope: self.axial_envelope,
             rest_use: self.rest_use,
+            territory_xy: self.territory_xy,
         }
     }
 }
@@ -158,6 +163,24 @@ pub enum RestUse {
     /// The remaining stock only builds the link ceiling of the op's links
     /// (ruling R1). The cut paths do not read it.
     LinkSafetyOnly,
+}
+
+/// The XY containment an operation reads while it plans (W6.2). The
+/// session clips every result to the machining boundary after generation;
+/// this states what the op reads BEFORE that clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerritoryXy {
+    /// The op reads no XY containment while it plans. The session clip
+    /// after generation is its only boundary. Pencil and the 2D ops.
+    ClipAfter,
+    /// The op pre-clips its sampling and its link stage to the boundary
+    /// region set (`ExecutionContext::boundary_regions`, P2.3). The 3D
+    /// finishes, Waterline and Project Curve (its link stage).
+    Regions,
+    /// The planner reads the boundary outline (`ExecutionContext::boundary`,
+    /// the pre-clear) and the centre containment
+    /// (`ExecutionContext::boundary_centre`, G-BOUNDARYPHANTOM). 3D Rough.
+    PlannerBounds,
 }
 
 /// The air-cut bar of a 3D finish op (W5B-F4 §5.1). The defect-free cluster

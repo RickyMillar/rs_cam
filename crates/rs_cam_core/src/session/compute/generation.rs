@@ -564,7 +564,7 @@ impl ProjectSession {
             )));
         };
 
-        match result.annotated().rest_regions.as_ref() {
+        match result.annotated().produced.rest_regions.as_ref() {
             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
             _ => Err(SessionError::OperationFailed(format!(
                 "'{source_name}' produced no rest regions. Its rest analysis found no material \

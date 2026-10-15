@@ -603,15 +603,11 @@ impl ProjectSession {
                 toolpath: modulated_toolpath,
                 spans: annotated_arc.spans.clone(),
                 spans_valid: annotated_arc.spans_valid,
-                // Modulation rewrites feeds, not geometry — the planner
-                // engagement samples stay valid by position.
-                planner_engagement: annotated_arc.planner_engagement.clone(),
-                // Rest-field overlay grid is toolpath-wide metadata, unaffected
-                // by feed modulation — carry it through unchanged.
-                rest_grid: annotated_arc.rest_grid.clone(),
-                // Same for the derived machining-region polygons.
-                rest_regions: annotated_arc.rest_regions.clone(),
-                area_regions: annotated_arc.area_regions.clone(),
+                // Modulation rewrites feeds, not geometry: the planner
+                // engagement samples stay valid by position, and the rest
+                // grid, rest regions and area regions are toolpath-wide
+                // metadata. Carry the side channel through unchanged.
+                produced: annotated_arc.produced.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.

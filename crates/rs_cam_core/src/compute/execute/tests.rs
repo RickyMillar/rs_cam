@@ -1549,11 +1549,11 @@ fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
         .expect("scallop with rest_analysis enabled should succeed");
 
     assert!(
-        result.rest_grid.is_some(),
+        result.produced.rest_grid.is_some(),
         "enabled rest_analysis should attach a rest_grid to a non-pencil op"
     );
     assert!(
-        result.rest_regions.is_some(),
+        result.produced.rest_regions.is_some(),
         "enabled rest_analysis should attach rest_regions to a non-pencil op"
     );
 }
@@ -1583,8 +1583,8 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
     };
     let result = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
 
-    assert!(result.rest_grid.is_none());
-    assert!(result.rest_regions.is_none());
+    assert!(result.produced.rest_grid.is_none());
+    assert!(result.produced.rest_regions.is_none());
 
     // `None` for the whole param is the same no-op.
     let findings = std::cell::RefCell::new(GenerationFindings::default());
@@ -1596,8 +1596,8 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
         )
     };
     let result_none = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
-    assert!(result_none.rest_grid.is_none());
-    assert!(result_none.rest_regions.is_none());
+    assert!(result_none.produced.rest_grid.is_none());
+    assert!(result_none.produced.rest_regions.is_none());
 }
 
 /// Precedence: a Pencil op whose OWN `RestDepth` detector arm already
@@ -1645,6 +1645,7 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
     let result = execute_operation_annotated(&ctx, &op).expect("pencil rest_depth should succeed");
 
     let grid = result
+        .produced
         .rest_grid
         .as_ref()
         .expect("pencil RestDepth detector should attach a rest_grid");

@@ -376,10 +376,7 @@ pub fn apply_entry(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     let mut result = Toolpath::new();
@@ -543,10 +540,7 @@ pub fn apply_entry(
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )
@@ -753,10 +747,7 @@ pub fn optimize_entry_descents_annotated(
         mut toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     let (split_count, mapping) = optimize_entry_descents_with_provenance(
@@ -780,10 +771,7 @@ pub fn optimize_entry_descents_annotated(
                 toolpath,
                 spans,
                 spans_valid,
-                planner_engagement,
-                rest_grid,
-                rest_regions,
-                area_regions,
+                produced,
             },
             mapping,
         ),
@@ -1417,10 +1405,7 @@ pub fn apply_lead_in_out(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
@@ -1429,10 +1414,7 @@ pub fn apply_lead_in_out(
             toolpath: result,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -1741,10 +1723,7 @@ pub fn apply_lead_in_out(
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )
@@ -1779,10 +1758,7 @@ pub fn apply_dogbones(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
@@ -1794,10 +1770,7 @@ pub fn apply_dogbones(
             toolpath,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -1909,10 +1882,7 @@ pub fn apply_dogbones(
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )
@@ -1976,10 +1946,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
@@ -1987,10 +1954,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
             toolpath,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -2117,10 +2081,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )
@@ -2346,10 +2307,7 @@ pub fn filter_air_cuts(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -2357,10 +2315,7 @@ pub fn filter_air_cuts(
             toolpath,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -2573,10 +2528,7 @@ pub fn filter_air_cuts(
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )

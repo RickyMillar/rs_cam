@@ -1269,9 +1269,11 @@ impl RsCamApp {
                         // with the same display shift applied to toolpath
                         // lines above (identity-setup world→local shift).
                         if has_display_shift {
-                            translate_annotated(&result.annotated, display_shift).rest_grid
+                            translate_annotated(&result.annotated, display_shift)
+                                .produced
+                                .rest_grid
                         } else {
-                            result.annotated.rest_grid.clone()
+                            result.annotated.produced.rest_grid.clone()
                         }
                     })
             } else {
@@ -1355,7 +1357,7 @@ impl RsCamApp {
                     .toolpath_rt
                     .get(&tp_id)
                     .and_then(|rt| rt.result.as_ref())
-                    .filter(|result| result.annotated.area_regions.is_some())
+                    .filter(|result| result.annotated.produced.area_regions.is_some())
                     .map(|result| upload_cache::AreaRegionsUploadKey {
                         toolpath: tp_id,
                         annotated: upload_cache::ArcId::new(&result.annotated),
@@ -1568,10 +1570,7 @@ mod tests {
             toolpath: tp,
             spans: Vec::new(),
             spans_valid: true,
-            planner_engagement: Vec::new(),
-            rest_grid: None,
-            rest_regions: None,
-            area_regions: None,
+            produced: rs_cam_core::trace::produced::Produced::default(),
         };
 
         let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));

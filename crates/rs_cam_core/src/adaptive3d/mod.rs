@@ -534,11 +534,11 @@ pub(crate) fn adaptive_3d_toolpath_annotated_with_cancel(
 pub struct Adaptive3dOutput {
     pub toolpath: Toolpath,
     pub annotations: Vec<Adaptive3dRuntimeAnnotation>,
-    /// Stage 4 — planner-predicted leading-arc engagement samples
-    /// `(cut_point, α/2π)`; empty for non-ContourSpiral strategies.
-    pub planner_engagement: Vec<(P3, f64)>,
-    /// The regions that By Area detected. `None` for Global.
-    pub area_regions: Option<AreaRegionMap>,
+    /// W6.2: what the planner produced beside the path. It fills
+    /// `planner_engagement` (Stage 4, `(cut_point, α/2π)`; empty for
+    /// non-ContourSpiral strategies) and `area_regions` (the regions that
+    /// By Area detected; `None` for Global).
+    pub produced: crate::trace::produced::Produced,
 }
 
 /// Run the planner and return every output. The compute adapter calls
@@ -575,8 +575,11 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
     Ok(Adaptive3dOutput {
         toolpath: tp,
         annotations,
-        planner_engagement,
-        area_regions: result.area_regions,
+        produced: crate::trace::produced::Produced {
+            planner_engagement,
+            area_regions: result.area_regions.map(std::sync::Arc::new),
+            ..crate::trace::produced::Produced::default()
+        },
     })
 }
 
@@ -596,7 +599,11 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
     let out = adaptive_3d_toolpath_output_with_cancel(mesh, index, cutter, params, cancel, debug)?;
-    Ok((out.toolpath, out.annotations, out.planner_engagement))
+    Ok((
+        out.toolpath,
+        out.annotations,
+        out.produced.planner_engagement,
+    ))
 }
 
 pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(

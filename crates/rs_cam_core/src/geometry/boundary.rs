@@ -197,10 +197,7 @@ pub fn clip_annotated_to_boundary_set(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     let (clipped, mapping) = if boundaries.is_empty() {
@@ -227,10 +224,7 @@ pub fn clip_annotated_to_boundary_set(
             toolpath: clipped,
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         mapping,
     )

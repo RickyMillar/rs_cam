@@ -1066,13 +1066,13 @@ pub struct UnifiedFinishReport {
     /// The junction decisions, `route.len().saturating_sub(1)` entries —
     /// empty when routing ran without kinematics (no costing happened).
     pub links: Vec<RoutedLink>,
-    /// The claims detector's continuous rest field (design doc §2.4:
-    /// carried through so the GUI heatmap and probes can see the op's OWN
-    /// territory evidence). `None` when claims didn't run.
-    pub rest_grid: Option<std::sync::Arc<crate::surface::rest_field::RestGrid>>,
-    /// The claims detector's rest-region polygons (the
-    /// `DerivedRestRegions` source shape). `None` when claims didn't run.
-    pub rest_regions: Option<std::sync::Arc<Vec<Polygon2>>>,
+    /// W6.2: what the claims detector produced. `rest_grid` is its
+    /// continuous rest field (design doc §2.4: carried through so the GUI
+    /// heatmap and probes can see the op's OWN territory evidence);
+    /// `rest_regions` is its rest-region polygons (the
+    /// `DerivedRestRegions` source shape). Both `None` when claims didn't
+    /// run.
+    pub produced: crate::trace::produced::Produced,
     /// Intra-region stay-down linking totals, summed over every region
     /// (`UnifiedFinishParams::intra_region_hookup_mm`). `None` when the
     /// pass is disabled (hookup `0.0`): the pass did not run, so nothing
@@ -1911,8 +1911,11 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     let mut report = UnifiedFinishReport {
         decompose: planned.stats,
         provenance: planned.stats.provenance,
-        rest_grid: claims_rest_grid,
-        rest_regions: claims_rest_regions,
+        produced: crate::trace::produced::Produced {
+            rest_grid: claims_rest_grid,
+            rest_regions: claims_rest_regions,
+            ..crate::trace::produced::Produced::default()
+        },
         tip_float: claims_tip_float,
         // W2.3: `Some` exactly when the intra-region link pass runs, so the
         // findings door records it only then.

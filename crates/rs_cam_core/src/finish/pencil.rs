@@ -44,7 +44,6 @@ use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -517,7 +516,14 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
-    let (tp, _, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
+    let (tp, _, _) = pencil_toolpath_structured_annotated(
+        mesh,
+        index,
+        cutter,
+        params,
+        PencilStock::default(),
+        None,
+    );
     tp
 }
 
@@ -592,13 +598,12 @@ fn polyline_passes_depth(
 /// `None` is **not measured**, never a measured zero.
 #[derive(Debug, Clone, Default)]
 pub struct PencilReport {
-    /// The `RestDepth` detector's rest-field grid, for the GUI heatmap
-    /// overlay. `None` for every other detector — no rest field was built.
-    pub rest_grid: Option<crate::surface::rest_field::RestGrid>,
-    /// The `RestDepth` detector's derived machining-region polygons (P2.2
-    /// selective-finishing boundary source). `None` for every other
-    /// detector.
-    pub rest_regions: Option<Vec<Polygon2>>,
+    /// W6.2: what the `RestDepth` detector produced. `rest_grid` is its
+    /// rest-field grid (the GUI heatmap overlay); `rest_regions` is its
+    /// derived machining-region polygons (the P2.2 selective-finishing
+    /// boundary source). Both `None` for every other detector — no rest
+    /// field was built.
+    pub produced: crate::trace::produced::Produced,
     /// Wave D1: the centreline TIP-FLOAT tally. Always `Some` from the
     /// cancellable entry point — a detector that emitted no centreline
     /// still measured zero points, which is a different statement from
@@ -617,24 +622,29 @@ pub fn pencil_toolpath_structured_annotated(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
-    // R2: the actual machined stock left by prior toolpaths, when this pencil op
-    // cuts `FromRemainingStock` and a prior simulation exists. The RestDepth
-    // detector prefers it as the rest reference (it captures the real prior
-    // toolpath pattern). `None` ⇒ fall back to the tool/nominal reference (R1).
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    stock: PencilStock<'_>,
     debug: Option<&ToolpathDebugContext>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport) {
     crate::interrupt::run_uncancellable(|cancel| {
         pencil_toolpath_structured_annotated_with_cancel(
-            mesh,
-            index,
-            cutter,
-            params,
-            initial_stock,
-            debug,
-            cancel,
+            mesh, index, cutter, params, stock, debug, cancel,
         )
     })
+}
+
+/// The stock a pencil pass reads (W6.2). `Default` is a fresh-stock pass.
+#[derive(Clone, Copy, Default)]
+pub struct PencilStock<'a> {
+    /// The actual machined stock left by prior toolpaths, when this pencil
+    /// op cuts `FromRemainingStock` and a prior simulation exists. The entry
+    /// ramps read it as is (G-ENTRYLOAD).
+    pub remaining: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// R2: the same stock after the W2.1 stock-vs-mesh guard
+    /// (`compute::execute::Territory::reference_stock`). The RestDepth
+    /// detector prefers it as the rest reference (it captures the real prior
+    /// toolpath pattern). `None` ⇒ fall back to the tool/nominal reference
+    /// (R1).
+    pub rest_reference: Option<&'a crate::dexel_stock::TriDexelStock>,
 }
 
 /// Cancellable variant of [`pencil_toolpath_structured_annotated`]. Polls
@@ -650,7 +660,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &PencilParams,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    stock: PencilStock<'_>,
     debug: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport), Cancelled> {
@@ -669,7 +679,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
             index,
             cutter,
             params,
-            initial_stock,
+            stock.rest_reference,
             debug,
             &mut report,
             &mut float,
@@ -698,7 +708,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
         index,
         cutter,
         params,
-        initial_stock,
+        stock.remaining,
     );
     // G-LINKVISIBLE: recorded even when every counter is zero — the emitter
     // ran, so the measurement exists.

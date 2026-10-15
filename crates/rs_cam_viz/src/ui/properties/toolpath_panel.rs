@@ -1025,10 +1025,10 @@ fn draw_geometry_tab(
     // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
     // No grid ⇒ 0.0 ⇒ silence, never a guess.
     if let Some(result) = &entry.result
-        && let Some(regions) = result.annotated.rest_regions.as_ref()
+        && let Some(regions) = result.annotated.produced.rest_regions.as_ref()
         && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
             regions,
-            rest_grid_footprint_area(result.annotated.rest_grid.as_deref()),
+            rest_grid_footprint_area(result.annotated.produced.rest_grid.as_deref()),
         )
     {
         ui.add(rest_region_pathology_line(pathology));

@@ -12,8 +12,8 @@ use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::RegionOrdering;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::P2;
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
-use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -349,7 +349,13 @@ pub(crate) fn generate_project_curve(
         )?;
         combined.moves.extend(tp.moves);
     }
-    let combined = chain_project_curve(ctx, cfg, &params, &cutter, m, idx, combined);
+    // W6.2: the link stage may not leave the op's territory regions.
+    let surface = MeshInput {
+        mesh: m,
+        index: idx,
+    };
+    let regions = prepared.territory().regions();
+    let combined = chain_project_curve(ctx, cfg, &params, &cutter, surface, regions, combined);
     Ok(with_depth_run_annotation(
         generated_with_cut_run_spans(combined, "Projected curve"),
         ctx.semantic_ctx,
@@ -361,10 +367,11 @@ fn chain_project_curve(
     cfg: &crate::compute::operation_configs::ProjectCurveConfig,
     params: &crate::ops::project_curve::ProjectCurveParams,
     cutter: &ToolDefinition,
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
+    surface: MeshInput<'_>,
+    regions: Option<&RegionSet<'_>>,
     tp: Toolpath,
 ) -> Toolpath {
+    let MeshInput { mesh, index } = surface;
     if cfg.chain_distance_mm <= 0.0 {
         return tp;
     }
@@ -408,7 +415,7 @@ fn chain_project_curve(
         // A link is a fed move over the workpiece; one that leaves the
         // operation's territory travels over ground the boundary
         // deliberately excluded.
-        boundary: ctx.boundary_regions,
+        boundary: regions,
         // …and being AIRBORNE does not buy an exemption here. This op's
         // boundary is machining territory, which the operator may have drawn
         // around a clamp or a keep-out; the ceiling below reads its clearance

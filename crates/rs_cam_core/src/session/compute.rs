@@ -1796,8 +1796,9 @@ fn modulate_annotated_against_trace(
         )
     };
     let planner_map: std::collections::HashMap<(i64, i64, i64), f64> =
-        if is_contour_spiral && !annotated.planner_engagement.is_empty() {
+        if is_contour_spiral && !annotated.produced.planner_engagement.is_empty() {
             annotated
+                .produced
                 .planner_engagement
                 .iter()
                 .map(|(p, f)| (pos_key(p), *f))

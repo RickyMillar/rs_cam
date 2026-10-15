@@ -356,6 +356,9 @@ pub struct ExecutionContext<'a> {
     pub cancel: &'a AtomicBool,
     pub initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
+    /// W6.2: `boundary`, `boundary_regions` and `boundary_centre` are the
+    /// inputs of the territory resolver (`execute/territory.rs`). An adapter
+    /// reads them through `Prepared::territory`, never from here.
     pub boundary: Option<&'a Polygon2>,
     /// P2.3: sibling of `boundary` — the multi-region set the mesh-finish
     /// family (scallop / radial / spiral / steep-shallow / ramp / horizontal
@@ -534,6 +537,7 @@ mod layered;
 mod prologue;
 mod shared;
 pub(crate) mod standing_material;
+mod territory;
 
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,
@@ -560,6 +564,7 @@ pub(crate) use finish_3d::{
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
 pub use prologue::{MeshInput, Prepared};
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
+pub use territory::{SurfaceMask, Territory, XyTerritory};
 
 /// THE dispatch: run one operation and produce its toolpath, spans and
 /// annotations.
@@ -608,8 +613,7 @@ pub(crate) fn execute_operation_annotated(
     // no terrain to rest-analyze.
     if let Some(ra) = ctx.rest_analysis
         && ra.enabled
-        && generated.rest_grid.is_none()
-        && generated.rest_regions.is_none()
+        && generated.produced.has_no_rest_output()
         && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
     {
         attach_generic_rest_analysis(
@@ -618,7 +622,8 @@ pub(crate) fn execute_operation_annotated(
             idx,
             ctx.tool_def,
             ctx.reference_tool_cfg.as_ref(),
-            ctx.initial_stock,
+            // W6.2: the territory ran the stock guard once for this op.
+            prepared.territory().reference_stock(),
             ra,
             ctx.findings,
         );

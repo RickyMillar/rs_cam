@@ -2122,7 +2122,7 @@ fn fake_result_with_regions(
 ) -> ToolpathComputeResult {
     let mut at =
         crate::trace::toolpath_spans::AnnotatedToolpath::new(crate::toolpath::Toolpath::new());
-    at.rest_regions = regions.map(Arc::new);
+    at.produced.rest_regions = regions.map(Arc::new);
     ToolpathComputeResult {
         op_data: crate::ops::drill_op::OpData::Toolpath(Arc::new(at)),
         stats: ToolpathStats {

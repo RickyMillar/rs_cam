@@ -2478,6 +2478,7 @@ fn by_area_exports_two_pocket_region_map() {
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
     let map = out
+        .produced
         .area_regions
         .as_ref()
         .expect("By Area records its regions");
@@ -2541,5 +2542,5 @@ fn by_area_exports_two_pocket_region_map() {
     let global =
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
-    assert!(global.area_regions.is_none());
+    assert!(global.produced.area_regions.is_none());
 }

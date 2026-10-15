@@ -127,10 +127,7 @@ pub(crate) fn fit_arcs_within(
         toolpath,
         spans,
         spans_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
     let moves = &toolpath.moves;
 
@@ -139,10 +136,7 @@ pub(crate) fn fit_arcs_within(
             toolpath: Toolpath::new(),
             spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -334,10 +328,7 @@ pub(crate) fn fit_arcs_within(
             toolpath: result,
             spans: new_spans,
             spans_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )

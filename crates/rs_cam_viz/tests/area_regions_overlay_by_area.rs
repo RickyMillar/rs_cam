@@ -175,7 +175,7 @@ fn add(
     if generated {
         rt.status = ComputeStatus::Done;
         let mut annotated = AnnotatedToolpath::new(sample_path());
-        annotated.area_regions = map.map(Arc::new);
+        annotated.produced.area_regions = map.map(Arc::new);
         rt.result = Some(ToolpathResult {
             annotated: Arc::new(annotated),
             stats: Default::default(),

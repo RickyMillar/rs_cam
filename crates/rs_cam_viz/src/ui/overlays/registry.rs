@@ -345,7 +345,7 @@ pub fn rest_grid_info(state: &AppState) -> Option<(f64, f32)> {
         .toolpath_rt
         .get(&tp_id)
         .and_then(|rt| rt.result.as_ref())
-        .and_then(|r| r.annotated.rest_grid.as_ref())
+        .and_then(|r| r.annotated.produced.rest_grid.as_ref())
         .map(|grid| (grid.threshold, rest_ramp_top(grid)))
 }
 
@@ -394,7 +394,7 @@ pub fn selected_area_regions(
         .toolpath_rt
         .get(&tp_id)
         .and_then(|rt| rt.result.as_ref())
-        .and_then(|r| r.annotated.area_regions.as_ref())
+        .and_then(|r| r.annotated.produced.area_regions.as_ref())
 }
 
 /// Does the viewport draw the By Area regions this frame? The flag is on

@@ -968,6 +968,7 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
     let source_regions = std::sync::Arc::clone(
         source_result
             .annotated
+            .produced
             .rest_regions
             .as_ref()
             .expect("non-pencil op with rest_analysis enabled should produce rest_regions"),
@@ -978,7 +979,7 @@ fn non_pencil_rest_analysis_source_feeds_a_downstream_boundary() {
     );
 
     // Feed those exact regions into a downstream toolpath's boundary, same
-    // shape a controller would resolve from `source_result.annotated.rest_regions`.
+    // shape a controller would resolve from `source_result.annotated.produced.rest_regions`.
     let mut downstream_spec = pocket_spec(401);
     downstream_spec.boundary.enabled = true;
     downstream_spec.rest_source_regions = Some((*source_regions).clone());

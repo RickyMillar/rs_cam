@@ -178,7 +178,7 @@ fn rest_grid() -> RestGrid {
 fn annotated(with_grid: bool) -> AnnotatedToolpath {
     let mut annotated = AnnotatedToolpath::new(sample_path());
     if with_grid {
-        annotated.rest_grid = Some(Arc::new(rest_grid()));
+        annotated.produced.rest_grid = Some(Arc::new(rest_grid()));
     }
     annotated
 }

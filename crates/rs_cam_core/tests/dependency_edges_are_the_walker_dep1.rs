@@ -146,7 +146,7 @@ fn result_with_regions(
     regions: Option<Vec<Polygon2>>,
 ) -> rs_cam_core::session::ToolpathComputeResult {
     let mut annotated = AnnotatedToolpath::new(rs_cam_core::toolpath::Toolpath::new());
-    annotated.rest_regions = regions.map(Arc::new);
+    annotated.produced.rest_regions = regions.map(Arc::new);
     rs_cam_core::session::ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(annotated)),
         stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
@@ -372,7 +372,7 @@ fn assert_fixture_is_live(session: &ProjectSession) {
     assert!(
         session
             .get_result(ROUGH)
-            .and_then(|r| r.annotated().rest_regions.as_deref())
+            .and_then(|r| r.annotated().produced.rest_regions.as_deref())
             .is_some_and(|regions| !regions.is_empty()),
         "the Regions source carries regions, or claim 5 reads Broken for the wrong reason"
     );

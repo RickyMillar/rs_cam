@@ -3,7 +3,7 @@
 ## Files
 
 - `execute.rs`/`execute/` — the dispatch (`execute_operation_annotated`), `prologue.rs` (W2.2), `findings.rs`
-  (W2.3), `standing_material.rs` (G-RESTLEVELS), `layered.rs` (W3.0); `catalog.rs` — the registry, `catalog/capabilities.rs` (W2.4); `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
+  (W2.3), `standing_material.rs` (G-RESTLEVELS), `layered.rs` (W3.0), `territory.rs` (W6.2); `catalog.rs` — the registry, `catalog/capabilities.rs` (W2.4); `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
   (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
   `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources, P10 setup notes), `spans.rs`, `validate.rs`, `generated_empty.rs`.
@@ -17,7 +17,7 @@
 - A new operation needs a catalogue row and a config variant that derives `OpParams` (W5: its `#[param]`
   attributes ARE the schema, and the GUI row and the setter read one range). The row's `generate` IS the dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
-- W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`.
+- W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`. W6.2: an adapter reads XY, mask and guarded stock from `Prepared::territory()`, never `ctx.boundary*`.
 - W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face, Chamfer, Waterline) writes `prepare` + fallible `emit_level` (level stock, cancel); `Input` = `Polygon2` or a surface (`MeshInput`, W6.1); hooks `outlines`, `ladder`, `link`, `spans`, `annotate`, `reach_band`, `off_grid`.
   `run_layered` owns the ladder, rest rule, one prepare per region, `region_ordering` (R4), cancel per level, link, spans. `LevelInfo::is_final`: final Z, spring passes too.
 - W3.4: rest rule = `Capabilities::rest_use`. `LevelClip` clips the input; `LevelSkip` only skips (a clipped contour cuts a new wall; Chamfer band = `w + t`); Waterline `ContourFilter` keeps the runs that pass material (`standing_near`, `R + cell`; an air stretch splits only when the retract saves time, W6.1); Drill

@@ -1407,6 +1407,7 @@ fn crease_reference_machined_stock_runs_and_falls_back_without_stock() {
     // comfortably-over-threshold rest value there — independent of
     // whatever the ridge-tracing pipeline does with it downstream.
     let rest_grid_stock = report_stock
+        .produced
         .rest_grid
         .as_ref()
         .expect("rest grid must be carried through");
@@ -1630,6 +1631,7 @@ fn territory_clip_confines_bands_to_rest_islands_and_shrinks_the_toolpath() {
         "the unconfined baseline run must not itself mask anything"
     );
     let rest_regions = report_unclipped
+        .produced
         .rest_regions
         .as_ref()
         .expect("rest_regions must be carried through under MachinedStock");

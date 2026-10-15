@@ -5,8 +5,11 @@
 //! remaining stock is the best reference, but only when its frame is the
 //! frame of the mesh. A stock in a different XY frame reads garbage rest
 //! (the F-024 lesson). [`StockReference::resolve`] is the only place that
-//! makes this decision. The unified finish claims, the generic rest analysis
-//! and the pencil `RestDepth` detector all call it.
+//! makes this decision. The territory resolver
+//! (`compute::execute::Territory::resolve`, W6.2) calls it once per op; the
+//! unified finish claims, the generic rest analysis and the pencil
+//! `RestDepth` detector read that one answer. The drill calls it against
+//! the bbox of its holes.
 //!
 //! The rule: the stock is the reference only when it exists and its XY bbox
 //! overlaps the mesh XY bbox (inclusive). In all other cases the result is

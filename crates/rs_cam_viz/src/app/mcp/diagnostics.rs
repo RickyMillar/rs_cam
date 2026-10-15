@@ -572,7 +572,7 @@ impl RsCamApp {
                 if let serde_json::Value::Object(map) = &mut value {
                     map.insert(
                         "area_regions".into(),
-                        area_regions_json(result.annotated.area_regions.as_deref()),
+                        area_regions_json(result.annotated.produced.area_regions.as_deref()),
                     );
                 }
                 json_str(value)

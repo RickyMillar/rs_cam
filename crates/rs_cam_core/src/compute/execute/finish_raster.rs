@@ -23,7 +23,9 @@ use super::shared::{
     generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
 use super::standing_material::standing_near;
-use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
+use super::{
+    ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared, SurfaceMask,
+};
 
 /// Curve chaining for `project_curve` — the op's air is COUNT-bound.
 ///
@@ -75,6 +77,9 @@ use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prep
 /// stage is then byte-identical to the legacy surface-riding link, which is
 /// what `tests/island_stay_down_links_o3.rs` pins.
 ///
+/// The boundary is the op's territory regions (W6.2): a link may not leave
+/// the area the op cuts.
+///
 /// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
 /// a reference to it can only live as long as the borrow of `*ctx` — while
 /// the stock and the regions live as long as the context's own parameter. The
@@ -85,6 +90,7 @@ use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prep
 fn finishing_link_stage<'c, 'a: 'c>(
     op: OperationType,
     ctx: &'c ExecutionContext<'a>,
+    boundary: Option<&'c RegionSet<'c>>,
     hookup_mm: f64,
 ) -> Option<crate::finish::surface_link::FinishingLinkStage<'c>> {
     if hookup_mm <= 0.0 {
@@ -93,7 +99,7 @@ fn finishing_link_stage<'c, 'a: 'c>(
     Some(crate::finish::surface_link::FinishingLinkStage {
         hookup_distance: hookup_mm,
         link_ceiling: op_link_ceiling(op, ctx),
-        boundary: ctx.boundary_regions,
+        boundary,
         link_kinematics: ctx.link_kinematics.as_ref(),
     })
 }
@@ -178,6 +184,7 @@ pub(crate) fn generate_scallop(
         },
         ctx.link_kinematics.clone(),
     );
+    let regions = prepared.territory().regions();
     let (tp, annotations, scallop_report) = if cfg.iso_field {
         // M8 iso-field rings — per-point spacing, cosine slope law,
         // completion by construction. See the wrapper's doc for evidence.
@@ -193,21 +200,21 @@ pub(crate) fn generate_scallop(
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
-            ctx.boundary_regions,
+            regions,
             &ctx.cancel_fn(),
         )?
     } else {
         // The offset-cascade contour scallop IS the op §2 of the linking spec
         // measured: breadth-first ring order, no reorder, no loop rotation
         // and no stock ceiling. It opts in.
-        let stage = finishing_link_stage(op.op_type(), ctx, cfg.intra_pass_hookup_mm);
+        let stage = finishing_link_stage(op.op_type(), ctx, regions, cfg.intra_pass_hookup_mm);
         crate::finish::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
             m,
             idx,
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
-            ctx.boundary_regions,
+            regions,
             stage.as_ref(),
             &ctx.cancel_fn(),
         )?
@@ -289,12 +296,14 @@ pub(crate) fn generate_drop_cutter(
     // at the mesh bottom). Filter them so the finish never cuts past
     // the mesh boundary.
     let min_z_filter = Some(effective_min_z);
-    let slope_filter_active =
-        crate::finish::finish_setup::slope_filter_active(cfg.slope_from, cfg.slope_to);
     let feed_rate = op.feed_rate();
     let plunge_rate = op.plunge_rate();
     let safe_z = ctx.heights.retract_z;
-    let tp = if slope_filter_active {
+    // W6.2: the territory holds the slope band only when it is active
+    // (`OperationConfig::surface_mask`), and the boundary regions.
+    let territory = prepared.territory();
+    let regions = territory.regions();
+    let tp = if let Some(SurfaceMask::SlopeBand { from_deg, to_deg }) = territory.mask {
         // P1.3 (planning/finishing_stack_review_2026-07.md): derive the
         // slope filter from `SlopeMap` (radians + normals + curvature)
         // instead of the retired degrees-only `compute_grid_slopes`. The
@@ -320,14 +329,14 @@ pub(crate) fn generate_drop_cutter(
         crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
             &grid,
             &slope_map.angles,
-            cfg.slope_from.to_radians(),
-            cfg.slope_to.to_radians(),
+            from_deg.to_radians(),
+            to_deg.to_radians(),
             feed_rate,
             plunge_rate,
             safe_z,
             min_z_filter,
             crate::toolpath::MoveIntent::FinishingCut,
-            ctx.boundary_regions,
+            regions,
         )
     } else {
         crate::toolpath::raster_toolpath_from_grid(
@@ -336,7 +345,7 @@ pub(crate) fn generate_drop_cutter(
             plunge_rate,
             safe_z,
             min_z_filter,
-            ctx.boundary_regions,
+            regions,
         )
     };
     // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
@@ -352,7 +361,7 @@ pub(crate) fn generate_drop_cutter(
     // G-LINKVISIBLE: `None` here reaches `ToolpathStats::relink` as `None`,
     // which is the honest "the stage never ran" — `hookup_mm` at its shipped
     // `0.0`. A recorded zero would claim a measurement that never happened.
-    let tp = match finishing_link_stage(op.op_type(), ctx, cfg.hookup_mm) {
+    let tp = match finishing_link_stage(op.op_type(), ctx, regions, cfg.hookup_mm) {
         None => tp,
         Some(stage) => {
             let (tp, totals) = relink_in_adapter(
@@ -447,7 +456,7 @@ pub(crate) fn generate_waterline(
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
-        boundary_regions: ctx.boundary_regions,
+        boundary_regions: prepared.territory().regions(),
         link_kinematics: ctx.link_kinematics.clone(),
         rest_tally: Cell::new(None),
     };
@@ -605,7 +614,9 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
     /// G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
     /// `None` on the stats channel.
     fn link(&self, toolpath: Toolpath, ctx: &ExecutionContext<'_>) -> Toolpath {
-        let Some(stage) = finishing_link_stage(self.op_type, ctx, self.hookup_mm) else {
+        let Some(stage) =
+            finishing_link_stage(self.op_type, ctx, self.boundary_regions, self.hookup_mm)
+        else {
             return toolpath;
         };
         let (linked, totals) = relink_in_adapter(

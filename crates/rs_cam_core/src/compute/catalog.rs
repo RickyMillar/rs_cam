@@ -18,7 +18,7 @@ mod schema;
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, MoveCountModel,
-    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
+    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -839,6 +839,50 @@ impl OperationConfig {
                 // CL surface is the side that cannot gouge the part.
                 None => EntryProbe::Surface { leave_mm: 0.0 },
             },
+        }
+    }
+
+    /// W6.2: the surface cell mask this config states, or `None` when the
+    /// op masks no cell by slope. The match names every variant, so a new
+    /// op states whether it masks. `compute::execute::Territory` reads it.
+    pub fn surface_mask(&self) -> Option<crate::compute::execute::SurfaceMask> {
+        use crate::compute::execute::SurfaceMask;
+        let band = |from_deg: f64, to_deg: f64| {
+            crate::finish::finish_setup::slope_filter_active(from_deg, to_deg)
+                .then_some(SurfaceMask::SlopeBand { from_deg, to_deg })
+        };
+        match self {
+            OperationConfig::DropCutter(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::Scallop(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::RampFinish(c) => band(c.slope_from, c.slope_to),
+            OperationConfig::SteepShallow(c) => Some(SurfaceMask::SteepShallowSplit {
+                threshold_deg: c.threshold_angle,
+            }),
+            OperationConfig::HorizontalFinish(c) => Some(SurfaceMask::Flat {
+                max_slope_deg: c.angle_threshold,
+            }),
+            OperationConfig::UnifiedFinish(c) => Some(SurfaceMask::Bands {
+                steep_threshold_deg: c.steep_threshold_deg,
+                waterline_threshold_deg: c.waterline_threshold_deg,
+            }),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
         }
     }
 

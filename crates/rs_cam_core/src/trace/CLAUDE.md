@@ -9,6 +9,7 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - `debug_trace.rs` — the per-operation debug record.
 - `semantic_trace.rs` — the semantic items for operation-level diagnostics.
 - `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`.
+- `produced.rs` — `Produced`, the typed side channel of a generated toolpath (W6.2).
 - `narrate.rs` — agent-friendly narration of a toolpath and a cut trace.
 - `transform_provenance.rs` — the post-generation transform provenance.
 

@@ -12,11 +12,15 @@
 //!
 //! An adapter receives the checked geometry as a [`Prepared`]. It does not
 //! check the mesh, the index, the polygons or the tool kind again.
+//!
+//! W6.2: after the checks, the prologue resolves the op's [`Territory`]
+//! once. [`Prepared::territory`] gives it to the adapter.
 
 use crate::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 
+use super::territory::Territory;
 use super::{ExecutionContext, OperationError};
 
 /// A mesh and its spatial index, both present.
@@ -48,6 +52,7 @@ enum CheckedGeometry<'a> {
 pub struct Prepared<'a> {
     op_type: OperationType,
     geometry: CheckedGeometry<'a>,
+    territory: Territory<'a>,
 }
 
 impl<'a> Prepared<'a> {
@@ -67,6 +72,12 @@ impl<'a> Prepared<'a> {
             CheckedGeometry::Mesh(mesh) | CheckedGeometry::Both { mesh, .. } => Ok(mesh),
             CheckedGeometry::None | CheckedGeometry::Polygons(_) => Err(self.mismatch("a mesh")),
         }
+    }
+
+    /// W6.2: the territory, resolved once for this op
+    /// ([`Territory::resolve`]).
+    pub fn territory(&self) -> Territory<'a> {
+        self.territory
     }
 
     fn mismatch(&self, what: &str) -> OperationError {
@@ -110,7 +121,11 @@ pub(super) fn check_inputs<'a>(
     if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind()) {
         return Err(OperationError::InvalidTool(text));
     }
-    Ok(Prepared { op_type, geometry })
+    Ok(Prepared {
+        op_type,
+        geometry,
+        territory: Territory::resolve(ctx, op),
+    })
 }
 
 /// CMP-13: the refusal names the operation. An empty list refuses as an

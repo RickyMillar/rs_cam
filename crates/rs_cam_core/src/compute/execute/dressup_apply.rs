@@ -24,8 +24,8 @@ use super::{GeneratedToolpath, GenerationFindings};
 /// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
 /// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
 /// no centerline toolpath is emitted, only the analysis artifacts. Reference
-/// resolution: prefer the actual machined stock (when the shared W2.1 guard
-/// accepts it), else the configured real
+/// resolution: prefer the actual machined stock (`rest_reference`: the
+/// territory's stock after the shared W2.1 guard, W6.2), else the configured real
 /// reference tool (`reference_tool_cfg`, resolved upstream from
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else a self-referenced bare-surface
@@ -39,7 +39,7 @@ pub(super) fn attach_generic_rest_analysis(
     index: &SpatialIndex,
     tool_def: &ToolDefinition,
     reference_tool_cfg: Option<&ToolConfig>,
-    initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    rest_reference: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
     findings: &std::cell::RefCell<GenerationFindings>,
 ) {
@@ -49,9 +49,8 @@ pub(super) fn attach_generic_rest_analysis(
         crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
     );
     let reference = resolve_rest_reference(
-        mesh,
         reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
-        initial_stock,
+        rest_reference,
         &probe_ball,
     );
     let defaults = crate::surface::rest_field::RestFieldParams::default();
@@ -123,8 +122,8 @@ pub(super) fn attach_generic_rest_analysis(
         min_valley_depth = rf_params.min_valley_depth,
         "generic rest analysis attached region set"
     );
-    generated.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
-    generated.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+    generated.produced.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
+    generated.produced.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
 }
 
 /// Why [`attach_generic_rest_analysis`] sizes the reach policy at
@@ -139,19 +138,16 @@ pub(super) const SHALLOW_SLOPE_DERATE_BASIS: &str =
 
 /// Resolve the rest-depth reference (P2.5 chain): the machined stock when
 /// the shared guard (`surface::stock_reference::StockReference::resolve`,
-/// W2.1) accepts it → a configured real reference tool → a self-referenced
-/// bare-surface probe. The guard is the one the unified finish claims and
-/// the pencil `RestDepth` detector also call; the tool tier after it is this
-/// pass's own dial.
+/// W2.1) accepted it → a configured real reference tool → a self-referenced
+/// bare-surface probe. The territory resolver ran the guard once for the op
+/// (W6.2), the one the unified finish claims and the pencil `RestDepth`
+/// detector also read; the tool tier after it is this pass's own dial.
 fn resolve_rest_reference<'a>(
-    mesh: &TriangleMesh,
     reference_tool: Option<&'a dyn MillingCutter>,
-    initial_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    rest_reference: Option<&'a crate::dexel_stock::TriDexelStock>,
     probe_ball: &'a crate::tool::BallEndmill,
 ) -> crate::surface::rest_field::RestReference<'a> {
-    if let Some(stock) =
-        crate::surface::stock_reference::StockReference::resolve(initial_stock, &mesh.bbox).stock()
-    {
+    if let Some(stock) = rest_reference {
         crate::surface::rest_field::RestReference::Stock(stock)
     } else if let Some(tool) = reference_tool {
         crate::surface::rest_field::RestReference::Cutter {
@@ -946,10 +942,7 @@ pub fn apply_dressups(
         toolpath: current.toolpath,
         spans: current.spans,
         spans_valid: input_valid && current.spans_valid,
-        planner_engagement: current.planner_engagement,
-        rest_grid: current.rest_grid,
-        rest_regions: current.rest_regions,
-        area_regions: current.area_regions,
+        produced: current.produced,
     }
 }
 

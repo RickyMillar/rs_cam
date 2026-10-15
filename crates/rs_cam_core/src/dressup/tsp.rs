@@ -213,10 +213,7 @@ pub fn optimize_rapid_order(
         toolpath,
         spans,
         spans_valid: input_valid,
-        planner_engagement,
-        rest_grid,
-        rest_regions,
-        area_regions,
+        produced,
     } = annotated;
 
     if toolpath.moves.is_empty() {
@@ -224,10 +221,7 @@ pub fn optimize_rapid_order(
             toolpath,
             spans,
             spans_valid: input_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -292,10 +286,7 @@ pub fn optimize_rapid_order(
             toolpath,
             spans,
             spans_valid: input_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         });
     }
 
@@ -313,10 +304,7 @@ pub fn optimize_rapid_order(
             toolpath: result,
             spans: new_spans,
             spans_valid: new_valid,
-            planner_engagement,
-            rest_grid,
-            rest_regions,
-            area_regions,
+            produced,
         },
         remap,
     )

@@ -241,7 +241,7 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
         }
         EdgeKind::Regions => match session.get_result(source_index) {
             None => EdgeState::Pending,
-            Some(result) => match result.annotated().rest_regions.as_deref() {
+            Some(result) => match result.annotated().produced.rest_regions.as_deref() {
                 Some(regions) if !regions.is_empty() => EdgeState::Ready,
                 _ => EdgeState::Broken,
             },

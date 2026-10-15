@@ -131,7 +131,7 @@ pub struct ViewportState {
     pub show_tier_preview: bool,
     /// The By Area regions overlay: the regions that the SELECTED 3D Rough
     /// detected with By Area ordering, one colour per region, with its
-    /// order number. It reads `AnnotatedToolpath::area_regions`.
+    /// order number. It reads `Produced::area_regions`.
     ///
     /// Defaults **off**. It is a diagnostic that the operator switches on.
     /// It is a TERRITORY overlay, so it stacks with the model colour.

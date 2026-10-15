@@ -6,6 +6,7 @@
 
 pub mod debug_trace;
 pub mod narrate;
+pub mod produced;
 pub mod semantic_trace;
 pub mod toolpath_spans;
 pub mod transform_provenance;

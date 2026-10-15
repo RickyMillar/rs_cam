@@ -448,12 +448,13 @@ pub(crate) fn toolpath_panel_inputs(
                 .toolpath_rt
                 .get(&tc.id)
                 .and_then(|rt| rt.result.as_ref());
-            let cached_regions = cached.and_then(|r| r.annotated.rest_regions.clone());
+            let cached_regions = cached.and_then(|r| r.annotated.produced.rest_regions.clone());
             // LH-2: the source's OWN rest-grid footprint travels with
             // its regions, so the pathology share has an honest
             // denominator without new session plumbing.
-            let footprint_area =
-                rest_grid_footprint_area(cached.and_then(|r| r.annotated.rest_grid.as_deref()));
+            let footprint_area = rest_grid_footprint_area(
+                cached.and_then(|r| r.annotated.produced.rest_grid.as_deref()),
+            );
             let ready = cached_regions
                 .as_ref()
                 .is_some_and(|regions| !regions.is_empty());

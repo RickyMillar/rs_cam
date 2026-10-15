@@ -10,7 +10,9 @@ use crate::tool::MillingCutter;
 use super::shared::{
     generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
-use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
+use super::{
+    ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared, XyTerritory,
+};
 
 /// Read the single leave-stock scalar the adaptive3d planner consumes.
 ///
@@ -32,8 +34,9 @@ pub(super) fn adaptive3d_effective_stock_to_leave(
     cfg.stock_to_leave_axial
 }
 
-/// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`
-/// (F-027 world-stock XY bounds + machining-boundary pre-clear) and
+/// Adaptive3d family adapter. Cancellable; consumes the territory's
+/// `PlannerBounds` (the machining-boundary pre-clear and the centre
+/// containment), the world-stock XY bounds (F-027) and
 /// `ctx.initial_stock`; spans come from
 /// `spans_from_adaptive3d_annotations` + annotate_adaptive3d.
 pub(crate) fn generate_adaptive3d(
@@ -46,6 +49,12 @@ pub(crate) fn generate_adaptive3d(
         mesh: m,
         index: idx,
     } = prepared.mesh()?;
+    // W6.2: the row states `TerritoryXy::PlannerBounds`, so the territory
+    // carries the outline and the centre containment.
+    let (outline, centre) = match prepared.territory().xy {
+        XyTerritory::PlannerBounds { outline, centre } => (outline, centre),
+        XyTerritory::ClipAfter | XyTerritory::Regions(_) => (None, None),
+    };
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -103,7 +112,7 @@ pub(crate) fn generate_adaptive3d(
             tolerance: cfg.tolerance,
             segment_merge_tolerance: ctx.segment_merge_tolerance,
             min_cutting_radius: cfg.min_cutting_radius,
-            boundary: ctx.boundary.cloned(), // F-027: forward the world stock XY bounds so the planner's
+            boundary: outline.cloned(), // F-027: forward the world stock XY bounds so the planner's
             // internal `material_stock` extends to cover every cell the
             // simulator's per-setup dexel grid will look at. Pre-fix the
             // planner was bounded by `mesh.bbox + tool_radius`, while the
@@ -121,8 +130,7 @@ pub(crate) fn generate_adaptive3d(
             )),
             // G-BOUNDARYPHANTOM: the containment the session clips to after
             // generation; the planner stamps only what that clip keeps.
-            centre_boundary: ctx
-                .boundary_centre
+            centre_boundary: centre
                 .map(<[crate::polygon::Polygon2]>::to_vec)
                 .unwrap_or_default(),
         },
@@ -173,8 +181,7 @@ pub(crate) fn generate_adaptive3d(
     let crate::adaptive3d::Adaptive3dOutput {
         toolpath: tp,
         annotations,
-        planner_engagement,
-        area_regions,
+        produced,
     } = crate::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
         m,
         idx,
@@ -188,13 +195,11 @@ pub(crate) fn generate_adaptive3d(
     }
     let spans =
         crate::compute::spans::spans_from_adaptive3d_annotations(&annotations, tp.moves.len());
-    // Stage 4 — carry the planner-predicted engagement samples on the
-    // AnnotatedToolpath so the feed modulator can read them post-dressup.
+    // W6.2: the planner's side channel rides the result. The feed
+    // modulator reads the engagement samples post-dressup (Stage 4); the
+    // viewport overlay and MCP read the By Area detection.
     let mut annotated = generated_with_spans(tp, spans);
-    annotated.planner_engagement = planner_engagement;
-    // The By Area detection, for the viewport overlay and MCP. `None` for
-    // Global.
-    annotated.area_regions = area_regions.map(std::sync::Arc::new);
+    annotated.produced = produced;
     Ok(annotated)
 }
 
@@ -233,9 +238,14 @@ pub(crate) fn generate_pencil(
             idx,
             ctx.tool_def,
             &params,
-            // R2: the prior-op machined stock (FromRemainingStock + a prior sim);
-            // the RestDepth detector prefers it as the rest reference.
-            ctx.initial_stock,
+            // The prior-op machined stock (FromRemainingStock + a prior sim)
+            // for the entry ramps, and (R2) the same stock after the W2.1
+            // guard, which the territory resolved once (W6.2). The RestDepth
+            // detector prefers it as the rest reference.
+            crate::finish::pencil::PencilStock {
+                remaining: ctx.initial_stock,
+                rest_reference: prepared.territory().reference_stock(),
+            },
             ctx.debug_ctx,
             &ctx.cancel_fn(),
         )?;
@@ -253,11 +263,10 @@ pub(crate) fn generate_pencil(
             .map(|ann| (ann.move_index, ann.event.label())),
     );
     let mut generated = generated_with_spans(tp, spans);
-    // Attach the RestDepth heatmap grid (if any) for the GUI overlay.
-    generated.rest_grid = report.rest_grid.map(std::sync::Arc::new);
-    // Attach the derived machining-region polygons (if any) — P2.2
-    // selective-finishing boundary source.
-    generated.rest_regions = report.rest_regions.map(std::sync::Arc::new);
+    // W6.2: the RestDepth detector's rest grid (the GUI overlay) and its
+    // derived region polygons (the P2.2 selective-finishing boundary
+    // source), when that detector ran.
+    generated.produced = report.produced;
     Ok(generated)
 }
 
@@ -299,15 +308,15 @@ pub(crate) fn generate_unified_finish(
     // number that this configuration never applies.
     ctx.record(&crate::compute::toolpath_stats::InertClaimsDialFinding::of_config(cfg));
 
+    let territory = prepared.territory();
     let claims_cfg = cfg.pencil_claims.then(|| {
         // The stock always feeds the TERRITORY mask; it ALSO feeds crease
         // detection when the resolved reference is
         // `CreaseReference::MachinedStock` (build-list item 3 —
-        // `CreaseReference` doc). The one stock-vs-mesh guard (W2.1); this
-        // op has no tool tier after it (`CreaseReference` decides).
-        let territory_stock =
-            crate::surface::stock_reference::StockReference::resolve(ctx.initial_stock, &m.bbox)
-                .stock();
+        // `CreaseReference` doc). W6.2: the territory resolved it once,
+        // through the W2.1 stock-vs-mesh guard; this op has no tool tier
+        // after it (`CreaseReference` decides).
+        let territory_stock = territory.reference_stock();
         // A/M6: resolve the three-valued DIAL into the two-valued field the
         // detector switches on, HERE — this is the only site that can see
         // both the operator's setting and what is actually in scope. The
@@ -419,7 +428,7 @@ pub(crate) fn generate_unified_finish(
             ctx.heights.bottom_z,
             &params,
             &planner,
-            ctx.boundary_regions,
+            territory.regions(),
             // P2.d: cost the region route against the real machine envelope
             // when one is in scope (same plumbing as pencil's P1 W4a hookup).
             ctx.link_kinematics.as_ref(),
@@ -481,8 +490,7 @@ pub(crate) fn generate_unified_finish(
     // RestDepth arm's (GUI heatmap, DerivedRestRegions, probes). `None`
     // when claims didn't run — the generic post-pass fallback still
     // applies then.
-    generated.rest_grid = report.rest_grid;
-    generated.rest_regions = report.rest_regions;
+    generated.produced = report.produced;
     Ok(generated)
 }
 
@@ -509,7 +517,7 @@ pub(crate) fn generate_steep_shallow(
         idx,
         ctx.tool_def,
         &params,
-        ctx.boundary_regions,
+        prepared.territory().regions(),
         &ctx.cancel_fn(),
     )?;
     // Two concatenated passes, not one continuous trace: barriers keep the
@@ -548,7 +556,7 @@ pub(crate) fn generate_ramp_finish(
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
-            ctx.boundary_regions,
+            prepared.territory().regions(),
             &ctx.cancel_fn(),
         )?;
     // PR-8b: unconditional, including when the clamp was inert — this is the
@@ -595,7 +603,7 @@ pub(crate) fn generate_spiral_finish(
             ctx.tool_def,
             &params,
             ctx.debug_ctx,
-            ctx.boundary_regions,
+            prepared.territory().regions(),
             &ctx.cancel_fn(),
         )?;
     if let Some(sem) = ctx.semantic_ctx {
@@ -655,7 +663,7 @@ pub(crate) fn generate_radial_finish(
         idx,
         ctx.tool_def,
         &params,
-        ctx.boundary_regions,
+        prepared.territory().regions(),
         &ctx.cancel_fn(),
     )?;
     Ok(with_depth_run_annotation(
@@ -687,7 +695,7 @@ pub(crate) fn generate_horizontal_finish(
         idx,
         ctx.tool_def,
         &params,
-        ctx.boundary_regions,
+        prepared.territory().regions(),
         &ctx.cancel_fn(),
     )?;
     Ok(with_depth_run_annotation(

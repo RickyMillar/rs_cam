@@ -249,6 +249,7 @@ fn pocket_merge_tree_census_on_the_rough() {
         .get_result(rough_index)
         .expect("the rough generated")
         .annotated()
+        .produced
         .area_regions
         .clone();
 

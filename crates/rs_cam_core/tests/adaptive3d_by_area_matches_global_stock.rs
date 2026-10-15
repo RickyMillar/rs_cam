@@ -139,6 +139,7 @@ fn by_area_final_stock_equals_global() {
         )
         .unwrap();
         let map = out
+            .produced
             .area_regions
             .as_ref()
             .expect("By Area records its regions");
