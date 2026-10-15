@@ -17,18 +17,18 @@ auto_from_model = false
 species = "WhiteOak"
 
 [[job.stock.alignment_pins]]
-x = 59.0
-y = 32.5
+x = 32.5
+y = 6.8
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 7.511
-y = 9.0
+x = 47.5
+y = 58.2
 diameter = 6.0
 
 [[job.stock.alignment_pins]]
-x = 7.511
-y = 56.0
+x = 17.5
+y = 58.2
 diameter = 6.0
 
 [job.post]
@@ -357,8 +357,33 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 1. North to +X. Z0 = spoilboard."
-fixtures = []
 keep_out_zones = []
+
+[[setups.fixtures]]
+id = 0
+name = "Clamp X min"
+kind = "clamp"
+enabled = true
+origin_x = -15.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
+
+[[setups.fixtures]]
+id = 1
+name = "Clamp X max"
+kind = "clamp"
+enabled = true
+origin_x = 60.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
 
 [[setups.toolpaths]]
 id = 0
@@ -473,16 +498,16 @@ kind = "alignment_pin_drill"
 diameter = 6.0
 holes = [
     [
-    59.0,
     32.5,
+    6.8,
 ],
     [
-    7.511,
-    9.0,
+    47.5,
+    58.2,
 ],
     [
-    7.511,
-    56.0,
+    17.5,
+    58.2,
 ],
 ]
 spoilboard_penetration = 6.3
@@ -570,6 +595,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -666,6 +692,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -763,6 +790,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -842,8 +870,33 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 3, after the pour and the cure. Same zero."
-fixtures = []
 keep_out_zones = []
+
+[[setups.fixtures]]
+id = 0
+name = "Clamp X min"
+kind = "clamp"
+enabled = true
+origin_x = -15.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
+
+[[setups.fixtures]]
+id = 1
+name = "Clamp X max"
+kind = "clamp"
+enabled = true
+origin_x = 60.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
 
 [[setups.stock_changes]]
 id = 0
@@ -985,6 +1038,7 @@ pattern = "contour"
 angle = 0.0
 finishing_passes = 0
 spindle_rpm = 18000
+region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -1059,12 +1113,45 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 id = 2
 name = "3 Front"
 face_up = "bottom"
-z_rotation = "0"
+z_rotation = "180"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 4: flipped on the dowels. Local Z = block Z."
-fixtures = []
-keep_out_zones = []
+
+[[setups.fixtures]]
+id = 0
+name = "Clamp X min"
+kind = "clamp"
+enabled = true
+origin_x = -15.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
+
+[[setups.fixtures]]
+id = 1
+name = "Clamp X max"
+kind = "clamp"
+enabled = true
+origin_x = 60.0
+origin_y = 22.5
+origin_z = -5.0
+size_x = 20.0
+size_y = 20.0
+size_z = 34.5
+clearance = 2.0
+
+[[setups.keep_out_zones]]
+id = 0
+name = "Keep-Out 1"
+enabled = true
+origin_x = 0.0
+origin_y = 0.0
+size_x = 20.0
+size_y = 20.0
 
 [[setups.toolpaths]]
 id = 7
