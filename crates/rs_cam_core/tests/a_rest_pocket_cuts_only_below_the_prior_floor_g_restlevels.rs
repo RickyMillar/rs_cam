@@ -2027,8 +2027,8 @@ fn a_rest_waterline_feeds_through_air_that_a_retract_would_not_save() {
         r.sort_unstable();
         f.sort_unstable();
         // Above the prior floor the session's air-cut filter (a dressup,
-        // `AirBridgePolicy`) still turns cuts in air into rapids, after the
-        // kernel. The kernel's own output is the whole contour: the finding
+        // `filter_air_cuts`, the same time rule) may turn cuts in air into
+        // rapids, after the kernel. The kernel's own output is the whole contour: the finding
         // above says it dropped nothing. Each rest cut point is a fresh one.
         assert!(
             r.iter().all(|p| f.binary_search(p).is_ok()),

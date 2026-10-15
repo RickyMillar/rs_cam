@@ -152,6 +152,7 @@ fn ship(planned: &Toolpath, cfg: &DressupConfig) -> Toolpath {
             safe_z: SAFE_Z,
             stock_top: STOCK_TOP_Z,
             prior_stock: None,
+            link_kinematics: None,
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,

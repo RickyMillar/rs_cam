@@ -25,13 +25,13 @@ use crate::ui_command::{
 // Re-use parameter structs from the standalone MCP crate.
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
-    AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CutTraceParam, ExportParam,
-    GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam, GetNotificationsParam,
-    ImportMachineSettingsParam, IndexParam, InspectSpansParam, ListToolCatalogParam,
-    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam,
-    OperationSchemaParam, PlaceAlignmentPatternParam, PlanMultitoolFinishingParam,
-    PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam,
-    RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CompareRestWithFreshParam,
+    CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam,
+    GetNotificationsParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
+    ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
+    MoveAlignmentPinsParam, OperationSchemaParam, PlaceAlignmentPatternParam,
+    PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
+    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
     SetDressupFieldParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
     SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
@@ -1246,7 +1246,7 @@ impl EmbeddedCamServer {
         // literal, so the list cannot be built here; the
         // `dressup_field_names_are_published` test holds this string against
         // the table and fails when a field is added without a word here.
-        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order, air_bridge_policy. helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
+        description = "Set dressup configuration for a toolpath. Pass a JSON object with dressup fields: entry_style, ramp_angle, helix_radius, helix_pitch, entry_clearance_mm, dogbone, dogbone_angle, lead_in_out, lead_radius, lead_in_feed_rate, lead_out_feed_rate, link_moves, link_max_distance, link_feed_rate, arc_fitting, arc_tolerance, segment_merge, segment_merge_tolerance, feed_optimization, feed_max_rate, feed_ramp_rate, optimize_rapid_order. helix_radius is in mm; null = 0.3 x tool diameter (repo rule), and the engine caps every helix radius at the tool's flat bottom so the helix leaves no core."
     )]
     async fn set_dressup_config(
         &self,
@@ -1485,6 +1485,20 @@ impl EmbeddedCamServer {
                 None,
             )
             .await,
+        )
+    }
+
+    #[tool(
+        name = "compare_rest_with_fresh",
+        description = "Compare a rest operation (stock source: remaining stock) with the same operation on fresh stock. Generates the fresh twin once (one more generation of the op, no simulation) and answers both cycle times in one measure: the simulator's cycle-time model at the commanded feeds. The comparison is recorded; while it stays current (the op is not edited or regenerated), the simulation triage reports project.rest_slower_than_fresh (Info) when rest is slower. Generate the rest op first."
+    )]
+    async fn compare_rest_with_fresh(
+        &self,
+        Parameters(CompareRestWithFreshParam { index }): Parameters<CompareRestWithFreshParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::CompareRestWithFresh { index })
+                .await,
         )
     }
 

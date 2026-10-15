@@ -26,6 +26,7 @@ mod pin_report;
 mod pins;
 pub mod project_file;
 mod reach;
+mod rest_fresh;
 mod rest_stock;
 mod result_provenance;
 mod save;
@@ -34,12 +35,13 @@ mod stock_change_report;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
     AddAlignmentPinArgs, AddFixtureArgs, AddKeepOutArgs, AddModelArgs, AddSetupArgs,
-    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptResultArgs,
-    AdoptSimulationArgs, AutoEnableRestAnalysisArgs, Command, CommandId, CommandKind, Effects,
-    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
-    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
-    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle,
-    MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs,
+    AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs,
+    Command, CommandId, CommandKind, Effects, ForgetResultArgs, GenerateToolpathArgs,
+    GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
+    InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
+    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, MoveStockChangeArgs,
+    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
     RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
     RemoveModelArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceStockChangeArgs,
@@ -1386,6 +1388,10 @@ pub struct ProjectSession {
 
     // Computed results (keyed by toolpath index)
     pub(crate) results: HashMap<usize, ToolpathComputeResult>,
+    /// Operator ruling 2026-10-15: the rest-against-fresh comparisons a
+    /// surface asked for, by toolpath id. Only a current one is read
+    /// ([`ProjectSession::current_rest_fresh_comparisons`]).
+    pub(crate) rest_fresh_comparisons: HashMap<ToolpathId, rest_fresh::RestFreshRecord>,
     /// Per-toolpath generation-input revision, keyed by toolpath index.
     ///
     /// Bumped by [`ProjectSession::drop_result`] — the single site that
@@ -1471,6 +1477,7 @@ impl ProjectSession {
             }],
             toolpath_configs: Vec::new(),
             results: HashMap::new(),
+            rest_fresh_comparisons: HashMap::new(),
             toolpath_revision: HashMap::new(),
             next_revision: 0,
             simulation_epoch: 0,

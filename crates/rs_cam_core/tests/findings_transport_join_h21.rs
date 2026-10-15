@@ -282,7 +282,7 @@ fn every_recorded_finding_survives_the_single_join() {
     let tp = traced_toolpath();
     let findings = every_finding_recorded();
 
-    let stats = stats_with_findings(&tp, None, findings.clone(), None, None);
+    let stats = stats_with_findings(&tp, None, findings.clone(), None, None, None);
 
     let ToolpathStats {
         // Move-derived — pinned separately by
@@ -320,6 +320,8 @@ fn every_recorded_finding_survives_the_single_join() {
         stock_snapshot,
         // G-RESTRES: the same caller-owned rule as `stock_snapshot`.
         source_stock: _,
+        // The fresh twin's time: caller-owned, the same rule.
+        planned_cycle_time_s: _,
     } = stats;
     assert_eq!(
         stock_snapshot, None,
@@ -377,7 +379,7 @@ fn every_recorded_finding_survives_the_single_join() {
 fn the_join_leaves_the_move_derived_half_alone() {
     let tp = traced_toolpath();
     let moves_only = compute_stats_with_spans(&tp, None);
-    let joined = stats_with_findings(&tp, None, every_finding_recorded(), None, None);
+    let joined = stats_with_findings(&tp, None, every_finding_recorded(), None, None, None);
 
     assert_eq!(joined.move_count, moves_only.move_count);
     assert_eq!(joined.move_count, 4);
@@ -400,7 +402,7 @@ fn the_join_leaves_the_move_derived_half_alone() {
 #[test]
 fn an_unrecorded_generation_still_reads_as_not_measured() {
     let tp = traced_toolpath();
-    let stats = stats_with_findings(&tp, None, GenerationFindings::default(), None, None);
+    let stats = stats_with_findings(&tp, None, GenerationFindings::default(), None, None, None);
 
     assert_eq!(stats.truncated_core_mm2, None);
     assert_eq!(stats.untouched_material_mm2, None);

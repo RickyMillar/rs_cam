@@ -144,6 +144,14 @@ pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
 /// generator fix it should be silent on the shipped fixtures — a monitor that
 /// speaks the day a generator regresses.
 pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load";
+/// Operator ruling 2026-10-15. After a simulation, a rest operation takes
+/// longer than the same operation on fresh stock (its fresh twin, generated
+/// on request by `ProjectSession::compare_rest_with_fresh`: one cycle-time
+/// model, commanded feeds). Only a comparison that is still current reports.
+/// Rest can take longer for a real reason (small islands need their own
+/// entries and rapids), so this is INFORMATIONAL: it names both times, and
+/// the operator decides.
+pub const PROJECT_REST_SLOWER_THAN_FRESH: &str = "project.rest_slower_than_fresh";
 /// Phase 4 (2026-09-07). The two-sided kinematic reading for one toolpath:
 /// what fraction of the commanded feed the machine actually achieves, which
 /// constraint binds each move (feed / accel / per-axis rate / junction), and
@@ -425,6 +433,7 @@ pub const ALL: &[&str] = &[
     PROJECT_ENTRY_LOAD,
     PROJECT_LINK_CUTS_STOCK,
     PROJECT_PLUNGE_CLASS_LOAD,
+    PROJECT_REST_SLOWER_THAN_FRESH,
     PROJECT_KINEMATIC_UTILIZATION,
     FEEDS_FEED_CLAMPED,
     FEEDS_POWER_LIMITED,

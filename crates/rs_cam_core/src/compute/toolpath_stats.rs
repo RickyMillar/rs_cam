@@ -404,6 +404,18 @@ pub struct ToolpathStats {
     /// project state after every command, and drops a result whose record
     /// no longer matches (`ProjectSession::rest_results_out_of_date`).
     pub source_stock: Option<crate::compute::source_stock::SourceStock>,
+    /// Operator ruling 2026-10-15: a rest operation's cycle time (s) at the
+    /// feeds it was planned with, one integrator pass at generation
+    /// (`machine::kinematics::compute_cycle_time` over
+    /// `MachineProfile::link_kinematics`). A later feed modulation rewrites
+    /// the feeds of the stored moves; this number stays the planned one.
+    /// The on-demand rest-against-fresh comparison
+    /// (`ProjectSession::compare_rest_with_fresh`) reads it.
+    ///
+    /// `None` = not measured: a `Fresh` operation, a context with no
+    /// machine envelope, or a stats struct that never went through a real
+    /// generation. Caller-owned, as `stock_snapshot` is.
+    pub planned_cycle_time_s: Option<f64>,
     /// F3 (2026-08-23): what the
     /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this operation's
     /// rest-region extraction. See [`crate::geometry::region_mask::RegionCapReport`].
@@ -841,6 +853,22 @@ impl WaterlineLadderFinding {
 /// bit-for-bit in [`crate::compute::stats::compute_retract_trips`] so the
 /// production channel and that harness can never disagree about what counts
 /// as one trip.
+/// A rest operation's cycle time and its fresh twin's (operator ruling
+/// 2026-10-15). On request (`ProjectSession::compare_rest_with_fresh`) the
+/// session generates the same operation with `StockSource::Fresh` (the
+/// fresh twin). Both times are ONE measure: the integrator the simulator uses
+/// (`machine::kinematics::compute_cycle_time` over
+/// `MachineProfile::link_kinematics`), at the commanded feeds of each
+/// dressed plan. A simulated time under feed modulation reads other feeds,
+/// so the comparison does not use it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FreshTwinTime {
+    /// The rest operation's cycle time (s).
+    pub rest_s: f64,
+    /// The fresh twin's cycle time (s).
+    pub fresh_s: f64,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RetractTripCount {
     /// Total retract round trips. Always populated once a stats struct has

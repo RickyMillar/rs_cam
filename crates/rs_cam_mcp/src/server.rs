@@ -533,6 +533,12 @@ pub struct CollisionCheckParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct CompareRestWithFreshParam {
+    /// Toolpath index (0-based) of a rest operation (remaining stock)
+    pub index: usize,
+}
+
+#[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct CutTraceParam {
     /// Optional: filter results to a single toolpath by its project-level
     /// **id** — NOT its index. Ids come from `list_toolpaths` (`id` field);

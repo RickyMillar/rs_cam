@@ -293,7 +293,7 @@ pub(super) fn draw_toolpath_panel(
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
-        ToolpathTab::Geometry => draw_geometry_tab(ui, entry, inputs, model_bbox),
+        ToolpathTab::Geometry => draw_geometry_tab(ui, entry, inputs, model_bbox, events),
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
 
@@ -466,6 +466,7 @@ fn draw_geometry_tab(
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
@@ -479,8 +480,6 @@ fn draw_geometry_tab(
     let material = &inputs.material;
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
-    let model_has_enriched = inputs.model_has_enriched;
-    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
     let height_ctx = inputs.height_ctx.as_ref();
     let drill_layers = inputs.drill_layers.as_slice();
     let drill_targets = inputs.drill_targets.as_slice();
@@ -491,14 +490,7 @@ fn draw_geometry_tab(
     // Faces and the stock source. It used to sit behind a `Geometry`
     // disclosure above the tab strip, which gave one name two homes
     // at one level. One name, one place (Rule A).
-    draw_geometry_wiring(
-        ui,
-        entry,
-        tools,
-        models,
-        model_has_enriched,
-        model_is_step_missing_brep,
-    );
+    draw_geometry_wiring(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
 

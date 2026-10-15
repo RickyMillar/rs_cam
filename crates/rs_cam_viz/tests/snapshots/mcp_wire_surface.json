@@ -481,6 +481,25 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based) of a rest operation (remaining stock)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "CompareRestWithFreshParam",
+      "type": "object"
+    },
+    "name": "compare_rest_with_fresh"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "description": "`edit_stock_change` (S4): change one stock change in place. Each field\nthat is given replaces that part of the change; the others stay. Use\n`enabled` to turn a change on or off.\n\nTo change the geometry, give `kind` with every value that kind needs\n(`model_ids`, and `level_z` or `z_bottom` and `z_top`).",
       "properties": {
         "change_id": {

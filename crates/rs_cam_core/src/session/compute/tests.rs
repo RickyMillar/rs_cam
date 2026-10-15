@@ -2161,6 +2161,7 @@ fn fake_result_with_regions(
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,
+            planned_cycle_time_s: None,
         },
         debug_trace: None,
         semantic_trace: None,

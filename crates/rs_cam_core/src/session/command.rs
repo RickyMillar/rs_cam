@@ -141,6 +141,17 @@ macro_rules! for_each_command {
                      "the CLI generates synchronously and never adopts a completion",
                  ),
              }),
+            (Command, AdoptRestFreshComparison, "adopt_rest_fresh_comparison",
+             AdoptRestFreshComparisonArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the compare_rest_with_fresh tool records its own answer; no wire mutation",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, SetAlignmentPins, "set_alignment_pins", SetAlignmentPinsArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -918,6 +929,23 @@ pub struct AdoptResultArgs {
     pub revision: u64,
     /// The computed result.
     pub result: Box<ToolpathComputeResult>,
+}
+
+/// The arguments of the `adopt_rest_fresh_comparison` command (operator
+/// ruling 2026-10-15): the answer of
+/// [`ProjectSession::compare_rest_with_fresh`](super::ProjectSession::compare_rest_with_fresh).
+///
+/// The command records the comparison for the toolpath. It refuses a
+/// stale revision, as `adopt_result` does. It stales nothing and keeps the
+/// simulation: recording two times moves no generation input.
+#[derive(Debug, Clone)]
+pub struct AdoptRestFreshComparisonArgs {
+    /// The index of the rest toolpath.
+    pub index: usize,
+    /// The revision the fresh twin was generated at.
+    pub revision: u64,
+    /// The rest time and the fresh twin's time, one measure.
+    pub times: crate::compute::toolpath_stats::FreshTwinTime,
 }
 
 /// The arguments of the `adopt_simulation` command.
@@ -2362,6 +2390,31 @@ impl ProjectSession {
                     );
                     Ok(())
                 })
+            }
+            Command::AdoptRestFreshComparison(args) => {
+                let AdoptRestFreshComparisonArgs {
+                    index,
+                    revision,
+                    times,
+                } = args;
+                let id = self
+                    .toolpath_configs
+                    .get(index)
+                    .ok_or(SessionError::ToolpathNotFound(index))?
+                    .id;
+                let current = self.toolpath_revision(index);
+                if current != revision {
+                    return Err(SessionError::StaleCompletion {
+                        index,
+                        submitted: revision,
+                        current,
+                    });
+                }
+                Ok(self.with_effects(None, move |session| {
+                    let _ = session
+                        .rest_fresh_comparisons
+                        .insert(id, super::rest_fresh::RestFreshRecord { revision, times });
+                }))
             }
             Command::AdoptSimulation(args) => {
                 let AdoptSimulationArgs { result, epoch } = args;

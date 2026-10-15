@@ -475,7 +475,7 @@ struct WaterlinePass<'a> {
     rest_use: RestUse,
     boundary_regions: Option<&'a RegionSet<'a>>,
     /// The machine envelope that times a stretch the contour filter drops
-    /// (`ops::waterline::stretch_is_worth_a_retract`). `None`: the filter
+    /// (`machine::kinematics::retract_saves_time`). `None`: the filter
     /// drops nothing.
     link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
     /// The `ContourFilter` tally over the levels: a level whose filter

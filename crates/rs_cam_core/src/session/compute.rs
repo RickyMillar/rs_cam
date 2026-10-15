@@ -185,6 +185,10 @@ impl ResolvedGenInputs {
 /// [`ResolvedGenInputs`]'s compute-time-patched copy. The tail made that
 /// split before WP10 split the function; reading these off the patched
 /// copy would change the answer.
+///
+/// `Clone`: the fresh twin of a rest generation reads a copy with
+/// `StockSource::Fresh` ([`fresh_twin_cycle_time`]).
+#[derive(Clone)]
 pub struct GenContext {
     /// `ToolpathConfig::name`. The recorder labels and the
     /// empty-generation refusal name the toolpath the operator sees.
@@ -573,10 +577,100 @@ pub fn execute_job(
     // split.
     let annotated = phases.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
 
+    // Operator ruling 2026-10-15: a rest operation keeps its planned cycle
+    // time for the on-demand comparison with its fresh twin. One
+    // integrator pass; the twin itself is generated only on request.
+    let planned_cycle_time_s = (context.stock_source
+        == crate::session::StockSource::FromRemainingStock)
+        .then_some(context.link_kinematics.as_ref())
+        .flatten()
+        .map(|link| {
+            crate::machine::kinematics::compute_cycle_time(
+                &annotated.toolpath,
+                &link.kinematics,
+                link.max_feed_mm_min,
+                link.rapid_feed_mm_min,
+            )
+        });
+
     // `channels` borrows `semantic_recorder`, which `finish` consumes. The
     // borrow ends at the line above, so no explicit drop is needed —
     // `ReconcileSet` implements no `Drop` and `drop_non_drop` refuses one.
-    phases.finish(annotated, findings, debug_recorder, semantic_recorder)
+    phases.finish(
+        annotated,
+        findings,
+        debug_recorder,
+        semantic_recorder,
+        planned_cycle_time_s,
+    )
+}
+
+/// The fresh twin of a rest generation (operator ruling 2026-10-15): the
+/// cycle time (s) the same operation takes with `StockSource::Fresh`.
+///
+/// It runs the same four phases as [`execute_job`] on a copy of the
+/// context with `StockSource::Fresh` and no machined-stock snapshot: the
+/// generator, the dressups, the boundary clip and the entry split, as a
+/// fresh op on the board generates them. The time is the integrator the
+/// simulator uses
+/// (`machine::kinematics::compute_cycle_time` over
+/// `MachineProfile::link_kinematics`), on the commanded feeds.
+///
+/// **Cost.** One more generation of the operation, so it runs only on
+/// request ([`ProjectSession::compare_rest_with_fresh`]): a rest generator
+/// never plans the fresh motion it leaves out.
+///
+/// `None` for a `Fresh` operation, a context with no machine envelope, and
+/// a twin that fails, is cancelled or comes out empty. The twin's traces
+/// are dropped.
+pub(crate) fn fresh_twin_cycle_time(
+    handle: &GenerateToolpathHandle,
+    observer: &GenObserver<'_>,
+    cancel: &AtomicBool,
+) -> Option<f64> {
+    if handle.context.stock_source != crate::session::StockSource::FromRemainingStock {
+        return None;
+    }
+    let link = handle.context.link_kinematics.as_ref()?;
+    // Fresh stock is the board: no machined-stock snapshot at all, so the
+    // air-cut filter (which reads the snapshot whatever the stock source)
+    // does not drop the motion over material an earlier op removed.
+    let context = GenContext {
+        stock_source: crate::session::StockSource::Fresh,
+        prior_stock: None,
+        source_stock: None,
+        ..handle.context.clone()
+    };
+    let debug_recorder =
+        ToolpathDebugRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let semantic_recorder =
+        ToolpathSemanticRecorder::new(context.toolpath_name.clone(), context.op_label);
+    let debug_root = debug_recorder.root_context();
+    let semantic_root = semantic_recorder.root_context();
+    let phases = JobPhases {
+        inputs: &handle.inputs,
+        context: &context,
+        observer,
+        gen_initial_stock: context.generator_seed_stock(),
+        debug_root: &debug_root,
+        semantic_root: &semantic_root,
+    };
+    let (annotated, mut findings) = phases.generate(cancel).ok()?;
+    let mut channels =
+        crate::trace::transform_provenance::ReconcileSet::new(Some(&semantic_recorder), None);
+    let annotated = phases.apply_dressups(annotated, &mut channels);
+    let annotated = phases
+        .clip_and_split_entries(annotated, &mut channels, &mut findings)
+        .ok()?;
+    if annotated.toolpath.moves.is_empty() {
+        return None;
+    }
+    Some(crate::machine::kinematics::compute_cycle_time(
+        &annotated.toolpath,
+        &link.kinematics,
+        link.max_feed_mm_min,
+        link.rapid_feed_mm_min,
+    ))
 }
 
 /// The per-job state the four [`execute_job`] phases share (SES-04).
@@ -747,6 +841,7 @@ impl JobPhases<'_, '_> {
                 safe_z: self.inputs.heights.retract_z,
                 stock_top: self.inputs.emission_stock_bbox.max.z,
                 prior_stock: prior_stock_ref,
+                link_kinematics: self.context.link_kinematics.as_ref(),
                 feed_opt_stock: feed_opt_stock.as_mut(),
                 cutter: Some(&self.inputs.tool_def as &dyn crate::tool::MillingCutter),
                 entry_surface,
@@ -907,6 +1002,8 @@ impl JobPhases<'_, '_> {
     }
 
     /// Phase 4 — the empty gate, then the stats and the result.
+    /// `planned_cycle_time_s` is a rest operation's planned cycle time; the
+    /// stats carry it.
     ///
     /// It consumes both recorders, so it is the last phase by
     /// construction: nothing can record after the traces are read.
@@ -921,6 +1018,7 @@ impl JobPhases<'_, '_> {
         findings: crate::compute::execute::GenerationFindings,
         debug_recorder: ToolpathDebugRecorder,
         semantic_recorder: ToolpathSemanticRecorder,
+        planned_cycle_time_s: Option<f64>,
     ) -> Result<ToolpathComputeResult, SessionError> {
         // ── G-ENTRYEMPTY: the empty-generation gate ───────────
         // The pipeline is finished; `annotated` is exactly what
@@ -1017,6 +1115,7 @@ impl JobPhases<'_, '_> {
                 .as_deref()
                 .map(crate::compute::toolpath_stats::StockSnapshotStamp::of),
             self.context.source_stock.clone(),
+            planned_cycle_time_s,
         );
 
         let mut debug_trace = debug_recorder.finish();
@@ -2225,6 +2324,19 @@ impl ProjectSession {
             }
         }
 
+        self.capture_generate_handle(index, cancel)
+    }
+
+    /// Steps 3 to 5 of [`Self::start_generate_toolpath`]: resolve the
+    /// inputs, capture the context, stamp the revision. It reads the
+    /// session only, so the on-demand fresh twin
+    /// ([`Self::compare_rest_with_fresh`]) builds its handle here too and
+    /// keeps the stored result.
+    pub(crate) fn capture_generate_handle(
+        &self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<GenerateToolpathHandle, SessionError> {
         let inputs = self.resolve_generation_inputs(index, cancel)?;
 
         // Re-borrow the config for the recorder labels and for every dial

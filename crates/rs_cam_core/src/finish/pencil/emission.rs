@@ -139,10 +139,11 @@ pub(crate) struct EntryRampPlan {
 /// Plan a bite-budgeted entry ramp along the first few millimetres of `run`.
 ///
 /// Returns `None` — keeping the legacy single descent — when there is no
-/// input stock reading, the run is too short to ramp along, or the stock over
-/// the window already sits within one bite budget of the finished surface (in
-/// which case the descent arrives in near-zero engagement and a ramp would
-/// only cost time).
+/// input stock reading, the run is too short to ramp along, no material
+/// stands above the run's start point (operator ruling 2026-10-15), or the
+/// stock over the window already sits within one bite budget of the finished
+/// surface (in which case the descent arrives in near-zero engagement and a
+/// ramp would only cost time).
 ///
 /// # Shape
 ///
@@ -186,6 +187,22 @@ pub(crate) fn plan_entry_ramp(
     end_at_start: bool,
 ) -> Option<EntryRampPlan> {
     if run.len() < 2 {
+        return None;
+    }
+    // Operator ruling 2026-10-15: a run whose start point has no material
+    // above its entry Z, in the reach of the tip, needs no ladder. The
+    // caller's plain descent goes straight down through air. The rule is
+    // the W6.1 contour filter's own (`standing_near`): material counts
+    // above `z + FRESH_MATERIAL_THRESHOLD_MM`, within `R + cell`, and a
+    // band off the grid counts as material.
+    let first = *run.first()?;
+    let start_in_material = crate::compute::execute::standing_material::standing_near(
+        Some(stock),
+        first.z,
+        contact_radius,
+    )
+    .is_some_and(|near| near.keeps(crate::geo::P2::new(first.x, first.y)));
+    if !start_in_material {
         return None;
     }
     let tip = contact_radius.max(1e-6);

@@ -17,15 +17,15 @@ moves_hash = "6a7919a9fa017e9e"
 
 ["adaptive/rest"]
 outcome = "ok"
-move_count = 1086
-rapid_count = 54
-linear_count = 754
-arc_count = 278
-cutting_length_mm = 2462.728
-rapid_length_mm = 615.548
+move_count = 1088
+rapid_count = 36
+linear_count = 773
+arc_count = 279
+cutting_length_mm = 2480.004
+rapid_length_mm = 458.319
 bbox_min = [-16.825, -8.825, -6.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "fc2a6ba989f36d52"
+moves_hash = "9a2a08d6bee39639"
 
 ["adaptive3d/fresh"]
 outcome = "ok"
@@ -41,15 +41,15 @@ moves_hash = "fc7bd966aaee3c06"
 
 ["adaptive3d/rest"]
 outcome = "ok"
-move_count = 45
-rapid_count = 9
-linear_count = 36
+move_count = 44
+rapid_count = 6
+linear_count = 38
 arc_count = 0
-cutting_length_mm = 91.912
-rapid_length_mm = 96.499
+cutting_length_mm = 110.092
+rapid_length_mm = 62.572
 bbox_min = [-12.5, -12.5, 0.6246]
 bbox_max = [11.9719, 11.9719, 13.0]
-moves_hash = "150d9282df0a9f55"
+moves_hash = "263e179cb44e7c9e"
 
 ["alignment_pin_drill/fresh"]
 outcome = "ok"
@@ -221,15 +221,15 @@ moves_hash = "5b4e6e04a39e4bdf"
 
 ["pencil/rest"]
 outcome = "ok"
-move_count = 1394
-rapid_count = 124
-linear_count = 726
-arc_count = 544
-cutting_length_mm = 1399.743
-rapid_length_mm = 662.093
+move_count = 1387
+rapid_count = 91
+linear_count = 750
+arc_count = 546
+cutting_length_mm = 1421.249
+rapid_length_mm = 461.27
 bbox_min = [-13.3091, -12.4109, 0.0]
 bbox_max = [12.4805, 11.5387, 13.0]
-moves_hash = "d09d8690dd0ddc0a"
+moves_hash = "b4fa72c97e502152"
 
 ["pocket/fresh"]
 outcome = "ok"
@@ -245,15 +245,15 @@ moves_hash = "6ed525af757a5822"
 
 ["pocket/rest"]
 outcome = "ok"
-move_count = 127
-rapid_count = 32
-linear_count = 95
+move_count = 126
+rapid_count = 30
+linear_count = 96
 arc_count = 0
-cutting_length_mm = 648.052
-rapid_length_mm = 302.276
+cutting_length_mm = 648.427
+rapid_length_mm = 282.901
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "211cc3431eec4428"
+moves_hash = "70c2de817b4fa52f"
 
 ["pocket/zigzag"]
 outcome = "ok"
@@ -449,15 +449,15 @@ moves_hash = "a42b3a4fa7794cb5"
 
 ["unified_finish/rest"]
 outcome = "ok"
-move_count = 1841
-rapid_count = 35
-linear_count = 1681
+move_count = 1847
+rapid_count = 14
+linear_count = 1708
 arc_count = 125
-cutting_length_mm = 1511.425
-rapid_length_mm = 259.61
+cutting_length_mm = 1475.283
+rapid_length_mm = 129.763
 bbox_min = [-13.9324, -13.9324, 0.0]
 bbox_max = [13.6448, 13.6448, 13.0]
-moves_hash = "da13e4c6a1021499"
+moves_hash = "28cb81cba6d9d1ae"
 
 ["v_carve/fresh"]
 outcome = "ok"

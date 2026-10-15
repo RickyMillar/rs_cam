@@ -18,7 +18,8 @@ it: `apply_tabs`, in the per-level closure of `compute/execute/clearing_2d.rs`
 
 ## Invariants
 
-- G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever.
+- G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever. `filter_air_cuts` bridges an
+  air run only when `machine::kinematics::retract_saves_time` says the retract is faster (10-15).
 - Every linking arm calls the shared `relink_fragments` kernel in
   `finish/surface_link.rs`. Do not add a second linking implementation.
 - A helix or ramp starts `entry_clearance_mm` over the material and takes
@@ -26,8 +27,7 @@ it: `apply_tabs`, in the per-level closure of `compute/execute/clearing_2d.rs`
   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
   fit `entry_containment`, arc fit inside it; under entry None a
   `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
-- The modulator skips a plunge by geometry; the descent pass splits no
-  entry retract (G-PECKSPLIT).
+- The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT).
 - `tsp.rs`: a reordered group's fed first move is never fed from elsewhere
   (G-TIERBURIAL); rapid travel never grows: a group keeps its order and
   framing unless its rebuild is shorter, else the input comes out as is.

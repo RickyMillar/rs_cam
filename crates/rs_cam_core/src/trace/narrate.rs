@@ -313,6 +313,9 @@ impl<'a> ToolpathNarrationContext<'a> {
             //  - source_stock:      G-RESTRES provenance, the same rule as
             //    `stock_snapshot`. The wires publish it.
             source_stock: _,
+            //  - planned_cycle_time_s: read by the rest-against-fresh
+            //    comparison, not a part measurement.
+            planned_cycle_time_s: _,
             //  - region_cap (F3):   surfaced as a diagnostic notice
             //    (`geom.region_cap_truncated`), on the same rule as
             //    `deprecated_dial`. It is a statement about the rest-region

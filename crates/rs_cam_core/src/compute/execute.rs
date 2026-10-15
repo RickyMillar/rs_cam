@@ -533,7 +533,7 @@ mod finish_raster;
 mod layered;
 mod prologue;
 mod shared;
-mod standing_material;
+pub(crate) mod standing_material;
 
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,

@@ -372,6 +372,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// W2.5 (D10): the feed stage of the stored result, the one export
     /// emits. `None` when the toolpath has no stored result.
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+    /// Operator ruling 2026-10-15: this rest toolpath's current comparison
+    /// with fresh stock, when one was asked for
+    /// (`ProjectSession::current_rest_fresh_comparisons`).
+    pub rest_fresh: Option<rs_cam_core::compute::toolpath_stats::FreshTwinTime>,
 }
 
 impl ToolpathPanelInputs {
@@ -594,6 +598,7 @@ pub(crate) fn toolpath_panel_inputs(
     let feed_stage = session
         .find_toolpath_config_by_id(id)
         .and_then(|(index, _)| session.feed_stage(index));
+    let rest_fresh = session.current_rest_fresh_comparisons().get(&id).copied();
     ToolpathPanelInputs {
         tools,
         models,
@@ -619,6 +624,7 @@ pub(crate) fn toolpath_panel_inputs(
         reach: reach_summary,
         freshness: freshness_for_tp,
         feed_stage,
+        rest_fresh,
     }
 }
 

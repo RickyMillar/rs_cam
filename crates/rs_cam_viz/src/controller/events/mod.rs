@@ -281,6 +281,14 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- Compute / check events ---
             AppEvent::RunCollisionCheck => self.request_collision_check(),
+            AppEvent::CompareRestWithFresh(tp_id) => {
+                if let Err(error) = self.compare_rest_with_fresh(tp_id) {
+                    self.push_notification(
+                        format!("Could not compare with fresh stock: {error}"),
+                        super::Severity::Warning,
+                    );
+                }
+            }
 
             // --- Face selection ---
             AppEvent::ToggleFaceSelection {

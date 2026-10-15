@@ -1825,6 +1825,7 @@ impl RsCamApp {
             | CommandId::MoveToolpathToSetup
             | CommandId::SetToolpathParam
             | CommandId::AdoptResult
+            | CommandId::AdoptRestFreshComparison
             | CommandId::SetToolParam
             | CommandId::SetToolpathHeights
             | CommandId::SetToolpathDebugOptions
@@ -2726,6 +2727,7 @@ impl RsCamApp {
             // is what this arm answers about. No MCP arm applies
             // `SetToolpathDebugOptions` (U4, 2026-10-01).
             CommandId::AdoptResult
+            | CommandId::AdoptRestFreshComparison
             | CommandId::AdoptModelGeometry
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum

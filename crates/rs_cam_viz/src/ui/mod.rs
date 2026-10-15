@@ -181,6 +181,10 @@ pub enum AppEvent {
     MoveToolpathToSetup(ToolpathId, SetupId, Option<usize>),
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
+    /// Operator ruling 2026-10-15: generate the fresh twin of a rest
+    /// toolpath on request and record both cycle times
+    /// (`ProjectSession::compare_rest_with_fresh`).
+    CompareRestWithFresh(ToolpathId),
     GenerateAll,
     /// Write the ONE stored simulation resolution (G-RESTRES) through
     /// `Command::SetSimulationResolution`. The Simulation panel sends it once

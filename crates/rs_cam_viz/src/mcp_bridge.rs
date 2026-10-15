@@ -645,6 +645,12 @@ pub enum McpRequestKind {
     CollisionCheck {
         index: usize,
     },
+    /// Operator ruling 2026-10-15: generate the fresh twin of one rest
+    /// toolpath and record both cycle times. One generation; no
+    /// simulation.
+    CompareRestWithFresh {
+        index: usize,
+    },
 
     // ── Measurements over the model ──────────────────────────────────
     /// P5 — the per-tool reach map for one finishing toolpath, as

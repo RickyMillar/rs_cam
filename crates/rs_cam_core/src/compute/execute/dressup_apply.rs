@@ -357,8 +357,9 @@ fn apply_dressup_traced(
 /// (`RapidOrderBarrier` + `DepthPass` span starts) — see
 /// [`AnnotatedToolpath::rapid_order_barriers`].
 ///
-/// `prior_stock` + `cutter` enable the air-cut filter step (S3: the filter
-/// judges air for the whole cutter, so it refuses to run without one — see
+/// `prior_stock` + `cutter` + `link_kinematics` enable the air-cut filter
+/// step (S3: the filter judges air for the whole cutter, so it refuses to
+/// run without one; it times a bridge with the envelope — see
 /// [`crate::dressup::filter_air_cuts`]). `feed_opt_stock` + `cutter`
 /// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
 /// per-step tracing scopes — the GUI passes them through to populate the
@@ -462,6 +463,10 @@ pub struct DressupContext<'a> {
     pub safe_z: f64,
     pub stock_top: f64,
     pub prior_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// The machine envelope (`MachineProfile::link_kinematics`) the
+    /// air-cut filter times a bridge with. `None` skips the filter, as a
+    /// missing cutter does: nothing becomes a rapid.
+    pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
     pub feed_opt_stock: Option<&'a mut crate::dexel_stock::TriDexelStock>,
     pub cutter: Option<&'a dyn MillingCutter>,
     /// G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
@@ -494,6 +499,7 @@ pub fn apply_dressups(
         safe_z,
         stock_top,
         prior_stock,
+        link_kinematics,
         feed_opt_stock,
         cutter,
         entry_surface,
@@ -860,11 +866,16 @@ pub fn apply_dressups(
     }
 
     // 7. Air-cut filter. S3: the filter classifies each sample for the whole
-    // cutter, so it needs the cutter — a `prior_stock` without one cannot be
-    // served. Skipping is the conservative arm (nothing becomes a rapid that
-    // was not one), and it is unreachable from the two production callers,
-    // which both pass a cutter unconditionally.
-    if let (Some(stock), Some(cut)) = (prior_stock, cutter) {
+    // cutter, so it needs the cutter; it times each bridge against the feed
+    // with the machine envelope (operator ruling 2026-10-15). A
+    // `prior_stock` without both cannot be served. Skipping is the
+    // conservative arm (nothing becomes a rapid that was not one), and it is
+    // unreachable from the session, which passes both.
+    if let (Some(stock), Some(cut), Some(link)) = (prior_stock, cutter, link_kinematics) {
+        let timing = crate::dressup::AirBridgeTiming {
+            feed_rate_mm_min: nominal_feed_rate,
+            link,
+        };
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -875,14 +886,12 @@ pub fn apply_dressups(
                 scope.set_param(SemanticKey::ToolRadius, tool_radius);
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
-            |at| {
-                crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, cfg.air_bridge_policy)
-            },
+            |at| crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, timing),
         );
     } else if prior_stock.is_some() {
         tracing::warn!(
-            "air-cut filter skipped: prior stock present but no cutter was \
-             supplied to apply_dressups"
+            "air-cut filter skipped: prior stock present but no cutter or no \
+             machine envelope was supplied to apply_dressups"
         );
     }
 

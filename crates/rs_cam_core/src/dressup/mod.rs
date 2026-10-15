@@ -2249,35 +2249,21 @@ pub fn reference_engagement_of_cutting_moves(
     }
 }
 
-/// Should a run of in-air cutting moves be replaced by a retract bridge?
+/// What the air-cut filter times an air run with: the feed through it
+/// against a retract bridge over it ([`crate::machine::kinematics::retract_saves_time`]).
 ///
 /// MEASURED CONTEXT (2026-08-03, `planning/unified_v3_design.md` §10): the
 /// filter used to bridge EVERY air run regardless of length. Each bridge is
 /// a retract to `safe_z`, a traverse, and a descent — on wanaka ×2 roughly
 /// 35 mm of travel — so skipping a 2 mm sliver of air costs ~17× the
-/// distance it saves. The unified rest-clearer emitted 1 634 fragments and
-/// this filter shattered them into 15 373, adding ~13 700 such bridges and
-/// almost all of the op's 539 m of rapid travel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AirBridgePolicy {
-    /// Bridge every air run, however short. Pre-2026-08 behaviour.
-    #[default]
-    Always,
-    /// Bridge only when the retract round trip is SHORTER than the air path
-    /// it replaces.
-    ///
-    /// Deliberately compares raw distance rather than time, which makes the
-    /// rule conservative in one direction only: rapids are never slower than
-    /// cutting feeds, so a bridge up to `rapid/feed` times longer than the
-    /// air path could still win on the clock and this rule declines it. It
-    /// catches every pathological case without needing a machine envelope
-    /// threaded into the dressup pipeline; if the refused middle band turns
-    /// out to matter, the principled successor is
-    /// `machine_kinematics::retract_link_time`, which is what
-    /// `pencil::emit_paths` and the unified router already use for the same
-    /// bridge-vs-stay-down question.
-    ShorterThanAirPath,
+/// distance it saves. Operator ruling 2026-10-15: a bridge replaces an air
+/// run only when it is the faster of the two.
+#[derive(Debug, Clone, Copy)]
+pub struct AirBridgeTiming<'a> {
+    /// The operation's cutting feed (mm/min): the feed through an air run.
+    pub feed_rate_mm_min: f64,
+    /// The machine envelope (`MachineProfile::link_kinematics`).
+    pub link: &'a crate::machine::kinematics::LinkKinematics,
 }
 
 /// Remove cutting moves that pass through empty stock (no remaining material).
@@ -2305,6 +2291,15 @@ pub enum AirBridgePolicy {
 /// a safe path: a plunge whose tail strikes crest material stays fed for its
 /// whole length. `session::compute`'s `optimize_entry_descents` then re-splits
 /// the airborne top of such a plunge against its own envelope-disc ceiling.
+///
+/// # Bridge or feed (operator ruling 2026-10-15)
+///
+/// A run of air moves becomes a retract bridge only when the bridge is the
+/// faster of the two: [`crate::machine::kinematics::retract_saves_time`]
+/// times a rapid up, across and down against the feed through the run at
+/// `timing.feed_rate_mm_min`. Otherwise the run stays fed, verbatim: the
+/// tool cuts air for less time than a retract would take. A tie keeps the
+/// feed. The Waterline contour filter reads the same rule (W6.1).
 ///
 /// # Ramp and helix entries are never air
 ///
@@ -2345,7 +2340,7 @@ pub fn filter_air_cuts(
     cutter: &dyn crate::tool::MillingCutter,
     safe_z: f64,
     tolerance: f64,
-    policy: AirBridgePolicy,
+    timing: AirBridgeTiming<'_>,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -2412,62 +2407,72 @@ pub fn filter_air_cuts(
         ));
     }
 
-    // Phase 1b: under `ShorterThanAirPath`, veto the bridges that cost more
-    // travel than the air they skip. A vetoed run's moves are un-flagged, so
-    // phase 2 emits them verbatim — the tool simply cuts through the sliver
-    // of air rather than climbing to `safe_z` and back for it.
-    if policy == AirBridgePolicy::ShorterThanAirPath {
-        let dist =
-            |a: P3, b: P3| ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt();
-        let mut i = 0usize;
-        while i < air_flags.len() {
-            if !air_flags.get(i).copied().unwrap_or(false) {
-                i += 1;
-                continue;
-            }
-            let run_start = i;
-            while air_flags.get(i).copied().unwrap_or(false) {
-                i += 1;
-            }
-            let run_end = i; // exclusive
+    // Phase 1b (operator ruling 2026-10-15): a bridge replaces an air run
+    // only when it saves time. A run whose feed is not slower than the
+    // bridge is un-flagged, so phase 2 emits its moves verbatim. A tie keeps
+    // the feed. A run that the toolpath leaves by a rapid (or that ends the
+    // toolpath) needs no descent back to it: phase 2 lifts the tool at the
+    // run start and the kept rapid goes on from `safe_z`, so it is always
+    // dropped. A drill peck through air is such a run.
+    let mut i = 0usize;
+    while i < air_flags.len() {
+        if !air_flags.get(i).copied().unwrap_or(false) {
+            i += 1;
+            continue;
+        }
+        let run_start = i;
+        while air_flags.get(i).copied().unwrap_or(false) {
+            i += 1;
+        }
+        let run_end = i; // exclusive
 
-            // Where the tool is when the run begins, and where it must be
-            // when the run ends — the bridge's two endpoints.
-            let Some(from) = run_start
-                .checked_sub(1)
-                .and_then(|k| moves.get(k))
-                .map(|m| m.target)
-            else {
-                continue; // run starts the toolpath: nothing to bridge from
-            };
-            let Some(to) = run_end
-                .checked_sub(1)
-                .and_then(|k| moves.get(k))
-                .map(|m| m.target)
-            else {
-                continue;
-            };
-
-            let mut air_len = 0.0f64;
-            let mut prev = from;
-            for k in run_start..run_end {
-                if let Some(m) = moves.get(k) {
-                    air_len += dist(prev, m.target);
-                    prev = m.target;
+        // Where the tool is when the run begins: the bridge's start.
+        let Some(from) = run_start
+            .checked_sub(1)
+            .and_then(|k| moves.get(k))
+            .map(|m| m.target)
+        else {
+            continue; // run starts the toolpath: nothing to bridge from
+        };
+        if moves
+            .get(run_end)
+            .is_none_or(|m| m.move_type == MoveType::Rapid)
+        {
+            continue;
+        }
+        // The air path as the tool feeds it: an arc at its own samples.
+        let mut path: Vec<P3> = Vec::new();
+        let mut prev = from;
+        for m in moves.get(run_start..run_end).unwrap_or_default() {
+            match m.move_type {
+                MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
+                    let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
+                    crate::geometry::arc_util::linearize_arc_into(
+                        &mut arc_buf,
+                        prev,
+                        m.target,
+                        i,
+                        j,
+                        clockwise,
+                        prior_stock.z_grid.cell_size.max(1.0e-6),
+                    );
+                    path.extend(arc_buf.iter().skip(1).copied());
                 }
+                _ => path.push(m.target),
             }
-            // The bridge phase 2 would emit: up to safe_z, across, back down.
-            let bridge_len = (safe_z - from.z).max(0.0) + (safe_z - to.z).max(0.0) + {
-                let (dx, dy) = (to.x - from.x, to.y - from.y);
-                (dx * dx + dy * dy).sqrt()
-            };
-
-            if bridge_len >= air_len {
-                for k in run_start..run_end {
-                    if let Some(f) = air_flags.get_mut(k) {
-                        *f = false;
-                    }
-                }
+            prev = m.target;
+        }
+        let bridge = crate::machine::kinematics::retract_saves_time(
+            from,
+            &path,
+            timing.feed_rate_mm_min,
+            safe_z,
+            crate::machine::kinematics::RetractDescent::Rapid,
+            timing.link,
+        );
+        if !bridge {
+            for f in air_flags.get_mut(run_start..run_end).unwrap_or_default() {
+                *f = false;
             }
         }
     }

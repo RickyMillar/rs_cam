@@ -901,16 +901,6 @@ pub struct DressupConfig {
     /// Rapid-order optimisation. A bool with no value field of its own, so
     /// there is no pair to fold.
     pub optimize_rapid_order: bool,
-    /// When the air-cut filter may replace a run of in-air cutting with a
-    /// retract bridge (`planning/unified_v3_design.md` §10).
-    ///
-    /// `Always` (default) is the historical behaviour: bridge every air
-    /// run however short. That is a net loss whenever the retract round
-    /// trip is longer than the air it skips, which on a rest-clearer is
-    /// most of them — the unified rest-clearer's 1 634 emitted fragments
-    /// became 15 373 after filtering, and the added bridges account for
-    /// almost all of its 539 m of rapid travel.
-    pub air_bridge_policy: crate::dressup::AirBridgePolicy,
 }
 
 /// The serialized shape of [`DressupConfig`]: one enable `bool` beside each
@@ -951,8 +941,6 @@ struct DressupConfigWire {
     feed_max_rate: f64,
     feed_ramp_rate: f64,
     optimize_rapid_order: bool,
-    #[serde(default)]
-    air_bridge_policy: crate::dressup::AirBridgePolicy,
 }
 
 impl From<DressupConfigWire> for DressupConfig {
@@ -985,7 +973,6 @@ impl From<DressupConfigWire> for DressupConfig {
             feed_max_rate: w.feed_max_rate,
             feed_ramp_rate: w.feed_ramp_rate,
             optimize_rapid_order: w.optimize_rapid_order,
-            air_bridge_policy: w.air_bridge_policy,
         }
     }
 }
@@ -1020,7 +1007,6 @@ impl From<DressupConfig> for DressupConfigWire {
             feed_max_rate: c.feed_max_rate,
             feed_ramp_rate: c.feed_ramp_rate,
             optimize_rapid_order: c.optimize_rapid_order,
-            air_bridge_policy: c.air_bridge_policy,
         }
     }
 }
@@ -1135,10 +1121,6 @@ impl DressupConfig {
             name: "optimize_rapid_order",
             description: "reorder disconnected fragments to cut rapid travel",
         },
-        DressupFieldDef {
-            name: "air_bridge_policy",
-            description: "when the air-cut filter may replace an air run with a retract bridge",
-        },
     ];
 
     /// The published field names, in table order.
@@ -1169,7 +1151,6 @@ impl Default for DressupConfig {
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
             optimize_rapid_order: true,
-            air_bridge_policy: crate::dressup::AirBridgePolicy::default(),
         }
     }
 }

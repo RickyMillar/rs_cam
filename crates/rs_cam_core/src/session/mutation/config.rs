@@ -576,9 +576,11 @@ impl ProjectSession {
     /// The link stage costs each link against a retract with
     /// `MachineProfile::link_kinematics`, so its emitted links can move
     /// with the envelope. `Capabilities::reads_link_kinematics` names those
-    /// operations. Every other operation reads the machine at simulation
-    /// time only and keeps its result. A change that leaves the envelope
-    /// equal (the name, the spindle, the power) drops nothing.
+    /// operations. The air-cut filter times each bridge with the same
+    /// envelope (operator ruling 2026-10-15), so a result whose generation
+    /// read a stock snapshot (`ToolpathStats::stock_snapshot`) reads it
+    /// too. Every other toolpath keeps its result. A change that leaves the
+    /// envelope equal (the name, the spindle, the power) drops nothing.
     fn drop_link_readers_if_moved(&mut self, before: &crate::machine::kinematics::LinkKinematics) {
         if self.machine.link_kinematics() == *before {
             return;
@@ -587,7 +589,13 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .enumerate()
-            .filter(|(_, tc)| tc.operation.capabilities().reads_link_kinematics())
+            .filter(|(index, tc)| {
+                tc.operation.capabilities().reads_link_kinematics()
+                    || self
+                        .results
+                        .get(index)
+                        .is_some_and(|r| r.stats.stock_snapshot.is_some())
+            })
             .map(|(index, _)| index)
             .collect();
         if !readers.is_empty() {

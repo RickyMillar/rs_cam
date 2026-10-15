@@ -562,6 +562,37 @@ impl<B: ComputeBackend> AppController<B> {
     /// toolpath most likely to strike. The scope's `examined` counts the
     /// ENABLED toolpath it reached, so a verdict about a switched-off
     /// operation examines none of the job and cannot read as the job's.
+    /// Operator ruling 2026-10-15: generate the fresh twin of rest
+    /// toolpath `tp_id` and record both cycle times through
+    /// `Command::AdoptRestFreshComparison`. The GUI button and the MCP
+    /// `compare_rest_with_fresh` tool both take this door. It runs on the
+    /// frame loop: one generation of the operation, on request only.
+    pub(crate) fn compare_rest_with_fresh(
+        &mut self,
+        tp_id: ToolpathId,
+    ) -> Result<rs_cam_core::compute::toolpath_stats::FreshTwinTime, String> {
+        let (index, _) = self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id)
+            .ok_or_else(|| format!("no toolpath with id {}", tp_id.0))?;
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let args = self
+            .state
+            .session
+            .compare_rest_with_fresh(index, &cancel)
+            .map_err(|e| e.to_string())?;
+        let times = args.times;
+        let _ = self
+            .state
+            .session
+            .apply(rs_cam_core::session::Command::AdoptRestFreshComparison(
+                args,
+            ))
+            .map_err(|e| e.to_string())?;
+        Ok(times)
+    }
+
     pub(crate) fn request_collision_check(&mut self) {
         // F2.13: the denominator is the ENABLED operation list, not the list
         // of toolpaths a check could examine. An operation with no mesh is one

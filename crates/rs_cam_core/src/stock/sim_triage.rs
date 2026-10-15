@@ -311,7 +311,7 @@ impl SimulationTriage {
     /// know which toolpaths are rest-driven use
     /// [`Self::build_with_rest_context`]; the session does.
     pub fn build(inputs: &TriageInputs<'_>) -> Self {
-        Self::build_with_rest_context(inputs, &BTreeSet::new(), &BTreeSet::new())
+        Self::build_with_rest_context(inputs, &BTreeSet::new(), &BTreeSet::new(), &BTreeMap::new())
     }
 
     /// [`Self::build`] plus the set of rest-driven toolpath ids
@@ -327,10 +327,17 @@ impl SimulationTriage {
     /// links ride the mesh through the same stock its passes cut, so
     /// `project.link_cuts_stock` (G-LINKPLOUGH) does not grade them. See
     /// [`link_cut_observation`].
+    ///
+    /// `fresh_twin` holds, for each rest operation whose comparison a
+    /// surface asked for and that is still current, its cycle time and the
+    /// cycle time of the same operation on fresh stock
+    /// (`ProjectSession::current_rest_fresh_comparisons`). See
+    /// [`rest_slower_than_fresh_finding`].
     pub fn build_with_rest_context(
         inputs: &TriageInputs<'_>,
         rest_driven: &BTreeSet<ToolpathId>,
         links_on_mesh: &BTreeSet<ToolpathId>,
+        fresh_twin: &BTreeMap<ToolpathId, crate::compute::toolpath_stats::FreshTwinTime>,
     ) -> Self {
         let mut safety = Vec::new();
         let mut actions = Vec::new();
@@ -483,6 +490,19 @@ impl SimulationTriage {
             }
         }
 
+        // Operator ruling 2026-10-15: a rest operation that runs longer
+        // than the same operation on fresh stock is told so, with both
+        // times. Information, not a defect.
+        for (&id, &times) in fresh_twin {
+            if let Some(f) = rest_slower_than_fresh_finding(
+                id,
+                times,
+                inputs.toolpath_names.get(&id).map(String::as_str),
+            ) {
+                actions.push(f);
+            }
+        }
+
         // ── Class C ────────────────────────────────────────────────────
         let mut advisories: Vec<Finding> = Vec::new();
         for (i, h) in inputs.trace.hotspots.iter().enumerate() {
@@ -552,6 +572,61 @@ impl SimulationTriage {
             counts: ChannelCounts::from_trace(inputs.trace),
         }
     }
+}
+
+/// Operator ruling 2026-10-15: report a rest operation that takes longer
+/// than its fresh twin.
+///
+/// Both times are one measure, the cycle-time model at the commanded feeds
+/// of each dressed plan (`FreshTwinTime`). With feed modulation off this is
+/// the simulator's own runtime; with it on, the simulated time reads the
+/// modulated feeds, which the fresh twin never had. Equal or faster is
+/// silent.
+fn rest_slower_than_fresh_finding(
+    toolpath_id: ToolpathId,
+    times: crate::compute::toolpath_stats::FreshTwinTime,
+    name: Option<&str>,
+) -> Option<Finding> {
+    let crate::compute::toolpath_stats::FreshTwinTime { rest_s, fresh_s } = times;
+    if !(rest_s.is_finite() && fresh_s.is_finite()) || rest_s <= fresh_s {
+        return None;
+    }
+    let label = name.map_or_else(
+        || format!("toolpath {}", toolpath_id.0),
+        |n| format!("'{n}'"),
+    );
+    Some(Finding {
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_REST_SLOWER_THAN_FRESH),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_REST_SLOWER_THAN_FRESH),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category: Category::Efficiency,
+            severity: Severity::Info,
+            confidence: Confidence::Approximate,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: format!(
+                "rest operation {label} takes {rest_s:.1} s; the same operation on fresh stock \
+                 takes {fresh_s:.1} s (cycle-time model, commanded feeds). Rest can take \
+                 longer: each island needs its own entry and rapids."
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: 1,
+        worst: WorstEvidence {
+            duration_s: rest_s,
+            ..WorstEvidence::default()
+        },
+    })
 }
 
 /// Fraction of a pass's cutting samples that must sit over the reference
@@ -2308,6 +2383,7 @@ mod tests {
             &inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()),
             &rest,
             &BTreeSet::new(),
+            &BTreeMap::new(),
         );
         let f = t
             .actions

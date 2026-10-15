@@ -180,8 +180,9 @@ pub(super) fn plunge_stress_offenders_for_session(
 /// 1. the load report it read ([`crate::session::LoadReportStamp`]): the
 ///    rows, the results, the tools, the material, the post, the machine
 ///    and the trace;
-/// 2. this key: each row's name and stock source, the stock (its pins
-///    give the alignment-pin findings) and each setup's face;
+/// 2. this key: each row's name and stock source, the current
+///    rest-against-fresh comparisons, the stock (its pins give the
+///    alignment-pin findings) and each setup's face;
 /// 3. the evidence the caller gives (collisions, boundaries, resolution).
 ///
 /// A result's `stats` travel with its annotated toolpath. Each write of a
@@ -191,6 +192,10 @@ pub(super) fn plunge_stress_offenders_for_session(
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriageSessionKey {
     rows: Vec<(ToolpathId, String, crate::session::StockSource)>,
+    /// The current rest-against-fresh comparisons: a new one adds a
+    /// finding.
+    rest_fresh:
+        std::collections::BTreeMap<ToolpathId, crate::compute::toolpath_stats::FreshTwinTime>,
     stock: crate::compute::stock_config::StockConfig,
     faces: Vec<crate::compute::transform::FaceUp>,
 }
@@ -204,13 +209,14 @@ impl TriageSessionKey {
                 .iter()
                 .map(|tc| (tc.id, tc.name.clone(), tc.stock_source))
                 .collect(),
+            rest_fresh: session.current_rest_fresh_comparisons(),
             stock: session.stock.clone(),
             faces: session.setups.iter().map(|setup| setup.face_up).collect(),
         }
     }
 
-    /// Does this key describe `session` as it is now? It allocates
-    /// nothing, so a frame can ask it.
+    /// Does this key describe `session` as it is now? It allocates only
+    /// when the session holds a rest-against-fresh comparison.
     pub fn matches(&self, session: &ProjectSession) -> bool {
         self.rows.len() == session.toolpath_configs.len()
             && self
@@ -221,6 +227,8 @@ impl TriageSessionKey {
                     *id == tc.id && *name == tc.name && *source == tc.stock_source
                 })
             && self.stock == session.stock
+            && (self.rest_fresh.is_empty() && session.rest_fresh_comparisons.is_empty()
+                || self.rest_fresh == session.current_rest_fresh_comparisons())
             && self.faces.len() == session.setups.len()
             && self
                 .faces
@@ -844,6 +852,10 @@ impl ProjectSession {
             .map(|tc| (tc.id, tc.name.clone()))
             .collect();
 
+        // Operator ruling 2026-10-15: the rest-against-fresh comparisons a
+        // surface asked for, while they are current.
+        let fresh_twin = self.current_rest_fresh_comparisons();
+
         SimulationTriage::build_with_rest_context(
             &TriageInputs {
                 trace,
@@ -859,6 +871,7 @@ impl ProjectSession {
             },
             &rest_driven,
             &links_on_mesh,
+            &fresh_twin,
         )
     }
 

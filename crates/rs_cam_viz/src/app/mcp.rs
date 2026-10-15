@@ -475,6 +475,10 @@ impl super::RsCamApp {
                 self.mcp_send_progress(&progress_tx, "Starting simulation...", 0.0, Some(1.0));
                 self.mcp_run_simulation(resolution, response_tx);
             }
+            McpRequestKind::CompareRestWithFresh { index } => {
+                let result = self.mcp_compare_rest_with_fresh(index);
+                let _ = response_tx.send(McpResponse { result });
+            }
             McpRequestKind::CollisionCheck { index } => {
                 self.mcp_send_progress(&progress_tx, "Running collision check...", 0.0, Some(1.0));
                 self.mcp_collision_check(index, response_tx);

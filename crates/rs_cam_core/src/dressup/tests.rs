@@ -1118,7 +1118,7 @@ fn air_cut_spanning_an_island_is_not_air() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ))
     .toolpath;
 
@@ -1158,7 +1158,7 @@ fn filter_air_cuts_removes_air_moves() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ))
     .toolpath;
 
@@ -1210,7 +1210,7 @@ fn filter_air_cuts_keeps_ramp_and_helix_entries_fed() {
             &probe_cutter(),
             10.0,
             0.1,
-            AirBridgePolicy::Always,
+            air_timing(&generic_link(), 1000.0),
         ))
         .toolpath
     };
@@ -1247,7 +1247,7 @@ fn filter_air_cuts_preserves_cutting_moves() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ))
     .toolpath;
 
@@ -1536,7 +1536,7 @@ fn filter_air_cuts_conservative_partial() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ))
     .toolpath;
 
@@ -1759,97 +1759,160 @@ fn apply_lead_in_out_preserves_invalid_flag() {
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
 }
 
-#[test]
-fn air_bridge_policy_vetoes_bridges_longer_than_the_air_they_skip() {
+/// The machine envelope the air-cut tests time a bridge with: the generic
+/// router, which `MachineProfile::default()` reads.
+fn generic_link() -> crate::machine::kinematics::LinkKinematics {
+    crate::machine::MachineProfile::default().link_kinematics()
+}
+
+/// The air-cut timing of a test: the op's feed `feed` (mm/min) on `link`.
+fn air_timing(link: &crate::machine::kinematics::LinkKinematics, feed: f64) -> AirBridgeTiming<'_> {
+    AirBridgeTiming {
+        feed_rate_mm_min: feed,
+        link,
+    }
+}
+
+/// A stock 120 mm long with a trench across it from `x0` to `x1`, carved
+/// by a Ø10 end mill to `z = -5`, and the Ø3 probe. The carving tool is
+/// wider than the probe by more than the probe's envelope: S3 judges a
+/// sample against the whole cutter, so a trench of the probe's own width
+/// would put its uncut walls inside the query's disc.
+fn trench_stock(x0: f64, x1: f64) -> TriDexelStock {
     use crate::dexel_stock::StockCutDirection;
     use crate::geo::BoundingBox3;
     use crate::tool::FlatEndmill;
-
-    // One long cut with a SHORT air gap in the middle, and safe_z far
-    // above: the historical `Always` policy climbs to safe_z and back
-    // — ~20mm of travel — to skip ~2mm of air.
-    let stock = TriDexelStock::from_bounds(
+    let mut stock = TriDexelStock::from_bounds(
         &BoundingBox3 {
             min: P3::new(0.0, 0.0, -10.0),
-            max: P3::new(60.0, 20.0, 0.0),
+            max: P3::new(120.0, 20.0, 0.0),
         },
         0.5,
     );
-    // Carve a trench so a short stretch mid-pass reads as air. The carving
-    // tool (Ø10) is wider than the probing tool (Ø3) by more than the
-    // probe's envelope: S3 judges a sample against the whole cutter, so a
-    // trench of exactly the probe's own width would put its uncut walls
-    // inside the query's disc and no sample would read air at all. That
-    // over-read is real and deliberate (S2's kerf-rim note); this test is
-    // about the bridge-cost policy, so it stays clear of it.
-    let mut carved = stock.clone();
     let mut cut = Toolpath::new();
-    cut.rapid_to(P3::new(29.0, 10.0, 10.0));
-    cut.feed_to(P3::new(29.0, 10.0, -5.0), 500.0);
-    cut.feed_to(P3::new(31.0, 10.0, -5.0), 500.0);
-    carved.simulate_toolpath(
+    cut.rapid_to(P3::new(x0, 10.0, 10.0));
+    cut.feed_to(P3::new(x0, 10.0, -5.0), 500.0);
+    cut.feed_to(P3::new(x1, 10.0, -5.0), 500.0);
+    stock.simulate_toolpath(
         &cut,
         &FlatEndmill::new(10.0, 25.0),
         StockCutDirection::FromTop,
     );
-    let probe = FlatEndmill::new(3.0, 25.0);
+    stock
+}
 
+/// One pass at `z = -3` from `x = 5` to `x = 115` along `y = 10`, with a
+/// point every 2 mm, over a trench: a stretch of it is air.
+fn pass_over_trench() -> Toolpath {
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(5.0, 10.0, 10.0));
     tp.feed_to(P3::new(5.0, 10.0, -3.0), 500.0);
-    for x in [10.0_f64, 20.0, 28.0, 30.0, 32.0, 40.0, 50.0] {
+    let mut x = 7.0_f64;
+    while x <= 115.0 + 1e-9 {
         tp.feed_to(P3::new(x, 10.0, -3.0), 1000.0);
+        x += 2.0;
     }
-    tp.rapid_to(P3::new(50.0, 10.0, 10.0));
+    tp.rapid_to(P3::new(115.0, 10.0, 10.0));
+    tp
+}
 
-    let always = without_provenance(filter_air_cuts(
+/// The fed moves of `tp` that end strictly inside `(x0, x1)` at `z = -3`.
+fn fed_inside(tp: &Toolpath, x0: f64, x1: f64) -> usize {
+    tp.moves
+        .iter()
+        .filter(|m| {
+            matches!(m.move_type, MoveType::Linear { .. })
+                && m.target.x > x0
+                && m.target.x < x1
+                && (m.target.z + 3.0).abs() < 1e-9
+        })
+        .count()
+}
+
+/// Operator ruling 2026-10-15: an air stretch whose feed is faster than a
+/// retract bridge is fed through. A 4 mm trench at 1000 mm/min takes about
+/// a quarter of a second to feed; a bridge to `safe_z` 13 mm up and back
+/// takes longer. Red with a bridge on every air run (the old `Always`).
+#[test]
+fn an_air_stretch_shorter_than_the_break_even_is_fed() {
+    let stock = trench_stock(58.0, 62.0);
+    let probe = crate::tool::FlatEndmill::new(3.0, 25.0);
+    let link = generic_link();
+    let tp = pass_over_trench();
+    let out = without_provenance(filter_air_cuts(
         AnnotatedToolpath::new(tp.clone()),
-        &carved,
+        &stock,
         &probe,
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&link, 1000.0),
     ))
     .toolpath;
-    let costed = without_provenance(filter_air_cuts(
-        AnnotatedToolpath::new(tp.clone()),
-        &carved,
-        &probe,
-        10.0,
-        0.1,
-        AirBridgePolicy::ShorterThanAirPath,
-    ))
-    .toolpath;
-
-    let rapid = |t: &Toolpath| t.total_rapid_distance();
+    // Non-vacuity: the stretch over the trench reads air, so a bridge was a
+    // choice, and the time rule must say the feed is faster.
+    let air = |x: f64| super::air_cut::sample_is_air_for_tool(&stock, &probe, x, 10.0, -3.0, 0.1);
+    assert!(air(60.0), "the trench centre reads air for the probe");
+    let path: Vec<P3> = (0..=2)
+        .map(|k| P3::new(59.0 + 2.0 * k as f64, 10.0, -3.0))
+        .collect();
     assert!(
-        rapid(&costed) < rapid(&always),
-        "vetoing a bridge that is longer than the air it skips must cut \
-             rapid travel: Always={:.1}mm over {} moves vs Costed={:.1}mm \
-             over {} moves",
-        rapid(&always),
-        always.moves.len(),
-        rapid(&costed),
-        costed.moves.len(),
+        !crate::machine::kinematics::retract_saves_time(
+            P3::new(57.0, 10.0, -3.0),
+            &path,
+            1000.0,
+            10.0,
+            crate::machine::kinematics::RetractDescent::Rapid,
+            &link,
+        ),
+        "fixture check: the feed through the trench is the faster arm"
     );
-    // And the vetoed air moves survive as cutting moves.
+    assert_eq!(
+        out.moves.len(),
+        tp.moves.len(),
+        "the short air stretch is fed through: no move is dropped or added"
+    );
     assert!(
-        costed.moves.len() >= tp.moves.len(),
-        "a vetoed run is emitted verbatim, so no cutting move is lost"
+        out.moves
+            .iter()
+            .filter(|m| m.move_type == MoveType::Rapid)
+            .all(|m| (m.target.z - 10.0).abs() < 1e-9),
+        "no bridge descends into the pass"
     );
 }
 
+/// Operator ruling 2026-10-15: an air stretch whose feed is slower than a
+/// retract bridge is bridged. A 60 mm trench at 250 mm/min takes about
+/// 14 s to feed; a bridge takes a few seconds.
 #[test]
-fn air_bridge_policy_always_is_the_untouched_default() {
-    assert_eq!(
-        AirBridgePolicy::default(),
-        AirBridgePolicy::Always,
-        "the cost-aware policy is a shipped-behaviour change and must be \
-             opt-in until the wanaka A/B justifies flipping it"
+fn an_air_stretch_longer_than_the_break_even_is_bridged() {
+    let stock = trench_stock(30.0, 90.0);
+    let probe = crate::tool::FlatEndmill::new(3.0, 25.0);
+    let link = generic_link();
+    let tp = pass_over_trench();
+    let out = without_provenance(filter_air_cuts(
+        AnnotatedToolpath::new(tp.clone()),
+        &stock,
+        &probe,
+        10.0,
+        0.1,
+        air_timing(&link, 250.0),
+    ))
+    .toolpath;
+    assert!(
+        fed_inside(&tp, 40.0, 80.0) > 0,
+        "fixture check: the pass feeds over the trench"
     );
     assert_eq!(
-        crate::compute::config::DressupConfig::default().air_bridge_policy,
-        AirBridgePolicy::Always
+        fed_inside(&out, 40.0, 80.0),
+        0,
+        "the long air stretch is bridged: no feed over the trench survives"
+    );
+    let bridge_down = out.moves.iter().any(|m| {
+        m.move_type == MoveType::Rapid && m.intent == MoveIntent::Linking && m.target.z < 0.0
+    });
+    assert!(
+        bridge_down,
+        "the bridge descends by rapid to the point where the cut resumes"
     );
 }
 
@@ -1879,7 +1942,7 @@ fn filter_air_cuts_remaps_spans_through_transform() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ));
     result
         .check_invariants()
@@ -1914,7 +1977,7 @@ fn filter_air_cuts_tags_new_moves_with_correct_kind() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ));
     let bridges: Vec<&Span> = result
         .spans
@@ -1950,7 +2013,7 @@ fn filter_air_cuts_preserves_invalid_flag() {
         &probe_cutter(),
         10.0,
         0.1,
-        AirBridgePolicy::Always,
+        air_timing(&generic_link(), 1000.0),
     ));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);

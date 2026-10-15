@@ -380,3 +380,77 @@ fn every_op_keeps_its_toolpath() {
         lines.join("\n")
     );
 }
+
+// ── Instrument: the rest arms' moves and time ──────────────────────────
+
+/// One arm of the instrument: the move count, the simulated runtime (s),
+/// and the simulated entry time (s) of the case op, or `None` when the op
+/// refuses.
+fn timed_arm(op_type: OperationType, source: StockSource) -> Option<(usize, f64, f64)> {
+    let (mut session, index) = case_session(CaseSpec {
+        name: "timed",
+        op: OperationConfig::new_default(op_type),
+        prior: Prior::RestPrior,
+        stock_source: source,
+        frame: Frame::TopUp,
+        fixture: Fixture::Standard,
+        tool: None,
+    });
+    // The simulator integrates a runtime only with a kinematics block. The
+    // generic block is the one `effective_kinematics` reads without it, so
+    // the generated moves do not change.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetMachineKinematics(
+            rs_cam_core::session::SetMachineKinematicsArgs {
+                kinematics: Box::new(
+                    rs_cam_core::machine::kinematics::MachineKinematics::generic_wood_router(),
+                ),
+            },
+        ))
+        .expect("the kinematics block");
+    run_prior(&mut session);
+    let cancel = AtomicBool::new(false);
+    let result = session.generate_toolpath(index, &cancel).ok()?;
+    let moves = result.toolpath().moves.len();
+    common::op_fixtures::simulate(&mut session);
+    let id = session.toolpath_configs()[index].id;
+    let breakdown = session
+        .simulation_result()
+        .and_then(|sim| sim.cut_trace.as_deref())
+        .and_then(|t| t.toolpath_runtimes.iter().find(|r| r.toolpath_id == id))
+        .map(|r| r.breakdown)?;
+    Some((moves, breakdown.total_s, breakdown.entry_s))
+}
+
+/// Instrument (not a gate): for each rest arm and its fresh twin (the same
+/// session with the prior op, `StockSource::Fresh`), the move count, the
+/// simulated runtime and the simulated entry time. Run it by name:
+///
+/// ```text
+/// cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden \
+///     -- --ignored rest_arm_times --nocapture
+/// ```
+#[test]
+#[ignore = "instrument: prints the rest arms' moves and times"]
+fn rest_arm_times() {
+    let rows: Vec<String> = REST_READERS
+        .par_iter()
+        .map(|&op_type| {
+            let fmt = |a: Option<(usize, f64, f64)>| match a {
+                Some((n, sim, entry)) => {
+                    format!("moves {n:>6} sim {sim:>8.2} s (entry {entry:>7.2} s)")
+                }
+                None => "refused".to_owned(),
+            };
+            format!(
+                "{:<16} rest: {} | fresh: {}",
+                op_type.kind_str(),
+                fmt(timed_arm(op_type, StockSource::FromRemainingStock)),
+                fmt(timed_arm(op_type, StockSource::Fresh)),
+            )
+        })
+        .collect();
+    for row in rows {
+        eprintln!("{row}");
+    }
+}

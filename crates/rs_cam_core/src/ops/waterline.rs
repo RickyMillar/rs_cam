@@ -14,7 +14,7 @@ use crate::geometry::contour_extract::weave_contours;
 use crate::geometry::fiber::Fiber;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link_time};
+use crate::machine::kinematics::{LinkKinematics, RetractDescent, retract_saves_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::pushcutter::batch_push_cutter_with_cancel;
 use crate::tool::MillingCutter;
@@ -336,8 +336,9 @@ pub struct RunFilter<'f> {
     /// W6.1: the machine envelope that times a stretch `keep` drops. A
     /// dropped stretch between two kept points stays dropped only when the
     /// feed through it takes longer than a retract and a re-entry
-    /// ([`stretch_is_worth_a_retract`]). `None`: no time model, so `keep`
-    /// drops nothing (cut more, never less).
+    /// ([`retract_saves_time`], with a plunge at the op's plunge feed: the
+    /// motion the emitter makes at a run end and a run start). `None`: no
+    /// time model, so `keep` drops nothing (cut more, never less).
     pub split_timing: Option<&'f LinkKinematics>,
 }
 
@@ -366,50 +367,10 @@ pub struct WaterlineLevel {
     pub rest_dropped: bool,
 }
 
-/// W6.1: true when a retract over the stretch `from → path → to` saves
-/// time. Both sides come from the one cycle-time model
-/// (`machine::kinematics`), as the finishing link stage costs a link:
-///
-/// - the feed through the stretch: [`surface_link_time`] at the op's feed;
-/// - leaving and entering again: [`retract_link_time`], a rapid up to
-///   `safe_z`, a rapid across and a plunge at the op's plunge feed, the
-///   motion the emitter makes at a run end and a run start.
-///
-/// A tie keeps the feed: a split that saves no time leaves the cut whole.
-pub fn stretch_is_worth_a_retract(
-    from: P3,
-    path: &[P3],
-    params: &WaterlineParams,
-    timing: &LinkKinematics,
-) -> bool {
-    let Some(&to) = path.last() else {
-        return false;
-    };
-    let feed_s = surface_link_time(
-        from,
-        path,
-        params.feed_rate,
-        &timing.kinematics,
-        timing.max_feed_mm_min,
-        timing.rapid_feed_mm_min,
-    );
-    let retract_s = retract_link_time(
-        from,
-        to,
-        params.safe_z,
-        None,
-        params.plunge_rate,
-        &timing.kinematics,
-        timing.max_feed_mm_min,
-        timing.rapid_feed_mm_min,
-    );
-    retract_s < feed_s
-}
-
 /// The rest mask of one closed contour: `keep[i]` for each point. A
 /// stretch that only the rest rule dropped, between two kept points, comes
 /// back as kept when the feed through it is not slower than a retract
-/// ([`stretch_is_worth_a_retract`]). A stretch next to a point outside the
+/// ([`retract_saves_time`]). A stretch next to a point outside the
 /// boundary stays dropped: the boundary ends the run there in any case.
 fn bridge_air_stretches(
     contour: &[P3],
@@ -453,7 +414,16 @@ fn bridge_air_stretches(
                     .filter_map(|&j| contour.get(j).copied())
                     .collect();
                 path.push(end);
-                !stretch_is_worth_a_retract(from, &path, params, t)
+                !retract_saves_time(
+                    from,
+                    &path,
+                    params.feed_rate,
+                    params.safe_z,
+                    RetractDescent::Plunge {
+                        rate_mm_min: params.plunge_rate,
+                    },
+                    t,
+                )
             });
         if feed_through {
             for j in stretch {
