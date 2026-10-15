@@ -379,6 +379,13 @@ pub struct ObstacleSet {
 }
 
 /// Grow `polygons` outward by `distance` (mm), keeping only the exteriors.
+///
+/// The offset keeps its arcs and flattens them once. A flattened arc is a
+/// chord, and a chord lies inside its arc by up to the flatten deviation.
+/// So the offset distance includes that deviation, and no point of the
+/// result is closer than `distance` to the input. (`offset_polygon` keeps
+/// only the chord endpoints: on a 90 degree corner it cut 29 % of the
+/// distance off the keep-out.)
 fn grow(
     polygons: &[Polygon2],
     distance: f64,
@@ -391,14 +398,21 @@ fn grow(
             out.push(solid);
             continue;
         }
-        let (grown, failure) = crate::polygon::offset_polygon_reported(&solid, -distance);
+        let policy = crate::polygon::FlattenPolicy::untoleranced();
+        let (grown, failure) = crate::polygon::OffsetRingSet::from_polygon(&solid)
+            .offset_reported(-(distance + policy.max_deviation_mm()));
         if let Some(failure) = failure {
             return Err(ObstacleResolveError {
                 name: name.to_owned(),
                 reason: format!("the outward offset failed ({failure:?})"),
             });
         }
-        out.extend(grown.into_iter().map(|p| Polygon2::new(p.exterior)));
+        out.extend(
+            grown
+                .to_polygons(policy)
+                .into_iter()
+                .map(|p| Polygon2::new(p.exterior)),
+        );
     }
     Ok(out)
 }
@@ -1236,6 +1250,8 @@ mod tests {
             "the tool crosses at the obstacle plane"
         );
         // The kept cuts end at the grown footprint plus the cutter radius.
+        // Each grow adds the flatten deviation (0.01 mm), so the edge is
+        // up to 0.05 mm further out, never closer.
         let cut_xs: Vec<f64> = out
             .toolpath
             .moves
@@ -1243,7 +1259,10 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }) && m.target.z == 0.0)
             .map(|m| m.target.x)
             .collect();
-        assert!(cut_xs.iter().any(|x| (x + 4.0).abs() < 1e-6), "{cut_xs:?}");
+        assert!(
+            cut_xs.iter().any(|x| (-4.05..=-4.0).contains(x)),
+            "{cut_xs:?}"
+        );
         assert!(cut_xs.iter().any(|x| (x - 30.0).abs() < 1e-6), "{cut_xs:?}");
     }
 
@@ -1317,5 +1336,34 @@ mod tests {
         )
         .unwrap();
         assert!(ok.is_empty());
+    }
+
+    /// A grown corner keeps the full distance: no chord of the flattened
+    /// arc cuts into it. Two grows (clearance 2, then cutter 3) give at
+    /// least 5 mm from the raw box at every point, the corners too.
+    #[test]
+    fn a_grown_corner_keeps_the_full_distance() {
+        let square = Polygon2::new(vec![
+            crate::geo::P2::new(60.0, 22.5),
+            crate::geo::P2::new(80.0, 22.5),
+            crate::geo::P2::new(80.0, 42.5),
+            crate::geo::P2::new(60.0, 42.5),
+        ]);
+        let clearance = grow(&[square], 2.0, "Clamp").unwrap();
+        let band = grow(&clearance, 3.0, "Clamp").unwrap();
+        let mut min_gap = f64::INFINITY;
+        let mut max_gap: f64 = 0.0;
+        for p in band.iter().flat_map(|poly| poly.exterior.iter()) {
+            let dx = (60.0 - p.x).max(0.0).max(p.x - 80.0);
+            let dy = (22.5 - p.y).max(0.0).max(p.y - 42.5);
+            let gap = dx.hypot(dy);
+            min_gap = min_gap.min(gap);
+            max_gap = max_gap.max(gap);
+        }
+        assert!(
+            min_gap >= 5.0 - 1e-9,
+            "a vertex is {min_gap} mm from the box"
+        );
+        assert!(max_gap <= 5.05, "a vertex is {max_gap} mm from the box");
     }
 }
