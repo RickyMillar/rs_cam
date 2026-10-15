@@ -47,6 +47,12 @@ impl<T: RecordFindings> RecordFindings for Option<T> {
     }
 }
 
+/// A prepare that measures nothing (Waterline: its Z-free geometry is the
+/// surface itself) reports `()`, which writes nothing.
+impl RecordFindings for () {
+    fn record_into(&self, _findings: &mut GenerationFindings) {}
+}
+
 /// Each report of the list, in order. A Layered prepare that runs one
 /// kernel per piece of a region returns one report per piece.
 impl<T: RecordFindings> RecordFindings for Vec<T> {

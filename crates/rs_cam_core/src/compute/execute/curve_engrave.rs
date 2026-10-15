@@ -12,6 +12,7 @@ use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::RegionOrdering;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::P2;
+use crate::interrupt::CancelCheck;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -19,7 +20,7 @@ use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, ReachBand, run_layered};
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, ReachBand, run_layered};
 use super::shared::{generated_with_cut_run_spans, op_link_ceiling, with_depth_run_annotation};
 use super::{
     ExecutionContext, GeneratedToolpath, MeshInput, OffsetFailures, OperationError, Prepared,
@@ -196,6 +197,7 @@ impl ChamferPass {
 }
 
 impl LayeredOp for ChamferPass {
+    type Input = Polygon2;
     type Geometry = Vec<Vec<P2>>;
     type Report = OffsetFailures;
 
@@ -254,8 +256,18 @@ impl LayeredOp for ChamferPass {
         Ok((rings, OffsetFailures(failures)))
     }
 
-    fn emit_level(&self, geometry: &Self::Geometry, level: LevelInfo) -> Toolpath {
-        crate::ops::chamfer::chamfer_rings_at_z(geometry, level.z, &self.params)
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        _stock: &LevelStock<'_>,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
+        Ok(crate::ops::chamfer::chamfer_rings_at_z(
+            geometry,
+            level.z,
+            &self.params,
+        ))
     }
 
     /// One cut run per ring, labelled "Chamfer run", as before W3.5.

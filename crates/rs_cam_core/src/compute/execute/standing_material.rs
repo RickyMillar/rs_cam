@@ -26,7 +26,8 @@
 //!   material over one point.
 //!
 //! [`level_masks`] (`RestUse::LevelMask`, 2D Adaptive) reads the same mask
-//! per level. It skips a level with no material in the footprint, and it
+//! per level. [`standing_near`] (`RestUse::ContourFilter`, Waterline, W6.1)
+//! reads the same floor around each contour point. It skips a level with no material in the footprint, and it
 //! gives each other level the raw mask, which seeds the planner's grid.
 //!
 //! # The geometry
@@ -514,6 +515,78 @@ pub(crate) fn level_masks(
         fallback: None,
     });
     Ok(plan)
+}
+
+/// `RestUse::ContourFilter` (W6.1): which points of a contour at one level
+/// pass material. See [`standing_near`].
+pub(crate) struct StandingNear<'s> {
+    grid: &'s crate::stock::dexel::DexelGrid,
+    /// [`standing_floor`] of the level.
+    floor: f32,
+    /// The reach (mm) from a contour point: `R + cell`.
+    band: f64,
+}
+
+/// `RestUse::ContourFilter` (W6.1): the rule that keeps a contour point at
+/// level `z`, or `None` for a fresh op (`stock == None`), which keeps
+/// every point.
+///
+/// A point is kept when a cell whose centre lies within `R + cell` of it
+/// holds material above `z + FRESH_MATERIAL_THRESHOLD_MM`. A finishing
+/// pass must never leave material (lead ruling, 2026-10-15), so the band
+/// takes in every cell the tool touches, a part-covered one too. The
+/// narrower band of [`levels_in_reach`] (`R - cell / 2`) left 0.05 to
+/// 0.13 mm in the W4 cap terraces. A point is also kept when the band
+/// holds a cell off the grid: the grid holds no answer there, so the op
+/// cuts more, never less.
+pub(crate) fn standing_near(
+    stock: Option<&TriDexelStock>,
+    z: f64,
+    tool_radius: f64,
+) -> Option<StandingNear<'_>> {
+    let grid = &stock?.z_grid;
+    Some(StandingNear {
+        grid,
+        floor: standing_floor(z),
+        band: tool_radius + grid.cell_size,
+    })
+}
+
+impl StandingNear<'_> {
+    /// True when the contour point `p` passes material, or when the grid
+    /// holds no answer in its band. See [`standing_near`].
+    pub(crate) fn keeps(&self, p: P2) -> bool {
+        let grid = self.grid;
+        let cell = grid.cell_size;
+        let index = |u: f64, origin: f64| ((u - origin) / cell).floor() as isize;
+        let (c0, c1) = (
+            index(p.x - self.band, grid.origin_u),
+            index(p.x + self.band, grid.origin_u) + 1,
+        );
+        let (r0, r1) = (
+            index(p.y - self.band, grid.origin_v),
+            index(p.y + self.band, grid.origin_v) + 1,
+        );
+        let mut seen = false;
+        for r in r0..=r1 {
+            for c in c0..=c1 {
+                let (x, y) = (
+                    grid.origin_u + c as f64 * cell,
+                    grid.origin_v + r as f64 * cell,
+                );
+                if (x - p.x).hypot(y - p.y) > self.band {
+                    continue;
+                }
+                seen = true;
+                let on_grid =
+                    r >= 0 && c >= 0 && (r as usize) < grid.rows && (c as usize) < grid.cols;
+                if !on_grid || grid.has_material_above(r as usize, c as usize, self.floor) {
+                    return true;
+                }
+            }
+        }
+        !seen
+    }
 }
 
 /// What the stock column over one point holds (`RestUse::StockColumn`).

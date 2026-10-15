@@ -573,7 +573,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         air_cut_hint: AirCutHint::SurfaceFinish,
         relink_dial: Some("hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
-        rest_use: RestUse::LinkSafetyOnly,
+        rest_use: RestUse::ContourFilter,
     },
     generate: crate::compute::execute::generate_waterline,
 };

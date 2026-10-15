@@ -14,8 +14,9 @@ use crate::geometry::contour_extract::weave_contours;
 use crate::geometry::fiber::Fiber;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::machine::kinematics::{LinkKinematics, retract_link_time, surface_link_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::surface::pushcutter::batch_push_cutter;
+use crate::surface::pushcutter::batch_push_cutter_with_cancel;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, Toolpath};
 
@@ -304,90 +305,280 @@ pub fn waterline_toolpath_at_levels(
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
-
+    let filter = RunFilter {
+        boundary_regions,
+        keep: None,
+        split_timing: None,
+    };
     for &z in levels {
         check_cancel(cancel)?;
-        let mut contours =
-            waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
+        let level = waterline_level(mesh, index, cutter, z, params, &filter, cancel)?;
+        toolpath.moves.extend(level.toolpath.moves);
+    }
+    Ok(toolpath)
+}
 
-        // D-16.2: the whole contour rides up by `stock_to_leave`. Applied to
-        // the CL points BEFORE the boundary run-splitter and the
-        // minimum-segment floor, so neither the run topology nor the emitted
-        // point count can change with the dial — only Z. Skipped entirely at
-        // `0.0`, so the pre-fix path is byte-identical there.
-        if params.stock_to_leave != 0.0 {
-            for contour in &mut contours {
-                for p in contour.iter_mut() {
-                    p.z += params.stock_to_leave;
-                }
-            }
+/// Which points of a contour one waterline level keeps.
+///
+/// With no rule, each contour is a closed loop. With a rule, the shared
+/// run-splitter cuts each contour into the runs of kept points: a whole
+/// surviving loop stays closed, and a part is an open run, so the dropped
+/// stretch becomes a retract and a replunge, not a straight close across
+/// it.
+#[derive(Clone, Copy, Default)]
+pub struct RunFilter<'f> {
+    /// P2.3: a point is kept only inside a boundary region. A hard rule:
+    /// a stretch outside the boundary is always dropped.
+    pub boundary_regions: Option<&'f RegionSet<'f>>,
+    /// W6.1 (`RestUse::ContourFilter`): a point is kept only where the rule
+    /// says so (the rest stock at the level).
+    pub keep: Option<&'f dyn Fn(P2) -> bool>,
+    /// W6.1: the machine envelope that times a stretch `keep` drops. A
+    /// dropped stretch between two kept points stays dropped only when the
+    /// feed through it takes longer than a retract and a re-entry
+    /// ([`stretch_is_worth_a_retract`]). `None`: no time model, so `keep`
+    /// drops nothing (cut more, never less).
+    pub split_timing: Option<&'f LinkKinematics>,
+}
+
+impl RunFilter<'_> {
+    /// True when no rule drops a point.
+    fn keeps_all(&self) -> bool {
+        self.boundary_regions.is_none() && self.keep.is_none()
+    }
+
+    /// True when the boundary rule keeps `p`.
+    fn inside(&self, p: &P3) -> bool {
+        self.boundary_regions
+            .is_none_or(|r| r.contains(&P2::new(p.x, p.y)))
+    }
+}
+
+/// One waterline level, as [`waterline_level`] gives it.
+pub struct WaterlineLevel {
+    /// The cut of the level.
+    pub toolpath: Toolpath,
+    /// True when [`RunFilter::keep`] kept a point inside the boundary,
+    /// after the time rule.
+    pub rest_kept: bool,
+    /// True when [`RunFilter::keep`] dropped a point inside the boundary,
+    /// after the time rule.
+    pub rest_dropped: bool,
+}
+
+/// W6.1: true when a retract over the stretch `from → path → to` saves
+/// time. Both sides come from the one cycle-time model
+/// (`machine::kinematics`), as the finishing link stage costs a link:
+///
+/// - the feed through the stretch: [`surface_link_time`] at the op's feed;
+/// - leaving and entering again: [`retract_link_time`], a rapid up to
+///   `safe_z`, a rapid across and a plunge at the op's plunge feed, the
+///   motion the emitter makes at a run end and a run start.
+///
+/// A tie keeps the feed: a split that saves no time leaves the cut whole.
+pub fn stretch_is_worth_a_retract(
+    from: P3,
+    path: &[P3],
+    params: &WaterlineParams,
+    timing: &LinkKinematics,
+) -> bool {
+    let Some(&to) = path.last() else {
+        return false;
+    };
+    let feed_s = surface_link_time(
+        from,
+        path,
+        params.feed_rate,
+        &timing.kinematics,
+        timing.max_feed_mm_min,
+        timing.rapid_feed_mm_min,
+    );
+    let retract_s = retract_link_time(
+        from,
+        to,
+        params.safe_z,
+        None,
+        params.plunge_rate,
+        &timing.kinematics,
+        timing.max_feed_mm_min,
+        timing.rapid_feed_mm_min,
+    );
+    retract_s < feed_s
+}
+
+/// The rest mask of one closed contour: `keep[i]` for each point. A
+/// stretch that only the rest rule dropped, between two kept points, comes
+/// back as kept when the feed through it is not slower than a retract
+/// ([`stretch_is_worth_a_retract`]). A stretch next to a point outside the
+/// boundary stays dropped: the boundary ends the run there in any case.
+fn bridge_air_stretches(
+    contour: &[P3],
+    inside: &[bool],
+    keep: &mut [bool],
+    params: &WaterlineParams,
+    timing: Option<&LinkKinematics>,
+) {
+    let n = contour.len();
+    let Some(first_kept) = keep.iter().position(|&k| k) else {
+        return;
+    };
+    let mut k = 1;
+    while k < n {
+        let i = (first_kept + k) % n;
+        if keep.get(i).copied().unwrap_or(true) {
+            k += 1;
+            continue;
         }
-
-        for contour in &contours {
-            if contour.len() < 3 {
-                continue;
-            }
-            match boundary_regions {
-                None => {
-                    let path = floor_contour(contour, true);
-                    if path.len() < 3 {
-                        continue;
-                    }
-                    toolpath.emit_closed_contour_with_intent(
-                        &path,
-                        params.safe_z,
-                        params.feed_rate,
-                        params.plunge_rate,
-                        MoveIntent::FinishingCut,
-                    );
-                }
-                Some(regions) => {
-                    let runs = crate::geometry::point_runs::split_runs(
-                        contour,
-                        |_, p: &P3| regions.contains(&P2::new(p.x, p.y)),
-                        crate::geometry::point_runs::RunTopology::Closed,
-                        2,
-                    );
-                    for run in runs {
-                        if run.len() < 2 {
-                            continue;
-                        }
-                        // Decided on the RAW run: whether this is a whole
-                        // surviving loop is a question about the boundary
-                        // filter, not about the degeneracy floor.
-                        let whole_loop = run.len() == contour.len();
-                        let path = floor_contour(&run, whole_loop);
-                        if path.len() < 2 {
-                            continue;
-                        }
-                        if whole_loop {
-                            // The whole loop survived — safe to close it.
-                            toolpath.emit_closed_contour_with_intent(
-                                &path,
-                                params.safe_z,
-                                params.feed_rate,
-                                params.plunge_rate,
-                                MoveIntent::FinishingCut,
-                            );
-                        } else {
-                            // Partial survivor: an open run, not a closed
-                            // loop — closing it would chord straight across
-                            // the excluded stretch.
-                            toolpath.emit_path_segment_with_intent(
-                                &path,
-                                params.safe_z,
-                                params.feed_rate,
-                                params.plunge_rate,
-                                MoveIntent::FinishingCut,
-                            );
-                        }
-                    }
+        // A dropped stretch starts at `i`; `from` is the kept point before
+        // it. Walk to its end.
+        let start = k;
+        while k < n && !keep.get((first_kept + k) % n).copied().unwrap_or(true) {
+            k += 1;
+        }
+        let stretch: Vec<usize> = (start..k).map(|j| (first_kept + j) % n).collect();
+        let to = (first_kept + k) % n;
+        let only_rest = stretch
+            .iter()
+            .all(|&j| inside.get(j).copied().unwrap_or(false));
+        let bounded = inside.get(to).copied().unwrap_or(false);
+        let from_i = (first_kept + start - 1) % n;
+        let (Some(&from), Some(&end)) = (contour.get(from_i), contour.get(to)) else {
+            continue;
+        };
+        let feed_through = only_rest
+            && bounded
+            && timing.is_none_or(|t| {
+                let mut path: Vec<P3> = stretch
+                    .iter()
+                    .filter_map(|&j| contour.get(j).copied())
+                    .collect();
+                path.push(end);
+                !stretch_is_worth_a_retract(from, &path, params, t)
+            });
+        if feed_through {
+            for j in stretch {
+                if let Some(m) = keep.get_mut(j) {
+                    *m = true;
                 }
             }
         }
     }
+}
 
-    Ok(toolpath)
+/// One waterline level: the contours at `z`, the leave lift, the run split
+/// of `filter` and the emit. Every waterline ladder (the standalone op on
+/// the Layered runner, and [`waterline_toolpath_at_levels`]) cuts its
+/// levels here.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires inside the push cutter.
+pub fn waterline_level(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    z: f64,
+    params: &WaterlineParams,
+    filter: &RunFilter<'_>,
+    cancel: &dyn CancelCheck,
+) -> Result<WaterlineLevel, Cancelled> {
+    let mut toolpath = Toolpath::new();
+    let (mut rest_kept, mut rest_dropped) = (false, false);
+    let mut contours =
+        waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
+
+    // D-16.2: the whole contour rides up by `stock_to_leave`. Applied to
+    // the CL points BEFORE the boundary run-splitter and the
+    // minimum-segment floor, so neither the run topology nor the emitted
+    // point count can change with the dial — only Z. Skipped entirely at
+    // `0.0`, so the pre-fix path is byte-identical there.
+    if params.stock_to_leave != 0.0 {
+        for contour in &mut contours {
+            for p in contour.iter_mut() {
+                p.z += params.stock_to_leave;
+            }
+        }
+    }
+
+    for contour in &contours {
+        if contour.len() < 3 {
+            continue;
+        }
+        if filter.keeps_all() {
+            let path = floor_contour(contour, true);
+            if path.len() < 3 {
+                continue;
+            }
+            toolpath.emit_closed_contour_with_intent(
+                &path,
+                params.safe_z,
+                params.feed_rate,
+                params.plunge_rate,
+                MoveIntent::FinishingCut,
+            );
+            continue;
+        }
+        let inside: Vec<bool> = contour.iter().map(|p| filter.inside(p)).collect();
+        let mut keep: Vec<bool> = contour
+            .iter()
+            .zip(&inside)
+            .map(|(p, &inside)| inside && filter.keep.is_none_or(|k| k(P2::new(p.x, p.y))))
+            .collect();
+        if filter.keep.is_some() {
+            bridge_air_stretches(contour, &inside, &mut keep, params, filter.split_timing);
+            for (&inside, &kept) in inside.iter().zip(&keep) {
+                if inside {
+                    rest_kept |= kept;
+                    rest_dropped |= !kept;
+                }
+            }
+        }
+        let runs = crate::geometry::point_runs::split_runs(
+            contour,
+            |i, _: &P3| keep.get(i).copied().unwrap_or(false),
+            crate::geometry::point_runs::RunTopology::Closed,
+            2,
+        );
+        for run in runs {
+            if run.len() < 2 {
+                continue;
+            }
+            // Decided on the RAW run: whether this is a whole surviving
+            // loop is a question about the filter, not about the
+            // degeneracy floor.
+            let whole_loop = run.len() == contour.len();
+            let path = floor_contour(&run, whole_loop);
+            if path.len() < 2 {
+                continue;
+            }
+            if whole_loop {
+                // The whole loop survived — safe to close it.
+                toolpath.emit_closed_contour_with_intent(
+                    &path,
+                    params.safe_z,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    MoveIntent::FinishingCut,
+                );
+            } else {
+                // Partial survivor: an open run, not a closed loop —
+                // closing it would chord straight across the dropped
+                // stretch.
+                toolpath.emit_path_segment_with_intent(
+                    &path,
+                    params.safe_z,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    MoveIntent::FinishingCut,
+                );
+            }
+        }
+    }
+    Ok(WaterlineLevel {
+        toolpath,
+        rest_kept,
+        rest_dropped,
+    })
 }
 
 pub fn waterline_contours_with_cancel(
@@ -417,46 +608,28 @@ pub fn waterline_contours_with_cancel(
     let y_max = bbox.max.y + r + sampling;
 
     let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
-    let mut x_fibers: Vec<Fiber> = (0..ny)
-        .map(|i| {
-            let y = y_min + i as f64 * sampling;
-            Fiber::new_x(y, z, x_min, x_max)
-        })
-        .collect();
-
     let nx = ((x_max - x_min) / sampling).ceil() as usize + 1;
-    let mut y_fibers: Vec<Fiber> = (0..nx)
-        .map(|i| {
-            let x = x_min + i as f64 * sampling;
-            Fiber::new_y(x, z, y_min, y_max)
-        })
-        .collect();
-
-    // Run push-cutter on both fiber sets in parallel — this mirrors the
-    // rayon::join structure `waterline_contours` uses, restoring the
-    // parallelism this cancellable variant had lost (it previously pushed
-    // x- and y-fibers through `batch_push_cutter_with_cancel` one after the
-    // other). Cancellation is checked once the join completes rather than
-    // per-chunk inside each direction — the same trade-off
-    // `SurfaceHeightmap::from_mesh_with_cancel` makes for its parallel grid
-    // batch (slope.rs): a single Z-level's fiber batch is short enough that
-    // per-chunk polling isn't worth losing join concurrency for, and the
-    // per-Z-level `check_cancel` in `waterline_toolpath_with_cancel`'s loop
-    // still bounds how much uncancelled work a stale cancel signal can cost.
-    #[cfg(feature = "parallel")]
-    rayon::join(
-        || batch_push_cutter(&mut x_fibers, mesh, index, cutter),
-        || batch_push_cutter(&mut y_fibers, mesh, index, cutter),
-    );
-    #[cfg(not(feature = "parallel"))]
-    {
-        batch_push_cutter(&mut x_fibers, mesh, index, cutter);
-        batch_push_cutter(&mut y_fibers, mesh, index, cutter);
-    }
-
+    // The X fibers first, then the Y fibers, in one batch. A fiber is
+    // pushed on its own, so one batch gives each fiber the interval two
+    // batches give it. W6.1: the batch polls `cancel` between its chunks,
+    // so a cancel stops a level inside the push cutter. The two batches of
+    // the uncancellable `rayon::join` could not: `&dyn CancelCheck` is not
+    // `Sync`, so that join polled only after both batches ended. One batch
+    // keeps the parallelism; it runs each chunk of fibers on the pool.
+    let mut fibers: Vec<Fiber> = Vec::with_capacity(ny + nx);
+    fibers.extend((0..ny).map(|i| {
+        let y = y_min + i as f64 * sampling;
+        Fiber::new_x(y, z, x_min, x_max)
+    }));
+    fibers.extend((0..nx).map(|i| {
+        let x = x_min + i as f64 * sampling;
+        Fiber::new_y(x, z, y_min, y_max)
+    }));
+    batch_push_cutter_with_cancel(&mut fibers, mesh, index, cutter, cancel)?;
+    // The batch polls before each chunk; this poll covers the last one.
     check_cancel(cancel)?;
-
-    Ok(weave_contours(&x_fibers, &y_fibers, z))
+    let (x_fibers, y_fibers) = fibers.split_at(ny);
+    Ok(weave_contours(x_fibers, y_fibers, z))
 }
 
 #[cfg(test)]

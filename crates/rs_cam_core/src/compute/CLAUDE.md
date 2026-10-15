@@ -18,9 +18,9 @@
   attributes ARE the schema, and the GUI row and the setter read one range). The row's `generate` IS the dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
   `OperationType::tool_refusal`. An adapter reads `Prepared`; it does not check them again.
 - W2.4: a consumer reads `OperationConfig::capabilities()`, never a `match` on the op type. W2.3: a report reaches `GenerationFindings` only through `ctx.record`.
-- W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face, Chamfer) writes `prepare` + `emit_level`; hooks `outlines`, `ladder`, `spans`, `annotate`, `reach_band`, `off_grid`.
-  `run_layered` owns the ladder, rest rule, one prepare per region, `region_ordering` (R4), cancel per level, spans. `LevelInfo::is_final`: final Z, spring passes too.
-- W3.4: rest rule = `Capabilities::rest_use`. `LevelClip` clips the input; `LevelSkip` only skips (a clipped contour cuts a new wall; Chamfer band = `w + t`); Drill
+- W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face, Chamfer, Waterline) writes `prepare` + fallible `emit_level` (level stock, cancel); `Input` = `Polygon2` or a surface (`MeshInput`, W6.1); hooks `outlines`, `ladder`, `link`, `spans`, `annotate`, `reach_band`, `off_grid`.
+  `run_layered` owns the ladder, rest rule, one prepare per region, `region_ordering` (R4), cancel per level, link, spans. `LevelInfo::is_final`: final Z, spring passes too.
+- W3.4: rest rule = `Capabilities::rest_use`. `LevelClip` clips the input; `LevelSkip` only skips (a clipped contour cuts a new wall; Chamfer band = `w + t`); Waterline `ContourFilter` keeps the runs that pass material (`standing_near`, `R + cell`; an air stretch splits only when the retract saves time, W6.1); Drill
   `StockColumn` lowers each hole top and R-plane (D8). 2D Adaptive `LevelMask` (own loop): `level_masks` skips a level, seeds the planner from the raw mask. Rest Face keeps the fresh rows (`FaceLattice`, B8). Zigzag op and Pocket share `ZigzagRaster`, rows on the lattice of `LayerCtx::outline` (B9).
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field
   beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =

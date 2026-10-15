@@ -3,18 +3,26 @@
 //! All three relink their fragments through the shared finishing link stage
 //! before they return. Split out of `compute/execute.rs` (P4).
 
-use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::operation_configs::OpMotion;
+use std::borrow::Cow;
+use std::cell::Cell;
+
+use crate::compute::catalog::{OperationConfig, OperationType, RestUse};
+use crate::compute::operation_configs::{OpMotion, RegionOrdering};
+use crate::compute::toolpath_stats::RestLevelsFinding;
+use crate::geo::P2;
+use crate::geometry::region_set::RegionSet;
+use crate::interrupt::CancelCheck;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::tool::ToolDefinition;
+use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, run_layered};
 use super::shared::{
-    generated_with_cut_run_spans, generated_with_depth_run_spans, generated_with_spans,
-    op_link_ceiling, with_depth_run_annotation,
+    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
+use super::standing_material::standing_near;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
 /// Curve chaining for `project_curve` — the op's air is COUNT-bound.
@@ -379,8 +387,9 @@ pub(crate) fn generate_drop_cutter(
     ))
 }
 
-/// Waterline family adapter. Cancellable: the cooperative cancel
-/// closure is built by `ctx.cancel_fn()` (pinned by
+/// Waterline family adapter (W6.1): [`WaterlinePass`] on the Layered
+/// runner. The runner polls the cancel before each level, and the push
+/// cutter polls it between its fiber chunks (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_waterline(
     ctx: &ExecutionContext<'_>,
@@ -388,10 +397,7 @@ pub(crate) fn generate_waterline(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Waterline, "generate_waterline");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
+    let surface = prepared.mesh()?;
     let params = crate::ops::waterline::WaterlineParams {
         sampling: cfg.sampling,
         feed_rate: op.feed_rate(),
@@ -405,17 +411,18 @@ pub(crate) fn generate_waterline(
         stock_to_leave: 0.0,
     };
     // R3 / R4 (Corne case, 2026-09-18): the ladder is built ONCE, here, and
-    // the same `Vec` reaches the generator and the span builder below.
-    // `waterline_ladder` nudges a level off a horizontal facet (§4.5 of the
-    // analysis: levels at 18.0 and 15.0 wove junk across the wall top and
-    // the notch floor) and drops every level at or below the emission-frame
-    // stock bottom (a level AT the stock bottom cuts the bed). The as-found
-    // `-1.37` pin therefore yields an EMPTY ladder plus the finding, never a
-    // cut below the stock. The resolved heights themselves are the R3 half:
-    // an Auto bottom on this zero-depth op is now the model bottom
-    // (`HeightsConfig::auto_bottom_z`), so the Auto ladder spans the model.
+    // the same `Vec` is the runner's ladder: it cuts the levels and spans
+    // them. `waterline_ladder` nudges a level off a horizontal facet (§4.5
+    // of the analysis: levels at 18.0 and 15.0 wove junk across the wall
+    // top and the notch floor) and drops every level at or below the
+    // emission-frame stock bottom (a level AT the stock bottom cuts the
+    // bed). The as-found `-1.37` pin therefore yields an EMPTY ladder plus
+    // the finding, never a cut below the stock. The resolved heights
+    // themselves are the R3 half: an Auto bottom on this zero-depth op is
+    // now the model bottom (`HeightsConfig::auto_bottom_z`), so the Auto
+    // ladder spans the model.
     let ladder = crate::ops::waterline::waterline_ladder(
-        m,
+        surface.mesh,
         ctx.heights.top_z,
         ctx.heights.bottom_z,
         cfg.z_step,
@@ -431,59 +438,196 @@ pub(crate) fn generate_waterline(
         dropped_below_stock: ladder.dropped_below_stock,
         delivered_levels: ladder.levels.len(),
     });
-    let tp = crate::ops::waterline::waterline_toolpath_at_levels(
-        m,
-        idx,
-        ctx.tool_def,
-        &ladder.levels,
-        &params,
-        ctx.boundary_regions,
-        &ctx.cancel_fn(),
-    )?;
-    // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
-    // family's fingerprint does not move.
-    //
-    // No fragment kind is declared yet. A waterline level IS a closed loop
-    // and would benefit from rotation, but this adapter cannot see which of
-    // the emitted fragments are whole levels and which are arcs the boundary
-    // split, and a mis-declared kind rotates the wrong fragment. Declaring
-    // them inside `waterline_toolpath_with_cancel`, the way the scallop does,
-    // is the follow-up.
-    // G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
-    // `None` on the stats channel.
-    let tp = match finishing_link_stage(op.op_type(), ctx, cfg.hookup_mm) {
-        None => tp,
-        Some(stage) => {
-            let (tp, totals) = relink_in_adapter(
-                &stage,
-                &crate::finish::surface_link::LinkGeometry {
-                    stock_to_leave: params.stock_to_leave,
-                    sampling: cfg.sampling.max(0.01),
-                    feed_rate: params.feed_rate,
-                    plunge_rate: params.plunge_rate,
-                    safe_z: params.safe_z,
-                    // `WaterlineConfig` has no path tolerance: the link is
-                    // not refined (G-TIERBURIAL, open).
-                    link_tolerance: None,
-                },
-                m,
-                idx,
-                ctx.tool_def,
-                tp,
-                "waterline",
-            );
-            ctx.record(&totals);
-            tp
-        }
+    let pass = WaterlinePass {
+        surface,
+        cutter: ctx.tool_def,
+        params,
+        levels: ladder.levels,
+        z_step: cfg.z_step,
+        hookup_mm: cfg.hookup_mm,
+        op_type: op.op_type(),
+        rest_use: op.capabilities().rest_use,
+        boundary_regions: ctx.boundary_regions,
+        link_kinematics: ctx.link_kinematics.clone(),
+        rest_tally: Cell::new(None),
     };
-    // R2.8: waterline has a real Z-level ladder (unlike the single-level
-    // Face op) — pass it to the span builder instead of `&[]` so
-    // `spans_from_depth_runs`'s `nearest_level` snapping has real levels
-    // to snap to. R4: it is the SAME `Vec` the generator cut at, nudged and
-    // floored, not a second call to the raw ladder helper.
-    Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(tp, &ladder.levels),
-        ctx.semantic_ctx,
-    ))
+    let generated = run_layered(&pass, ctx, prepared)?;
+    // G-RESTLEVELS: the per-level tally of the contour filter. `None` (no
+    // record) when the filter did not run: a fresh op, or a rule that is
+    // not `ContourFilter`.
+    ctx.record(&pass.rest_tally.get());
+    Ok(generated)
+}
+
+/// The Waterline op: the push-cutter contours of the surface at each level
+/// of its ladder. The Z-independent geometry is the surface itself; each
+/// level queries it (W6.1).
+struct WaterlinePass<'a> {
+    surface: MeshInput<'a>,
+    cutter: &'a ToolDefinition,
+    params: crate::ops::waterline::WaterlineParams,
+    /// The ladder of `waterline_ladder`: nudged off the flat facets and
+    /// floored at the stock bottom.
+    levels: Vec<f64>,
+    z_step: f64,
+    hookup_mm: f64,
+    op_type: OperationType,
+    rest_use: RestUse,
+    boundary_regions: Option<&'a RegionSet<'a>>,
+    /// The machine envelope that times a stretch the contour filter drops
+    /// (`ops::waterline::stretch_is_worth_a_retract`). `None`: the filter
+    /// drops nothing.
+    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    /// The `ContourFilter` tally over the levels: a level whose filter
+    /// dropped every point is skipped, and one that dropped some points is
+    /// clipped. `None` until the filter runs.
+    rest_tally: Cell<Option<RestLevelsFinding>>,
+}
+
+impl<'a> LayeredOp for WaterlinePass<'a> {
+    type Input = MeshInput<'a>;
+    /// The surfaces of one region: the one surface.
+    type Geometry = Vec<MeshInput<'a>>;
+    /// The surface needs no Z-free work, so a prepare measures nothing.
+    type Report = ();
+
+    /// Waterline offsets no polygon, so it claims no offset zero.
+    const MEASURES_OFFSETS: bool = false;
+
+    /// The Z step. [`Self::ladder`] reads the ladder built from it.
+    fn depth_per_pass(&self) -> f64 {
+        self.z_step
+    }
+
+    /// One surface, so the order changes nothing.
+    fn region_ordering(&self) -> RegionOrdering {
+        RegionOrdering::ByArea
+    }
+
+    fn rest_use(&self) -> RestUse {
+        self.rest_use
+    }
+
+    /// The one input: the surface the prologue checked.
+    fn outlines<'p>(
+        &'p self,
+        _prepared: &Prepared<'p>,
+    ) -> Result<Cow<'p, [MeshInput<'a>]>, OperationError>
+    where
+        MeshInput<'a>: 'p,
+    {
+        Ok(Cow::Borrowed(std::slice::from_ref(&self.surface)))
+    }
+
+    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Vec<f64> {
+        self.levels.clone()
+    }
+
+    fn prepare(
+        &self,
+        region: &[MeshInput<'a>],
+        _layer: &LayerCtx<'_, MeshInput<'a>>,
+    ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        Ok((region.to_vec(), ()))
+    }
+
+    /// The contours at `level.z`, split by the boundary regions and, for
+    /// a rest op whose rule is `ContourFilter`, by the material that stands
+    /// at the level (`standing_material::standing_near`, W6.1). A stretch
+    /// in air is dropped only when the retract saves time.
+    fn emit_level(
+        &self,
+        geometry: &Self::Geometry,
+        level: LevelInfo,
+        stock: &LevelStock<'_>,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Toolpath, OperationError> {
+        let standing = match self.rest_use {
+            RestUse::ContourFilter => standing_near(stock.remaining, level.z, self.cutter.radius()),
+            RestUse::None
+            | RestUse::LevelClip
+            | RestUse::LevelSkip
+            | RestUse::LevelMask
+            | RestUse::StockColumn
+            | RestUse::Planner
+            | RestUse::Reference
+            | RestUse::LinkSafetyOnly => None,
+        };
+        let keep = |p: P2| standing.as_ref().is_none_or(|s| s.keeps(p));
+        let filter = crate::ops::waterline::RunFilter {
+            boundary_regions: self.boundary_regions,
+            keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
+            split_timing: self.link_kinematics.as_ref(),
+        };
+        let mut tp = Toolpath::new();
+        let (mut kept, mut dropped) = (false, false);
+        for surface in geometry {
+            let piece = crate::ops::waterline::waterline_level(
+                surface.mesh,
+                surface.index,
+                self.cutter,
+                level.z,
+                &self.params,
+                &filter,
+                cancel,
+            )?;
+            kept |= piece.rest_kept;
+            dropped |= piece.rest_dropped;
+            tp.moves.extend(piece.toolpath.moves);
+        }
+        if standing.is_some() {
+            let mut tally = self.rest_tally.get().unwrap_or(RestLevelsFinding {
+                planned_levels: 0,
+                skipped_levels: 0,
+                clipped_levels: 0,
+                fallback: None,
+            });
+            tally.planned_levels += 1;
+            match (kept, dropped) {
+                (false, true) => tally.skipped_levels += 1,
+                (true, true) => tally.clipped_levels += 1,
+                (_, false) => {}
+            }
+            self.rest_tally.set(Some(tally));
+        }
+        Ok(tp)
+    }
+
+    /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
+    /// family's fingerprint does not move.
+    ///
+    /// No fragment kind is declared yet. A waterline level IS a closed loop
+    /// and would benefit from rotation, but this stage cannot see which of
+    /// the emitted fragments are whole levels and which are arcs the
+    /// boundary split, and a mis-declared kind rotates the wrong fragment.
+    /// Declaring them in `ops::waterline::waterline_level`, the way the
+    /// scallop does, is the follow-up.
+    /// G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
+    /// `None` on the stats channel.
+    fn link(&self, toolpath: Toolpath, ctx: &ExecutionContext<'_>) -> Toolpath {
+        let Some(stage) = finishing_link_stage(self.op_type, ctx, self.hookup_mm) else {
+            return toolpath;
+        };
+        let (linked, totals) = relink_in_adapter(
+            &stage,
+            &crate::finish::surface_link::LinkGeometry {
+                stock_to_leave: self.params.stock_to_leave,
+                sampling: self.params.sampling.max(0.01),
+                feed_rate: self.params.feed_rate,
+                plunge_rate: self.params.plunge_rate,
+                safe_z: self.params.safe_z,
+                // `WaterlineConfig` has no path tolerance: the link is
+                // not refined (G-TIERBURIAL, open).
+                link_tolerance: None,
+            },
+            self.surface.mesh,
+            self.surface.index,
+            self.cutter,
+            toolpath,
+            "waterline",
+        );
+        ctx.record(&totals);
+        linked
+    }
 }
 // ── Public API ────────────────────────────────────────────────────────

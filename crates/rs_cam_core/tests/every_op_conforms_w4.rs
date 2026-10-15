@@ -89,6 +89,8 @@ use rs_cam_core::compute::{OperationError, StockConfig};
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::feeds::CutterKind;
 use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::arc_util::linearize_arc;
+use rs_cam_core::machine::kinematics::compute_cycle_time;
 use rs_cam_core::session::{
     Command, ProjectSession, ProjectSessionBuilder, SessionError, SetToolpathParamArgs,
 };
@@ -97,6 +99,9 @@ use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 /// The band (cells) at the edge of a cut that a cellwise claim skips: the
 /// simulator blends a cell the tool covers in part.
 const EDGE_CELLS: usize = 1;
+
+/// The float noise (mm) of two cut-length sums over the same moves.
+const CUT_LENGTH_EPS_MM: f64 = 1e-6;
 
 /// The material height (mm) the simulator reads as standing material
 /// (`FRESH_MATERIAL_THRESHOLD_MM`), as the `f32` of the stock grid.
@@ -488,6 +493,70 @@ impl Stocks<'_> {
             .count()
     }
 
+    /// The geometric stock claim of `ContourFilter` (W6.1). A cell counts
+    /// where the Fresh tool covers it completely: its centre lies within
+    /// `R - cell` of a Fresh cutting move, sampled at half a cell (arcs
+    /// too). The lowest such move is the depth the Fresh cut takes the
+    /// cell to. Gives the most material (mm) the rest stock holds above
+    /// `max(fresh top, that depth)`, and the count of cells judged.
+    fn worst_left_under_cover(&self, fresh: &Toolpath, tool_radius: f64) -> (f32, usize) {
+        let g = &self.fresh.z_grid;
+        let cell = g.cell_size;
+        let reach = tool_radius - cell;
+        let span = (reach / cell).ceil() as isize + 1;
+        let mut cover = vec![f64::INFINITY; g.rows * g.cols];
+        let mut mark = |p: P3| {
+            let col = ((p.x - g.origin_u) / cell).round() as isize;
+            let row = ((p.y - g.origin_v) / cell).round() as isize;
+            for rr in row - span..=row + span {
+                for cc in col - span..=col + span {
+                    if rr < 0 || cc < 0 || rr as usize >= g.rows || cc as usize >= g.cols {
+                        continue;
+                    }
+                    let (x, y) = g.cell_to_world(rr as usize, cc as usize);
+                    if (x - p.x).hypot(y - p.y) <= reach {
+                        let i = rr as usize * g.cols + cc as usize;
+                        cover[i] = cover[i].min(p.z);
+                    }
+                }
+            }
+        };
+        let step = cell / 2.0;
+        let mut prev: Option<P3> = None;
+        for m in &fresh.moves {
+            if is_cut(m)
+                && let Some(a) = prev
+            {
+                let points = match m.move_type {
+                    MoveType::ArcCW { i, j, .. } => linearize_arc(a, m.target, i, j, true, step),
+                    MoveType::ArcCCW { i, j, .. } => linearize_arc(a, m.target, i, j, false, step),
+                    MoveType::Linear { .. } | MoveType::Rapid => {
+                        let n = ((m.target - a).norm() / step).ceil().max(1.0) as usize;
+                        (0..=n)
+                            .map(|k| a + (m.target - a) * (k as f64 / n as f64))
+                            .collect()
+                    }
+                };
+                for p in points {
+                    mark(p);
+                }
+            }
+            prev = Some(m.target);
+        }
+        let mut worst: f32 = 0.0;
+        let mut judged = 0;
+        for (r, c) in self.cells() {
+            let z = cover[r * g.cols + c];
+            if !z.is_finite() {
+                continue;
+            }
+            judged += 1;
+            let floor = self.top(self.fresh, r, c).max(z as f32);
+            worst = worst.max(self.top(self.rest, r, c) - floor);
+        }
+        (worst, judged)
+    }
+
     /// Inside the cut of `reach` (off its edge band): the most material
     /// (mm) the rest stock holds above the fresh stock, and the count of
     /// cells the claim judged.
@@ -525,6 +594,18 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 ///   cleared part of its region.
 /// - `LevelSkip`: the same stock claim; and the rest cutting moves are a
 ///   subset of the Fresh cutting moves (a skip never makes a new path).
+/// - `ContourFilter` (W6.1): a geometric stock claim
+///   ([`Stocks::worst_left_under_cover`]): in each cell the Fresh tool
+///   covers completely, the rest stock stands no higher than the Fresh
+///   stock (or the depth of that cover) plus the material threshold. The
+///   lowered-cell claim does not fit this rule: a split run starts where
+///   the Fresh loop does not, and the simulator blends a part-covered cell
+///   by its stamp count, so a Fresh plunge and a rest feed through one
+///   point leave that cell at different heights (measured 2026-10-15:
+///   0.3 to 0.55 mm, with the kept points bit for bit equal). And the rest
+///   op cuts no more (the length of its cutting moves) than the Fresh op:
+///   a filter only drops runs. The arc fit fits a split run again, so the
+///   moves themselves are not compared.
 /// - `Planner`: the stock claim inside the REST cut (the planner plans its
 ///   own paths, so the Fresh cut is no reference); and it cuts less.
 /// - `LinkSafetyOnly`: the cutting moves are the Fresh cutting moves. Only
@@ -545,6 +626,9 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 /// Non-vacuity: each rule the registry uses (other than `None` and
 /// `Reference`) has an op whose Fresh cut lowers some cells.
 #[test]
+// SAFETY: the W6.1 `ContourFilter` measurement (leftover, time, rapids) is
+// printed as the record of the arm.
+#[allow(clippy::print_stderr)]
 fn check2_rest_rule_per_op() {
     let mut reached: BTreeMap<String, usize> = BTreeMap::new();
     let mut defects = Vec::new();
@@ -597,6 +681,60 @@ fn check2_rest_rule_per_op() {
                 if !contains_all(&cut_targets(fresh), &cut_targets(rest)) {
                     defects.push(format!(
                         "{key}/rest (LevelSkip): the rest op cuts a move the Fresh op does not"
+                    ));
+                }
+            }
+            RestUse::ContourFilter => {
+                match stocks(op, pair) {
+                    None => defects.push(format!("{key}/rest (ContourFilter): no final stock")),
+                    Some(s) => {
+                        let r = tool_for(op).diameter / 2.0;
+                        // The record of W6.1: the lowered-cell leftover,
+                        // and the time and rapids of each arm on the one
+                        // cycle-time model (`MachineProfile::link_kinematics`).
+                        let (lowered_worst, lowered_judged) = s.worst_left_inside(s.fresh);
+                        let lk = rs_cam_core::machine::MachineProfile::default().link_kinematics();
+                        let time = |tp: &Toolpath| {
+                            compute_cycle_time(
+                                tp,
+                                &lk.kinematics,
+                                lk.max_feed_mm_min,
+                                lk.rapid_feed_mm_min,
+                            )
+                        };
+                        let rapids = |tp: &Toolpath| {
+                            tp.moves
+                                .iter()
+                                .filter(|m| m.move_type == MoveType::Rapid)
+                                .count()
+                        };
+                        eprintln!(
+                            "{key}/rest (ContourFilter): lowered-cell leftover {lowered_worst:.3} mm \
+                             over {lowered_judged} cells; time fresh {:.2} s, rest {:.2} s; \
+                             rapids fresh {} ({:.1} mm), rest {} ({:.1} mm)",
+                            time(fresh),
+                            time(rest),
+                            rapids(fresh),
+                            fresh.total_rapid_distance(),
+                            rapids(rest),
+                            rest.total_rapid_distance()
+                        );
+                        let (worst, judged) = s.worst_left_under_cover(fresh, r);
+                        if judged == 0 || worst > threshold() {
+                            defects.push(format!(
+                                "{key}/rest (ContourFilter): under the Fresh tool's full cover \
+                                 ({judged} cells) the rest stock stands {worst:.3} mm over the \
+                                 Fresh cut; the bound is {:.3} mm",
+                                threshold()
+                            ));
+                        }
+                        *reached.entry(format!("{rule:?}")).or_insert(0) += s.fresh_reach_cells();
+                    }
+                }
+                if rl > fl + CUT_LENGTH_EPS_MM {
+                    defects.push(format!(
+                        "{key}/rest (ContourFilter): the rest op cuts {rl:.2} mm, the Fresh \
+                         op {fl:.2} mm. A contour filter only drops runs."
                     ));
                 }
             }

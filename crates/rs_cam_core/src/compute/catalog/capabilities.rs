@@ -118,7 +118,8 @@ impl<P> Capabilities<P> {
 /// How an operation uses the remaining stock (W3.4, AUDIT.md "Rest is not
 /// one thing"). A rest pass reads the machined stock; each kind says what
 /// the op does with it. The Layered runner (`compute/execute/layered.rs`)
-/// acts on the three `Level*` kinds of a Layered op.
+/// acts on `LevelClip` and `LevelSkip`; a `ContourFilter` op filters in its
+/// own `emit_level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestUse {
     /// The op ignores the remaining stock: a rest pass cuts what a fresh
@@ -140,6 +141,14 @@ pub enum RestUse {
     /// Each hole starts at the remaining stock top over the hole, not at
     /// the stock box top (D8). Drill.
     StockColumn,
+    /// A contour op keeps, at each level, only the contour runs that pass
+    /// material: a point stays when material stands above
+    /// `z + FRESH_MATERIAL_THRESHOLD_MM` within `R + cell` of it, or when
+    /// the stock grid holds no answer there. A stretch in air is dropped
+    /// only when a retract and a re-entry take less time than the feed
+    /// through it. The op splits a contour into runs as its boundary
+    /// filter does (W6.1). Waterline.
+    ContourFilter,
     /// The planner owns the stock: it plans each run against its own
     /// dexel stock, seeded from the remaining stock. 3D Rough.
     Planner,
