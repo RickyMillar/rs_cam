@@ -187,6 +187,9 @@ struct Row {
     /// Retract-tagged moves that are rapids — the shape every production
     /// site emits today.
     retract_rapids: usize,
+    /// B11: moves with `MoveIntent::Unknown`. Every generator and dressup
+    /// tags its moves, so this count is zero.
+    unknown_tagged: usize,
     offenders: Vec<Offender>,
 }
 
@@ -218,6 +221,7 @@ fn census(
         arc_feeds: 0,
         retract_tagged: 0,
         retract_rapids: 0,
+        unknown_tagged: 0,
         offenders: Vec::new(),
     };
 
@@ -226,6 +230,9 @@ fn census(
             MoveType::Rapid => row.rapids += 1,
             MoveType::Linear { .. } => row.linear_feeds += 1,
             MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => row.arc_feeds += 1,
+        }
+        if mv.intent == MoveIntent::Unknown {
+            row.unknown_tagged += 1;
         }
         if mv.intent == MoveIntent::Retract {
             row.retract_tagged += 1;
@@ -909,7 +916,7 @@ fn no_shipped_generator_emits_a_retract_tagged_linear_feed() {
     for r in &rows {
         println!(
             "W6 CENSUS | {:<18} | {:<9} | moves {:>7} | rapid {:>7} | linear {:>7} | \
-             arc {:>6} | retract {:>5} (rapid {:>5}) | offenders {}",
+             arc {:>6} | retract {:>5} (rapid {:>5}) | unknown {:>5} | offenders {}",
             format!("{:?}", r.op),
             r.profile.label(),
             r.moves,
@@ -918,6 +925,7 @@ fn no_shipped_generator_emits_a_retract_tagged_linear_feed() {
             r.arc_feeds,
             r.retract_tagged,
             r.retract_rapids,
+            r.unknown_tagged,
             r.offenders.len(),
         );
     }
@@ -1052,6 +1060,18 @@ fn no_shipped_generator_emits_a_retract_tagged_linear_feed() {
         "retract-tagged ARC moves emitted by {non_rapid:?} — the playback \
          kernel stamps arcs too, so this is the same divergence in a \
          different move type"
+    );
+
+    // B11: every emitted move carries a known intent, under both dressup
+    // profiles. The rest arms are in G-OPGOLDEN, which asserts the same.
+    let unknown: Vec<String> = rows
+        .iter()
+        .filter(|r| r.unknown_tagged > 0)
+        .map(|r| format!("{:?} [{}]: {}", r.op, r.profile.label(), r.unknown_tagged))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "moves with MoveIntent::Unknown: {unknown:?}"
     );
 }
 

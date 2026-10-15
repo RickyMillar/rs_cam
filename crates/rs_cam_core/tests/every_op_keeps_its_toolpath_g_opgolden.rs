@@ -98,7 +98,7 @@ use rs_cam_core::session::{
     Command, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs, SimulationOptions,
     SimulationResolution, ToolpathConfig,
 };
-use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 use serde::{Deserialize, Serialize};
 
 /// The environment switch that rewrites the golden file.
@@ -497,9 +497,16 @@ fn simulate(session: &mut ProjectSession) {
         .expect("the prior op simulates");
 }
 
+/// One generated case: its fingerprint and the count of its moves with
+/// `MoveIntent::Unknown` (B11).
+struct Generated {
+    golden: Golden,
+    unknown_intents: usize,
+}
+
 /// Generate one case and fingerprint it. A refusal is a result too: a
 /// refactor must not change it.
-fn run(case: &Case) -> Golden {
+fn run(case: &Case) -> Generated {
     let (mut session, index) = session_for(case);
     let cancel = AtomicBool::new(false);
     if case.source == Source::Rest {
@@ -509,8 +516,19 @@ fn run(case: &Case) -> Golden {
         simulate(&mut session);
     }
     match session.generate_toolpath(index, &cancel) {
-        Ok(result) => Golden::of(result.toolpath()),
-        Err(e) => Golden::refused(&e.to_string()),
+        Ok(result) => Generated {
+            golden: Golden::of(result.toolpath()),
+            unknown_intents: result
+                .toolpath()
+                .moves
+                .iter()
+                .filter(|m| m.intent == MoveIntent::Unknown)
+                .count(),
+        },
+        Err(e) => Generated {
+            golden: Golden::refused(&e.to_string()),
+            unknown_intents: 0,
+        },
     }
 }
 
@@ -709,10 +727,25 @@ fn every_op_keeps_its_toolpath() {
         "the rest arms are the ops whose capabilities state a rest rule"
     );
 
-    let actual: BTreeMap<String, Golden> = cases
+    let generated: BTreeMap<String, Generated> = cases
         .par_iter()
         .map(|case| (case.key(), run(case)))
         .collect();
+
+    // B11: every move of every arm carries a known intent. A dressup that
+    // turns an air row into a rapid tags it; it never leaves `Unknown`.
+    let unknown: Vec<(&String, usize)> = generated
+        .iter()
+        .filter(|(_, g)| g.unknown_intents > 0)
+        .map(|(k, g)| (k, g.unknown_intents))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "these arms emit moves with MoveIntent::Unknown (arm, count): {unknown:?}"
+    );
+
+    let actual: BTreeMap<String, Golden> =
+        generated.into_iter().map(|(k, g)| (k, g.golden)).collect();
 
     // Non-vacuity: every op cuts something in its fresh arm, so a golden
     // of an empty toolpath cannot pass for a kept one.

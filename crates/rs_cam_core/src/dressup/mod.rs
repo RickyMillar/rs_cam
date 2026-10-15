@@ -1855,8 +1855,15 @@ pub fn apply_dogbones(
                             let overcut_x = b.x + dx * tool_radius;
                             let overcut_y = b.y + dy * tool_radius;
                             let overcut_start = result.moves.len();
-                            result.feed_to(P3::new(overcut_x, overcut_y, b.z), feed_rate);
-                            result.feed_to(b, feed_rate);
+                            // B11: the overcut cuts as the corner cuts, so
+                            // it carries the corner's intent.
+                            let intent = moves[i].intent;
+                            result.feed_to_with_intent(
+                                P3::new(overcut_x, overcut_y, b.z),
+                                feed_rate,
+                                intent,
+                            );
+                            result.feed_to_with_intent(b, feed_rate, intent);
                             let overcut_end = result.moves.len();
                             dogbone_ranges.push(overcut_start..overcut_end);
                             emitted_overcut = true;
@@ -2055,7 +2062,12 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
                         LINK_Z_MATCH_TOL,
                     ) {
                         let bridge_idx = result.moves.len();
-                        result.feed_to(plunge_target, params.link_feed_rate);
+                        // B11: a stay-down bridge is a fed link.
+                        result.feed_to_with_intent(
+                            plunge_target,
+                            params.link_feed_rate,
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                         bridge_positions.push(bridge_idx);
                         let r = bridge_idx..bridge_idx + 1;
                         old_to_new.push(Some(r.clone()));
@@ -2308,6 +2320,17 @@ pub enum AirBridgePolicy {
 /// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
 /// bridges and should not block downstream link/TSP passes).
 ///
+/// # The bridge moves (B11)
+///
+/// Each inserted move carries a known intent: the lift to `safe_z` is a
+/// `Retract`, the travel at `safe_z` and the rapid descent to the resume
+/// point are `Linking`. A bridge move that would not move the tool is not
+/// emitted. A run that stays in one column and ends at a rapid that lifts
+/// in that column (a drill peck through air, [`air_run_is_a_column`]) gets
+/// no bridge: the peck ladder's own retract and positioning rapid follow,
+/// so the hole still reads back as a canned cycle. A kept rapid after the
+/// run that does not move the tool is dropped.
+///
 /// # Provenance
 ///
 /// This is the one dressup that DELETES moves, so its provenance is the one
@@ -2465,11 +2488,19 @@ pub fn filter_air_cuts(
                 } else {
                     m.target
                 };
-                if prev_target.z < safe_z - 0.001 {
+                if prev_target.z < safe_z - 0.001
+                    && !air_run_is_a_column(moves, &air_flags, i, prev_target)
+                {
                     let b_start = result.moves.len();
-                    result.rapid_to(P3::new(prev_target.x, prev_target.y, safe_z));
+                    push_bridge_rapid(
+                        &mut result,
+                        P3::new(prev_target.x, prev_target.y, safe_z),
+                        crate::toolpath::MoveIntent::Retract,
+                    );
                     let b_end = result.moves.len();
-                    bridge_ranges.push(b_start..b_end);
+                    if b_end > b_start {
+                        bridge_ranges.push(b_start..b_end);
+                    }
                 }
                 in_air_run = true;
             }
@@ -2481,14 +2512,34 @@ pub fn filter_air_cuts(
                 if m.move_type != MoveType::Rapid {
                     let source = if i > 0 { moves[i - 1].target } else { m.target };
                     let b_start = result.moves.len();
-                    result.rapid_to(P3::new(source.x, source.y, safe_z));
+                    push_bridge_rapid(
+                        &mut result,
+                        P3::new(source.x, source.y, safe_z),
+                        crate::toolpath::MoveIntent::Linking,
+                    );
                     if source.z < safe_z - 0.001 {
-                        result.rapid_to(source);
+                        push_bridge_rapid(
+                            &mut result,
+                            source,
+                            crate::toolpath::MoveIntent::Linking,
+                        );
                     }
                     let b_end = result.moves.len();
                     if b_end > b_start {
                         bridge_ranges.push(b_start..b_end);
                     }
+                } else if result
+                    .moves
+                    .last()
+                    .is_some_and(|last| (last.target - m.target).norm() <= SAME_POINT_MM)
+                {
+                    // B11: the first kept move after the run is a rapid to
+                    // where the tool already stands (the retract of a drill
+                    // peck through air, `air_run_is_a_column`). It moves
+                    // nothing, so it is dropped.
+                    in_air_run = false;
+                    old_to_new.push(None);
+                    continue;
                 }
                 in_air_run = false;
             }
@@ -2522,6 +2573,45 @@ pub fn filter_air_cuts(
         },
         remap,
     )
+}
+
+/// B11: the distance (mm) under which [`filter_air_cuts`] reads a rapid as
+/// one that does not move the tool.
+const SAME_POINT_MM: f64 = 1e-9;
+
+/// B11: push a bridge rapid of [`filter_air_cuts`] with its intent. A
+/// rapid to the point where the tool already stands moves nothing, so it
+/// is not emitted.
+fn push_bridge_rapid(result: &mut Toolpath, target: P3, intent: crate::toolpath::MoveIntent) {
+    if result
+        .moves
+        .last()
+        .is_some_and(|last| (last.target - target).norm() <= SAME_POINT_MM)
+    {
+        return;
+    }
+    result.rapid_to_with_intent(target, intent);
+}
+
+/// B11: true when the air run of [`filter_air_cuts`] that starts at move
+/// `start` stays in the column of `from` (the tool position before the
+/// run), and the first kept move after it is a rapid that lifts in that
+/// column. A drill peck through air has this shape: the peck ladder's own
+/// retract follows it. The tool then needs no bridge to `safe_z`: the kept
+/// retract lifts it along the path the dropped air move ran down.
+fn air_run_is_a_column(moves: &[Move], air_flags: &[bool], start: usize, from: P3) -> bool {
+    const XY_EPS_MM: f64 = 1e-6;
+    let in_column = |p: P3| (p.x - from.x).abs() < XY_EPS_MM && (p.y - from.y).abs() < XY_EPS_MM;
+    let mut k = start;
+    while air_flags.get(k).copied().unwrap_or(false) {
+        match moves.get(k) {
+            Some(m) if in_column(m.target) => k += 1,
+            _ => return false,
+        }
+    }
+    moves.get(k).is_some_and(|m| {
+        m.move_type == MoveType::Rapid && in_column(m.target) && m.target.z >= from.z
+    })
 }
 
 #[cfg(test)]

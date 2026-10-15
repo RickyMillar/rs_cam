@@ -108,6 +108,10 @@ pub(crate) struct LayerCtx<'c> {
     pub tool_radius: f64,
     /// The cooperative cancel. A kernel that loops polls it.
     pub cancel: &'c dyn CancelCheck,
+    /// The whole outline the region comes from. A rest clip region is a
+    /// part of it. An op that puts its rows on a lattice reads the lattice
+    /// from it, so a clipped region keeps the rows of the whole (B9).
+    pub outline: &'c Polygon2,
 }
 
 /// A 2.5D op in the Layered shape. [`run_layered`] runs it.
@@ -232,10 +236,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
     let levels = op.ladder(ctx);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
-    let layer = LayerCtx {
-        tool_radius: ctx.tool_def.radius(),
-        cancel: &cancel_fn,
-    };
+    let tool_radius = ctx.tool_def.radius();
     // Checkpoint C: a Layered op measures its offsets, so the channel holds
     // a measured zero before the first prepare. Each prepare report adds
     // its own count (W2.3).
@@ -248,10 +249,10 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // the outline count.
         RegionOrdering::ByArea => {
             for outline in outlines.iter() {
-                let layers = prepare_outline(op, ctx, &layer, outline, &levels)?;
+                let layers = prepare_outline(op, ctx, tool_radius, &cancel_fn, outline, &levels)?;
                 let mut emitted = false;
                 for i in 0..levels.len() {
-                    check_cancel(layer.cancel)?;
+                    check_cancel(&cancel_fn)?;
                     let Some(piece) = emit_at(op, &layers, &levels, i) else {
                         continue;
                     };
@@ -268,11 +269,18 @@ pub(crate) fn run_layered<O: LayeredOp>(
         RegionOrdering::Global => {
             let mut layers = Vec::with_capacity(outlines.len());
             for outline in outlines.iter() {
-                layers.push(prepare_outline(op, ctx, &layer, outline, &levels)?);
+                layers.push(prepare_outline(
+                    op,
+                    ctx,
+                    tool_radius,
+                    &cancel_fn,
+                    outline,
+                    &levels,
+                )?);
             }
             for i in 0..levels.len() {
                 for outline_layers in &layers {
-                    check_cancel(layer.cancel)?;
+                    check_cancel(&cancel_fn)?;
                     let Some(piece) = emit_at(op, outline_layers, &levels, i) else {
                         continue;
                     };
@@ -313,13 +321,19 @@ fn emit_at<O: LayeredOp>(
 fn prepare_outline<O: LayeredOp>(
     op: &O,
     ctx: &ExecutionContext<'_>,
-    layer: &LayerCtx<'_>,
+    tool_radius: f64,
+    cancel: &dyn CancelCheck,
     outline: &Polygon2,
     levels: &[f64],
 ) -> Result<OutlineLayers<O::Geometry>, OperationError> {
     if ctx.is_cancelled() {
         return Err(OperationError::Cancelled);
     }
+    let layer = &LayerCtx {
+        tool_radius,
+        cancel,
+        outline,
+    };
     let prepare = |region: &[Polygon2]| {
         let (geometry, report) = op.prepare(region, layer)?;
         ctx.record(&report);

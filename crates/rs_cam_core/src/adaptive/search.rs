@@ -1472,6 +1472,12 @@ fn walk_boundary_for_entry(
 /// Returns `None` if no cell meets the inscribed-radius gate — caller
 /// should fall back to `find_entry_point` (boundary walk).
 ///
+/// With `on_material` (B10, the 2D planner) only a cell that still holds
+/// material qualifies. On a rest level the seeded grid has cleared the
+/// stock an earlier op removed, and the medial point of the piece can lie
+/// in that cleared area; an entry there cuts only air. Adaptive3d passes
+/// `false` and keeps its historical entry (byte parity).
+///
 /// Reference: Bieterman & Sandström (Boeing, ~2003), Ren & Bi (Int. J.
 /// Adv. Manuf. Tech., 2014). The "DT max" point is what BobCAD/
 /// Fusion/HSMWorks use as their helical-plunge seed.
@@ -1481,6 +1487,7 @@ pub(crate) fn find_entry_via_distance_transform(
     machinable_mask: &[bool],
     boundary_distances: &[f64],
     tool_radius: f64,
+    on_material: bool,
 ) -> Option<P2> {
     // Gate: the cell's inscribed-disk radius must be at least 1.1× tool
     // radius for the helical/center entry to make sense. Below this the
@@ -1493,6 +1500,9 @@ pub(crate) fn find_entry_via_distance_transform(
             let idx = row * grid.cols + col;
             let dt = boundary_distances[idx];
             if dt < min_inscribed || dt.is_infinite() {
+                continue;
+            }
+            if on_material && grid.cells[idx] != CELL_MATERIAL {
                 continue;
             }
             // Local-maximum check across the 8 neighbours (slight

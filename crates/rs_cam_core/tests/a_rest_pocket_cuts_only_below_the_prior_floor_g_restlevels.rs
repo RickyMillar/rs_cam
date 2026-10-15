@@ -53,12 +53,16 @@
 //!     a Face above the chamfer level, it cuts the fresh rings.
 //! 12. 2D Adaptive (`LevelMask`): on A's outline it skips the levels A
 //!     cleared and cuts only below A's floor. Shifted, above A's floor it
-//!     cuts only near the material A left (its entry starter apart). It
+//!     cuts and enters only near the material A left (B10). It
 //!     leaves the stock a fresh Adaptive leaves, with no material above its
 //!     floor in the cells its tool covers.
 //! 13. B8, Face on a whole top: a rest Face cuts the rows of a fresh Face.
 //! 14. B8, Face on part of the top: each rest row lies on a fresh row and
 //!     inside that row's X span.
+//! 15. B11, Drill: a peck through air is dropped, every move keeps a known
+//!     intent, and the holes read back as native canned cycles.
+//! 16. B9, Zigzag op and Pocket zigzag on part of the outline: each rest
+//!     row lies on a fresh row, in that row's direction and span.
 //!
 //! Each rule has a red proof: with the rule off, the claim fails. The red
 //! runs are recorded in the W3.4 report.
@@ -1001,6 +1005,81 @@ fn a_rest_drill_starts_each_hole_at_the_remaining_stock_top() {
     assert_eq!(top_of(&rest.drill_holes, HOLE_OUTSIDE_A).0, 0.0);
 }
 
+/// 15. B11, Drill: the air-cut filter drops a peck that runs only through
+///     air above the remaining stock. Every move of the rest Drill keeps a
+///     known intent, and the toolpath still reads back as native peck
+///     cycles (G83) on a post that runs them.
+#[test]
+fn a_rest_drill_reads_back_as_native_canned_cycles() {
+    use rs_cam_core::gcode::post::grblhal;
+    use rs_cam_core::gcode::{
+        CoolantMode, GcodePhase, PhaseDrill, ToolLoadExportPolicy, WizardOverlay,
+        export_gcode_phases_with_overlay_checked,
+    };
+    let op = drill(B_DEPTH);
+    let OperationConfig::Drill(cfg) = &op else {
+        unreachable!("drill() builds a Drill")
+    };
+    let cycle = cfg.cycle.to_core(cfg);
+    let fresh = run_ops(
+        pocket(A_DEPTH),
+        op.clone(),
+        0.0,
+        StockSource::Fresh,
+        &[HOLE_IN_A, HOLE_OUTSIDE_A],
+    );
+    let rest = run_ops(
+        pocket(A_DEPTH),
+        op,
+        0.0,
+        StockSource::FromRemainingStock,
+        &[HOLE_IN_A, HOLE_OUTSIDE_A],
+    );
+    // Non-vacuity: the rest arm is shorter, so the filter dropped a peck.
+    assert!(rest.moves.len() < fresh.moves.len());
+    let unknown = rest
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::Unknown)
+        .count();
+    assert_eq!(unknown, 0, "the rest Drill emits moves with intent Unknown");
+    let toolpath = rs_cam_core::toolpath::Toolpath { moves: rest.moves };
+    let phase = GcodePhase {
+        toolpath: &toolpath,
+        spindle_rpm: 12_000,
+        label: "rest drill",
+        pre_gcode: None,
+        post_gcode: None,
+        tool: None,
+        coolant: CoolantMode::Off,
+        controller_compensation: None,
+        drill: Some(PhaseDrill { cycle }),
+        feeds: None,
+    };
+    let overlay = WizardOverlay {
+        native_drill_cycles: true,
+        ..WizardOverlay::default()
+    };
+    let gcode = export_gcode_phases_with_overlay_checked(
+        &[phase],
+        grblhal(),
+        &rs_cam_core::tool_load::ToolLoadReport {
+            per_toolpath: vec![],
+        },
+        ToolLoadExportPolicy::default(),
+        &overlay,
+    )
+    .expect("the rest drill exports");
+    assert!(
+        !gcode.contains("native drill cycles not used"),
+        "the rest drill must read back as plain drill holes:\n{gcode}"
+    );
+    assert!(
+        gcode.lines().filter(|l| l.contains("G83")).count() >= 1,
+        "the rest drill must write a native peck cycle:\n{gcode}"
+    );
+}
+
 // ── W3.5: Chamfer ───────────────────────────────────────────────────────
 
 /// Width (mm) and tip offset (mm) of the chamfer of claim 11. With the 90°
@@ -1144,6 +1223,9 @@ fn highest_covered_top(stock: &TriDexelStock, shift: f64) -> (f32, usize) {
     (top, judged)
 }
 
+/// The Z tolerance (mm) of a level: a planner Z carries float noise.
+const LEVEL_Z_EPS_MM: f64 = 1e-6;
+
 /// 12. 2D Adaptive (`LevelMask`, item 1 of the W3.4 follow-up): after
 ///     Pocket A, a rest Adaptive on A's outline skips every level A cleared
 ///     and cuts only below A's floor. Shifted, above A's floor it cuts only
@@ -1194,40 +1276,54 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                 finding.skipped_levels, 0,
                 "the strip holds material at every level"
             );
-            // The planner starts each level with its entry starter at the
-            // medial point of the piece, which lies in A's cleared area
-            // here (an open item, not a rest rule). The starter stays
-            // within 2R + cell of the first cut of the level; every other
-            // cut must lie near the material A left. The level at A's own
-            // floor is not judged: there the simulator's blend of the
-            // cells along A's wall stands above the threshold, so the
-            // planner reads (and cleans) a sliver along that wall.
+            // Every cut and every entry move above A's floor lies near the
+            // material A left (B10: the entry starter stands on material,
+            // not at the medial point of the piece, which lies in A's
+            // cleared area here). The level at A's own floor is not
+            // judged: there the simulator's blend of the cells along A's
+            // wall stands above the threshold, so the planner reads (and
+            // cleans) a sliver along that wall.
             let bound = TOOL_R + 2.0 * CELL_MM;
-            let starter = 2.0 * TOOL_R + CELL_MM;
             let mut worst: f64 = 0.0;
-            let mut starter_moves = 0;
+            let mut judge = |kind: &str, p: P2, z: f64| {
+                let d = distance_to_material_left(p, shift);
+                worst = worst.max(d);
+                assert!(
+                    d <= bound,
+                    "a {kind} at ({:.2}, {:.2}, {z:.3}) lies {d:.2} mm from the material A \
+                     left; the bound is {bound} mm",
+                    p.x,
+                    p.y
+                );
+            };
             for z in ladder(A_DEPTH - DPP) {
                 let level = cuts_at(&cuts, z);
-                let Some(&first) = level.first() else {
-                    panic!("the strip holds material at level {z}");
-                };
+                assert!(!level.is_empty(), "the strip holds material at level {z}");
                 for p in level {
-                    let d = distance_to_material_left(p, shift);
-                    if d > bound && (p.x - first.x).hypot(p.y - first.y) <= starter {
-                        starter_moves += 1;
-                        continue;
-                    }
-                    worst = worst.max(d);
-                    assert!(
-                        d <= bound,
-                        "a cut at ({:.2}, {:.2}, {z}) lies {d:.2} mm from the material A \
-                         left; the bound is {bound} mm",
-                        p.x,
-                        p.y
-                    );
+                    judge("cut", p, z);
                 }
             }
-            eprintln!("adaptive shifted: {starter_moves} starter moves above A's floor");
+            // The fed entry moves (plunge, helix, ramp) inside the stock
+            // and above the level at A's floor (not judged, as above).
+            let mut entries = 0;
+            for m in &rest.moves {
+                if m.move_type != MoveType::Rapid
+                    && matches!(
+                        m.intent,
+                        MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp
+                    )
+                    && m.target.z <= 0.0
+                    && m.target.z > -A_DEPTH + LEVEL_Z_EPS_MM
+                {
+                    entries += 1;
+                    judge("entry move", P2::new(m.target.x, m.target.y), m.target.z);
+                }
+            }
+            eprintln!("adaptive shifted: {entries} entry moves judged above A's floor");
+            assert!(
+                entries > 0,
+                "non-vacuity: the rest Adaptive enters above A's floor"
+            );
             eprintln!("adaptive shifted: worst distance above A's floor {worst:.3} mm");
         }
         let fresh = run_ops(
@@ -1277,13 +1373,9 @@ fn face_b8(depth: f64) -> OperationConfig {
     })
 }
 
-/// The rows a Face cuts at level `z`: each cutting move as a segment from
-/// the target of the move before it. Only rows in the reach of the stock
-/// count (`|y|` at most the stock half-width plus R): the stock-aware entry
-/// dressup turns a rest row that runs only in air into a rapid, and a
-/// fresh Face does not know the stock.
-fn face_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
-    let reach = HALF + MARGIN + TOOL_R;
+/// The rows cut at level `z`: each cutting move as a segment from the
+/// target of the move before it.
+fn cut_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
     moves
         .windows(2)
         .filter(|w| {
@@ -1291,7 +1383,6 @@ fn face_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
             m.move_type != MoveType::Rapid
                 && matches!(m.intent, MoveIntent::ClearingCut | MoveIntent::FinishingCut)
                 && (m.target.z - z).abs() < 1e-6
-                && m.target.y.abs() <= reach
         })
         .map(|w| {
             [
@@ -1299,6 +1390,18 @@ fn face_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
                 P2::new(w[1].target.x, w[1].target.y),
             ]
         })
+        .collect()
+}
+
+/// The rows a Face cuts at level `z` ([`cut_rows`]). Only rows in the
+/// reach of the stock count (`|y|` at most the stock half-width plus R):
+/// the air-cut filter drops a rest row that runs only in air, and a fresh
+/// Face does not know the stock.
+fn face_rows(moves: &[Move], z: f64) -> Vec<[P2; 2]> {
+    let reach = HALF + MARGIN + TOOL_R;
+    cut_rows(moves, z)
+        .into_iter()
+        .filter(|[_, b]| b.y.abs() <= reach)
         .collect()
 }
 
@@ -1375,5 +1478,98 @@ fn a_rest_face_never_reaches_past_the_fresh_rows() {
                 p.y
             );
         }
+    }
+}
+
+/// The scan angle (degrees) of the B9 cases. The rows run along -Y, so
+/// the first row of a region lies at its lowest X. The rest clip of the
+/// shifted outline starts inside the outline on that side (the material A
+/// left is the strip at the +X end), so the clip moves the region's first
+/// row.
+const ZIGZAG_B9_ANGLE: f64 = 270.0;
+
+/// The stepover (mm) of the B9 cases: no divisor of the gap between the
+/// clip region and the outline.
+const ZIGZAG_B9_STEPOVER: f64 = 2.3;
+
+/// 16. B9, Zigzag op and Pocket zigzag: on the shifted outline the rest
+///     clip region is the strip A left, so it starts inside the outline.
+///     Each rest row must lie on a fresh row (the same X, bit for bit),
+///     cut in the direction of that fresh row, and stay inside its span.
+#[test]
+fn a_rest_zigzag_cuts_on_the_fresh_rows() {
+    let ops = [
+        (
+            "zigzag op",
+            OperationConfig::Zigzag(ZigzagConfig {
+                stepover: ZIGZAG_B9_STEPOVER,
+                angle: ZIGZAG_B9_ANGLE,
+                depth: B_DEPTH,
+                depth_per_pass: DPP,
+                ..ZigzagConfig::default()
+            }),
+        ),
+        (
+            "pocket zigzag",
+            OperationConfig::Pocket(PocketConfig {
+                stepover: ZIGZAG_B9_STEPOVER,
+                angle: ZIGZAG_B9_ANGLE,
+                depth: B_DEPTH,
+                depth_per_pass: DPP,
+                pattern: PocketPattern::Zigzag,
+                ..PocketConfig::default()
+            }),
+        ),
+    ];
+    for (name, op) in ops {
+        let fresh = run_ops(pocket(A_DEPTH), op.clone(), SHIFT, StockSource::Fresh, &[]);
+        let rest = run_ops(
+            pocket(A_DEPTH),
+            op,
+            SHIFT,
+            StockSource::FromRemainingStock,
+            &[],
+        );
+        let finding = rest.finding.expect("a rest zigzag records its level clip");
+        assert!(
+            finding.clipped_levels > 0,
+            "{name}: precondition, the strip clips a level: {finding:?}"
+        );
+        let mut judged = 0;
+        for z in ladder(A_DEPTH - DPP) {
+            let rows = cut_rows(&fresh.moves, z);
+            assert!(!rows.is_empty(), "{name}: non-vacuity, a fresh row at {z}");
+            for [a, b] in cut_rows(&rest.moves, z) {
+                let Some([fa, fb]) = rows.iter().find(|[fa, _]| fa.x.to_bits() == a.x.to_bits())
+                else {
+                    panic!(
+                        "{name}: level {z}: a rest row at x = {:.4} lies on no fresh row",
+                        a.x
+                    );
+                };
+                assert_eq!(
+                    (b.y - a.y).signum(),
+                    (fb.y - fa.y).signum(),
+                    "{name}: level {z}: the rest row at x = {:.4} cuts against its fresh row",
+                    a.x
+                );
+                let (lo, hi) = (fa.y.min(fb.y), fa.y.max(fb.y));
+                for p in [a, b] {
+                    assert!(
+                        p.y >= lo - 1e-9 && p.y <= hi + 1e-9,
+                        "{name}: level {z}: the rest row at x = {:.4} reaches y = {:.4} \
+                         past its fresh row [{lo:.4}, {hi:.4}]",
+                        a.x,
+                        p.y
+                    );
+                }
+                judged += 1;
+            }
+        }
+        eprintln!("{name}: {judged} rest rows judged above A's floor");
+        assert!(
+            judged > 0,
+            "{name}: the rest zigzag cuts rows above A's floor"
+        );
     }
 }

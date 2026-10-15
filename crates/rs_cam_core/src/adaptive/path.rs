@@ -2483,8 +2483,15 @@ fn emit_helical_starter_pocket(
     tool_radius: f64,
     pass_load: Option<(&PassLoad, f64, &LinkLoad)>,
 ) -> Option<(Vec<AdaptiveSegment>, P2)> {
-    let medial =
-        find_entry_via_distance_transform(grid, machinable_mask, boundary_distances, tool_radius)?;
+    // B10: under the 2D pass load the starter stands on material: on a
+    // rest level the medial point can lie where an earlier op cleared.
+    let medial = find_entry_via_distance_transform(
+        grid,
+        machinable_mask,
+        boundary_distances,
+        tool_radius,
+        pass_load.is_some(),
+    )?;
     // Need the medial-axis disk to fit the helix (radius `tool_radius`)
     // plus the cutter (radius `tool_radius`) plus a small safety margin.
     let dt_at = grid.boundary_distance_at(boundary_distances, medial.x, medial.y);

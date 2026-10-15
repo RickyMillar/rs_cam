@@ -235,7 +235,9 @@ impl LayeredOp for PocketContour<'_> {
 
 /// The zigzag raster: the wall inset and the scan lines of each region.
 /// ONE kernel for the Zigzag op and the Zigzag pattern of Pocket; each
-/// adapter fills the dials from its own config.
+/// adapter fills the dials from its own config. The rows of each region
+/// lie on the scan lattice of its whole outline (B9), as the rows of a
+/// rest Face lie on the rows of the facing rectangle (B8).
 struct ZigzagRaster {
     stepover: f64,
     angle: f64,
@@ -266,15 +268,23 @@ impl LayeredOp for ZigzagRaster {
         region: &[Polygon2],
         layer: &LayerCtx<'_>,
     ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        // B9: the rows of a rest clip region lie on the rows of the whole
+        // outline, with the direction of each fresh row. Without the
+        // lattice, row 0 sat on the region's own lowest point, so every
+        // rest row moved off the fresh rows and flipped its direction.
+        let lattice =
+            crate::ops::zigzag::scan_lattice_origin(layer.outline, layer.tool_radius, self.angle);
         let mut lines = Vec::new();
         let mut failures = 0;
         for piece in region {
-            let (piece_lines, piece_failures) = crate::ops::zigzag::zigzag_lines_reported(
-                piece,
-                layer.tool_radius,
-                self.stepover,
-                self.angle,
-            );
+            let (piece_lines, piece_failures) =
+                crate::ops::zigzag::zigzag_lines_on_lattice_reported(
+                    piece,
+                    layer.tool_radius,
+                    self.stepover,
+                    self.angle,
+                    lattice,
+                );
             failures += piece_failures;
             lines.extend(piece_lines);
         }

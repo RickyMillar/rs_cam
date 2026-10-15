@@ -21,7 +21,7 @@
 - W3: a Layered op (Pocket, Zigzag, Trace, Profile, Face, Chamfer) writes `prepare` + `emit_level`; hooks `outlines`, `ladder`, `spans`, `annotate`, `reach_band`, `off_grid`.
   `run_layered` owns the ladder, rest rule, one prepare per region, `region_ordering` (R4), cancel per level, spans. `LevelInfo::is_final`: final Z, spring passes too.
 - W3.4: rest rule = `Capabilities::rest_use`. `LevelClip` clips the input; `LevelSkip` only skips (a clipped contour cuts a new wall; Chamfer band = `w + t`); Drill
-  `StockColumn` lowers each hole top and R-plane (D8). 2D Adaptive `LevelMask` (own loop): `level_masks` skips a level, seeds the planner from the raw mask. Rest Face keeps the fresh rows (`FaceLattice`, B8). Zigzag op and Pocket share `ZigzagRaster`.
+  `StockColumn` lowers each hole top and R-plane (D8). 2D Adaptive `LevelMask` (own loop): `level_masks` skips a level, seeds the planner from the raw mask. Rest Face keeps the fresh rows (`FaceLattice`, B8). Zigzag op and Pocket share `ZigzagRaster`, rows on the lattice of `LayerCtx::outline` (B9).
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field
   beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()`
