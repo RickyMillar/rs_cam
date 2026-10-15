@@ -235,6 +235,14 @@ fn pencil_curvature(op: &mut OperationConfig) {
     cfg.detector = PencilDetector::Curvature;
 }
 
+/// W6.4.6: the link stage of Steep and Shallow on.
+fn steep_shallow_hookup(op: &mut OperationConfig) {
+    let OperationConfig::SteepShallow(cfg) = op else {
+        unreachable!("steep and shallow arm on another op")
+    };
+    cfg.hookup_mm = STEEP_SHALLOW_HOOKUP_MM;
+}
+
 fn spiral_outside_in(op: &mut OperationConfig) {
     let OperationConfig::SpiralFinish(cfg) = op else {
         unreachable!("spiral arm on another op")
@@ -445,6 +453,10 @@ fn use_curve(session: &mut ProjectSession, index: usize, model: rs_cam_core::ses
 /// degrees: radius `R sin 20` = 3.4 mm), so the stage can join a row over it.
 const DROP_CUTTER_HOOKUP_MM: f64 = 10.0;
 
+/// The Steep and Shallow link-stage cap (mm) of the `rest_hookup` arm: the
+/// Drop Cutter cap, so the two raster families link on one rule.
+const STEEP_SHALLOW_HOOKUP_MM: f64 = DROP_CUTTER_HOOKUP_MM;
+
 /// The boundary rectangle `[x0, y0, x1, y1]` (mm) of the `regions` arms.
 /// It is off centre and cuts through the cap (foot radius about 9.2 mm),
 /// so a kernel keeps only a part of the cap.
@@ -468,8 +480,10 @@ const REGION_OPS: &[OperationType] = &[
 /// Drill (`drilling.rs`, the stock column of D8), Adaptive3d,
 /// Pencil and Unified Finish (`finish_3d.rs`), the raster link stage of
 /// Drop Cutter and Scallop, the contour filter of Waterline
-/// (`finish_raster.rs`, W6.1), and Project Curve (`curve_engrave.rs`). Each is an op whose `Capabilities::rest_use`
-/// is not `RestUse::None`.
+/// (`finish_raster.rs`, W6.1), Project Curve (`curve_engrave.rs`), and the
+/// contour filter of both halves of Steep and Shallow (`finish_3d.rs`,
+/// W6.4.6). Each is an op whose `Capabilities::rest_use` is not
+/// `RestUse::None`.
 const REST_READERS: &[OperationType] = &[
     OperationType::Pocket,
     OperationType::Zigzag,
@@ -486,6 +500,7 @@ const REST_READERS: &[OperationType] = &[
     OperationType::Scallop,
     OperationType::Waterline,
     OperationType::ProjectCurve,
+    OperationType::SteepShallow,
 ];
 
 fn cases() -> Vec<Case> {
@@ -501,7 +516,7 @@ fn cases() -> Vec<Case> {
             curve: CurveModel::Fixture,
         })
         .collect();
-    let variants: [(OperationType, &'static str, Tweak, Source, bool); 17] = [
+    let variants: [(OperationType, &'static str, Tweak, Source, bool); 19] = [
         (
             OperationType::Pocket,
             "zigzag",
@@ -621,6 +636,23 @@ fn cases() -> Vec<Case> {
             "curvature",
             pencil_curvature,
             Source::Fresh,
+            false,
+        ),
+        // W6.4.6: Steep and Shallow over the remaining stock in a region
+        // (its `rest` arm is a `REST_READERS` arm), and its link stage over
+        // the remaining stock.
+        (
+            OperationType::SteepShallow,
+            "rest_regions",
+            no_tweak,
+            Source::Rest,
+            true,
+        ),
+        (
+            OperationType::SteepShallow,
+            "rest_hookup",
+            steep_shallow_hookup,
+            Source::Rest,
             false,
         ),
     ];
@@ -978,6 +1010,11 @@ fn every_op_keeps_its_toolpath() {
         actual["project_curve/split_chained"].rapid_count
             < actual["project_curve/split"].rapid_count,
         "project_curve/split_chained: the link stage joins no gap, so the arm proves nothing"
+    );
+    // W6.4.6: the Steep and Shallow link stage acts on the rest arm.
+    assert_ne!(
+        actual["steep_shallow/rest_hookup"].moves_hash, actual["steep_shallow/rest"].moves_hash,
+        "steep_shallow/rest_hookup: the link stage changes nothing, so the arm proves nothing"
     );
     // The link stage acts: it changes the arm it is added to.
     assert_ne!(

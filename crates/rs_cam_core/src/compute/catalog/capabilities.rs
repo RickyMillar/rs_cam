@@ -202,7 +202,9 @@ pub enum RestUse {
     /// the stock grid holds no answer there. A stretch in air is dropped
     /// only when a retract and a re-entry take less time than the feed
     /// through it. The op splits a contour into runs as its boundary
-    /// filter does (W6.1). Waterline.
+    /// filter does (W6.1). Waterline; both halves of Steep and Shallow
+    /// (W6.4.6: the contours of the steep half, the raster rows of the
+    /// shallow half, each point at its own tool tip Z).
     ContourFilter,
     /// The planner owns the stock: it plans each run against its own
     /// dexel stock, seeded from the remaining stock. 3D Rough.

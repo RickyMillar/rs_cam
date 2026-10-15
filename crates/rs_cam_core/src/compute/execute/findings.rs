@@ -184,10 +184,12 @@ impl RecordFindings for crate::finish::unified_finish::UnifiedFinishReport {
     }
 }
 
-/// A Steep and Shallow pass (W6.4.4): the split is span input, not a
-/// finding. Nothing to record.
-impl RecordFindings for crate::finish::steep_shallow::SteepShallowSplit {
-    fn record_into(&self, _findings: &mut GenerationFindings) {}
+/// A Steep and Shallow pass: its link stage totals (G-LINKVISIBLE), `Some`
+/// exactly when the `hookup_mm` stage ran (W6.4.6).
+impl RecordFindings for crate::finish::steep_shallow::SteepShallowReport {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.record(&self.relink);
+    }
 }
 
 /// A pencil pass: its tip float (a centreline op always measures it, zero
@@ -307,8 +309,9 @@ impl RecordFindings for crate::geometry::region_mask::RegionCapReport {
 /// MEASUREMENT: record it even when every counter is zero, because "the
 /// pass ran and had no junction" differs from "the pass never ran".
 ///
-/// Four families reach here, each through its own hookup dial:
-/// `unified_finish`, `scallop`, `drop_cutter` and `waterline`. They share
+/// Five families reach here, each through its own hookup dial:
+/// `unified_finish`, `scallop`, `drop_cutter`, `waterline` and
+/// `steep_shallow` (W6.4.6). They share
 /// the slot because they share the kernel, and one toolpath is one
 /// operation. The pencil runs a different linker and has its own slot.
 impl RecordFindings for crate::finish::unified_finish::RelinkTotals {

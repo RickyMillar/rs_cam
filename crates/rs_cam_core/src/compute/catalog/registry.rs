@@ -885,14 +885,17 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
         honors_pinned_bottom_z: false,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
-        link_ceiling: LinkCeilingNeed::NoLink,
+        // W6.4.6: the `hookup_mm` link stage reads the remaining stock.
+        link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
         move_count: MoveCountModel::Raster,
         doc_basis: DocBasis::SurfaceHeights,
         air_cut_hint: AirCutHint::SurfaceFinish,
-        relink_dial: None,
+        relink_dial: Some("hookup_mm"),
         axial_envelope: AxialEnvelope::Finish3d,
-        rest_use: RestUse::None,
+        // W6.4.6 (ruling R-W6.4b): both halves keep only the points that
+        // pass material, by the Waterline rule.
+        rest_use: RestUse::ContourFilter,
         territory_xy: TerritoryXy::Regions,
         plans_bands: false,
         ramp_descent: false,

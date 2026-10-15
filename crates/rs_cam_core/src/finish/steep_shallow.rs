@@ -19,15 +19,20 @@ use std::ops::Range;
 use crate::compute::spans::RegionNode;
 use crate::finish::composed::{ComposedSurfaceOp, Routed, compose, composed_spans};
 use crate::finish::finish_setup::FinishResolutionPolicy;
+use crate::finish::surface_link::{FinishingLinkStage, LinkGeometry, relink_fragments};
+use crate::finish::unified_finish::RelinkTotals;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::machine::kinematics::LinkKinematics;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::ops::waterline::waterline_contours;
+use crate::ops::waterline::{AirBridge, bridge_air_stretches, waterline_contours};
 use crate::surface::dropcutter::batch_drop_cutter;
 use crate::surface::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
+use crate::trace::toolpath_spans::AnnotatedToolpath;
+use crate::trace::transform_provenance::ReconcileSet;
 
 use tracing::{debug, info};
 
@@ -132,7 +137,8 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
 
 /// The steep sub-kernel: waterline contours filtered to the steep+overlap
 /// cells. Polls `cancel` once per Z level (the outer waterline-contour
-/// loop).
+/// loop). Gives the toolpath and the index of the first move of each Z
+/// level (W6.4.6: the link stage links inside one level only).
 ///
 /// W6.4.4: this is the op's OWN emitter, not the waterline kernel of
 /// Unified Finish: the 30° contour-majority filter, the per-point keep on
@@ -143,6 +149,9 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
 /// predicate below — a contour point survives only when it's both in the
 /// expanded steep grid AND inside a machining-boundary region (when one is
 /// given). `None` reproduces today's steep-grid-only filtering byte-for-byte.
+///
+/// `rest` (W6.4.6): a kept point must also pass material at the level
+/// ([`SteepShallowRest`]). `None` (a fresh pass) adds no rule.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn emit_steep_passes(
     mesh: &TriangleMesh,
@@ -159,9 +168,11 @@ fn emit_steep_passes(
     plunge_rate: f64,
     safe_z: f64,
     boundary_regions: Option<&RegionSet<'_>>,
+    rest: Option<&SteepShallowRest<'_>>,
     cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
+) -> Result<(Toolpath, Vec<usize>), Cancelled> {
     let mut tp = Toolpath::new();
+    let mut level_starts = Vec::new();
 
     let steep_threshold = 30.0_f64.to_radians(); // Filter out contours that are mostly shallow
 
@@ -179,6 +190,7 @@ fn emit_steep_passes(
     );
     for z in z_levels {
         check_cancel(cancel)?;
+        level_starts.push(tp.moves.len());
         let contours = waterline_contours(mesh, index, cutter, z, sampling);
 
         for contour in &contours {
@@ -207,7 +219,7 @@ fn emit_steep_passes(
             // steep grid AND (when given) a machining-boundary region,
             // preserving contour ordering so we can tell which survivors
             // are contiguous.
-            let keep: Vec<bool> = contour
+            let mut keep: Vec<bool> = contour
                 .iter()
                 .map(|p| {
                     let in_steep_grid = slope_map
@@ -218,6 +230,25 @@ fn emit_steep_passes(
                     in_steep_grid && in_region
                 })
                 .collect();
+            // W6.4.6: the rest rule, then the air-stretch time rule.
+            if let Some(rest) = rest {
+                let inside = keep.clone();
+                for (kept, p) in keep.iter_mut().zip(contour) {
+                    *kept = *kept && (rest.standing)(P3::new(p.x, p.y, z));
+                }
+                bridge_air_stretches(
+                    contour,
+                    &inside,
+                    &mut keep,
+                    true,
+                    &AirBridge {
+                        feed_rate,
+                        plunge_rate,
+                        safe_z,
+                        timing: rest.split_timing,
+                    },
+                );
+            }
 
             let kept_count = keep.iter().filter(|&&k| k).count();
             if kept_count < 3 {
@@ -323,7 +354,7 @@ fn emit_steep_passes(
         }
     }
 
-    Ok(tp)
+    Ok((tp, level_starts))
 }
 
 /// The shallow sub-kernel: a zigzag raster filtered to the shallow+overlap
@@ -338,7 +369,10 @@ fn emit_steep_passes(
 /// still cheap since it only gates which precomputed grid points get
 /// emitted). `None` reproduces today's shallow-grid-only filtering
 /// byte-for-byte.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+///
+/// `rest` (W6.4.6): a kept point must also pass material at its drop
+/// ([`SteepShallowRest`]). `None` (a fresh pass) adds no rule.
+#[allow(clippy::too_many_arguments)]
 fn emit_shallow_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -351,6 +385,7 @@ fn emit_shallow_passes(
     plunge_rate: f64,
     safe_z: f64,
     boundary_regions: Option<&RegionSet<'_>>,
+    rest: Option<&SteepShallowRest<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -363,8 +398,6 @@ fn emit_shallow_passes(
     for row in 0..grid.rows {
         check_cancel(cancel)?;
         let reverse = row % 2 == 1;
-        let mut in_region = false;
-        let mut run: Vec<P3> = Vec::new();
 
         let cols: Box<dyn Iterator<Item = usize>> = if reverse {
             Box::new((0..grid.cols).rev())
@@ -372,6 +405,10 @@ fn emit_shallow_passes(
             Box::new(0..grid.cols)
         };
 
+        // The CL points of the row in walk order, and which of them lie in
+        // the shallow region and (when given) a machining-boundary region.
+        let mut points: Vec<P3> = Vec::with_capacity(grid.cols);
+        let mut inside: Vec<bool> = Vec::with_capacity(grid.cols);
         for col in cols {
             let cl = grid.get(row, col);
             // Read world coordinates straight off the CL point rather than
@@ -380,60 +417,67 @@ fn emit_shallow_passes(
             // world X/Y when `direction_deg == 0.0` (which the call above
             // hardcodes, but `cl.x`/`cl.y` are always world-frame regardless
             // of sampling direction, so this removes that trap entirely).
-            let x = cl.x;
-            let y = cl.y;
+            let (x, y) = (cl.x, cl.y);
+            let is_shallow = slope_map
+                .world_to_cell(x, y)
+                .is_some_and(|(r, c)| shallow_eroded.get(r * slope_map.cols + c) == Some(&true))
+                && boundary_regions.is_none_or(|regions| regions.contains(&P2::new(x, y)));
+            points.push(P3::new(x, y, cl.z));
+            inside.push(is_shallow);
+        }
 
-            // Check if this point is in the shallow region and (when given)
-            // inside a machining-boundary region.
-            let is_shallow = slope_map.world_to_cell(x, y).is_some_and(|(_r, _c)| {
-                let idx = _r * slope_map.cols + _c;
-                idx < shallow_eroded.len() && shallow_eroded[idx]
-            }) && boundary_regions
-                .is_none_or(|regions| regions.contains(&P2::new(x, y)));
+        // W6.4.6: the rest rule, then the air-stretch time rule.
+        let mut keep = inside.clone();
+        if let Some(rest) = rest {
+            for (kept, p) in keep.iter_mut().zip(&points) {
+                *kept = *kept && (rest.standing)(*p);
+            }
+            bridge_air_stretches(
+                &points,
+                &inside,
+                &mut keep,
+                false,
+                &AirBridge {
+                    feed_rate,
+                    plunge_rate,
+                    safe_z,
+                    timing: rest.split_timing,
+                },
+            );
+        }
 
-            if is_shallow {
-                let z = cl.z + stock_to_leave;
-                run.push(P3::new(x, y, z));
-                in_region = true;
-            } else if in_region {
-                use crate::toolpath::MoveIntent;
-                // Exiting region — emit the run
-                if run.len() >= 2 {
-                    tp.rapid_to_with_intent(
-                        P3::new(run[0].x, run[0].y, safe_z),
-                        MoveIntent::Linking,
-                    );
-                    tp.feed_to_with_intent(run[0], plunge_rate, MoveIntent::EntryPlunge);
-                    for pt in &run[1..] {
-                        tp.feed_to_with_intent(*pt, feed_rate, MoveIntent::FinishingCut);
-                    }
-                    if let Some(&last) = run.last() {
-                        tp.rapid_to_with_intent(
-                            P3::new(last.x, last.y, safe_z),
-                            MoveIntent::Retract,
-                        );
-                    }
-                }
+        // Emit each run of kept points.
+        let mut run: Vec<P3> = Vec::new();
+        for (p, &kept) in points.iter().zip(&keep) {
+            if kept {
+                run.push(P3::new(p.x, p.y, p.z + stock_to_leave));
+            } else {
+                emit_shallow_run(&mut tp, &run, feed_rate, plunge_rate, safe_z);
                 run.clear();
-                in_region = false;
             }
         }
-
-        // Flush remaining run at end of row
-        if run.len() >= 2 {
-            use crate::toolpath::MoveIntent;
-            tp.rapid_to_with_intent(P3::new(run[0].x, run[0].y, safe_z), MoveIntent::Linking);
-            tp.feed_to_with_intent(run[0], plunge_rate, MoveIntent::EntryPlunge);
-            for pt in &run[1..] {
-                tp.feed_to_with_intent(*pt, feed_rate, MoveIntent::FinishingCut);
-            }
-            if let Some(&last) = run.last() {
-                tp.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
-            }
-        }
+        emit_shallow_run(&mut tp, &run, feed_rate, plunge_rate, safe_z);
     }
 
     Ok(tp)
+}
+
+/// Emit one shallow raster run: a rapid over its start, a plunge, the cut,
+/// and a rapid retract. A run of fewer than two points emits nothing.
+fn emit_shallow_run(tp: &mut Toolpath, run: &[P3], feed_rate: f64, plunge_rate: f64, safe_z: f64) {
+    use crate::toolpath::MoveIntent;
+    let (Some(&first), Some(&last)) = (run.first(), run.last()) else {
+        return;
+    };
+    if run.len() < 2 {
+        return;
+    }
+    tp.rapid_to_with_intent(P3::new(first.x, first.y, safe_z), MoveIntent::Linking);
+    tp.feed_to_with_intent(first, plunge_rate, MoveIntent::EntryPlunge);
+    for pt in run.iter().skip(1) {
+        tp.feed_to_with_intent(*pt, feed_rate, MoveIntent::FinishingCut);
+    }
+    tp.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
 }
 
 /// The resolution policy steep/shallow generates on (H3 step 2).
@@ -511,7 +555,14 @@ pub fn steep_shallow_spans(
     toolpath: &Toolpath,
     split: &SteepShallowSplit,
 ) -> Vec<crate::trace::toolpath_spans::Span> {
-    composed_spans::<SteepShallowOp<'_>>(toolpath, &[], split)
+    composed_spans::<SteepShallowOp<'_>>(
+        toolpath,
+        &[],
+        &SteepShallowReport {
+            split: split.clone(),
+            relink: None,
+        },
+    )
 }
 
 /// Label on the steep half's `Region` span — the handle sentries use to
@@ -578,9 +629,11 @@ pub fn steep_shallow_toolpath_split_with_resolution(
         params,
         boundary_regions,
         resolution,
+        rest: None,
+        link_stage: None,
     };
     let composed = compose(&op, cancel)?;
-    Ok((composed.toolpath, composed.report))
+    Ok((composed.toolpath, composed.report.split))
 }
 
 // ── The composed op (W6.4.4) ─────────────────────────────────────────────
@@ -600,6 +653,39 @@ pub(crate) struct SteepShallowOp<'a> {
     /// The generation and classification grid
     /// ([`steep_shallow_generation_resolution`] in production).
     pub resolution: FinishResolutionPolicy,
+    /// W6.4.6: the rest inputs. `Some` only on a rest pass (the territory
+    /// accepted the remaining stock as the rest reference).
+    pub rest: Option<SteepShallowRest<'a>>,
+    /// W6.4.6: the shared finishing link stage, `Some` when `hookup_mm` is
+    /// above zero. Its ceiling comes from `link_ceiling_for`.
+    pub link_stage: Option<FinishingLinkStage<'a>>,
+}
+
+/// The rest rule of a rest pass (W6.4.6, ruling R-W6.4b): the Waterline
+/// `RestUse::ContourFilter` rule (W6.1), applied to the points of both
+/// halves.
+///
+/// Each emitter folds `standing` into its per-point keep, beside the cell
+/// mask and the boundary. A stretch that only this rule drops, between two
+/// kept points, comes back when the feed through it is not slower than a
+/// retract and a re-entry ([`bridge_air_stretches`]).
+pub(crate) struct SteepShallowRest<'a> {
+    /// True when material stands in the reach of the tool at a point. The
+    /// point carries the tool tip Z before `stock_to_leave` (the steep
+    /// level, the shallow drop). The adapter builds it from
+    /// `standing_material::standing_near` and the remaining stock.
+    pub standing: &'a dyn Fn(P3) -> bool,
+    /// The machine envelope that times a dropped stretch. `None`: no time
+    /// model, so the rule drops no stretch between two kept points.
+    pub split_timing: Option<&'a LinkKinematics>,
+}
+
+/// What the composed op reports: the split of the two halves and the link
+/// stage totals.
+pub(crate) struct SteepShallowReport {
+    pub split: SteepShallowSplit,
+    /// G-LINKVISIBLE: `Some` exactly when the link stage ran.
+    pub relink: Option<RelinkTotals>,
 }
 
 /// The two regions of the op. Each one is a cell mask on the classifier
@@ -628,12 +714,12 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
     type Fragment = (SteepShallowRegion, Toolpath);
     type Memo = ();
     type Annotation = ();
-    type Report = SteepShallowSplit;
+    type Report = SteepShallowReport;
 
     fn classify(
         &self,
         cancel: &dyn CancelCheck,
-    ) -> Result<(SteepShallowClassified, SteepShallowSplit), Cancelled> {
+    ) -> Result<(SteepShallowClassified, SteepShallowReport), Cancelled> {
         let (mesh, index, cutter, params, resolution) = (
             self.mesh,
             self.index,
@@ -719,9 +805,12 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
                 z_top,
                 z_bottom,
             },
-            SteepShallowSplit {
-                steep: 0..0,
-                shallow: 0..0,
+            SteepShallowReport {
+                split: SteepShallowSplit {
+                    steep: 0..0,
+                    shallow: 0..0,
+                },
+                relink: self.link_stage.as_ref().map(|_| RelinkTotals::default()),
             },
         ))
     }
@@ -737,16 +826,15 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
         classified: &SteepShallowClassified,
         region: usize,
         _memo: &mut (),
-        _report: &mut SteepShallowSplit,
+        report: &mut SteepShallowReport,
         cancel: &dyn CancelCheck,
     ) -> Result<Option<(SteepShallowRegion, Toolpath)>, Cancelled> {
         let params = self.params;
         let slope_map = &classified.surface.slope_map;
         match region {
             // Generate steep (waterline) passes
-            0 => Ok(Some((
-                SteepShallowRegion::Steep,
-                emit_steep_passes(
+            0 => {
+                let (tp, level_starts) = emit_steep_passes(
                     self.mesh,
                     self.index,
                     self.cutter,
@@ -761,13 +849,17 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
                     params.plunge_rate,
                     params.safe_z,
                     self.boundary_regions,
+                    self.rest.as_ref(),
                     cancel,
-                )?,
-            ))),
+                )?;
+                Ok(Some((
+                    SteepShallowRegion::Steep,
+                    self.link_levels(tp, &level_starts, report),
+                )))
+            }
             // Generate shallow (parallel) passes
-            1 => Ok(Some((
-                SteepShallowRegion::Shallow,
-                emit_shallow_passes(
+            1 => {
+                let tp = emit_shallow_passes(
                     self.mesh,
                     self.index,
                     self.cutter,
@@ -779,9 +871,11 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
                     params.plunge_rate,
                     params.safe_z,
                     self.boundary_regions,
+                    self.rest.as_ref(),
                     cancel,
-                )?,
-            ))),
+                )?;
+                Ok(Some((SteepShallowRegion::Shallow, self.link(tp, report))))
+            }
             _ => Ok(None),
         }
     }
@@ -791,7 +885,7 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
         &self,
         _classified: SteepShallowClassified,
         fragments: Vec<(SteepShallowRegion, Toolpath)>,
-        split: &mut SteepShallowSplit,
+        report: &mut SteepShallowReport,
         _cancel: &dyn CancelCheck,
     ) -> Result<Routed<()>, Cancelled> {
         let mut steep_tp = Toolpath::new();
@@ -813,7 +907,7 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
         // Merge: steep_first means steep toolpath comes first
         let (n_steep, n_shallow) = (steep_tp.moves.len(), shallow_tp.moves.len());
         let mut tp = Toolpath::new();
-        *split = if self.params.steep_first {
+        report.split = if self.params.steep_first {
             tp.moves.extend(steep_tp.moves);
             tp.moves.extend(shallow_tp.moves);
             SteepShallowSplit {
@@ -845,7 +939,8 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
     /// Z, so its runs must keep their relative depth order. The shallow
     /// half is a raster over a height field: its runs are materially
     /// independent of visiting order.
-    fn order_constraints(split: &SteepShallowSplit) -> Vec<RegionNode> {
+    fn order_constraints(report: &SteepShallowReport) -> Vec<RegionNode> {
+        let split = &report.split;
         vec![
             RegionNode {
                 move_range: split.steep.clone(),
@@ -862,9 +957,10 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
     fn label_spans(
         toolpath: &Toolpath,
         _annotations: &[()],
-        split: &SteepShallowSplit,
+        report: &SteepShallowReport,
     ) -> Vec<crate::trace::toolpath_spans::Span> {
         use crate::compute::spans::spans_from_cutting_runs;
+        let split = &report.split;
         use crate::trace::toolpath_spans::{Span, SpanKind};
 
         let mut spans = spans_from_cutting_runs(toolpath, "Steep/shallow run");
@@ -885,6 +981,69 @@ impl ComposedSurfaceOp for SteepShallowOp<'_> {
         halves.sort_by_key(|s| s.start_move);
         spans.splice(insert_at..insert_at, halves);
         spans
+    }
+}
+
+impl SteepShallowOp<'_> {
+    /// Run the shared link stage over `tp`, when it is on. `tp` unchanged
+    /// when it is off.
+    fn link(&self, tp: Toolpath, report: &mut SteepShallowReport) -> Toolpath {
+        let Some(stage) = &self.link_stage else {
+            return tp;
+        };
+        let params = self.params;
+        let rp = stage.params(&LinkGeometry {
+            stock_to_leave: params.stock_to_leave,
+            sampling: params.sampling,
+            feed_rate: params.feed_rate,
+            plunge_rate: params.plunge_rate,
+            safe_z: params.safe_z,
+            // G-TIERBURIAL: a link feed is refined against the surface
+            // within the op tolerance, or refused.
+            link_tolerance: Some(params.tolerance),
+        });
+        let (linked, rep) = relink_fragments(
+            AnnotatedToolpath::new(tp),
+            self.mesh,
+            self.index,
+            self.cutter,
+            &rp,
+        );
+        if let Some(totals) = report.relink.as_mut() {
+            totals.add(&rep);
+        }
+        linked
+            .reconcile(&mut ReconcileSet::empty())
+            .into_inner()
+            .toolpath
+    }
+
+    /// [`Self::link`] for the steep half, one Z level at a time: the stage
+    /// reorders the runs it links, and the steep half must keep its Z
+    /// ladder (its `depth_ordered` node).
+    fn link_levels(
+        &self,
+        tp: Toolpath,
+        level_starts: &[usize],
+        report: &mut SteepShallowReport,
+    ) -> Toolpath {
+        if self.link_stage.is_none() {
+            return tp;
+        }
+        let mut out = Toolpath::new();
+        let mut moves = tp.moves;
+        for &start in level_starts.iter().rev() {
+            let level = Toolpath {
+                moves: moves.split_off(start.min(moves.len())),
+            };
+            if level.moves.is_empty() {
+                continue;
+            }
+            let mut linked = self.link(level, report).moves;
+            linked.append(&mut out.moves);
+            out.moves = linked;
+        }
+        out
     }
 }
 
@@ -1084,7 +1243,7 @@ mod tests {
         let steep_grid = classify_steep_shallow(&slope_map, 40.0);
         let steep_expanded = dilate_grid(&steep_grid, rows, cols, 2);
 
-        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+        let (steep_tp, _) = crate::interrupt::run_uncancellable(|c| {
             emit_steep_passes(
                 &mesh,
                 &si,
@@ -1099,6 +1258,7 @@ mod tests {
                 1000.0,
                 500.0,
                 30.0,
+                None,
                 None,
                 c,
             )
@@ -1175,6 +1335,7 @@ mod tests {
                 1000.0,
                 500.0,
                 30.0,
+                None,
                 None,
                 c,
             )
@@ -1329,7 +1490,7 @@ mod tests {
             max_adjacent_spacing = max_adjacent_spacing.max(d);
         }
 
-        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+        let (steep_tp, _) = crate::interrupt::run_uncancellable(|c| {
             emit_steep_passes(
                 &mesh,
                 &si,
@@ -1344,6 +1505,7 @@ mod tests {
                 1000.0,
                 500.0,
                 30.0,
+                None,
                 None,
                 c,
             )
@@ -1412,10 +1574,10 @@ mod tests {
         // Every cell steep: the whole contour should survive the filter.
         let all_steep = vec![true; rows * cols];
 
-        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+        let (steep_tp, _) = crate::interrupt::run_uncancellable(|c| {
             emit_steep_passes(
                 &mesh, &si, &cutter, &slope_map, &all_steep, 8.0, 7.5, 100.0, 1.0, 0.0, 1000.0,
-                500.0, 30.0, None, c,
+                500.0, 30.0, None, None, c,
             )
         });
 
@@ -1510,5 +1672,135 @@ mod tests {
             }
         }
         assert!(saw_cut, "expected at least one cutting move");
+    }
+
+    // ── W6.4.6: the rest rule ────────────────────────────────────────
+
+    /// The op with a rest rule `standing`, timed by the default machine.
+    fn rest_toolpath(standing: &dyn Fn(P3) -> bool) -> (Toolpath, SteepShallowSplit) {
+        let timing = crate::machine::MachineProfile::default().link_kinematics();
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = SteepShallowParams {
+            stepover: 2.0,
+            z_step: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..SteepShallowParams::default()
+        };
+        let op = SteepShallowOp {
+            mesh: &mesh,
+            index: &si,
+            cutter: &cutter,
+            params: &params,
+            boundary_regions: None,
+            resolution: steep_shallow_generation_resolution(&cutter, params.tolerance),
+            rest: Some(SteepShallowRest {
+                standing,
+                split_timing: Some(&timing),
+            }),
+            link_stage: None,
+        };
+        let composed = crate::interrupt::run_uncancellable(|c| compose(&op, c));
+        (composed.toolpath, composed.report.split)
+    }
+
+    /// The X of each cutting move in `range`.
+    fn cut_xs(tp: &Toolpath, range: Range<usize>) -> Vec<f64> {
+        tp.moves[range]
+            .iter()
+            .filter(|m| {
+                matches!(m.move_type, crate::toolpath::MoveType::Linear { .. })
+                    && m.intent == crate::toolpath::MoveIntent::FinishingCut
+            })
+            .map(|m| m.target.x)
+            .collect()
+    }
+
+    /// A rule that sees material only at `x < 0`:
+    ///
+    /// - confines the shallow half to `x < 0`: a dropped stretch at the end
+    ///   of a raster row has no kept point after it;
+    /// - drops a part of the steep half at `x > 0`: on a high contour the
+    ///   retract is shorter than the feed through the dropped half loop,
+    ///   and on a low one the time rule feeds through it.
+    ///
+    /// A rule that sees material everywhere gives the fresh toolpath, so
+    /// the rule alone makes the difference.
+    #[test]
+    fn the_rest_rule_confines_both_halves_to_the_standing_material() {
+        let (fresh, _) = rest_toolpath(&|_| true);
+        let (mesh, si) = make_hemisphere();
+        let params = SteepShallowParams {
+            stepover: 2.0,
+            z_step: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..SteepShallowParams::default()
+        };
+        assert_eq!(
+            format!("{:?}", fresh.moves),
+            format!("{:?}", toolpath(&mesh, &si, &ball_cutter(), &params).moves),
+            "a rule that keeps every point must give the fresh toolpath"
+        );
+        let (_, fresh_split) = rest_toolpath(&|_| true);
+        let (rest, split) = rest_toolpath(&|p| p.x < 0.0);
+        let shallow = cut_xs(&rest, split.shallow);
+        assert!(
+            !shallow.is_empty(),
+            "the shallow half cuts nothing at x < 0"
+        );
+        let worst = shallow.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            worst < 0.0,
+            "the shallow half cuts at x = {worst:.3}, where the rule sees no material"
+        );
+        let right = |xs: Vec<f64>| xs.iter().filter(|&&x| x > 0.0).count();
+        let (fresh_right, rest_right) = (
+            right(cut_xs(&fresh, fresh_split.steep)),
+            right(cut_xs(&rest, split.steep)),
+        );
+        assert!(
+            rest_right < fresh_right,
+            "the steep half keeps {rest_right} cutting moves at x > 0, the fresh one \
+             {fresh_right}: the rule drops no stretch"
+        );
+    }
+
+    /// G-LINKVISIBLE: the report holds link totals exactly when the
+    /// `hookup_mm` stage ran.
+    #[test]
+    fn the_report_holds_link_totals_only_when_the_stage_ran() {
+        let (mesh, si) = make_hemisphere();
+        let cutter = ball_cutter();
+        let params = SteepShallowParams {
+            stepover: 2.0,
+            z_step: 2.0,
+            sampling: 3.0,
+            tolerance: 0.5,
+            ..SteepShallowParams::default()
+        };
+        let report = |link_stage: Option<FinishingLinkStage<'_>>| {
+            let op = SteepShallowOp {
+                mesh: &mesh,
+                index: &si,
+                cutter: &cutter,
+                params: &params,
+                boundary_regions: None,
+                resolution: steep_shallow_generation_resolution(&cutter, params.tolerance),
+                rest: None,
+                link_stage,
+            };
+            crate::interrupt::run_uncancellable(|c| compose(&op, c)).report
+        };
+        assert!(report(None).relink.is_none(), "no stage, no totals");
+        let on = report(Some(FinishingLinkStage {
+            hookup_distance: 5.0,
+            link_ceiling: None,
+            boundary: None,
+            link_kinematics: None,
+        }));
+        let totals = on.relink.expect("a stage that ran records its totals");
+        assert!(totals.fragments > 0, "the stage saw the runs: {totals:?}");
     }
 }

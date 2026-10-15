@@ -14,7 +14,7 @@ use super::composed::run_composed;
 use super::height_field::{
     HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
-use super::shared::{generated_with_spans, op_link_ceiling};
+use super::shared::{finishing_link_stage, generated_with_spans, op_link_ceiling};
 use super::territory::Territory;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
@@ -284,6 +284,12 @@ pub(crate) fn generate_unified_finish(
 /// runner. Cancellable: the cooperative cancel closure is built by
 /// `ctx.cancel_fn()` (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+///
+/// W6.4.6 (ruling R-W6.4b): on a rest pass both halves keep only the
+/// points that pass material in the remaining stock: the Waterline rule
+/// (`RestUse::ContourFilter`, `standing_near`), timed by
+/// `ctx.link_kinematics`. The `hookup_mm` link stage reads the one link
+/// ceiling (`finishing_link_stage` → `op_link_ceiling`).
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
@@ -299,6 +305,17 @@ pub(crate) fn generate_steep_shallow(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
     });
+    let territory = prepared.territory();
+    // W6.4.6: the flat band of `standing_near` around each point, at the
+    // tool tip Z the point carries. The stock and the reach are the ones
+    // the Waterline rule reads (`finish_raster.rs`): the remaining stock
+    // of the context and the cutter radius.
+    let rest_stock = ctx.initial_stock;
+    let radius = ctx.tool_def.radius();
+    let standing = |p: crate::geo::P3| {
+        super::standing_material::standing_near(rest_stock, p.z, radius)
+            .is_none_or(|rule| rule.keeps(crate::geo::P2::new(p.x, p.y)))
+    };
     // W6.4.4: the composed op. Two concatenated passes, not one continuous
     // trace: the barriers of its `order_constraints` keep the halves in
     // their emitted order and keep the steep half's Z ladder, which is what
@@ -309,11 +326,16 @@ pub(crate) fn generate_steep_shallow(
         index: idx,
         cutter: ctx.tool_def,
         params: &params,
-        boundary_regions: prepared.territory().regions(),
+        boundary_regions: territory.regions(),
         resolution: crate::finish::steep_shallow::steep_shallow_generation_resolution(
             ctx.tool_def,
             params.tolerance,
         ),
+        rest: rest_stock.map(|_| crate::finish::steep_shallow::SteepShallowRest {
+            standing: &standing,
+            split_timing: ctx.link_kinematics.as_ref(),
+        }),
+        link_stage: finishing_link_stage(op.op_type(), ctx, territory.regions(), cfg.hookup_mm),
     };
     run_composed(&steep_shallow, ctx)
 }

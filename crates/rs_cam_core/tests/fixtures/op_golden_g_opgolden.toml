@@ -855,6 +855,48 @@ moves_hash = "d96447df91d5e289"
 span_count = 224
 spans_hash = "f7f8307771d733dd"
 
+["steep_shallow/rest"]
+outcome = "ok"
+move_count = 1707
+rapid_count = 167
+linear_count = 1487
+arc_count = 53
+cutting_length_mm = 1893.695
+rapid_length_mm = 1257.024
+bbox_min = [-18.175, -18.175, 0.0]
+bbox_max = [17.825, 17.825, 13.0]
+moves_hash = "ff89068293cf492a"
+span_count = 230
+spans_hash = "98f68510d5f90ee9"
+
+["steep_shallow/rest_hookup"]
+outcome = "ok"
+move_count = 1622
+rapid_count = 106
+linear_count = 1465
+arc_count = 51
+cutting_length_mm = 1881.319
+rapid_length_mm = 778.299
+bbox_min = [-18.175, -18.175, 0.0]
+bbox_max = [17.825, 17.825, 13.0]
+moves_hash = "71ff3962836ca721"
+span_count = 207
+spans_hash = "f9f6cc9ce1c79721"
+
+["steep_shallow/rest_regions"]
+outcome = "ok"
+move_count = 993
+rapid_count = 204
+linear_count = 774
+arc_count = 15
+cutting_length_mm = 902.687
+rapid_length_mm = 830.214
+bbox_min = [-14.0034, -12.5896, 0.0]
+bbox_max = [7.7362, 11.6802, 13.0]
+moves_hash = "e0ed492db4494dc7"
+span_count = 160
+spans_hash = "fcd839368f4c741b"
+
 ["trace/fresh"]
 outcome = "ok"
 move_count = 24

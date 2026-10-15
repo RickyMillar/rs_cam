@@ -2159,6 +2159,15 @@ pub struct SteepShallowConfig {
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// G-LINKSTAGE (W6.4.6): cap on the XY gap a link between two runs of
+    /// one half may span, in mm. **Ships at `0.0`, which is OFF**: the same
+    /// contract and the same reason as [`DropCutterConfig::hookup_mm`]. The
+    /// steep half links inside one Z level only, so its depth order stays.
+    /// On a rest pass each link reads the op's link ceiling
+    /// (`LinkCeilingNeed::WithRemainingStock`).
+    #[serde(default)]
+    #[param(optional)]
+    pub hookup_mm: f64,
 }
 
 impl Default for SteepShallowConfig {
@@ -2177,6 +2186,8 @@ impl Default for SteepShallowConfig {
             stock_to_leave: 0.0,
             tolerance: 0.05,
             spindle_rpm: None,
+            // OFF. See the field doc.
+            hookup_mm: 0.0,
         }
     }
 }

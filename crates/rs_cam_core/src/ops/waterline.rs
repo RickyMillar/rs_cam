@@ -367,25 +367,49 @@ pub struct WaterlineLevel {
     pub rest_dropped: bool,
 }
 
-/// The rest mask of one closed contour: `keep[i]` for each point. A
-/// stretch that only the rest rule dropped, between two kept points, comes
-/// back as kept when the feed through it is not slower than a retract
+/// The motion a run end and a run start make, which
+/// [`bridge_air_stretches`] times against the feed through a stretch.
+pub(crate) struct AirBridge<'t> {
+    pub feed_rate: f64,
+    /// The feed (mm/min) of the plunge that enters a run.
+    pub plunge_rate: f64,
+    pub safe_z: f64,
+    /// `None`: no time model, so every stretch between two kept points is
+    /// fed through (cut more, never less).
+    pub timing: Option<&'t LinkKinematics>,
+}
+
+/// The rest mask of one run of points: `keep[i]` for each point. A stretch
+/// that only the rest rule dropped, between two kept points, comes back as
+/// kept when the feed through it is not slower than a retract
 /// ([`retract_saves_time`]). A stretch next to a point outside the
 /// boundary stays dropped: the boundary ends the run there in any case.
-fn bridge_air_stretches(
-    contour: &[P3],
+/// `closed`: the points are a loop, so the last point leads to the first
+/// (a waterline contour). Open (a raster row, W6.4.6): a stretch at an end
+/// of the row has no kept point after it and stays dropped.
+pub(crate) fn bridge_air_stretches(
+    points: &[P3],
     inside: &[bool],
     keep: &mut [bool],
-    params: &WaterlineParams,
-    timing: Option<&LinkKinematics>,
+    closed: bool,
+    bridge: &AirBridge<'_>,
 ) {
-    let n = contour.len();
+    let n = points.len();
     let Some(first_kept) = keep.iter().position(|&k| k) else {
         return;
     };
+    // The count of points from `first_kept` that the walk visits.
+    let len = if closed { n } else { n - first_kept };
+    let at = |j: usize| {
+        if closed {
+            (first_kept + j) % n
+        } else {
+            first_kept + j
+        }
+    };
     let mut k = 1;
-    while k < n {
-        let i = (first_kept + k) % n;
+    while k < len {
+        let i = at(k);
         if keep.get(i).copied().unwrap_or(true) {
             k += 1;
             continue;
@@ -393,34 +417,38 @@ fn bridge_air_stretches(
         // A dropped stretch starts at `i`; `from` is the kept point before
         // it. Walk to its end.
         let start = k;
-        while k < n && !keep.get((first_kept + k) % n).copied().unwrap_or(true) {
+        while k < len && !keep.get(at(k)).copied().unwrap_or(true) {
             k += 1;
         }
-        let stretch: Vec<usize> = (start..k).map(|j| (first_kept + j) % n).collect();
-        let to = (first_kept + k) % n;
+        if !closed && k >= len {
+            // An open run ends in the stretch: no kept point follows it.
+            break;
+        }
+        let stretch: Vec<usize> = (start..k).map(at).collect();
+        let to = at(k % len);
         let only_rest = stretch
             .iter()
             .all(|&j| inside.get(j).copied().unwrap_or(false));
         let bounded = inside.get(to).copied().unwrap_or(false);
-        let from_i = (first_kept + start - 1) % n;
-        let (Some(&from), Some(&end)) = (contour.get(from_i), contour.get(to)) else {
+        let from_i = at(start - 1);
+        let (Some(&from), Some(&end)) = (points.get(from_i), points.get(to)) else {
             continue;
         };
         let feed_through = only_rest
             && bounded
-            && timing.is_none_or(|t| {
+            && bridge.timing.is_none_or(|t| {
                 let mut path: Vec<P3> = stretch
                     .iter()
-                    .filter_map(|&j| contour.get(j).copied())
+                    .filter_map(|&j| points.get(j).copied())
                     .collect();
                 path.push(end);
                 !retract_saves_time(
                     from,
                     &path,
-                    params.feed_rate,
-                    params.safe_z,
+                    bridge.feed_rate,
+                    bridge.safe_z,
                     RetractDescent::Plunge {
-                        rate_mm_min: params.plunge_rate,
+                        rate_mm_min: bridge.plunge_rate,
                     },
                     t,
                 )
@@ -495,7 +523,18 @@ pub fn waterline_level(
             .map(|(p, &inside)| inside && filter.keep.is_none_or(|k| k(P2::new(p.x, p.y))))
             .collect();
         if filter.keep.is_some() {
-            bridge_air_stretches(contour, &inside, &mut keep, params, filter.split_timing);
+            bridge_air_stretches(
+                contour,
+                &inside,
+                &mut keep,
+                true,
+                &AirBridge {
+                    feed_rate: params.feed_rate,
+                    plunge_rate: params.plunge_rate,
+                    safe_z: params.safe_z,
+                    timing: filter.split_timing,
+                },
+            );
             for (&inside, &kept) in inside.iter().zip(&keep) {
                 if inside {
                     rest_kept |= kept;
