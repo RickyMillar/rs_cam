@@ -2532,8 +2532,8 @@ pub struct ProjectCurveConfig {
     #[param(help = HELP_DEPTH, range = -20.0..=20.0)]
     pub depth: f64,
     #[param(
-        help = "Distance between sample points along curves. Smaller = smoother.",
-        range = 0.1..=5.0,
+        help = "Distance between sample points along curves. Smaller = smoother. Minimum 0.01 mm (operator ruling 2026-10-15).",
+        range = 0.01..=5.0,
     )]
     pub point_spacing: f64,
     pub feed_rate: f64,
