@@ -10,11 +10,11 @@ use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
-use super::composed::run_composed;
+use super::composed::{ComposedLink, run_composed};
 use super::height_field::{
     HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
-use super::shared::{finishing_link_stage, generated_with_spans, op_link_ceiling};
+use super::shared::{generated_with_spans, op_link_ceiling};
 use super::territory::Territory;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
@@ -85,25 +85,18 @@ pub(crate) fn generate_pencil(
 }
 
 /// UnifiedFinish family adapter (P2.c orchestrator —
-/// `planning/unified_finish_planner_design.md`). Mirrors `generate_scallop`
-/// closely: the prologue's ball-tip and mesh checks, inherited-dial params
-/// build, the P2.b `FinishPlannerParams::for_tool` base with the op's three
-/// new dials (`steep_threshold_deg` / `waterline_threshold_deg` /
-/// `overlap_mm`) overridden on top (one-new-dial rule — everything else
-/// inherits the tool-derived conditioning defaults), then the same
-/// cancellable-core-call / annotate / spans tail Scallop uses (the core
-/// call returns the same `ScallopRuntimeAnnotation` type since the
-/// mid-steep band is itself a scallop pass).
+/// `planning/unified_finish_planner_design.md`): `UnifiedFinishOp` on the
+/// composed runner. The adapter builds the params, the P2.b
+/// `FinishPlannerParams::for_tool` base with the op's own dials on top
+/// (one-new-dial rule — everything else inherits the tool-derived
+/// conditioning defaults) and the claims config. The runner reads the
+/// territory and the one link ceiling (`ComposedLink::CeilingOnly`).
 pub(crate) fn generate_unified_finish(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, UnifiedFinish, "generate_unified_finish");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
@@ -122,117 +115,10 @@ pub(crate) fn generate_unified_finish(
     // number that this configuration never applies.
     ctx.record(&crate::compute::toolpath_stats::InertClaimsDialFinding::of_config(cfg));
 
-    let territory = prepared.territory();
-    let claims_cfg = cfg.pencil_claims.then(|| {
-        // The stock always feeds the TERRITORY mask; it ALSO feeds crease
-        // detection when the resolved reference is
-        // `CreaseReference::MachinedStock` (build-list item 3 —
-        // `CreaseReference` doc). W6.2: the territory resolved it once,
-        // through the W2.1 stock-vs-mesh guard; this op has no tool tier
-        // after it (`CreaseReference` decides).
-        let territory_stock = territory.reference_stock();
-        // A/M6: resolve the three-valued DIAL into the two-valued field the
-        // detector switches on, HERE — this is the only site that can see
-        // both the operator's setting and what is actually in scope. The
-        // resolution is recorded whatever it is: `Auto`'s derivation is
-        // invisible in every config surface, and pinning `self_probe` over a
-        // real machined prior is the A/M6 footgun measured at −88.7% cutting
-        // when corrected.
-        //
-        // The "prior wanted but absent" case does NOT get a second signal
-        // invented for it here. An op that cuts `FromRemainingStock` with no
-        // snapshot never reaches this function at all — it is refused
-        // upstream as `ComputeStatus::AwaitingPriorStock` (A/M11), which is
-        // the taxonomy for blocked-on-sequencing. What reaches here with no
-        // stock in scope is an op that asked for FRESH stock, and that is a
-        // configuration statement, not a block; the finding's `why()` names
-        // both remedies.
-        let resolution = crate::finish::unified_finish::ClaimsReferenceResolution::resolve(
-            cfg.claims_reference,
-            territory_stock.is_some(),
-        );
-        ctx.record(&crate::compute::toolpath_stats::ClaimsReferenceFinding {
-            resolution,
-            territory_clip_requested: cfg.territory_clip,
-        });
-        // Detector tuning mirrors `attach_generic_rest_analysis`: use the
-        // configured `rest_analysis` cell/depth/margin when present, else
-        // the detector's own defaults. `min_cut_length` has no
-        // `RestAnalysisConfig` equivalent yet, so it always falls back to
-        // `RestFieldParams::default()`.
-        // `routing_radius_mm` is set by `unified_finish_toolpath_with_cancel`
-        // itself (the op's own cutter), so leaving the default here is a
-        // no-op either way.
-        let mut rest_field_params = ctx.rest_analysis.map_or_else(
-            crate::surface::rest_field::RestFieldParams::default,
-            |ra| crate::surface::rest_field::RestFieldParams {
-                cell_mm: ra.cell_mm,
-                min_valley_depth: ra.min_valley_depth,
-                region_margin_mm: ra.region_margin_mm,
-                ..crate::surface::rest_field::RestFieldParams::default()
-            },
-        );
-        // S4 threshold coupling (`unified_finish::ClaimsConfig::
-        // territory_clip` doc): the detector's own rest field (whose
-        // valleys are gated on `rest_field_params.min_valley_depth`) feeds
-        // the S4 mask-AND, which thresholds it at a DIFFERENT value —
-        // `cfg.min_rest_depth_mm` (the S4 per-cell territory gate) —
-        // unless we floor it here. Left to disagree, the mask-AND would
-        // confine generation to islands measuring a different "rest" than
-        // the one S4's mask-AND decided was worth keeping. Only floors
-        // when no deliberate `rest_analysis` dial is
-        // in scope: the session populates `ctx.rest_analysis`
-        // UNCONDITIONALLY from the toolpath config (`session/compute.rs`),
-        // so mere presence is not intent — an untouched default block
-        // (`enabled: false`, dials == `RestFieldParams::default()`) must
-        // not shadow the coupling. `enabled` is the explicit-override
-        // signal, same as `attach_generic_rest_analysis` keys on.
-        if cfg.territory_clip && !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
-            rest_field_params.min_valley_depth = cfg.min_rest_depth_mm;
-        }
-        crate::finish::unified_finish::ClaimsConfig {
-            territory_stock,
-            // A/M6: the RESOLVED reference, never the raw dial. `ClaimsConfig`
-            // takes `CreaseReference` (two-valued, what the detector reads);
-            // `UnifiedFinishConfig::claims_reference` is `ClaimsReference`
-            // (three-valued, what the operator asked for). The resolution
-            // above is the only bridge, and it is recorded.
-            crease_reference: resolution.reference(),
-            rest_field_params,
-            min_rest_depth_mm: cfg.min_rest_depth_mm,
-            territory_clip: cfg.territory_clip,
-            crease_hookup_mm: cfg.crease_hookup_mm,
-        }
-    });
-
-    // B3 / G-LINKLOAD (Phase O item 3): an intra-region link rides the MESH,
-    // which is the material only on a fresh-stock pass. This op is handed
-    // the remaining stock exactly when it cuts what a prior op left — there,
-    // material stands above the design surface wherever nothing has cut yet,
-    // and a surface-riding link is a cutting feed straight through it.
-    //
-    // `None` when no snapshot is in scope, which is the byte-identical
-    // fresh-stock arm (`tests/island_stay_down_links_o3.rs` pins that the
-    // two entry points agree).
-    //
-    // The ENVELOPE radius is the SEARCH BOUND — the furthest lateral offset at
-    // which material could reach this cutter at all — and it is no longer the
-    // whole answer. Inside it the tool's own profile decides
-    // (`LinkCeiling::required_tip_z`): past its tip a cutter RISES, so material
-    // at offset `r` can only strike it if it stands more than
-    // `height_at_radius(r)` above the tip. This comment used to justify a flat
-    // disc with "material anywhere under the tool is material the tool will
-    // hit, and on a tapered ball the shank is what would strike it" — that is
-    // the reasoning the profile rule corrects. Measured on the operator's
-    // 200x200x9.81 relief with the shipped R1.0 tapered ball, the shank stands
-    // 10.97 mm above the tip at r = 2.0, above the board's entire relief: only
-    // material within ~1.5 mm laterally can touch it, so the flat disc
-    // over-reached 2x in radius and lifted every link to the height of ridges
-    // that cannot contact the cutter (one region 898 s -> 1411 s, 1.57x, with
-    // the path held identical). For a FLAT endmill the profile rule is
-    // byte-identical to the flat disc, which is the safety anchor.
-    // R1: the one builder (`op_link_ceiling`) sets all three values.
-    let link_ceiling = op_link_ceiling(op.op_type(), ctx, territory);
+    // The claims config ([`unified_claims_config`]). The op borrows it, and
+    // the A4 finding below reads it after the run, so it lives in this
+    // cell. The runner's build closure fills it from the inputs.
+    let claims_cell = std::cell::OnceCell::new();
     // W6.4: the composed op. `run_composed` records the whole report (the
     // link totals and the C2 cells only when their pass ran, the cascade
     // residual, the dropped and clipped bands, the crease tip float and the
@@ -240,29 +126,64 @@ pub(crate) fn generate_unified_finish(
     // builds the spans (the Region attribution, then the barriers of
     // `order_constraints`), writes the semantic trace and moves the claims
     // detector's rest output onto the result.
-    let unified = crate::finish::unified_finish::UnifiedFinishOp {
-        mesh: m,
-        index: idx,
-        cutter: ctx.tool_def,
-        top_z: ctx.heights.top_z,
-        bottom_z: ctx.heights.bottom_z,
-        params: &params,
-        planner: &planner,
-        machining_boundary: territory.regions(),
-        // P2.d: cost the region route against the real machine envelope
-        // when one is in scope (same plumbing as pencil's P1 W4a hookup).
-        link_kinematics: ctx.link_kinematics.as_ref(),
-        claims: claims_cfg.as_ref(),
-        debug: ctx.debug_ctx,
-        link_ceiling,
-    };
-    let generated = run_composed(&unified, ctx)?;
+    let generated = run_composed(ctx, prepared, ComposedLink::CeilingOnly, |inputs| {
+        let claims = claims_cell
+            .get_or_init(|| {
+                cfg.pencil_claims
+                    .then(|| unified_claims_config(ctx, cfg, inputs.reference_stock))
+            })
+            .as_ref();
+        // B3 / G-LINKLOAD (Phase O item 3): an intra-region link rides the MESH,
+        // which is the material only on a fresh-stock pass. This op is handed
+        // the remaining stock exactly when it cuts what a prior op left — there,
+        // material stands above the design surface wherever nothing has cut yet,
+        // and a surface-riding link is a cutting feed straight through it.
+        //
+        // `None` when no snapshot is in scope, which is the byte-identical
+        // fresh-stock arm (`tests/island_stay_down_links_o3.rs` pins that the
+        // two entry points agree).
+        //
+        // The ENVELOPE radius is the SEARCH BOUND — the furthest lateral offset at
+        // which material could reach this cutter at all — and it is no longer the
+        // whole answer. Inside it the tool's own profile decides
+        // (`LinkCeiling::required_tip_z`): past its tip a cutter RISES, so material
+        // at offset `r` can only strike it if it stands more than
+        // `height_at_radius(r)` above the tip. This comment used to justify a flat
+        // disc with "material anywhere under the tool is material the tool will
+        // hit, and on a tapered ball the shank is what would strike it" — that is
+        // the reasoning the profile rule corrects. Measured on the operator's
+        // 200x200x9.81 relief with the shipped R1.0 tapered ball, the shank stands
+        // 10.97 mm above the tip at r = 2.0, above the board's entire relief: only
+        // material within ~1.5 mm laterally can touch it, so the flat disc
+        // over-reached 2x in radius and lifted every link to the height of ridges
+        // that cannot contact the cutter (one region 898 s -> 1411 s, 1.57x, with
+        // the path held identical). For a FLAT endmill the profile rule is
+        // byte-identical to the flat disc, which is the safety anchor.
+        // R1: the one builder (`op_link_ceiling`) sets all three values; the
+        // runner calls it (`ComposedInputs::link_ceiling`).
+        crate::finish::unified_finish::UnifiedFinishOp {
+            mesh: inputs.mesh.mesh,
+            index: inputs.mesh.index,
+            cutter: ctx.tool_def,
+            top_z: ctx.heights.top_z,
+            bottom_z: ctx.heights.bottom_z,
+            params: &params,
+            planner: &planner,
+            machining_boundary: inputs.boundary,
+            // P2.d: cost the region route against the real machine envelope
+            // when one is in scope (same plumbing as pencil's P1 W4a hookup).
+            link_kinematics: inputs.link_kinematics,
+            claims,
+            debug: ctx.debug_ctx,
+            link_ceiling: inputs.link_ceiling,
+        }
+    })?;
     // A4: the pass has just been planned against a reference stock, and this
     // is the only point where the emitted geometry and that reference are
     // both in scope. Gated on the reference having RESOLVED to a real
     // machined prior — under a self-probe reference `territory_clip` never
     // ran and the op is not a rest pass in the sense this finding is about.
-    if let Some(cfg) = claims_cfg.as_ref()
+    if let Some(cfg) = claims_cell.get().and_then(Option::as_ref)
         && matches!(
             cfg.crease_reference,
             crate::finish::unified_finish::CreaseReference::MachinedStock
@@ -280,6 +201,87 @@ pub(crate) fn generate_unified_finish(
     Ok(generated)
 }
 
+/// The claims config of a Unified Finish with `pencil_claims` on, over
+/// `territory_stock` (the runner's `ComposedInputs::reference_stock`). It
+/// records the `ClaimsReferenceFinding`.
+fn unified_claims_config<'s>(
+    ctx: &ExecutionContext<'_>,
+    cfg: &crate::compute::operation_configs::UnifiedFinishConfig,
+    territory_stock: Option<&'s crate::dexel_stock::TriDexelStock>,
+) -> crate::finish::unified_finish::ClaimsConfig<'s> {
+    // The stock always feeds the TERRITORY mask; it ALSO feeds crease
+    // detection when the resolved reference is
+    // `CreaseReference::MachinedStock` (build-list item 3 —
+    // `CreaseReference` doc). W6.2: the territory resolved it once,
+    // through the W2.1 stock-vs-mesh guard (the runner's
+    // `ComposedInputs::reference_stock`); this op has no tool tier
+    // after it (`CreaseReference` decides).
+    // A/M6: resolve the three-valued DIAL into the two-valued field the
+    // detector switches on, HERE — this is the only site that can see
+    // both the operator's setting and what is actually in scope. The
+    // resolution is recorded whatever it is: `Auto`'s derivation is
+    // invisible in every config surface, and pinning `self_probe` over a
+    // real machined prior is the A/M6 footgun measured at −88.7% cutting
+    // when corrected.
+    //
+    // The "prior wanted but absent" case does NOT get a second signal
+    // invented for it here. An op that cuts `FromRemainingStock` with no
+    // snapshot never reaches this function at all — it is refused
+    // upstream as `ComputeStatus::AwaitingPriorStock` (A/M11), which is
+    // the taxonomy for blocked-on-sequencing. What reaches here with no
+    // stock in scope is an op that asked for FRESH stock, and that is a
+    // configuration statement, not a block; the finding's `why()` names
+    // both remedies.
+    let resolution = crate::finish::unified_finish::ClaimsReferenceResolution::resolve(
+        cfg.claims_reference,
+        territory_stock.is_some(),
+    );
+    ctx.record(&crate::compute::toolpath_stats::ClaimsReferenceFinding {
+        resolution,
+        territory_clip_requested: cfg.territory_clip,
+    });
+    // Detector tuning: the one map of the `rest_analysis` dials
+    // (`dressup_apply::rest_field_params`, which the generic rest analysis
+    // reads too), else the detector's own defaults. The claims pipeline
+    // reads only the cell, the depth, the margin and `min_cut_length`; it
+    // routes on its own fan (`unified_finish_toolpath_with_cancel`).
+    let mut rest_field_params = ctx.rest_analysis.map_or_else(
+        crate::surface::rest_field::RestFieldParams::default,
+        super::dressup_apply::rest_field_params,
+    );
+    // S4 threshold coupling (`unified_finish::ClaimsConfig::
+    // territory_clip` doc): the detector's own rest field (whose
+    // valleys are gated on `rest_field_params.min_valley_depth`) feeds
+    // the S4 mask-AND, which thresholds it at a DIFFERENT value —
+    // `cfg.min_rest_depth_mm` (the S4 per-cell territory gate) —
+    // unless we floor it here. Left to disagree, the mask-AND would
+    // confine generation to islands measuring a different "rest" than
+    // the one S4's mask-AND decided was worth keeping. Only floors
+    // when no deliberate `rest_analysis` dial is
+    // in scope: the session populates `ctx.rest_analysis`
+    // UNCONDITIONALLY from the toolpath config (`session/compute.rs`),
+    // so mere presence is not intent — an untouched default block
+    // (`enabled: false`, dials == `RestFieldParams::default()`) must
+    // not shadow the coupling. `enabled` is the explicit-override
+    // signal, same as `attach_generic_rest_analysis` keys on.
+    if cfg.territory_clip && !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+        rest_field_params.min_valley_depth = cfg.min_rest_depth_mm;
+    }
+    crate::finish::unified_finish::ClaimsConfig {
+        territory_stock,
+        // A/M6: the RESOLVED reference, never the raw dial. `ClaimsConfig`
+        // takes `CreaseReference` (two-valued, what the detector reads);
+        // `UnifiedFinishConfig::claims_reference` is `ClaimsReference`
+        // (three-valued, what the operator asked for). The resolution
+        // above is the only bridge, and it is recorded.
+        crease_reference: resolution.reference(),
+        rest_field_params,
+        min_rest_depth_mm: cfg.min_rest_depth_mm,
+        territory_clip: cfg.territory_clip,
+        crease_hookup_mm: cfg.crease_hookup_mm,
+    }
+}
+
 /// SteepShallow family adapter (W6.4.4): `SteepShallowOp` on the composed
 /// runner. Cancellable: the cooperative cancel closure is built by
 /// `ctx.cancel_fn()` (pinned by
@@ -287,58 +289,45 @@ pub(crate) fn generate_unified_finish(
 ///
 /// W6.4.6 (ruling R-W6.4b): on a rest pass both halves keep only the
 /// points that pass material in the remaining stock: the Waterline rule
-/// (`RestUse::ContourFilter`, `standing_near`), timed by
-/// `ctx.link_kinematics`. The `hookup_mm` link stage reads the one link
-/// ceiling (`finishing_link_stage` → `op_link_ceiling`).
+/// (`RestUse::ContourFilter`), which the runner owns and gives the op as
+/// `ComposedInputs::rest`. The `hookup_mm` link stage is the runner's
+/// (`ComposedLink::Stage`), with the one link ceiling.
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
     let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
     });
-    let territory = prepared.territory();
-    // W6.4.6: the flat band of `standing_near` around each point, at the
-    // tool tip Z the point carries. The stock and the reach are the ones
-    // the Waterline rule reads (`finish_raster.rs`): the remaining stock
-    // after the W2.1 guard, which the territory resolved (C3), and the
-    // cutter radius.
-    let rest_stock = territory.reference_stock();
-    let radius = ctx.tool_def.radius();
-    let standing = |p: crate::geo::P3| {
-        super::standing_material::standing_near(rest_stock, p.z, radius)
-            .is_none_or(|rule| rule.keeps(crate::geo::P2::new(p.x, p.y)))
-    };
     // W6.4.4: the composed op. Two concatenated passes, not one continuous
     // trace: the barriers of its `order_constraints` keep the halves in
     // their emitted order and keep the steep half's Z ladder, which is what
     // lets `UnifiedFinish`-style intra-node reordering apply here too
     // (capability arm in `compute/catalog.rs`).
-    let steep_shallow = crate::finish::steep_shallow::SteepShallowOp {
-        mesh: m,
-        index: idx,
-        cutter: ctx.tool_def,
-        params: &params,
-        boundary_regions: territory.regions(),
-        resolution: crate::finish::steep_shallow::steep_shallow_generation_resolution(
-            ctx.tool_def,
-            params.tolerance,
-        ),
-        rest: rest_stock.map(|_| crate::finish::steep_shallow::SteepShallowRest {
-            standing: &standing,
-            split_timing: ctx.link_kinematics.as_ref(),
-        }),
-        link_stage: finishing_link_stage(op.op_type(), ctx, territory, cfg.hookup_mm),
-    };
-    run_composed(&steep_shallow, ctx)
+    run_composed(
+        ctx,
+        prepared,
+        ComposedLink::Stage {
+            hookup_mm: cfg.hookup_mm,
+        },
+        |inputs| crate::finish::steep_shallow::SteepShallowOp {
+            mesh: inputs.mesh.mesh,
+            index: inputs.mesh.index,
+            cutter: ctx.tool_def,
+            params: &params,
+            boundary_regions: inputs.boundary,
+            resolution: crate::finish::steep_shallow::steep_shallow_generation_resolution(
+                ctx.tool_def,
+                params.tolerance,
+            ),
+            rest: inputs.rest,
+            link_stage: inputs.link_stage,
+        },
+    )
 }
 
 /// RampFinish family adapter (W6.3): [`RampPass`] on the height-field

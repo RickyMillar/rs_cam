@@ -516,7 +516,7 @@ fn cases() -> Vec<Case> {
             curve: CurveModel::Fixture,
         })
         .collect();
-    let variants: [(OperationType, &'static str, Tweak, Source, bool); 19] = [
+    let variants: [(OperationType, &'static str, Tweak, Source, bool); 20] = [
         (
             OperationType::Pocket,
             "zigzag",
@@ -572,6 +572,15 @@ fn cases() -> Vec<Case> {
             "iso_field",
             scallop_iso_field,
             Source::Fresh,
+            false,
+        ),
+        // D1: the iso field over the remaining stock reads the one link
+        // ceiling (ruling R1).
+        (
+            OperationType::Scallop,
+            "iso_field_rest",
+            scallop_iso_field,
+            Source::Rest,
             false,
         ),
         (
@@ -1015,6 +1024,13 @@ fn every_op_keeps_its_toolpath() {
     assert_ne!(
         actual["steep_shallow/rest_hookup"].moves_hash, actual["steep_shallow/rest"].moves_hash,
         "steep_shallow/rest_hookup: the link stage changes nothing, so the arm proves nothing"
+    );
+    // D1: the link ceiling acts on the iso field over the remaining stock.
+    // The iso field ignores the stock in its rings, so only the links
+    // differ.
+    assert_ne!(
+        actual["scallop/iso_field_rest"].moves_hash, actual["scallop/iso_field"].moves_hash,
+        "scallop/iso_field_rest: the link ceiling changes nothing, so the arm proves nothing"
     );
     // The link stage acts: it changes the arm it is added to.
     assert_ne!(

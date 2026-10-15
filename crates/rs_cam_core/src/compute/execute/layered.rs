@@ -6,8 +6,8 @@
 //!
 //! - [`LayeredOp::prepare`] makes the Z-independent geometry of one region;
 //! - [`LayeredOp::emit_level`] cuts that geometry at one level. It can
-//!   fail, it polls the cancel, and it reads the remaining stock
-//!   ([`LevelStock`]) when the op's rest rule cuts per level
+//!   fail, it polls the cancel, and it reads the runner's rest rule at the
+//!   level ([`LevelRest`]) when the op's rest rule cuts per level
 //!   ([`RestUse::ContourFilter`]).
 //!
 //! [`run_layered`] owns everything else, for every Layered op:
@@ -15,7 +15,10 @@
 //! - the ladder ([`LayeredOp::ladder`]);
 //! - the rest step per level, as the op's [`RestUse`] states it
 //!   ([`RestUse::LevelClip`] reads `standing_material::regions_per_level`,
-//!   [`RestUse::LevelSkip`] reads `standing_material::levels_in_reach`);
+//!   [`RestUse::LevelSkip`] reads `standing_material::levels_in_reach`,
+//!   [`RestUse::ContourFilter`] resolves
+//!   `standing_material::ContourFilterRule` once and gives the op the rule
+//!   at each level, then records its level tally);
 //! - one `prepare` per distinct region (the whole outline and each clipped
 //!   region) of an outline, never one per level. Region-first prepares one
 //!   outline at a time and drops its geometry after its last level, so peak
@@ -26,8 +29,10 @@
 //! - the findings: the measured zero of the offset channel (for an op that
 //!   offsets, [`LayeredOp::MEASURES_OFFSETS`]), the rest-level finding and
 //!   each prepare report, through the W2.3 record door;
-//! - the link stage. The op's [`LayeredOp::link`] hook runs on the whole
-//!   toolpath after the last level and before the spans (default: none);
+//! - the link stage. When the op declares one ([`LayeredOp::after_plan_link`],
+//!   default: none), the runner runs the one after-plan link
+//!   (`shared::link_after_plan`) on the whole toolpath after the last level
+//!   and before the spans, and records its totals;
 //! - the spans. The op's [`LayeredOp::spans`] hook builds them (the
 //!   default: the depth runs, snapped to the ladder), and its
 //!   [`LayeredOp::annotate`] hook reads them into the semantic trace (the
@@ -59,22 +64,28 @@
 //! Layered emitter ends.
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use crate::compute::catalog::RestUse;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::operation_configs::RegionOrdering;
+use crate::compute::toolpath_stats::RestLevelsFinding;
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, check_cancel};
+use crate::machine::kinematics::LinkKinematics;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::findings::RecordFindings;
-use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
+use super::shared::{
+    AfterPlanLink, generated_with_depth_run_spans, link_after_plan, with_depth_run_annotation,
+};
 use super::standing_material::{
-    LevelPlan, LevelRegion, OffGrid, levels_in_reach, regions_per_level,
+    ContourFilterRule, LevelPlan, LevelRegion, OffGrid, StandingNear, levels_in_reach,
+    regions_per_level,
 };
 use super::{
     ExecutionContext, GeneratedToolpath, MeshInput, OffsetFailures, OperationError, Prepared,
@@ -128,8 +139,8 @@ pub(crate) struct LayerCtx<'c, I = Polygon2> {
 /// A 2D op steps a [`Polygon2`]: the `Level*` rest rules read it, and a
 /// [`RestUse::LevelClip`] clip gives pieces of it back to `prepare`. A
 /// surface op (Waterline) steps an input with no outline: the runner then
-/// cuts it whole at every level, and the op reads the stock per level
-/// itself ([`LevelStock`]).
+/// cuts it whole at every level, and the op reads the runner's
+/// `ContourFilter` rule per level ([`LevelRest`]).
 pub(crate) trait LayerInput: Clone {
     /// The 2D outline the `Level*` rest rules read, or `None` for an input
     /// with no outline. The runner cuts an input with no outline whole at
@@ -174,14 +185,43 @@ impl LayerInput for MeshInput<'_> {
     }
 }
 
-/// The remaining stock, as [`LayeredOp::emit_level`] gets it at one level.
-#[derive(Clone, Copy)]
-pub(crate) struct LevelStock<'s> {
-    /// The machined stock the op cuts, in the frame of the op, after the
-    /// W2.1 guard (`Territory::reference_stock`, C3). `None`: a fresh op,
-    /// or a rule that reads no reference. A rest rule that cuts per level
-    /// ([`RestUse::ContourFilter`]) reads it at the level's Z.
-    pub remaining: Option<&'s TriDexelStock>,
+/// The runner's rest rule, as [`LayeredOp::emit_level`] gets it at one
+/// level ([`RestUse::ContourFilter`]).
+pub(crate) struct LevelRest<'s> {
+    /// The rule at the level's Z (`ContourFilterRule::at`). `None`: a
+    /// fresh op, or a rest rule that is not `ContourFilter`. The op keeps
+    /// every point then.
+    pub standing: Option<StandingNear<'s>>,
+    /// The time model of the rule (`ContourFilterRule::split_timing`).
+    pub split_timing: Option<&'s LinkKinematics>,
+    /// The runner's level tally (G-RESTLEVELS).
+    tally: &'s Cell<Option<RestLevelsFinding>>,
+}
+
+impl LevelRest<'_> {
+    /// Add this level to the runner's tally: `kept` when the rule kept a
+    /// point inside the boundary, `dropped` when it dropped one (both after
+    /// the time rule). Only the kernel knows them, so the op reports them
+    /// here; the runner records the tally after the last level. No effect
+    /// when [`Self::standing`] is `None`.
+    pub(crate) fn tally(&self, kept: bool, dropped: bool) {
+        if self.standing.is_none() {
+            return;
+        }
+        let mut tally = self.tally.get().unwrap_or(RestLevelsFinding {
+            planned_levels: 0,
+            skipped_levels: 0,
+            clipped_levels: 0,
+            fallback: None,
+        });
+        tally.planned_levels += 1;
+        match (kept, dropped) {
+            (false, true) => tally.skipped_levels += 1,
+            (true, true) => tally.clipped_levels += 1,
+            (_, false) => {}
+        }
+        self.tally.set(Some(tally));
+    }
 }
 
 /// An op in the Layered shape. [`run_layered`] runs it.
@@ -208,8 +248,9 @@ pub(crate) trait LayeredOp {
     /// How the op uses the remaining stock. The adapter reads it from the
     /// op's capabilities (`OperationConfig::capabilities().rest_use`), so
     /// the GUI, MCP and the runner read one answer. The runner acts on
-    /// `LevelClip` and `LevelSkip`. It cuts every other kind whole at each
-    /// level; a `ContourFilter` op filters its own runs in `emit_level`.
+    /// `LevelClip`, `LevelSkip` and `ContourFilter` (it gives the op the
+    /// rule at each level, [`LevelRest`]). It cuts every other kind whole
+    /// at each level.
     fn rest_use(&self) -> RestUse;
 
     /// What a cell off the stock grid holds for [`RestUse::LevelClip`].
@@ -239,7 +280,7 @@ pub(crate) trait LayeredOp {
 
     /// The cut of `geometry` at one level. An empty toolpath is a level
     /// with nothing to cut; the runner skips it. A 2.5D op reads neither
-    /// `stock` nor `cancel`: the runner polls the cancel before each level.
+    /// `rest` nor `cancel`: the runner polls the cancel before each level.
     /// A kernel that runs long inside one level polls `cancel` itself.
     ///
     /// # Errors
@@ -249,7 +290,7 @@ pub(crate) trait LayeredOp {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        stock: &LevelStock<'_>,
+        rest: &LevelRest<'_>,
         cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError>;
 
@@ -289,12 +330,12 @@ pub(crate) trait LayeredOp {
         generated_with_depth_run_spans(toolpath, levels)
     }
 
-    /// The link stage of the whole toolpath. The runner calls it after the
-    /// last level and before [`Self::spans`]. The default links nothing.
-    /// Waterline runs its finishing link stage here (G-LINKSTAGE, with the
-    /// W1.1 link ceiling).
-    fn link(&self, toolpath: Toolpath, _ctx: &ExecutionContext<'_>) -> Toolpath {
-        toolpath
+    /// The finishing link stage of the whole toolpath, when the op has
+    /// one. The runner runs it (`shared::link_after_plan`) after the last
+    /// level and before [`Self::spans`]. The default links nothing.
+    /// Waterline declares one (G-LINKSTAGE, with the one link ceiling).
+    fn after_plan_link(&self) -> Option<AfterPlanLink<'_>> {
+        None
     }
 
     /// The semantic annotation of the finished toolpath. The default reads
@@ -342,12 +383,20 @@ pub(crate) fn run_layered<O: LayeredOp>(
     let cancel_fn = ctx.cancel_fn();
     let tool_radius = ctx.tool_def.radius();
     // C3: the territory resolved both stocks. `ContourFilter` compares the
-    // stock with the surface, so it reads the guarded one; `LevelClip` and
-    // `LevelSkip` have no mesh to guard against.
+    // stock with the surface, so its rule reads the guarded one; `LevelClip`
+    // and `LevelSkip` have no mesh to guard against.
     let territory = prepared.territory();
     let unguarded = territory.unguarded_stock();
-    let stock = LevelStock {
-        remaining: territory.reference_stock(),
+    let contour = ContourFilterRule::resolve(
+        op.rest_use(),
+        territory,
+        tool_radius,
+        ctx.link_kinematics.as_ref(),
+    );
+    let tally = Cell::new(None);
+    let rules = LevelRules {
+        contour: contour.as_ref(),
+        tally: &tally,
     };
     // Checkpoint C: an op that measures its offsets holds a measured zero
     // before the first prepare. Each prepare report adds its own count
@@ -375,7 +424,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
                 let mut emitted = false;
                 for i in 0..levels.len() {
                     check_cancel(&cancel_fn)?;
-                    let Some(piece) = emit_at(op, &layers, &levels, i, &stock, &cancel_fn)? else {
+                    let Some(piece) = emit_at(op, &layers, &levels, i, &rules, &cancel_fn)? else {
                         continue;
                     };
                     if i > 0 && emitted {
@@ -404,7 +453,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
             for i in 0..levels.len() {
                 for outline_layers in &layers {
                     check_cancel(&cancel_fn)?;
-                    let Some(piece) = emit_at(op, outline_layers, &levels, i, &stock, &cancel_fn)?
+                    let Some(piece) = emit_at(op, outline_layers, &levels, i, &rules, &cancel_fn)?
                     else {
                         continue;
                     };
@@ -417,7 +466,13 @@ pub(crate) fn run_layered<O: LayeredOp>(
         }
     }
 
-    let linked = op.link(combined, ctx);
+    // G-RESTLEVELS: the level tally of the contour filter. `None` (no
+    // record) when the rule did not run.
+    ctx.record(&tally.get());
+    let linked = match op.after_plan_link() {
+        Some(link) => link_after_plan(&link, ctx, territory, combined),
+        None => combined,
+    };
     Ok(op.annotate(op.spans(linked, &levels), ctx.semantic_ctx))
 }
 
@@ -455,13 +510,20 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
     }
 }
 
+/// The runner's per-level rest inputs: the `ContourFilter` rule and its
+/// tally.
+struct LevelRules<'r> {
+    contour: Option<&'r ContourFilterRule<'r>>,
+    tally: &'r Cell<Option<RestLevelsFinding>>,
+}
+
 /// The cut of one outline at level `i`, or `None` for an empty level.
 fn emit_at<O: LayeredOp>(
     op: &O,
     layers: &OutlineLayers<O::Geometry>,
     levels: &[f64],
     i: usize,
-    stock: &LevelStock<'_>,
+    rules: &LevelRules<'_>,
     cancel: &dyn CancelCheck,
 ) -> Result<Option<Toolpath>, OperationError> {
     let (Some(&z), Some(geometry), Some(&final_z)) =
@@ -476,7 +538,11 @@ fn emit_at<O: LayeredOp>(
             index: i,
             is_final: (z - final_z).abs() < FINAL_Z_EPS_MM,
         },
-        stock,
+        &LevelRest {
+            standing: rules.contour.map(|rule| rule.at(z)),
+            split_timing: rules.contour.and_then(|rule| rule.split_timing()),
+            tally: rules.tally,
+        },
         cancel,
     )?;
     Ok((!piece.moves.is_empty()).then_some(piece))
@@ -534,20 +600,9 @@ fn prepare_outline<O: LayeredOp>(
             });
         }
         // Every other kind cuts the whole input at each level, and so does
-        // an input with no outline. A `ContourFilter` op filters its runs
-        // per level in `emit_level`.
-        (
-            RestUse::None
-            | RestUse::LevelClip
-            | RestUse::LevelSkip
-            | RestUse::LevelMask
-            | RestUse::StockColumn
-            | RestUse::ContourFilter
-            | RestUse::Planner
-            | RestUse::Reference
-            | RestUse::LinkSafetyOnly,
-            _,
-        ) => LevelPlan::whole(levels.len(), None),
+        // an input with no outline. A `ContourFilter` op gets the rule per
+        // level ([`LevelRest`]).
+        _ => LevelPlan::whole(levels.len(), None),
     };
     ctx.record(&plan.finding);
     let whole = if plan.needs_whole() {
@@ -644,7 +699,7 @@ mod tests {
             &self,
             _geometry: &(),
             level: LevelInfo,
-            _stock: &LevelStock<'_>,
+            _rest: &LevelRest<'_>,
             _cancel: &dyn CancelCheck,
         ) -> Result<Toolpath, OperationError> {
             self.emitted.borrow_mut().push(level.index);

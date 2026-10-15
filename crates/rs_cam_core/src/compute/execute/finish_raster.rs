@@ -6,23 +6,21 @@
 //! (`layered.rs`, W6.1). Split out of `compute/execute.rs` (P4).
 
 use std::borrow::Cow;
-use std::cell::Cell;
 
 use crate::compute::catalog::{OperationConfig, OperationType, RestUse};
 use crate::compute::operation_configs::{OpMotion, RegionOrdering};
-use crate::compute::toolpath_stats::RestLevelsFinding;
 use crate::geo::P2;
+use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
-use crate::tool::{MillingCutter, ToolDefinition};
+use crate::tool::ToolDefinition;
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::height_field::{
     HeightFieldOp, HeightQuery, LinkRule, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, run_layered};
-use super::shared::{finishing_link_stage, relink_in_adapter};
-use super::standing_material::standing_near;
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelRest, run_layered};
+use super::shared::AfterPlanLink;
 use super::territory::Territory;
 use super::{
     ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared, SurfaceMask,
@@ -73,24 +71,19 @@ impl HeightFieldOp for ScallopPass {
         OperationType::Scallop
     }
 
-    /// The offset cascade IS the op §2 of the linking spec measured
-    /// (breadth-first ring order, no reorder, no loop rotation, no stock
-    /// ceiling), and it opts in. It links INSIDE its kernel: the ring
-    /// annotations carry move indices that the kernel reconciles beside the
-    /// relink.
+    /// Both ring sources link INSIDE the kernel: the ring annotations carry
+    /// move indices that the kernel reconciles beside the relink. The
+    /// runner builds the one stage, so both read the one link ceiling
+    /// (`link_ceiling_for`, ruling R1).
     ///
-    /// The iso field is NOT on the shared stage (SPEC §3.7). Its ring list
-    /// is level sets, a different population from the cascade's, and its
-    /// fingerprint is pinned by `scallop_isofield_gouge_m4` and the
-    /// multitool tiers. It keeps the legacy relink at the same
-    /// `intra_pass_hookup_mm`, byte for byte.
+    /// - The offset cascade runs the stage itself (reorder, loop rotation).
+    /// - The iso field (SPEC §3.7) keeps the ring order: its ring list is
+    ///   level sets, a different population from the cascade's. It reads
+    ///   only the stage's ceiling (D1). On fresh stock the ceiling is
+    ///   `None`, so its fresh output does not change.
     fn link_rule(&self) -> LinkRule {
-        if self.iso_field {
-            LinkRule::Off
-        } else {
-            LinkRule::InPlan {
-                hookup_mm: self.hookup_mm,
-            }
+        LinkRule::InPlan {
+            hookup_mm: self.hookup_mm,
         }
     }
 
@@ -130,6 +123,7 @@ impl HeightFieldOp for ScallopPass {
                 &self.params,
                 pctx.debug,
                 regions,
+                pctx.link_stage.and_then(|stage| stage.link_ceiling),
                 pctx.cancel,
             )?
         } else {
@@ -350,16 +344,9 @@ pub(crate) fn generate_waterline(
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
-        territory: prepared.territory(),
-        link_kinematics: ctx.link_kinematics.clone(),
-        rest_tally: Cell::new(None),
+        boundary_regions: prepared.territory().regions(),
     };
-    let generated = run_layered(&pass, ctx, prepared)?;
-    // G-RESTLEVELS: the per-level tally of the contour filter. `None` (no
-    // record) when the filter did not run: a fresh op, or a rule that is
-    // not `ContourFilter`.
-    ctx.record(&pass.rest_tally.get());
-    Ok(generated)
+    run_layered(&pass, ctx, prepared)
 }
 
 /// The Waterline op: the push-cutter contours of the surface at each level
@@ -373,20 +360,13 @@ struct WaterlinePass<'a> {
     /// floored at the stock bottom.
     levels: Vec<f64>,
     z_step: f64,
+    /// The cap (mm) of the after-plan link stage. `0.0`: no stage.
     hookup_mm: f64,
     op_type: OperationType,
     rest_use: RestUse,
-    /// The op's territory: the boundary regions of the contour split and
-    /// of the link stage, and the stock of the link ceiling (C3).
-    territory: &'a Territory<'a>,
-    /// The machine envelope that times a stretch the contour filter drops
-    /// (`machine::kinematics::retract_saves_time`). `None`: the filter
-    /// drops nothing.
-    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
-    /// The `ContourFilter` tally over the levels: a level whose filter
-    /// dropped every point is skipped, and one that dropped some points is
-    /// clipped. `None` until the filter runs.
-    rest_tally: Cell<Option<RestLevelsFinding>>,
+    /// The boundary regions of the contour split (the territory's XY
+    /// part).
+    boundary_regions: Option<&'a RegionSet<'a>>,
 }
 
 impl<'a> LayeredOp for WaterlinePass<'a> {
@@ -436,33 +416,23 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         Ok((region.to_vec(), ()))
     }
 
-    /// The contours at `level.z`, split by the boundary regions and, for
-    /// a rest op whose rule is `ContourFilter`, by the material that stands
-    /// at the level (`standing_material::standing_near`, W6.1). A stretch
-    /// in air is dropped only when the retract saves time.
+    /// The contours at `level.z`, split by the boundary regions and, on a
+    /// rest pass, by the runner's `ContourFilter` rule at the level
+    /// ([`LevelRest`], W6.1). A stretch in air is dropped only when the
+    /// retract saves time.
     fn emit_level(
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        stock: &LevelStock<'_>,
+        rest: &LevelRest<'_>,
         cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
-        let standing = match self.rest_use {
-            RestUse::ContourFilter => standing_near(stock.remaining, level.z, self.cutter.radius()),
-            RestUse::None
-            | RestUse::LevelClip
-            | RestUse::LevelSkip
-            | RestUse::LevelMask
-            | RestUse::StockColumn
-            | RestUse::Planner
-            | RestUse::Reference
-            | RestUse::LinkSafetyOnly => None,
-        };
-        let keep = |p: P2| standing.as_ref().is_none_or(|s| s.keeps(p));
+        let standing = rest.standing.as_ref();
+        let keep = |p: P2| standing.is_none_or(|s| s.keeps(p));
         let filter = crate::ops::waterline::RunFilter {
-            boundary_regions: self.territory.regions(),
+            boundary_regions: self.boundary_regions,
             keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
-            split_timing: self.link_kinematics.as_ref(),
+            split_timing: rest.split_timing,
         };
         let mut tp = Toolpath::new();
         let (mut kept, mut dropped) = (false, false);
@@ -480,26 +450,13 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             dropped |= piece.rest_dropped;
             tp.moves.extend(piece.toolpath.moves);
         }
-        if standing.is_some() {
-            let mut tally = self.rest_tally.get().unwrap_or(RestLevelsFinding {
-                planned_levels: 0,
-                skipped_levels: 0,
-                clipped_levels: 0,
-                fallback: None,
-            });
-            tally.planned_levels += 1;
-            match (kept, dropped) {
-                (false, true) => tally.skipped_levels += 1,
-                (true, true) => tally.clipped_levels += 1,
-                (_, false) => {}
-            }
-            self.rest_tally.set(Some(tally));
-        }
+        rest.tally(kept, dropped);
         Ok(tp)
     }
 
     /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
-    /// family's fingerprint does not move.
+    /// family's fingerprint does not move. The runner runs the one
+    /// after-plan link (`shared::link_after_plan`).
     ///
     /// No fragment kind is declared yet. A waterline level IS a closed loop
     /// and would benefit from rotation, but this stage cannot see which of
@@ -507,16 +464,11 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
     /// boundary split, and a mis-declared kind rotates the wrong fragment.
     /// Declaring them in `ops::waterline::waterline_level`, the way the
     /// scallop does, is the follow-up.
-    /// G-LINKVISIBLE: same contract as the raster's — an unrun stage stays
-    /// `None` on the stats channel.
-    fn link(&self, toolpath: Toolpath, ctx: &ExecutionContext<'_>) -> Toolpath {
-        let Some(stage) = finishing_link_stage(self.op_type, ctx, self.territory, self.hookup_mm)
-        else {
-            return toolpath;
-        };
-        let (linked, totals) = relink_in_adapter(
-            &stage,
-            &crate::finish::surface_link::LinkGeometry {
+    fn after_plan_link(&self) -> Option<AfterPlanLink<'_>> {
+        Some(AfterPlanLink {
+            op_type: self.op_type,
+            hookup_mm: self.hookup_mm,
+            geometry: crate::finish::surface_link::LinkGeometry {
                 stock_to_leave: self.params.stock_to_leave,
                 sampling: self.params.sampling.max(0.01),
                 feed_rate: self.params.feed_rate,
@@ -526,14 +478,9 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
                 // not refined (G-TIERBURIAL, open).
                 link_tolerance: None,
             },
-            self.surface.mesh,
-            self.surface.index,
-            self.cutter,
-            toolpath,
-            "waterline",
-        );
-        ctx.record(&totals);
-        linked
+            surface: self.surface,
+            cutter: self.cutter,
+        })
     }
 }
 // ── Public API ────────────────────────────────────────────────────────

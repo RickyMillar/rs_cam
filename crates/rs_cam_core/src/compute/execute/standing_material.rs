@@ -54,6 +54,7 @@
 //! region extraction that hits `MAX_REST_REGIONS`, and a window too large
 //! for the grid. The finding records which one.
 
+use crate::compute::catalog::RestUse;
 use crate::compute::toolpath_stats::{RestLevelsFallback, RestLevelsFinding};
 use crate::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use crate::geo::P2;
@@ -544,12 +545,7 @@ pub(crate) fn standing_near(
     z: f64,
     tool_radius: f64,
 ) -> Option<StandingNear<'_>> {
-    let grid = &stock?.z_grid;
-    Some(StandingNear {
-        grid,
-        floor: standing_floor(z),
-        band: tool_radius + grid.cell_size,
-    })
+    Some(ContourFilterRule::new(stock?, tool_radius, None).at(z))
 }
 
 impl StandingNear<'_> {
@@ -586,6 +582,79 @@ impl StandingNear<'_> {
             }
         }
         !seen
+    }
+}
+
+/// `RestUse::ContourFilter` (W6.1, W6.4.6): the rule a runner owns. The
+/// Layered runner (`layered::run_layered`, Waterline) and the composed
+/// runner (`composed::run_composed`, both halves of Steep and Shallow)
+/// resolve it once from the territory ([`Self::resolve`]) and give it to
+/// the op. The op folds [`Self::keeps`] into its per-point keep; it does
+/// not read the stock itself.
+#[derive(Clone, Copy)]
+pub(crate) struct ContourFilterRule<'s> {
+    /// The remaining stock after the W2.1 guard
+    /// (`Territory::reference_stock`, C3).
+    stock: &'s TriDexelStock,
+    /// The cutter radius (mm), the `R` of [`standing_near`].
+    tool_radius: f64,
+    /// The machine envelope that times a stretch the rule drops
+    /// (`ops::waterline::bridge_air_stretches`). `None`: no time model, so
+    /// the rule drops no stretch between two kept points.
+    split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+}
+
+impl<'s> ContourFilterRule<'s> {
+    /// The rule of an op whose rest rule is `rest_use`. `Some` only for
+    /// `RestUse::ContourFilter` with a remaining stock that the territory
+    /// accepted as the rest reference; `None` for a fresh op, which keeps
+    /// every point.
+    pub(crate) fn resolve(
+        rest_use: RestUse,
+        territory: &super::territory::Territory<'s>,
+        tool_radius: f64,
+        split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+    ) -> Option<Self> {
+        if rest_use != RestUse::ContourFilter {
+            return None;
+        }
+        territory
+            .reference_stock()
+            .map(|stock| Self::new(stock, tool_radius, split_timing))
+    }
+
+    /// The rule over `stock`. A runner calls [`Self::resolve`];
+    /// [`standing_near`] (the Pencil entry check) calls this.
+    pub(crate) fn new(
+        stock: &'s TriDexelStock,
+        tool_radius: f64,
+        split_timing: Option<&'s crate::machine::kinematics::LinkKinematics>,
+    ) -> Self {
+        Self {
+            stock,
+            tool_radius,
+            split_timing,
+        }
+    }
+
+    /// The rule at level `z` ([`standing_near`]).
+    pub(crate) fn at(&self, z: f64) -> StandingNear<'s> {
+        StandingNear {
+            grid: &self.stock.z_grid,
+            floor: standing_floor(z),
+            band: self.tool_radius + self.stock.z_grid.cell_size,
+        }
+    }
+
+    /// True when material stands in the reach of the tool at `p`; `p.z` is
+    /// the tool tip Z.
+    pub(crate) fn keeps(&self, p: crate::geo::P3) -> bool {
+        self.at(p.z).keeps(P2::new(p.x, p.y))
+    }
+
+    /// The machine envelope that times a dropped stretch.
+    pub(crate) fn split_timing(&self) -> Option<&'s crate::machine::kinematics::LinkKinematics> {
+        self.split_timing
     }
 }
 

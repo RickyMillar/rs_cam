@@ -131,7 +131,8 @@ pub fn link_ceiling_for<'a>(
 /// [`link_ceiling_for`] with its inputs read off the execution context and
 /// the op's territory. The stock is the remaining stock WITHOUT the W2.1
 /// guard ([`Territory::unguarded_stock`], C3): the ceiling must see all the
-/// material that stands, also where no mesh is in scope.
+/// material that stands, also where no mesh is in scope. The obstacles are
+/// the territory's (K1: the one `ObstacleToolView` of the op).
 pub(super) fn op_link_ceiling<'a>(
     op: OperationType,
     ctx: &ExecutionContext<'a>,
@@ -143,7 +144,7 @@ pub(super) fn op_link_ceiling<'a>(
         ctx.tool_def,
         ctx.stock_bbox.max.z,
         ctx.heights.top_z,
-        ctx.obstacles,
+        territory.obstacles,
     )
 }
 
@@ -206,8 +207,50 @@ pub(super) fn finishing_link_stage<'c, 'a: 'c>(
     })
 }
 
-/// Run the shared stage over a finishing family's emitted path, in the
-/// adapter, and report what it did.
+/// What an op states for the after-plan link: the link stage runs over its
+/// whole planned toolpath. Drop Cutter (`LinkRule::AfterPlan` of the
+/// height-field runner) and Waterline (`LayeredOp::after_plan_link`).
+pub(super) struct AfterPlanLink<'a> {
+    /// The op, for its `LinkCeilingNeed` (ruling R1).
+    pub op_type: OperationType,
+    /// The candidate cap (mm) of the stage. `<= 0.0`: no stage.
+    pub hookup_mm: f64,
+    /// The link geometry of the plan. Only the op knows its sampling.
+    pub geometry: LinkGeometry,
+    /// The surface a link rides.
+    pub surface: super::MeshInput<'a>,
+    /// The op's cutter.
+    pub cutter: &'a ToolDefinition,
+}
+
+/// THE after-plan link (G-LINKSTAGE). The runner builds the one stage
+/// ([`finishing_link_stage`]), relinks the planned toolpath, and records
+/// the link totals when the stage ran (G-LINKVISIBLE). No stage: the
+/// toolpath comes back unchanged and nothing is recorded.
+pub(super) fn link_after_plan(
+    link: &AfterPlanLink<'_>,
+    ctx: &ExecutionContext<'_>,
+    territory: &Territory<'_>,
+    toolpath: Toolpath,
+) -> Toolpath {
+    let Some(stage) = finishing_link_stage(link.op_type, ctx, territory, link.hookup_mm) else {
+        return toolpath;
+    };
+    let (linked, totals) = relink_in_adapter(
+        &stage,
+        &link.geometry,
+        link.surface.mesh,
+        link.surface.index,
+        link.cutter,
+        toolpath,
+        link.op_type.kind_str(),
+    );
+    ctx.record(&totals);
+    linked
+}
+
+/// Run the shared stage over a finishing family's emitted path and report
+/// what it did.
 ///
 /// For a family whose generator holds no index-carrying channel (the raster
 /// and the waterline both build their spans from the RESULT), so the
@@ -215,12 +258,9 @@ pub(super) fn finishing_link_stage<'c, 'a: 'c>(
 /// does hold one (its ring annotations), which is why its stage runs inside
 /// the generator instead.
 ///
-/// G-LINKVISIBLE: the totals come BACK rather than being written to
-/// `ctx.findings` in here. The two callers (the height-field runner for
-/// `LinkRule::AfterPlan`, and the Waterline `link` hook) each hold their own
-/// `ctx` and record the totals unconditionally: reaching this function at
-/// all IS the measurement.
-pub(super) fn relink_in_adapter(
+/// G-LINKVISIBLE: the totals come BACK; the one caller
+/// ([`link_after_plan`]) records them.
+fn relink_in_adapter(
     stage: &FinishingLinkStage<'_>,
     geom: &LinkGeometry,
     mesh: &TriangleMesh,

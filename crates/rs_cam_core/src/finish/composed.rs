@@ -17,8 +17,10 @@
 //! [`ComposedSurfaceOp::cut_region`] call. The op binds its inputs (mesh,
 //! cutter, dials, territory) when it is built, so this module reads no
 //! execution context. The compute runner
-//! (`compute::execute::composed::run_composed`) adds the record, the spans,
-//! the semantic trace (its `ComposedAnnotate` hook) and the side channel.
+//! (`compute::execute::composed::run_composed`) reads the territory, the
+//! link ceiling, the link stage and the rest rule ([`ComposedRest`]) once
+//! and gives them to the op it builds. It adds the record, the spans, the
+//! semantic trace (its `ComposedAnnotate` hook) and the side channel.
 //!
 //! # The order constraints
 //!
@@ -30,10 +32,26 @@
 //! builds a barrier list by hand.
 
 use crate::compute::spans::{RegionNode, region_node_barriers};
+use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::machine::kinematics::LinkKinematics;
 use crate::toolpath::Toolpath;
 use crate::trace::produced::Produced;
 use crate::trace::toolpath_spans::Span;
+
+/// The rest rule of a composed op on a rest pass (W6.4.6, ruling R-W6.4b):
+/// the `RestUse::ContourFilter` rule that the compute runner owns
+/// (`standing_material::ContourFilterRule`). Steep and Shallow folds
+/// `standing` into the per-point keep of both halves.
+pub(crate) struct ComposedRest<'a> {
+    /// True when material stands in the reach of the tool at a point. The
+    /// point carries the tool tip Z before `stock_to_leave`.
+    pub standing: Box<dyn Fn(P3) -> bool + 'a>,
+    /// The machine envelope that times a stretch the rule drops
+    /// (`ops::waterline::bridge_air_stretches`). `None`: no time model, so
+    /// the rule drops no stretch between two kept points.
+    pub split_timing: Option<&'a LinkKinematics>,
+}
 
 /// An op of the Composed-surface shape. See the module doc.
 pub(crate) trait ComposedSurfaceOp {

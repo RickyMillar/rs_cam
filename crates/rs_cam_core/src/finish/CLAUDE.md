@@ -26,7 +26,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   `surface/chord_refine.rs`): ring chords and connectors, the raster and
   waterline bands (`refine_band_chords`), a link with a tolerance.
 - W6.4: a composed op (Unified Finish, Steep and Shallow) states its barriers only through
-  `order_constraints`. A product rest field comes only from `rest_detector::detect_rest`; a caller keeps its
+  `order_constraints`; its rest rule (`composed::ComposedRest`) and link stage come from the runner. A product rest field comes only from `rest_detector::detect_rest`; a caller keeps its
   own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16);
   its last leg is `push_link_landing`: into standing stock it is an `EntryPlunge` at the plunge feed (B20).
 
@@ -36,5 +36,5 @@ Every 3D finishing strategy and the unified planner. The entry point is
   --test a_scallop_ring_connector_rides_the_surface_g_tierburial --test fed_chords_ride_the_surface_g_tierburial`
 - `... --test scallop_iso_field_config --test the_research_arms_are_feature_gated_fin01`
 - `wanaka_decomposes_to_order_ten_regions` (`#[ignore]`; long) in `--test finish_planner_wanaka_decompose`; its tables: `..._wanaka_diagnostics`.
-- W6.4: `--test a_link_between_regions_clears_standing_stock_b16`, `--lib finish::unified_finish`; B20: `--test a_lifted_link_lands_as_an_entry_b20`;
+- W6.4: `--test a_link_between_regions_clears_standing_stock_b16`, `--lib finish::unified_finish`; B20: `--test a_lifted_link_lands_as_an_entry_b20`; D1 (iso-field links read the one ceiling): `--test a_scallop_iso_field_link_clears_standing_stock_d1`;
   W6.4.6 (Steep and Shallow rest + `hookup_mm` links): `--lib finish::steep_shallow`, `--test steep_shallow_cuts_only_the_rest_w6_4_6`.

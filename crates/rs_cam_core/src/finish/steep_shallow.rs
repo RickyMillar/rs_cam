@@ -17,14 +17,13 @@
 use std::ops::Range;
 
 use crate::compute::spans::RegionNode;
-use crate::finish::composed::{ComposedSurfaceOp, Routed, compose, composed_spans};
+use crate::finish::composed::{ComposedRest, ComposedSurfaceOp, Routed, compose, composed_spans};
 use crate::finish::finish_setup::FinishResolutionPolicy;
 use crate::finish::surface_link::{FinishingLinkStage, LinkGeometry, relink_fragments};
 use crate::finish::unified_finish::RelinkTotals;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::machine::kinematics::LinkKinematics;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::ops::waterline::{AirBridge, bridge_air_stretches, waterline_contours};
 use crate::surface::dropcutter::batch_drop_cutter;
@@ -151,7 +150,7 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
 /// given). `None` reproduces today's steep-grid-only filtering byte-for-byte.
 ///
 /// `rest` (W6.4.6): a kept point must also pass material at the level
-/// ([`SteepShallowRest`]). `None` (a fresh pass) adds no rule.
+/// ([`ComposedRest`]). `None` (a fresh pass) adds no rule.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
 fn emit_steep_passes(
     mesh: &TriangleMesh,
@@ -168,7 +167,7 @@ fn emit_steep_passes(
     plunge_rate: f64,
     safe_z: f64,
     boundary_regions: Option<&RegionSet<'_>>,
-    rest: Option<&SteepShallowRest<'_>>,
+    rest: Option<&ComposedRest<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<usize>), Cancelled> {
     let mut tp = Toolpath::new();
@@ -371,7 +370,7 @@ fn emit_steep_passes(
 /// byte-for-byte.
 ///
 /// `rest` (W6.4.6): a kept point must also pass material at its drop
-/// ([`SteepShallowRest`]). `None` (a fresh pass) adds no rule.
+/// ([`ComposedRest`]). `None` (a fresh pass) adds no rule.
 #[allow(clippy::too_many_arguments)]
 fn emit_shallow_passes(
     mesh: &TriangleMesh,
@@ -385,7 +384,7 @@ fn emit_shallow_passes(
     plunge_rate: f64,
     safe_z: f64,
     boundary_regions: Option<&RegionSet<'_>>,
-    rest: Option<&SteepShallowRest<'_>>,
+    rest: Option<&ComposedRest<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let mut tp = Toolpath::new();
@@ -655,29 +654,10 @@ pub(crate) struct SteepShallowOp<'a> {
     pub resolution: FinishResolutionPolicy,
     /// W6.4.6: the rest inputs. `Some` only on a rest pass (the territory
     /// accepted the remaining stock as the rest reference).
-    pub rest: Option<SteepShallowRest<'a>>,
+    pub rest: Option<ComposedRest<'a>>,
     /// W6.4.6: the shared finishing link stage, `Some` when `hookup_mm` is
     /// above zero. Its ceiling comes from `link_ceiling_for`.
     pub link_stage: Option<FinishingLinkStage<'a>>,
-}
-
-/// The rest rule of a rest pass (W6.4.6, ruling R-W6.4b): the Waterline
-/// `RestUse::ContourFilter` rule (W6.1), applied to the points of both
-/// halves.
-///
-/// Each emitter folds `standing` into its per-point keep, beside the cell
-/// mask and the boundary. A stretch that only this rule drops, between two
-/// kept points, comes back when the feed through it is not slower than a
-/// retract and a re-entry ([`bridge_air_stretches`]).
-pub(crate) struct SteepShallowRest<'a> {
-    /// True when material stands in the reach of the tool at a point. The
-    /// point carries the tool tip Z before `stock_to_leave` (the steep
-    /// level, the shallow drop). The adapter builds it from
-    /// `standing_material::standing_near` and the remaining stock.
-    pub standing: &'a dyn Fn(P3) -> bool,
-    /// The machine envelope that times a dropped stretch. `None`: no time
-    /// model, so the rule drops no stretch between two kept points.
-    pub split_timing: Option<&'a LinkKinematics>,
 }
 
 /// What the composed op reports: the split of the two halves and the link
@@ -1695,8 +1675,8 @@ mod tests {
             params: &params,
             boundary_regions: None,
             resolution: steep_shallow_generation_resolution(&cutter, params.tolerance),
-            rest: Some(SteepShallowRest {
-                standing,
+            rest: Some(ComposedRest {
+                standing: Box::new(standing),
                 split_timing: Some(&timing),
             }),
             link_stage: None,

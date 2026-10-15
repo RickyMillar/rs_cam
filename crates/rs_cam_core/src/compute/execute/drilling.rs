@@ -551,17 +551,7 @@ fn column_stock<'s>(
     op: &OperationConfig,
     initial_stock: Option<&'s crate::dexel_stock::TriDexelStock>,
 ) -> Option<&'s crate::dexel_stock::TriDexelStock> {
-    match op.capabilities().rest_use {
-        RestUse::StockColumn => initial_stock,
-        RestUse::None
-        | RestUse::LevelClip
-        | RestUse::LevelSkip
-        | RestUse::LevelMask
-        | RestUse::ContourFilter
-        | RestUse::Planner
-        | RestUse::Reference
-        | RestUse::LinkSafetyOnly => None,
-    }
+    initial_stock.filter(|_| op.capabilities().rest_use == RestUse::StockColumn)
 }
 
 /// Drill family adapter (holes from the model's drill targets or picks).

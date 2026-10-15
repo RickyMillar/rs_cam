@@ -28,7 +28,7 @@ use super::height_field::{
     AnalyticField, HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule,
     run_height_field,
 };
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, ReachBand, run_layered};
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelRest, ReachBand, run_layered};
 use super::shared::{generated_with_cut_run_spans, with_depth_run_annotation};
 use super::territory::Territory;
 use super::{
@@ -321,7 +321,7 @@ impl LayeredOp for ChamferPass {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         Ok(crate::ops::chamfer::chamfer_rings_at_z(

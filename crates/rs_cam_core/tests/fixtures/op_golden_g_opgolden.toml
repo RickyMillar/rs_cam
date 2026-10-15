@@ -757,6 +757,20 @@ moves_hash = "11a1d509eb149e96"
 span_count = 186
 spans_hash = "53784d6b955b4c24"
 
+["scallop/iso_field_rest"]
+outcome = "ok"
+move_count = 776
+rapid_count = 44
+linear_count = 569
+arc_count = 163
+cutting_length_mm = 978.423
+rapid_length_mm = 224.998
+bbox_min = [-17.0, -17.0, 0.0]
+bbox_max = [15.0, 15.0, 13.0]
+moves_hash = "ecbe33084f16a089"
+span_count = 223
+spans_hash = "1ddc6582448ccd79"
+
 ["scallop/regions"]
 outcome = "ok"
 move_count = 448

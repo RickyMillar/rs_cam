@@ -15,10 +15,10 @@
 //! - the op's own refusal ([`HeightFieldOp::refuse`]), after the prologue;
 //! - the query handle ([`HeightFieldOp::query`]);
 //! - the ONE finishing link stage ([`super::shared::finishing_link_stage`]):
-//!   the runner builds it, and runs it after the plan or gives it to the
-//!   plan, as the op's [`LinkRule`] states;
-//! - the record of the kernel's report and of the link totals, through the
-//!   W2.3 record door;
+//!   the runner runs it after the plan ([`super::shared::link_after_plan`],
+//!   which records the link totals) or builds it and gives it to the plan,
+//!   as the op's [`LinkRule`] states;
+//! - the record of the kernel's report, through the W2.3 record door;
 //! - the spans, as the op's [`SpanRule`] states, and the semantic trace.
 //!
 //! # The query is a handle, not a grid
@@ -59,8 +59,8 @@ use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::findings::RecordFindings;
 use super::shared::{
-    finishing_link_stage, generated_with_cut_run_spans, generated_with_spans, relink_in_adapter,
-    with_depth_run_annotation,
+    AfterPlanLink, finishing_link_stage, generated_with_cut_run_spans, generated_with_spans,
+    link_after_plan, with_depth_run_annotation,
 };
 use super::territory::Territory;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
@@ -183,7 +183,8 @@ pub(crate) enum LinkRule {
     /// returns its [`Planned::link_geometry`]. Drop Cutter.
     AfterPlan { hookup_mm: f64 },
     /// The runner builds the stage and gives it to the plan, which links
-    /// inside its kernel (module doc). Offset-cascade Scallop.
+    /// inside its kernel (module doc). Scallop: the offset cascade runs the
+    /// stage, the iso field reads its ceiling.
     InPlan { hookup_mm: f64 },
 }
 
@@ -277,20 +278,17 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
     let territory = prepared.territory();
     let query = op.query(ctx, prepared)?;
     let rule = op.link_rule();
-    let stage = match rule {
-        LinkRule::Off => None,
-        LinkRule::AfterPlan { hookup_mm } | LinkRule::InPlan { hookup_mm } => {
+    let in_plan_stage = match rule {
+        LinkRule::InPlan { hookup_mm } => {
             finishing_link_stage(op.op_type(), ctx, territory, hookup_mm)
         }
+        LinkRule::Off | LinkRule::AfterPlan { .. } => None,
     };
     let cancel = ctx.cancel_fn();
     let pctx = PlanCtx {
         cancel: &cancel,
         debug: ctx.debug_ctx,
-        link_stage: match rule {
-            LinkRule::InPlan { .. } => stage.as_ref(),
-            LinkRule::Off | LinkRule::AfterPlan { .. } => None,
-        },
+        link_stage: in_plan_stage.as_ref(),
     };
     let Planned {
         mut toolpath,
@@ -301,7 +299,9 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
     } = op.plan(query, territory, &pctx)?;
     // W2.3: always, an inert report too (PR-8b: Ramp's reach clamp).
     ctx.record(&report);
-    if let (LinkRule::AfterPlan { .. }, Some(stage)) = (rule, stage.as_ref()) {
+    if let LinkRule::AfterPlan { hookup_mm } = rule
+        && hookup_mm > 0.0
+    {
         let geometry = link_geometry.ok_or_else(|| {
             OperationError::Other(format!(
                 "height-field defect: {} links after its plan but returns no link geometry",
@@ -309,18 +309,19 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
             ))
         })?;
         let (surface, cutter) = query.mesh(op.op_type())?;
-        let (linked, totals) = relink_in_adapter(
-            stage,
-            &geometry,
-            surface.mesh,
-            surface.index,
-            cutter,
-            toolpath,
-            op.op_type().kind_str(),
-        );
         // G-LINKVISIBLE: only a stage that ran records its totals.
-        ctx.record(&totals);
-        toolpath = linked;
+        toolpath = link_after_plan(
+            &AfterPlanLink {
+                op_type: op.op_type(),
+                hookup_mm,
+                geometry,
+                surface,
+                cutter,
+            },
+            ctx,
+            territory,
+            toolpath,
+        );
     }
     let mut generated = match op.span_rule() {
         SpanRule::CutRuns(label) => with_depth_run_annotation(

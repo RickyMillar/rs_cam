@@ -217,6 +217,30 @@ pub enum RestUse {
     LinkSafetyOnly,
 }
 
+impl RestUse {
+    /// True when the rule compares the remaining stock with the surface,
+    /// so the territory resolves the stock through the W2.1 guard
+    /// (`Territory::reference_stock`): `Reference` and `ContourFilter`.
+    /// Every other rule reads the stock without the guard, or not at all.
+    ///
+    /// The ONE exhaustive match on the rule outside the registry. A
+    /// runner or an adapter that owns one rule compares with `==`; a new
+    /// rule must answer here first.
+    #[must_use]
+    pub const fn reads_reference_stock(self) -> bool {
+        match self {
+            Self::Reference | Self::ContourFilter => true,
+            Self::None
+            | Self::LevelClip
+            | Self::LevelSkip
+            | Self::LevelMask
+            | Self::StockColumn
+            | Self::Planner
+            | Self::LinkSafetyOnly => false,
+        }
+    }
+}
+
 /// The XY containment an operation reads while it plans (W6.2). The
 /// session clips every result to the machining boundary after generation;
 /// this states what the op reads BEFORE that clip.

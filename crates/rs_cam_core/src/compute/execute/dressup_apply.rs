@@ -19,6 +19,30 @@ use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 use super::{GeneratedToolpath, GenerationFindings};
 
+/// THE map from the `rest_analysis` dials to the rest detector's params.
+/// The generic rest analysis below and the Unified Finish claims pipeline
+/// (`finish_3d.rs`) both read it.
+///
+/// - `cell_mm`, `min_valley_depth` and `region_margin_mm` are the dials.
+/// - `num_offset_passes_cap` is the dial, else the detector default.
+/// - `offset_stepover_mm` is the detector default. The generic stage sets
+///   its own routing stepover; Unified Finish routes on its own fan.
+/// - `min_cut_length` has no dial: the detector default.
+pub(super) fn rest_field_params(
+    cfg: &crate::compute::config::RestAnalysisConfig,
+) -> crate::surface::rest_field::RestFieldParams {
+    let defaults = crate::surface::rest_field::RestFieldParams::default();
+    crate::surface::rest_field::RestFieldParams {
+        cell_mm: cfg.cell_mm,
+        min_valley_depth: cfg.min_valley_depth,
+        region_margin_mm: cfg.region_margin_mm,
+        num_offset_passes_cap: cfg
+            .num_offset_passes
+            .unwrap_or(defaults.num_offset_passes_cap),
+        ..defaults
+    }
+}
+
 /// P2.5: shared rest-analysis attach for any operation family. Runs the same
 /// rest-depth detector `pencil::rest_depth_arm` uses
 /// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
@@ -31,7 +55,8 @@ use super::{GeneratedToolpath, GenerationFindings};
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else the stage's bare-surface probe.
 /// Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
-#[allow(clippy::too_many_arguments)] // post-generation attach point; every
+#[allow(clippy::too_many_arguments)]
+// post-generation attach point; every
 // argument is a distinct upstream source (geometry, tool, reference, stock,
 // dials, findings sink)
 pub(super) fn attach_generic_rest_analysis(
@@ -52,7 +77,6 @@ pub(super) fn attach_generic_rest_analysis(
         stock: rest_reference,
         tool: reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
     };
-    let defaults = crate::surface::rest_field::RestFieldParams::default();
     // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
     //
     // Wave A left this taking `RestFieldParams::default()` — a literal
@@ -71,14 +95,8 @@ pub(super) fn attach_generic_rest_analysis(
         crate::surface::reach::suggested_offset_stepover_mm(tool_def, cfg.min_valley_depth)
     });
     let rf_params = crate::surface::rest_field::RestFieldParams {
-        cell_mm: cfg.cell_mm,
-        min_valley_depth: cfg.min_valley_depth,
-        region_margin_mm: cfg.region_margin_mm,
         offset_stepover_mm,
-        num_offset_passes_cap: cfg
-            .num_offset_passes
-            .unwrap_or(defaults.num_offset_passes_cap),
-        min_cut_length: defaults.min_cut_length,
+        ..rest_field_params(cfg)
     };
     // Same audit trail as the `UnifiedFinish` claims pipeline (PR-6a): the
     // number steers a routing decision and appears in no dial the operator

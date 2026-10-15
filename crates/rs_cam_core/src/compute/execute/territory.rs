@@ -55,7 +55,7 @@
 
 use std::borrow::Cow;
 
-use crate::compute::catalog::{OperationConfig, RestUse, TerritoryXy};
+use crate::compute::catalog::{OperationConfig, TerritoryXy};
 use crate::compute::obstacle::ObstacleToolView;
 use crate::dexel_stock::TriDexelStock;
 use crate::geometry::boundary::subtract_keepouts;
@@ -192,9 +192,10 @@ impl<'a> Territory<'a> {
     /// THE resolver. The prologue calls it once per op.
     ///
     /// The stock part runs the guard only when something reads it: an op
-    /// whose rest rule is [`RestUse::Reference`] (Pencil, Unified Finish)
-    /// or [`RestUse::ContourFilter`] (Waterline, Steep and Shallow, C3), or
-    /// an enabled generic rest analysis. All of them need a mesh.
+    /// whose rest rule reads the reference stock
+    /// (`RestUse::reads_reference_stock`: `Reference` for Pencil and
+    /// Unified Finish, `ContourFilter` for Waterline and Steep and Shallow,
+    /// C3), or an enabled generic rest analysis. All of them need a mesh.
     pub(super) fn resolve(ctx: &ExecutionContext<'a>, op: &OperationConfig) -> Self {
         let caps = op.capabilities();
         let inputs = ctx.territory_inputs;
@@ -206,17 +207,8 @@ impl<'a> Territory<'a> {
             }
             TerritoryXy::PlannerBounds => planner_bounds_less_obstacles(ctx, &inputs, obstacles),
         };
-        let rule_reads_reference = match caps.rest_use {
-            RestUse::Reference | RestUse::ContourFilter => true,
-            RestUse::None
-            | RestUse::LevelClip
-            | RestUse::LevelSkip
-            | RestUse::LevelMask
-            | RestUse::StockColumn
-            | RestUse::Planner
-            | RestUse::LinkSafetyOnly => false,
-        };
-        let reads_stock = rule_reads_reference || ctx.rest_analysis.is_some_and(|ra| ra.enabled);
+        let reads_stock =
+            caps.rest_use.reads_reference_stock() || ctx.rest_analysis.is_some_and(|ra| ra.enabled);
         let stock = ctx
             .mesh
             .filter(|_| reads_stock)

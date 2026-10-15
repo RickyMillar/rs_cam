@@ -25,7 +25,7 @@ use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
 use super::layered::{
-    LayerCtx, LayeredOp, LevelInfo, LevelStock, ReachBand, effective_levels, run_layered,
+    LayerCtx, LayeredOp, LevelInfo, LevelRest, ReachBand, effective_levels, run_layered,
 };
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
 use super::standing_material::{LevelSeed, OffGrid, level_masks};
@@ -224,7 +224,7 @@ impl LayeredOp for PocketContour<'_> {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
@@ -306,7 +306,7 @@ impl LayeredOp for ZigzagRaster {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
@@ -384,7 +384,7 @@ impl LayeredOp for TracePass<'_> {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         Ok(crate::ops::trace_path::trace_polygons_at_z(
@@ -477,7 +477,7 @@ impl LayeredOp for ProfilePass<'_> {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         let params = crate::ops::profile::ProfileParams {
@@ -602,7 +602,7 @@ impl LayeredOp for FacePass<'_> {
         &self,
         geometry: &Self::Geometry,
         level: LevelInfo,
-        _stock: &LevelStock<'_>,
+        _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<Toolpath, OperationError> {
         let feeds = &self.feeds;
@@ -662,26 +662,18 @@ pub(crate) fn generate_adaptive(
         // G-RESTLEVELS (`RestUse::LevelMask`): one stock read per level of
         // this piece. It skips a level with no material in reach and seeds
         // each other level's planner grid.
-        let seeds = match rest_use {
-            RestUse::LevelMask => {
-                let plan = level_masks(
-                    prepared.territory().unguarded_stock(),
-                    poly,
-                    &levels,
-                    ctx.tool_def.radius(),
-                    &cancel_fn,
-                )?;
-                ctx.record(&plan.finding);
-                plan.levels
-            }
-            RestUse::None
-            | RestUse::LevelClip
-            | RestUse::LevelSkip
-            | RestUse::StockColumn
-            | RestUse::ContourFilter
-            | RestUse::Planner
-            | RestUse::Reference
-            | RestUse::LinkSafetyOnly => vec![LevelSeed::Fresh; levels.len()],
+        let seeds = if rest_use == RestUse::LevelMask {
+            let plan = level_masks(
+                prepared.territory().unguarded_stock(),
+                poly,
+                &levels,
+                ctx.tool_def.radius(),
+                &cancel_fn,
+            )?;
+            ctx.record(&plan.finding);
+            plan.levels
+        } else {
+            vec![LevelSeed::Fresh; levels.len()]
         };
         for ((level_i, &z), seed) in levels.iter().enumerate().zip(seeds) {
             let standing_material = match seed {
