@@ -27,6 +27,12 @@
 //! Arm 4 is the non-vacuity guard: the scan must find the call sites it
 //! claims to check.
 //!
+//! Arm 5 (W5): every `dv` / `dv_pill` key names a parameter whose schema
+//! states a range. The row clamps to that range, and MCP refuses outside
+//! it, so a row without one would be an unbounded widget (D5 inverted).
+//! `dv_narrowed` rows are exempt: a GUI rule narrows their range. A
+//! `frame_dependent` param (an absolute Z) is exempt: it has no static range.
+//!
 //! # NOT MEASURED
 //!
 //! Whether the help text is CORRECT, and the tooltips of rows that are not
@@ -157,7 +163,8 @@ fn the_help_key_is_the_registry_param_name_ui04() {
         };
         let def = op
             .registry_entry()
-            .param_defs
+            .params
+            .defs
             .iter()
             .find(|d| d.name == param);
         match def {
@@ -176,8 +183,75 @@ fn the_help_key_is_the_registry_param_name_ui04() {
     assert!(
         bad.is_empty(),
         "these parameter rows key a tooltip on a name the core registry \
-         cannot answer. Add the row to `compute/catalog/registry.rs`, or \
-         give the existing row a `.with_help(\"…\")` line. Failures: {}",
+         cannot answer. Give the config field in \
+         `compute/operation_configs.rs` a `#[param(help = …)]` attribute. Failures: {}",
+        bad.join("; ")
+    );
+}
+
+/// The function name that a `p(OperationType::…)` key is passed to, read
+/// from the flattened text before the key (`dv(ui,` gives `dv`).
+fn caller_before(flat: &str, key_at: usize) -> String {
+    let head = flat[..key_at].trim_end_matches("(ui,");
+    head.chars()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+#[test]
+fn every_value_row_reads_a_schema_range_w5() {
+    let mut bad = Vec::new();
+    let mut checked = 0usize;
+    for (rel, text) in properties_source() {
+        let flat: String = text.split_whitespace().collect();
+        let needle = "p(OperationType::";
+        let mut from = 0usize;
+        while let Some(i) = flat[from..].find(needle) {
+            let at = from + i;
+            from = at + needle.len();
+            let caller = caller_before(&flat, at);
+            if !matches!(caller.as_str(), "dv" | "dv_pill") {
+                continue;
+            }
+            let rest = &flat[from..];
+            let variant: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            let Some(param) = rest
+                .find('"')
+                .and_then(|q| rest[q + 1..].split('"').next().map(str::to_owned))
+            else {
+                continue;
+            };
+            let Some(op) = op_by_variant(&variant) else {
+                continue;
+            };
+            checked += 1;
+            let ranged = op
+                .registry_entry()
+                .params
+                .defs
+                .iter()
+                .any(|d| d.name == param && (d.range.is_some() || d.frame_dependent));
+            if !ranged {
+                bad.push(format!("{rel}: {variant}.{param}"));
+            }
+        }
+    }
+    assert!(
+        checked >= MIN_OP_KEYS,
+        "the scan found only {checked} dv / dv_pill rows"
+    );
+    assert!(
+        bad.is_empty(),
+        "these value rows name a parameter with no schema range, so the row \
+         does not clamp and MCP does not refuse. Give the config field a \
+         `#[param(range = …)]` attribute: {}",
         bad.join("; ")
     );
 }

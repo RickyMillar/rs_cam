@@ -29,7 +29,16 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 const CANCEL_POLL_STRIDE: usize = 256;
 
 /// Whether the spiral cuts from center outward or rim inward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SpiralDirection {
     /// Start at the center and spiral outward to the rim.

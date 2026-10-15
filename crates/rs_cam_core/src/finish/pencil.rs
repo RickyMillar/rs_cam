@@ -58,7 +58,17 @@ use emission::emit_paths_with_entry_stock_reported;
 /// The project-file and MCP token is the snake-case variant name:
 /// `dihedral`, `curvature`, `rest_depth`. An unknown token refuses the load
 /// and names the key, as every other typed operation dial does (FIN-09).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PencilDetector {
     /// Mesh-dihedral crease detection (Ohtake-Belyaev-Seidel-style discrete

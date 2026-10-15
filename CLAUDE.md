@@ -29,6 +29,8 @@ folder's file map, invariants, sentries and traps.
 - `crates/rs_cam_viz`: desktop application (`rs_cam_gui`) and embedded MCP
   server.
 - `crates/rs_cam_mcp`: shared MCP parameter types; it is **not** the server.
+- `crates/rs_cam_derive`: proc-macro derives (`OpParams`, `ParamEnum`) that
+  write the operation parameter schema in core (W5).
 - `crates/rs_cam_mcp_proxy`: stdio MCP supervisor in front of `rs_cam_gui --mcp`;
   the agent restarts the GUI through it (`gui_status`, `gui_restart`).
 

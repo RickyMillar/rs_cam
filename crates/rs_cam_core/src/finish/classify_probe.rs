@@ -88,7 +88,16 @@ pub const TILE_EDGE_CELLS: usize = 64;
 /// name one; every variant is reachable through
 /// [`crate::finish::finish_setup::build_classification_surface_with_sampler_and_cancel`].
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ClassificationSampler {

@@ -392,7 +392,17 @@ pub enum CreaseReference {
 /// and every resolution — derived or explicit — is recorded in
 /// [`crate::compute::toolpath_stats::ClaimsReferenceFinding`] so the change is
 /// visible rather than silent.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimsReference {
     /// DERIVE it from what is in scope. A machined prior stock — this op

@@ -12,7 +12,16 @@ use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
 
 /// Direction of facing passes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum FaceDirection {
     /// All passes cut in the same direction (rapid return between passes).

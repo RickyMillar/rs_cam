@@ -171,7 +171,6 @@ fn draw_drill_feed_rows(
         feed_rate,
         " mm/min",
         10.0,
-        1.0..=5000.0,
         feed_sugg,
     );
     dv(
@@ -180,7 +179,6 @@ fn draw_drill_feed_rows(
         retract_z,
         " mm",
         0.5,
-        0.5..=50.0,
     );
 }
 
@@ -206,7 +204,6 @@ fn draw_drill_cycle_rows(
             peck_depth,
             " mm",
             0.5,
-            0.5..=50.0,
         );
     }
     if let Some(dwell_time) = dwell_time
@@ -218,7 +215,6 @@ fn draw_drill_cycle_rows(
             dwell_time,
             " s",
             0.1,
-            0.1..=10.0,
         );
     }
     if let Some(retract_amount) = retract_amount
@@ -230,7 +226,6 @@ fn draw_drill_cycle_rows(
             retract_amount,
             " mm",
             0.1,
-            0.1..=5.0,
         );
     }
 }
@@ -256,7 +251,6 @@ pub(in crate::ui::properties) fn draw_drill_params(
             &mut cfg.depth,
             " mm",
             0.5,
-            0.5..=100.0,
         );
         depth_caution_row(ui, depth_caution);
         draw_drill_feed_rows(
@@ -309,7 +303,6 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
             &mut cfg.spoilboard_penetration,
             " mm",
             0.5,
-            0.5..=20.0,
         );
         draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
         draw_drill_feed_rows(

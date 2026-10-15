@@ -8,7 +8,16 @@ use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, Toolpath};
 
 /// Which side of the boundary the tool cuts on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ProfileSide {
     /// Tool outside the boundary (cutting out a part).

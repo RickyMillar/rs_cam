@@ -153,7 +153,8 @@ fn every_advertised_enum_value_is_one_the_config_can_hold() {
 
 /// The specific F1.16 case, pinned so the fix cannot silently regress.
 ///
-/// Profile's side is `inside|outside` and nothing more. The on-the-line cut
+/// Profile's side is `outside|inside` and nothing more. W5: the order is the
+/// `ProfileSide` declaration order, which `#[derive(ParamEnum)]` reads. The on-the-line cut
 /// exists in this repo twice under its own names — `project_curve` with
 /// `side: center` (labelled "On Line") and `trace` with
 /// `compensation: none`, whose doc says "tool center follows the path
@@ -166,7 +167,7 @@ fn profile_side_advertises_only_the_two_sides_it_cuts() {
         .param_type_name("side")
         .expect("profile advertises a side param");
     assert_eq!(
-        type_name, "enum:inside|outside",
+        type_name, "enum:outside|inside",
         "profile's side schema must name exactly the two ProfileSide variants"
     );
 

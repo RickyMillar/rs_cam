@@ -152,7 +152,8 @@ fn the_dial_is_reachable_from_set_toolpath_param() {
     assert!(
         OperationType::Pencil
             .registry_entry()
-            .param_defs
+            .params
+            .defs
             .iter()
             .any(|d| d.name == "link_hop_distance_mm"),
         "the registry must publish the dial, or `get_operation_schema` and \

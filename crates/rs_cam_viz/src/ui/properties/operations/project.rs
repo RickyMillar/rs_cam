@@ -124,7 +124,6 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            -20.0..=20.0,
         );
     });
     advanced(ui, "proj_adv", |ui| {
@@ -138,7 +137,6 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             &mut cfg.point_spacing,
             " mm",
             0.1,
-            0.1..=5.0,
         );
         // Chaining is OFF at 0.0 and ships that way — the row's hover (the
         // registry help of `chain_distance_mm`) says so.
@@ -152,7 +150,6 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             &mut cfg.chain_distance_mm,
             " mm",
             0.1,
-            0.0..=25.0,
         );
     });
 }

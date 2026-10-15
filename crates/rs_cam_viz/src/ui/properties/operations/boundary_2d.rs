@@ -6,7 +6,7 @@ use crate::state::toolpath::{
     ZigzagConfig,
 };
 
-use super::super::{advanced, depth_caution_row, dv, dv_pill, p, through_cut_row};
+use super::super::{advanced, depth_caution_row, dv, dv_pill, p, schema_range, through_cut_row};
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
@@ -38,7 +38,6 @@ pub(in crate::ui::properties) fn draw_face_params(
             &mut cfg.stepover,
             " mm",
             0.5,
-            0.5..=100.0,
             stepover_sugg,
         );
         dv(
@@ -47,7 +46,6 @@ pub(in crate::ui::properties) fn draw_face_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.0..=50.0,
         );
         depth_caution_row(ui, depth_caution);
         dv_pill(
@@ -56,7 +54,6 @@ pub(in crate::ui::properties) fn draw_face_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=20.0,
             dpp_sugg,
         );
         dv(
@@ -65,7 +62,6 @@ pub(in crate::ui::properties) fn draw_face_params(
             &mut cfg.stock_offset,
             " mm",
             0.5,
-            0.0..=50.0,
         );
     });
 }
@@ -97,7 +93,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
         dv(
@@ -106,7 +101,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.1..=100.0,
         );
         depth_caution_row(ui, depth_caution);
         dv_pill(
@@ -115,7 +109,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
         ui.label("Climb:");
@@ -129,12 +122,11 @@ pub(in crate::ui::properties) fn draw_pocket_params(
                 &mut cfg.angle,
                 " deg",
                 1.0,
-                0.0..=360.0,
             );
         }
     });
     advanced(ui, "pocket_adv", |ui| {
-        finishing_passes_row(ui, &mut cfg.finishing_passes);
+        finishing_passes_row(ui, OperationType::Pocket, &mut cfg.finishing_passes);
     });
 }
 
@@ -142,11 +134,15 @@ pub(in crate::ui::properties) fn draw_pocket_params(
 ///
 /// UI-10: an integer field. `ValueRow` edits an `f64`, and a temporary f64
 /// would change what a partial edit commits.
-fn finishing_passes_row(ui: &mut egui::Ui, passes: &mut usize) {
+fn finishing_passes_row(ui: &mut egui::Ui, op: OperationType, passes: &mut usize) {
     ui.label("Finishing Passes:");
     let mut fp = *passes as i32;
     if ui
-        .add(egui::DragValue::new(&mut fp).range(0..=10).speed(0.1))
+        .add(
+            egui::DragValue::new(&mut fp)
+                .range(schema_range(op, "finishing_passes"))
+                .speed(0.1),
+        )
         .on_hover_text("Spring passes at final depth for dimensional accuracy")
         .changed()
     {
@@ -212,7 +208,6 @@ pub(in crate::ui::properties) fn draw_profile_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.1..=100.0,
         );
         through_cut_row(ui, through_cut);
         depth_caution_row(ui, depth_caution);
@@ -222,7 +217,6 @@ pub(in crate::ui::properties) fn draw_profile_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
         ui.label("Climb:");
@@ -259,7 +253,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 );
             });
         ui.end_row();
-        finishing_passes_row(ui, &mut cfg.finishing_passes);
+        finishing_passes_row(ui, OperationType::Profile, &mut cfg.finishing_passes);
     });
 }
 
@@ -280,7 +274,10 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                 ui.label("Count:");
                 let mut count = cfg.tab_count as i32;
                 if ui
-                    .add(egui::DragValue::new(&mut count).range(0..=20))
+                    .add(
+                        egui::DragValue::new(&mut count)
+                            .range(schema_range(OperationType::Profile, "tab_count")),
+                    )
                     .changed()
                 {
                     cfg.tab_count = count.max(0) as usize;
@@ -293,7 +290,6 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                         &mut cfg.tab_width,
                         " mm",
                         0.5,
-                        1.0..=50.0,
                     );
                     dv(
                         ui,
@@ -301,7 +297,6 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                         &mut cfg.tab_height,
                         " mm",
                         0.5,
-                        0.5..=20.0,
                     );
                 }
             });
@@ -327,7 +322,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
         dv(
@@ -336,7 +330,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.1..=100.0,
         );
         depth_caution_row(ui, depth_caution);
         dv_pill(
@@ -345,7 +338,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
     });
@@ -356,7 +348,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
         ui.label("Slot Clearing:");
         ui.checkbox(&mut cfg.slot_clearing, "").on_hover_text(
@@ -377,7 +368,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             &mut cfg.min_cutting_radius,
             " mm",
             0.1,
-            0.0..=50.0,
         );
         ui.label("Cleanup:");
         egui::ComboBox::from_id_salt("adaptive_cleanup_strategy")
@@ -423,7 +413,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
             &mut cfg.max_depth,
             " mm",
             0.1,
-            0.1..=50.0,
             max_depth_sugg,
         );
         depth_caution_row(ui, depth_caution);
@@ -433,7 +422,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
             &mut cfg.stepover,
             " mm",
             0.05,
-            0.01..=10.0,
             stepover_sugg,
         );
     });
@@ -444,7 +432,6 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
     });
 }
@@ -466,7 +453,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             &mut cfg.pocket_depth,
             " mm",
             0.1,
-            0.1..=50.0,
         );
         depth_caution_row(ui, depth_caution);
         dv(
@@ -475,7 +461,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             &mut cfg.floor_overlap,
             " mm",
             0.1,
-            0.0..=50.0,
         );
         dv(
             ui,
@@ -483,7 +468,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             &mut cfg.floor_ridge,
             " mm",
             0.01,
-            0.005..=1.0,
         );
         dv_pill(
             ui,
@@ -491,7 +475,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
     });
@@ -502,7 +485,6 @@ pub(in crate::ui::properties) fn draw_inlay_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
     });
 }
@@ -524,7 +506,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.pocket_depth,
             " mm",
             0.1,
-            0.1..=50.0,
         );
         depth_caution_row(ui, depth_caution);
         dv(
@@ -533,7 +514,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.glue_gap,
             " mm",
             0.01,
-            0.0..=2.0,
         );
         dv(
             ui,
@@ -541,7 +521,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.proud_height,
             " mm",
             0.1,
-            0.0..=50.0,
         );
         dv(
             ui,
@@ -549,7 +528,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.outer_margin,
             " mm",
             0.1,
-            0.0..=100.0,
         );
         dv_pill(
             ui,
@@ -557,7 +535,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
         dv_pill(
@@ -566,7 +543,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.stepover,
             " mm",
             0.05,
-            0.05..=50.0,
             stepover_sugg,
         );
     });
@@ -577,7 +553,6 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
             &mut cfg.tolerance,
             " mm",
             0.01,
-            0.01..=1.0,
         );
     });
 }
@@ -597,7 +572,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             &mut cfg.stepover,
             " mm",
             0.1,
-            0.05..=50.0,
             stepover_sugg,
         );
         dv(
@@ -606,7 +580,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             &mut cfg.depth,
             " mm",
             0.1,
-            0.1..=100.0,
         );
         depth_caution_row(ui, depth_caution);
         dv_pill(
@@ -615,7 +588,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             &mut cfg.depth_per_pass,
             " mm",
             0.1,
-            0.1..=50.0,
             dpp_sugg,
         );
         dv(
@@ -624,7 +596,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             &mut cfg.angle,
             " deg",
             1.0,
-            0.0..=360.0,
         );
         region_ordering_row(ui, "zigzag_ord", &mut cfg.region_ordering);
     });

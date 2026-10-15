@@ -51,7 +51,8 @@
 //! The registry declares a `ParamRange` on six param defs only
 //! (`peck_depth` on the two drill families, `chain_distance_mm` on
 //! ProjectCurve, and — since N10, 2026-09-11 — `angular_step` and
-//! `point_spacing` on RadialFinish). No named param declares a range on
+//! `point_spacing` on RadialFinish; their floors moved from `> 0` to the
+//! GUI floors by the operator ruling of 2026-10-15). No named param declares a range on
 //! any operation, so the population an out-of-range assertion draws from
 //! is EMPTY, and a gate handed an empty population passes and looks
 //! healthy. The helper's own refusal behaviour is covered by

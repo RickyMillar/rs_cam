@@ -123,6 +123,8 @@ fn set_toolpath_param_depth_per_pass() {
 /// smallest sane positive accepted, and **the refused value not
 /// applied** — a setter that rejects and mutates anyway is worse than
 /// one that accepts.
+///
+/// The operator ruling of 2026-10-15 moves the GUI floor of 0.5 mm into the schema.
 #[test]
 fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
     let mut s = make_session();
@@ -140,7 +142,7 @@ fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
         }
     };
 
-    for bad in [0.0_f64, -3.0, -0.000_001] {
+    for bad in [0.0_f64, -3.0, -0.000_001, 0.499] {
         let err = s
             .set_toolpath_param(0, "peck_depth", json!(bad))
             .expect_err(
@@ -175,22 +177,21 @@ fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
         .range
         .as_ref()
         .expect("peck_depth must publish its range");
-    assert_eq!(range["min"], json!(0.0));
-    assert_eq!(range["min_exclusive"], json!(true));
+    assert_eq!(range["min"], json!(0.5));
+    assert_eq!(range["min_exclusive"], json!(false));
     assert_eq!(range["finite"], json!(true));
 }
 
 /// The **residual** the sentry above deliberately does not close, so
 /// it is on the record rather than implied away.
 ///
-/// `ParamRange::greater_than(0.0)` matches `drill::fed_descents`'
-/// guard exactly (`!peck.is_finite() || peck <= 0.0`). It bounds the
-/// *sign and finiteness* of the peck. It does **not** bound the peck
-/// COUNT: `fed_descents` has no cap, so descents scale as
-/// `depth / peck` without limit, and a positive-but-tiny peck set
-/// through MCP is still a practical hang (allocation-bound, not a
-/// spin). This is measured at safe magnitudes and asserted as a
-/// TREND, not run at the magnitude that would take the machine down.
+/// The schema floor (0.5 mm since the operator ruling of 2026-10-15)
+/// bounds the peck count of a value set through MCP. It does **not**
+/// bound `fed_descents` itself: the emitter has no cap, so descents
+/// scale as `depth / peck` without limit, and a project file or a
+/// feeds write that bypasses the setter can still carry a tiny peck.
+/// This is measured at safe magnitudes and asserted as a TREND, not
+/// run at the magnitude that would take the machine down.
 ///
 /// Not fixed here: capping the emitter is a behavioural change to
 /// generation, and S-5's brief is to align the ParamDef. Reported as
@@ -443,6 +444,30 @@ fn set_toolpath_param_wrong_type_errors() {
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
     let result = s.set_toolpath_param(0, "feed_rate", json!("not a number"));
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
+}
+
+/// W5: before W5 only the GUI clamped Pocket `stepover` (0.05..=50) and
+/// `angle` (0..=360); MCP took any finite value. The ranges now live in the
+/// schema, so the setter refuses a value outside them on the named arm and
+/// on the generic serde arm, names the range, and keeps the config.
+#[test]
+fn set_toolpath_param_refuses_a_value_outside_the_schema_range_w5() {
+    let mut s = make_session();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let before = format!("{:?}", s.toolpath_configs()[0].operation);
+    let err = s
+        .set_toolpath_param(0, "stepover", json!(60.0))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("<= 50"), "the refusal names the range: {err}");
+    let err = s
+        .set_toolpath_param(0, "angle", json!(400.0))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("<= 360"), "the refusal names the range: {err}");
+    assert_eq!(format!("{:?}", s.toolpath_configs()[0].operation), before);
+    // The bound itself is inside the inclusive range.
+    let _ = s.set_toolpath_param(0, "stepover", json!(50.0)).unwrap();
 }
 
 #[test]

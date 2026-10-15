@@ -58,7 +58,7 @@ pub struct OperationSchema {
     pub params: Vec<OperationParamSchema>,
     /// Names `set_toolpath_param` accepts that are NOT operation
     /// parameters — they write toolpath state instead of the operation
-    /// config, so no `param_defs` array holds them (CMP-08).
+    /// config, so no `ParamDef` table holds them (CMP-08).
     ///
     /// The same for every operation. Published here rather than mixed
     /// into [`Self::params`], because a caller reading `params` is
@@ -71,7 +71,7 @@ pub struct OperationSchema {
 ///
 /// `debug_enabled` writes `ToolpathConfig::debug_options`, not the
 /// operation config, so the generic serde arm of `set_toolpath_param`
-/// never sees it and no `param_defs` array can hold it. Before this row
+/// never sees it and no `ParamDef` table can hold it. Before this row
 /// it was a fourth accepted name that the published schema did not
 /// mention at all.
 pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required("debug_enabled", "bool")];
@@ -84,57 +84,132 @@ pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required("debug_enabled
 /// it, and the setter refuses it with [`Self::reason`]. The schema then
 /// offers no field the setter refuses and hides no field the setter
 /// accepts.
+///
+/// W5: the `#[param(driver_set = "reason")]` attribute on the config field
+/// writes this row, through `#[derive(OpParams)]`. The row lives in the
+/// op's [`ParamTable::driver_set`]; there is no second table.
 #[derive(Debug, Clone, Copy)]
 pub struct DriverSetField {
     /// The config field name.
     pub name: &'static str,
-    /// The operations whose config holds the field.
-    pub ops: &'static [OperationType],
     /// Which driver writes the field, and why an edit is refused.
     pub reason: &'static str,
 }
 
-/// Every driver-set config field, one row per field name.
-pub const DRIVER_SET_FIELDS: &[DriverSetField] = &[
-    DriverSetField {
-        name: "selected_holes",
-        ops: &[OperationType::Drill, OperationType::AlignmentPinDrill],
-        reason: "the DXF/model drill picker writes the picked target list",
-    },
-    DriverSetField {
-        name: "selected_layers",
-        ops: &[OperationType::Drill, OperationType::AlignmentPinDrill],
-        reason: "the layer-select route writes this beside the picked target list",
-    },
-    DriverSetField {
-        name: "diameter",
-        ops: &[OperationType::AlignmentPinDrill],
-        reason: "the pin door keeps one pin-drill operation per pin diameter and writes \
-                 the diameter it drills (R1); an edit would make the operation drill no pin. \
-                 Edit the pin set instead",
-    },
-    DriverSetField {
-        name: "setup_z_flipped",
-        ops: &[OperationType::ProjectCurve],
-        reason: "the setup transform writes this from the setup face",
-    },
-];
+/// A config field that is not a parameter at all (W5,
+/// `#[param(skip = "reason")]`). No config has one today.
+#[derive(Debug, Clone, Copy)]
+pub struct SkippedField {
+    /// The config field name.
+    pub name: &'static str,
+    /// Why the field is not a parameter.
+    pub reason: &'static str,
+}
 
 /// The driver-set row for `param` on `op_type`, if there is one.
 #[must_use]
 pub fn driver_set_field(op_type: OperationType, param: &str) -> Option<&'static DriverSetField> {
-    DRIVER_SET_FIELDS
+    op_type
+        .registry_entry()
+        .params
+        .driver_set
         .iter()
-        .find(|field| field.name == param && field.ops.contains(&op_type))
+        .find(|field| field.name == param)
+}
+
+/// The parameter table of one operation config (W5).
+///
+/// `#[derive(OpParams)]` writes it from the config struct, so every field
+/// of the struct is in exactly one of [`Self::defs`], [`Self::driver_set`]
+/// and [`Self::skipped`], in the field order of the struct.
+#[derive(Debug, Clone, Copy)]
+pub struct ParamTable {
+    /// The published parameters.
+    pub defs: &'static [ParamDef],
+    /// The fields that their own driver writes (D9).
+    pub driver_set: &'static [DriverSetField],
+    /// The fields that are not parameters.
+    pub skipped: &'static [SkippedField],
+    /// Every field name of the struct, in declaration order.
+    pub fields: &'static [&'static str],
+}
+
+/// An operation config whose parameter table `#[derive(OpParams)]` wrote.
+pub trait OpParams {
+    /// The table of the config's fields.
+    const PARAMS: ParamTable;
+}
+
+/// The schema type string of a parameter's Rust type (W5).
+///
+/// `#[derive(OpParams)]` reads [`Self::TYPE_NAME`] and [`Self::OPTIONAL`]
+/// for every published field, so a field of a type without an impl does
+/// not compile. `#[derive(ParamEnum)]` writes the impl of a parameter enum
+/// (`enum:a|b`, from the serde names).
+pub trait ParamType {
+    /// The type string a field of this type publishes.
+    const TYPE_NAME: &'static str;
+    /// The type string an `Option` of this type publishes. For an enum it is
+    /// the same `enum:a|b` string: the schema states the optional flag
+    /// beside it.
+    const OPTION_TYPE_NAME: &'static str;
+    /// Whether a field of this type is optional. True only for `Option`.
+    const OPTIONAL: bool = false;
+}
+
+impl<T: ParamType> ParamType for Option<T> {
+    const TYPE_NAME: &'static str = T::OPTION_TYPE_NAME;
+    const OPTION_TYPE_NAME: &'static str = T::OPTION_TYPE_NAME;
+    const OPTIONAL: bool = true;
+}
+
+impl ParamType for f64 {
+    const TYPE_NAME: &'static str = "f64";
+    const OPTION_TYPE_NAME: &'static str = "option<f64>";
+}
+
+impl ParamType for u32 {
+    const TYPE_NAME: &'static str = "u32";
+    const OPTION_TYPE_NAME: &'static str = "option<u32>";
+}
+
+impl ParamType for usize {
+    const TYPE_NAME: &'static str = "usize";
+    const OPTION_TYPE_NAME: &'static str = "option<usize>";
+}
+
+impl ParamType for bool {
+    const TYPE_NAME: &'static str = "bool";
+    const OPTION_TYPE_NAME: &'static str = "option<bool>";
+}
+
+impl ParamType for Vec<[f64; 2]> {
+    const TYPE_NAME: &'static str = "array<[f64;2]>";
+    const OPTION_TYPE_NAME: &'static str = "option<array<[f64;2]>>";
+}
+
+/// A tool id is a plain index on the wire.
+impl ParamType for crate::compute::tool_config::ToolId {
+    const TYPE_NAME: &'static str = "usize";
+    const OPTION_TYPE_NAME: &'static str = "option<usize>";
+}
+
+/// A model id is a plain index on the wire.
+impl ParamType for crate::ids::ModelId {
+    const TYPE_NAME: &'static str = "usize";
+    const OPTION_TYPE_NAME: &'static str = "option<usize>";
 }
 
 /// The numeric domain a settable parameter is declared to accept.
 ///
 /// # What `None` on [`ParamDef::range`] means (DR-LIVE, 2026-08-14)
 ///
-/// **Not measured, not "unbounded".** Almost every entry in the registry
-/// still carries `None`, because nobody has stated that param's domain —
-/// exactly the state `peck_depth` was in when
+/// **Not measured, not "unbounded".** An entry carries `None` when nobody
+/// has stated that param's domain. W5 moved every GUI clamp range into the
+/// schema (`#[param(range = ...)]`), so the GUI and the setter read one
+/// domain; feeds, the spindle and most optional dials still carry `None`,
+/// and an absolute-Z field never carries one ([`ParamDef::frame_dependent`]).
+/// That is the state `peck_depth` was in when
 /// `TECH_DEBT_2_CLOSEOUT.md` §4.4 ledgered DR-LIVE: `ParamDef::required
 /// ("peck_depth", "f64")` advertised no domain at all, so MCP
 /// `set_toolpath_param` accepted `0` and `-3` on a param whose emitter
@@ -144,7 +219,8 @@ pub fn driver_set_field(op_type: OperationType, param: &str) -> Option<&'static 
 /// as "any f64 is valid here" is the same category error this whole
 /// ledger keeps finding, so it is written down at the type.
 ///
-/// A declared range is a **refusal at the setter**, not a clamp: the
+/// A declared range is a **refusal at the setter**, and the GUI row
+/// clamps to it ([`Self::inclusive_bounds`]). At the setter the
 /// value the caller asked for is rejected with a message naming the
 /// domain, rather than silently becoming a different number. Project
 /// TOML is deliberately **not** validated against it — a file is loaded
@@ -161,26 +237,17 @@ pub struct ParamRange {
 }
 
 impl ParamRange {
-    /// A strictly-positive-and-above-`min` domain with no ceiling — the
-    /// shape of every "a physical length that must be real" dial.
-    pub(super) const fn greater_than(min: f64) -> Self {
-        Self {
-            min: Some(min),
-            max: None,
-            min_exclusive: true,
-        }
-    }
-
-    /// `min` INCLUSIVE, no ceiling — the shape of a dial whose floor is a
-    /// meaningful setting rather than a degenerate one. A cap that switches
-    /// its own feature off at `0.0` needs this and not
-    /// [`Self::greater_than`], which would refuse the off position.
-    pub(super) const fn at_least(min: f64) -> Self {
-        Self {
-            min: Some(min),
-            max: None,
-            min_exclusive: false,
-        }
+    /// The domain as one inclusive interval, for a widget that clamps
+    /// (W5: the GUI `dv` row). A missing bound is infinite. A strict lower
+    /// bound `m` becomes the next float above `m`, so the widget never
+    /// holds a value that [`Self::accepts`] refuses.
+    pub fn inclusive_bounds(&self) -> std::ops::RangeInclusive<f64> {
+        let lo = match (self.min, self.min_exclusive) {
+            (Some(m), true) => m.next_up(),
+            (Some(m), false) => m,
+            (None, _) => f64::NEG_INFINITY,
+        };
+        lo..=self.max.unwrap_or(f64::INFINITY)
     }
 
     /// Whether `value` is inside the declared domain. Non-finite is
@@ -247,6 +314,12 @@ impl ParamRange {
     }
 }
 
+/// One published operation parameter.
+///
+/// W5: `#[derive(OpParams)]` writes every `ParamDef` from the config struct
+/// (`compute/operation_configs.rs`): the name and the field order from the
+/// struct, the type string from [`ParamType`], `optional` from `Option<T>`
+/// or `#[param(optional)]`, and the rest from `#[param(...)]`.
 #[derive(Debug, Clone, Copy)]
 pub struct ParamDef {
     pub name: &'static str,
@@ -280,6 +353,11 @@ pub struct ParamDef {
     /// beside its def and it never becomes a key of its own in
     /// `params_value_including_nulls` or `param_schema_hints`.
     pub aliases: &'static [&'static str],
+    /// The field is an absolute coordinate in the setup frame (an absolute
+    /// Z, `#[param(frame_dependent)]`). A setup-local frame can put the
+    /// stock at positive Z, so the valid values depend on the frame and the
+    /// def carries no static [`Self::range`]. Not published on the wire.
+    pub frame_dependent: bool,
 }
 
 impl ParamDef {
@@ -291,88 +369,7 @@ impl ParamDef {
             help: None,
             range: None,
             aliases: &[],
-        }
-    }
-
-    /// A required parameter whose numeric domain the registry states.
-    pub(super) const fn required_ranged(
-        name: &'static str,
-        type_name: &'static str,
-        range: ParamRange,
-        help: &'static str,
-    ) -> Self {
-        Self {
-            name,
-            type_name,
-            optional: false,
-            help: Some(help),
-            range: Some(range),
-            aliases: &[],
-        }
-    }
-
-    pub(super) const fn optional(name: &'static str, type_name: &'static str) -> Self {
-        Self {
-            name,
-            type_name,
-            optional: true,
-            help: None,
-            range: None,
-            aliases: &[],
-        }
-    }
-
-    pub(super) const fn optional_desc(
-        name: &'static str,
-        type_name: &'static str,
-        help: &'static str,
-    ) -> Self {
-        Self {
-            name,
-            type_name,
-            optional: true,
-            help: Some(help),
-            range: None,
-            aliases: &[],
-        }
-    }
-
-    /// A required parameter that carries an agent-facing description.
-    ///
-    /// The sibling of [`Self::optional_desc`] for the required case, added
-    /// so a dial whose SEMANTICS an agent cannot guess from its name can say
-    /// what it does. First used by F3 / D-16.2.
-    pub(super) const fn required_desc(
-        name: &'static str,
-        type_name: &'static str,
-        help: &'static str,
-    ) -> Self {
-        Self {
-            name,
-            type_name,
-            optional: false,
-            help: Some(help),
-            range: None,
-            aliases: &[],
-        }
-    }
-
-    /// The same def, plus the other names `set_toolpath_param` accepts
-    /// for this field. See [`Self::aliases`] for why a registry row and
-    /// not a hidden match arm.
-    pub(super) const fn with_aliases(self, aliases: &'static [&'static str]) -> Self {
-        Self { aliases, ..self }
-    }
-
-    /// The same def, plus the one line that says what the dial does.
-    ///
-    /// UI-04 wrote the GUI's 60 tooltip texts onto the rows they belong to
-    /// through this builder, so the constructor list above did not have to
-    /// grow a fourth variant for every combination.
-    pub(super) const fn with_help(self, help: &'static str) -> Self {
-        Self {
-            help: Some(help),
-            ..self
+            frame_dependent: false,
         }
     }
 }
@@ -604,7 +601,8 @@ impl DressupPolicy {
 pub struct OpRegistryEntry {
     pub op_type: OperationType,
     pub spec: OperationSpec,
-    pub param_defs: &'static [ParamDef],
+    /// W5: the parameter table `#[derive(OpParams)]` wrote from the config.
+    pub params: ParamTable,
     pub tool_constraints: ToolConstraintsDef,
     pub dressup_policy: DressupPolicy,
     /// The three per-op policies CMP-07 moved off `matches!` lists.

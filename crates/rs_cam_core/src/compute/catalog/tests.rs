@@ -19,7 +19,7 @@ fn operation_catalog_is_exhaustive_and_consistent() {
         assert_eq!(entry.op_type, op_type, "registry entry op_type mismatch");
         assert_eq!(entry.spec.label, op_type.label());
         assert!(
-            !entry.param_defs.is_empty(),
+            !entry.params.defs.is_empty(),
             "{op_type:?}: registry entry has no settable params — \
              every op exposes at least one"
         );
@@ -33,132 +33,138 @@ fn operation_catalog_is_exhaustive_and_consistent() {
     }
 }
 
-/// CMP-10: every field of an operation's config is either a published
-/// `ParamDef` or a named exemption with a reason.
+/// CMP-10, W5: every field of an operation's config is a published
+/// `ParamDef`, a driver-set field or a skipped field, and no row names a
+/// field the config does not have.
 ///
-/// Nothing compared the two tables before this. The gap ran both ways:
-/// a new struct field was simply invisible to MCP, and
-/// `params_value_including_nulls` inserts a JSON null for any `ParamDef`
-/// name, so a def naming a field that no longer exists would publish a
-/// null for ever. CMP-09 found two live instances by hand;
-/// `DropCutterConfig::scallop_height` — a dial the GUI could turn and an
-/// agent could not — is now published, and the other is recorded below.
-///
-/// # Why the field list comes from the SOURCE
-///
-/// The obvious instrument is the serialised default config. It does not
-/// work, and the way it fails is the reason CMP-09 went unseen: almost
-/// every unexposed field is an `Option` with
-/// `skip_serializing_if = "Option::is_none"`, so a default config does
-/// not serialise it at all. `scallop_height` is exactly that shape. An
-/// instrument built on the default's key set reports a clean sweep over
-/// an empty population.
-///
-/// So this reads `operation_configs.rs` and takes each config struct's
-/// own `pub` field list. The field counts below are the non-vacuity
-/// anchor: the parser must find all 24 structs and a field total in the
-/// right order of magnitude, or it is measuring nothing.
+/// `#[derive(OpParams)]` writes the table from the struct, so the three
+/// lists cover the fields by construction. This test reads the table the
+/// registry row holds and checks the partition: each field of
+/// `ParamTable::fields` is in exactly one list, each list row names a
+/// field, and each reason is not empty. Before W5 the same claim needed a
+/// test that parsed `operation_configs.rs` as text.
 #[test]
-fn param_defs_cover_every_config_field() {
-    // One row per field that exists and is deliberately NOT settable
-    // through `set_toolpath_param`: the production table
-    // `DRIVER_SET_FIELDS` (D9), which the setter reads too. Adding a row
-    // there is a decision; the absence of a row is a defect.
-
-    const CONFIG_SRC: &str = include_str!("../operation_configs.rs");
-
-    /// Every `pub` field of one config struct, read from the source.
-    fn fields_of(struct_name: &str) -> Vec<&'static str> {
-        let head = format!("pub struct {struct_name} {{");
-        let at = CONFIG_SRC
-            .find(&head)
-            .unwrap_or_else(|| panic!("`{head}` is not in operation_configs.rs"));
-        let body_start = at + head.len();
-        // Every struct in this file closes with a `}` in column 0.
-        let body_len = CONFIG_SRC[body_start..]
-            .find("\n}")
-            .unwrap_or_else(|| panic!("`{struct_name}` has no closing brace"));
-        CONFIG_SRC[body_start..body_start + body_len]
-            .lines()
-            .filter_map(|line| {
-                let t = line.trim_start();
-                let rest = t.strip_prefix("pub ")?;
-                let colon = rest.find(':')?;
-                let name = &rest[..colon];
-                name.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                    .then_some(name)
-            })
-            .collect()
-    }
-
-    let mut unexposed_seen: Vec<(OperationType, &str)> = Vec::new();
+fn every_config_field_is_published_driver_set_or_skipped() {
     let mut field_total = 0;
     let mut def_total = 0;
-
+    let mut driver_set_total = 0;
     for &op_type in OperationType::ALL {
-        let struct_name = format!("{}Config", op_type.name());
-        let fields = fields_of(&struct_name);
-        assert!(
-            !fields.is_empty(),
-            "{struct_name}: the parser found no fields — it is measuring nothing"
-        );
-        field_total += fields.len();
-
-        let published = OperationConfig::param_names_for_type(op_type);
-        def_total += op_type.registry_entry().param_defs.len();
-
-        for field in &fields {
-            if published.contains(field) {
-                continue;
-            }
-            assert!(
-                driver_set_field(op_type, field).is_some(),
-                "{op_type:?}: `{struct_name}::{field}` is in no `param_defs` array, so no \
-                 agent can set it and `get_operation_schema` does not mention it. Publish \
-                 it as a `ParamDef`, or add it to `DRIVER_SET_FIELDS` with this operation \
-                 and the reason it is driver-set."
+        let table = op_type.registry_entry().params;
+        field_total += table.fields.len();
+        def_total += table.defs.len();
+        driver_set_total += table.driver_set.len();
+        for field in table.fields {
+            let homes = table.defs.iter().filter(|d| d.name == *field).count()
+                + table.driver_set.iter().filter(|d| d.name == *field).count()
+                + table.skipped.iter().filter(|d| d.name == *field).count();
+            assert_eq!(
+                homes, 1,
+                "{op_type:?}: the config field `{field}` is in {homes} of the three lists \
+                 (published, driver-set, skipped); it must be in exactly one"
             );
-            unexposed_seen.push((op_type, *field));
         }
-
-        // The other direction, as far as it can honestly go: a def must
-        // name a field of the struct it describes.
-        for def in op_type.registry_entry().param_defs {
+        assert_eq!(
+            table.fields.len(),
+            table.defs.len() + table.driver_set.len() + table.skipped.len(),
+            "{op_type:?}: a list row names a field the config does not have"
+        );
+        for row in table.driver_set {
             assert!(
-                fields.contains(&def.name),
-                "{op_type:?}: `param_defs` publishes `{}`, and `{struct_name}` has no field \
-                 of that name. The schema advertises a dial that writes nothing, and \
-                 `params_value_including_nulls` publishes a null for it for ever.",
-                def.name
+                !row.reason.trim().is_empty(),
+                "{op_type:?}: `{}` has no reason",
+                row.name
+            );
+        }
+        for row in table.skipped {
+            assert!(
+                !row.reason.trim().is_empty(),
+                "{op_type:?}: `{}` has no reason",
+                row.name
             );
         }
     }
-
-    // Non-vacuity anchors. The audit of 2026-09-17 counted 243 defs
-    // against 250 fields; these bars are deliberately loose, because the
-    // claim is "the parser read the real tables", not a pinned census.
+    // Non-vacuity anchors: the tables are the real ones (269 defs and four
+    // driver-set field names over six rows on 2026-10-15).
     assert!(
         field_total > 200,
-        "the parser found only {field_total} config fields over 24 structs"
+        "only {field_total} config fields over 24 structs"
     );
     assert!(
         def_total > 200,
-        "the registry holds only {def_total} param defs over 24 operations"
+        "only {def_total} param defs over 24 operations"
     );
+    assert!(
+        driver_set_total >= 6,
+        "only {driver_set_total} driver-set rows"
+    );
+}
 
-    // Non-vacuity on the allow-list itself: an entry nobody hits is a
-    // stale exemption, and a stale exemption hides the next real one.
-    for field in DRIVER_SET_FIELDS {
-        for &op_type in field.ops {
-            assert!(
-                unexposed_seen.contains(&(op_type, field.name)),
-                "the DRIVER_SET_FIELDS row `{}` names {op_type:?}, and that config has no \
-                 unpublished field of that name any more. Delete it from the row.",
-                field.name
-            );
+/// W5: a field that is an absolute Z in the setup frame carries no static
+/// range. A setup-local frame can put the stock at positive Z (the mini
+/// project's stock spans 0..24.5), so a static range refuses valid values
+/// through MCP and clamps them in the GUI.
+#[test]
+fn frame_dependent_fields_carry_no_static_range() {
+    // The absolute-Z fields on 2026-10-15. A new one needs
+    // `#[param(frame_dependent)]` and a row here.
+    const FRAME_DEPENDENT: &[(OperationType, &str)] = &[
+        (OperationType::DropCutter, "min_z"),
+        (OperationType::Drill, "retract_z"),
+        (OperationType::AlignmentPinDrill, "retract_z"),
+    ];
+    let mut marked = Vec::new();
+    for &op_type in OperationType::ALL {
+        for def in op_type.registry_entry().params.defs {
+            if def.frame_dependent {
+                assert!(
+                    def.range.is_none(),
+                    "{op_type:?}.{} is frame-dependent and carries a static range",
+                    def.name
+                );
+                marked.push((op_type, def.name));
+            }
         }
     }
+    for &(op_type, name) in FRAME_DEPENDENT {
+        assert!(
+            marked.contains(&(op_type, name)),
+            "{op_type:?}.{name} is an absolute Z and is not marked frame_dependent"
+        );
+    }
+    assert_eq!(marked.len(), FRAME_DEPENDENT.len(), "marked: {marked:?}");
+}
+
+/// W5: every declared range is well formed and holds the default value of
+/// its field. `set_toolpath_param` refuses a value outside the range, so a
+/// default outside it would be a value the op starts with and an agent
+/// cannot write back.
+#[test]
+fn every_declared_range_holds_the_default() {
+    let mut ranged = 0;
+    for &op_type in OperationType::ALL {
+        let schema = OperationConfig::schema_for_type(op_type);
+        for def in op_type.registry_entry().params.defs {
+            let Some(range) = def.range else { continue };
+            ranged += 1;
+            if let (Some(min), Some(max)) = (range.min, range.max) {
+                assert!(min < max, "{op_type:?}.{}: the range is empty", def.name);
+            }
+            let default = schema
+                .params
+                .iter()
+                .find(|p| p.name == def.name)
+                .and_then(|p| p.default.as_f64());
+            if let Some(value) = default {
+                assert!(
+                    range.accepts(value),
+                    "{op_type:?}.{}: the default {value} is outside {}",
+                    def.name,
+                    range.describe()
+                );
+            }
+        }
+    }
+    assert!(ranged > 100, "only {ranged} ranged params");
 }
 
 /// CMP-08: every alias the registry publishes names a real def on the
@@ -168,11 +174,11 @@ fn every_alias_names_a_field_of_its_own_operation() {
     let mut aliases_seen = 0;
     for &op_type in OperationType::ALL {
         let entry = op_type.registry_entry();
-        for def in entry.param_defs {
+        for def in entry.params.defs {
             for alias in def.aliases {
                 aliases_seen += 1;
                 assert!(
-                    entry.param_defs.iter().all(|other| other.name != *alias),
+                    entry.params.defs.iter().all(|other| other.name != *alias),
                     "{op_type:?}: `{alias}` is both an alias of `{}` and a param name of                      its own. One name, one field.",
                     def.name
                 );
@@ -856,7 +862,7 @@ fn param_def_help_only_ever_grows_ui04() {
     let mut helpless = Vec::new();
     let mut total = 0usize;
     for &op in OperationType::ALL {
-        for def in op.registry_entry().param_defs {
+        for def in op.registry_entry().params.defs {
             total += 1;
             match def.help {
                 Some(text) => assert!(
@@ -887,7 +893,7 @@ fn param_def_help_only_ever_grows_ui04() {
 #[test]
 fn a_param_name_resolves_to_at_most_one_row_ui04() {
     for &op in OperationType::ALL {
-        let defs = op.registry_entry().param_defs;
+        let defs = op.registry_entry().params.defs;
         for def in defs {
             let hits = defs.iter().filter(|d| d.name == def.name).count();
             assert_eq!(

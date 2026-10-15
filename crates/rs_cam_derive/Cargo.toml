@@ -1,0 +1,18 @@
+[package]
+name = "rs_cam_derive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Derive macros for the rs_cam_core operation parameter schema"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = { version = "2.0.117", features = ["full"] }
+
+[lints]
+workspace = true

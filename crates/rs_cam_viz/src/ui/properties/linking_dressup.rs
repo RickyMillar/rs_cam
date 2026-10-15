@@ -36,16 +36,52 @@ pub(super) const fn p(op: OperationType, name: &'static str, label: &'static str
     Param { op, name, label }
 }
 
-pub(super) fn dv(
+/// The clamp range of one parameter row: the range the schema declares for
+/// the parameter (W5).
+///
+/// The same `ParamRange` makes MCP `set_toolpath_param` refuse a value, so
+/// the GUI and an agent accept one domain. A parameter with no declared
+/// range gets an unbounded row.
+pub(super) fn schema_range(op: OperationType, name: &str) -> std::ops::RangeInclusive<f64> {
+    rs_cam_core::compute::catalog::OperationConfig::param_range_for_type(op, name)
+        .map_or(f64::NEG_INFINITY..=f64::INFINITY, |range| {
+            range.inclusive_bounds()
+        })
+}
+
+/// One numeric parameter row. The clamp range is [`schema_range`].
+pub(super) fn dv(ui: &mut egui::Ui, param: Param, val: &mut f64, suffix: &str, speed: f64) {
+    // Delegates to the shared `ValueRow` component (the one labelled-input row).
+    let out = ValueRow::new(
+        param.label,
+        val,
+        suffix,
+        speed,
+        schema_range(param.op, param.name),
+    )
+    .tooltip(help_for(param.op, param.name))
+    .show(ui);
+    record_stock_to_leave(ui, param.name, &out);
+}
+
+/// [`dv`] for a row whose range a GUI rule narrows inside [`schema_range`].
+/// The row clamps to the part of `narrow` that is inside the schema range.
+///
+/// One rule uses it: a cross-field rule. The Unified Finish waterline
+/// threshold stays above the steep threshold. A single-field floor goes in
+/// the schema, not here (operator ruling 2026-10-15).
+pub(super) fn dv_narrowed(
     ui: &mut egui::Ui,
     param: Param,
     val: &mut f64,
     suffix: &str,
     speed: f64,
-    range: std::ops::RangeInclusive<f64>,
+    narrow: std::ops::RangeInclusive<f64>,
 ) {
-    // Delegates to the shared `ValueRow` component (the one labelled-input row).
-    let out = ValueRow::new(param.label, val, suffix, speed, range)
+    let schema = schema_range(param.op, param.name);
+    let lo = narrow.start().max(*schema.start());
+    let hi = narrow.end().min(*schema.end()).max(lo);
+    let out = ValueRow::new(param.label, val, suffix, speed, lo..=hi)
         .tooltip(help_for(param.op, param.name))
         .show(ui);
     record_stock_to_leave(ui, param.name, &out);
@@ -74,7 +110,8 @@ pub(super) fn advanced(ui: &mut egui::Ui, id_salt: &str, add: impl FnOnce(&mut e
 /// tooltip in silence. `help_for` cannot miss for a name the registry states.
 pub(super) fn help_for(op: OperationType, param: &'static str) -> Option<&'static str> {
     op.registry_entry()
-        .param_defs
+        .params
+        .defs
         .iter()
         .find(|d| d.name == param)
         .and_then(|d| d.help)
@@ -197,8 +234,9 @@ fn record_stock_to_leave(
 // fallback or edge-radius floor) rather than the old local
 // `pill_color_for_source` / `source_short_label` helpers.
 
-/// Same as [`dv`] but with an optional inline ⚡ Suggest pill that pushes
-/// the recommended value into the field on click. Delegates to [`ValueRow`]
+/// Same as [`dv`] (the clamp range is [`schema_range`]) but with an optional
+/// inline ⚡ Suggest pill that pushes the recommended value into the field on
+/// click. Delegates to [`ValueRow`]
 /// with the [`Suggestion`] a [`PillSuggestions`] built for this field.
 ///
 /// G-PILLCLAMP (2026-09-10): the suggestion is the apply funnel's as-applied
@@ -212,11 +250,16 @@ pub(super) fn dv_pill(
     val: &mut f64,
     suffix: &str,
     speed: f64,
-    range: std::ops::RangeInclusive<f64>,
     suggestion: Option<pills::PillSuggestion<'_>>,
 ) -> bool {
-    let mut row = ValueRow::new(param.label, val, suffix, speed, range)
-        .tooltip(help_for(param.op, param.name));
+    let mut row = ValueRow::new(
+        param.label,
+        val,
+        suffix,
+        speed,
+        schema_range(param.op, param.name),
+    )
+    .tooltip(help_for(param.op, param.name));
     let mut click = None;
     if let Some(pill) = suggestion {
         let (s, c) = pill.into_parts();

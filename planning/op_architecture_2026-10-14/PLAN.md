@@ -143,7 +143,8 @@ and W4, from what they measure. It is not scheduled now.
 | W2 | DONE: 6fddd518, eabeb43f, e614ee9a, 66a81d77, 7d19ea6d; live check passed (mini: no change); merged to master |
 | W3 | W3.0/W3.1 86692c56, W3.2 b6c83a81, W3.3/W3.4 29183d95, W3.5 Chamfer (Waterline moved to W6: needs fallible emit_level with cancel + per-level stock, and a link hook); B5-B7 7f820c42; live check passed (mini 2675 s vs 2673 s, only Face front changed, B8); merged to master; open: 2D Adaptive shared-mask ruling |
 | W4 | DONE: every_op_conforms_w4 (c7de79a0, 10 checks over ALL, ~8 s); found G-RAMPCHORD (SAFETY, entry ramps cut arc chords; fixed 981ff4ed) and the classification_sampler schema null; R6 bd7cf9f4; B8-B11 b523905a; merged to master |
-| W5–W6 | not started |
+| W5 | DONE: rs_cam_derive #[derive(OpParams)] + ParamEnum, all 24 ops (95ee4b3c), floors in the schema; live mini export identical; merged to master |
+| W6 | not planned yet |
 
 ## Backlog (not scheduled)
 
@@ -160,3 +161,5 @@ and W4, from what they measure. It is not scheduled now.
 - B10: on a rest level the 2D Adaptive planner starts with an entry starter at the piece centre even when that point is cleared.
 - B11: for a rest op, the entry dressup turns a row that runs only in air into a rapid with intent Unknown (also seen on rest Drill pecks). Air rows should be dropped or tagged, not left Unknown.
 - B12 (from B10): at the level at a prior op's own floor, the rest 2D Adaptive still places an entry helix at the piece centre 7.4 mm from material with no cuts near it (level mask reads material, air filter reads air, the filter never drops a helix).
+- B13 (W5): planning/fixtures/nz_south.toml holds four ProjectCurve point_spacing = 0.05, below the W5 range 0.1..=5.0 (the old GUI literal). Rule whether 0.05 is a valid spacing (then lower the min) or the fixture is wrong.
+- B14 (W5): feeds clamp_peck_to_depth bypasses the setter and can write a peck under the 0.5 mm floor on a shallow hole (0.75 x depth).
