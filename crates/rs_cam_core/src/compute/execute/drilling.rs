@@ -6,7 +6,7 @@
 //! `generate_drill` / `generate_alignment_pin_drill`. Split out of
 //! `compute/execute.rs` (P4).
 
-use crate::compute::catalog::OperationConfig;
+use crate::compute::catalog::{OperationConfig, RestUse};
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
 use crate::io::dxf_input::DrillTarget;
@@ -69,8 +69,13 @@ pub fn build_drill_op_for_config(
             } else {
                 HoleSource::ModelDerived
             };
-            let holes =
-                drill_hole_columns(cfg, &hole_xys, stock_bbox, initial_stock, tool_def.radius());
+            let holes = drill_hole_columns(
+                cfg,
+                &hole_xys,
+                stock_bbox,
+                column_stock(op, initial_stock),
+                tool_def.radius(),
+            );
             Some(DrillOp {
                 holes,
                 hole_source,
@@ -539,6 +544,26 @@ fn drill_hole_columns(
     holes
 }
 
+/// The stock that sets the hole tops of `op` (C2). The row's `rest_use`
+/// states the rule, as for 2D Adaptive: `StockColumn` reads the remaining
+/// stock; every other rule drills from the stock box top.
+fn column_stock<'s>(
+    op: &OperationConfig,
+    initial_stock: Option<&'s crate::dexel_stock::TriDexelStock>,
+) -> Option<&'s crate::dexel_stock::TriDexelStock> {
+    match op.capabilities().rest_use {
+        RestUse::StockColumn => initial_stock,
+        RestUse::None
+        | RestUse::LevelClip
+        | RestUse::LevelSkip
+        | RestUse::LevelMask
+        | RestUse::ContourFilter
+        | RestUse::Planner
+        | RestUse::Reference
+        | RestUse::LinkSafetyOnly => None,
+    }
+}
+
 /// Drill family adapter (holes from the model's drill targets or picks).
 pub(crate) fn generate_drill(
     ctx: &ExecutionContext<'_>,
@@ -552,12 +577,12 @@ pub(crate) fn generate_drill(
     let hole_xys = drill_holes_for_config(cfg, ctx.drill_targets, ctx.setup_transform)?;
     // D8 (W3.4, `RestUse::StockColumn`): each hole starts at the remaining
     // stock top over it. `build_drill_op_for_config` reads the same
-    // columns.
+    // columns through the same rule.
     let holes = drill_hole_columns(
         cfg,
         &hole_xys,
         ctx.stock_bbox,
-        ctx.initial_stock,
+        column_stock(op, ctx.initial_stock),
         ctx.tool_def.radius(),
     );
     let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath_at_holes(

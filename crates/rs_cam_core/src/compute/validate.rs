@@ -282,10 +282,7 @@ fn check_wood_adaptive_stepover(
     if !matches!(tool_def.to_geometry_hint(), ToolGeometryHint::Flat) {
         return None;
     }
-    if !matches!(
-        tc.operation,
-        OperationConfig::Adaptive(_) | OperationConfig::Adaptive3d(_)
-    ) {
+    if !tc.operation.capabilities().adaptive_woc {
         return None;
     }
     let stepover = tc.operation.as_params().stepover()?;

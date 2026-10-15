@@ -90,8 +90,9 @@ const SESSION_COMPUTE_SRC: &str = include_str!("../src/session/compute/params.rs
 /// Operations whose config has no `stepover` field.
 const EXPECTED_STEPOVER_REJECTS: usize = 11;
 
-/// Operations whose config has no `depth_per_pass` field.
-const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 14;
+/// Operations whose config has no `depth_per_pass` field. C1 deleted the
+/// Waterline alias of `z_step`, so Waterline joined this set (15).
+const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 15;
 
 // ── the two populations, from the registry ───────────────────────
 
@@ -295,13 +296,6 @@ fn pencil_offset_stepover(op: &OperationConfig) -> f64 {
     cfg.offset_stepover
 }
 
-fn waterline_z_step(op: &OperationConfig) -> f64 {
-    let OperationConfig::Waterline(cfg) = op else {
-        panic!("expected Waterline");
-    };
-    cfg.z_step
-}
-
 fn ramp_finish_max_stepdown(op: &OperationConfig) -> f64 {
     let OperationConfig::RampFinish(cfg) = op else {
         panic!("expected RampFinish");
@@ -438,9 +432,10 @@ fn every_name_the_setter_accepts_is_published() {
     );
 }
 
-/// Assertion 3. The named arms are the only route to these three
-/// fields; since CMP-08 the registry publishes all three names as
-/// `ParamDef` aliases of the field each one writes.
+/// Assertion 3. The named arms are the only route to these two fields;
+/// since CMP-08 the registry publishes both names as `ParamDef` aliases
+/// of the field each one writes. C1 deleted the third alias (Waterline
+/// `depth_per_pass` onto `z_step`); the reject count above holds it.
 #[test]
 fn the_alias_setters_still_write_through_the_named_arms() {
     alias_writes_through(
@@ -448,12 +443,6 @@ fn the_alias_setters_still_write_through_the_named_arms() {
         "stepover",
         0.37,
         pencil_offset_stepover,
-    );
-    alias_writes_through(
-        OperationType::Waterline,
-        "depth_per_pass",
-        0.23,
-        waterline_z_step,
     );
     alias_writes_through(
         OperationType::RampFinish,

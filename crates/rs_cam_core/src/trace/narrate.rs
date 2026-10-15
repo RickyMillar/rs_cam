@@ -1077,8 +1077,9 @@ fn append_untouched_standing_split(
 /// the point: a reader must never infer "clean" from a line that is absent
 /// because nothing looked.
 fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    let plans_bands = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().plans_bands);
     match context.dropped_band {
         Some(f) => {
             output.push_str(&format!(
@@ -1232,8 +1233,9 @@ fn append_inert_claims_dial(
 /// worst-case lift DEPTH with no extent could mean one stray point or half
 /// the part and nothing said which.
 fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let ramps = matches!(context.operation_kind, Some(OperationType::RampFinish));
+    let ramps = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().ramp_descent);
     match context.ramp_reach_clamp {
         Some(f) if !f.is_inert() => {
             let area = match f.lifted_area() {
@@ -1287,8 +1289,9 @@ fn append_ramp_reach_clamp(output: &mut String, context: &ToolpathNarrationConte
 /// operation that plans bands, and an explicit "not measured" on one that
 /// does not. Absence of a number is never a zero.
 fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'_>) {
-    use crate::compute::catalog::OperationType;
-    let plans_bands = matches!(context.operation_kind, Some(OperationType::UnifiedFinish));
+    let plans_bands = context
+        .operation_kind
+        .is_some_and(|k| k.capabilities().plans_bands);
     match context.clipped_band {
         Some(f) => {
             output.push_str(&format!("Partly machined band: {}\n", f.message()));

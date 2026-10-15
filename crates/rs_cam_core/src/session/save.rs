@@ -222,7 +222,6 @@ impl ProjectSession {
                     .map(|tc| ProjectToolpathSection {
                         id: Some(tc.id),
                         name: tc.name.clone(),
-                        op_type: Some(tc.operation.op_type()),
                         operation: Some(tc.operation.clone()),
                         enabled: tc.enabled,
                         tool_id: Some(tc.tool_id),
@@ -519,6 +518,12 @@ mod tests {
                 "setups[0].toolpaths[0].operation.params.holes",
                 "live stock pins",
             ),
+            (
+                "[[setups.toolpaths]]\n",
+                "type = \"pocket\"\n",
+                "setups[0].toolpaths[0].type",
+                "kind",
+            ),
         ];
         for (anchor, line, key_path, replacement) in cases {
             assert!(
@@ -534,6 +539,56 @@ mod tests {
             assert!(message.contains(&format!("'{key_path}'")), "{message}");
             assert!(message.contains(replacement), "{message}");
         }
+        cleanup(&path);
+    }
+
+    /// C2: the save writes no retired key, and a file with several
+    /// retired keys refuses with ONE message that names every one.
+    #[test]
+    fn every_retired_key_in_a_file_is_named_in_one_refusal_c2() {
+        let mut s = ProjectSession::new_empty();
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let path = temp_path("retired_keys_all_c2");
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        // The save writes no `type` key in a toolpath table.
+        let value: toml::Value = toml::from_str(&text).unwrap();
+        let toolpaths = value["setups"][0]["toolpaths"].as_array().unwrap();
+        assert_eq!(toolpaths.len(), 2);
+        assert!(
+            toolpaths.iter().all(|t| t.get("type").is_none()),
+            "the save still writes the retired toolpath key `type`:\n{text}"
+        );
+        // Three retired keys: one in the stock, one in EACH toolpath.
+        let edited = text
+            .replacen(
+                "[job.stock]\n",
+                "[job.stock]\nflip_axis = \"horizontal\"\n",
+                1,
+            )
+            .replace(
+                "[[setups.toolpaths]]\n",
+                "[[setups.toolpaths]]\ntype = \"pocket\"\n",
+            );
+        std::fs::write(&path, &edited).unwrap();
+        let message = ProjectSession::load(&path)
+            .err()
+            .expect("the retired keys refuse")
+            .to_string();
+        for key_path in [
+            "job.stock.flip_axis",
+            "setups[0].toolpaths[0].type",
+            "setups[0].toolpaths[1].type",
+        ] {
+            assert!(
+                message.contains(&format!("'{key_path}'")),
+                "the refusal must name {key_path}: {message}"
+            );
+        }
+        assert!(message.contains("3 retired key(s)"), "{message}");
         cleanup(&path);
     }
 

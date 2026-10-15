@@ -103,7 +103,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 7
 name = "Face 5"
-type = "face"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -189,7 +188,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 1
 name = "3D Rough ladder 8 > 2"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1

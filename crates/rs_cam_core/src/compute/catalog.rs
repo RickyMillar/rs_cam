@@ -805,6 +805,22 @@ impl OperationConfig {
                 },
                 ..row
             },
+            // C2: a contour-spiral planner holds the engagement of its
+            // stepover; the other strategies have real engagement spikes.
+            OperationConfig::Adaptive3d(c) => Capabilities {
+                planner_uniform_engagement: matches!(
+                    c.clearing_strategy,
+                    super::operation_configs::ClearingStrategy::ContourSpiral
+                ),
+                ..row
+            },
+            OperationConfig::Adaptive(c) => Capabilities {
+                planner_uniform_engagement: matches!(
+                    c.path_strategy,
+                    crate::adaptive::PathStrategy2d::ContourSpiral
+                ),
+                ..row
+            },
             // No field of these configs changes a capability beyond the
             // entry probe, which `entry_probe` resolved above.
             OperationConfig::Pencil(_)
@@ -814,14 +830,12 @@ impl OperationConfig {
             | OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)
-            | OperationConfig::Adaptive(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
-            | OperationConfig::Adaptive3d(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_) => row,
         }

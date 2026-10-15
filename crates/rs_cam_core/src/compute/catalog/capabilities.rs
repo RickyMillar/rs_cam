@@ -12,6 +12,13 @@
 //! in `feeds/suggest/axial_envelope.rs` and three in `trace/narrate.rs`.
 //! A consumer now reads the field. A consumer that maps a class to its own
 //! numbers or words matches on the class enum, which is exhaustive.
+//!
+//! C2 moved six more answers here: the two narrate lists (`plans_bands`,
+//! `ramp_descent`), the validation and static-check lists
+//! (`adaptive_woc`, `flat_floor_clearing`), the advisor guard
+//! (`clearing_strategy_dial`), the modulation planner floor
+//! (`planner_uniform_engagement`) and two height checks
+//! (`top_on_stock_box`, `floor_inside_stock`).
 
 use super::{FeedsHints, OperationTransformCapabilities};
 use crate::compute::execute::LinkCeilingNeed;
@@ -77,6 +84,41 @@ pub struct Capabilities<P = EntryProbe> {
     /// "Territory is three concepts"). `compute::execute::Territory`
     /// resolves it once per op.
     pub territory_xy: TerritoryXy,
+    /// The op plans finish bands (C2). The narration then states a
+    /// measured "none" for the dropped-band and clipped-band lines,
+    /// instead of "does not apply". Unified Finish.
+    pub plans_bands: bool,
+    /// The op descends by a ramp (C2). The narration then states that a
+    /// missing ramp reach clamp is "not measured" for this run. Ramp
+    /// Finish.
+    pub ramp_descent: bool,
+    /// The stepover is the narrow WOC of an adaptive planner (C2). The
+    /// static validation then applies the 0.15 x D wood floor to it.
+    /// 2D Adaptive and 3D Rough.
+    pub adaptive_woc: bool,
+    /// The op clears a flat floor (C2). A ball nose leaves scallops on
+    /// that floor, so the static check gives a hint. Pocket, Face,
+    /// Zigzag.
+    pub flat_floor_clearing: bool,
+    /// The config field of the clearing strategy that the strategy
+    /// advisor compares (C2), or `None` when the op has no such dial.
+    /// The advisor writes each candidate through this field name.
+    pub clearing_strategy_dial: Option<&'static str>,
+    /// The planner holds a uniform engagement equal to the target of its
+    /// stepover (C2), so feed modulation may read that target as a floor
+    /// under the simulated engagement. A row states `false`;
+    /// `OperationConfig::capabilities` sets it for a contour-spiral
+    /// strategy, which is a config value.
+    pub planner_uniform_engagement: bool,
+    /// The op starts at the stock box top and ignores a pinned Top Z
+    /// (C2). A pinned bottom is then compared with the stock top. 3D
+    /// Rough (`VolumetricOp::HEIGHTS.top`).
+    pub top_on_stock_box: bool,
+    /// The op's depth dial is a floor that must stay inside the stock
+    /// (C2), so the depth-beyond-stock check applies. Project Curve
+    /// measures its depth below the mesh, and Pin Drill goes into the
+    /// spoilboard on purpose: both state `false`.
+    pub floor_inside_stock: bool,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -116,6 +158,14 @@ impl<P> Capabilities<P> {
             axial_envelope: self.axial_envelope,
             rest_use: self.rest_use,
             territory_xy: self.territory_xy,
+            plans_bands: self.plans_bands,
+            ramp_descent: self.ramp_descent,
+            adaptive_woc: self.adaptive_woc,
+            flat_floor_clearing: self.flat_floor_clearing,
+            clearing_strategy_dial: self.clearing_strategy_dial,
+            planner_uniform_engagement: self.planner_uniform_engagement,
+            top_on_stock_box: self.top_on_stock_box,
+            floor_inside_stock: self.floor_inside_stock,
         }
     }
 }

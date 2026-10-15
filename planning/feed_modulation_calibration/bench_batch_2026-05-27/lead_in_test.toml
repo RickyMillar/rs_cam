@@ -90,7 +90,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 1
 name = "Profile lead-in F500 lead-out F4500"
-type = "profile"
 enabled = true
 tool_id = 1
 model_id = 1

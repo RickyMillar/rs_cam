@@ -528,7 +528,6 @@ datum_notes = "Back up. Z0 = spoilboard (MachineTable). XY0 = stock corner = pin
 [[setups.toolpaths]]
 id = 0
 name = "Face back to T1"
-type = "face"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -593,7 +592,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 1
 name = "Pin drill, flip pins"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -654,7 +652,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 2
 name = "Cavity rough D8.80"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 3
@@ -720,7 +717,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 3
 name = "Rough slot Z10.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 5
@@ -788,7 +784,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 4
 name = "Rough slot Z11.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 6
@@ -856,7 +851,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 5
 name = "Rough slot Z12.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 7
@@ -924,7 +918,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 6
 name = "Rough slot Z13.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 8
@@ -992,7 +985,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 7
 name = "Rough slot Z14.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 9
@@ -1060,7 +1052,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 8
 name = "Rough slot Z15.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 10
@@ -1127,7 +1118,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 9
 name = "Light holes Z15.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 11
@@ -1194,7 +1184,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 10
 name = "Light holes Z16.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 12
@@ -1261,7 +1250,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 11
 name = "Light holes Z17.00 helix"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 13
@@ -1331,7 +1319,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 12
 name = "V river pre-pass"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 14
@@ -1399,7 +1386,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 13
 name = "V river final"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 14
@@ -1467,7 +1453,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 14
 name = "V lake pre-pass"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 15
@@ -1535,7 +1520,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 15
 name = "V lake final"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 15
@@ -1600,7 +1584,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 16
 name = "Mech ANTENNA_D5.00"
-type = "pocket"
 enabled = true
 tool_id = 1
 model_id = 16
@@ -1666,7 +1649,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 17
 name = "Mech WIRE_D5.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 17
@@ -1732,7 +1714,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 18
 name = "Mech BOARD_POCKET_D14.50"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 18
@@ -1798,7 +1779,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 19
 name = "Mech PARTS_RELIEF_D17.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 19
@@ -1864,7 +1844,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 20
 name = "Mech STRIP_CHANNEL_F6_D17.10"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 20
@@ -1930,7 +1909,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 21
 name = "Mech SLIT_SLOT_F6_D20.67"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 21
@@ -1996,7 +1974,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 22
 name = "Mech ESP_RELIEF_D20.70"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 22
@@ -2062,7 +2039,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 23
 name = "Mech ANTENNA_D21.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 23
@@ -2128,7 +2104,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 24
 name = "Mech CONTROL_RELIEF_D21.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 24
@@ -2194,7 +2169,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 25
 name = "Mech CONTROL_RELIEF_D22.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 25
@@ -2260,7 +2234,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 26
 name = "Mech THROUGH holes helix"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 26
@@ -2326,7 +2299,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 27
 name = "Day strip slit V60"
-type = "trace"
 enabled = true
 tool_id = 3
 model_id = 27
@@ -2398,7 +2370,6 @@ datum_notes = "Back up, on the pins, after the cure. Same zero as setup 1."
 [[setups.toolpaths]]
 id = 28
 name = "Cavity skim D9.00"
-type = "pocket"
 enabled = true
 tool_id = 0
 model_id = 4
@@ -2474,7 +2445,6 @@ datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. L
 [[setups.toolpaths]]
 id = 29
 name = "Face front to T"
-type = "face"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -2538,7 +2508,6 @@ mode = "auto"
 [[setups.toolpaths]]
 id = 30
 name = "Front 3D rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 4
 model_id = 0
@@ -2622,7 +2591,6 @@ holes = false
 [[setups.toolpaths]]
 id = 31
 name = "Front scallop finish"
-type = "scallop"
 enabled = true
 tool_id = 5
 model_id = 0
@@ -2698,7 +2666,6 @@ holes = false
 [[setups.toolpaths]]
 id = 32
 name = "Outline profile with tabs"
-type = "profile"
 enabled = true
 tool_id = 0
 model_id = 1

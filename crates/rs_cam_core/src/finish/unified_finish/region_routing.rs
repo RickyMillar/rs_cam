@@ -10,7 +10,7 @@ use crate::finish::finish_planner::FinishBand;
 use crate::finish::finish_setup::FinishSurface;
 use crate::finish::scallop::ScallopRuntimeAnnotation;
 use crate::finish::surface_link::{
-    CeilingShape, LinkCeiling, build_surface_link, shape_under_ceiling,
+    CeilingShape, LinkCeiling, LinkLanding, build_surface_link, shape_under_ceiling,
 };
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
@@ -268,6 +268,9 @@ pub(super) struct JunctionChoice {
     /// Interior surface-link points (empty for a retract junction, and for
     /// a zero-length surface junction).
     pub(super) pts: Vec<P3>,
+    /// How the link reaches the next region's entry (B20). `Ride` for a
+    /// retract junction, which emits its own `EntryPlunge`.
+    pub(super) landing: LinkLanding,
     pub(super) cost_s: f64,
     pub(super) alt_cost_s: Option<f64>,
 }
@@ -475,8 +478,8 @@ fn choose_link(
         }
         // B16: the shape under the op's ceiling. A lifted link keeps the XY
         // of the surface candidate, so the boundary test above holds for it.
-        let pts = match link_ceiling {
-            None => pts,
+        let (pts, landing) = match link_ceiling {
+            None => (pts, LinkLanding::Ride),
             Some(ceiling) => match shape_under_ceiling(
                 &ceiling,
                 from,
@@ -489,7 +492,8 @@ fn choose_link(
                 params.safe_z,
                 true,
             ) {
-                CeilingShape::Flush(pts) | CeilingShape::Lifted(pts) => pts,
+                CeilingShape::Flush(pts) => (pts, LinkLanding::Ride),
+                CeilingShape::Lifted { pts, landing } => (pts, landing),
                 CeilingShape::AboveSafeZ => return None,
             },
         };
@@ -503,25 +507,28 @@ fn choose_link(
             lk.max_feed_mm_min,
             lk.rapid_feed_mm_min,
         );
-        Some((pts, surface_t))
+        Some((pts, landing, surface_t))
     });
 
     match surface_candidate {
-        Some((pts, surface_t)) if surface_t <= retract_t => JunctionChoice {
+        Some((pts, landing, surface_t)) if surface_t <= retract_t => JunctionChoice {
             surface: true,
             pts,
+            landing,
             cost_s: surface_t,
             alt_cost_s: Some(retract_t),
         },
-        Some((_, surface_t)) => JunctionChoice {
+        Some((_, _, surface_t)) => JunctionChoice {
             surface: false,
             pts: Vec::new(),
+            landing: LinkLanding::Ride,
             cost_s: retract_t,
             alt_cost_s: Some(surface_t),
         },
         None => JunctionChoice {
             surface: false,
             pts: Vec::new(),
+            landing: LinkLanding::Ride,
             cost_s: retract_t,
             alt_cost_s: None,
         },

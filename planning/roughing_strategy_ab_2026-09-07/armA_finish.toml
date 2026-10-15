@@ -249,7 +249,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 0
 name = "1 Pin Drill"
-type = "alignment_pin_drill"
 enabled = false
 tool_id = 0
 model_id = 0
@@ -327,7 +326,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 1
 name = "2 Back Rough"
-type = "adaptive3d"
 enabled = false
 tool_id = 0
 model_id = 0
@@ -432,7 +430,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 2
 name = "3 Holes (6mm pilot)"
-type = "drill"
 enabled = false
 tool_id = 0
 model_id = 3
@@ -511,7 +508,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 3
 name = "4 Rivers (back, V-bit)"
-type = "project_curve"
 enabled = false
 tool_id = 5
 model_id = 1
@@ -591,7 +587,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 4
 name = "5 Lakes (back)"
-type = "project_curve"
 enabled = false
 tool_id = 2
 model_id = 2
@@ -680,7 +675,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 5
 name = "6 3D Rough (front)"
-type = "adaptive3d"
 enabled = true
 tool_id = 0
 model_id = 0
@@ -785,7 +779,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 8
 name = "7 3D Finish (R1.5 drop_cutter)"
-type = "drop_cutter"
 enabled = true
 tool_id = 3
 model_id = 0
@@ -869,7 +862,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 9
 name = "8 Pencil detail (R0.5)"
-type = "pencil"
 enabled = false
 tool_id = 1
 model_id = 0

@@ -172,10 +172,7 @@ fn tool_op_compat_checks(
 
     // Ball-nose on 2D clearing → demoted quality hint (PR-1).
     if matches!(tool_type, ToolType::BallNose | ToolType::TaperedBallNose)
-        && matches!(
-            op,
-            OperationConfig::Pocket(_) | OperationConfig::Face(_) | OperationConfig::Zigzag(_)
-        )
+        && op.capabilities().flat_floor_clearing
     {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::COMPAT_BALL_NOSE_FLAT_CLEARING),
@@ -539,16 +536,13 @@ impl DepthBeyondStock {
 /// `Drill` is included: it has a depth dial anchored at the top and no
 /// spoilboard allowance of its own (`DrillConfig`).
 pub fn depth_beyond_stock_applies(op: &OperationConfig) -> bool {
-    use crate::compute::catalog::OperationType::{AlignmentPinDrill, ProjectCurve};
     // Subsumed today — all three of Adaptive3d / UnifiedFinish / Waterline
     // declare `DepthSemantics::None`, so the `Explicit` requirement below
     // already excludes them. It is kept because it states the REASON they
     // cannot be answered for, which the `Explicit` check does not: their
     // floor can be a pinned Bottom Z, and this snapshot carries no pin flag.
-    if op.op_type().capabilities().honors_pinned_bottom_z {
-        return false;
-    }
-    if matches!(op.op_type(), ProjectCurve | AlignmentPinDrill) {
+    let caps = op.capabilities();
+    if caps.honors_pinned_bottom_z || !caps.floor_inside_stock {
         return false;
     }
     // `Explicit(_)` and nothing else. `DepthSemantics::None` is the
@@ -610,7 +604,7 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
 /// against the stock top the rough really starts from. Every other operation
 /// reads its resolved `top_z`.
 fn anchored_top_z(op: &OperationConfig, h: &ResolvedHeights) -> f64 {
-    if op.op_type() == crate::compute::catalog::OperationType::Adaptive3d {
+    if op.capabilities().top_on_stock_box {
         h.stock_top_z.unwrap_or(h.top_z)
     } else {
         h.top_z

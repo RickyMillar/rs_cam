@@ -115,7 +115,6 @@ model_ids = [1]
 [[setups.toolpaths]]
 id = 1
 name = "3D Rough 1"
-type = "adaptive3d"
 enabled = true
 tool_id = 0
 model_id = 1
@@ -218,7 +217,6 @@ reference = "amana-flat-softwood-pocket-6000-2f"
 [[setups.toolpaths]]
 id = 3
 name = "3D Rough 1 (copy)"
-type = "adaptive3d"
 enabled = true
 tool_id = 1
 model_id = 1
@@ -320,7 +318,6 @@ reference = "amana-zrn-flat-softwood-pocket-3175-2f"
 [[setups.toolpaths]]
 id = 4
 name = "Waterline 3"
-type = "waterline"
 enabled = true
 tool_id = 0
 model_id = 1

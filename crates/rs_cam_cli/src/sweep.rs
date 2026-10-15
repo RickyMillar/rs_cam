@@ -195,10 +195,11 @@ fn op_field_map(op: &job::OperationDef) -> Result<serde_json::Map<String, serde_
 /// - the field's value, exactly as the parsed job file carries it;
 /// - JSON `null` when the job file leaves the field unset, which states "the
 ///   job file sets nothing here; the operation ran on the planner default";
-/// - a refusal that names the field when `OperationDef` has no such key.
+/// - a refusal that names the field when the op's schema has no such
+///   parameter (C2: the parser's own check).
 ///
-/// The refusal matters: the parser drops an unknown key, so such a sweep
-/// patches nothing and every variant repeats the baseline.
+/// The refusal matters: a sweep of a field that no setter reads would
+/// repeat the baseline in every variant.
 fn resolve_base_value(
     base: &job::JobFile,
     field: &str,
@@ -215,23 +216,10 @@ fn resolve_base_value(
     }
 
     // The job file does not set the field. Patch it with the first sweep
-    // value and read the parsed result back: a key `OperationDef` knows
-    // survives the round trip, an unknown key does not.
-    let probe_job = patch_job_param(base, field, probe_value)?;
-    let probe_op = probe_job
-        .operation
-        .first()
-        .context("the patched job file lost its [[operation]] block")?;
-    if op_field_map(probe_op)?.contains_key(field) {
-        Ok(serde_json::Value::Null)
-    } else {
-        let set_fields = op_field_map(first_op)?;
-        let known: Vec<&str> = set_fields.keys().map(String::as_str).collect();
-        bail!(
-            "the job file's [[operation]] has no field `{field}`; the parser drops that key, so every variant would repeat the baseline. The first operation sets: {}",
-            known.join(", ")
-        )
-    }
+    // value: the patch runs the parser's C2 check, so a field that is not
+    // a schema parameter of the op refuses there and names itself.
+    let _ = patch_job_param(base, field, probe_value)?;
+    Ok(serde_json::Value::Null)
 }
 
 /// Patch one parameter in the first operation of a job file.
@@ -250,6 +238,13 @@ fn patch_job_param(base: &job::JobFile, field: &str, value: &str) -> Result<job:
 
     let patched_job: job::JobFile =
         toml::from_str(&patched).context(format!("Re-parsing patched TOML for {field}={value}"))?;
+    // C2: the patched job passes the parser's own check, so a field that
+    // is not a schema parameter refuses here and names itself.
+    for op in &patched_job.operation {
+        let _ = op
+            .operation_type()
+            .with_context(|| format!("sweep field `{field}`"))?;
+    }
 
     Ok(patched_job)
 }
@@ -439,7 +434,7 @@ min_region_cut_length_mm = 4.0
     #[test]
     fn an_unset_field_reports_null_not_a_made_up_value() {
         let job = sweepable_job();
-        let value = resolve_base_value(&job, "stock_to_leave", "0.3").unwrap();
+        let value = resolve_base_value(&job, "stock_to_leave_axial", "0.3").unwrap();
         assert_eq!(value, serde_json::Value::Null);
         assert_ne!(value, serde_json::json!("default"));
     }
@@ -469,19 +464,23 @@ input = "finish.svg"
 tool = "flat_6mm"
 "#;
         let base: JobFile = toml::from_str(source).unwrap();
-        let patched = super::patch_job_param(&base, "min_region_cut_length_mm", "3.0").unwrap();
-        assert_eq!(patched.operation[0].min_region_cut_length_mm, Some(3.0));
-        assert_eq!(patched.operation[1].min_region_cut_length_mm, None);
+        let patched = super::patch_job_param(&base, "depth_per_pass", "3.0").unwrap();
+        assert_eq!(
+            patched.operation[0].params.get("depth_per_pass"),
+            Some(&toml::Value::Float(3.0))
+        );
+        assert_eq!(patched.operation[1].params.get("depth_per_pass"), None);
 
         // The baseline reads the same operation the patch writes.
         assert_eq!(
-            resolve_base_value(&base, "min_region_cut_length_mm", "3.0").unwrap(),
+            resolve_base_value(&base, "depth_per_pass", "3.0").unwrap(),
             serde_json::Value::Null
         );
     }
 
-    /// A field name `OperationDef` does not know refuses and names the field.
-    /// The parser drops the key, so the sweep would repeat the baseline.
+    /// A field that the op's schema does not publish refuses and names the
+    /// field (C2). No setter reads such a key, so the sweep would repeat
+    /// the baseline.
     #[test]
     fn a_field_the_parser_does_not_know_refuses_the_sweep() {
         let job = sweepable_job();
@@ -492,18 +491,16 @@ tool = "flat_6mm"
         );
     }
 
-    /// CLI-01 sentry: the two deleted job keys refuse the sweep by name.
+    /// CLI-01 sentry: the deleted job keys refuse the sweep by name.
     ///
-    /// `OperationDef` carried `max_stay_down_dist` beside
-    /// `max_stay_down_distance_mm` and coalesced them with `.or()`, and
-    /// it carried an `entry_style` alias for `entry_3d`. Both are gone
-    /// (operator ruling 2026-09-16, no legacy support). `OperationDef`
-    /// does not deny unknown keys, so the plain job loader ignores such
-    /// a key in silence; this door does not, and this test pins that.
+    /// `max_stay_down_dist` was a second spelling of
+    /// `max_stay_down_distance_mm`, and C2 deleted the job spelling
+    /// `entry_3d` (the schema name is `entry_style`). Operator ruling
+    /// 2026-09-16, no legacy support.
     #[test]
     fn the_deleted_job_keys_refuse_the_sweep() {
         let job = sweepable_job();
-        for field in ["max_stay_down_dist", "entry_style"] {
+        for field in ["max_stay_down_dist", "entry_3d"] {
             let outcome = resolve_base_value(&job, field, "1.0");
             assert!(
                 outcome.is_err(),
@@ -558,37 +555,30 @@ type = "adaptive3d"
 input = "design.stl"
 tool = "flat_6mm"
 setup = "front"
+safe_z = 11.0
+coolant = "mist"
+scale = 2.0
+stock_top_z = 1.0
 stepover = 2.0
-depth = 6.0
 depth_per_pass = 3.0
 feed_rate = 1000.0
 plunge_rate = 500.0
-safe_z = 11.0
-spindle_speed = 17000
-coolant = "mist"
-pattern = "zigzag"
-angle = 45.0
-climb = true
-entry = "ramp"
-side = "outside"
-tabs = 4
-tab_width = 6.0
-tab_height = 1.5
-dogbone = true
+spindle_rpm = 17000
 tolerance = 0.05
-slot_clearing = true
 min_cutting_radius = 1.2
 z_blend = true
-scale = 2.0
-stock_top_z = 1.0
-stock_to_leave = 0.3
-entry_3d = "helix"
+stock_to_leave_axial = 0.3
+entry_style = "helix"
 detect_flat_areas = true
-order_by = "by_area"
-strategy = "contour"
+region_ordering = "by_area"
+clearing_strategy = "contour_parallel"
 min_region_cut_length_mm = 4.0
 max_stay_down_distance_mm = 18.0
 stay_down_clearance_mm = 0.75
+
+[operation.dressups]
+entry_style = "ramp"
+dogbone = true
 "#;
         let base: JobFile = toml::from_str(source).unwrap();
         // The sweep serializes the parsed job exactly this way.
@@ -616,14 +606,20 @@ stay_down_clearance_mm = 0.75
         assert_eq!(back.setup[0].name, "front");
 
         let op = &back.operation[0];
+        let first = &base.operation[0];
         assert_eq!(op.coolant, rs_cam_core::gcode::CoolantMode::Mist);
-        assert_eq!(op.min_region_cut_length_mm, Some(4.0));
-        assert_eq!(op.max_stay_down_distance_mm, Some(18.0));
-        assert_eq!(op.stay_down_clearance_mm, Some(0.75));
-        assert_eq!(op.entry_3d.as_deref(), Some("helix"));
-        assert_eq!(op.tabs, Some(4));
-        assert_eq!(op.strategy.as_deref(), Some("contour"));
-        assert_eq!(op.order_by.as_deref(), Some("by_area"));
+        assert_eq!(op.safe_z, Some(11.0));
+        assert_eq!(op.scale, Some(2.0));
+        assert_eq!(op.stock_top_z, Some(1.0));
+        assert_eq!(op.params, first.params, "every parameter survives");
+        assert_eq!(op.params.len(), 16);
+        assert_eq!(op.dressups, first.dressups, "every dressup field survives");
+        assert_eq!(op.dressups.len(), 2);
+        // The emitted job passes the parser's own check.
+        assert_eq!(
+            op.operation_type().unwrap(),
+            rs_cam_core::compute::catalog::OperationType::Adaptive3d
+        );
     }
 
     /// The emitted tool-type strings must re-parse as the same variants.

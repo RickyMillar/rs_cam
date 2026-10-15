@@ -1231,7 +1231,6 @@ name = "Setup 1"
 [[setups.toolpaths]]
 id = 1
 name = "Rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 1
 model_id = 1

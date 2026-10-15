@@ -1437,16 +1437,34 @@ impl RecommendClearingStrategyHandle {
 
     /// Whether the operation carries a clearing strategy at all.
     ///
-    /// Only `Adaptive3d` does. A caller that wants to know before it pays
-    /// for the ranking reads this; [`execute_recommend_clearing_strategy`]
-    /// answers `Ok(None)` for every other operation.
+    /// The op's `clearing_strategy_dial` capability answers (C2). A caller
+    /// that wants to know before it pays for the ranking reads this;
+    /// [`execute_recommend_clearing_strategy`] answers `Ok(None)` for every
+    /// other operation.
     #[must_use]
     pub(crate) fn has_clearing_strategy(&self) -> bool {
-        matches!(
-            self.inputs.operation,
-            crate::compute::OperationConfig::Adaptive3d(_)
-        )
+        self.inputs
+            .operation
+            .capabilities()
+            .clearing_strategy_dial
+            .is_some()
     }
+}
+
+/// A copy of `op` with `strategy` written to its clearing-strategy dial
+/// (C2). The dial is the config field that the op's
+/// `clearing_strategy_dial` capability names. The write is a serde round
+/// trip, the same one `set_toolpath_param` uses. `None` when the op has no
+/// dial or the round trip fails.
+fn with_clearing_strategy(
+    op: &crate::compute::OperationConfig,
+    strategy: ClearingStrategy,
+) -> Option<crate::compute::OperationConfig> {
+    let dial = op.capabilities().clearing_strategy_dial?;
+    let mut json = serde_json::to_value(op).ok()?;
+    let params = json.get_mut("params")?.as_object_mut()?;
+    let _ = params.insert(dial.to_owned(), serde_json::to_value(strategy).ok()?);
+    serde_json::from_value(json).ok()
 }
 
 /// Rank the clearing strategies from a handle — step (ii) of the
@@ -1503,10 +1521,9 @@ pub fn execute_recommend_clearing_strategy(
             break;
         }
         // Override the clearing strategy on a clone of the resolved op.
-        let mut op = resolved.operation.clone();
-        if let crate::compute::OperationConfig::Adaptive3d(ref mut cfg) = op {
-            cfg.clearing_strategy = strategy;
-        }
+        let Some(op) = with_clearing_strategy(&resolved.operation, strategy) else {
+            continue;
+        };
         // Back the params off to the load limit via Suggest.
         let suggested = crate::feeds::suggest::suggest_for_operation(
             crate::feeds::suggest::SuggestForOperationInput {
@@ -1803,29 +1820,15 @@ fn modulate_annotated_against_trace(
     // faster. Per move we take `max(sim, planner)` so any genuine
     // spike the simulator *does* resolve still wins — never feeding
     // above the higher of the two estimates. Gated strictly to the
-    // ContourSpiral strategy: the Agent / AgentSearch path has real
+    // ContourSpiral strategy (`planner_uniform_engagement`): the
+    // Agent / AgentSearch path has real
     // ~2.5× target engagement spikes that a planner floor would
     // dangerously over-feed. See
     // planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md §"Stage 4".
-    let is_contour_spiral = matches!(
-        operation,
-        crate::compute::OperationConfig::Adaptive3d(c)
-            if matches!(
-                c.clearing_strategy,
-                crate::compute::operation_configs::ClearingStrategy::ContourSpiral
-            )
-    ) || matches!(
-        operation,
-        crate::compute::OperationConfig::Adaptive(c)
-            if matches!(c.path_strategy, crate::adaptive::PathStrategy2d::ContourSpiral)
-    );
+    // C2: the `planner_uniform_engagement` capability states the gate.
+    let is_contour_spiral = operation.capabilities().planner_uniform_engagement;
     let planner_uniform_woc: Option<f64> = if is_contour_spiral {
-        let stepover = match operation {
-            crate::compute::OperationConfig::Adaptive3d(c) => Some(c.stepover),
-            crate::compute::OperationConfig::Adaptive(c) => Some(c.stepover),
-            _ => None,
-        };
-        stepover.and_then(|s| {
+        operation.as_params().stepover().and_then(|s| {
             let r = tool_cfg.diameter * 0.5;
             (r > 0.0 && s > 0.0).then(|| {
                 let f = crate::ops::adaptive_shared::target_engagement_fraction(s, r);

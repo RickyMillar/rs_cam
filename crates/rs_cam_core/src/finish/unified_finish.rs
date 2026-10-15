@@ -2368,7 +2368,14 @@ impl ComposedSurfaceOp for UnifiedFinishOp<'_> {
                 for p in &link.pts {
                     stitched.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
                 }
-                stitched.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
+                // B20: a lift that lands in standing stock lands as an entry.
+                crate::finish::surface_link::push_link_landing(
+                    &mut stitched,
+                    entry,
+                    link.landing,
+                    params.feed_rate,
+                    params.plunge_rate,
+                );
             }
 
             // `offset` stays the region's OWN first move — annotation rebasing

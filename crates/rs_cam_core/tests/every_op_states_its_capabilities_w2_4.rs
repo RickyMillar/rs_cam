@@ -27,6 +27,21 @@
 //! W3.5 moved Chamfer onto the Layered runner: its row reads `LevelSkip`.
 //! W6.2 added the `territory_xy` column: the XY containment each op reads
 //! while it plans, resolved once per op by `compute::execute::Territory`.
+//!
+//! C2 added eight columns in a second table ([`frozen_c2`]). Each one
+//! replaced a `match` on the op type in a consumer:
+//!
+//! - `plans_bands`: the dropped-band and clipped-band narrate lines.
+//! - `ramp_descent`: the ramp reach clamp narrate line.
+//! - `adaptive_woc`: the 0.15 x D wood stepover floor in `validate.rs`.
+//! - `flat_floor_clearing`: the ball-nose hint in the static checks.
+//! - `clearing_strategy_dial`: the strategy advisor guard and its write.
+//! - `planner_uniform_engagement`: the modulation planner floor. The row
+//!   says `false`; a contour-spiral config says `true`.
+//! - `top_on_stock_box`: the pinned-bottom check of 3D Rough.
+//! - `floor_inside_stock`: the depth-beyond-stock check.
+//!
+//! Before C2 changed each consumer, the old lists gave the same sets.
 
 #![allow(
     clippy::unwrap_used,
@@ -363,4 +378,157 @@ fn the_feeds_hints_read_the_ops_own_fields() {
         assert_eq!(h.radial_width_mm, None, "{op:?}");
         assert_eq!(h.target_scallop_mm, None, "{op:?}");
     }
+}
+
+/// One frozen C2 row: the eight columns C2 added, in field order.
+type C2Row = (
+    OperationType,
+    bool,
+    bool,
+    bool,
+    bool,
+    Option<&'static str>,
+    bool,
+    bool,
+    bool,
+);
+
+/// The C2 columns: `plans_bands`, `ramp_descent`, `adaptive_woc`,
+/// `flat_floor_clearing`, `clearing_strategy_dial`,
+/// `planner_uniform_engagement`, `top_on_stock_box`, `floor_inside_stock`.
+#[rustfmt::skip]
+fn frozen_c2() -> Vec<C2Row> {
+    use OperationType as O;
+    vec![
+    (O::Face, false, false, false, true, None, false, false, true),
+    (O::Pocket, false, false, false, true, None, false, false, true),
+    (O::Profile, false, false, false, false, None, false, false, true),
+    (O::Adaptive, false, false, true, false, None, false, false, true),
+    (O::VCarve, false, false, false, false, None, false, false, true),
+    (O::Inlay, false, false, false, false, None, false, false, true),
+    (O::InlayPlug, false, false, false, false, None, false, false, true),
+    (O::Zigzag, false, false, false, true, None, false, false, true),
+    (O::Trace, false, false, false, false, None, false, false, true),
+    (O::Drill, false, false, false, false, None, false, false, true),
+    (O::Chamfer, false, false, false, false, None, false, false, true),
+    (O::DropCutter, false, false, false, false, None, false, false, true),
+    (O::Adaptive3d, false, false, true, false, Some("clearing_strategy"), false, true, true),
+    (O::Waterline, false, false, false, false, None, false, false, true),
+    (O::Pencil, false, false, false, false, None, false, false, true),
+    (O::Scallop, false, false, false, false, None, false, false, true),
+    (O::UnifiedFinish, true, false, false, false, None, false, false, true),
+    (O::SteepShallow, false, false, false, false, None, false, false, true),
+    (O::RampFinish, false, true, false, false, None, false, false, true),
+    (O::SpiralFinish, false, false, false, false, None, false, false, true),
+    (O::RadialFinish, false, false, false, false, None, false, false, true),
+    (O::HorizontalFinish, false, false, false, false, None, false, false, true),
+    (O::ProjectCurve, false, false, false, false, None, false, false, false),
+    (O::AlignmentPinDrill, false, false, false, false, None, false, false, false),
+    ]
+}
+
+fn c2_columns<P>(
+    c: &Capabilities<P>,
+) -> (
+    bool,
+    bool,
+    bool,
+    bool,
+    Option<&'static str>,
+    bool,
+    bool,
+    bool,
+) {
+    (
+        c.plans_bands,
+        c.ramp_descent,
+        c.adaptive_woc,
+        c.flat_floor_clearing,
+        c.clearing_strategy_dial,
+        c.planner_uniform_engagement,
+        c.top_on_stock_box,
+        c.floor_inside_stock,
+    )
+}
+
+/// C2: the row of each op kind and its default config give the frozen
+/// C2 columns. No default config uses the contour-spiral strategy, so
+/// no default config overrides a C2 column.
+#[test]
+fn every_op_keeps_its_c2_capabilities() {
+    let table = frozen_c2();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for r in table {
+        let expected = (r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8);
+        assert_eq!(
+            c2_columns(&r.0.capabilities()),
+            expected,
+            "{:?} (kind)",
+            r.0
+        );
+        let cfg = OperationConfig::new_default(r.0);
+        assert_eq!(
+            c2_columns(&cfg.capabilities()),
+            expected,
+            "{:?} (config)",
+            r.0
+        );
+    }
+}
+
+/// C2: a contour-spiral strategy, 2D or 3D, states the uniform planner
+/// engagement; every other strategy does not.
+#[test]
+fn only_a_contour_spiral_holds_a_uniform_engagement() {
+    let with = |op: OperationType, field: &str, token: &str| {
+        let mut value = serde_json::to_value(OperationConfig::new_default(op)).unwrap();
+        value["params"][field] = serde_json::json!(token);
+        let cfg: OperationConfig = serde_json::from_value(value).unwrap();
+        cfg.capabilities().planner_uniform_engagement
+    };
+    assert!(with(
+        OperationType::Adaptive3d,
+        "clearing_strategy",
+        "contour_spiral"
+    ));
+    for token in ["contour_parallel", "adaptive", "agent_search"] {
+        assert!(
+            !with(OperationType::Adaptive3d, "clearing_strategy", token),
+            "{token}"
+        );
+    }
+    assert!(with(
+        OperationType::Adaptive,
+        "path_strategy",
+        "ContourSpiral"
+    ));
+    assert!(!with(OperationType::Adaptive, "path_strategy", "Agent"));
+}
+
+/// C2: a dial that a capability names by its config field name is a
+/// schema parameter of that op. The advisor writes `clearing_strategy_dial`
+/// by name through a serde round trip, and a renamed field would make that
+/// write fail with no message.
+#[test]
+fn every_named_dial_is_a_schema_parameter() {
+    let mut named = 0;
+    for &op in OperationType::ALL {
+        let caps = op.capabilities();
+        for dial in [caps.clearing_strategy_dial, caps.relink_dial]
+            .into_iter()
+            .flatten()
+        {
+            named += 1;
+            assert!(
+                op.registry_entry()
+                    .params
+                    .defs
+                    .iter()
+                    .any(|d| d.name == dial),
+                "{op:?}: the dial `{dial}` is not a schema parameter"
+            );
+        }
+    }
+    assert!(named >= 5, "non-vacuity: {named} named dials");
 }

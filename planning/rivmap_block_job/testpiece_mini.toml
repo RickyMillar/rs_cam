@@ -391,7 +391,6 @@ max = [
 [[setups.toolpaths]]
 id = 0
 name = "Face back to T1"
-type = "face"
 enabled = true
 tool_id = 4
 model_id = 1
@@ -485,7 +484,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 10
 name = "Pin Drill"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 7
 model_id = 0
@@ -559,7 +557,6 @@ source = "manual"
 [[setups.toolpaths]]
 id = 6
 name = "Back cavity Z9.00"
-type = "pocket"
 enabled = true
 tool_id = 4
 model_id = 5
@@ -655,7 +652,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 2
 name = "Channel BACK_CHANNEL_Z22.00"
-type = "pocket"
 enabled = true
 tool_id = 5
 model_id = 3
@@ -752,7 +748,6 @@ reference = "amana-flat-hardwood-pocket-3175-2f-spektra"
 [[setups.toolpaths]]
 id = 3
 name = "Channel BACK_CHANNEL_Z23.00"
-type = "pocket"
 enabled = true
 tool_id = 5
 model_id = 4
@@ -915,7 +910,6 @@ feed_scale_factor = 1.0
 [[setups.toolpaths]]
 id = 5
 name = "Face back overfill"
-type = "face"
 enabled = false
 tool_id = 4
 model_id = 1
@@ -1009,7 +1003,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 11
 name = "Cavity floor skim (epoxy overfill)"
-type = "pocket"
 enabled = true
 tool_id = 4
 model_id = 5
@@ -1152,7 +1145,6 @@ max = [
 [[setups.toolpaths]]
 id = 7
 name = "Face front to T"
-type = "face"
 enabled = true
 tool_id = 4
 model_id = 1
@@ -1245,7 +1237,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 8
 name = "Front 3D rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 4
 model_id = 0
@@ -1351,7 +1342,6 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 [[setups.toolpaths]]
 id = 9
 name = "Front finish parallel N-S"
-type = "drop_cutter"
 enabled = true
 tool_id = 6
 model_id = 0

@@ -30,11 +30,11 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - Generation passes `entry_feed_rate()`, not the raw ramp feed (G10 B4), and
   the STOCK top, never `heights.top_z`, as the descent ceiling (G-PECKSPLIT).
   Do not add a setter without a command row. The registry test fails on it.
-  C1: the loader refuses each key in `project_file::RETIRED_KEYS`; a key that leaves the format gets a row.
+  C1: the loader refuses each key in `project_file::RETIRED_KEYS` (a key that leaves the format gets a
+  row); C2: one refusal names EVERY retired key in the file (`SessionError::RetiredKeys`).
 
 ## Sentries
 
 `cargo test -p rs_cam_core -q --test <name>`, one per name (W2.5: viz `export_states_the_feed_stage_w2_5`): `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
-`adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`,
-`dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
+`adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
 `stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock).

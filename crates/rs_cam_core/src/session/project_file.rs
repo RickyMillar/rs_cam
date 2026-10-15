@@ -9,7 +9,7 @@ use super::{
     DatumConfig, LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig, XYDatum,
     ZDatum,
 };
-use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -118,6 +118,12 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       diameter. Delete the key",
     },
     RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]"],
+        key: "type",
+        replacement: "Removed (C2): the op kind is `kind` in the toolpath's [operation] \
+                      table, the one source. Delete the key",
+    },
+    RetiredKey {
         table: &["tools", "[]"],
         key: "shank_length",
         replacement: "Removed (B18): the holder face is at the stickout above the tip, and the \
@@ -125,9 +131,9 @@ const RETIRED_KEYS: &[RetiredKey] = &[
     },
 ];
 
-/// The path of the first `key` under the tables that `steps` names, or
-/// `None` when no such table holds the key.
-fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str) -> Option<String> {
+/// Push the path of every `key` under the tables that `steps` names onto
+/// `found`.
+fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str, found: &mut Vec<String>) {
     let join = |name: &str| {
         if at.is_empty() {
             name.to_owned()
@@ -136,27 +142,42 @@ fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str) -> Opt
         }
     };
     match steps.split_first() {
-        None => value.as_table()?.contains_key(key).then(|| join(key)),
-        Some((&"[]", rest)) => value
-            .as_array()?
-            .iter()
-            .enumerate()
-            .find_map(|(i, entry)| find_retired(entry, rest, key, &format!("{at}[{i}]"))),
-        Some((step, rest)) => find_retired(value.as_table()?.get(*step)?, rest, key, &join(step)),
+        None => {
+            if value.as_table().is_some_and(|t| t.contains_key(key)) {
+                found.push(join(key));
+            }
+        }
+        Some((&"[]", rest)) => {
+            for (i, entry) in value.as_array().into_iter().flatten().enumerate() {
+                find_retired(entry, rest, key, &format!("{at}[{i}]"), found);
+            }
+        }
+        Some((step, rest)) => {
+            if let Some(next) = value.as_table().and_then(|t| t.get(*step)) {
+                find_retired(next, rest, key, &join(step), found);
+            }
+        }
     }
 }
 
-/// Refuse a project file that holds a key from [`RETIRED_KEYS`].
+/// Refuse a project file that holds a key from [`RETIRED_KEYS`]. C2: the
+/// refusal names EVERY retired key in the file, so one edit pass clears
+/// them all.
 fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
+    let mut found = Vec::new();
     for retired in RETIRED_KEYS {
-        if let Some(path) = find_retired(raw, retired.table, retired.key, "") {
-            return Err(SessionError::RetiredKey {
-                path,
-                replacement: retired.replacement,
-            });
-        }
+        let mut paths = Vec::new();
+        find_retired(raw, retired.table, retired.key, "", &mut paths);
+        found.extend(paths.into_iter().map(|path| super::RetiredKeyFound {
+            path,
+            replacement: retired.replacement,
+        }));
     }
-    Ok(())
+    if found.is_empty() {
+        Ok(())
+    } else {
+        Err(SessionError::RetiredKeys(found))
+    }
 }
 
 impl ProjectFile {
@@ -599,8 +620,6 @@ pub struct ProjectToolpathSection {
     pub id: Option<crate::ids::ToolpathId>,
     #[serde(default)]
     pub name: String,
-    #[serde(rename = "type", default)]
-    pub op_type: Option<OperationType>,
     #[serde(default)]
     pub operation: Option<OperationConfig>,
     #[serde(default = "default_true")]

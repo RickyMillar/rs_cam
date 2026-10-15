@@ -19,8 +19,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
 
 - A finishing-strategy verdict recorded before 2026-08-04 is superseded. See
   `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
-- The pencil NMS detector stands. Do not route pencil through a flow-accum
-  spine; see `../surface/CLAUDE.md`.
+- The pencil NMS detector stands; no flow-accum spine (`../surface/CLAUDE.md`).
 - The iso-scallop `iso_field` dial is live; it beats raster at a matched finish.
 - Never gate on an aggregate without rendering the surface.
 - Every straight feed tracks the drop-cutter surface (G-TIERBURIAL,
@@ -28,7 +27,8 @@ Every 3D finishing strategy and the unified planner. The entry point is
   waterline bands (`refine_band_chords`), a link with a tolerance.
 - W6.4: a composed op (Unified Finish, Steep and Shallow) states its barriers only through
   `order_constraints`. A product rest field comes only from `rest_detector::detect_rest`; a caller keeps its
-  own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16).
+  own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16);
+  its last leg is `push_link_landing`: into standing stock it is an `EntryPlunge` at the plunge feed (B20).
 
 ## Sentries
 
@@ -37,4 +37,4 @@ Every 3D finishing strategy and the unified planner. The entry point is
 - `... --test scallop_iso_field_config --test the_research_arms_are_feature_gated_fin01`
 - `wanaka_decomposes_to_order_ten_regions` (`#[ignore]`; long) in `--test
   finish_planner_wanaka_decompose`; its tables: `..._wanaka_diagnostics`.
-- W6.4: `--test a_link_between_regions_clears_standing_stock_b16`, `--lib finish::unified_finish`.
+- W6.4: `--test a_link_between_regions_clears_standing_stock_b16`, `--lib finish::unified_finish`; B20: `--test a_lifted_link_lands_as_an_entry_b20`.

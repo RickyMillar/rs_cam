@@ -124,6 +124,15 @@ use crate::compute::simulate::SimulationError;
 
 // ── Error types ────────────────────────────────────────────────────────
 
+/// One retired key in a project file (C1, C2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetiredKeyFound {
+    /// The path of the key in the file, for example `setups[0].fixtures`.
+    pub path: String,
+    /// What replaced the key, or that it is removed.
+    pub replacement: &'static str,
+}
+
 /// Errors that can occur during session operations.
 #[derive(Debug)]
 pub enum SessionError {
@@ -237,13 +246,11 @@ pub enum SessionError {
     /// ([`crate::compute::stock_change::StockChangeRefusal`]). The session
     /// writes nothing.
     StockChangeRefused(crate::compute::stock_change::StockChangeRefusal),
-    /// The project file holds a retired key. `path` names the key in the
-    /// file. `replacement` says what replaced it, or that it is removed.
-    /// The table of retired keys is `project_file::RETIRED_KEYS`.
-    RetiredKey {
-        path: String,
-        replacement: &'static str,
-    },
+    /// The project file holds retired keys. Each entry names one key in
+    /// the file and what replaced it, or that it is removed. C2: the list
+    /// holds EVERY retired key in the file, not only the first. The table
+    /// of retired keys is `project_file::RETIRED_KEYS`.
+    RetiredKeys(Vec<RetiredKeyFound>),
     /// A toolpath in the project file has no `[setups.toolpaths.operation]`
     /// table, so it has no parameters. The loader refuses it.
     MissingOperation { setup: String, toolpath: String },
@@ -297,10 +304,13 @@ impl std::fmt::Display for SessionError {
                  at epoch {current}. Simulate it again."
             ),
             Self::StockChangeRefused(refusal) => write!(f, "Stock change refused: {refusal}"),
-            Self::RetiredKey { path, replacement } => write!(
-                f,
-                "The project file uses the retired key '{path}'. {replacement}."
-            ),
+            Self::RetiredKeys(found) => {
+                write!(f, "The project file uses {} retired key(s).", found.len())?;
+                for key in found {
+                    write!(f, " '{}': {}.", key.path, key.replacement)?;
+                }
+                Ok(())
+            }
             Self::MissingOperation { setup, toolpath } => write!(
                 f,
                 "Toolpath '{toolpath}' in setup '{setup}' has no [setups.toolpaths.operation] \
@@ -2005,8 +2015,6 @@ mod tests {
     /// to load. Before C1 it loaded as a default of its `type`.
     #[test]
     fn toolpath_missing_operation_refuses() {
-        use crate::compute::catalog::OperationType;
-
         let project = ProjectFile {
             format_version: 3,
             job: ProjectJobSection::default(),
@@ -2027,7 +2035,6 @@ mod tests {
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
                     name: "Bare".to_owned(),
-                    op_type: Some(OperationType::Profile),
                     operation: None,
                     enabled: true,
                     tool_id: None,
@@ -2331,7 +2338,6 @@ mod tests {
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
                     name: "Test Pocket".to_owned(),
-                    op_type: Some(crate::compute::catalog::OperationType::Pocket),
                     operation: Some(OperationConfig::new_default(
                         crate::compute::catalog::OperationType::Pocket,
                     )),

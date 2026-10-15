@@ -252,10 +252,45 @@ pub(crate) enum CeilingShape {
     Flush(Vec<P3>),
     /// The exit lift, the interior samples and the re-entry lift, all at
     /// clearance: nothing standing between the two ends is crossed at cut
-    /// depth.
-    Lifted(Vec<P3>),
+    /// depth. `landing` states how the last vertical leg reaches the entry
+    /// (B20).
+    Lifted { pts: Vec<P3>, landing: LinkLanding },
     /// The clearance reaches `safe_z`: the caller keeps the retract.
     AboveSafeZ,
+}
+
+/// How a link reaches the entry of the next cut (B20, C2).
+///
+/// A lifted link ends with a vertical leg from the clearance height down to
+/// the entry. Where material stands above the entry, that leg is a plunge
+/// into stock, so it takes the plunge feed and the `EntryPlunge` intent, as
+/// a retract junction does. [`push_link_landing`] emits the leg for every
+/// emitter, so the two link emitters cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkLanding {
+    /// The last leg rides the surface or descends in air: a `Linking` feed
+    /// at the cut feed.
+    Ride,
+    /// The last leg descends into standing material: an `EntryPlunge` at
+    /// the plunge feed.
+    Plunge,
+}
+
+/// Emit the last leg of a link onto `entry` (B20). See [`LinkLanding`].
+pub(crate) fn push_link_landing(
+    out: &mut crate::toolpath::Toolpath,
+    entry: P3,
+    landing: LinkLanding,
+    feed_rate: f64,
+    plunge_rate: f64,
+) {
+    use crate::toolpath::MoveIntent;
+    match landing {
+        LinkLanding::Ride => out.feed_to_with_intent(entry, feed_rate, MoveIntent::Linking),
+        LinkLanding::Plunge => {
+            out.feed_to_with_intent(entry, plunge_rate, MoveIntent::EntryPlunge);
+        }
+    }
 }
 
 /// Shape the surface-link candidate `pts` from `from` to `entry` under
@@ -335,7 +370,19 @@ pub(crate) fn shape_under_ceiling(
         }
         lifted.push(P3::new(x, y, z));
     }
-    CeilingShape::Lifted(lifted)
+    // B20: the last lifted sample stands over the entry, at the material
+    // top plus clearance. The leg down to the entry plunges into stock
+    // when the conservative material top over the tool disc stands above
+    // the entry.
+    let landing = if ceiling.material_top(entry.x, entry.y) > entry.z + 1e-6 {
+        LinkLanding::Plunge
+    } else {
+        LinkLanding::Ride
+    };
+    CeilingShape::Lifted {
+        pts: lifted,
+        landing,
+    }
 }
 
 /// What one fragment IS, so the stage knows whether it may change where the
@@ -844,8 +891,9 @@ pub fn relink_fragments_with_kinds(
         /// (a) Arrives at cutting depth. Removes the next fragment's entry.
         AtDepth,
         /// (b) Lifts to the local stock ceiling and descends again. Cheaper
-        /// than a safe-Z retract; the entry survives.
-        ClearanceHop,
+        /// than a safe-Z retract; the entry survives, and `landing` says
+        /// whether the descent is an entry plunge (B20).
+        ClearanceHop { landing: LinkLanding },
     }
     let mut frags: Vec<Fragment> = Vec::new();
     let mut cur: Vec<(usize, crate::toolpath::Move)> = Vec::new();
@@ -1117,7 +1165,9 @@ pub fn relink_fragments_with_kinds(
                         }
                         (pts, LinkTier::AtDepth)
                     }
-                    CeilingShape::Lifted(pts) => (pts, LinkTier::ClearanceHop),
+                    CeilingShape::Lifted { pts, landing } => {
+                        (pts, LinkTier::ClearanceHop { landing })
+                    }
                     CeilingShape::AboveSafeZ => {
                         // Clearing the standing material costs the whole
                         // retract anyway — keep the rapid, which is faster
@@ -1165,14 +1215,25 @@ pub fn relink_fragments_with_kinds(
                 report.surface_links += 1;
                 match tier {
                     LinkTier::AtDepth => report.at_depth_links += 1,
-                    LinkTier::ClearanceHop => report.clearance_hops += 1,
+                    LinkTier::ClearanceHop { .. } => report.clearance_hops += 1,
                 }
                 for p in &pts {
                     out.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
                 }
                 // The fragment's own first move lands on `entry`; re-emit it
-                // as a link so the run reads as one stay-down chain.
-                out.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
+                // as a link so the run reads as one stay-down chain. B20: a
+                // hop that lands in standing stock lands as an entry.
+                let landing = match tier {
+                    LinkTier::AtDepth => LinkLanding::Ride,
+                    LinkTier::ClearanceHop { landing } => landing,
+                };
+                push_link_landing(
+                    &mut out,
+                    entry,
+                    landing,
+                    params.feed_rate,
+                    params.plunge_rate,
+                );
             }
             (_, Some(from)) => {
                 report.retract_links += 1;

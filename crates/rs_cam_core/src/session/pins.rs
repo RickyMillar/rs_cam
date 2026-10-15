@@ -276,12 +276,7 @@ impl ProjectSession {
         }
         self.toolpath_configs
             .iter()
-            .filter(|tc| {
-                matches!(
-                    tc.operation,
-                    OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-                )
-            })
+            .filter(|tc| tc.operation.op_type().is_drill_kinematics())
             .map(|tc| tc.tool_id)
             .find(|&id| {
                 self.tool_diameter(id)
@@ -534,12 +529,7 @@ impl ProjectSession {
         let source = self
             .toolpath_configs
             .iter()
-            .filter(|tc| {
-                matches!(
-                    tc.operation,
-                    OperationConfig::AlignmentPinDrill(_) | OperationConfig::Drill(_)
-                )
-            })
+            .filter(|tc| tc.operation.op_type().is_drill_kinematics())
             .find_map(|tc| self.tools.iter().find(|t| t.id.0 == tc.tool_id));
         let mut tool = match source {
             Some(t) => t.clone(),

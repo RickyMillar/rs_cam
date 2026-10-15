@@ -220,10 +220,15 @@ mod tests {
             heights.pinned_bottom,
             caps.honors_pinned_bottom_z,
         );
+        check(
+            "top",
+            matches!(heights.top, TopAnchor::StockBox),
+            caps.top_on_stock_box,
+        );
         out
     }
 
-    /// W6.5: `OWNS` and `HEIGHTS` agree with the four flags that live in
+    /// W6.5: `OWNS` and `HEIGHTS` agree with the flags that live in
     /// the registry row, so a wrapper never claims what the row denies.
     #[test]
     fn the_declaration_matches_the_row() {

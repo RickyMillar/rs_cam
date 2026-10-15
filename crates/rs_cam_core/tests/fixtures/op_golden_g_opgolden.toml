@@ -627,9 +627,9 @@ cutting_length_mm = 45.859
 rapid_length_mm = 11.885
 bbox_min = [-7.0, -2.0, 4.1155]
 bbox_max = [7.0, 2.0, 13.0]
-moves_hash = "aa696c0a017d93ae"
-span_count = 6
-spans_hash = "50f381942c0781a6"
+moves_hash = "ace97f380febf8b6"
+span_count = 8
+spans_hash = "dfb92919fd3c2ef0"
 
 ["project_curve/square"]
 outcome = "ok"
@@ -781,9 +781,9 @@ cutting_length_mm = 459.563
 rapid_length_mm = 58.048
 bbox_min = [-14.0, -10.0, 0.0]
 bbox_max = [4.6294, 7.5129, 13.0]
-moves_hash = "28de2fca51a24287"
-span_count = 24
-spans_hash = "59e4fe63b1c0029a"
+moves_hash = "be461846610c6391"
+span_count = 30
+spans_hash = "b18f873a9c31a588"
 
 ["scallop/rest"]
 outcome = "ok"
@@ -795,9 +795,9 @@ cutting_length_mm = 923.583
 rapid_length_mm = 231.628
 bbox_min = [-17.0, -15.0, 0.0]
 bbox_max = [15.0, 15.0, 13.0]
-moves_hash = "01a1685da3bc2bb7"
-span_count = 62
-spans_hash = "69561ee06a97892c"
+moves_hash = "1105b2a8f66f73cd"
+span_count = 72
+spans_hash = "4c738e3d3886f8fc"
 
 ["spiral_finish/fresh"]
 outcome = "ok"
@@ -913,9 +913,9 @@ cutting_length_mm = 7342.281
 rapid_length_mm = 2208.159
 bbox_min = [-13.9324, -13.9324, 0.0]
 bbox_max = [13.6448, 13.6448, 13.0]
-moves_hash = "649a5dd93dc75ead"
-span_count = 2076
-spans_hash = "5c471a820a08c06c"
+moves_hash = "27d61cefed2ac170"
+span_count = 2082
+spans_hash = "d5fff39febd4a6f6"
 
 ["unified_finish/claims_rest_clip".produced]
 rest_grid_cells = 5929
@@ -961,9 +961,9 @@ cutting_length_mm = 1450.737
 rapid_length_mm = 158.189
 bbox_min = [-13.9324, -13.9324, 0.0]
 bbox_max = [13.6448, 13.6448, 13.0]
-moves_hash = "da8b720187397443"
-span_count = 154
-spans_hash = "82d44d742d378621"
+moves_hash = "a82deb4dd55d8519"
+span_count = 162
+spans_hash = "bfbb5b0c882cf88d"
 
 ["v_carve/fresh"]
 outcome = "ok"

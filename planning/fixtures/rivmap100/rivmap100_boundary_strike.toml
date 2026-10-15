@@ -186,7 +186,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 1
 name = "3D Rough 8"
-type = "adaptive3d"
 enabled = true
 tool_id = 20
 model_id = 1

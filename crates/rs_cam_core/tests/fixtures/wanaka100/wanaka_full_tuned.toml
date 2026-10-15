@@ -378,7 +378,6 @@ z_rotation = "0"
 [[setups.toolpaths]]
 id = 14
 name = "Pin Drill"
-type = "alignment_pin_drill"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -454,7 +453,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 4
 name = "Back Rough"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -577,7 +575,6 @@ reference = "amana-flat-hardwood-adaptive-6000-2f"
 [[setups.toolpaths]]
 id = 7
 name = "Holes"
-type = "drill"
 enabled = true
 tool_id = 3
 model_id = 3
@@ -654,7 +651,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 12
 name = "Rivers (back) (copy)"
-type = "project_curve"
 enabled = false
 tool_id = 3
 model_id = 5
@@ -722,7 +718,6 @@ enabled = true
 [[setups.toolpaths]]
 id = 5
 name = "Rivers (back)"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 5
@@ -799,7 +794,6 @@ source = "formula"
 [[setups.toolpaths]]
 id = 6
 name = "Lakes (back, inside)"
-type = "project_curve"
 enabled = true
 tool_id = 2
 model_id = 2
@@ -882,7 +876,6 @@ z_rotation = "90"
 [[setups.toolpaths]]
 id = 10
 name = "3D Rough 6"
-type = "adaptive3d"
 enabled = true
 tool_id = 3
 model_id = 1
@@ -985,7 +978,6 @@ reference = "amana-flat-hardwood-adaptive-6000-2f"
 [[setups.toolpaths]]
 id = 11
 name = "3D Finish 6"
-type = "drop_cutter"
 enabled = true
 tool_id = 2
 model_id = 1
