@@ -52,9 +52,9 @@
 //!     a rest Chamfer skips its one level and gives an empty result. After
 //!     a Face above the chamfer level, it cuts the fresh rings.
 //! 12. 2D Adaptive (`LevelMask`): on A's outline it skips the levels A
-//!     cleared and cuts only below A's floor. Shifted, above A's floor it
-//!     cuts and enters only near the material A left (B10). It
-//!     leaves the stock a fresh Adaptive leaves, with no material above its
+//!     cleared and cuts only below A's floor. Shifted, at and above A's
+//!     floor it cuts and enters only near the material A left (B10, B12).
+//!     It leaves the stock a fresh Adaptive leaves, with no material above its
 //!     floor in the cells its tool covers.
 //! 13. B8, Face on a whole top: a rest Face cuts the rows of a fresh Face.
 //! 14. B8, Face on part of the top: each rest row lies on a fresh row and
@@ -1276,13 +1276,11 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                 finding.skipped_levels, 0,
                 "the strip holds material at every level"
             );
-            // Every cut and every entry move above A's floor lies near the
+            // Every cut and every entry at or above A's floor lies near the
             // material A left (B10: the entry starter stands on material,
             // not at the medial point of the piece, which lies in A's
-            // cleared area here). The level at A's own floor is not
-            // judged: there the simulator's blend of the cells along A's
-            // wall stands above the threshold, so the planner reads (and
-            // cleans) a sliver along that wall.
+            // cleared area here). The level at A's own floor is judged too
+            // (B12).
             let bound = TOOL_R + 2.0 * CELL_MM;
             let mut worst: f64 = 0.0;
             let mut judge = |kind: &str, p: P2, z: f64| {
@@ -1296,35 +1294,65 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                     p.y
                 );
             };
-            for z in ladder(A_DEPTH - DPP) {
+            for z in ladder(A_DEPTH) {
                 let level = cuts_at(&cuts, z);
                 assert!(!level.is_empty(), "the strip holds material at level {z}");
                 for p in level {
                     judge("cut", p, z);
                 }
             }
-            // The fed entry moves (plunge, helix, ramp) inside the stock
-            // and above the level at A's floor (not judged, as above).
-            let mut entries = 0;
-            for m in &rest.moves {
-                if m.move_type != MoveType::Rapid
+            // The fed entry moves (plunge, helix, ramp), one run per entry.
+            // An entry belongs to the level its run ends on (B12): the
+            // helix into a level below A's floor starts its clearance
+            // above A's floor and passes through the levels above in the
+            // air A cleared, so one of its arc ends can lie on A's floor
+            // (z = -5.000 at 7.4 mm from the strip). Below A's floor the
+            // whole footprint holds material, so such a run is not judged.
+            let is_entry = |m: &Move| {
+                m.move_type != MoveType::Rapid
                     && matches!(
                         m.intent,
                         MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp
                     )
-                    && m.target.z <= 0.0
-                    && m.target.z > -A_DEPTH + LEVEL_Z_EPS_MM
-                {
-                    entries += 1;
+            };
+            let mut runs: Vec<Vec<&Move>> = Vec::new();
+            let mut open = false;
+            for m in &rest.moves {
+                if is_entry(m) {
+                    if !open {
+                        runs.push(Vec::new());
+                    }
+                    if let Some(run) = runs.last_mut() {
+                        run.push(m);
+                    }
+                }
+                open = is_entry(m);
+            }
+            let mut entries = 0;
+            let mut floor_entries = 0;
+            for run in &runs {
+                let Some(last) = run.last() else { continue };
+                let level = last.target.z;
+                if level < -A_DEPTH - LEVEL_Z_EPS_MM {
+                    continue;
+                }
+                entries += 1;
+                if (level + A_DEPTH).abs() <= LEVEL_Z_EPS_MM {
+                    floor_entries += 1;
+                }
+                for m in run {
                     judge("entry move", P2::new(m.target.x, m.target.y), m.target.z);
                 }
             }
-            eprintln!("adaptive shifted: {entries} entry moves judged above A's floor");
-            assert!(
-                entries > 0,
-                "non-vacuity: the rest Adaptive enters above A's floor"
+            eprintln!(
+                "adaptive shifted: {entries} entries judged at or above A's floor, \
+                 {floor_entries} at A's floor"
             );
-            eprintln!("adaptive shifted: worst distance above A's floor {worst:.3} mm");
+            assert!(
+                floor_entries > 0,
+                "non-vacuity: the rest Adaptive enters at the level at A's floor"
+            );
+            eprintln!("adaptive shifted: worst distance at or above A's floor {worst:.3} mm");
         }
         let fresh = run_ops(
             pocket(A_DEPTH),
@@ -1566,7 +1594,7 @@ fn a_rest_zigzag_cuts_on_the_fresh_rows() {
                 judged += 1;
             }
         }
-        eprintln!("{name}: {judged} rest rows judged above A's floor");
+        eprintln!("{name}: {judged} rest rows judged at or above A's floor");
         assert!(
             judged > 0,
             "{name}: the rest zigzag cuts rows above A's floor"
