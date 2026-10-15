@@ -56,7 +56,7 @@ fn inspector_requests_shared_confirmation_and_disables_the_last_setup_route() {
     let draw = function_region(
         &source,
         "pub fn draw(",
-        "pub fn draw_fixture_properties(",
+        "pub fn draw_obstacle_properties(",
         "src/ui/properties/setup.rs",
     );
     assert!(

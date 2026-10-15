@@ -222,6 +222,7 @@ fn raster_and_project_curve_build_the_same_ceiling_on_remaining_stock() {
         &tool,
         stock_top_z,
         heights_top_z,
+        None,
     )
     .expect("a finishing op with remaining stock builds a ceiling");
     let curve = link_ceiling_for(
@@ -230,6 +231,7 @@ fn raster_and_project_curve_build_the_same_ceiling_on_remaining_stock() {
         &tool,
         stock_top_z,
         heights_top_z,
+        None,
     )
     .expect("Project Curve always builds a ceiling");
     assert!(
@@ -253,7 +255,7 @@ fn raster_and_project_curve_build_the_same_ceiling_on_remaining_stock() {
         OperationType::Pencil,
         OperationType::UnifiedFinish,
     ] {
-        let c = link_ceiling_for(op, Some(&stock), &tool, stock_top_z, heights_top_z)
+        let c = link_ceiling_for(op, Some(&stock), &tool, stock_top_z, heights_top_z, None)
             .unwrap_or_else(|| panic!("{op:?} builds a ceiling on remaining stock"));
         assert_eq!(
             c.tool_radius.to_bits(),
@@ -288,6 +290,7 @@ fn auto_heights_keep_the_old_ceiling_values() {
         &tool,
         STOCK_Z,
         auto_top_z,
+        None,
     )
     .expect("Project Curve always builds a ceiling");
     assert_eq!(ceiling.fallback_top_z.to_bits(), auto_top_z.to_bits());
@@ -301,7 +304,7 @@ fn auto_heights_keep_the_old_ceiling_values() {
 fn a_finishing_op_on_fresh_stock_builds_no_ceiling() {
     let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM));
     for &op in OperationType::ALL {
-        let ceiling = link_ceiling_for(op, None, &tool, STOCK_Z, PINNED_TOP_Z);
+        let ceiling = link_ceiling_for(op, None, &tool, STOCK_Z, PINNED_TOP_Z, None);
         match op.capabilities().link_ceiling {
             LinkCeilingNeed::Always => {
                 let c = ceiling.unwrap_or_else(|| panic!("{op:?} needs a fresh-stock ceiling"));

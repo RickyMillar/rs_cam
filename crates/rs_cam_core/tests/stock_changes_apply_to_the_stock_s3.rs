@@ -119,6 +119,7 @@ fn top_group(entries: Vec<SimToolpathEntry>, changes: Vec<ResolvedStockChange>) 
         local_to_global: None,
         phantom_prior_stock: None,
         stock_changes: changes,
+        obstacles: Ok(Default::default()),
     }
 }
 
@@ -134,6 +135,7 @@ fn bottom_group(
         local_to_global: Some(info),
         phantom_prior_stock: None,
         stock_changes: changes,
+        obstacles: Ok(Default::default()),
     }
 }
 

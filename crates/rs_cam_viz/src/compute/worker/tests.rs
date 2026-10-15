@@ -370,6 +370,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -420,6 +421,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -1519,7 +1521,7 @@ fn analysis_requests_replace_stale_work() {
         )),
         tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
-        obstacles: Vec::new(),
+        obstacles: Arc::default(),
     });
 
     let snapshot = backend.lane_snapshot(ComputeLane::Analysis);
@@ -1634,6 +1636,7 @@ fn multi_setup_top_bottom_simulation() {
                     local_to_global: None,
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
@@ -1663,6 +1666,7 @@ fn multi_setup_top_bottom_simulation() {
                     }),
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
             ],
             stock_bbox,
@@ -1793,6 +1797,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     local_to_global: None,
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
@@ -1822,6 +1827,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                     }),
                     phantom_prior_stock: None,
                     stock_changes: Vec::new(),
+                    obstacles: Ok(Default::default()),
                 },
             ],
             stock_bbox,
@@ -2054,6 +2060,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -2163,6 +2170,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                 }),
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 10.0,
@@ -2269,6 +2277,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
                 }),
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox,
             stock_top_z: 8.0,
@@ -2451,6 +2460,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             }],
             stock_bbox: world_stock_bbox,
             stock_top_z: 0.0,

@@ -397,7 +397,7 @@ impl ProjectSession {
     /// a `ModelOutline` boundary that names the model. A reload of the
     /// outline model moves the boundary, so the second door drops too.
     /// S2 adds a third reader: a setup stock change whose geometry names
-    /// the model.
+    /// the model. K1 adds a fourth: a setup obstacle that names it.
     fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
@@ -423,6 +423,23 @@ impl ProjectSession {
         });
         if let Some(from_setup) = first_reader {
             self.drop_stock_change_dependents(from_setup);
+        }
+        // K1: an enabled obstacle that reads the model moves where the
+        // tool may go in its setup.
+        let readers: Vec<usize> = self
+            .setups
+            .iter()
+            .enumerate()
+            .filter(|(_, setup)| {
+                setup
+                    .obstacles
+                    .iter()
+                    .any(|o| o.enabled && o.geometry.reads_model(crate::ids::ModelId(model_id)))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        for setup_index in readers {
+            self.drop_obstacle_dependents(setup_index);
         }
     }
 

@@ -165,6 +165,7 @@ fn intra_region_links_clear_standing_stock_g_linkload() {
         None,
         None,
         Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: 1.0,
             fallback_top_z: STOCK_TOP_Z,

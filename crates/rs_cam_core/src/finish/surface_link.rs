@@ -133,6 +133,11 @@ pub struct LinkCeiling<'a> {
     /// Ceiling to assume where the dexel query has no answer (off-grid, or
     /// no snapshot at all). The analytic fresh-stock top.
     pub fallback_top_z: f64,
+    /// K1: the setup's obstacles for this tool. Where a band of the tool
+    /// would reach an obstacle at `(x, y)`, the ceiling rises to the tip Z
+    /// that clears it, so a stay-down link goes over the obstacle. `None`:
+    /// no obstacle.
+    pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 }
 
 // Hand-written: `TriDexelStock` is not `Debug`, and printing a whole dexel
@@ -144,6 +149,7 @@ impl std::fmt::Debug for LinkCeiling<'_> {
             .field("stock", &self.stock.is_some())
             .field("tool_radius", &self.tool_radius)
             .field("fallback_top_z", &self.fallback_top_z)
+            .field("obstacles", &self.obstacles.is_some())
             .finish()
     }
 }
@@ -172,6 +178,14 @@ impl LinkCeiling<'_> {
         self.stock
             .and_then(|s| s.max_conservative_top_z_in_disc(x, y, self.tool_radius))
             .unwrap_or(self.fallback_top_z)
+            .max(self.obstacle_tip_z(x, y))
+    }
+
+    /// K1: the lowest tip Z at `(x, y)` that keeps every band of the tool
+    /// above the obstacles. `NEG_INFINITY` where no band reaches one.
+    fn obstacle_tip_z(&self, x: f64, y: f64) -> f64 {
+        self.obstacles
+            .map_or(f64::NEG_INFINITY, |view| view.required_tip_z_at(x, y))
     }
 
     /// Lowest tool TIP Z at `(x, y)` that nothing standing under the cutter
@@ -206,6 +220,7 @@ impl LinkCeiling<'_> {
         self.stock
             .and_then(|s| s.max_clearance_tip_z_for_profile(x, y, self.tool_radius, cutter))
             .unwrap_or(self.fallback_top_z)
+            .max(self.obstacle_tip_z(x, y))
     }
 
     /// Clearance height for a link sample at `(x, y)` whose mesh surface
@@ -1679,6 +1694,7 @@ mod tests {
             reorder: false,
             boundary: Some(&region),
             link_ceiling: Some(LinkCeiling {
+                obstacles: None,
                 stock: None,
                 tool_radius: 1.0,
                 fallback_top_z: 0.0,
@@ -1771,6 +1787,7 @@ mod tests {
             reorder: false,
             boundary: Some(&region),
             link_ceiling: Some(LinkCeiling {
+                obstacles: None,
                 stock: None,
                 tool_radius: 1.0,
                 fallback_top_z: 0.0,
@@ -1820,6 +1837,7 @@ mod tests {
         let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
 
         let flush_ceiling = LinkCeiling {
+            obstacles: None,
             stock: None,
             tool_radius: 1.0,
             fallback_top_z: -50.0,

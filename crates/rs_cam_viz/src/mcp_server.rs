@@ -473,7 +473,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "list_setups",
-        description = "List all setups in the loaded project with name, face orientation, toolpath indices and stock_changes (each change with its id, op, geometry, material and the volume the last simulation measured)"
+        description = "List all setups in the loaded project with name, face orientation, toolpath indices, obstacles (K1: each with its id, name, enabled, clearance and geometry in the setup frame) and stock_changes (each change with its id, op, geometry, material and the volume the last simulation measured)"
     )]
     async fn list_setups(&self) -> String {
         Self::format_result(self.send_request(McpRequestKind::ListSetups).await)
@@ -845,6 +845,48 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::RemoveStockChange(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "add_obstacle",
+        description = "Add an obstacle to the end of a setup's list (K1). An obstacle is a fixture or a keep-out zone (one concept): every operation of the setup keeps the tool (cutter, shank and holder) out of it, grown by its clearance; the tool crosses it at the obstacle plane (its top + clearance + 5 mm); the simulation counts a hit as a collision. kind: box (min and max [x, y, z]), outline_extrude (closed 2D outlines of model_ids, from z_bottom to z_top) or model (one mesh model). Every value is in the SETUP frame (the frame the setup's toolpaths use). clearance default 3 mm. Adding an enabled obstacle drops the setup's results. Returns the new obstacle id."
+    )]
+    async fn add_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddObstacle(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "edit_obstacle",
+        description = "Edit one obstacle of a setup in place (K1). Each given field replaces that part; the others stay. enabled turns it on or off. Give kind with its values to change the geometry kind; without kind, min, max, model_ids, z_bottom and z_top patch the current geometry. Every value is in the setup frame. An edit that moves the obstacle drops the setup's results and their dependents; a rename drops nothing."
+    )]
+    async fn edit_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::EditObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::EditObstacle(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "remove_obstacle",
+        description = "Remove one obstacle from a setup by its id (K1)."
+    )]
+    async fn remove_obstacle(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::RemoveObstacleParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::RemoveObstacle(param)))
                 .await,
         )
     }

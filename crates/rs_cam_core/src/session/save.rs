@@ -6,9 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::instrument;
 
 use super::project_file::{
-    ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectModelSection, ProjectSetupSection, ProjectStockConfig, ProjectToolSection,
-    ProjectToolpathSection,
+    ProjectFile, ProjectJobSection, ProjectModelSection, ProjectSetupSection, ProjectStockConfig,
+    ProjectToolSection, ProjectToolpathSection,
 };
 use super::{ProjectSession, SessionError};
 use crate::compute::tool_config::{BitCutDirection, ToolMaterial, ToolType};
@@ -248,38 +247,6 @@ impl ProjectSession {
                     })
                     .collect();
 
-                let fixtures: Vec<ProjectFixtureSection> = s
-                    .fixtures
-                    .iter()
-                    .map(|f| ProjectFixtureSection {
-                        id: Some(f.id.0),
-                        name: f.name.clone(),
-                        kind: format!("{:?}", f.kind).to_ascii_lowercase(),
-                        enabled: f.enabled,
-                        origin_x: f.origin_x,
-                        origin_y: f.origin_y,
-                        origin_z: f.origin_z,
-                        size_x: f.size_x,
-                        size_y: f.size_y,
-                        size_z: f.size_z,
-                        clearance: f.clearance,
-                    })
-                    .collect();
-
-                let keep_out_zones: Vec<ProjectKeepOutSection> = s
-                    .keep_out_zones
-                    .iter()
-                    .map(|k| ProjectKeepOutSection {
-                        id: Some(k.id.0),
-                        name: k.name.clone(),
-                        enabled: k.enabled,
-                        origin_x: k.origin_x,
-                        origin_y: k.origin_y,
-                        size_x: k.size_x,
-                        size_y: k.size_y,
-                    })
-                    .collect();
-
                 // W9 / P-2. An untouched datum writes NO keys — the
                 // three `skip_serializing_if = "String::is_empty"`
                 // fields stay empty — so projects that never opened the
@@ -304,8 +271,9 @@ impl ProjectSession {
                     z_datum,
                     datum_notes,
                     model_ids: s.model_ids.iter().map(|id| id.0).collect(),
-                    fixtures,
-                    keep_out_zones,
+                    obstacles: s.obstacles.clone(),
+                    fixtures: None,
+                    keep_out_zones: None,
                     stock_changes: s.stock_changes.clone(),
                     toolpaths,
                 }
@@ -332,12 +300,12 @@ impl ProjectSession {
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
+    use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
     use crate::compute::operation_configs::PocketConfig;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::compute::transform::FaceUp;
-    use crate::ids::FixtureId;
-    use crate::ids::ToolpathId;
-    use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathConfig};
+    use crate::ids::{ObstacleId, ToolpathId};
+    use crate::session::ToolpathConfig;
 
     fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
@@ -433,47 +401,66 @@ mod tests {
     }
 
     #[test]
-    fn setup_with_fixture_and_keep_out_round_trip() {
+    fn setup_with_obstacles_round_trips() {
         let mut s = ProjectSession::new_empty();
-        let fixture = Fixture {
-            id: FixtureId(0),
+        let clamp = Obstacle {
+            id: ObstacleId(0),
             name: "Clamp 1".to_owned(),
-            kind: FixtureKind::Clamp,
             enabled: true,
-            origin_x: 10.0,
-            origin_y: 20.0,
-            origin_z: 0.0,
-            size_x: 30.0,
-            size_y: 15.0,
-            size_z: 20.0,
             clearance: 3.0,
+            geometry: ObstacleGeometry::Box {
+                min: [10.0, 20.0, 0.0],
+                max: [40.0, 35.0, 20.0],
+            },
         };
-        let _ = s.add_fixture(0, fixture).unwrap();
-
-        let zone = KeepOutZone {
-            id: crate::ids::KeepOutId(0),
+        let _ = s.add_obstacle(0, clamp.clone()).unwrap();
+        let zone = Obstacle {
+            id: ObstacleId(1),
             name: "Danger Zone".to_owned(),
-            enabled: true,
-            origin_x: 5.0,
-            origin_y: 5.0,
-            size_x: 15.0,
-            size_y: 25.0,
+            enabled: false,
+            clearance: 0.0,
+            geometry: ObstacleGeometry::Box {
+                min: [5.0, 5.0, -10.0],
+                max: [20.0, 30.0, 30.0],
+            },
         };
-        let _ = s.add_keep_out(0, zone).unwrap();
+        let _ = s.add_obstacle(0, zone.clone()).unwrap();
 
-        let path = temp_path("setup_fixture");
+        let path = temp_path("setup_obstacles");
         s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[[setups.obstacles]]"), "{text}");
         let loaded = ProjectSession::load(&path).unwrap();
 
         let setup = &loaded.list_setups()[0];
-        assert_eq!(setup.fixtures.len(), 1);
-        assert_eq!(setup.fixtures[0].name, "Clamp 1");
-        assert!((setup.fixtures[0].origin_x - 10.0).abs() < 1e-9);
-        assert!((setup.fixtures[0].clearance - 3.0).abs() < 1e-9);
+        assert_eq!(setup.obstacles, vec![clamp, zone]);
+        cleanup(&path);
+    }
 
-        assert_eq!(setup.keep_out_zones.len(), 1);
-        assert_eq!(setup.keep_out_zones[0].name, "Danger Zone");
-        assert!((setup.keep_out_zones[0].size_y - 25.0).abs() < 1e-9);
+    #[test]
+    fn a_file_with_a_retired_fixture_key_names_the_new_key() {
+        let s = ProjectSession::new_empty();
+        let path = temp_path("retired_fixture_key");
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        // An empty old list holds no obstacle and loads.
+        let empty = text.replacen("[[setups]]\n", "[[setups]]\nkeep_out_zones = []\n", 1);
+        assert!(empty.contains("keep_out_zones = []"), "{empty}");
+        std::fs::write(&path, &empty).unwrap();
+        assert!(
+            ProjectSession::load(&path).is_ok(),
+            "an empty old list loads"
+        );
+        // A table at the end of the file belongs to the last setup.
+        let text = format!("{text}\n[[setups.keep_out_zones]]\nid = 0\nname = \"Zone\"\n");
+        assert!(text.contains("keep_out_zones"), "{text}");
+        std::fs::write(&path, text).unwrap();
+        let err = ProjectSession::load(&path)
+            .err()
+            .expect("the old key refuses");
+        let message = err.to_string();
+        assert!(message.contains("keep_out_zones"), "{message}");
+        assert!(message.contains("[[setups.obstacles]]"), "{message}");
         cleanup(&path);
     }
 

@@ -112,6 +112,8 @@ impl SimulationState {
             boundaries,
             rapid_collisions: &self.checks.rapid_collisions,
             rapid_collision_move_indices: &self.checks.rapid_collision_move_indices,
+            // K1: the obstacle hits of the accepted run.
+            obstacle_collisions: &self.checks.obstacle_collisions,
             cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
             holder_collisions: self.holder_collision_counts_by_tp(),
             // The cell the accepted run simulated at. Read only to enrich a

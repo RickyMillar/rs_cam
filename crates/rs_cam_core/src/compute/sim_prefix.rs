@@ -508,6 +508,9 @@ fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
         stock_changes,
         toolpaths: _,
         phantom_prior_stock: _,
+        // K1: the obstacles move no stock. The run checks them at its
+        // tail from the live request, so a resume needs no key for them.
+        obstacles: _,
     } = group;
 
     let mut hasher = DefaultHasher::new();
@@ -1025,6 +1028,7 @@ mod tests {
                     change,
                     sources: vec![StockChangeSource::Outlines(Arc::clone(polys))],
                 }],
+                obstacles: Ok(Default::default()),
             };
         let base = group_with(change.clone(), &outlines);
         let key = GroupKey::new(&base, 0, true);

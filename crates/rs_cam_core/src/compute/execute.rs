@@ -405,6 +405,10 @@ pub struct ExecutionContext<'a> {
     /// stamps that hole at every re-entry (G-ADAPTPASSLOAD). Only a
     /// generator whose planner models its entries reads it.
     pub entry_helix_radius: Option<f64>,
+    /// K1: the setup's obstacles for this tool. The link ceiling reads
+    /// them (`shared::link_ceiling_for`); the session clips every result
+    /// against them after the dressups. `None`: no obstacle.
+    pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -479,6 +483,7 @@ impl<'a> ExecutionContext<'a> {
             rest_analysis: None,
             segment_merge_tolerance: None,
             entry_helix_radius: None,
+            obstacles: None,
         }
     }
 }

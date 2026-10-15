@@ -10,10 +10,7 @@ use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::upload_cache;
 use crate::state::Workspace;
-use crate::state::job::{
-    SetupFrame, SetupId, height_context_from_session, session_fixture_bbox,
-    session_fixture_clearance_bbox, session_keep_out_bbox, transform_mesh,
-};
+use crate::state::job::{SetupFrame, SetupId, height_context_from_session, transform_mesh};
 use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 
@@ -609,25 +606,9 @@ impl RsCamApp {
             let state = self.controller.state();
             let selection = &state.selection;
 
-            // Helper: forward-transform a bbox into the setup's local frame.
-            // After transforming corners, min/max may swap, so rebuild via from_points.
-            let transform_bbox = |bb: BoundingBox3, setup: &SetupFrame| -> BoundingBox3 {
-                let corners = [
-                    P3::new(bb.min.x, bb.min.y, bb.min.z),
-                    P3::new(bb.max.x, bb.min.y, bb.min.z),
-                    P3::new(bb.min.x, bb.max.y, bb.min.z),
-                    P3::new(bb.max.x, bb.max.y, bb.min.z),
-                    P3::new(bb.min.x, bb.min.y, bb.max.z),
-                    P3::new(bb.max.x, bb.min.y, bb.max.z),
-                    P3::new(bb.min.x, bb.max.y, bb.max.z),
-                    P3::new(bb.max.x, bb.max.y, bb.max.z),
-                ];
-                BoundingBox3::from_points(corners.iter().map(|c| setup.transform_point(*c, &stock)))
-            };
-
-            // Only show fixtures/keepouts/pins from the active setup (each
+            // Only show obstacles and pins from the active setup (each
             // setup has its own local frame, so mixing them is wrong).
-            // Get the active setup's session data for fixtures/keepouts/pins.
+            // Get the active setup's session data for obstacles and pins.
             let active_session_setup = active_setup_id
                 .and_then(|sid| state.session.list_setups().iter().find(|sd| sd.id == sid.0));
 
@@ -650,36 +631,32 @@ impl RsCamApp {
                 // SAFETY: active_setup_ref.is_some() when active_session_setup.is_some()
                 #[allow(clippy::unwrap_used)]
                 let setup = active_setup_ref.as_ref().unwrap();
-                for fixture in &sd.fixtures {
-                    if fixture.enabled && state.viewport.show_fixtures {
-                        let selected = *selection == Selection::Fixture(SetupId(sd.id), fixture.id);
-                        let color = if selected {
-                            [1.0_f32, 0.9, 0.4] // bright highlight
-                        } else {
-                            [0.9_f32, 0.7, 0.2]
-                        };
-                        let clearance = session_fixture_clearance_bbox(fixture);
-                        let display_clearance = transform_bbox(clearance, setup);
-                        boxes.push((display_clearance, color));
-                        if selected {
-                            let inner = session_fixture_bbox(fixture);
-                            let display_inner = transform_bbox(inner, setup);
-                            boxes.push((display_inner, [0.9_f32, 0.9, 0.9]));
-                        }
+                // K1: the obstacles of the setup. Their values are in the
+                // setup (emission) frame, so the display needs only the
+                // setup's emission-to-display shift. The GUI draws box
+                // obstacles; K2 draws the outline and model kinds.
+                let shift = setup.emission_to_display_shift(&stock);
+                let shifted = |bb: BoundingBox3| BoundingBox3 {
+                    min: P3::new(bb.min.x + shift.x, bb.min.y + shift.y, bb.min.z + shift.z),
+                    max: P3::new(bb.max.x + shift.x, bb.max.y + shift.y, bb.max.z + shift.z),
+                };
+                for obstacle in &sd.obstacles {
+                    if !(obstacle.enabled && state.viewport.show_fixtures) {
+                        continue;
                     }
-                }
-                for keep_out in &sd.keep_out_zones {
-                    if keep_out.enabled && state.viewport.show_keep_outs {
-                        let selected =
-                            *selection == Selection::KeepOut(SetupId(sd.id), keep_out.id);
-                        let color = if selected {
-                            [1.0_f32, 0.4, 0.4] // bright highlight
-                        } else {
-                            [0.9_f32, 0.2, 0.2]
-                        };
-                        let ko_bb = session_keep_out_bbox(keep_out, &stock);
-                        let display_ko = transform_bbox(ko_bb, setup);
-                        boxes.push((display_ko, color));
+                    let Some(clearance) = crate::state::job::obstacle_clearance_box(obstacle)
+                    else {
+                        continue;
+                    };
+                    let selected = *selection == Selection::Obstacle(SetupId(sd.id), obstacle.id);
+                    let color = if selected {
+                        [1.0_f32, 0.9, 0.4] // bright highlight
+                    } else {
+                        [0.9_f32, 0.7, 0.2]
+                    };
+                    boxes.push((shifted(clearance), color));
+                    if selected && let Some(inner) = crate::state::job::obstacle_box(obstacle) {
+                        boxes.push((shifted(inner), [0.9_f32, 0.9, 0.9]));
                     }
                 }
             }

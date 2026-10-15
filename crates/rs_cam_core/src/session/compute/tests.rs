@@ -1290,6 +1290,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         display_degrade: None,
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
+        obstacle_collisions: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -1371,6 +1372,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         display_degrade: None,
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
+        obstacle_collisions: Vec::new(),
     });
 
     let diag = s.diagnostics();

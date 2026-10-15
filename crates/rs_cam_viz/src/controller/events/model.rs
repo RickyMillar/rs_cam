@@ -1,8 +1,8 @@
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
-    AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, Command, Fixture, KeepOutZone,
-    RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs, RemoveToolArgs,
-    SetAlignmentPinsArgs, SetMachineArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
+    AddObstacleArgs, AddSetupArgs, AddToolArgs, Command, Obstacle, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveToolArgs, SetAlignmentPinsArgs, SetMachineArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -18,13 +18,13 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_select(&mut self, selection: &Selection) {
         let old_setup = match &self.state.selection {
             Selection::Setup(id) => Some(*id),
-            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Obstacle(id, _) => Some(*id),
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
         let new_setup = match selection {
             Selection::Setup(id) => Some(*id),
-            Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+            Selection::Obstacle(id, _) => Some(*id),
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
             _ => None,
         };
@@ -530,45 +530,40 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    pub(crate) fn handle_add_fixture(&mut self, setup_id: SetupId) {
-        // Generate a fixture ID based on existing max
-        let max_id = self
+    /// K1: add a new box obstacle to the setup, with the default spans
+    /// and clearance (`Obstacle::new_default_box`), and select it.
+    pub(crate) fn handle_add_obstacle(&mut self, setup_id: SetupId) {
+        let Some((idx, obstacle_id)) = self
             .state
             .session
             .list_setups()
             .iter()
-            .flat_map(|s| s.fixtures.iter())
-            .map(|f| f.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        let fixture_id = crate::state::job::FixtureId(max_id);
-
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            // C02: the six numbers this used to spell out are core's
-            // serde defaults. A file that omitted `size_y` restored a
-            // fixture the GUI would never have drawn.
-            let fixture = Fixture::new_default(fixture_id);
-            let command = Command::AddFixture(AddFixtureArgs {
-                setup_index: idx,
-                fixture: Box::new(fixture),
-            });
-            let _ = self.apply_quietly(command);
-            self.state.selection = Selection::Fixture(setup_id, fixture_id);
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
-        }
+            .enumerate()
+            .find(|(_, s)| s.id == setup_id.0)
+            .map(|(idx, s)| {
+                (
+                    idx,
+                    rs_cam_core::compute::obstacle::next_obstacle_id(&s.obstacles),
+                )
+            })
+        else {
+            return;
+        };
+        let command = Command::AddObstacle(AddObstacleArgs {
+            setup_index: idx,
+            obstacle: Box::new(Obstacle::new_default_box(obstacle_id)),
+        });
+        let _ = self.apply_quietly(command);
+        self.state.selection = Selection::Obstacle(setup_id, obstacle_id);
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
     }
 
-    pub(crate) fn handle_remove_fixture(
+    /// K1: remove one obstacle of the setup.
+    pub(crate) fn handle_remove_obstacle(
         &mut self,
         setup_id: SetupId,
-        fixture_id: crate::state::job::FixtureId,
+        obstacle_id: crate::state::job::ObstacleId,
     ) {
         if let Some(idx) = self
             .state
@@ -577,76 +572,12 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|s| s.id == setup_id.0)
         {
-            let command = Command::RemoveFixture(RemoveFixtureArgs {
+            let command = Command::RemoveObstacle(RemoveObstacleArgs {
                 setup_index: idx,
-                fixture_id,
+                obstacle_id,
             });
             let _ = self.apply_quietly(command);
-            if self.state.selection == Selection::Fixture(setup_id, fixture_id) {
-                self.state.selection = Selection::Setup(setup_id);
-            }
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
-        }
-    }
-
-    pub(crate) fn handle_add_keep_out(&mut self, setup_id: SetupId) {
-        let max_id = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .flat_map(|s| s.keep_out_zones.iter())
-            .map(|k| k.id.0)
-            .max()
-            .map_or(0, |id| id + 1);
-        let keep_out_id = crate::state::job::KeepOutId(max_id);
-
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            let zone = KeepOutZone {
-                id: keep_out_id,
-                name: format!("Keep-Out {}", keep_out_id.0 + 1),
-                enabled: true,
-                origin_x: 0.0,
-                origin_y: 0.0,
-                size_x: 20.0,
-                size_y: 20.0,
-            };
-            let command = Command::AddKeepOut(AddKeepOutArgs {
-                setup_index: idx,
-                zone: Box::new(zone),
-            });
-            let _ = self.apply_quietly(command);
-            self.state.selection = Selection::KeepOut(setup_id, keep_out_id);
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
-        }
-    }
-
-    pub(crate) fn handle_remove_keep_out(
-        &mut self,
-        setup_id: SetupId,
-        keep_out_id: crate::state::job::KeepOutId,
-    ) {
-        if let Some(idx) = self
-            .state
-            .session
-            .list_setups()
-            .iter()
-            .position(|s| s.id == setup_id.0)
-        {
-            let command = Command::RemoveKeepOut(RemoveKeepOutArgs {
-                setup_index: idx,
-                zone_id: keep_out_id,
-            });
-            let _ = self.apply_quietly(command);
-            if self.state.selection == Selection::KeepOut(setup_id, keep_out_id) {
+            if self.state.selection == Selection::Obstacle(setup_id, obstacle_id) {
                 self.state.selection = Selection::Setup(setup_id);
             }
             self.pending_upload = true;

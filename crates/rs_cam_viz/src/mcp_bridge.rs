@@ -821,6 +821,14 @@ declare_core_requests! {
             => MoveStockChange, Some(Workspace::Setup);
         RemoveStockChange(rs_cam_mcp::server::RemoveStockChangeParam)
             => RemoveStockChange, Some(Workspace::Setup);
+        AddObstacle(rs_cam_mcp::server::AddObstacleParam)
+            => AddObstacle, Some(Workspace::Setup);
+        /// Row `ReplaceObstacle`. The wire name is `edit_obstacle`: the tool
+        /// patches the stored record and installs the whole of it.
+        EditObstacle(rs_cam_mcp::server::EditObstacleParam)
+            => ReplaceObstacle, Some(Workspace::Setup);
+        RemoveObstacle(rs_cam_mcp::server::RemoveObstacleParam)
+            => RemoveObstacle, Some(Workspace::Setup);
         /// Row `AddModel`. The wire name is `import_model`: the surface reads
         /// the file, and core adopts the geometry that import produced.
         ImportModel(rs_cam_mcp::server::ImportModelParam)

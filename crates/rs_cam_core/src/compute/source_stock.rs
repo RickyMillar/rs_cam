@@ -392,6 +392,7 @@ mod tests {
             local_to_global: None,
             phantom_prior_stock: Some((0, phantom)),
             stock_changes: vec![change],
+            obstacles: Ok(Default::default()),
         }
     }
 

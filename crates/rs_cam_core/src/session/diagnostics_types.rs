@@ -122,6 +122,8 @@ pub enum VerdictKind {
     /// toolpath collides, this one says nobody knows.
     HolderCheckFailed,
     RapidCollision,
+    /// K1: a move puts the tool inside an obstacle of its setup.
+    ObstacleCollision,
     PlungeStress,
     AirCut,
     GeneratedEmpty,
@@ -157,6 +159,7 @@ impl VerdictKind {
             Self::HolderCollision => "holder_collision",
             Self::HolderCheckFailed => "holder_check_failed",
             Self::RapidCollision => "rapid_collision",
+            Self::ObstacleCollision => "obstacle_collision",
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
             Self::GeneratedEmpty => "generated_empty",
@@ -199,6 +202,10 @@ pub struct ProjectEvidence<'a> {
     pub boundaries: Vec<(ToolpathId, usize, usize)>,
     pub rapid_collisions: &'a [crate::stock::collision::RapidCollision],
     pub rapid_collision_move_indices: &'a [usize],
+    /// K1: every obstacle hit of the simulation
+    /// (`SimulationResult::obstacle_collisions`). A collision: the
+    /// diagnostics add it to `collision_count` and the triage lists it.
+    pub obstacle_collisions: &'a [crate::compute::obstacle::ObstacleCollision],
     pub cut_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
     /// Per-toolpath holder/shank collision outcomes, supplied by the
     /// caller from its most recent dedicated collision check. Empty =
@@ -238,6 +245,7 @@ impl<'a> ProjectEvidence<'a> {
             boundaries,
             rapid_collisions: &sim.rapid_collisions,
             rapid_collision_move_indices: &sim.rapid_collision_move_indices,
+            obstacle_collisions: &sim.obstacle_collisions,
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
             resolution_mm: Some(sim.column_grid_cell_mm),

@@ -110,7 +110,7 @@ impl StockGeometry {
 
 /// One stock change on a setup.
 ///
-/// The record derives `PartialEq` for the same reason `Fixture` does: a
+/// The record derives `PartialEq` for the same reason `Obstacle` does: a
 /// panel edits a clone and must not apply a command for an edit that moved
 /// nothing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -328,7 +328,22 @@ pub fn validate_stock_change<'a>(
     change: &StockChange,
     facts: impl Fn(ModelId) -> Option<ModelGeometryFacts<'a>>,
 ) -> Result<(), StockChangeRefusal> {
-    match &change.geometry {
+    validate_stock_geometry(&change.geometry, change.op, facts)
+}
+
+/// Check one geometry against the project models, for a change that does
+/// `op` with it. [`validate_stock_change`] and the K1 obstacle validation
+/// (`compute::obstacle`) share it, so the two refuse a model by the same
+/// rule.
+///
+/// # Errors
+/// The [`StockChangeRefusal`] that names the first rule the geometry breaks.
+pub fn validate_stock_geometry<'a>(
+    geometry: &StockGeometry,
+    op: StockChangeOp,
+    facts: impl Fn(ModelId) -> Option<ModelGeometryFacts<'a>>,
+) -> Result<(), StockChangeRefusal> {
+    match geometry {
         StockGeometry::Model { model_id } => {
             let model = facts(*model_id).ok_or(StockChangeRefusal::UnknownModel {
                 model_id: *model_id,
@@ -341,7 +356,7 @@ pub fn validate_stock_change<'a>(
             }
         }
         StockGeometry::OutlineFill { model_ids, level_z } => {
-            if change.op == StockChangeOp::Remove {
+            if op == StockChangeOp::Remove {
                 return Err(StockChangeRefusal::RemoveCannotUseOutlineFill);
             }
             check_outline_models(model_ids, &facts)?;

@@ -22,19 +22,16 @@ use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_WALL_MM, PinFinding, PinFindingKi
 pub enum PinObstacleKind {
     /// The footprint of a model that the operator calls the part.
     Part,
-    /// A keep-out zone of a setup.
-    KeepOut,
-    /// A workholding fixture of a setup (its footprint includes the
-    /// fixture's own clearance).
-    Fixture,
+    /// An obstacle of a setup (K1: a fixture or a keep-out zone). Its
+    /// footprint includes the obstacle's own clearance.
+    Obstacle,
 }
 
 impl PinObstacleKind {
     fn label(self) -> &'static str {
         match self {
             PinObstacleKind::Part => "the part",
-            PinObstacleKind::KeepOut => "the keep-out zone",
-            PinObstacleKind::Fixture => "the fixture",
+            PinObstacleKind::Obstacle => "the obstacle",
         }
     }
 }
@@ -490,7 +487,7 @@ mod tests {
         let obstacles = [
             square(12.0, 12.0, 53.0, 53.0),
             PinObstacle {
-                kind: PinObstacleKind::KeepOut,
+                kind: PinObstacleKind::Obstacle,
                 name: "a line".into(),
                 points: vec![(0.0, 0.0), (30.0, 9.0)],
                 closed: false,

@@ -33,6 +33,128 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`add_obstacle` (K1): add an obstacle to the END of a setup's list. An\nobstacle is a fixture or a keep-out zone (one concept): every operation\nof the setup keeps the tool (cutter, shank and holder) out of it, the\nrapids cross above it, and the simulation counts a hit as a collision.\n\nEvery value is in the SETUP frame: the frame the setup's toolpaths use,\nwith the setup's +Z up.",
+      "properties": {
+        "clearance": {
+          "default": null,
+          "description": "The distance (mm) the tool keeps from the geometry on every side.\nDefault: 3.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "Default: true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The geometry kind.",
+          "oneOf": [
+            {
+              "const": "box",
+              "description": "An axis-aligned box from `min` to `max` ([x, y, z], mm).",
+              "type": "string"
+            },
+            {
+              "const": "outline_extrude",
+              "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+              "type": "string"
+            },
+            {
+              "const": "model",
+              "description": "An imported mesh model. `model_ids` holds exactly one id.",
+              "type": "string"
+            }
+          ]
+        },
+        "max": {
+          "default": null,
+          "description": "`box` only: the high corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "min": {
+          "default": null,
+          "description": "`box` only: the low corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "default": [],
+          "description": "The model ids (`inspect_model` ids): one mesh model for `model`, one\nor more 2D models with closed outlines for `outline_extrude`.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": null,
+          "description": "A name for the obstacle. Default: \"Obstacle <id + 1>\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism bottom (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "`outline_extrude` only: the prism top (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "kind"
+      ],
+      "title": "AddObstacleParam",
+      "type": "object"
+    },
+    "name": "add_obstacle"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "name": {
           "description": "Optional name for the new setup",
@@ -496,6 +618,145 @@
       "type": "object"
     },
     "name": "compare_rest_with_fresh"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`edit_obstacle` (K1): change one obstacle in place. Each field that is\ngiven replaces that part; the others stay. Use `enabled` to turn the\nobstacle on or off. To change the geometry kind, give `kind` with every\nvalue that kind needs.",
+      "properties": {
+        "clearance": {
+          "default": null,
+          "description": "The clearance (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": null,
+          "description": "On (true) or off (false).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "description": "K1: the geometry kind of an obstacle, as a wire enum. A mirror of the\nkinds of `rs_cam_core::compute::obstacle::ObstacleGeometry`.",
+              "oneOf": [
+                {
+                  "const": "box",
+                  "description": "An axis-aligned box from `min` to `max` ([x, y, z], mm).",
+                  "type": "string"
+                },
+                {
+                  "const": "outline_extrude",
+                  "description": "A prism from the closed 2D outlines of `model_ids`, from `z_bottom`\nto `z_top`.",
+                  "type": "string"
+                },
+                {
+                  "const": "model",
+                  "description": "An imported mesh model. `model_ids` holds exactly one id.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The geometry kind. With it, the geometry is built again from the\nvalues given here."
+        },
+        "max": {
+          "default": null,
+          "description": "The high box corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "min": {
+          "default": null,
+          "description": "The low box corner [x, y, z] (mm).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "model_ids": {
+          "default": null,
+          "description": "The model ids.",
+          "items": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "description": "A new name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "obstacle_id": {
+          "description": "The obstacle id (`list_setups` `obstacles[].id`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "z_bottom": {
+          "default": null,
+          "description": "The prism bottom (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "z_top": {
+          "default": null,
+          "description": "The prism top (mm).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index",
+        "obstacle_id"
+      ],
+      "title": "EditObstacleParam",
+      "type": "object"
+    },
+    "name": "edit_obstacle"
   },
   {
     "inputSchema": {
@@ -1891,6 +2152,33 @@
       "type": "object"
     },
     "name": "remove_alignment_pin"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`remove_obstacle` (K1): remove one obstacle from a setup.",
+      "properties": {
+        "obstacle_id": {
+          "description": "The obstacle id.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "setup_index": {
+          "description": "Setup index (0-based, the `list_setups` order).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "setup_index",
+        "obstacle_id"
+      ],
+      "title": "RemoveObstacleParam",
+      "type": "object"
+    },
+    "name": "remove_obstacle"
   },
   {
     "inputSchema": {

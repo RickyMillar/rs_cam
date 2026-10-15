@@ -117,10 +117,9 @@ impl ProjectSession {
     ///   polygons gives the exterior of each polygon. A model with only a
     ///   mesh gives the XY rectangle of its bbox (the mesh silhouette is
     ///   not computed; the rectangle is the safe reading);
-    /// - each enabled keep-out zone and each enabled fixture of each
-    ///   setup. Their footprints are in the world frame, as a model is, so
-    ///   they apply to the pins of every setup. A fixture footprint
-    ///   includes its own clearance.
+    /// - each enabled obstacle of each setup (K1), mapped from its setup
+    ///   frame to the world frame, so it applies to the pins of every
+    ///   setup. The footprint includes the obstacle's own clearance.
     #[must_use]
     pub fn pin_obstacles(&self, part_models: &[ModelId]) -> Vec<PinObstacle> {
         let mut out = Vec::new();
@@ -147,20 +146,59 @@ impl ProjectSession {
                 }
             }
         }
+        // K1: every enabled obstacle of every setup, mapped from its
+        // setup frame to the world frame. An identity setup's frame IS the
+        // world frame. Another setup maps the corners of the obstacle's
+        // box (footprint by Z range) and keeps their XY rectangle: the safe
+        // reading, and the only one for a lateral setup.
         for setup in &self.setups {
-            for zone in setup.keep_out_zones.iter().filter(|z| z.enabled) {
-                out.push(PinObstacle::from_polygon(
-                    PinObstacleKind::KeepOut,
-                    &zone.name,
-                    &zone.footprint(),
-                ));
-            }
-            for fixture in setup.fixtures.iter().filter(|f| f.enabled) {
-                out.push(PinObstacle::from_polygon(
-                    PinObstacleKind::Fixture,
-                    &fixture.name,
-                    &fixture.footprint(),
-                ));
+            let ctx = super::SetupEvalContext::build_for_setup(self, Some(setup));
+            let set = match crate::compute::obstacle::ObstacleSet::resolve(
+                &setup.obstacles,
+                &self.models,
+                ctx.local_to_global.as_ref(),
+            ) {
+                Ok(set) => set,
+                Err(e) => {
+                    tracing::warn!(setup = %setup.name, error = %e, "pin walls skip an obstacle");
+                    continue;
+                }
+            };
+            for obstacle in set.obstacles() {
+                let Some(info) = ctx.local_to_global.as_ref() else {
+                    out.extend(obstacle.footprint.iter().map(|polygon| {
+                        PinObstacle::from_polygon(
+                            PinObstacleKind::Obstacle,
+                            &obstacle.name,
+                            polygon,
+                        )
+                    }));
+                    continue;
+                };
+                let mut lo = (f64::INFINITY, f64::INFINITY);
+                let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for polygon in &obstacle.footprint {
+                    let [x0, y0, x1, y1] = polygon.bbox();
+                    for x in [x0, x1] {
+                        for y in [y0, y1] {
+                            for z in [obstacle.bottom_z, obstacle.top_z] {
+                                let p = info.local_to_global(crate::geo::P3::new(x, y, z));
+                                let (wx, wy) =
+                                    (p.x + info.stock_origin_x, p.y + info.stock_origin_y);
+                                lo = (lo.0.min(wx), lo.1.min(wy));
+                                hi = (hi.0.max(wx), hi.1.max(wy));
+                            }
+                        }
+                    }
+                }
+                if lo.0.is_finite() && hi.0.is_finite() {
+                    out.push(PinObstacle::rectangle(
+                        PinObstacleKind::Obstacle,
+                        &obstacle.name,
+                        lo,
+                        hi,
+                    ));
+                }
             }
         }
         out

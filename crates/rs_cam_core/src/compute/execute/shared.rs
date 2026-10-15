@@ -98,7 +98,8 @@ pub enum LinkCeilingNeed {
 /// - `tool_radius` is the tool's ENVELOPE radius, the search bound of
 ///   [`LinkCeiling::required_tip_z`];
 /// - `fallback_top_z` is [`crate::dressup::fresh_stock_top_z`], the
-///   G-PECKSPLIT rule the entry-descent split also reads.
+///   G-PECKSPLIT rule the entry-descent split also reads;
+/// - `obstacles` (K1) lifts the ceiling over each obstacle of the setup.
 ///
 /// `stock_top_z` is the stock top in the emission frame; `heights_top_z` is
 /// the op's resolved `top_z`. The result is `None` when the op's
@@ -109,6 +110,7 @@ pub fn link_ceiling_for<'a>(
     tool: &dyn MillingCutter,
     stock_top_z: f64,
     heights_top_z: f64,
+    obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 ) -> Option<LinkCeiling<'a>> {
     let build = match op.capabilities().link_ceiling {
         LinkCeilingNeed::Always => true,
@@ -119,6 +121,7 @@ pub fn link_ceiling_for<'a>(
         stock,
         tool_radius: tool.envelope_radius_mm(),
         fallback_top_z: crate::dressup::fresh_stock_top_z(stock_top_z, heights_top_z),
+        obstacles: obstacles.filter(|view| !view.is_empty()),
     })
 }
 
@@ -133,5 +136,6 @@ pub(super) fn op_link_ceiling<'a>(
         ctx.tool_def,
         ctx.stock_bbox.max.z,
         ctx.heights.top_z,
+        ctx.obstacles,
     )
 }

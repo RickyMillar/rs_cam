@@ -1219,6 +1219,7 @@ fn ladder_request(
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: BoundingBox3 {
             min: P3::new(0.0, 0.0, -8.0),
@@ -1387,6 +1388,7 @@ fn bench_viz_triage_build(c: &mut Criterion) {
                     commanded_depth_per_pass_mm: &BTreeMap::new(),
                     kinematic_utilization: &kinematic_utilization,
                     region_of: None,
+                    obstacle_collisions: &[],
                 };
                 black_box(SimulationTriage::build(&inputs).advisories.total_matching)
             })

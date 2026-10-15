@@ -136,6 +136,32 @@ pub struct SimGroupEntry {
     /// it per group (`sim_prefix`), and `snapshot_sources` lists it in every
     /// rest record of the group and of the groups that carry from it.
     pub stock_changes: Vec<crate::compute::stock_change::ResolvedStockChange>,
+    /// K1: the setup's obstacles in the setup frame, from
+    /// [`group_obstacles`], or the reason they could not be resolved. The
+    /// run refuses an `Err` before it carves anything, and checks every
+    /// move of every entry against an `Ok` set
+    /// ([`SimulationResult::obstacle_collisions`]).
+    pub obstacles: GroupObstacles,
+}
+
+/// The obstacles of one simulation group (K1). See
+/// [`SimGroupEntry::obstacles`].
+pub type GroupObstacles = Result<
+    Arc<crate::compute::obstacle::ObstacleSet>,
+    crate::compute::obstacle::ObstacleResolveError,
+>;
+
+/// The obstacles a setup's simulation group carries (K1): the sixth shared
+/// decision of the request. Both builders call it with the group's
+/// `local_to_global`, so the set is in the frame the group's toolpaths
+/// emit in.
+pub fn group_obstacles(
+    setup: &crate::session::SetupData,
+    models: &[crate::session::LoadedModel],
+    local_to_global: Option<&SetupTransformInfo>,
+) -> GroupObstacles {
+    crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, models, local_to_global)
+        .map(Arc::new)
 }
 
 /// The stock changes a setup's simulation group carries: every ENABLED
@@ -763,6 +789,12 @@ pub struct SimulationResult {
     /// group order and, within a group, in list order. Empty for a run with
     /// no stock change. See [`crate::compute::stock_change_apply`].
     pub stock_change_volumes: Vec<crate::compute::stock_change_apply::StockChangeVolume>,
+    /// K1: every move that puts the tool inside an obstacle of its setup,
+    /// at most one per move, in run order. Every move class is checked,
+    /// the rapids included, with the cutter, the shank and the holder, in
+    /// the setup frame. Each is a collision: the diagnostics add them to
+    /// `collision_count`.
+    pub obstacle_collisions: Vec<crate::compute::obstacle::ObstacleCollision>,
 }
 
 impl SimulationResult {
@@ -794,6 +826,9 @@ pub enum SimulationError {
         /// The limit, in bytes.
         limit_bytes: u64,
     },
+    /// K1: an obstacle of a setup cannot be resolved (a missing model).
+    /// The simulation does not run: it would not check that obstacle.
+    ObstacleRefused(String),
     /// S3: a stock change of the request cannot apply (a missing model, a
     /// mesh that is not closed, a full material slot table, ...). The
     /// simulation applies no partial result.
@@ -813,6 +848,7 @@ impl std::fmt::Display for SimulationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Simulation cancelled"),
+            Self::ObstacleRefused(text) => f.write_str(text),
             Self::OverBudget {
                 need_bytes,
                 limit_bytes,
@@ -1866,6 +1902,10 @@ where
 {
     set_phase("Initialize stock");
 
+    // K1: an obstacle that cannot be resolved stops the run before it
+    // carves: a simulation that skipped it would report a clean run.
+    let obstacle_views = group_obstacle_views(request)?;
+
     // Detect whether the grid will be coarsened beyond the requested
     // resolution — and record what the cell size actually ends up being, so
     // deviation populations carry their own resolution (M1 / X-9: column
@@ -2272,6 +2312,10 @@ where
     let prior_stock_sources =
         crate::compute::source_stock::snapshot_sources(request, &prior_stocks);
 
+    // K1: the obstacle check. It reads only the request and the
+    // boundaries, so a memo resume gives the same list as a full replay.
+    let obstacle_collisions = obstacle_collisions(request, &obstacle_views, &boundaries);
+
     Ok(SimulationResult {
         mesh,
         total_moves,
@@ -2289,7 +2333,75 @@ where
         display_degrade: DisplayMeshDegrade::for_stride(request.display_stride),
         group_starts,
         stock_change_volumes,
+        obstacle_collisions,
     })
+}
+
+/// K1: per group, per entry, the obstacle view for the entry's tool. An
+/// empty group set gives an empty inner list.
+fn group_obstacle_views(
+    request: &SimulationRequest,
+) -> Result<Vec<Vec<crate::compute::obstacle::ObstacleToolView>>, SimulationError> {
+    request
+        .groups
+        .iter()
+        .map(|group| {
+            let set = group
+                .obstacles
+                .as_ref()
+                .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))?;
+            if set.is_empty() {
+                return Ok(Vec::new());
+            }
+            group
+                .toolpaths
+                .iter()
+                .map(|entry| {
+                    set.for_tool(&entry.tool.to_assembly())
+                        .map_err(|e| SimulationError::ObstacleRefused(e.to_string()))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// K1: check every entry's moves against its group's obstacles. The
+/// global move index reads the entry's boundary (by toolpath id, in run
+/// order).
+fn obstacle_collisions(
+    request: &SimulationRequest,
+    views: &[Vec<crate::compute::obstacle::ObstacleToolView>],
+    boundaries: &[SimBoundary],
+) -> Vec<crate::compute::obstacle::ObstacleCollision> {
+    let mut out = Vec::new();
+    let mut next_boundary = 0usize;
+    for (group, group_views) in request.groups.iter().zip(views) {
+        for (k, entry) in group.toolpaths.iter().enumerate() {
+            // The boundaries are pushed one per entry, in this order.
+            let position = boundaries
+                .iter()
+                .skip(next_boundary)
+                .position(|b| b.id == entry.id)
+                .map(|p| p + next_boundary);
+            if let Some(p) = position {
+                next_boundary = p + 1;
+            }
+            let Some(view) = group_views.get(k) else {
+                continue;
+            };
+            let start_move = position
+                .and_then(|p| boundaries.get(p))
+                .map_or(0, |b| b.start_move);
+            for event in view.check_toolpath(&entry.annotated.toolpath) {
+                out.push(crate::compute::obstacle::ObstacleCollision {
+                    toolpath_id: entry.id,
+                    global_move: start_move + event.move_index,
+                    event,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// F-034: walk every toolpath in the request, recompute its runtime
@@ -2637,6 +2749,7 @@ mod tests {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         SimulationRequest {
@@ -2960,6 +3073,7 @@ mod tests {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let req = SimulationRequest {
@@ -3060,6 +3174,7 @@ mod tests {
             local_to_global: None, // identity setup
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let bottom_group = SimGroupEntry {
@@ -3091,6 +3206,7 @@ mod tests {
             }),
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         };
 
         let req = SimulationRequest {

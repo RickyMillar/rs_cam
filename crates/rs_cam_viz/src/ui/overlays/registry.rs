@@ -615,13 +615,14 @@ pub const ROWS: &[OverlayRow] = &[
         get: |s| s.viewport.show_fixtures,
         set: |s, on| s.viewport.show_fixtures = on,
         precondition: |s| match active_setup(s) {
-            Some(sd) if sd.fixtures.iter().any(|f| f.enabled) => Precondition::Ready,
-            Some(_) => Precondition::no("no fixture in this setup"),
+            Some(sd) if sd.obstacles.iter().any(|o| o.enabled) => Precondition::Ready,
+            Some(_) => Precondition::no("no obstacle in this setup"),
             None => Precondition::no("no setup in this project"),
         },
         default_for: geometry_default,
-        hover: "Fixture clearance boxes. Before P6 this one checkbox also \
-                drew keep-outs, pins, the flip axis and the datum.",
+        hover: "Obstacle clearance boxes (K1: fixtures and keep-out zones are \
+                one concept). Before P6 this one checkbox also drew pins, the \
+                flip axis and the datum.",
     },
     OverlayRow {
         id: "keep_outs",
@@ -633,13 +634,13 @@ pub const ROWS: &[OverlayRow] = &[
         radio: false,
         get: |s| s.viewport.show_keep_outs,
         set: |s, on| s.viewport.show_keep_outs = on,
-        precondition: |s| match active_setup(s) {
-            Some(sd) if sd.keep_out_zones.iter().any(|k| k.enabled) => Precondition::Ready,
-            Some(_) => Precondition::no("no keep-out zone in this setup"),
-            None => Precondition::no("no setup in this project"),
+        // K1: a keep-out zone is an obstacle, and the Fixtures row draws
+        // every obstacle. K2 merges the two rows.
+        precondition: |_| {
+            Precondition::no("keep-out zones are obstacles now; the Fixtures row draws them")
         },
         default_for: geometry_default,
-        hover: "Red wireframe forbidden volumes.",
+        hover: "Keep-out zones are obstacles (K1); the Fixtures row draws them.",
     },
     OverlayRow {
         id: "alignment_pins",

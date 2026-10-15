@@ -129,6 +129,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                 display_degrade: None,
                 group_starts: Vec::new(),
                 stock_change_volumes: Vec::new(),
+                obstacle_collisions: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

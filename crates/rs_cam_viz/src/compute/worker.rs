@@ -300,10 +300,10 @@ pub struct CollisionRequest {
     pub annotated: Arc<AnnotatedToolpath>,
     pub tool: ToolConfig,
     pub mesh: Arc<TriangleMesh>,
-    /// Workholding fixtures (clearance-expanded boxes) the assembly must
-    /// clear, built from the toolpath's setup via
-    /// `ProjectSession::collision_obstacles_for_toolpath`. W0.1 / P6-003.
-    pub obstacles: Vec<rs_cam_core::stock::collision::CollisionObstacle>,
+    /// K1: the obstacles of the toolpath's setup, in its frame, from
+    /// `ProjectSession::obstacle_set_for_toolpath`. The check runs the one
+    /// obstacle kernel the simulation runs.
+    pub obstacles: Arc<rs_cam_core::compute::obstacle::ObstacleSet>,
 }
 
 pub struct CollisionResult {

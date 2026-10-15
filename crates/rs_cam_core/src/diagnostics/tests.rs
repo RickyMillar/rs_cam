@@ -107,6 +107,10 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
         ("DRILL_PLUNGE_FEED", ids::DRILL_PLUNGE_FEED),
         ("PROJECT_HOLDER_COLLISION", ids::PROJECT_HOLDER_COLLISION),
         ("PROJECT_RAPID_COLLISION", ids::PROJECT_RAPID_COLLISION),
+        (
+            "PROJECT_OBSTACLE_COLLISION",
+            ids::PROJECT_OBSTACLE_COLLISION,
+        ),
         ("PROJECT_PLUNGE_STRESS", ids::PROJECT_PLUNGE_STRESS),
         ("PROJECT_AIR_CUT_HIGH", ids::PROJECT_AIR_CUT_HIGH),
         ("PROJECT_GENERATED_EMPTY", ids::PROJECT_GENERATED_EMPTY),

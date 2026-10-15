@@ -206,13 +206,9 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = self.apply_pin_wizard(pins, &add_drills, &use_tools);
             }
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
-            AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),
-            AppEvent::RemoveFixture(setup_id, fixture_id) => {
-                self.handle_remove_fixture(setup_id, fixture_id);
-            }
-            AppEvent::AddKeepOut(setup_id) => self.handle_add_keep_out(setup_id),
-            AppEvent::RemoveKeepOut(setup_id, keep_out_id) => {
-                self.handle_remove_keep_out(setup_id, keep_out_id);
+            AppEvent::AddObstacle(setup_id) => self.handle_add_obstacle(setup_id),
+            AppEvent::RemoveObstacle(setup_id, obstacle_id) => {
+                self.handle_remove_obstacle(setup_id, obstacle_id);
             }
             AppEvent::EditStockChanges(setup_id, intent) => {
                 self.handle_stock_change_intent(setup_id, intent);

@@ -10,14 +10,14 @@ pub use rs_cam_core::compute::tool_config::{
 };
 pub use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 pub use rs_cam_core::gcode::{PostConfig, PostFormat};
-pub use rs_cam_core::ids::{FixtureId, KeepOutId, ModelId, SetupId};
+pub use rs_cam_core::ids::{ModelId, ObstacleId, SetupId};
 
 // LoadedModel is now the single core type — viz re-exports it directly.
 pub use rs_cam_core::session::LoadedModel;
 
 // ToolConfig, ToolType, ToolMaterial, BitCutDirection, PostConfig, PostFormat,
-// StockConfig, AlignmentPin, ModelId, ToolId, SetupId, FixtureId,
-// KeepOutId, ModelKind, ModelUnits are now re-exported from core above.
+// StockConfig, AlignmentPin, ModelId, ToolId, SetupId, ObstacleId,
+// ModelKind, ModelUnits are now re-exported from core above.
 
 // FaceUp and ZRotation are now re-exported from core::compute::transform above.
 
@@ -257,47 +257,29 @@ pub fn height_context_from_session(
     }
 }
 
-/// Bounding box of a session `Fixture` (physical extents, no clearance).
-pub fn session_fixture_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+/// K1: the box of a box obstacle, in its setup frame (the frame the
+/// setup's toolpaths emit in). `None` for an outline or a model obstacle:
+/// the GUI draws and edits boxes only until K2.
+pub fn obstacle_box(o: &rs_cam_core::session::Obstacle) -> Option<BoundingBox3> {
     use rs_cam_core::geo::P3;
-    BoundingBox3 {
-        min: P3::new(f.origin_x, f.origin_y, f.origin_z),
-        max: P3::new(
-            f.origin_x + f.size_x,
-            f.origin_y + f.size_y,
-            f.origin_z + f.size_z,
-        ),
+    match &o.geometry {
+        rs_cam_core::session::ObstacleGeometry::Box { min, max } => Some(BoundingBox3 {
+            min: P3::new(min[0], min[1], min[2]),
+            max: P3::new(max[0], max[1], max[2]),
+        }),
+        rs_cam_core::session::ObstacleGeometry::OutlineExtrude { .. }
+        | rs_cam_core::session::ObstacleGeometry::Model { .. } => None,
     }
 }
 
-/// Clearance bounding box of a session `Fixture` (inflated by clearance margin).
-pub fn session_fixture_clearance_bbox(f: &rs_cam_core::session::Fixture) -> BoundingBox3 {
+/// K1: [`obstacle_box`] grown by the obstacle's clearance on every side.
+pub fn obstacle_clearance_box(o: &rs_cam_core::session::Obstacle) -> Option<BoundingBox3> {
     use rs_cam_core::geo::P3;
-    let c = f.clearance;
-    BoundingBox3 {
-        min: P3::new(f.origin_x - c, f.origin_y - c, f.origin_z),
-        max: P3::new(
-            f.origin_x + f.size_x + c,
-            f.origin_y + f.size_y + c,
-            f.origin_z + f.size_z,
-        ),
-    }
-}
-
-/// Bounding box of a session `KeepOutZone` (full Z extent of stock).
-pub fn session_keep_out_bbox(
-    ko: &rs_cam_core::session::KeepOutZone,
-    stock: &StockConfig,
-) -> BoundingBox3 {
-    use rs_cam_core::geo::P3;
-    BoundingBox3 {
-        min: P3::new(ko.origin_x, ko.origin_y, stock.origin_z),
-        max: P3::new(
-            ko.origin_x + ko.size_x,
-            ko.origin_y + ko.size_y,
-            stock.origin_z + stock.z,
-        ),
-    }
+    let c = o.clearance;
+    obstacle_box(o).map(|b| BoundingBox3 {
+        min: P3::new(b.min.x - c, b.min.y - c, b.min.z - c),
+        max: P3::new(b.max.x + c, b.max.y + c, b.max.z + c),
+    })
 }
 
 /// Transform a mesh into a setup's local coordinate frame.

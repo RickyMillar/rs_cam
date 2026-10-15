@@ -47,6 +47,7 @@ impl SimulationState {
             checks: SimulationChecks {
                 rapid_collisions: Vec::new(),
                 rapid_collision_move_indices: Vec::new(),
+                obstacle_collisions: Vec::new(),
                 collision_report: None,
                 holder_collision_count: 0,
                 min_safe_stickout: None,
@@ -360,11 +361,16 @@ impl SimulationState {
         rs_cam_core::stock::collision::HolderCollisionCheck,
     )> {
         use rs_cam_core::stock::collision::HolderCollisionCheck;
-        let count = self
-            .checks
-            .collision_report
-            .as_ref()
-            .map_or(0, |report| report.collisions.len());
+        // K1: the simulation counts the obstacle hits
+        // (`SimulationChecks::obstacle_collisions`), so the holder count
+        // reads the workpiece hits alone, as core's sweep does.
+        let count = self.checks.collision_report.as_ref().map_or(0, |report| {
+            report
+                .collisions
+                .iter()
+                .filter(|c| c.kind == rs_cam_core::stock::collision::CollisionKind::Workpiece)
+                .count()
+        });
         // Only a toolpath the report found HITS on appears here. A toolpath
         // the GUI never checked is absent, and core reads absence as "not
         // measured" — it must not be listed as a measured zero (CMP-14).

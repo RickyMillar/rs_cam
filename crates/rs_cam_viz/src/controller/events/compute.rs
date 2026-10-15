@@ -803,6 +803,14 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.simulation.checks.rapid_collisions = simulation.core.rapid_collisions;
                 self.state.simulation.checks.rapid_collision_move_indices =
                     simulation.core.rapid_collision_move_indices;
+                if !simulation.core.obstacle_collisions.is_empty() {
+                    tracing::warn!(
+                        "{} obstacle collisions detected",
+                        simulation.core.obstacle_collisions.len()
+                    );
+                }
+                self.state.simulation.checks.obstacle_collisions =
+                    simulation.core.obstacle_collisions;
 
                 self.state.simulation.playback.display_deviations = simulation.core.deviations;
                 self.state.simulation.playback.display_mesh = None;
@@ -2648,5 +2656,6 @@ fn core_simulation_from_lane(
         display_degrade: None,
         group_starts: core.group_starts.clone(),
         stock_change_volumes: core.stock_change_volumes.clone(),
+        obstacle_collisions: core.obstacle_collisions.clone(),
     }
 }

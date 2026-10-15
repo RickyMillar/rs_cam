@@ -150,6 +150,7 @@ fn identity_group(entries: Vec<SimToolpathEntry>) -> SimGroupEntry {
         local_to_global: None,
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 
@@ -162,6 +163,7 @@ fn setup_group(entries: Vec<SimToolpathEntry>, info: SetupTransformInfo) -> SimG
         local_to_global: Some(info),
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 

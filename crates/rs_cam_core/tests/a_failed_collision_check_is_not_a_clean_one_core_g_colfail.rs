@@ -35,13 +35,18 @@
 //! ## The follow-up this file also pins
 //!
 //! The holder check has two halves and they need different things. The mesh
-//! half needs a mesh; the FIXTURE half needs only the setup's fixtures. The
-//! first fix read `NotApplicable` for every mesh-less toolpath, so a 2D job
-//! held down by a clamp never had its holder tested against that clamp
+//! half needs a mesh; the OBSTACLE half needs only the setup's obstacles.
+//! The first fix read `NotApplicable` for every mesh-less toolpath, so a 2D
+//! job held down by a clamp never had its holder tested against that clamp
 //! either. `a_mesh_less_toolpath_still_meets_its_fixtures_g_colfail` pins
 //! the measured answer, and
 //! `a_mesh_less_toolpath_with_no_fixture_is_not_applicable_g_colfail` pins
 //! that the 2D `NotApplicable` case survives.
+//!
+//! K1 (2026-10-15): fixtures are obstacles, generation keeps every move
+//! out of them, and the simulation counts an obstacle hit. The sweep counts
+//! workpiece hits alone, so the measured answer under a clamp is now a
+//! measured ZERO, never `NotApplicable`.
 
 #![allow(
     clippy::unwrap_used,
@@ -63,9 +68,9 @@ use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{DropCutterConfig, TraceConfig};
 use rs_cam_core::diagnostics::ids;
-use rs_cam_core::ids::FixtureId;
+use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::session::{
-    AddFixtureArgs, Command, Fixture, FixtureKind, ProjectEvidence, ProjectSession,
+    AddObstacleArgs, Command, Obstacle, ObstacleGeometry, ProjectEvidence, ProjectSession,
     ProjectSessionBuilder, VerdictKind,
 };
 use rs_cam_core::stock::collision::HolderCollisionCheck;
@@ -107,25 +112,19 @@ fn two_toolpaths_one_model() -> ProjectSession {
     session
 }
 
-/// A clamp standing where the holder sweeps.
-///
-/// The box spans the whole 2D cut in XY and reaches far above it in Z, so
-/// every shank and holder segment over the cut is inside it. That is
-/// deliberate: the sentry proves the fixture half RAN, so the geometry is
-/// chosen to make the answer unambiguous.
-fn clamp_over_the_cut() -> Fixture {
-    Fixture {
-        id: FixtureId(1),
+/// A clamp over one side of the 2D cut, far above it in Z. Generation keeps
+/// the tool out of it (K1), so the rest of the cut stays and the sweep has
+/// a result to measure.
+fn clamp_over_the_cut() -> Obstacle {
+    Obstacle {
+        id: ObstacleId(1),
         name: "G-COLFAIL clamp".to_owned(),
-        kind: FixtureKind::Clamp,
         enabled: true,
-        origin_x: -10.0,
-        origin_y: -10.0,
-        origin_z: -5.0,
-        size_x: 20.0,
-        size_y: 20.0,
-        size_z: 60.0,
         clearance: 0.0,
+        geometry: ObstacleGeometry::Box {
+            min: [3.0, -10.0, -5.0],
+            max: [13.0, 10.0, 55.0],
+        },
     }
 }
 
@@ -133,7 +132,7 @@ fn clamp_over_the_cut() -> Fixture {
 ///
 /// The fixture, when there is one, is added BEFORE generation: adding a
 /// fixture invalidates the setup's results.
-fn one_2d_toolpath(fixture: Option<Fixture>) -> ProjectSession {
+fn one_2d_toolpath(fixture: Option<Obstacle>) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
     let tool_id = builder.tools()[tool_idx].id.0;
@@ -151,9 +150,9 @@ fn one_2d_toolpath(fixture: Option<Fixture>) -> ProjectSession {
     let mut session = builder.build();
     if let Some(fixture) = fixture {
         let _ = session
-            .apply(Command::AddFixture(AddFixtureArgs {
+            .apply(Command::AddObstacle(AddObstacleArgs {
                 setup_index: 0,
-                fixture: Box::new(fixture),
+                obstacle: Box::new(fixture),
             }))
             .expect("add the fixture");
     }
@@ -179,10 +178,10 @@ fn a_mesh_less_toolpath_still_meets_its_fixtures_g_colfail() {
     assert_eq!(outcomes.len(), 1, "the 2D toolpath carries a result");
     let (id, outcome) = outcomes[0];
     match outcome {
-        HolderCollisionCheck::Measured(n) => assert!(
-            n > 0,
-            "TP{id}: the clamp stands in the holder's path, so the fixture \
-             half must report hits; got Measured(0)"
+        HolderCollisionCheck::Measured(n) => assert_eq!(
+            n, 0,
+            "TP{id}: generation keeps the tool out of the clamp (K1), and the \
+             sweep counts workpiece hits alone"
         ),
         other => panic!(
             "TP{id}: a mesh-less toolpath under a clamp must be MEASURED \

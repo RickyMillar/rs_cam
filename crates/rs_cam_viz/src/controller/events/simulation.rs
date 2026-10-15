@@ -298,6 +298,13 @@ impl<B: ComputeBackend> AppController<B> {
                     setup.z_rotation,
                 );
 
+                // K1: the sixth shared decision, the same call as the core
+                // builder.
+                let obstacles = rs_cam_core::compute::simulate::group_obstacles(
+                    setup,
+                    self.state.session.models(),
+                    setup_ctx.local_to_global.as_ref(),
+                );
                 groups.push(SimGroupEntry {
                     toolpaths,
                     direction: group_stock_cut_direction(setup.face_up),
@@ -311,6 +318,7 @@ impl<B: ComputeBackend> AppController<B> {
                     local_to_global: setup_ctx.local_to_global,
                     phantom_prior_stock,
                     stock_changes,
+                    obstacles,
                 });
             }
 
@@ -546,22 +554,6 @@ impl<B: ComputeBackend> AppController<B> {
         );
     }
 
-    /// Submit the holder/shank clearance check.
-    ///
-    /// **It examines ONE toolpath** — the first that has a result, a cutter
-    /// and a mesh — and the row it feeds is titled "Holder clearance" for the
-    /// whole job. F2.13 (G-HOLDERSCOPE) does not widen the check: pricing a
-    /// per-toolpath sweep needs a measurement this lane could not take
-    /// (`run_collision_check` builds a spatial index and runs a drop-cutter
-    /// query per 1 mm sample per assembly segment). It makes the verdict carry
-    /// its own population instead, so the row states what it measured rather
-    /// than reading Clear for operations it never asked about.
-    ///
-    /// The selection is unchanged, including the two things it does not do:
-    /// it does not skip a DISABLED toolpath, and it does not look for the
-    /// toolpath most likely to strike. The scope's `examined` counts the
-    /// ENABLED toolpath it reached, so a verdict about a switched-off
-    /// operation examines none of the job and cannot read as the job's.
     /// Operator ruling 2026-10-15: generate the fresh twin of rest
     /// toolpath `tp_id` and record both cycle times through
     /// `Command::AdoptRestFreshComparison`. The GUI button and the MCP
@@ -583,16 +575,29 @@ impl<B: ComputeBackend> AppController<B> {
             .compare_rest_with_fresh(index, &cancel)
             .map_err(|e| e.to_string())?;
         let times = args.times;
-        let _ = self
-            .state
-            .session
-            .apply(rs_cam_core::session::Command::AdoptRestFreshComparison(
-                args,
-            ))
-            .map_err(|e| e.to_string())?;
-        Ok(times)
+        self.apply_quietly(rs_cam_core::session::Command::AdoptRestFreshComparison(
+            args,
+        ))
+        .map(|_effects| times)
+        .ok_or_else(|| "the session refused the fresh comparison".to_owned())
     }
 
+    /// Submit the holder/shank clearance check.
+    ///
+    /// **It examines ONE toolpath** — the first that has a result, a cutter
+    /// and a mesh — and the row it feeds is titled "Holder clearance" for the
+    /// whole job. F2.13 (G-HOLDERSCOPE) does not widen the check: pricing a
+    /// per-toolpath sweep needs a measurement this lane could not take
+    /// (`run_collision_check` builds a spatial index and runs a drop-cutter
+    /// query per 1 mm sample per assembly segment). It makes the verdict carry
+    /// its own population instead, so the row states what it measured rather
+    /// than reading Clear for operations it never asked about.
+    ///
+    /// The selection is unchanged, including the two things it does not do:
+    /// it does not skip a DISABLED toolpath, and it does not look for the
+    /// toolpath most likely to strike. The scope's `examined` counts the
+    /// ENABLED toolpath it reached, so a verdict about a switched-off
+    /// operation examines none of the job and cannot read as the job's.
     pub(crate) fn request_collision_check(&mut self) {
         // F2.13: the denominator is the ENABLED operation list, not the list
         // of toolpaths a check could examine. An operation with no mesh is one
@@ -630,9 +635,14 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .find(|m| m.id == tc.model_id)
                     .and_then(|m| m.mesh.clone())?;
-                // W0.1 — carry the setup's fixtures so the GUI check
-                // flags holder-vs-clamp crashes, not just mesh hits.
-                let obstacles = self.state.session.collision_obstacles_for_toolpath(index);
+                // K1: carry the setup's obstacles so the GUI check runs the
+                // obstacle kernel too. An obstacle that cannot be resolved
+                // refuses the simulation, which names it.
+                let obstacles = self
+                    .state
+                    .session
+                    .obstacle_set_for_toolpath(index)
+                    .unwrap_or_default();
                 Some((
                     index,
                     tc.id,
@@ -811,6 +821,7 @@ mod release_for_new_run_m1 {
             display_degrade: None,
             group_starts: Vec::new(),
             stock_change_volumes: Vec::new(),
+            obstacle_collisions: Vec::new(),
         };
         let epoch = controller.state.session.simulation_epoch();
         let _ = controller

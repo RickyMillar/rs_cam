@@ -201,6 +201,7 @@ fn run(with_kinematics: bool) -> SimulationResult {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock_bbox(),
         stock_top_z: STOCK_Z,

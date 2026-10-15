@@ -115,6 +115,7 @@ fn request(chain: &[Arc<AnnotatedToolpath>], count: usize) -> SimulationRequest 
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,
@@ -736,6 +737,7 @@ fn a_multi_group_prefix_resumes_inside_the_last_group() {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),
@@ -778,6 +780,7 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
                 local_to_global: None,
                 phantom_prior_stock: if g == 0 { phantom } else { None },
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),
@@ -821,6 +824,7 @@ fn layout_request(chain: &[Arc<AnnotatedToolpath>], layout: &[&[usize]]) -> Simu
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: Vec::new(),
+                obstacles: Ok(Default::default()),
             })
             .collect(),
         stock_bbox: stock(),

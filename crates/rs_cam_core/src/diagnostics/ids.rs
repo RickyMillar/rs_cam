@@ -76,6 +76,9 @@ pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision";
 /// defect the `diagnostics/` contract names.
 pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed";
 pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
+/// K1: a move puts the tool (cutter, shank or holder) inside an obstacle
+/// of its setup: a fixture or a keep-out zone.
+pub const PROJECT_OBSTACLE_COLLISION: &str = "project.obstacle_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
@@ -420,6 +423,7 @@ pub const ALL: &[&str] = &[
     PROJECT_HOLDER_COLLISION,
     PROJECT_HOLDER_CHECK_FAILED,
     PROJECT_RAPID_COLLISION,
+    PROJECT_OBSTACLE_COLLISION,
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,
     PROJECT_GENERATED_EMPTY,

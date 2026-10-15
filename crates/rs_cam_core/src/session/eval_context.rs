@@ -77,7 +77,8 @@ pub struct SetupEvalContext {
 
     /// Effective safe_z. Floored at `heights_stock_bbox.max.z +
     /// SAFE_Z_CLEARANCE_MM` — the frame the toolpath emits in
-    /// (G-SAFEZ-LOCAL).
+    /// (G-SAFEZ-LOCAL). K1: [`Self::build_for_setup`] raises it to the
+    /// obstacle plane of the setup when the plane is higher.
     pub safe_z: f64,
 
     /// Setup orientation. Kept here so consumers don't have to plumb
@@ -144,6 +145,18 @@ impl SetupEvalContext {
         let z_rotation = setup.map(|s| s.z_rotation).unwrap_or_default();
         let mut ctx = Self::build(session, face_up, z_rotation);
         ctx.z_datum = setup.map(|s| s.datum.z_method.clone()).unwrap_or_default();
+        // K1: the safe Z rises to the obstacle plane when the plane is
+        // higher, so every rapid at the safe or retract Z clears the
+        // obstacles of the setup.
+        if let Some(plane) = setup.and_then(|s| {
+            crate::compute::obstacle::obstacle_plane_z(
+                &s.obstacles,
+                &session.models,
+                ctx.local_to_global.as_ref(),
+            )
+        }) {
+            ctx.safe_z = ctx.safe_z.max(plane);
+        }
         ctx
     }
 

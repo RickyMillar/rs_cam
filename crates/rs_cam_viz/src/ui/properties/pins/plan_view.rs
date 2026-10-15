@@ -277,12 +277,11 @@ fn paint(
     );
     legend(painter, &micro);
 
-    // The part outlines, the keep-out zones and the fixtures.
+    // The part outlines and the obstacles.
     for obstacle in &report.obstacles_local {
         let colour = match obstacle.kind {
             PinObstacleKind::Part => tokens::DIAGRAM_TOOL,
-            PinObstacleKind::KeepOut => tokens::CAUTION,
-            PinObstacleKind::Fixture => tokens::DANGER,
+            PinObstacleKind::Obstacle => tokens::DANGER,
         };
         let points: Vec<egui::Pos2> = obstacle
             .points

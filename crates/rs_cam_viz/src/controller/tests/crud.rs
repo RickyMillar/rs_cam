@@ -304,6 +304,7 @@ fn queued_simulation_naming(ids: &[ToolpathId]) -> ComputeMessage {
             display_degrade: None,
             group_starts: Vec::new(),
             stock_change_volumes: Vec::new(),
+            obstacle_collisions: Vec::new(),
         },
         playback_data: Vec::new(),
         cut_trace_path: None,

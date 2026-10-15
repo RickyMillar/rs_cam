@@ -118,6 +118,7 @@ fn request() -> SimulationRequest {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: BoundingBox3 {
             min: P3::new(0.0, 0.0, -6.0),

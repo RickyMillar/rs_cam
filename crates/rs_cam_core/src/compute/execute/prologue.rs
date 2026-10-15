@@ -14,7 +14,8 @@
 //! check the mesh, the index, the polygons or the tool kind again.
 //!
 //! W6.2: after the checks, the prologue resolves the op's [`Territory`]
-//! once. [`Prepared::territory`] gives it to the adapter.
+//! once. [`Prepared::territory`] gives it to the adapter. K1: the territory
+//! carries the setup's obstacles for every op.
 
 use crate::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
 use crate::mesh::{SpatialIndex, TriangleMesh};

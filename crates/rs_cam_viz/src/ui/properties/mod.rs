@@ -20,7 +20,7 @@ pub use operations::{
     profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 pub(crate) use panel_apply::{
-    apply_fixture_draft, apply_stock_draft, commit_tool_draft, part_models_first,
+    apply_obstacle_draft, apply_stock_draft, commit_tool_draft, part_models_first,
     stock_edit_command,
 };
 
@@ -36,13 +36,13 @@ use linking_dressup::{
 use machine_panel::draw_machine_panel;
 use model_sim_panels::{draw_model_properties, draw_simulation_panel};
 use panel_apply::{
-    apply_keep_out_draft, apply_panel_command, apply_setup_draft, flush_machine_snapshot,
-    flush_post_snapshot, flush_tool_draft, flush_toolpath_snapshot,
+    apply_panel_command, apply_setup_draft, flush_machine_snapshot, flush_post_snapshot,
+    flush_tool_draft, flush_toolpath_snapshot,
 };
 use toolpath_panel::draw_toolpath_panel;
 
 use crate::state::AppState;
-use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolId};
+use crate::state::job::{ModelId, ObstacleId, SetupId, ToolId};
 use crate::state::selection::Selection;
 use crate::state::toolpath::{BoundarySource, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
@@ -151,11 +151,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Model(id) => draw_model_selection(ui, state, events, id),
         Selection::Tool(id) => draw_tool_selection(ui, state, id),
         Selection::Setup(setup_id) => draw_setup_selection(ui, state, events, setup_id),
-        Selection::Fixture(setup_id, fixture_id) => {
-            draw_fixture_selection(ui, state, setup_id, fixture_id);
-        }
-        Selection::KeepOut(setup_id, keep_out_id) => {
-            draw_keep_out_selection(ui, state, setup_id, keep_out_id);
+        Selection::Obstacle(setup_id, obstacle_id) => {
+            draw_obstacle_selection(ui, state, setup_id, obstacle_id);
         }
         Selection::Face(model_id, face_id) => draw_face_selection(ui, state, model_id, face_id),
         Selection::Faces(model_id, ref face_ids) => {
@@ -1190,66 +1187,34 @@ fn draw_stock_changes_section(
     stock_changes::draw(ui, &inputs, &mut state.panels.stock_change_editor, events);
 }
 
-/// The `Fixture` arm of [`draw`]'s selection dispatch.
-fn draw_fixture_selection(
+/// The `Obstacle` arm of [`draw`]'s selection dispatch (K1).
+fn draw_obstacle_selection(
     ui: &mut egui::Ui,
     state: &mut AppState,
     setup_id: SetupId,
-    fixture_id: FixtureId,
+    obstacle_id: ObstacleId,
 ) {
     let stored = state
         .session
         .find_setup_by_id(setup_id.0)
         .and_then(|(index, setup_data)| {
             setup_data
-                .fixtures
+                .obstacles
                 .iter()
-                .find(|fixture| fixture.id == fixture_id)
-                .map(|fixture| (index, fixture.clone()))
+                .find(|obstacle| obstacle.id == obstacle_id)
+                .map(|obstacle| (index, obstacle.clone()))
         });
     if let Some((setup_index, stored)) = stored {
-        let mut draft = match state.history.fixture_draft.take() {
-            Some((s_id, f_id, data)) if s_id == setup_id && f_id == fixture_id => data,
+        let mut draft = match state.history.obstacle_draft.take() {
+            Some((s_id, o_id, data)) if s_id == setup_id && o_id == obstacle_id => data,
             _ => stored.clone(),
         };
-        let edit = setup::draw_fixture_properties(ui, setup_id, &mut draft);
+        let edit = setup::draw_obstacle_properties(ui, setup_id, &mut draft);
         if edit.committed && draft != stored {
-            apply_fixture_draft(state, setup_index, fixture_id, draft.clone());
+            apply_obstacle_draft(state, setup_index, obstacle_id, draft.clone());
         }
         if edit.in_flight {
-            state.history.fixture_draft = Some((setup_id, fixture_id, draft));
-        }
-    }
-}
-
-/// The `KeepOut` arm of [`draw`]'s selection dispatch.
-fn draw_keep_out_selection(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    setup_id: SetupId,
-    keep_out_id: KeepOutId,
-) {
-    let stored = state
-        .session
-        .find_setup_by_id(setup_id.0)
-        .and_then(|(index, setup_data)| {
-            setup_data
-                .keep_out_zones
-                .iter()
-                .find(|zone| zone.id == keep_out_id)
-                .map(|zone| (index, zone.clone()))
-        });
-    if let Some((setup_index, stored)) = stored {
-        let mut draft = match state.history.keep_out_draft.take() {
-            Some((s_id, z_id, data)) if s_id == setup_id && z_id == keep_out_id => data,
-            _ => stored.clone(),
-        };
-        let edit = setup::draw_keep_out_properties(ui, setup_id, &mut draft);
-        if edit.committed && draft != stored {
-            apply_keep_out_draft(state, setup_index, keep_out_id, draft.clone());
-        }
-        if edit.in_flight {
-            state.history.keep_out_draft = Some((setup_id, keep_out_id, draft));
+            state.history.obstacle_draft = Some((setup_id, obstacle_id, draft));
         }
     }
 }

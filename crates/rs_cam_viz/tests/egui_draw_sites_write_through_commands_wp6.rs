@@ -62,7 +62,7 @@ const DELETED_EVENTS: &[&str] = &[
 
 /// The wire name of every registry row a WP6 draw site calls.
 ///
-/// Eleven rows serve the twelve sites: two machine widgets share
+/// Ten rows serve the sites: two machine widgets share
 /// `load_machine_from_library`.
 const ADOPTED_ROWS: &[&str] = &[
     "replace_tool",
@@ -71,8 +71,8 @@ const ADOPTED_ROWS: &[&str] = &[
     "set_setup_rotation",
     "set_setup_datum",
     "set_setup_models",
-    "replace_fixture",
-    "replace_keep_out",
+    // K1: one obstacle panel replaced the fixture and keep-out panels.
+    "edit_obstacle",
     "load_machine_from_library",
     "set_machine_kinematics",
     "import_machine_settings",

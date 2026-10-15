@@ -1663,6 +1663,7 @@ fn wanaka_valley_branch_falsifier_h1() {
     let regime = LinkRegime {
         safe_z,
         ceiling: Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: r10.envelope_radius_mm(),
             fallback_top_z: block_top_z,

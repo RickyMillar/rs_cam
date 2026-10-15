@@ -150,20 +150,20 @@ impl ProjectSession {
         let face_up = ctx.face_up;
         let z_rotation = ctx.z_rotation;
 
-        // Collect keep-out footprints from setup fixtures and keep-out zones
-        let mut keep_out_footprints: Vec<crate::polygon::Polygon2> = Vec::new();
-        if let Some(s) = setup {
-            for fixture in &s.fixtures {
-                if fixture.enabled {
-                    keep_out_footprints.push(fixture.footprint());
-                }
-            }
-            for keep_out in &s.keep_out_zones {
-                if keep_out.enabled {
-                    keep_out_footprints.push(keep_out.footprint());
-                }
-            }
-        }
+        // K1: the obstacles of the setup, resolved ONCE in the setup frame
+        // (the emission frame). A missing model refuses the generation and
+        // names the obstacle; an obstacle never vanishes in silence.
+        let obstacles = Arc::new(
+            crate::compute::obstacle::ObstacleSet::resolve(
+                setup.map(|s| s.obstacles.as_slice()).unwrap_or_default(),
+                &self.models,
+                ctx.local_to_global.as_ref(),
+            )
+            .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+        );
+        // The grown footprints also leave the machining boundary, when one
+        // is on, as the keep-outs always did.
+        let keep_out_footprints: Vec<crate::polygon::Polygon2> = obstacles.footprints();
 
         // Clone boundary config before we lose the borrow on tc
         let boundary_config = tc.boundary.clone();
@@ -207,14 +207,6 @@ impl ProjectSession {
                     )
                     .into_iter()
                     .next();
-            }
-            // Keep-out footprints are world-anchored hardware, not drawings,
-            // so they keep the orthographic world→local projection.
-            // (Unreachable with a non-empty list on a lateral setup —
-            // `check_lateral_setup_support` refuses that above.)
-            if !keep_out_footprints.is_empty() {
-                keep_out_footprints =
-                    self.transform_footprints_to_setup(&keep_out_footprints, face_up, z_rotation);
             }
         }
 
@@ -485,9 +477,33 @@ impl ProjectSession {
                 )
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?
             }
+        } else if !obstacles.is_empty() {
+            // K1: with the boundary off, the 3D Rough planner still reads
+            // the obstacles as holes in its outline, so it pre-clears the
+            // cells under them and never plans a cut there. The rectangle
+            // is the stock, one tool diameter wider on each side.
+            let b = &emission_stock_bbox;
+            let margin = tool.diameter;
+            let rect = crate::polygon::Polygon2::rectangle(
+                b.min.x - margin,
+                b.min.y - margin,
+                b.max.x + margin,
+                b.max.y + margin,
+            );
+            Some(crate::geometry::boundary::subtract_keepouts(
+                &rect,
+                &keep_out_footprints,
+            ))
         } else {
             None
         };
+
+        // K1: the obstacles for this tool, one footprint per assembly band.
+        let obstacle_view = Arc::new(
+            obstacles
+                .for_tool(&tool_def.to_assembly())
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+        );
 
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
@@ -498,6 +514,8 @@ impl ProjectSession {
                 .map(|m| Arc::clone(&m.drill_targets))
                 .unwrap_or_default(),
             keep_out_footprints,
+            obstacles,
+            obstacle_view,
             boundary_config,
             emission_stock_bbox,
             heights,

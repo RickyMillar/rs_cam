@@ -1274,6 +1274,7 @@ fn simulate_window(ctx: &WindowCtx<'_>, cx: f64, cy: f64, cell: f64) -> WindowRu
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: bbox,
         stock_top_z: bbox.max.z,

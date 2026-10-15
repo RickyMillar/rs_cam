@@ -208,7 +208,7 @@ fn a_setup_card_cannot_grow_a_second_line_dc4() {
 
     // The lines that used to VARY between cards now live in the hover text,
     // which is a string and cannot change a card's height.
-    for varying in ["flip_instruction", "keep_out_zones", "xy_method"] {
+    for varying in ["flip_instruction", "obstacles", "xy_method"] {
         assert!(
             !card.contains(varying),
             "{varying} is back on the card body. Rule D: a card's height \

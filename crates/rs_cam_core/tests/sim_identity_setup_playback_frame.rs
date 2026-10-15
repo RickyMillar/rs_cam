@@ -142,6 +142,7 @@ fn non_identity_group() -> SimGroupEntry {
         }),
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 
@@ -162,6 +163,7 @@ fn identity_group() -> SimGroupEntry {
         local_to_global: None,
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        obstacles: Ok(Default::default()),
     }
 }
 

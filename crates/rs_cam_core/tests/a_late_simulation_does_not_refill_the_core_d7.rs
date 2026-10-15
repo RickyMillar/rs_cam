@@ -173,6 +173,7 @@ fn a_simulation(session: &ProjectSession) -> SimulationResult {
         display_degrade: None,
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
+        obstacle_collisions: Vec::new(),
     }
 }
 

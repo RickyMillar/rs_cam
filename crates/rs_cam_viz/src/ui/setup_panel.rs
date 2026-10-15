@@ -479,17 +479,14 @@ fn setup_detail(setup: &SetupData, state: &AppState, state_line: &str, orient: &
         XYDatum::AlignmentPins => "Pins".to_owned(),
         XYDatum::Manual => "Manual".to_owned(),
     };
-    let fixtures = setup.fixtures.len();
-    let keep_out = setup.keep_out_zones.len();
+    let obstacles = setup.obstacles.len();
     let pins = state.session.stock_config().alignment_pins.len();
 
     let mut detail = format!("{state_line}\nOrientation: {orient}\nXY datum: {datum}");
-    if fixtures == 0 && keep_out == 0 && pins == 0 {
+    if obstacles == 0 && pins == 0 {
         detail.push_str("\nNo workholding");
     } else {
-        detail.push_str(&format!(
-            "\nFixtures {fixtures} · Keep-out {keep_out} · Pins {pins}"
-        ));
+        detail.push_str(&format!("\nObstacles {obstacles} · Pins {pins}"));
     }
     if setup.face_up != FaceUp::Top {
         detail.push('\n');
@@ -524,7 +521,7 @@ fn active_setup(state: &AppState) -> Option<&SetupData> {
     let setups = state.session.list_setups();
     let setup_id = match &state.selection {
         Selection::Setup(id) => Some(*id),
-        Selection::Fixture(id, _) | Selection::KeepOut(id, _) => Some(*id),
+        Selection::Obstacle(id, _) => Some(*id),
         Selection::Toolpath(tp_id) => state
             .session
             .setup_of_toolpath_id(*tp_id)

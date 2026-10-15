@@ -6,8 +6,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DatumConfig, Fixture, FixtureKind, KeepOutZone, LoadedGeometry, LoadedModel, SessionError,
-    SetupData, ToolpathConfig, XYDatum, ZDatum,
+    DatumConfig, LoadedGeometry, LoadedModel, SessionError, SetupData, ToolpathConfig, XYDatum,
+    ZDatum,
 };
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
@@ -16,7 +16,6 @@ use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geometry::enriched_mesh::FaceGroupId;
-use crate::ids::{FixtureId, KeepOutId};
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -58,6 +57,43 @@ fn check_format_version(project: &ProjectFile) -> Result<(), SessionError> {
     Err(SessionError::UnsupportedFormatVersion {
         found: project.format_version,
     })
+}
+
+/// K1: refuse a project file whose setup holds an entry under the retired
+/// `fixtures` or `keep_out_zones` key.
+///
+/// Fixtures and keep-out zones are one concept now, the obstacle, written
+/// as `[[setups.obstacles]]` in the setup frame. Nothing converts the old
+/// keys: the old fixture was a world box and the old keep-out zone had no
+/// Z extent, so a silent conversion would guess the solid. The file fails
+/// to open and the message names the new key.
+///
+/// An EMPTY old list (`fixtures = []`, which the old writer put in every
+/// file) holds no obstacle, so nothing can vanish; it loads, and the next
+/// save drops the key.
+fn check_retired_keys(project: &ProjectFile) -> Result<(), SessionError> {
+    let holds_an_entry = |value: &Option<toml::Value>| match value {
+        None => false,
+        Some(toml::Value::Array(entries)) => !entries.is_empty(),
+        Some(_) => true,
+    };
+    for setup in &project.setups {
+        let key = if holds_an_entry(&setup.fixtures) {
+            "fixtures"
+        } else if holds_an_entry(&setup.keep_out_zones) {
+            "keep_out_zones"
+        } else {
+            continue;
+        };
+        return Err(SessionError::TomlParse(format!(
+            "setup '{}' uses the retired key '{key}'. Fixtures and keep-out zones are one \
+             concept now: write each one as an obstacle, [[setups.obstacles]] with an id, \
+             a name, a clearance and a geometry (kind = \"box\" with min and max, \
+             \"outline_extrude\" or \"model\"), with every value in the setup frame",
+            setup.name
+        )));
+    }
+    Ok(())
 }
 
 /// Something a project load noticed, kept for the operator to read.
@@ -463,10 +499,18 @@ pub struct ProjectSetupSection {
     /// Models in scope for this setup; empty = all (W9 / P-2).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub model_ids: Vec<usize>,
-    #[serde(default)]
-    pub fixtures: Vec<ProjectFixtureSection>,
-    #[serde(default)]
-    pub keep_out_zones: Vec<ProjectKeepOutSection>,
+    /// K1: `[[setups.obstacles]]`, the setup's obstacles (fixtures and
+    /// keep-out zones are one concept). Every value is in the setup frame.
+    /// An empty list writes no key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obstacles: Vec<crate::compute::obstacle::Obstacle>,
+    /// The retired `fixtures` key. Read only to refuse a file whose list
+    /// holds an entry ([`check_retired_keys`]); never written.
+    #[serde(default, skip_serializing)]
+    pub fixtures: Option<toml::Value>,
+    /// The retired `keep_out_zones` key. Read only, as `fixtures` is.
+    #[serde(default, skip_serializing)]
+    pub keep_out_zones: Option<toml::Value>,
     /// S2: `[[setups.stock_changes]]`, the setup's stock changes in
     /// application order. Additive under `format_version = 3`: a file with
     /// no key loads an empty list, and an empty list writes no key, so a
@@ -475,78 +519,6 @@ pub struct ProjectSetupSection {
     pub stock_changes: Vec<crate::compute::stock_change::StockChange>,
     #[serde(default)]
     pub toolpaths: Vec<ProjectToolpathSection>,
-}
-
-/// Fixture section in the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectFixtureSection {
-    #[serde(default)]
-    pub id: Option<usize>,
-    #[serde(default = "default_fixture_name")]
-    pub name: String,
-    #[serde(default = "default_fixture_kind")]
-    pub kind: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    #[serde(default)]
-    pub origin_z: f64,
-    #[serde(default = "default_fixture_size_x")]
-    pub size_x: f64,
-    #[serde(default = "default_fixture_size_y")]
-    pub size_y: f64,
-    #[serde(default = "default_fixture_size_z")]
-    pub size_z: f64,
-    #[serde(default = "default_fixture_clearance")]
-    pub clearance: f64,
-}
-
-fn default_fixture_name() -> String {
-    "Fixture".to_owned()
-}
-fn default_fixture_kind() -> String {
-    "clamp".to_owned()
-}
-fn default_fixture_size_x() -> f64 {
-    30.0
-}
-fn default_fixture_size_y() -> f64 {
-    15.0
-}
-fn default_fixture_size_z() -> f64 {
-    20.0
-}
-fn default_fixture_clearance() -> f64 {
-    3.0
-}
-
-/// Keep-out zone section in the project file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectKeepOutSection {
-    #[serde(default)]
-    pub id: Option<usize>,
-    #[serde(default = "default_keep_out_name")]
-    pub name: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    #[serde(default = "default_keep_out_size")]
-    pub size_x: f64,
-    #[serde(default = "default_keep_out_size")]
-    pub size_y: f64,
-}
-
-fn default_keep_out_name() -> String {
-    "Keep-Out".to_owned()
-}
-fn default_keep_out_size() -> f64 {
-    20.0
 }
 
 fn default_setup_name() -> String {
@@ -942,44 +914,6 @@ fn datum_from_section(section: &ProjectSetupSection) -> DatumConfig {
     }
 }
 
-/// Convert TOML fixture sections into session `Fixture` values.
-fn build_fixtures(sections: &[ProjectFixtureSection]) -> Vec<Fixture> {
-    sections
-        .iter()
-        .enumerate()
-        .map(|(idx, fs)| Fixture {
-            id: FixtureId(fs.id.unwrap_or(idx)),
-            name: fs.name.clone(),
-            kind: FixtureKind::from_key(&fs.kind),
-            enabled: fs.enabled,
-            origin_x: fs.origin_x,
-            origin_y: fs.origin_y,
-            origin_z: fs.origin_z,
-            size_x: fs.size_x,
-            size_y: fs.size_y,
-            size_z: fs.size_z,
-            clearance: fs.clearance,
-        })
-        .collect()
-}
-
-/// Convert TOML keep-out sections into session `KeepOutZone` values.
-fn build_keep_out_zones(sections: &[ProjectKeepOutSection]) -> Vec<KeepOutZone> {
-    sections
-        .iter()
-        .enumerate()
-        .map(|(idx, ks)| KeepOutZone {
-            id: KeepOutId(ks.id.unwrap_or(idx)),
-            name: ks.name.clone(),
-            enabled: ks.enabled,
-            origin_x: ks.origin_x,
-            origin_y: ks.origin_y,
-            size_x: ks.size_x,
-            size_y: ks.size_y,
-        })
-        .collect()
-}
-
 /// Reject TOML that parses but contains no recognizable CAM content. Without
 /// this guard, `serde(default)` on every top-level field happily produces an
 /// empty session from any well-formed TOML file (or a CSV opened by mistake),
@@ -1022,6 +956,7 @@ pub(super) fn build_session_from_project(
 ) -> Result<super::ProjectSession, SessionError> {
     validate_looks_like_cam_project(&project, None)?;
     check_format_version(&project)?;
+    check_retired_keys(&project)?;
 
     let mut stock = stock_from_project(&project.job.stock);
 
@@ -1197,9 +1132,6 @@ pub(super) fn build_session_from_project(
             tp_indices.push(tp_idx);
         }
 
-        let fixtures = build_fixtures(&setup_section.fixtures);
-        let keep_out_zones = build_keep_out_zones(&setup_section.keep_out_zones);
-
         setups.push(SetupData {
             id: setup_id,
             name: setup_section.name.clone(),
@@ -1211,8 +1143,7 @@ pub(super) fn build_session_from_project(
                 .iter()
                 .map(|&id| crate::ids::ModelId(id))
                 .collect(),
-            fixtures,
-            keep_out_zones,
+            obstacles: setup_section.obstacles.clone(),
             stock_changes: setup_section.stock_changes.clone(),
             toolpath_indices: tp_indices,
             pause_message: setup_section.pause_message.clone(),

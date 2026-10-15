@@ -15,8 +15,6 @@
 use crate::geo::{BoundingBox3, P3};
 use crate::polygon::Polygon2;
 
-use super::{Fixture, KeepOutZone};
-
 // Path anchors for the children. A child names each of these as
 // `super::Name`, in code or in a doc link, so the binding must sit in
 // this module.
@@ -94,31 +92,47 @@ impl super::ProjectSession {
         self.drop_simulation(super::SimulationDropCause::StockChanges);
         let _ = self.walk_output_dependents(seeds, chain_seeds);
     }
+
+    /// K1: drop what an obstacle edit of `setup_index` moved. Every
+    /// toolpath of the setup reads the obstacles, so each result drops,
+    /// then every output that depends on one of them (a rest op in a later
+    /// setup reads the stock those toolpaths cut), then the simulation.
+    ///
+    /// Private: the three obstacle doors and the model refresh call it.
+    fn drop_obstacle_dependents(&mut self, setup_index: usize) {
+        let indices: Vec<usize> = self
+            .setups
+            .get(setup_index)
+            .map(|s| s.toolpath_indices.clone())
+            .unwrap_or_default();
+        let mut seeds = std::collections::BTreeSet::new();
+        let mut chain_seeds = std::collections::BTreeSet::new();
+        for index in indices {
+            let enabled = self
+                .toolpath_configs
+                .get(index)
+                .is_some_and(|tc| tc.enabled);
+            let _ = self.drop_result(index);
+            let _ = seeds.insert(index);
+            if enabled {
+                let _ = chain_seeds.insert(index);
+            }
+        }
+        self.drop_simulation(super::SimulationDropCause::Obstacles);
+        let _ = self.walk_output_dependents(seeds, chain_seeds);
+    }
 }
 
-/// Whether a fixture edit moved something a collision check reads.
-///
-/// Every field except the NAME is an input of the holder-clearance and
-/// fixture-collision checks. The name reaches the setup sheet alone, so
-/// a rename must not drop a result (WP6).
-///
-/// It compares the whole record with the name equalised, so a field
-/// ADDED to `Fixture` later counts as a collision input until someone
-/// states otherwise. That is the safe default.
-fn fixture_collision_inputs_moved(before: &Fixture, after: &Fixture) -> bool {
-    let mut named_before = before.clone();
-    named_before.name.clone_from(&after.name);
-    named_before != *after
-}
-
-/// Whether a keep-out edit moved something a collision check reads.
-///
-/// The twin of [`fixture_collision_inputs_moved`], and it exempts the
-/// same one field.
-fn keep_out_collision_inputs_moved(before: &KeepOutZone, after: &KeepOutZone) -> bool {
-    let mut named_before = before.clone();
-    named_before.name.clone_from(&after.name);
-    named_before != *after
+/// K1: the effect of a setup's obstacle list, the id and the digest of
+/// each obstacle in order ([`crate::compute::obstacle::Obstacle::effect_digest`]).
+/// A rename leaves it equal, so a rename drops nothing.
+fn obstacle_effects(
+    obstacles: &[crate::compute::obstacle::Obstacle],
+) -> Vec<(crate::ids::ObstacleId, u64)> {
+    obstacles
+        .iter()
+        .map(|o| (o.id, o.effect_digest()))
+        .collect()
 }
 
 /// Whether a post-config edit moved a field that reaches emitted motion

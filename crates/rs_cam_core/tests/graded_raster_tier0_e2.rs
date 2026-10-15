@@ -831,6 +831,7 @@ fn wanaka_graded_raster_tier0_e2() {
     let regime = LinkRegime {
         safe_z,
         ceiling: Some(LinkCeiling {
+            obstacles: None,
             stock: Some(&stock),
             tool_radius: r15.envelope_radius_mm(),
             fallback_top_z: block_top_z,

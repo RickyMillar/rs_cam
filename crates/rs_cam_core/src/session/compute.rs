@@ -61,6 +61,11 @@ pub struct ResolvedGenInputs {
     /// `selected_holes`, the generator maps them into the emission frame.
     drill_targets: Arc<Vec<crate::io::dxf_input::DrillTarget>>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
+    /// K1: the setup's obstacles, in the emission frame. Every op reads
+    /// them; the boundary does not gate them.
+    obstacles: Arc<crate::compute::obstacle::ObstacleSet>,
+    /// K1: [`Self::obstacles`] for this generation's tool.
+    obstacle_view: Arc<crate::compute::obstacle::ObstacleToolView>,
     boundary_config: crate::compute::config::BoundaryConfig,
     emission_stock_bbox: BoundingBox3,
     heights: crate::compute::config::ResolvedHeights,
@@ -126,6 +131,29 @@ impl ResolvedGenInputs {
     /// An offset that fails yields no polygon for that region; the clip
     /// refuses the generation on the same failure.
     fn boundary_centre(&self) -> Option<Vec<crate::polygon::Polygon2>> {
+        let set = self.boundary_centre_without_obstacles();
+        if self.obstacles.is_empty() {
+            return set;
+        }
+        // K1: the obstacles leave the centre containment as holes, grown
+        // by every band radius that reaches them over the stock depth.
+        let holes = self
+            .obstacle_view
+            .reach_footprints(self.emission_stock_bbox.min.z);
+        let set = match (set, self.pre_boundary.as_ref()) {
+            (Some(set), _) => set,
+            (None, Some(outline)) => vec![crate::polygon::Polygon2::new(outline.exterior.clone())],
+            (None, None) => return None,
+        };
+        Some(
+            set.iter()
+                .map(|p| crate::geometry::boundary::subtract_keepouts(p, &holes))
+                .collect(),
+        )
+    }
+
+    /// [`Self::boundary_centre`] of the machining boundary alone.
+    fn boundary_centre_without_obstacles(&self) -> Option<Vec<crate::polygon::Polygon2>> {
         use crate::geometry::boundary::{ToolContainment, effective_boundary};
         if !self.boundary_config.enabled {
             return None;
@@ -944,6 +972,29 @@ impl JobPhases<'_, '_> {
             };
         }
 
+        // ── K1: the obstacle step ─────────────────────────────
+        // For EVERY op, with no opt-in and with the boundary on or off: a
+        // move that would put the tool (cutter, shank or holder) inside an
+        // obstacle is split; the tool goes up to the obstacle plane,
+        // across, and back down. The shared clip walk does the split. It
+        // runs after the boundary clip, so a boundary re-entry descent is
+        // checked too, and before the entry-descent split, which reads the
+        // final descents.
+        if !self.inputs.obstacles.is_empty() {
+            let _obstacle_scope = self.observer.records_dressup_items().then(|| {
+                self.debug_root
+                    .start_span("obstacle_clip", "Keep out of obstacles")
+            });
+            annotated = crate::compute::obstacle::clip_annotated_to_obstacles(
+                annotated,
+                &self.inputs.obstacle_view,
+                self.inputs.heights.retract_z,
+                Some(self.context.plunge_rate),
+            )
+            .reconcile(channels)
+            .into_inner();
+        }
+
         // ── Entry-descent optimization ────────────────────────
         // P1 W2 (reworked): split long safe_z-to-cut-depth plunges
         // by rapiding down to just above the INPUT STOCK's material
@@ -998,7 +1049,21 @@ impl JobPhases<'_, '_> {
             &self.inputs.tool_def,
             rest_entry_ramp.as_ref(),
         );
-        Ok(transformed.reconcile(channels).into_inner())
+        let annotated = transformed.reconcile(channels).into_inner();
+        // K1 backstop: the split above can turn a descent into a ramp
+        // (G-ISOCLIPENTRY), which moves in XY. The obstacle step runs once
+        // more; it changes nothing when every move already keeps out.
+        if self.inputs.obstacles.is_empty() {
+            return Ok(annotated);
+        }
+        Ok(crate::compute::obstacle::clip_annotated_to_obstacles(
+            annotated,
+            &self.inputs.obstacle_view,
+            self.inputs.heights.retract_z,
+            Some(self.context.plunge_rate),
+        )
+        .reconcile(channels)
+        .into_inner())
     }
 
     /// Phase 4 — the empty gate, then the stats and the result.
@@ -1210,6 +1275,7 @@ pub fn execute_generation(
         boundary: inputs.pre_boundary.as_ref(),
         boundary_regions: regions.as_ref(),
         boundary_centre: boundary_centre.as_deref(),
+        obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
         segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),
@@ -2184,6 +2250,9 @@ fn simulate_candidate_isolated(
         local_to_global: setup_ctx.local_to_global.clone(),
         phantom_prior_stock: None,
         stock_changes: Vec::new(),
+        // K1: this run captures the engagement for the feed modulation
+        // only. The project simulation checks the obstacles.
+        obstacles: Ok(Arc::default()),
     }];
     let resolution = auto_resolution_for_groups(&groups, &stock_bbox);
     // Deviation (model_mesh) is not needed for engagement capture;

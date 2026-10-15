@@ -279,6 +279,9 @@ pub struct TriageInputs<'a> {
     /// from a clean one — on the one question that wrecks a machine. A
     /// failed check now raises its own safety finding.
     pub holder_collisions: &'a [(ToolpathId, HolderCollisionCheck)],
+    /// K1: every obstacle hit of the simulation. Each is a class A
+    /// finding, never deduped.
+    pub obstacle_collisions: &'a [crate::compute::obstacle::ObstacleCollision],
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
     /// G-OVERCUTREF — the commanded depth per pass of each toolpath that
@@ -396,6 +399,26 @@ impl SimulationTriage {
             }
         }
 
+        for (i, hit) in inputs.obstacle_collisions.iter().enumerate() {
+            let name = match &hit.event.kind {
+                crate::stock::collision::CollisionKind::Obstacle { name } => name.as_str(),
+                crate::stock::collision::CollisionKind::Workpiece => "",
+            };
+            let p = hit.event.position;
+            safety.push(collision_finding(
+                ids::PROJECT_OBSTACLE_COLLISION,
+                format!(
+                    "The {} enters obstacle '{name}' at move {} ({:.2} mm below its clear height)",
+                    hit.event.segment, hit.event.move_index, hit.event.penetration_depth
+                ),
+                Some(hit.toolpath_id),
+                hit.event.move_index,
+                hit.global_move,
+                [p.x, p.y, p.z],
+                i,
+            ));
+        }
+
         // ── Class B ────────────────────────────────────────────────────
         // Taken from the diagnostics the rest of the system already acts
         // on. Abstentions are NOT actions — they belong to the
@@ -407,7 +430,8 @@ impl SimulationTriage {
             }
             if matches!(d.category, Category::Safety)
                 && (d.id.as_str() == ids::PROJECT_RAPID_COLLISION
-                    || d.id.as_str() == ids::PROJECT_HOLDER_COLLISION)
+                    || d.id.as_str() == ids::PROJECT_HOLDER_COLLISION
+                    || d.id.as_str() == ids::PROJECT_OBSTACLE_COLLISION)
             {
                 // Already represented, per-event, in `safety`.
                 continue;
@@ -1847,6 +1871,7 @@ mod tests {
             commanded_depth_per_pass_mm: &NO_STEPS,
             kinematic_utilization: kinematics,
             region_of: None,
+            obstacle_collisions: &[],
         }
     }
 

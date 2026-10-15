@@ -79,6 +79,10 @@ pub struct Territory<'a> {
     /// from `ExecutionContext::initial_stock` without the guard, and an op
     /// builds its link ceiling from it the same way; neither reads this.
     pub stock: Option<StockReference<'a>>,
+    /// K1: the setup's obstacles for this op's tool. Every op keeps out of
+    /// them with no opt-in: the link ceiling lifts over them and the
+    /// session clips the result after the dressups. `None`: no obstacle.
+    pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
 }
 
 impl<'a> Territory<'a> {
@@ -107,6 +111,7 @@ impl<'a> Territory<'a> {
             xy,
             mask: op.surface_mask(),
             stock,
+            obstacles: ctx.obstacles,
         }
     }
 

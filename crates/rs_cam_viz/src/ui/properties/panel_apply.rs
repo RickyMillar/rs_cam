@@ -300,44 +300,23 @@ pub(super) fn apply_setup_draft(
     }
 }
 
-/// Apply the fixture panel's draft through `Command::ReplaceFixture`.
+/// Apply the obstacle panel's draft through `Command::ReplaceObstacle`
+/// (K1).
 ///
-/// G-FRESHSTATE: the row drops every result in the setup, because a
-/// fixture is a collision input of every operation in it. The panel
-/// wrote the fixture in place and dropped nothing, so a clamp could move
-/// under a cached holder-clearance verdict.
-pub(crate) fn apply_fixture_draft(
+/// G-FRESHSTATE: an edit that moves the obstacle drops every result in the
+/// setup and its dependents, because every operation in the setup keeps
+/// out of it. A rename drops nothing.
+pub(crate) fn apply_obstacle_draft(
     state: &mut AppState,
     setup_index: usize,
-    fixture_id: crate::state::job::FixtureId,
-    fixture: rs_cam_core::session::Fixture,
+    obstacle_id: crate::state::job::ObstacleId,
+    obstacle: rs_cam_core::session::Obstacle,
 ) {
-    use rs_cam_core::session::{Command, ReplaceFixtureArgs};
-    let command = Command::ReplaceFixture(ReplaceFixtureArgs {
+    use rs_cam_core::session::{Command, ReplaceObstacleArgs};
+    let command = Command::ReplaceObstacle(ReplaceObstacleArgs {
         setup_index,
-        fixture_id,
-        fixture: Box::new(fixture),
-    });
-    if apply_panel_command(state, command) {
-        state.gui.mark_edited();
-        state.panel_side_effects.upload = true;
-    }
-}
-
-/// Apply the keep-out panel's draft through `Command::ReplaceKeepOut`.
-///
-/// The twin of [`apply_fixture_draft`], and it drops the same set.
-pub(super) fn apply_keep_out_draft(
-    state: &mut AppState,
-    setup_index: usize,
-    zone_id: crate::state::job::KeepOutId,
-    zone: rs_cam_core::session::KeepOutZone,
-) {
-    use rs_cam_core::session::{Command, ReplaceKeepOutArgs};
-    let command = Command::ReplaceKeepOut(ReplaceKeepOutArgs {
-        setup_index,
-        zone_id,
-        zone: Box::new(zone),
+        obstacle_id,
+        obstacle: Box::new(obstacle),
     });
     if apply_panel_command(state, command) {
         state.gui.mark_edited();

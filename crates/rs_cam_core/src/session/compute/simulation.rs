@@ -214,6 +214,12 @@ impl ProjectSession {
                 let setup_ctx = super::SetupEvalContext::build_for_setup(self, Some(setup));
                 let local_stock_bbox = setup_ctx.sim_local_stock_bbox();
                 let local_to_global = setup_ctx.local_to_global.clone();
+                // K1: the sixth shared decision.
+                let obstacles = crate::compute::simulate::group_obstacles(
+                    setup,
+                    &self.models,
+                    local_to_global.as_ref(),
+                );
 
                 groups.push(SimGroupEntry {
                     toolpaths: entries,
@@ -222,6 +228,7 @@ impl ProjectSession {
                     local_to_global,
                     phantom_prior_stock,
                     stock_changes,
+                    obstacles,
                 });
             }
         }

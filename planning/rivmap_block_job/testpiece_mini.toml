@@ -357,33 +357,28 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 1. North to +X. Z0 = spoilboard."
-keep_out_zones = []
 
-[[setups.fixtures]]
+[[setups.obstacles]]
 id = 0
 name = "Clamp X min"
-kind = "clamp"
 enabled = true
-origin_x = -15.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
 clearance = 2.0
 
-[[setups.fixtures]]
+[setups.obstacles.geometry]
+kind = "box"
+min = [-15.0, 22.5, -5.0]
+max = [5.0, 42.5, 29.5]
+
+[[setups.obstacles]]
 id = 1
 name = "Clamp X max"
-kind = "clamp"
 enabled = true
-origin_x = 60.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
 clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [60.0, 22.5, -5.0]
+max = [80.0, 42.5, 29.5]
 
 [[setups.toolpaths]]
 id = 0
@@ -870,33 +865,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 3, after the pour and the cure. Same zero."
-keep_out_zones = []
-
-[[setups.fixtures]]
-id = 0
-name = "Clamp X min"
-kind = "clamp"
-enabled = true
-origin_x = -15.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
-clearance = 2.0
-
-[[setups.fixtures]]
-id = 1
-name = "Clamp X max"
-kind = "clamp"
-enabled = true
-origin_x = 60.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
-clearance = 2.0
 
 [[setups.stock_changes]]
 id = 0
@@ -916,6 +884,28 @@ level_z = 16.5
 [setups.stock_changes.material.Custom]
 name = "Epoxy"
 feed_scale_factor = 1.0
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [-15.0, 22.5, -5.0]
+max = [5.0, 42.5, 29.5]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [60.0, 22.5, -5.0]
+max = [80.0, 42.5, 29.5]
 
 [[setups.toolpaths]]
 id = 5
@@ -1118,40 +1108,38 @@ xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 4: flipped on the dowels. Local Z = block Z."
 
-[[setups.fixtures]]
+[[setups.obstacles]]
 id = 0
 name = "Clamp X min"
-kind = "clamp"
 enabled = true
-origin_x = -15.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
 clearance = 2.0
 
-[[setups.fixtures]]
+[setups.obstacles.geometry]
+kind = "box"
+min = [60.0, 22.5, -5.0]
+max = [80.0, 42.5, 29.5]
+
+[[setups.obstacles]]
 id = 1
 name = "Clamp X max"
-kind = "clamp"
 enabled = true
-origin_x = 60.0
-origin_y = 22.5
-origin_z = -5.0
-size_x = 20.0
-size_y = 20.0
-size_z = 34.5
 clearance = 2.0
 
-[[setups.keep_out_zones]]
-id = 0
+[setups.obstacles.geometry]
+kind = "box"
+min = [-15.0, 22.5, -5.0]
+max = [5.0, 42.5, 29.5]
+
+[[setups.obstacles]]
+id = 2
 name = "Keep-Out 1"
-enabled = true
-origin_x = 0.0
-origin_y = 0.0
-size_x = 20.0
-size_y = 20.0
+enabled = false
+clearance = 0.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [45.0, 0.0, -5.0]
+max = [65.0, 20.0, 29.5]
 
 [[setups.toolpaths]]
 id = 7

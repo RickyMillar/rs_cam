@@ -158,21 +158,12 @@ impl RsCamApp {
         match (workspace, hit) {
             (
                 Workspace::Setup,
-                PickHit::Fixture {
+                PickHit::Obstacle {
                     setup_id,
-                    fixture_id,
+                    obstacle_id,
                 },
             ) => {
-                self.controller.state_mut().selection = Selection::Fixture(setup_id, fixture_id);
-            }
-            (
-                Workspace::Setup,
-                PickHit::KeepOut {
-                    setup_id,
-                    keep_out_id,
-                },
-            ) => {
-                self.controller.state_mut().selection = Selection::KeepOut(setup_id, keep_out_id);
+                self.controller.state_mut().selection = Selection::Obstacle(setup_id, obstacle_id);
             }
             (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { pin_index }) => {
                 // Pins are stock-level: a pin click opens the stock panel

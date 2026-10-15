@@ -34,19 +34,18 @@ mod stock_change_report;
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AddAlignmentPinArgs, AddFixtureArgs, AddKeepOutArgs, AddModelArgs, AddSetupArgs,
-    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs,
-    AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs,
-    Command, CommandId, CommandKind, Effects, ForgetResultArgs, GenerateToolpathArgs,
-    GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
-    InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
-    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, MoveStockChangeArgs,
-    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveFixtureArgs, RemoveKeepOutArgs,
-    RemoveModelArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
-    ReorderToolpathArgs, ReplaceFixtureArgs, ReplaceKeepOutArgs, ReplaceStockChangeArgs,
-    ReplaceToolArgs, ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs,
-    SaveProjectArgs, SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs,
+    AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
+    AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
+    AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, Command, CommandId,
+    CommandKind, Effects, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
+    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
+    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
+    JobHandle, MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query,
+    QueryAnswer, Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
+    ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
+    SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs,
     SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs,
     SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs,
     SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
@@ -90,9 +89,9 @@ pub use mutation::polygons_bbox;
 
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
-    ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectLoadWarning, ProjectModelSection, ProjectSetupSection, ProjectSimulationSection,
-    ProjectStockConfig, ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
+    ProjectFile, ProjectJobSection, ProjectLoadWarning, ProjectModelSection, ProjectSetupSection,
+    ProjectSimulationSection, ProjectStockConfig, ProjectToolSection, ProjectToolpathSection,
+    SUPPORTED_FORMAT_VERSION,
 };
 
 use crate::ids::ToolpathId;
@@ -112,7 +111,7 @@ use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
-use crate::ids::{FixtureId, KeepOutId, ModelId};
+use crate::ids::ModelId;
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
@@ -524,149 +523,7 @@ impl LoadedModel {
     }
 }
 
-/// Kind of workholding fixture (compute-relevant subset of viz `FixtureKind`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum FixtureKind {
-    #[default]
-    Clamp,
-    Vise,
-    VacuumPod,
-    Custom,
-}
-
-impl FixtureKind {
-    pub fn from_key(s: &str) -> Self {
-        match s.to_ascii_lowercase().as_str() {
-            "vise" => Self::Vise,
-            "vacuum_pod" | "vacuumpod" => Self::VacuumPod,
-            "custom" => Self::Custom,
-            _ => Self::Clamp,
-        }
-    }
-}
-
-/// A physical workholding fixture — compute-relevant fields only.
-///
-/// The record derives `PartialEq` because the GUI fixture panel edits a
-/// CLONE of it and must not apply a command for an edit that moved
-/// nothing (WP6).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Fixture {
-    pub id: FixtureId,
-    pub name: String,
-    pub kind: FixtureKind,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Position of the fixture's min corner in workpiece coordinates (mm).
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    #[serde(default)]
-    pub origin_z: f64,
-    /// Dimensions of the fixture bounding box (mm).
-    #[serde(default = "default_fixture_size_x")]
-    pub size_x: f64,
-    #[serde(default = "default_fixture_size_y")]
-    pub size_y: f64,
-    #[serde(default = "default_fixture_height")]
-    pub size_z: f64,
-    /// Extra clearance around the fixture for tool avoidance (mm).
-    #[serde(default = "default_fixture_clearance")]
-    pub clearance: f64,
-}
-
-fn default_true() -> bool {
-    true
-}
-/// A clamp is wider than it is deep, so the two spans differ.
-///
-/// C02: one `default_fixture_size` of 30.0 used to serve both spans. The
-/// GUI creates a clamp 30 by 15, and `ProjectFixtureSection` defaults to
-/// 30 by 15 as well, so a file that omitted `size_y` restored a fixture
-/// the GUI would never have drawn.
-fn default_fixture_size_x() -> f64 {
-    30.0
-}
-fn default_fixture_size_y() -> f64 {
-    15.0
-}
-fn default_fixture_height() -> f64 {
-    20.0
-}
-fn default_fixture_clearance() -> f64 {
-    3.0
-}
-
-impl Fixture {
-    /// A new clamp, at the stock origin, with the default spans.
-    ///
-    /// C02: the GUI used to build this record from six hard-coded numbers
-    /// in `controller/events/model.rs`. The numbers are the serde
-    /// defaults, so they belong beside them.
-    pub fn new_default(id: FixtureId) -> Self {
-        Self {
-            name: format!("Fixture {}", id.0 + 1),
-            id,
-            kind: FixtureKind::Clamp,
-            enabled: default_true(),
-            origin_x: 0.0,
-            origin_y: 0.0,
-            origin_z: 0.0,
-            size_x: default_fixture_size_x(),
-            size_y: default_fixture_size_y(),
-            size_z: default_fixture_height(),
-            clearance: default_fixture_clearance(),
-        }
-    }
-
-    /// XY footprint polygon (with clearance) for boundary subtraction.
-    pub fn footprint(&self) -> Polygon2 {
-        let min_x = self.origin_x - self.clearance;
-        let min_y = self.origin_y - self.clearance;
-        let max_x = self.origin_x + self.size_x + self.clearance;
-        let max_y = self.origin_y + self.size_y + self.clearance;
-        Polygon2::rectangle(min_x, min_y, max_x, max_y)
-    }
-}
-
-/// A rectangular region the tool must avoid (XY only, full Z extent).
-///
-/// The record derives `PartialEq` for the reason [`Fixture`] does.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct KeepOutZone {
-    pub id: KeepOutId,
-    pub name: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Position of the zone's min corner (mm).
-    #[serde(default)]
-    pub origin_x: f64,
-    #[serde(default)]
-    pub origin_y: f64,
-    /// Dimensions of the zone (mm).
-    #[serde(default = "default_keep_out_size")]
-    pub size_x: f64,
-    #[serde(default = "default_keep_out_size")]
-    pub size_y: f64,
-}
-
-fn default_keep_out_size() -> f64 {
-    20.0
-}
-
-impl KeepOutZone {
-    /// XY footprint polygon for boundary subtraction.
-    pub fn footprint(&self) -> Polygon2 {
-        Polygon2::rectangle(
-            self.origin_x,
-            self.origin_y,
-            self.origin_x + self.size_x,
-            self.origin_y + self.size_y,
-        )
-    }
-}
+pub use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
 
 // ── Setup datum (W9 / P-2) ─────────────────────────────────────────────
 //
@@ -859,10 +716,11 @@ pub struct SetupData {
     /// exactly one model; the scope is what the operator allowed, not
     /// what got used). Persisted for that reason.
     pub model_ids: Vec<ModelId>,
-    /// Workholding fixtures in this setup.
-    pub fixtures: Vec<Fixture>,
-    /// Keep-out zones in this setup.
-    pub keep_out_zones: Vec<KeepOutZone>,
+    /// K1: the obstacles of this setup (fixtures and keep-out zones are
+    /// one concept). Values are in this setup's frame. Write the list
+    /// through the `AddObstacle`, `ReplaceObstacle` and `RemoveObstacle`
+    /// command rows.
+    pub obstacles: Vec<Obstacle>,
     /// S2: the stock changes of this setup, applied in order before the
     /// setup's first toolpath. Values are in this setup's frame. Write the
     /// list through the `AddStockChange`, `ReplaceStockChange`,
@@ -1262,8 +1120,8 @@ pub enum SimulationDropCause {
     PostSettings,
     /// The stored simulation resolution changed.
     Resolution,
-    /// A fixture or a keep-out zone changed.
-    Fixtures,
+    /// K1: an obstacle of a setup changed.
+    Obstacles,
     /// S2: a stock change of a setup changed. The run carved a stock that
     /// the project no longer starts that setup, or a later one, from.
     StockChanges,
@@ -1279,7 +1137,7 @@ impl SimulationDropCause {
         Self::Machine,
         Self::PostSettings,
         Self::Resolution,
-        Self::Fixtures,
+        Self::Obstacles,
         Self::StockChanges,
     ];
 
@@ -1290,7 +1148,7 @@ impl SimulationDropCause {
             Self::Machine => "machine settings changed",
             Self::PostSettings => "post settings changed",
             Self::Resolution => "simulation resolution changed",
-            Self::Fixtures => "fixtures changed",
+            Self::Obstacles => "obstacles changed",
             Self::StockChanges => "stock changes edited",
         }
     }
@@ -1301,7 +1159,7 @@ impl SimulationDropCause {
             Self::Machine => 1,
             Self::PostSettings => 2,
             Self::Resolution => 3,
-            Self::Fixtures => 4,
+            Self::Obstacles => 4,
             Self::StockChanges => 5,
         }
     }
@@ -1469,8 +1327,7 @@ impl ProjectSession {
                 z_rotation: ZRotation::default(),
                 datum: DatumConfig::default(),
                 model_ids: Vec::new(),
-                fixtures: Vec::new(),
-                keep_out_zones: Vec::new(),
+                obstacles: Vec::new(),
                 stock_changes: Vec::new(),
                 toolpath_indices: Vec::new(),
                 pause_message: None,
@@ -1878,8 +1735,7 @@ impl ProjectSession {
     /// Mutable access to all setups.
     ///
     /// Prefer named mutation methods: [`rename_setup()`](Self::rename_setup),
-    /// [`add_fixture()`](Self::add_fixture), [`remove_fixture()`](Self::remove_fixture),
-    /// [`add_keep_out()`](Self::add_keep_out), [`remove_keep_out()`](Self::remove_keep_out),
+    /// [`add_obstacle()`](Self::add_obstacle), [`remove_obstacle()`](Self::remove_obstacle),
     /// [`move_toolpath_to_setup()`](Self::move_toolpath_to_setup).
     ///
     /// Crate-private since WP7; every surface mutates through
@@ -1981,8 +1837,7 @@ impl ProjectSession {
     /// See
     /// [`SetupTransformInfo::apply_to_drawing_polygons`](crate::compute::transform::SetupTransformInfo::apply_to_drawing_polygons)
     /// — this is the door for SVG/DXF/STEP-face geometry that describes the
-    /// part. World-anchored footprints take
-    /// [`Self::transform_footprints_to_setup`] instead.
+    /// part.
     pub(crate) fn transform_drawing_polygons_to_setup(
         &self,
         polygons: &[Polygon2],
@@ -1993,23 +1848,7 @@ impl ProjectSession {
             .apply_to_drawing_polygons(polygons)
     }
 
-    /// Transform **world-frame** footprints (fixtures, keep-out zones) from
-    /// global to setup-local XY coordinates.
-    ///
-    /// Clamps and no-go zones are bolted to the machine table; they do not
-    /// follow the part when it is turned on its side, so they keep the
-    /// orthographic world→local projection that drawings no longer take.
-    pub(crate) fn transform_footprints_to_setup(
-        &self,
-        polygons: &[Polygon2],
-        face_up: FaceUp,
-        z_rotation: ZRotation,
-    ) -> Vec<Polygon2> {
-        self.setup_transform_info(face_up, z_rotation)
-            .apply_to_polygons(polygons)
-    }
-
-    /// The two lateral-setup preconditions, in ONE place — the single
+    /// The lateral-setup precondition, in ONE place — the single
     /// source of both refusal messages, called by every generation door
     /// (core `resolve_generation_inputs` for the session / CLI / headless
     /// MCP path, and the GUI controller before it submits to the worker).
@@ -2024,7 +1863,7 @@ impl ProjectSession {
     /// per-op check would refuse exactly that. "Does the project have a
     /// part?" is session-level knowledge, so the check is too.
     ///
-    /// # The two refusals
+    /// # The refusal
     ///
     /// **No mesh.** `face_up` only means something when there is a 3D model
     /// to register against. On a 2D-only project the drawing *is* the
@@ -2035,13 +1874,9 @@ impl ProjectSession {
     /// project is not a real workflow: it is done as a Top setup with the
     /// edge as the stock face, which is what the message says.
     ///
-    /// **Keep-outs (G-LATERALKEEPOUT).** A fixture or keep-out footprint is
-    /// a world-XY rectangle. Projected into a vertical work plane it is a
-    /// line, and a line subtracts nothing — so the keep-out would silently
-    /// vanish and the tool would be free to drive through the clamp. That
-    /// is a safety regression, so a lateral setup carrying an ENABLED
-    /// fixture or keep-out zone refuses. Follow-up would be a proper 3D
-    /// prism projection; refusing is the honest interim.
+    /// K1 closed the keep-out arm (G-LATERALKEEPOUT): an obstacle is a
+    /// solid in the setup frame, so a lateral setup reads it as it reads
+    /// a Top setup. Only the no-mesh refusal is left.
     pub fn check_lateral_setup_support(
         &self,
         setup: Option<&SetupData>,
@@ -2054,19 +1889,6 @@ impl ProjectSession {
             return Ok(());
         }
         let face = setup.face_up.label();
-
-        if setup.fixtures.iter().any(|f| f.enabled)
-            || setup.keep_out_zones.iter().any(|z| z.enabled)
-        {
-            return Err(SessionError::UnsupportedSetup(format!(
-                "setup '{}' is on the {face} face and carries a fixture or keep-out zone. \
-                 Keep-out footprints are world-XY rectangles with no extent in a vertical \
-                 work plane, so honouring them here would silently drop them and let the \
-                 tool drive through the clamp. Lateral keep-outs are not supported yet \
-                 (G-LATERALKEEPOUT) — disable them, or machine this face from a Top setup.",
-                setup.name
-            )));
-        }
 
         // Only ops that actually consume a 2D drawing are affected; a 3D op
         // already requires the mesh, and a stock-based op reads no drawing.
@@ -2178,8 +2000,7 @@ mod tests {
                 z_datum: String::new(),
                 datum_notes: String::new(),
                 model_ids: Vec::new(),
-                fixtures: Vec::new(),
-                keep_out_zones: Vec::new(),
+                obstacles: Vec::new(),
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
@@ -2203,6 +2024,8 @@ mod tests {
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
+                fixtures: None,
+                keep_out_zones: None,
             }],
         };
 
@@ -2479,8 +2302,7 @@ mod tests {
                 z_datum: String::new(),
                 datum_notes: String::new(),
                 model_ids: Vec::new(),
-                fixtures: Vec::new(),
-                keep_out_zones: Vec::new(),
+                obstacles: Vec::new(),
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     id: Some(ToolpathId(0)),
@@ -2506,6 +2328,8 @@ mod tests {
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
+                fixtures: None,
+                keep_out_zones: None,
             }],
         };
         ProjectSession::from_project_file(project, Path::new(".")).unwrap()
@@ -2734,6 +2558,7 @@ mod tests {
             display_degrade: None,
             group_starts: Vec::new(),
             stock_change_volumes: Vec::new(),
+            obstacle_collisions: Vec::new(),
         });
         assert!(
             session.simulation_result().is_some(),

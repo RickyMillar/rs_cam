@@ -269,17 +269,15 @@ impl ProjectSession {
         let model = self
             .find_model_by_raw_id(tc.model_id)
             .and_then(|m| m.mesh.as_deref());
-        let obstacles = self.collision_obstacles_for_toolpath(index);
+        let obstacles = self.obstacle_set_for_toolpath(index)?;
         // CMP-14 follow-up: the two halves of the check need different
-        // things. The mesh half needs a mesh; the fixture half needs only
-        // the fixtures. A 2D toolpath under a clamp used to refuse here and
-        // read as `NotApplicable`, so its holder was never tested against
-        // the clamp at all. Only a toolpath with NEITHER a mesh NOR an
-        // enabled fixture has nothing to answer, and that is the 2D case
+        // things. The mesh half needs a mesh; the obstacle half needs only
+        // the obstacles. Only a toolpath with NEITHER a mesh NOR an
+        // enabled obstacle has nothing to answer, and that is the 2D case
         // the CLI expects.
         if model.is_none() && obstacles.is_empty() {
             return Err(SessionError::MissingGeometry(
-                "Collision check requires a 3D mesh or an enabled fixture".to_owned(),
+                "Collision check requires a 3D mesh or an enabled obstacle".to_owned(),
             ));
         }
 
@@ -299,38 +297,41 @@ impl ProjectSession {
         Ok(check_result)
     }
 
-    /// Build the fixture obstacle set for a toolpath's setup — every
-    /// enabled fixture as a clearance-expanded axis-aligned box. The
-    /// single source of truth shared by the core collision check above
-    /// and the GUI worker path, so both flag holder-vs-fixture crashes
-    /// identically (W0.1 / P6-003). Returns empty when the toolpath has
-    /// no setup or no enabled fixtures.
-    pub fn collision_obstacles_for_toolpath(
+    /// K1: the obstacles of a toolpath's setup, resolved into the
+    /// setup frame (the frame the toolpath emits in). The one door the
+    /// core collision check and the GUI worker read, so both flag the
+    /// same hits. Empty when the toolpath has no setup or no enabled
+    /// obstacle.
+    ///
+    /// # Errors
+    /// [`SessionError::OperationFailed`] when an enabled obstacle cannot be
+    /// resolved (a missing model). The text names the obstacle.
+    pub fn obstacle_set_for_toolpath(
         &self,
         index: usize,
-    ) -> Vec<crate::stock::collision::CollisionObstacle> {
+    ) -> Result<std::sync::Arc<crate::compute::obstacle::ObstacleSet>, SessionError> {
         let Some(setup) = self.find_setup_for_toolpath_index(index) else {
-            return Vec::new();
+            return Ok(std::sync::Arc::default());
         };
-        setup
-            .fixtures
-            .iter()
-            .filter(|f| f.enabled)
-            .map(|f| {
-                let c = f.clearance;
-                crate::stock::collision::CollisionObstacle {
-                    id: f.id.0,
-                    aabb: crate::geo::BoundingBox3 {
-                        min: crate::geo::P3::new(f.origin_x - c, f.origin_y - c, f.origin_z - c),
-                        max: crate::geo::P3::new(
-                            f.origin_x + f.size_x + c,
-                            f.origin_y + f.size_y + c,
-                            f.origin_z + f.size_z + c,
-                        ),
-                    },
-                }
-            })
-            .collect()
+        self.obstacle_set_for_setup(setup).map(std::sync::Arc::new)
+    }
+
+    /// K1: the obstacles of `setup`, resolved into its frame.
+    ///
+    /// # Errors
+    /// [`SessionError::OperationFailed`] when an enabled obstacle cannot be
+    /// resolved.
+    pub fn obstacle_set_for_setup(
+        &self,
+        setup: &crate::session::SetupData,
+    ) -> Result<crate::compute::obstacle::ObstacleSet, SessionError> {
+        let ctx = crate::session::SetupEvalContext::build_for_setup(self, Some(setup));
+        crate::compute::obstacle::ObstacleSet::resolve(
+            &setup.obstacles,
+            &self.models,
+            ctx.local_to_global.as_ref(),
+        )
+        .map_err(|e| SessionError::OperationFailed(e.to_string()))
     }
 
     /// Narrate one generated toolpath in prose for agent-oriented debugging.
@@ -505,9 +506,18 @@ impl ProjectSession {
             .map(|(idx, tc)| {
                 let outcome =
                     match self.collision_check_with_index(idx, indices.get(&tc.model_id), cancel) {
-                        Ok(r) => {
-                            HolderCollisionCheck::Measured(r.collision_report.collisions.len())
-                        }
+                        // K1: an obstacle hit is counted from the
+                        // simulation (`SimulationResult::obstacle_collisions`),
+                        // so this sweep counts the workpiece hits alone.
+                        Ok(r) => HolderCollisionCheck::Measured(
+                            r.collision_report
+                                .collisions
+                                .iter()
+                                .filter(|c| {
+                                    c.kind == crate::stock::collision::CollisionKind::Workpiece
+                                })
+                                .count(),
+                        ),
                         // The 2D case the CLI calls expected: no mesh AND
                         // no enabled fixture, so nothing to check against.
                         Err(SessionError::MissingGeometry(_)) => {
@@ -864,6 +874,7 @@ impl ProjectSession {
                 rapid_collisions: &rapid_collisions,
                 toolpath_names: &toolpath_names,
                 holder_collisions: &evidence.holder_collisions,
+                obstacle_collisions: evidence.obstacle_collisions,
                 tool_diameters_mm: &tool_diameters_mm,
                 commanded_depth_per_pass_mm: &commanded_depth_per_pass_mm,
                 kinematic_utilization,
@@ -884,6 +895,7 @@ impl ProjectSession {
         // Per-TP context collected in the toolpath loop for later verdict
         // emission. We index by `toolpath_id` (which equals `tc.id`).
         let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize)> = Vec::new();
+        let mut obstacle_collisions_by_tp: Vec<(ToolpathId, String, usize, String)> = Vec::new();
         let mut failed_checks_by_tp: Vec<(ToolpathId, String)> = Vec::new();
         let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, RapidAttribution)> = Vec::new();
         let mut empty_results_by_tp: Vec<(ToolpathId, String, &str)> = Vec::new();
@@ -930,16 +942,49 @@ impl ProjectSession {
                     .iter()
                     .find(|(id, _)| *id == tc.id)
                     .map(|(_, check)| *check);
-                let holder_collision_count = holder_check.and_then(HolderCollisionCheck::count);
+                // K1: the obstacle hits of the simulation are collisions
+                // too. A measured obstacle count is published even when the
+                // holder check did not apply: `None` only when the holder
+                // check FAILED and no obstacle hit is known.
+                let obstacle_hits = evidence
+                    .obstacle_collisions
+                    .iter()
+                    .filter(|hit| hit.toolpath_id == tc.id)
+                    .count();
+                let holder_collision_count =
+                    match holder_check.and_then(HolderCollisionCheck::count) {
+                        Some(count) => Some(count + obstacle_hits),
+                        None if obstacle_hits > 0 => Some(obstacle_hits),
+                        None => None,
+                    };
                 if let Some(count) = holder_collision_count {
                     total_collision_count += count;
+                }
+                if obstacle_hits > 0 {
+                    let names: std::collections::BTreeSet<&str> = evidence
+                        .obstacle_collisions
+                        .iter()
+                        .filter(|hit| hit.toolpath_id == tc.id)
+                        .filter_map(|hit| match &hit.event.kind {
+                            crate::stock::collision::CollisionKind::Obstacle { name } => {
+                                Some(name.as_str())
+                            }
+                            crate::stock::collision::CollisionKind::Workpiece => None,
+                        })
+                        .collect();
+                    obstacle_collisions_by_tp.push((
+                        tc.id,
+                        tc.name.clone(),
+                        obstacle_hits,
+                        names.into_iter().collect::<Vec<_>>().join(", "),
+                    ));
                 }
                 if holder_check.is_some_and(HolderCollisionCheck::failed) {
                     collision_checks_failed += 1;
                     failed_checks_by_tp.push((tc.id, tc.name.clone()));
                 }
 
-                if let Some(count) = holder_collision_count
+                if let Some(count) = holder_collision_count.map(|c| c - obstacle_hits)
                     && count > 0
                 {
                     holder_collisions_by_tp.push((tc.id, tc.name.clone(), count));
@@ -1088,6 +1133,28 @@ impl ProjectSession {
                 fix_hint: "Increase tool stickout, switch to a tool with a smaller holder, \
                            or raise the operation's safe-Z. Re-run collision check after \
                            the change."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: Some(*count),
+                },
+            });
+        }
+
+        // Critical (K1): the tool enters an obstacle of its setup.
+        for (id, name, count, obstacles) in &obstacle_collisions_by_tp {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Critical,
+                kind: VerdictKind::ObstacleCollision,
+                headline: format!(
+                    "ERROR: TP{id} '{name}' puts the tool inside obstacle(s) {obstacles} \
+                     ({count} moves)"
+                ),
+                offender_toolpath_ids: vec![*id],
+                fix_hint: "Regenerate the toolpath: generation keeps every move out of the \
+                           obstacles of its setup. If the hits stay, check the obstacle \
+                           geometry and frame, or move the obstacle."
                     .to_owned(),
                 evidence: VerdictEvidence {
                     move_index: None,

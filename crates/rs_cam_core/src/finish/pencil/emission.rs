@@ -498,6 +498,7 @@ pub(super) fn plan_link_lift(
     params: &PencilParams,
 ) -> LinkLift {
     let ceiling = crate::finish::surface_link::LinkCeiling {
+        obstacles: None,
         stock: Some(stock),
         // B1 (backlog): the search reads the TIP radius, not the envelope
         // radius the one builder uses. Ruling R1 leaves this as it is.
@@ -510,6 +511,7 @@ pub(super) fn plan_link_lift(
     // Same stock, same fallback, one column wide — `max_conservative_top_z_in_disc`
     // dilates by half a cell, so radius 0 is "the cells the tip is over".
     let tip_column = crate::finish::surface_link::LinkCeiling {
+        obstacles: None,
         tool_radius: 0.0,
         ..ceiling
     };

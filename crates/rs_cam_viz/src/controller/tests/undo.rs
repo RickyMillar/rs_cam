@@ -1335,7 +1335,7 @@ mod pin_edit_one_door_p5 {
         controller
             .open_job_from_path(&path)
             .expect("the mini project loads");
-        let expected = vec![[59.0, 32.5], [7.511, 9.0], [7.511, 56.0]];
+        let expected = vec![[32.5, 6.8], [47.5, 58.2], [17.5, 58.2]];
         assert_eq!(
             pin_drills(&controller),
             vec![(6.0, 6.0, expected.clone())],

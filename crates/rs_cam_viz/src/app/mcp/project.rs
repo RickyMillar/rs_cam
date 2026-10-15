@@ -237,6 +237,12 @@ impl RsCamApp {
                     "name": s.name,
                     "face_up": s.face_up.label(),
                     "toolpath_indices": s.toolpath_indices,
+                    // K1: the setup's obstacles, in the setup frame.
+                    "obstacles": s
+                        .obstacles
+                        .iter()
+                        .map(super::commands::obstacle_json)
+                        .collect::<Vec<_>>(),
                     "stock_changes": stock_changes,
                 })
             })
@@ -483,6 +489,24 @@ impl RsCamApp {
                 .and_then(|map| map.axis_label()),
             // P5: the core pin report for the setup the pins register.
             "pin_report": pin_report_json(session),
+            // K1: every setup's obstacles, in setup order, each in its
+            // setup frame.
+            "obstacles": session
+                .list_setups()
+                .iter()
+                .enumerate()
+                .map(|(setup_index, s)| {
+                    serde_json::json!({
+                        "setup_index": setup_index,
+                        "setup_id": s.id,
+                        "obstacles": s
+                            .obstacles
+                            .iter()
+                            .map(super::commands::obstacle_json)
+                            .collect::<Vec<_>>(),
+                    })
+                })
+                .collect::<Vec<_>>(),
             // S4: every setup's stock changes, in setup order and then in
             // application order, with the simulated volume.
             "stock_changes": session
@@ -844,8 +868,7 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
     let named = |n: &rs_cam_core::compute::alignment_pins::NamedWall| {
         let kind = match n.kind {
             PinObstacleKind::Part => "part",
-            PinObstacleKind::KeepOut => "keep_out",
-            PinObstacleKind::Fixture => "fixture",
+            PinObstacleKind::Obstacle => "obstacle",
         };
         serde_json::json!({ "kind": kind, "name": n.name, "wall_mm": n.wall_mm })
     };

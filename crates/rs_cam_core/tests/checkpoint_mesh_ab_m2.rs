@@ -120,6 +120,7 @@ fn the_on_demand_checkpoint_mesh_equals_the_eager_mesh_m2() {
             local_to_global: None,
             phantom_prior_stock: None,
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,

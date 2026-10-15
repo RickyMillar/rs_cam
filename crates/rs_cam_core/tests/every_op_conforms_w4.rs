@@ -48,6 +48,9 @@
 //!    fresh and rest arms. This file runs the same counter
 //!    (`common::op_fixtures::unknown_intents`) on the arms only it
 //!    generates: flipped, nothing-to-cut, and the two rest-pair arms.
+//! 8. **Obstacles** (K1). A box strip across the stock, its top above the
+//!    stock top, on every op, top-up AND flipped. See
+//!    [`check8_no_op_puts_the_tool_inside_an_obstacle`].
 //!
 //! # The simulation cell
 //!
@@ -92,7 +95,8 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::arc_util::linearize_arc;
 use rs_cam_core::machine::kinematics::compute_cycle_time;
 use rs_cam_core::session::{
-    Command, ProjectSession, ProjectSessionBuilder, SessionError, SetToolpathParamArgs,
+    AddObstacleArgs, Command, Obstacle, ObstacleGeometry, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetToolpathParamArgs, SetupEvalContext,
 };
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 
@@ -1299,6 +1303,252 @@ fn check7_every_move_of_every_arm_here_has_a_known_intent() {
     }
     assert!(judged > 0, "no move was judged");
     assert!(defects.is_empty(), "{}", defects.join("\n"));
+}
+
+// ── 8. Obstacles (K1) ───────────────────────────────────────────────────
+
+/// The strip (mm, world X) and its clearance. It crosses the cap of the mesh
+/// fixture and the outline of the flat fixture between the two drill
+/// targets, and stays clear of the pin (world X -25).
+const STRIP_X: [f64; 2] = [2.0, 6.0];
+const STRIP_CLEARANCE_MM: f64 = 1.0;
+/// How far (mm) the strip reaches past the stock in Y, below its bottom and
+/// above its top.
+const STRIP_MARGIN_MM: f64 = 5.0;
+/// The sample step (mm) of the analytic cutter test.
+const STRIP_SAMPLE_MM: f64 = 0.25;
+
+/// The strip of `stock` in the WORLD frame: `[min, max]`.
+fn strip_world(stock: &StockConfig) -> [[f64; 3]; 2] {
+    [
+        [
+            STRIP_X[0],
+            stock.origin_y - STRIP_MARGIN_MM,
+            stock.origin_z - STRIP_MARGIN_MM,
+        ],
+        [
+            STRIP_X[1],
+            stock.origin_y + stock.y + STRIP_MARGIN_MM,
+            stock.origin_z + stock.z + STRIP_MARGIN_MM,
+        ],
+    ]
+}
+
+/// The distance (mm) in XY from `(x, y)` to the box `[min, max]`.
+fn xy_distance_to_box(x: f64, y: f64, b: &[[f64; 3]; 2]) -> f64 {
+    let dx = (b[0][0] - x).max(0.0).max(x - b[1][0]);
+    let dy = (b[0][1] - y).max(0.0).max(y - b[1][1]);
+    dx.hypot(dy)
+}
+
+/// The tip points of `tp` every [`STRIP_SAMPLE_MM`], with each move's index
+/// and kind. An arc is linearised.
+fn tip_samples(tp: &Toolpath) -> Vec<(usize, bool, P3)> {
+    let mut out = Vec::new();
+    let mut prev: Option<P3> = None;
+    for (i, m) in tp.moves.iter().enumerate() {
+        let a = prev.unwrap_or(m.target);
+        prev = Some(m.target);
+        let points = match m.move_type {
+            MoveType::ArcCW { i: ci, j: cj, .. } => {
+                linearize_arc(a, m.target, ci, cj, true, STRIP_SAMPLE_MM)
+            }
+            MoveType::ArcCCW { i: ci, j: cj, .. } => {
+                linearize_arc(a, m.target, ci, cj, false, STRIP_SAMPLE_MM)
+            }
+            MoveType::Rapid | MoveType::Linear { .. } => vec![a, m.target],
+        };
+        let rapid = m.move_type == MoveType::Rapid;
+        for w in points.windows(2) {
+            let n = ((w[1] - w[0]).norm() / STRIP_SAMPLE_MM).ceil().max(1.0) as usize;
+            for k in 0..=n {
+                let t = k as f64 / n as f64;
+                out.push((i, rapid, w[0] + (w[1] - w[0]) * t));
+            }
+        }
+    }
+    out
+}
+
+/// The case session of `op` in `frame` with the strip added to the case
+/// op's setup, in that setup's frame. Returns the session, the op index and
+/// the strip as the setup frame holds it.
+fn strip_session(op: OperationType, frame: Frame) -> (ProjectSession, usize, [[f64; 3]; 2]) {
+    let (mut session, index) = case_session(CaseSpec {
+        frame,
+        ..spec(op.kind_str(), op)
+    });
+    let setup_index = session
+        .list_setups()
+        .iter()
+        .position(|s| s.toolpath_indices.contains(&index))
+        .expect("the case op has a setup");
+    let world = strip_world(session.stock_config());
+    let setup = &session.list_setups()[setup_index];
+    let ctx = SetupEvalContext::build_for_setup(&session, Some(setup));
+    // The flipped frame is the zero-rooted setup frame: map the corners.
+    let local = match ctx.local_to_global.as_ref() {
+        None => world,
+        Some(info) => {
+            let mut lo = [f64::INFINITY; 3];
+            let mut hi = [f64::NEG_INFINITY; 3];
+            for x in [world[0][0], world[1][0]] {
+                for y in [world[0][1], world[1][1]] {
+                    for z in [world[0][2], world[1][2]] {
+                        let p = info.world_to_local(P3::new(x, y, z));
+                        for (axis, v) in [p.x, p.y, p.z].into_iter().enumerate() {
+                            lo[axis] = lo[axis].min(v);
+                            hi[axis] = hi[axis].max(v);
+                        }
+                    }
+                }
+            }
+            [lo, hi]
+        }
+    };
+    let _ = session
+        .apply(Command::AddObstacle(AddObstacleArgs {
+            setup_index,
+            obstacle: Box::new(Obstacle {
+                id: rs_cam_core::ids::ObstacleId(0),
+                name: "W4 strip".to_owned(),
+                enabled: true,
+                clearance: STRIP_CLEARANCE_MM,
+                geometry: ObstacleGeometry::Box {
+                    min: local[0],
+                    max: local[1],
+                },
+            }),
+        }))
+        .expect("the strip is a valid obstacle");
+    (session, index, local)
+}
+
+/// K1: for every op, top-up and flipped, with a box strip across the stock
+/// whose top is above the stock top:
+///
+/// - the op generates, with at least one cut move (non-vacuity);
+/// - the strip meets the op's FRESH cut (the arm without the strip), so the
+///   claim tests a real crossing (non-vacuity), for every op whose fresh cut
+///   reaches it;
+/// - no feed move puts the cutter inside the grown strip below its grown
+///   top, and every rapid over the grown strip is above its grown top. This
+///   test is analytic and independent of the service: the box distance
+///   against the cutter radius;
+/// - the service's own check (cutter, shank and holder) finds no hit;
+/// - the simulation reports 0 obstacle collisions.
+#[test]
+fn check8_no_op_puts_the_tool_inside_an_obstacle() {
+    // The shared arms first, OUTSIDE the parallel loop: their `OnceLock`
+    // init runs a rayon loop itself, and a pool worker that blocks on the
+    // init from inside this loop can deadlock the pool.
+    let arms = arms();
+    let results: Vec<(String, Vec<String>, bool)> = OperationType::ALL
+        .par_iter()
+        .flat_map(|&op| [(op, Frame::TopUp), (op, Frame::Flipped)])
+        .map(|(op, frame)| {
+            let label = format!("{}/{frame:?}", op.kind_str());
+            let mut defects = Vec::new();
+            let (mut session, index, strip) = strip_session(op, frame);
+            let tp = match generate(&mut session, index) {
+                Outcome::Done(tp) => tp,
+                other => {
+                    defects.push(format!("{label}/obstacle: {}", other.describe()));
+                    return (label, defects, false);
+                }
+            };
+            if cutting_moves(&tp).next().is_none() {
+                defects.push(format!("{label}/obstacle: no cut move is left (vacuous)"));
+            }
+            let tc = session.get_toolpath_config(index).expect("the case op");
+            let tool_cfg = session
+                .tools()
+                .iter()
+                .find(|t| t.id.0 == tc.tool_id)
+                .expect("the case tool")
+                .clone();
+            let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+            let r = tool.to_assembly().cutter_radius;
+            let grown = [
+                strip[0].map(|v| v - STRIP_CLEARANCE_MM),
+                strip[1].map(|v| v + STRIP_CLEARANCE_MM),
+            ];
+            let top = grown[1][2];
+            for (i, rapid, p) in tip_samples(&tp) {
+                let d = xy_distance_to_box(p.x, p.y, &grown);
+                if !rapid && p.z < top - 1e-6 && d < r - 1e-6 {
+                    defects.push(format!(
+                        "{label}/obstacle: feed move {i} puts the cutter {:.3} mm into the strip \
+                         at ({:.3}, {:.3}, {:.3})",
+                        r - d,
+                        p.x,
+                        p.y,
+                        p.z
+                    ));
+                    break;
+                }
+                if rapid && d < r - 1e-6 && p.z < top - 1e-6 {
+                    defects.push(format!(
+                        "{label}/obstacle: rapid {i} crosses the strip at z {:.3}, below its top {top:.3}",
+                        p.z
+                    ));
+                    break;
+                }
+            }
+            let set = session
+                .obstacle_set_for_toolpath(index)
+                .expect("the strip resolves");
+            let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+            let hits = view.check_toolpath(&tp);
+            if let Some(hit) = hits.first() {
+                defects.push(format!(
+                    "{label}/obstacle: the service finds {} hits, first at move {} ({})",
+                    hits.len(),
+                    hit.move_index,
+                    hit.segment
+                ));
+            }
+            // Non-vacuity: the strip meets the fresh cut of this op.
+            let crossed = arms[op.kind_str()]
+                .fresh
+                .toolpath()
+                .is_some_and(|fresh| {
+                    let fresh_frame = match frame {
+                        Frame::TopUp => fresh.clone(),
+                        Frame::Flipped => return true,
+                    };
+                    !view.check_toolpath(&fresh_frame).is_empty()
+                });
+            simulate(&mut session);
+            let sim_hits = session
+                .simulation_result()
+                .map_or(usize::MAX, |sim| sim.obstacle_collisions.len());
+            if sim_hits != 0 {
+                defects.push(format!(
+                    "{label}/obstacle: the simulation reports {sim_hits} obstacle collisions"
+                ));
+            }
+            (label, defects, crossed)
+        })
+        .collect();
+    let defects: Vec<String> = results.iter().flat_map(|(_, d, _)| d.clone()).collect();
+    let uncrossed: Vec<&str> = results
+        .iter()
+        .filter(|(_, _, crossed)| !crossed)
+        .map(|(label, _, _)| label.as_str())
+        .collect();
+    assert!(defects.is_empty(), "{}", defects.join("\n"));
+    // The pin drill drills the one pin, at world X -25: the strip leaves it
+    // by design (it must not refuse the pin drill as empty). Every other op
+    // crosses the strip, so the claim tests a real crossing for each.
+    assert_eq!(
+        uncrossed,
+        [format!(
+            "{}/TopUp",
+            OperationType::AlignmentPinDrill.kind_str()
+        )],
+        "the strip must meet the fresh cut of every op but the pin drill"
+    );
 }
 
 /// The registry is the case list: every op is in `ALL` once, so each check

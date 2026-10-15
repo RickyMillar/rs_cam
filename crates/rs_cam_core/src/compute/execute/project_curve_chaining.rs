@@ -730,6 +730,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
             &tool_def,
             0.0,
             heights(SAFE_Z_MM).top_z,
+            None,
         ),
         flush_ride: false,
         // project_curve's own prior, mirrored: its boundary is machining

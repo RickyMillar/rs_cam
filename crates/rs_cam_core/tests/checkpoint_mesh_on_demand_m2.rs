@@ -123,6 +123,7 @@ fn simulate() -> SimulationResult {
             // The first pending rest operation sits after every carved one.
             phantom_prior_stock: Some((PASSES, PHANTOM_ID)),
             stock_changes: Vec::new(),
+            obstacles: Ok(Default::default()),
         }],
         stock_bbox: stock(),
         stock_top_z: 0.0,

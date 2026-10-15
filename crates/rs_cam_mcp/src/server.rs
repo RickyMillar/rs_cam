@@ -1431,6 +1431,112 @@ pub struct RemoveStockChangeParam {
     pub change_id: usize,
 }
 
+/// K1: the geometry kind of an obstacle, as a wire enum. A mirror of the
+/// kinds of `rs_cam_core::compute::obstacle::ObstacleGeometry`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ObstacleGeometryKindParam {
+    /// An axis-aligned box from `min` to `max` ([x, y, z], mm).
+    #[default]
+    Box,
+    /// A prism from the closed 2D outlines of `model_ids`, from `z_bottom`
+    /// to `z_top`.
+    OutlineExtrude,
+    /// An imported mesh model. `model_ids` holds exactly one id.
+    Model,
+}
+
+/// `add_obstacle` (K1): add an obstacle to the END of a setup's list. An
+/// obstacle is a fixture or a keep-out zone (one concept): every operation
+/// of the setup keeps the tool (cutter, shank and holder) out of it, the
+/// rapids cross above it, and the simulation counts a hit as a collision.
+///
+/// Every value is in the SETUP frame: the frame the setup's toolpaths use,
+/// with the setup's +Z up.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddObstacleParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// A name for the obstacle. Default: "Obstacle <id + 1>".
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The geometry kind.
+    pub kind: ObstacleGeometryKindParam,
+    /// `box` only: the low corner [x, y, z] (mm).
+    #[serde(default)]
+    pub min: Option<[f64; 3]>,
+    /// `box` only: the high corner [x, y, z] (mm).
+    #[serde(default)]
+    pub max: Option<[f64; 3]>,
+    /// The model ids (`inspect_model` ids): one mesh model for `model`, one
+    /// or more 2D models with closed outlines for `outline_extrude`.
+    #[serde(default)]
+    pub model_ids: Vec<usize>,
+    /// `outline_extrude` only: the prism bottom (mm).
+    #[serde(default)]
+    pub z_bottom: Option<f64>,
+    /// `outline_extrude` only: the prism top (mm).
+    #[serde(default)]
+    pub z_top: Option<f64>,
+    /// The distance (mm) the tool keeps from the geometry on every side.
+    /// Default: 3.
+    #[serde(default)]
+    pub clearance: Option<f64>,
+    /// Default: true.
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+/// `edit_obstacle` (K1): change one obstacle in place. Each field that is
+/// given replaces that part; the others stay. Use `enabled` to turn the
+/// obstacle on or off. To change the geometry kind, give `kind` with every
+/// value that kind needs.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct EditObstacleParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// The obstacle id (`list_setups` `obstacles[].id`).
+    pub obstacle_id: usize,
+    /// A new name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// On (true) or off (false).
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// The clearance (mm).
+    #[serde(default)]
+    pub clearance: Option<f64>,
+    /// The geometry kind. With it, the geometry is built again from the
+    /// values given here.
+    #[serde(default)]
+    pub kind: Option<ObstacleGeometryKindParam>,
+    /// The low box corner [x, y, z] (mm).
+    #[serde(default)]
+    pub min: Option<[f64; 3]>,
+    /// The high box corner [x, y, z] (mm).
+    #[serde(default)]
+    pub max: Option<[f64; 3]>,
+    /// The model ids.
+    #[serde(default)]
+    pub model_ids: Option<Vec<usize>>,
+    /// The prism bottom (mm).
+    #[serde(default)]
+    pub z_bottom: Option<f64>,
+    /// The prism top (mm).
+    #[serde(default)]
+    pub z_top: Option<f64>,
+}
+
+/// `remove_obstacle` (K1): remove one obstacle from a setup.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct RemoveObstacleParam {
+    /// Setup index (0-based, the `list_setups` order).
+    pub setup_index: usize,
+    /// The obstacle id.
+    pub obstacle_id: usize,
+}
+
 /// Simulation jump-to-move parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SimJumpToMoveParam {
@@ -1913,6 +2019,10 @@ pub fn build_info() -> serde_json::Value {
             // W2.5 (D10): `get_toolpath_params` `runtime.feeds`, the
             // narration feeds line and the export feeds caution.
             "result_feed_stage",
+            // K1 (2026-10-15): `add_obstacle`, `edit_obstacle` and
+            // `remove_obstacle`; `list_setups` and `inspect_stock` list a
+            // setup's `obstacles`; a simulation counts an obstacle hit.
+            "obstacles",
         ],
     })
 }
@@ -1996,6 +2106,7 @@ mod tests {
             "alignment_pin_set_tools",
             "alignment_pin_report",
             "result_feed_stage",
+            "obstacles",
         ] {
             assert!(
                 features.contains(&flag),

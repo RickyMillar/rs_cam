@@ -59,12 +59,12 @@ use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
-use rs_cam_core::ids::{KeepOutId, ModelId, ToolpathId};
+use rs_cam_core::ids::{ModelId, ObstacleId, ToolpathId};
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AddKeepOutArgs, Command, KeepOutZone, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    SetAlignmentPinsArgs, ToolpathConfig,
+    AddObstacleArgs, Command, LoadedModel, Obstacle, ObstacleGeometry, ProjectSession,
+    ProjectSessionBuilder, SetAlignmentPinsArgs, ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
@@ -283,21 +283,22 @@ fn bottom_180_placement_seats_and_keys() {
 }
 
 /// The wall check of a stored set. Pin 1 is inside the part, pin 2 is
-/// inside a keep-out zone, pin 3 is in the rim with 3 mm walls.
+/// inside an obstacle (K1), pin 3 is in the rim with 3 mm walls.
 #[test]
 fn a_pin_in_the_part_or_a_keep_out_is_a_wall_finding() {
     let mut session = mini_session(true);
     let _ = session
-        .apply(Command::AddKeepOut(AddKeepOutArgs {
+        .apply(Command::AddObstacle(AddObstacleArgs {
             setup_index: 0,
-            zone: Box::new(KeepOutZone {
-                id: KeepOutId(0),
+            obstacle: Box::new(Obstacle {
+                id: ObstacleId(0),
                 name: "clamp pad".to_owned(),
                 enabled: true,
-                origin_x: 0.0,
-                origin_y: 0.0,
-                size_x: 10.0,
-                size_y: 10.0,
+                clearance: 0.0,
+                geometry: ObstacleGeometry::Box {
+                    min: [0.0, 0.0, -5.0],
+                    max: [10.0, 10.0, 40.0],
+                },
             }),
         }))
         .unwrap();
@@ -326,10 +327,10 @@ fn a_pin_in_the_part_or_a_keep_out_is_a_wall_finding() {
     );
     // Pin 2: 4 mm inside the zone edge, minus the 3 mm radius.
     assert!(
-        walls.iter().any(|f| f
-            .text
-            .contains("pin 2 cuts into the keep-out zone 'clamp pad'")
-            && f.text.contains("-7.0 mm")),
+        walls.iter().any(
+            |f| f.text.contains("pin 2 cuts into the obstacle 'clamp pad'")
+                && f.text.contains("-7.0 mm")
+        ),
         "{findings:?}"
     );
     assert!(
