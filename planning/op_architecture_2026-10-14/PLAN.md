@@ -177,3 +177,7 @@ and W4, from what they measure. It is not scheduled now.
 - B20 (CLOSED ba705014) (W6.4, 2026-10-16): under a link ceiling, a router link and a relink clearance hop end with a vertical `Linking` feed at cutting feed onto the next region's entry, not an `EntryPlunge`. Check whether the entry-descent dressup treats that descent; if it can enter standing stock, tag it as an entry. Decide in C.
 - W6.4.6 DONE (R-W6.4b yes): SteepShallow rest is `RestUse::ContourFilter` (the Waterline rule), not `Reference`: the stock-referenced detector read near-zero rest under a flat tool over terraces and cost +49 % time. Links read `link_ceiling_for` (new `hookup_mm` dial, default off; -11.6 % to -14.6 % time with it on). R-W6.4a (emitters onto W6.3 kernels) = no.
 - C3 (CLOSED d508ffaa) (follow-up): `Territory::resolve` gives stock only to `RestUse::Reference`; Waterline and SteepShallow (`ContourFilter`) read `ctx.initial_stock`. Resolve stock for `ContourFilter` too and make both read `Prepared::territory()`.
+
+## D3 (2026-10-16)
+
+DONE in the D3 commit after 72fb9854: the per-op entry points the shape runners replaced are deleted; tests use `op_fixtures::generated_op` or `tests/common/kernels.rs`; param aliases deleted; Pin Drill draws no boundary controls. FINAL_AUDIT item 6 closed. Left (minor): `pocket_contours` and `profile_contour` have callers only in their own file (make private); `adaptive_toolpath` in `param_sweep`; dated history docs (`architecture/orientation_refactor.md`, `toolpath_stress_test/*.md`) still name deleted functions and stay as history.
