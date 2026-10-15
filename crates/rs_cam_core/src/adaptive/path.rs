@@ -655,7 +655,7 @@ pub(super) fn adaptive_segments(
         plunge_rate: 0.0,
         safe_z: 0.0,
         min_cutting_radius: 0.0,
-        initial_stock: None,
+        standing_material: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::Legacy,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
@@ -700,8 +700,8 @@ pub(crate) fn adaptive_segments_with_debug(
 
     // If prior stock state is available, mark cells already cleared by
     // earlier operations so the adaptive algorithm does not re-cut them.
-    if let Some(ref stock) = params.initial_stock {
-        grid.apply_initial_stock(stock, cut_depth);
+    if let Some(mask) = &params.standing_material {
+        grid.seed_from_material_mask(mask);
     }
 
     // Cache the machinable region as a boolean mask for fast lookups
@@ -1540,8 +1540,8 @@ fn filter_short_cuts_by_redundancy(
 
     // Build a grid populated with the cells cleared by the LONG Cuts only.
     let mut long_grid = MaterialGrid::from_polygon(polygon, cell_size);
-    if let Some(stock) = &params.initial_stock {
-        long_grid.apply_initial_stock(stock, params.cut_depth);
+    if let Some(mask) = &params.standing_material {
+        long_grid.seed_from_material_mask(mask);
     }
     for seg in segments {
         if let AdaptiveSegment::Cut(path) = seg
@@ -1671,8 +1671,8 @@ pub(crate) fn apply_residue_mop_cleanup(
     if params.keep_down_links == KeepDownLinks::WithinPassLoad {
         grid.keep_fringe(polygon);
     }
-    if let Some(stock) = &params.initial_stock {
-        grid.apply_initial_stock(stock, params.cut_depth);
+    if let Some(mask) = &params.standing_material {
+        grid.seed_from_material_mask(mask);
     }
     let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
@@ -1783,8 +1783,8 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     if params.keep_down_links == KeepDownLinks::WithinPassLoad {
         grid.keep_fringe(polygon);
     }
-    if let Some(stock) = &params.initial_stock {
-        grid.apply_initial_stock(stock, params.cut_depth);
+    if let Some(mask) = &params.standing_material {
+        grid.seed_from_material_mask(mask);
     }
     let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
@@ -2483,8 +2483,15 @@ fn emit_helical_starter_pocket(
     tool_radius: f64,
     pass_load: Option<(&PassLoad, f64, &LinkLoad)>,
 ) -> Option<(Vec<AdaptiveSegment>, P2)> {
-    let medial =
-        find_entry_via_distance_transform(grid, machinable_mask, boundary_distances, tool_radius)?;
+    // B10: under the 2D pass load the starter stands on material: on a
+    // rest level the medial point can lie where an earlier op cleared.
+    let medial = find_entry_via_distance_transform(
+        grid,
+        machinable_mask,
+        boundary_distances,
+        tool_radius,
+        pass_load.is_some(),
+    )?;
     // Need the medial-axis disk to fit the helix (radius `tool_radius`)
     // plus the cutter (radius `tool_radius`) plus a small safety margin.
     let dt_at = grid.boundary_distance_at(boundary_distances, medial.x, medial.y);

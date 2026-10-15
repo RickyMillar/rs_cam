@@ -17,15 +17,15 @@ moves_hash = "6a7919a9fa017e9e"
 
 ["adaptive/rest"]
 outcome = "ok"
-move_count = 1101
-rapid_count = 69
-linear_count = 759
-arc_count = 273
-cutting_length_mm = 2458.29
-rapid_length_mm = 731.637
+move_count = 1086
+rapid_count = 54
+linear_count = 754
+arc_count = 278
+cutting_length_mm = 2462.728
+rapid_length_mm = 615.548
 bbox_min = [-16.825, -8.825, -6.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "134a3fc61d11853a"
+moves_hash = "fc2a6ba989f36d52"
 
 ["adaptive3d/fresh"]
 outcome = "ok"
@@ -49,7 +49,7 @@ cutting_length_mm = 91.912
 rapid_length_mm = 96.499
 bbox_min = [-12.5, -12.5, 0.6246]
 bbox_max = [11.9719, 11.9719, 13.0]
-moves_hash = "b753ac1d3ac6bac8"
+moves_hash = "150d9282df0a9f55"
 
 ["alignment_pin_drill/fresh"]
 outcome = "ok"
@@ -59,9 +59,9 @@ linear_count = 6
 arc_count = 0
 cutting_length_mm = 19.5
 rapid_length_mm = 109.5
-bbox_min = [-55.0, -20.0, -12.0]
-bbox_max = [-55.0, -20.0, 10.0]
-moves_hash = "996e3c5140e25e8c"
+bbox_min = [-25.0, 0.0, -12.0]
+bbox_max = [-25.0, 0.0, 10.0]
+moves_hash = "d6c18a3443571930"
 
 ["chamfer/fresh"]
 outcome = "ok"
@@ -101,15 +101,15 @@ moves_hash = "c26e74819238421f"
 
 ["drill/rest"]
 outcome = "ok"
-move_count = 29
-rapid_count = 22
+move_count = 25
+rapid_count = 18
 linear_count = 7
 arc_count = 0
 cutting_length_mm = 24.5
-rapid_length_mm = 174.041
+rapid_length_mm = 148.041
 bbox_min = [-10.0, 0.0, -10.0]
 bbox_max = [10.0, 0.0, 10.0]
-moves_hash = "3d3b820644239f07"
+moves_hash = "f8b78d3fa4f25638"
 
 ["drill/simple_cycle"]
 outcome = "ok"
@@ -221,15 +221,15 @@ moves_hash = "5b4e6e04a39e4bdf"
 
 ["pencil/rest"]
 outcome = "ok"
-move_count = 1399
-rapid_count = 129
+move_count = 1394
+rapid_count = 124
 linear_count = 726
 arc_count = 544
 cutting_length_mm = 1399.743
 rapid_length_mm = 662.093
 bbox_min = [-13.3091, -12.4109, 0.0]
 bbox_max = [12.4805, 11.5387, 13.0]
-moves_hash = "3953fcdbdece313a"
+moves_hash = "d09d8690dd0ddc0a"
 
 ["pocket/fresh"]
 outcome = "ok"
@@ -245,15 +245,15 @@ moves_hash = "6ed525af757a5822"
 
 ["pocket/rest"]
 outcome = "ok"
-move_count = 128
-rapid_count = 33
+move_count = 127
+rapid_count = 32
 linear_count = 95
 arc_count = 0
 cutting_length_mm = 648.052
 rapid_length_mm = 302.276
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "d07e33081cd45f6a"
+moves_hash = "211cc3431eec4428"
 
 ["pocket/zigzag"]
 outcome = "ok"
@@ -337,7 +337,7 @@ cutting_length_mm = 2187.992
 rapid_length_mm = 644.475
 bbox_min = [-18.1262, -18.1262, 0.0]
 bbox_max = [18.1262, 18.1262, 13.0]
-moves_hash = "c4fa25a3ed2a8f5b"
+moves_hash = "88e00e3af2ff96cb"
 
 ["ramp_finish/fresh"]
 outcome = "ok"
@@ -377,15 +377,15 @@ moves_hash = "0a3755e38272672c"
 
 ["scallop/rest"]
 outcome = "ok"
-move_count = 682
-rapid_count = 45
+move_count = 681
+rapid_count = 44
 linear_count = 622
 arc_count = 15
 cutting_length_mm = 923.583
 rapid_length_mm = 231.628
 bbox_min = [-17.0, -15.0, 0.0]
 bbox_max = [15.0, 15.0, 13.0]
-moves_hash = "723a0ebec84c6b02"
+moves_hash = "01a1685da3bc2bb7"
 
 ["spiral_finish/fresh"]
 outcome = "ok"
@@ -457,7 +457,7 @@ cutting_length_mm = 1511.425
 rapid_length_mm = 259.61
 bbox_min = [-13.9324, -13.9324, 0.0]
 bbox_max = [13.6448, 13.6448, 13.0]
-moves_hash = "7f926f67c185799a"
+moves_hash = "da13e4c6a1021499"
 
 ["v_carve/fresh"]
 outcome = "ok"
@@ -485,15 +485,15 @@ moves_hash = "980ff223a423a338"
 
 ["waterline/rest"]
 outcome = "ok"
-move_count = 107
+move_count = 191
 rapid_count = 18
-linear_count = 50
+linear_count = 134
 arc_count = 39
-cutting_length_mm = 817.584
+cutting_length_mm = 317.68
 rapid_length_mm = 104.827
 bbox_min = [-11.5715, -11.718, 1.0]
 bbox_max = [11.5827, 11.5827, 13.0]
-moves_hash = "3081b45e1cf4f5cc"
+moves_hash = "883cefbeb4fcd637"
 
 ["zigzag/fresh"]
 outcome = "ok"

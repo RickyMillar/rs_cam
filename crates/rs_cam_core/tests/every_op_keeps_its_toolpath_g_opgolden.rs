@@ -17,17 +17,10 @@
 //!
 //! # The fixtures
 //!
-//! One fixture for each `GeometryRequirement` kind:
-//!
-//! - Stock, Polygons: a flat board below world Z0, a rectangle outline with
-//!   two drill targets, and one alignment pin on the stock.
-//! - Mesh, Both: a spherical cap on a flat ground (flats, a slope, and a
-//!   concave crease at the foot of the cap). `Both` adds a curve model that
-//!   the op projects onto the mesh.
-//!
-//! The tool comes from the registry row (`ToolConstraintsDef`): the first
-//! required cutter kind, or a flat end mill when the row accepts any tool.
-//! Every tool is `ToolConfig::new_default` for its kind.
+//! `common::op_fixtures`: one fixture for each `GeometryRequirement` kind
+//! (a flat board with an outline, two drill targets and a pin; a spherical
+//! cap on flat ground, plus a curve for `Both`), and the registry tool. W4
+//! (`every_op_conforms_w4.rs`) builds its sessions from the same module.
 //!
 //! # The arms
 //!
@@ -72,80 +65,19 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::fingerprint::fnv1a_debug;
-use common::meshes::height_field;
-use common::session::{mesh_model, pinned_heights, polygon_model, toolpath_config};
+use common::op_fixtures::{
+    CaseSpec, Fixture, Frame, Golden, Prior, case_session, run_prior, unknown_intents,
+};
 use rayon::prelude::*;
-use rs_cam_core::compute::StockConfig;
-use rs_cam_core::compute::alignment_pins::AlignmentPin;
-use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType, RestUse};
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::operation_configs::{
-    AlignmentPinDrillConfig, DrillCycleType, PocketConfig, PocketPattern,
-};
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::export::fingerprint::ToolpathFingerprint;
-use rs_cam_core::gcode::post::{Decimals, grbl, grblhal, linuxcnc, mach3};
-use rs_cam_core::geo::P2;
-use rs_cam_core::ids::ModelId;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
+use rs_cam_core::compute::operation_configs::{DrillCycleType, PocketPattern};
 use rs_cam_core::ops::profile::ProfileSide;
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{
-    Command, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs, SimulationOptions,
-    SimulationResolution, ToolpathConfig,
-};
-use rs_cam_core::toolpath::{MoveType, Toolpath};
-use serde::{Deserialize, Serialize};
 
 /// The environment switch that rewrites the golden file.
 const BLESS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN";
-
-// ── The flat fixture (Stock, Polygons) ──────────────────────────────────
-
-/// Flat board size (mm). The board hangs below world Z0: 2D ops cut at
-/// negative Z.
-const FLAT_X: f64 = 60.0;
-const FLAT_Y: f64 = 40.0;
-const FLAT_Z: f64 = 10.0;
-
-/// Half extents (mm) of the outline the 2D ops cut. It leaves 10 mm of
-/// board on X and 8 mm on Y, so an outside profile stays on the board.
-const OUTLINE_HALF_X: f64 = 20.0;
-const OUTLINE_HALF_Y: f64 = 12.0;
-
-/// The two drill targets (mm), inside the outline.
-const DRILL_TARGETS: [[f64; 2]; 2] = [[-10.0, 0.0], [10.0, 0.0]];
-
-/// The one alignment pin (mm), on the board margin outside the outline.
-const PIN_XY: [f64; 2] = [-25.0, 0.0];
-
-// ── The mesh fixture (Mesh, Both) ───────────────────────────────────────
-
-/// Half extent (mm) of the height field and of the stock.
-const MESH_HALF: f64 = 15.0;
-/// Height-field sample step (mm).
-const MESH_STEP: f64 = 1.0;
-/// Sphere radius (mm) and centre height (mm) of the cap. The cap height is
-/// `SPHERE_R + SPHERE_CZ` and its foot radius is `sqrt(R² - CZ²)`.
-const SPHERE_R: f64 = 10.0;
-const SPHERE_CZ: f64 = -4.0;
-/// Stock height (mm): 2 mm over the cap top.
-const MESH_STOCK_Z: f64 = SPHERE_R + SPHERE_CZ + 2.0;
-
-// ── The rest arm ────────────────────────────────────────────────────────
-
-/// Simulation cell (mm) of the prior op in the rest arm.
-const SIM_CELL_MM: f64 = 0.5;
-/// Depth (mm) of the prior pocket on the flat fixture.
-const PRIOR_POCKET_DEPTH: f64 = 3.0;
-/// Stepover (mm) and depth per pass (mm) of the prior pocket: the values
-/// `PocketConfig::default()` had when this file was blessed.
-const PRIOR_POCKET_STEPOVER: f64 = 2.0;
-const PRIOR_POCKET_DEPTH_PER_PASS: f64 = 1.5;
 
 // ── Cases ───────────────────────────────────────────────────────────────
 
@@ -270,358 +202,45 @@ fn cases() -> Vec<Case> {
     cases
 }
 
-// ── Fixture builders ────────────────────────────────────────────────────
-
-/// The registry's tool for `op`: the first required cutter kind, or a flat
-/// end mill when the row accepts any tool.
-fn tool_for(op: OperationType) -> ToolConfig {
-    let kind = op
-        .registry_entry()
-        .tool_constraints
-        .required_kinds
-        .first()
-        .map_or(ToolType::EndMill, |k| k.tool_type());
-    ToolConfig::new_default(ToolId(0), kind)
-}
-
-fn flat_stock() -> StockConfig {
-    StockConfig {
-        x: FLAT_X,
-        y: FLAT_Y,
-        z: FLAT_Z,
-        origin_x: -FLAT_X / 2.0,
-        origin_y: -FLAT_Y / 2.0,
-        origin_z: -FLAT_Z,
-        auto_from_model: false,
-        alignment_pins: vec![AlignmentPin::new(
-            PIN_XY[0],
-            PIN_XY[1],
-            AlignmentPinDrillConfig::default().diameter,
-        )],
-        ..StockConfig::default()
-    }
-}
-
-fn rectangle(x0: f64, y0: f64, x1: f64, y1: f64) -> Polygon2 {
-    Polygon2::new(vec![
-        P2::new(x0, y0),
-        P2::new(x1, y0),
-        P2::new(x1, y1),
-        P2::new(x0, y1),
-    ])
-}
-
-fn outline_model() -> rs_cam_core::session::LoadedModel {
-    let mut model = polygon_model(
-        vec![rectangle(
-            -OUTLINE_HALF_X,
-            -OUTLINE_HALF_Y,
-            OUTLINE_HALF_X,
-            OUTLINE_HALF_Y,
-        )],
-        "opgolden_outline",
-    );
-    model.drill_targets = Arc::new(
-        DRILL_TARGETS
-            .iter()
-            .map(|&[x, y]| DrillTarget {
-                x,
-                y,
-                layer: "holes".to_owned(),
-                kind: DrillTargetKind::Point,
-            })
-            .collect(),
-    );
-    model
-}
-
-fn mesh_stock() -> StockConfig {
-    StockConfig {
-        x: 2.0 * MESH_HALF,
-        y: 2.0 * MESH_HALF,
-        z: MESH_STOCK_Z,
-        origin_x: -MESH_HALF,
-        origin_y: -MESH_HALF,
-        origin_z: 0.0,
-        auto_from_model: false,
-        ..StockConfig::default()
-    }
-}
-
-/// A spherical cap on flat ground at `z = 0`.
-fn cap_model() -> rs_cam_core::session::LoadedModel {
-    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
-        let r2 = x * x + y * y;
-        let s = SPHERE_R * SPHERE_R - r2;
-        if s <= 0.0 {
-            0.0
-        } else {
-            (s.sqrt() + SPHERE_CZ).max(0.0)
-        }
-    });
-    mesh_model(mesh, "opgolden_cap")
-}
-
-/// An open zigzag "river" over the cap, for Project Curve.
-fn curve_model() -> rs_cam_core::session::LoadedModel {
-    polygon_model(
-        vec![Polygon2::new(vec![
-            P2::new(-8.0, -4.0),
-            P2::new(-3.0, 4.0),
-            P2::new(3.0, -4.0),
-            P2::new(8.0, 4.0),
-        ])],
-        "opgolden_curve",
-    )
-}
-
-/// The flat-fixture prior op of the rest arm: a pocket over the left half
-/// of the outline, so the rest op meets cut and uncut stock.
-fn flat_prior_model() -> rs_cam_core::session::LoadedModel {
-    polygon_model(
-        vec![rectangle(
-            -OUTLINE_HALF_X,
-            -OUTLINE_HALF_Y,
-            0.0,
-            OUTLINE_HALF_Y,
-        )],
-        "opgolden_prior",
-    )
-}
-
-/// The dials that shape the prior pocket are pinned here, so a change to
-/// Pocket's defaults moves only the Pocket arms. The mesh prior is a
-/// default Adaptive3d: a change to Adaptive3d's defaults also moves every
-/// mesh rest arm, and the diff then names `adaptive3d/fresh` too.
-fn flat_prior_op() -> OperationConfig {
-    OperationConfig::Pocket(PocketConfig {
-        stepover: PRIOR_POCKET_STEPOVER,
-        depth: PRIOR_POCKET_DEPTH,
-        depth_per_pass: PRIOR_POCKET_DEPTH_PER_PASS,
-        ..PocketConfig::default()
-    })
-}
-
-/// Build the session of one case. The case's op is the last toolpath.
-fn session_for(case: &Case) -> (ProjectSession, usize) {
-    let geometry = case.op.spec().geometry;
-    let on_mesh = matches!(
-        geometry,
-        GeometryRequirement::Mesh | GeometryRequirement::Both
-    );
-    let stock = if on_mesh { mesh_stock() } else { flat_stock() };
-    let mut builder = ProjectSessionBuilder::new().stock(stock);
-
-    let tool_idx = builder.add_tool(tool_for(case.op));
-    let tool_id = builder.tools()[tool_idx].id.0;
-
-    let mut op = OperationConfig::new_default(case.op);
-    (case.tweak)(&mut op);
-
-    let (model_id, heights) = if on_mesh {
-        let cap_id = builder.add_model(cap_model());
-        let model_id = if geometry == GeometryRequirement::Both {
-            if let OperationConfig::ProjectCurve(cfg) = &mut op {
-                cfg.surface_model_id = Some(ModelId(cap_id));
-            }
-            builder.add_model(curve_model())
-        } else {
-            cap_id
-        };
-        (model_id, Some(pinned_heights(MESH_STOCK_Z, 0.0)))
-    } else {
-        (builder.add_model(outline_model()), None)
-    };
-
-    if let OperationConfig::AlignmentPinDrill(cfg) = &mut op {
-        // The pin door snapshots the stock pins into the op; do the same.
-        cfg.holes = vec![PIN_XY];
-    }
-    if case.source == Source::Rest {
-        // The prior op: a flat end mill, which every fixture admits.
-        let prior_tool_idx =
-            builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let prior_tool_id = builder.tools()[prior_tool_idx].id.0;
-        let prior: ToolpathConfig = if on_mesh {
-            ToolpathConfig {
-                heights: pinned_heights(MESH_STOCK_Z, 0.0),
-                ..toolpath_config(
-                    "prior",
-                    OperationConfig::new_default(OperationType::Adaptive3d),
-                    prior_tool_id,
-                    model_id_of_cap(&builder),
-                )
-            }
-        } else {
-            let prior_model = builder.add_model(flat_prior_model());
-            toolpath_config("prior", flat_prior_op(), prior_tool_id, prior_model)
-        };
-        let _ = builder.add_toolpath(0, prior).expect("add the prior op");
-    }
-
-    let mut config = toolpath_config(&case.key(), op, tool_id, model_id);
-    if let Some(h) = heights {
-        config.heights = h;
-    }
-    if case.source == Source::Rest {
-        config.stock_source = StockSource::FromRemainingStock;
-    }
-    let index = builder.add_toolpath(0, config).expect("add the case op");
-    (builder.build(), index)
-}
-
-/// The id of the cap model: the first model in a mesh session.
-fn model_id_of_cap(builder: &ProjectSessionBuilder) -> usize {
-    builder.models()[0].id
-}
-
-fn simulate(session: &mut ProjectSession) {
-    let _ = session
-        .apply(Command::SetSimulationResolution(
-            SetSimulationResolutionArgs {
-                resolution: SimulationResolution::Fixed(SIM_CELL_MM),
-            },
-        ))
-        .expect("a positive cell");
-    let cancel = AtomicBool::new(false);
-    let _ = session
-        .run_simulation(
-            &SimulationOptions {
-                resolution: SIM_CELL_MM,
-                auto_resolution: false,
-                adaptive_feed_modulation: false,
-                ..SimulationOptions::default()
-            },
-            &cancel,
-        )
-        .expect("the prior op simulates");
+/// One generated case: its fingerprint and the count of its moves with
+/// `MoveIntent::Unknown` (B11).
+struct Generated {
+    golden: Golden,
+    unknown_intents: usize,
 }
 
 /// Generate one case and fingerprint it. A refusal is a result too: a
 /// refactor must not change it.
-fn run(case: &Case) -> Golden {
-    let (mut session, index) = session_for(case);
+fn run(case: &Case) -> Generated {
+    let mut op = OperationConfig::new_default(case.op);
+    (case.tweak)(&mut op);
+    let rest = case.source == Source::Rest;
+    let (mut session, index) = case_session(CaseSpec {
+        name: &case.key(),
+        op,
+        prior: if rest { Prior::RestPrior } else { Prior::None },
+        stock_source: if rest {
+            StockSource::FromRemainingStock
+        } else {
+            StockSource::Fresh
+        },
+        frame: Frame::TopUp,
+        fixture: Fixture::Standard,
+        tool: None,
+    });
+    if rest {
+        run_prior(&mut session);
+    }
     let cancel = AtomicBool::new(false);
-    if case.source == Source::Rest {
-        let _ = session
-            .generate_toolpath(0, &cancel)
-            .expect("the prior op generates");
-        simulate(&mut session);
-    }
     match session.generate_toolpath(index, &cancel) {
-        Ok(result) => Golden::of(result.toolpath()),
-        Err(e) => Golden::refused(&e.to_string()),
-    }
-}
-
-// ── The fingerprint ─────────────────────────────────────────────────────
-
-/// The finest decimals each shipped post emits.
-fn finest_decimals() -> Decimals {
-    let posts = [grbl(), grblhal(), linuxcnc(), mach3()];
-    Decimals {
-        xyz: posts.iter().map(|p| p.decimals.xyz).max().unwrap(),
-        feed: posts.iter().map(|p| p.decimals.feed).max().unwrap(),
-        ijk: posts.iter().map(|p| p.decimals.ijk).max().unwrap(),
-    }
-}
-
-fn scale(decimals: usize) -> f64 {
-    10f64.powi(i32::try_from(decimals).unwrap())
-}
-
-fn quantize(v: f64, decimals: usize) -> i64 {
-    // The fixture coordinates and feeds are below 1e5, far inside the i64
-    // range at any shipped precision, so the cast does not saturate.
-    (v * scale(decimals)).round() as i64
-}
-
-fn round_to(v: f64, decimals: usize) -> f64 {
-    quantize(v, decimals) as f64 / scale(decimals)
-}
-
-/// One move at the post precision: kind (0 rapid, 1 line, 2 CW arc, 3 CCW
-/// arc), XYZ, arc IJ, feed and intent.
-type QuantizedMove = (u8, [i64; 3], [i64; 2], i64, String);
-
-/// One blessed record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Golden {
-    /// `ok`, or the refusal text.
-    outcome: String,
-    move_count: usize,
-    rapid_count: usize,
-    linear_count: usize,
-    arc_count: usize,
-    /// A sum of many segments carries more noise than one coordinate, so
-    /// the lengths are rounded one decade coarser than a coordinate.
-    cutting_length_mm: f64,
-    rapid_length_mm: f64,
-    bbox_min: [f64; 3],
-    bbox_max: [f64; 3],
-    /// FNV-1a over the quantized moves, as hex (TOML holds only i64).
-    moves_hash: String,
-}
-
-impl Golden {
-    fn of(tp: &Toolpath) -> Self {
-        let d = finest_decimals();
-        let fp = ToolpathFingerprint::from_toolpath(tp);
-        let quantized: Vec<QuantizedMove> = tp
-            .moves
-            .iter()
-            .map(|m| {
-                let (kind, ij, feed) = match m.move_type {
-                    MoveType::Rapid => (0_u8, [0, 0], 0.0),
-                    MoveType::Linear { feed_rate } => (1, [0, 0], feed_rate),
-                    MoveType::ArcCW { i, j, feed_rate } => {
-                        (2, [quantize(i, d.ijk), quantize(j, d.ijk)], feed_rate)
-                    }
-                    MoveType::ArcCCW { i, j, feed_rate } => {
-                        (3, [quantize(i, d.ijk), quantize(j, d.ijk)], feed_rate)
-                    }
-                };
-                (
-                    kind,
-                    [
-                        quantize(m.target.x, d.xyz),
-                        quantize(m.target.y, d.xyz),
-                        quantize(m.target.z, d.xyz),
-                    ],
-                    ij,
-                    quantize(feed, d.feed),
-                    format!("{:?}", m.intent),
-                )
-            })
-            .collect();
-        let length_decimals = d.xyz - 1;
-        Self {
-            outcome: "ok".to_owned(),
-            move_count: fp.move_count,
-            rapid_count: fp.rapid_count,
-            linear_count: fp.linear_count,
-            arc_count: fp.arc_cw_count + fp.arc_ccw_count,
-            cutting_length_mm: round_to(fp.cutting_distance_mm, length_decimals),
-            rapid_length_mm: round_to(fp.rapid_distance_mm, length_decimals),
-            bbox_min: fp.bbox_min.map(|v| round_to(v, d.xyz)),
-            bbox_max: fp.bbox_max.map(|v| round_to(v, d.xyz)),
-            moves_hash: format!("{:016x}", fnv1a_debug(&quantized)),
-        }
-    }
-
-    fn refused(message: &str) -> Self {
-        Self {
-            outcome: format!("refused: {message}"),
-            move_count: 0,
-            rapid_count: 0,
-            linear_count: 0,
-            arc_count: 0,
-            cutting_length_mm: 0.0,
-            rapid_length_mm: 0.0,
-            bbox_min: [0.0; 3],
-            bbox_max: [0.0; 3],
-            moves_hash: String::new(),
-        }
+        Ok(result) => Generated {
+            golden: Golden::of(result.toolpath()),
+            unknown_intents: unknown_intents(result.toolpath()),
+        },
+        Err(e) => Generated {
+            golden: Golden::refused(&e.to_string()),
+            unknown_intents: 0,
+        },
     }
 }
 
@@ -709,10 +328,25 @@ fn every_op_keeps_its_toolpath() {
         "the rest arms are the ops whose capabilities state a rest rule"
     );
 
-    let actual: BTreeMap<String, Golden> = cases
+    let generated: BTreeMap<String, Generated> = cases
         .par_iter()
         .map(|case| (case.key(), run(case)))
         .collect();
+
+    // B11: every move of every arm carries a known intent. A dressup that
+    // turns an air row into a rapid tags it; it never leaves `Unknown`.
+    let unknown: Vec<(&String, usize)> = generated
+        .iter()
+        .filter(|(_, g)| g.unknown_intents > 0)
+        .map(|(k, g)| (k, g.unknown_intents))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "these arms emit moves with MoveIntent::Unknown (arm, count): {unknown:?}"
+    );
+
+    let actual: BTreeMap<String, Golden> =
+        generated.into_iter().map(|(k, g)| (k, g.golden)).collect();
 
     // Non-vacuity: every op cuts something in its fresh arm, so a golden
     // of an empty toolpath cannot pass for a kept one.

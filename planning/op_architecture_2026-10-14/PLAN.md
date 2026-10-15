@@ -123,6 +123,7 @@ and W4, from what they measure. It is not scheduled now.
 | R2 | **A**: split Inlay. "Inlay" cuts only the V walls of the pocket; the floor is a normal Pocket with a flat end mill; a new "Inlay Plug" op (mirrored, start depth) runs in its own project for the plug board | W1.4. Also fix: plug not mirrored; glue gap wrong for bits that are not 90°; default flat tool is imperial |
 | R3 | **Retire the Rest op**, unless the reach map uses it. Checked: the reach map does not use `ops::rest` (only a doc mention in `surface/rest_field.rs:37`). Operator note: the reach map is a visual, not planning, and must not live with planning code | W1.7: delete the Rest op on every surface; state the load break |
 | R4 | **B**: region-first default plus the `region_ordering` option (the 3D Rough enum) on every Layered op | W3.0. 3D Rough keeps its own default (Global, level-first) |
+| R6 | **A** (2026-10-15): 2D Adaptive seeds its grid from the shared per-level mask (threshold z + FRESH_MATERIAL_THRESHOLD_MM, the stock lattice); Adaptive3d keeps its own path | DONE |
 | R5 | **A**: a proc-macro crate for `#[derive(OpParams)]`, "clean now" | W5 uses a derive. The GUI range drift (D5) and the pin-drill schema test (D9) still get their own direct fixes in W1 |
 
 ## Per-item flow
@@ -141,7 +142,8 @@ and W4, from what they measure. It is not scheduled now.
 | W1 | W1.1 DONE 877c93e5; W1.2 DONE b5dc7ed4; W1.3 DONE 0c8f562a (chamfer cut outside the edge); W1.4 DONE 08458617 + FM1 275e8948; W1.5, W1.6, W1.4b DONE 3ccc05bb; W1.5b DONE b086e269; W1.7 DONE 04753b54; W1.2b DONE e10bac23; W1.1b DONE e72f4ccb; W1.3b DONE. W1 DONE; live check passed (mini: no change); merged to master |
 | W2 | DONE: 6fddd518, eabeb43f, e614ee9a, 66a81d77, 7d19ea6d; live check passed (mini: no change); merged to master |
 | W3 | W3.0/W3.1 86692c56, W3.2 b6c83a81, W3.3/W3.4 29183d95, W3.5 Chamfer (Waterline moved to W6: needs fallible emit_level with cancel + per-level stock, and a link hook); B5-B7 7f820c42; live check passed (mini 2675 s vs 2673 s, only Face front changed, B8); merged to master; open: 2D Adaptive shared-mask ruling |
-| W4–W6 | not started |
+| W4 | DONE: every_op_conforms_w4 (c7de79a0, 10 checks over ALL, ~8 s); found G-RAMPCHORD (SAFETY, entry ramps cut arc chords; fixed 981ff4ed) and the classification_sampler schema null; R6 bd7cf9f4; B8-B11 b523905a; merged to master |
+| W5–W6 | not started |
 
 ## Backlog (not scheduled)
 
@@ -154,3 +156,7 @@ and W4, from what they measure. It is not scheduled now.
 - B6: import_machine_settings replaced the whole controller block with what the dump held (firmware grbl_hal -> unknown, the H-100 VFD plugin, the tool-change probe distance lost). An import must only overwrite the fields the dump states.
 - B7: a machine kinematics change leaves every toolpath current, but the link stage reads accel (link vs retract). Decide whether linking ops go stale on a machine edit.
 - B8 (W3 live check 2026-10-15): the rest Face 'Face front to T' on testpiece_mini grew from 782 to 792 moves; its rows now reach x -2.9 / 67.2 where they reached -1.0 / 66.0 (the clipped region seems to get the stock offset again inside the Face kernel). All extra motion is in air outside the stock; +2 s. Check and fix the double extension.
+- B9: ZigzagRaster (Zigzag op, Pocket zigzag pattern) has the same latent rest row shift B8 fixed for Face (rows start at the clipped region edge).
+- B10: on a rest level the 2D Adaptive planner starts with an entry starter at the piece centre even when that point is cleared.
+- B11: for a rest op, the entry dressup turns a row that runs only in air into a rapid with intent Unknown (also seen on rest Drill pecks). Air rows should be dropped or tagged, not left Unknown.
+- B12 (from B10): at the level at a prior op's own floor, the rest 2D Adaptive still places an entry helix at the piece centre 7.4 mm from material with no cuts near it (level mask reads material, air filter reads air, the filter never drops a helix).

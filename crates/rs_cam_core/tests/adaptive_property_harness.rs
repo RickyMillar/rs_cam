@@ -457,7 +457,7 @@ fn run_strategy_capped(polygon: &Polygon2, strategy: PathStrategy2d, cap_mult: f
         tolerance: 0.2,
         slot_clearing: false,
         min_cutting_radius: 0.0,
-        initial_stock: None,
+        standing_material: None,
         cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
         engagement_measure: EngagementMeasure::LeadingArc,
         path_strategy: strategy,

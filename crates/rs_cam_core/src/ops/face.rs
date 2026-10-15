@@ -71,8 +71,37 @@ fn face_scan_lines(polygon: &Polygon2, params: &FaceParams) -> Vec<[crate::geo::
         params.tool_radius,
         params.stepover,
         params.direction,
+        None,
     )
     .0
+}
+
+/// B8: the scan rows of the whole facing rectangle, which a rest piece of
+/// the rectangle keeps. Without it, each piece puts its first row on its
+/// own lowest point. A rest clip region ends `2R + cell` past the
+/// material, not at the rectangle, so its rows moved off the fresh rows
+/// and the last row passed the last fresh row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FaceLattice {
+    /// The perpendicular position of row 0 of the whole rectangle.
+    origin: f64,
+    /// `OneWay`: the direction of the first row of the whole rectangle,
+    /// as a dot product with the scan direction. `None`: no row.
+    oneway_dot: Option<f64>,
+}
+
+impl FaceLattice {
+    /// The lattice of the whole facing rectangle `rect`. `None` when the
+    /// inset of `rect` is empty.
+    pub(crate) fn of_rect(rect: &Polygon2, tool_radius: f64, stepover: f64) -> Option<Self> {
+        let origin = crate::ops::zigzag::scan_lattice_origin(rect, tool_radius, FACE_ANGLE)?;
+        let (rows, _) =
+            crate::ops::zigzag::zigzag_lines_reported(rect, tool_radius, stepover, FACE_ANGLE);
+        Some(Self {
+            origin,
+            oneway_dot: rows.first().map(|row| scan_dot(row, FACE_ANGLE)),
+        })
+    }
 }
 
 /// The scan rows of every piece of a facing region, and the count of
@@ -80,25 +109,44 @@ fn face_scan_lines(polygon: &Polygon2, params: &FaceParams) -> Vec<[crate::geo::
 /// whole facing rectangle, or with the pieces of a rest clip
 /// (G-RESTLEVELS). `OneWay` normalises the rows of all pieces to the
 /// direction of the first row, so one region cuts in one direction.
+///
+/// With `lattice` (B8) each piece keeps the rows of the whole rectangle:
+/// every row lies on a fresh row and cuts in the fresh row's direction, so
+/// a rest row never reaches past the fresh rows.
 pub(crate) fn face_scan_lines_reported(
     pieces: &[Polygon2],
     tool_radius: f64,
     stepover: f64,
     direction: FaceDirection,
+    lattice: Option<FaceLattice>,
 ) -> (Vec<[crate::geo::P2; 2]>, usize) {
     let mut lines = Vec::new();
     let mut failures = 0;
     for piece in pieces {
-        let (piece_lines, piece_failures) =
-            crate::ops::zigzag::zigzag_lines_reported(piece, tool_radius, stepover, FACE_ANGLE);
+        let (piece_lines, piece_failures) = crate::ops::zigzag::zigzag_lines_on_lattice_reported(
+            piece,
+            tool_radius,
+            stepover,
+            FACE_ANGLE,
+            lattice.map(|l| l.origin),
+        );
         failures += piece_failures;
         lines.extend(piece_lines);
     }
     let lines = match direction {
-        FaceDirection::OneWay => normalise_oneway(lines, FACE_ANGLE),
+        FaceDirection::OneWay => {
+            normalise_oneway(lines, FACE_ANGLE, lattice.and_then(|l| l.oneway_dot))
+        }
         FaceDirection::Zigzag => lines,
     };
     (lines, failures)
+}
+
+/// The dot product of `row` with the scan direction of `angle` (degrees).
+fn scan_dot(row: &[crate::geo::P2; 2], angle: f64) -> f64 {
+    let angle_rad = angle.to_radians();
+    let [a, b] = row;
+    (b.x - a.x) * angle_rad.cos() + (b.y - a.y) * angle_rad.sin()
 }
 
 /// The scan angle (degrees) of every face pass.
@@ -129,12 +177,17 @@ pub fn face_levels(stock_top_z: f64, depth: f64, depth_per_pass: f64) -> Vec<f64
 }
 
 /// Normalise scan rows so they all cut in the same direction (the direction
-/// of the first row) — the `OneWay` half of the old `oneway_toolpath`,
+/// of the first row, or of `reference` when given: the first row of the
+/// whole rectangle, B8) — the `OneWay` half of the old `oneway_toolpath`,
 /// factored out so the hoist can run it once instead of once per Z level.
 /// Between rows the tool still rapids at `safe_z`, exactly like the zigzag
 /// path but without alternating.
-fn normalise_oneway(mut lines: Vec<[crate::geo::P2; 2]>, angle: f64) -> Vec<[crate::geo::P2; 2]> {
-    if lines.len() > 1 {
+fn normalise_oneway(
+    mut lines: Vec<[crate::geo::P2; 2]>,
+    angle: f64,
+    reference: Option<f64>,
+) -> Vec<[crate::geo::P2; 2]> {
+    if lines.len() > 1 || reference.is_some() {
         // Pick the direction of the first row as the canonical direction.
         // For angle=0 this is the X component; generalise via the scan
         // direction vector (cos(angle), sin(angle)).
@@ -145,13 +198,15 @@ fn normalise_oneway(mut lines: Vec<[crate::geo::P2; 2]>, angle: f64) -> Vec<[cra
         // Dot the first row's displacement with the scan direction to
         // determine the canonical sign.
         // Compute reference dot product from the first line's direction.
-        let ref_dot = lines.first().map(|first| {
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: each line is a fixed-size [P2; 2] array
-            let dx = first[1].x - first[0].x;
-            #[allow(clippy::indexing_slicing)]
-            let dy = first[1].y - first[0].y;
-            dx * cos_a + dy * sin_a
+        let ref_dot = reference.or_else(|| {
+            lines.first().map(|first| {
+                #[allow(clippy::indexing_slicing)]
+                // SAFETY: each line is a fixed-size [P2; 2] array
+                let dx = first[1].x - first[0].x;
+                #[allow(clippy::indexing_slicing)]
+                let dy = first[1].y - first[0].y;
+                dx * cos_a + dy * sin_a
+            })
         });
 
         if let Some(ref_dot) = ref_dot {

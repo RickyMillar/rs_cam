@@ -1,8 +1,8 @@
 //! 2D material grid for adaptive clearing engagement calculation.
 
-use crate::dexel_stock::TriDexelStock;
 use crate::geo::P2;
 use crate::polygon::Polygon2;
+use crate::stock::dexel::MaterialMask;
 
 /// 2D boolean grid tracking material presence for engagement calculation.
 ///
@@ -420,46 +420,24 @@ impl MaterialGrid {
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    /// Mark cells as cleared where the tri-dexel stock surface is below
-    /// the cutting depth. This lets the adaptive algorithm skip regions
-    /// already machined by prior operations.
-    pub fn apply_initial_stock(&mut self, stock: &TriDexelStock, cut_depth: f64) {
-        let z_grid = &stock.z_grid;
-        let cut_z = cut_depth as f32;
+    /// G-RESTLEVELS (`RestUse::LevelMask`): the start state of one level.
+    /// Each material cell whose centre (`origin + index * cell_size`, the
+    /// point [`Self::from_polygon`] samples) reads no material in `mask`
+    /// becomes cleared. The mask is the raw stock read of the level, with
+    /// no reach filter: the engagement model must see the wood that stands
+    /// near a wall. The planner then tracks its own cuts on this grid.
+    pub fn seed_from_material_mask(&mut self, mask: &MaterialMask) {
         for row in 0..self.rows {
-            let world_y = self.origin_y + row as f64 * self.cell_size;
+            let y = self.origin_y + row as f64 * self.cell_size;
             for col in 0..self.cols {
                 let idx = row * self.cols + col;
                 if self.cells[idx] != CELL_MATERIAL {
                     continue;
                 }
-                let world_x = self.origin_x + col as f64 * self.cell_size;
-
-                // Map world coords to dexel grid cell
-                let dexel_col_f = (world_x - z_grid.origin_u) / z_grid.cell_size;
-                let dexel_row_f = (world_y - z_grid.origin_v) / z_grid.cell_size;
-                if dexel_col_f < 0.0 || dexel_row_f < 0.0 {
-                    continue;
-                }
-                let dexel_col = dexel_col_f as usize;
-                let dexel_row = dexel_row_f as usize;
-                if dexel_col >= z_grid.cols || dexel_row >= z_grid.rows {
-                    continue;
-                }
-
-                // If the stock top at this cell is at or below the cutting
-                // depth, the material was already removed.
-                match z_grid.top_z_at(dexel_row, dexel_col) {
-                    Some(top_z) if top_z <= cut_z => {
-                        self.cells[idx] = CELL_CLEARED;
-                        self.material_count -= 1;
-                    }
-                    None => {
-                        // No material at all in this dexel ray — cleared.
-                        self.cells[idx] = CELL_CLEARED;
-                        self.material_count -= 1;
-                    }
-                    _ => {}
+                let x = self.origin_x + col as f64 * self.cell_size;
+                if !mask.stands_at(x, y) {
+                    self.cells[idx] = CELL_CLEARED;
+                    self.material_count -= 1;
                 }
             }
         }

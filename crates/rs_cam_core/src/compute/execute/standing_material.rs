@@ -25,6 +25,10 @@
 //! - [`column_top`] (`RestUse::StockColumn`, Drill, D8): the highest
 //!   material over one point.
 //!
+//! [`level_masks`] (`RestUse::LevelMask`, 2D Adaptive) reads the same mask
+//! per level. It skips a level with no material in the footprint, and it
+//! gives each other level the raw mask, which seeds the planner's grid.
+//!
 //! # The geometry
 //!
 //! - A cell counts only when its centre is inside the FOOTPRINT of the tool
@@ -56,7 +60,14 @@ use crate::geometry::grid2::Grid2;
 use crate::geometry::region_mask::region_polygons_from_mask_reported;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::stock::dexel::LatticeWindow;
+use crate::stock::dexel::{LatticeWindow, MaterialMask};
+
+/// The floor of level `z`: material counts when it stands above
+/// `z + FRESH_MATERIAL_THRESHOLD_MM`, the floor below which the simulator
+/// itself calls material absent. Every rest rule of this module reads it.
+fn standing_floor(z: f64) -> f32 {
+    (z + FRESH_MATERIAL_THRESHOLD_MM) as f32
+}
 
 /// What one Z level of the ladder cuts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,8 +226,7 @@ pub(crate) fn regions_per_level(
     let mut previous: Option<(Vec<bool>, LevelRegion)> = None;
     for &z in levels {
         check_cancel(cancel)?;
-        let floor = (z + FRESH_MATERIAL_THRESHOLD_MM) as f32;
-        let mut mask = grid.material_above_mask(&window, floor);
+        let mut mask = grid.material_above_mask(&window, standing_floor(z));
         for (m, &r) in mask.iter_mut().zip(reach.iter()) {
             *m = *m && r;
         }
@@ -377,8 +387,7 @@ pub(crate) fn levels_in_reach(
     };
     for &z in levels {
         check_cancel(cancel)?;
-        let floor = (z + FRESH_MATERIAL_THRESHOLD_MM) as f32;
-        let material = grid.material_above_mask(&window, floor);
+        let material = grid.material_above_mask(&window, standing_floor(z));
         let stands = material.iter().zip(&reach).any(|(&m, &r)| m && r);
         plan.levels.push(if stands {
             LevelRegion::Whole
@@ -392,6 +401,114 @@ pub(crate) fn levels_in_reach(
             .levels
             .iter()
             .filter(|l| **l == LevelRegion::Empty)
+            .count(),
+        clipped_levels: 0,
+        fallback: None,
+    });
+    Ok(plan)
+}
+
+/// What one level of a `RestUse::LevelMask` op starts from.
+#[derive(Debug, Clone)]
+pub(crate) enum LevelSeed {
+    /// Fresh stock: the planner starts from the whole outline.
+    Fresh,
+    /// No material stands in the footprint of the tool: skip the level.
+    Empty,
+    /// The material that stands above the level, read raw from the stock.
+    Material(std::sync::Arc<MaterialMask>),
+}
+
+/// The answer of [`level_masks`] for one outline.
+#[derive(Debug, Clone)]
+pub(crate) struct SeedPlan {
+    /// One entry per level of the ladder, in ladder order.
+    pub levels: Vec<LevelSeed>,
+    /// `None` when the operation read no machined stock.
+    pub finding: Option<RestLevelsFinding>,
+}
+
+/// `RestUse::LevelMask` (2D Adaptive): the material each level of `levels`
+/// starts from in `outline`, read from the machined stock.
+///
+/// Per level the function reads the mask of [`regions_per_level`] once,
+/// at the same floor and on the stock lattice. It uses the mask twice:
+///
+/// - the skip: a level is [`LevelSeed::Empty`] when no cell in the
+///   footprint of the tool holds material (the footprint rule of
+///   [`regions_per_level`]);
+/// - the seed: each other level gets the RAW mask, with no footprint
+///   filter. The planner's engagement model must see the wood that stands
+///   in its own grid, near a wall and in a corner too.
+///
+/// `stock == None` (a fresh operation) gives `Fresh` at every level and no
+/// finding. A stock off the outline and a window too large give `Fresh`
+/// at every level with the fallback in the finding. A footprint that holds
+/// no cell centre never skips a level, but it still seeds.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires. The function polls once per level.
+pub(crate) fn level_masks(
+    stock: Option<&TriDexelStock>,
+    outline: &Polygon2,
+    levels: &[f64],
+    tool_radius: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<SeedPlan, Cancelled> {
+    let Some(stock) = stock else {
+        return Ok(SeedPlan {
+            levels: vec![LevelSeed::Fresh; levels.len()],
+            finding: None,
+        });
+    };
+    let fallback = |fallback: RestLevelsFallback| SeedPlan {
+        levels: vec![LevelSeed::Fresh; levels.len()],
+        finding: LevelPlan::fallback(levels.len(), fallback).finding,
+    };
+    let [ox_min, oy_min, ox_max, oy_max] = outline.bbox();
+    let sb = &stock.stock_bbox;
+    if !(sb.min.x <= ox_max && sb.max.x >= ox_min && sb.min.y <= oy_max && sb.max.y >= oy_min) {
+        return Ok(fallback(RestLevelsFallback::StockOffOutline));
+    }
+    let grid = &stock.z_grid;
+    // The planner's grid holds material only inside the outline, so the
+    // outline box holds every cell it seeds. Two cells of pad take up the
+    // rounding to the nearest ray. A point past the window reads as
+    // material, so it is cut.
+    let pad_cells = 2;
+    let window = grid.lattice_window([ox_min, oy_min, ox_max, oy_max], pad_cells);
+    let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
+        * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
+    if window.cell_count() > limit {
+        return Ok(fallback(RestLevelsFallback::WindowTooLarge {
+            cells: window.cell_count(),
+            limit,
+        }));
+    }
+    let reach = footprint_mask(stock, &window, outline, tool_radius);
+    let reach_seen = reach.contains(&true);
+
+    let mut plan = SeedPlan {
+        levels: Vec::with_capacity(levels.len()),
+        finding: None,
+    };
+    for &z in levels {
+        check_cancel(cancel)?;
+        let mask = grid.material_mask(window, standing_floor(z));
+        let stands = mask.cells().iter().zip(&reach).any(|(&m, &r)| m && r);
+        plan.levels.push(if reach_seen && !stands {
+            LevelSeed::Empty
+        } else {
+            LevelSeed::Material(std::sync::Arc::new(mask))
+        });
+    }
+    plan.finding = Some(RestLevelsFinding {
+        planned_levels: levels.len(),
+        skipped_levels: plan
+            .levels
+            .iter()
+            .filter(|l| matches!(l, LevelSeed::Empty))
             .count(),
         clipped_levels: 0,
         fallback: None,

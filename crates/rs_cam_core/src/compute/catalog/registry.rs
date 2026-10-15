@@ -589,16 +589,16 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("crease_hookup_mm", "f64"),
     // CMP-09: the field is read at `execute/finish_3d.rs` and reaches
     // `unified_finish`, but no surface could set it, so it was frozen at
-    // `ClassificationSampler::PRODUCTION`. `optional` because the config
-    // omits the key while it holds that value.
+    // `ClassificationSampler::PRODUCTION`. `optional` because the field is
+    // an `Option`: null (the published default) is "not pinned".
     ParamDef::optional_desc(
         "classification_sampler",
         "enum:drop_cutter_probe|drop_cutter_probe_scratch|triangle_raster|vertical_ray|tile_raster",
         "Which sampler fills the classification height grid (M3 COLUMNS). NOT a quality or \
          speed dial: it exists so an A/B can drive the pre-switch drop-cutter classifier and \
          the production tile-raster one through one pipeline, and so a project that hits a \
-         regression has an escape hatch that needs no rebuild. Absent = tile_raster, the \
-         production sampler.",
+         regression has an escape hatch that needs no rebuild. Null or absent = tile_raster, \
+         the production sampler.",
     ),
     // F2 island-filter overrides on `FinishPlannerParams`. All three are
     // `null` by default and are OMITTED from a saved project while null, so

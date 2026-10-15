@@ -427,6 +427,49 @@ impl LatticeWindow {
     }
 }
 
+/// G-RESTLEVELS (`RestUse::LevelMask`): which cells of a [`LatticeWindow`]
+/// hold material above one Z level. [`DexelGrid::material_mask`] makes it;
+/// the 2D Adaptive planner seeds its material grid from it.
+#[derive(Debug, Clone)]
+pub struct MaterialMask {
+    window: LatticeWindow,
+    origin_u: f64,
+    origin_v: f64,
+    cell_size: f64,
+    /// Row-major over `window`, as [`DexelGrid::material_above_mask`].
+    material: Vec<bool>,
+}
+
+impl MaterialMask {
+    /// Does material stand at the planar point (`u`, `v`)? The point reads
+    /// the cell that contains it: a grid cell is centred on its ray, so the
+    /// cell index is `round((u - origin_u) / cell_size)`, the rule of
+    /// [`DexelGrid::world_to_cell`]. A point off the window counts as
+    /// material, as a cell off the grid does.
+    #[must_use]
+    pub fn stands_at(&self, u: f64, v: f64) -> bool {
+        let col = ((u - self.origin_u) / self.cell_size).round() as isize - self.window.col0;
+        let row = ((v - self.origin_v) / self.cell_size).round() as isize - self.window.row0;
+        if col < 0 || row < 0 {
+            return true;
+        }
+        let (row, col) = (row as usize, col as usize);
+        if col >= self.window.cols || row >= self.window.rows {
+            return true;
+        }
+        self.material
+            .get(row * self.window.cols + col)
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// The window cells, row-major: `true` where material stands.
+    #[must_use]
+    pub fn cells(&self) -> &[bool] {
+        &self.material
+    }
+}
+
 impl Clone for DexelGrid {
     fn clone(&self) -> Self {
         Self {
@@ -650,6 +693,19 @@ impl DexelGrid {
             }
         }
         mask
+    }
+
+    /// [`Self::material_above_mask`] with the lattice it was read on, so a
+    /// reader on another grid can look up a point ([`MaterialMask`]).
+    #[must_use]
+    pub fn material_mask(&self, window: LatticeWindow, z_floor: f32) -> MaterialMask {
+        MaterialMask {
+            window,
+            origin_u: self.origin_u,
+            origin_v: self.origin_v,
+            cell_size: self.cell_size,
+            material: self.material_above_mask(&window, z_floor),
+        }
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

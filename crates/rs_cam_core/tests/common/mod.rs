@@ -33,6 +33,7 @@
 //! | [`meshes`] | synthetic mesh generators: plateau, grooved block, sawtooth plate, height fields, profile extrusion |
 //! | [`monge`] | Monge-quadric heightfield curvature: scale-normalised 6x6 fit, shape operator, `t1` axis, Zou strip width, line-field statistics — extracted from `wanaka_curvature_anisotropy.rs` + `zone_coherence_census.rs`, which keep their own copies per the migration policy below |
 //! | [`offset_lab`] | M5's 2D-offset bench: fixtures, cascade runner, per-ring attribution, erosion oracle |
+//! | [`op_fixtures`] | the all-op fixtures of G-OPGOLDEN and W4: one fixture per `GeometryRequirement`, the registry tool, the rest-arm prior op, the flipped frame and the post-precision fingerprint |
 //! | [`reference_plate`] | **ARP-1**, the analytic reference plate: 16 non-blending closed-form zones with exact normals, curvatures, band areas and tool-reach floors, tessellated per zone in its own natural parameter |
 //! | [`tools`] | the shipped taper / ball control as both `MillingCutter` shapes and `ToolConfig` records |
 //! | [`session`] | `LoadedModel` / `StockConfig` / the 18-field `ToolpathConfig` / one-op `ProjectSession` builders |
@@ -66,6 +67,7 @@ pub mod gcode_fixtures;
 pub mod meshes;
 pub mod monge;
 pub mod offset_lab;
+pub mod op_fixtures;
 pub mod reference_plate;
 pub mod scallop_oracle;
 pub mod session;

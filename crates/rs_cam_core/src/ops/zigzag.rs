@@ -77,13 +77,61 @@ pub fn zigzag_lines(
 }
 
 /// [`zigzag_lines`] with Checkpoint C's offset failure channel attached.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 #[must_use]
 pub fn zigzag_lines_reported(
     polygon: &Polygon2,
     tool_radius: f64,
     stepover: f64,
     angle_deg: f64,
+) -> (Vec<[P2; 2]>, usize) {
+    zigzag_lines_on_lattice_reported(polygon, tool_radius, stepover, angle_deg, None)
+}
+
+/// The perpendicular position of the first scan row of `polygon`: the
+/// lowest point of its inset by `tool_radius`, read across the scan
+/// direction. `None` when the inset is empty. [`zigzag_lines_reported`]
+/// puts its rows at this position plus whole stepovers.
+#[must_use]
+pub(crate) fn scan_lattice_origin(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    angle_deg: f64,
+) -> Option<f64> {
+    let inset = crate::polygon::offset_polygon(polygon, tool_radius);
+    let angle_rad = angle_deg.to_radians();
+    let (perp_min, _) = perp_range(&inset, -angle_rad.sin(), angle_rad.cos());
+    perp_min.is_finite().then_some(perp_min)
+}
+
+/// The range of the exterior vertices of `inset` across the scan direction.
+fn perp_range(inset: &[Polygon2], perp_x: f64, perp_y: f64) -> (f64, f64) {
+    let mut perp_min = f64::INFINITY;
+    let mut perp_max = f64::NEG_INFINITY;
+    for poly in inset {
+        for p in &poly.exterior {
+            let d = p.x * perp_x + p.y * perp_y;
+            perp_min = perp_min.min(d);
+            perp_max = perp_max.max(d);
+        }
+    }
+    (perp_min, perp_max)
+}
+
+/// [`zigzag_lines_reported`] with the rows on a given lattice. `lattice`
+/// is the perpendicular position of row 0 (see [`scan_lattice_origin`]);
+/// row `k` lies at `lattice + k * stepover` and cuts in the direction of
+/// its parity. A region cut from a larger one (a rest clip) then keeps the
+/// rows of the larger one: each row it cuts lies on a row of the whole.
+/// A row below `lattice` is not cut. `None` puts row 0 on the region's own
+/// lowest point.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[must_use]
+pub(crate) fn zigzag_lines_on_lattice_reported(
+    polygon: &Polygon2,
+    tool_radius: f64,
+    stepover: f64,
+    angle_deg: f64,
+    lattice: Option<f64>,
 ) -> (Vec<[P2; 2]>, usize) {
     if polygon.exterior.len() < 3 || stepover <= 0.0 {
         // Refused before any offset was attempted, so nothing was observed.
@@ -128,26 +176,30 @@ pub fn zigzag_lines_reported(
     let perp_x = -sin_a;
     let perp_y = cos_a;
 
-    let mut perp_min = f64::INFINITY;
-    let mut perp_max = f64::NEG_INFINITY;
-    for poly in &inset {
-        for p in &poly.exterior {
-            let d = p.x * perp_x + p.y * perp_y;
-            perp_min = perp_min.min(d);
-            perp_max = perp_max.max(d);
-        }
-    }
+    let (perp_min, perp_max) = perp_range(&inset, perp_x, perp_y);
 
     if perp_max - perp_min < 1e-10 {
         return (Vec::new(), failures);
     }
 
-    // Generate scan lines at stepover intervals
+    // Generate scan lines at stepover intervals, from row 0 of the lattice
+    // (the region's own lowest point when no lattice is given).
+    let (origin, first) = match lattice {
+        None => (perp_min, 0),
+        Some(origin) => (
+            origin,
+            // The first lattice row at or above the region, with a float
+            // tolerance so a row on the region's edge is kept.
+            ((perp_min - origin) / stepover - LATTICE_EPS)
+                .ceil()
+                .max(0.0) as usize,
+        ),
+    };
     let mut lines = Vec::new();
-    let n_lines = ((perp_max - perp_min) / stepover).ceil() as usize + 1;
+    let n_lines = ((perp_max - origin) / stepover).ceil().max(0.0) as usize + 1;
 
-    for i in 0..n_lines {
-        let perp_pos = perp_min + i as f64 * stepover;
+    for i in first..n_lines {
+        let perp_pos = origin + i as f64 * stepover;
         if perp_pos > perp_max {
             break;
         }
@@ -184,6 +236,10 @@ pub fn zigzag_lines_reported(
 
     (lines, failures)
 }
+
+/// The tolerance (in stepovers) of the first lattice row: float noise in
+/// the offset must not drop a row that lies on the edge of a region.
+const LATTICE_EPS: f64 = 1e-9;
 
 /// Find intersection parameters along the scan direction for a scan line.
 ///

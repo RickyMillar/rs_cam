@@ -2979,7 +2979,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         tolerance: ctx.tolerance,
         slot_clearing: false,
         min_cutting_radius: 0.0,
-        initial_stock: None,
+        standing_material: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
         engagement_measure: ctx.engagement_measure,
         // ContourSpiral (3D) routes through this same dispatch with the

@@ -77,7 +77,7 @@ fn spiral_params() -> AdaptiveParams {
         tolerance: 0.2,
         slot_clearing: false,
         min_cutting_radius: 0.0,
-        initial_stock: None,
+        standing_material: None,
         cleanup_strategy: CleanupStrategy::ContourParallelHybrid,
         engagement_measure: EngagementMeasure::LeadingArc,
         path_strategy: PathStrategy2d::ContourSpiral,
