@@ -1,6 +1,6 @@
 use rs_cam_core::session::{
-    Command, ReplaceToolArgs, RestoreToolpathSnapshotArgs, SetMachineArgs, SetPostConfigArgs,
-    SetStockConfigArgs,
+    Command, ReplaceToolArgs, RestoreToolpathSnapshotArgs, SetMachineArgs, SetMachineHeadArgs,
+    SetPostConfigArgs, SetStockConfigArgs, SetToolpathShoeArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -57,6 +57,12 @@ impl<B: ComputeBackend> AppController<B> {
                     ..
                 } => {
                     self.apply_obstacle_snapshot(setup_id, obstacle_id, old);
+                }
+                UndoAction::HeadChange { old, .. } => {
+                    self.apply_head_snapshot(*old);
+                }
+                UndoAction::ToolpathShoeChange { tp_id, old, .. } => {
+                    self.apply_toolpath_shoe_snapshot(tp_id, old);
                 }
             }
             // F2.5 (G-UNDOFRESH) — EVERY arm, at the one place all of them
@@ -124,11 +130,42 @@ impl<B: ComputeBackend> AppController<B> {
                 } => {
                     self.apply_obstacle_snapshot(setup_id, obstacle_id, new);
                 }
+                UndoAction::HeadChange { new, .. } => {
+                    self.apply_head_snapshot(*new);
+                }
+                UndoAction::ToolpathShoeChange { tp_id, new, .. } => {
+                    self.apply_toolpath_shoe_snapshot(tp_id, new);
+                }
             }
             // Redo carries the identical defect and takes the identical fix.
             // It is the same edit, applied in the other direction.
             self.state.gui.mark_edited();
         }
+    }
+
+    /// H2: install a machine head snapshot (an undo or a redo) through the
+    /// `SetMachineHead` row, the door the head editor writes through. An
+    /// open editor draft predates the snapshot, so it closes.
+    fn apply_head_snapshot(&mut self, head: rs_cam_core::machine::head::MachineHead) {
+        let command = Command::SetMachineHead(SetMachineHeadArgs {
+            head: Box::new(head),
+        });
+        let _ = self.apply_quietly(command);
+        self.state.panels.head_editor = None;
+    }
+
+    /// H2: install a toolpath shoe setting (an undo or a redo) through the
+    /// `SetToolpathShoe` row. A toolpath that is gone takes no write.
+    fn apply_toolpath_shoe_snapshot(
+        &mut self,
+        tp_id: crate::state::toolpath::ToolpathId,
+        shoe: rs_cam_core::machine::head::ShoeSetting,
+    ) {
+        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+            return;
+        };
+        let command = Command::SetToolpathShoe(SetToolpathShoeArgs { index, shoe });
+        let _ = self.apply_quietly(command);
     }
 
     /// Install a stock snapshot the way the stock panel installs an edit.

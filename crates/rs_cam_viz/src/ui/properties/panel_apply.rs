@@ -361,6 +361,48 @@ pub(crate) fn apply_obstacle_draft(
     }
 }
 
+/// Apply a machine head through `Command::SetMachineHead` (H2): a preset
+/// or the Head section's draft.
+///
+/// A head equal to the stored head applies nothing. The core refuses a
+/// head that breaks a rule of `MachineHead::validate`. A change of the
+/// fixed parts drops every result; a shoe-only change drops the
+/// simulation. The view mirrors both through the `Effects` (WP19).
+///
+/// # Errors
+/// The core refusal text. The draw site writes it into the section's
+/// banner (S4 refusal contract) and keeps the draft.
+pub(crate) fn apply_head(
+    state: &mut AppState,
+    head: rs_cam_core::machine::head::MachineHead,
+) -> Result<(), String> {
+    use rs_cam_core::session::{Command, SetMachineHeadArgs};
+    let stored = state.session.machine().head.clone();
+    if head == stored {
+        return Ok(());
+    }
+    let command = Command::SetMachineHead(SetMachineHeadArgs {
+        head: Box::new(head.clone()),
+    });
+    match state.session.apply(command) {
+        Ok(effects) => {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
+            state
+                .history
+                .push(crate::state::history::UndoAction::HeadChange {
+                    old: Box::new(stored),
+                    new: Box::new(head),
+                });
+            state.gui.mark_edited();
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// Whether the machine panel's own three dials moved.
 ///
 /// `MachineProfile` carries no `PartialEq`, and only three of its fields

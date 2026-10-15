@@ -276,6 +276,11 @@ pub(super) fn draw_toolpath_panel(
             DiagnosticState::NotApplicable => {}
         }
     }
+    // H2: the shoe gap finding (`project.shoe_gap_too_low`) is a project
+    // verdict about this toolpath. The footer is its one owner here; the
+    // Heights tab, which holds the shoe row, carries the badge.
+    let shoe_finding = inputs.shoe.as_ref().and_then(|shoe| shoe.finding.as_ref());
+    actionable.extend(shoe_finding);
 
     // ── Tab bar ─────────────────────────────────────────────────────
 
@@ -285,7 +290,7 @@ pub(super) fn draw_toolpath_panel(
         ui.memory(|mem| mem.data.get_temp(tab_id))
             .unwrap_or(ToolpathTab::Geometry)
     });
-    let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx);
+    let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx, shoe_finding.is_some());
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
@@ -303,7 +308,9 @@ pub(super) fn draw_toolpath_panel(
         // lives in `linking_dressup.rs` beside the Dressup rows it shares.
         ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, height_ctx),
 
-        ToolpathTab::Heights => draw_heights_tab(ui, entry, height_ctx),
+        ToolpathTab::Heights => {
+            draw_heights_tab(ui, entry, height_ctx, inputs.shoe.as_ref(), events);
+        }
 
         ToolpathTab::Dressup => draw_dressup_tab(ui, entry),
     }
@@ -1107,6 +1114,8 @@ fn draw_heights_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     height_ctx: Option<&HeightContext>,
+    shoe: Option<&super::ShoeRowInputs>,
+    events: &mut Vec<AppEvent>,
 ) {
     let fallback_ctx = HeightContext::simple(10.0, 5.0);
     let ctx = height_ctx.unwrap_or(&fallback_ctx);
@@ -1121,6 +1130,12 @@ fn draw_heights_tab(
     draw_height_diagram(ui, &mut entry.heights, ctx, op_type);
     ui.add_space(6.0);
     draw_heights_params(ui, &mut entry.heights, ctx, op_type);
+    // H2: the dust shoe sits with the safety heights. It moves no
+    // toolpath; it decides what the checks read above the tool.
+    if let Some(shoe) = shoe {
+        ui.add_space(6.0);
+        super::shoe_row::draw_shoe_row(ui, entry.id, shoe, events);
+    }
 }
 
 /// The Dressup tab: edge work and path quality.

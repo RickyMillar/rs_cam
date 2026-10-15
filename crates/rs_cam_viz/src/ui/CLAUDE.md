@@ -14,6 +14,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   charts first), Warnings (count badge), Navigate, Project (IC3). A card
   flips to a median line on a min-max band; `< >` opens it large.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
+  `shoe_list.rs` — the H2 run sheet; Readiness and the export wizard draw it.
 - `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`,
   `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs.
@@ -36,5 +37,4 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27`
 - `cargo test -p rs_cam_viz -q --test the_simulation_page_is_summary_first_dc6 --test the_sim_inspector_is_tabbed_ic3`
 - `cargo test -p rs_cam_viz -q --test panels_read_the_token_module_up1 --test ui_string_hygiene`
-- `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector --test the_dot_becomes_a_ring_in_flight_g_ring`
-- `cargo test -p rs_cam_viz -q --test cut_metric_cards_read_the_gate_g_cutcards`
+- `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector --test the_dot_becomes_a_ring_in_flight_g_ring --test cut_metric_cards_read_the_gate_g_cutcards`

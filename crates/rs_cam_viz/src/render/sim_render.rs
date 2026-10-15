@@ -502,11 +502,106 @@ pub struct ToolGeometry {
 
 /// The holder has no length in the tool model: it starts at the holder
 /// face and continues upward (`rs_cam_core::stock::collision::ToolAssembly`).
-/// A drawing must stop somewhere, so it draws the holder this many holder
-/// diameters tall. A drawing choice, not a model value.
+/// A head part with no height that is the last part of its list has no top
+/// either. A drawing must stop somewhere, so it draws such a part this many
+/// part diameters tall. A drawing choice, not a model value.
 pub(crate) const HOLDER_DRAW_LENGTH_OVER_DIAMETER: f32 = 1.0;
 
-/// Full tool assembly dimensions for wireframe rendering (shank + holder above cutter).
+/// A shelf has no width limit and no height in the head model
+/// (`rs_cam_core::machine::head`). The 3D ghost draws it this many times
+/// the widest part radius wide. A drawing choice, not a model value.
+pub(crate) const SHELF_DRAW_RADIUS_OVER_WIDEST: f32 = 1.5;
+
+/// The 3D ghost draws a shelf this many times its drawn radius tall. A
+/// drawing choice, not a model value.
+pub(crate) const SHELF_DRAW_HEIGHT_OVER_RADIUS: f32 = 0.25;
+
+/// The radius (mm) the 3D ghost gives a shelf when no head part has a
+/// width. A drawing choice, not a model value.
+pub(crate) const SHELF_DRAW_MIN_RADIUS_MM: f32 = 10.0;
+
+/// One head part as a drawing reads it (H2). Heights are in mm above the
+/// tip.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeadDrawPart {
+    /// The bottom of the part.
+    pub bottom: f32,
+    /// The top of the part: its height above the bottom, or the drawing
+    /// length of a part with no top ([`HOLDER_DRAW_LENGTH_OVER_DIAMETER`]).
+    /// A shelf has `top == bottom`; the drawing gives it its own height.
+    pub top: f32,
+    /// Half the part diameter. A shelf has 0: it has no width limit.
+    pub radius: f32,
+    /// A shelf: no width limit.
+    pub shelf: bool,
+    /// A soft part (a brush). The drawing draws it lighter.
+    pub soft: bool,
+}
+
+/// The parts of `head` for a tool of `stickout`, with the shoe at `shoe`,
+/// in drawing order: the fixed parts from the holder face up, then the shoe
+/// parts from the brush end up. The shoe is drawn only at a gap; a raised
+/// or removed shoe is not in the model (`ShoePosition::Clear`).
+#[must_use]
+pub fn head_draw_parts(
+    head: &rs_cam_core::machine::head::MachineHead,
+    stickout: f64,
+    shoe: rs_cam_core::machine::head::ShoePosition,
+) -> Vec<HeadDrawPart> {
+    use rs_cam_core::machine::head::{HeadPart, PartKind, ShoePosition};
+    fn walk(parts: &[HeadPart], start: f64, out: &mut Vec<HeadDrawPart>) {
+        let mut offset = start;
+        for (index, part) in parts.iter().enumerate() {
+            let bottom = offset as f32;
+            let soft = part.kind == PartKind::Soft;
+            match part.diameter_mm {
+                None => out.push(HeadDrawPart {
+                    bottom,
+                    top: bottom,
+                    radius: 0.0,
+                    shelf: true,
+                    soft,
+                }),
+                Some(diameter) => {
+                    let last = index + 1 == parts.len();
+                    let height = if part.height_mm <= 0.0 && last {
+                        diameter * f64::from(HOLDER_DRAW_LENGTH_OVER_DIAMETER)
+                    } else {
+                        part.height_mm
+                    };
+                    out.push(HeadDrawPart {
+                        bottom,
+                        top: (offset + height) as f32,
+                        radius: (diameter / 2.0) as f32,
+                        shelf: false,
+                        soft,
+                    });
+                }
+            }
+            offset += part.height_mm;
+        }
+    }
+    let mut out = Vec::new();
+    walk(&head.parts, stickout + head.mount_mm, &mut out);
+    if let (ShoePosition::At { gap_mm }, Some(dust_shoe)) = (shoe, &head.shoe) {
+        walk(&dust_shoe.parts, gap_mm, &mut out);
+    }
+    out
+}
+
+/// The radius the 3D ghost draws a shelf with: a multiple of the widest
+/// part radius of `parts`.
+#[must_use]
+pub fn shelf_draw_radius(parts: &[HeadDrawPart]) -> f32 {
+    let widest = parts.iter().map(|part| part.radius).fold(0.0_f32, f32::max);
+    if widest > 0.0 {
+        widest * SHELF_DRAW_RADIUS_OVER_WIDEST
+    } else {
+        SHELF_DRAW_MIN_RADIUS_MM
+    }
+}
+
+/// Full tool assembly dimensions for wireframe rendering (shank + head above cutter).
 /// All lengths in mm.
 pub struct ToolAssemblyInfo {
     /// Shank cylinder radius (shank_diameter / 2).
@@ -514,9 +609,9 @@ pub struct ToolAssemblyInfo {
     /// Exposed shank length between the flutes and the holder face
     /// (`ToolDefinition::exposed_shank_length`).
     pub shank_length: f32,
-    /// Holder cylinder radius: half the first fixed head part's diameter
-    /// (H1, `MachineHead::holder_diameter_mm`).
-    pub holder_radius: f32,
+    /// H2: the machine head parts above the holder face, and the dust shoe
+    /// at the gap this toolpath runs with ([`head_draw_parts`]).
+    pub head: Vec<HeadDrawPart>,
     /// Length from the holder face to the tool tip. The holder face is at
     /// this height above the tip.
     pub stickout: f32,
@@ -550,15 +645,17 @@ impl ToolGeometry {
 }
 
 impl ToolAssemblyInfo {
-    /// Build from a `ToolDefinition`.
+    /// Build from a `ToolDefinition`, the machine head and the shoe
+    /// position of the toolpath the tool runs.
     pub fn from_tool_definition(
         td: &rs_cam_core::tool::ToolDefinition,
         head: &rs_cam_core::machine::head::MachineHead,
+        shoe: rs_cam_core::machine::head::ShoePosition,
     ) -> Self {
         Self {
             shank_radius: (td.shank_diameter / 2.0) as f32,
             shank_length: td.exposed_shank_length() as f32,
-            holder_radius: (head.holder_diameter_mm().unwrap_or(0.0) / 2.0) as f32,
+            head: head_draw_parts(head, td.stickout, shoe),
             stickout: td.stickout as f32,
         }
     }
@@ -643,25 +740,40 @@ impl ToolModelGpuData {
             shank_ctx.push_verticals(&mut verts, sr, shank_bottom_z, sr, shank_top_z);
         }
 
-        // --- Holder cylinder ---
-        // The holder face is at the stickout above the tip, always. The
-        // holder has no top in the model; the drawing stops at
-        // `HOLDER_DRAW_LENGTH_OVER_DIAMETER` holder diameters.
-        let holder_bottom_z = tip_z + info.stickout;
-        let holder_length = 2.0 * info.holder_radius * HOLDER_DRAW_LENGTH_OVER_DIAMETER;
-        if info.holder_radius > 0.01 && holder_length > 0.01 {
-            let holder_top_z = holder_bottom_z + holder_length;
-            let hr = info.holder_radius;
-
-            let holder_ctx = ToolWireCtx {
+        // --- Head parts (H2) ---
+        // The fixed parts sit on the holder face, at the stickout above the
+        // tip; the shoe sits at its gap. A soft part draws lighter. A shelf
+        // has no width limit, so it draws as a wide flat disc.
+        let shelf_r = shelf_draw_radius(&info.head);
+        for part in &info.head {
+            let color = if part.soft {
+                super::colors::TOOL_HEAD_SOFT
+            } else {
+                holder_color
+            };
+            let ctx = ToolWireCtx {
                 cx: position[0],
                 cy: position[1],
                 segments,
-                color: holder_color,
+                color,
             };
-            holder_ctx.push_circle(&mut verts, holder_bottom_z, hr);
-            holder_ctx.push_circle(&mut verts, holder_top_z, hr);
-            holder_ctx.push_verticals(&mut verts, hr, holder_bottom_z, hr, holder_top_z);
+            let (r, bottom_z, top_z) = if part.shelf {
+                (
+                    shelf_r,
+                    tip_z + part.bottom,
+                    tip_z + part.bottom + shelf_r * SHELF_DRAW_HEIGHT_OVER_RADIUS,
+                )
+            } else {
+                (part.radius, tip_z + part.bottom, tip_z + part.top)
+            };
+            if r <= 0.01 {
+                continue;
+            }
+            ctx.push_circle(&mut verts, bottom_z, r);
+            if top_z - bottom_z > 0.01 {
+                ctx.push_circle(&mut verts, top_z, r);
+                ctx.push_verticals(&mut verts, r, bottom_z, r, top_z);
+            }
         }
 
         if verts.is_empty() {
@@ -974,5 +1086,59 @@ impl ToolWireCtx {
                 color: self.color,
             });
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    // SAFETY: test code; a failed lookup is a failed test.
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod head_draw_tests {
+    use super::*;
+    use rs_cam_core::machine::head::{MachineHead, ShoePosition};
+
+    #[test]
+    fn the_ghost_draws_the_head_parts_and_the_shoe_at_its_gap_h2() {
+        let head = MachineHead::dust_shoe();
+        let parts = head_draw_parts(&head, 45.0, ShoePosition::At { gap_mm: 25.0 });
+        // Collet nut 45..75, spindle shelf at 75, brush 25..50 (soft),
+        // plate 50..55, shoe mount shelf at 55.
+        assert_eq!(parts.len(), 5);
+        assert_eq!(
+            (parts[0].bottom, parts[0].top, parts[0].radius),
+            (45.0, 75.0, 10.0)
+        );
+        assert!(parts[1].shelf && parts[1].bottom == 75.0);
+        assert!(parts[2].soft && !parts[2].shelf);
+        assert_eq!(
+            (parts[2].bottom, parts[2].top, parts[2].radius),
+            (25.0, 50.0, 40.0)
+        );
+        assert!(!parts[3].soft);
+        assert_eq!((parts[3].bottom, parts[3].top), (50.0, 55.0));
+        assert!(parts[4].shelf && parts[4].bottom == 55.0);
+        assert_eq!(
+            shelf_draw_radius(&parts),
+            40.0 * SHELF_DRAW_RADIUS_OVER_WIDEST
+        );
+
+        // A raised or removed shoe is not in the model: no shoe part draws.
+        assert_eq!(head_draw_parts(&head, 45.0, ShoePosition::Clear).len(), 2);
+    }
+
+    #[test]
+    fn the_unmodelled_head_draws_the_old_holder_h2() {
+        let parts = head_draw_parts(&MachineHead::unmodelled(), 30.0, ShoePosition::Clear);
+        assert_eq!(parts.len(), 1);
+        // One part of 25 mm diameter at the holder face, with no top in the
+        // model: one diameter tall, as the holder drew before H2.
+        assert_eq!(
+            (parts[0].bottom, parts[0].top, parts[0].radius),
+            (30.0, 55.0, 12.5)
+        );
     }
 }

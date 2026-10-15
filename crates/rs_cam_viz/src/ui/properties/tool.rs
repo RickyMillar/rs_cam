@@ -33,12 +33,13 @@ pub fn draw(
     tool: &mut ToolConfig,
     modified: bool,
     panels: &mut crate::state::panels::PanelDrafts,
+    head: &rs_cam_core::machine::head::MachineHead,
 ) -> ToolEditAction {
     ui.heading(&tool.name);
     ui.label(egui::RichText::new(tool.summary()).color(crate::ui::tokens::TEXT_FAINT));
     ui.separator();
 
-    draw_tool_fields(ui, tool);
+    draw_tool_fields(ui, tool, Some(head));
 
     // TOO-003 — commit affordance. Edits are pending until Apply (or until
     // the user navigates away, which auto-commits); Revert discards them.
@@ -125,7 +126,14 @@ pub fn draw(
 
 /// Draw the editable tool fields (name, type, params, preview, holder).
 /// Shared by the properties panel and the Tool Library modal's edit form.
-pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
+///
+/// `head` is the project machine head the preview draws above the holder
+/// face (H2). `None` draws the head a project without a `head` table reads.
+pub(crate) fn draw_tool_fields(
+    ui: &mut egui::Ui,
+    tool: &mut ToolConfig,
+    head: Option<&rs_cam_core::machine::head::MachineHead>,
+) {
     // Editable name
     ui.horizontal(|ui| {
         ui.label("Name:");
@@ -329,11 +337,11 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     // Cross-section preview
     ui.add_space(12.0);
     ui.label("Cross-Section Preview:");
-    draw_tool_preview(ui, tool);
+    draw_tool_preview(ui, tool, head);
 
     ui.add_space(12.0);
     // H1: the holder is the machine head, one for every tool, so the tool
-    // panel holds the shank only. H2 adds the head editor.
+    // panel holds the shank only. H2: the head editor is the Machine panel.
     egui::CollapsingHeader::new(egui::RichText::new("Shank").color(theme::TEXT_HEADING))
         .id_salt("tool_holder_shank")
         .show(ui, |ui| {
@@ -373,7 +381,17 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
 ///
 /// Uses `profile_points()` from the `MillingCutter` trait so the preview
 /// automatically matches the actual cutting geometry for any tool type.
-pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
+///
+/// H2: above the holder face it draws the machine `head`: the fixed parts,
+/// then the dust shoe at its normal gap (the tool has no toolpath, so no
+/// solved gap). A soft part draws lighter; a shelf has no width limit, so
+/// it draws across the canvas. `None` draws the head a project without a
+/// `head` table reads.
+pub(crate) fn draw_tool_preview(
+    ui: &mut egui::Ui,
+    tool: &ToolConfig,
+    head: Option<&rs_cam_core::machine::head::MachineHead>,
+) {
     use rs_cam_core::tool::MillingCutter;
 
     let desired_size = egui::vec2(ui.available_width().min(240.0), 180.0);
@@ -395,14 +413,26 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     // the preview draws it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
     let shank_len = tool_def.exposed_shank_length() as f32;
     let holder_face = tool_def.stickout as f32;
-    // H1: the panel has no machine; it draws the head a project without a
-    // `head` table reads. H2 draws the machine head.
-    let holder_r = (rs_cam_core::machine::head::UNMODELLED_HEAD_DIAMETER_MM / 2.0) as f32;
-    let holder_len = 2.0 * holder_r * crate::render::sim_render::HOLDER_DRAW_LENGTH_OVER_DIAMETER;
+    let unmodelled = rs_cam_core::machine::head::MachineHead::unmodelled();
+    let head = head.unwrap_or(&unmodelled);
+    let shoe = head
+        .shoe
+        .as_ref()
+        .map_or(rs_cam_core::machine::head::ShoePosition::Clear, |shoe| {
+            rs_cam_core::machine::head::ShoePosition::At {
+                gap_mm: shoe.normal_gap_mm,
+            }
+        });
+    let parts = crate::render::sim_render::head_draw_parts(head, tool_def.stickout, shoe);
+    let parts_top = parts.iter().map(|part| part.top).fold(0.0_f32, f32::max);
+    let parts_r = parts.iter().map(|part| part.radius).fold(0.0_f32, f32::max);
 
     // Total height to display; clamp so preview isn't squished
-    let total_h = (holder_face.max(cutting_len) + holder_len).max(cutting_len * 1.2);
-    let max_r = cutter_r.max(shank_r).max(holder_r).max(0.1);
+    let total_h = holder_face
+        .max(cutting_len)
+        .max(parts_top)
+        .max(cutting_len * 1.2);
+    let max_r = cutter_r.max(shank_r).max(parts_r).max(0.1);
 
     // Scale: fit both width and height with padding
     let scale_x = (desired_size.x * 0.4) / max_r;
@@ -416,6 +446,7 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     let cutter_stroke = egui::Stroke::new(1.5_f32, crate::ui::tokens::DIAGRAM_TOOL);
     let shank_stroke = egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_DIM);
     let holder_stroke = egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_DIM);
+    let soft_stroke = egui::Stroke::new(1.0_f32, crate::ui::tokens::DIAGRAM_DIM_SOFT);
 
     // --- Cutter cross-section from profile_points ---
     let profile = tool_def.profile_points(32);
@@ -470,20 +501,39 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
         ));
     }
 
-    // --- Holder rectangle ---
-    let shank_top_y = bottom - holder_face * scale;
-    if holder_len > 0.01 && holder_r > 0.01 {
-        let holder_top_y = shank_top_y - holder_len * scale;
-        let hr = holder_r * scale;
+    // --- Head parts (H2) ---
+    for part in &parts {
+        let stroke = if part.soft {
+            soft_stroke
+        } else {
+            holder_stroke
+        };
+        let bottom_y = bottom - part.bottom * scale;
+        if part.shelf {
+            // No width limit: a line across the canvas.
+            painter.line_segment(
+                [
+                    egui::pos2(rect.left() + 4.0, bottom_y),
+                    egui::pos2(rect.right() - 4.0, bottom_y),
+                ],
+                stroke,
+            );
+            continue;
+        }
+        let top_y = bottom - part.top * scale;
+        let r = part.radius * scale;
+        if r <= 0.01 {
+            continue;
+        }
         painter.add(egui::Shape::line(
             vec![
-                egui::pos2(cx - hr, shank_top_y),
-                egui::pos2(cx + hr, shank_top_y),
-                egui::pos2(cx + hr, holder_top_y),
-                egui::pos2(cx - hr, holder_top_y),
-                egui::pos2(cx - hr, shank_top_y),
+                egui::pos2(cx - r, bottom_y),
+                egui::pos2(cx + r, bottom_y),
+                egui::pos2(cx + r, top_y),
+                egui::pos2(cx - r, top_y),
+                egui::pos2(cx - r, bottom_y),
             ],
-            holder_stroke,
+            stroke,
         ));
     }
 

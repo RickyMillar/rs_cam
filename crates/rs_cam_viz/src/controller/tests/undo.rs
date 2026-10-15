@@ -88,6 +88,28 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                 },
             ),
         ),
+        // H2: the undo writes the Dust shoe head, a real change.
+        (
+            "HeadChange",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::HeadChange {
+                    old: Box::new(rs_cam_core::machine::head::MachineHead::dust_shoe()),
+                    new: Box::new(c.state.session.machine().head.clone()),
+                },
+            ),
+        ),
+        // H2: the undo writes Raised over the stored Auto, a real change.
+        (
+            "ToolpathShoeChange",
+            Box::new(|c: &AppController<ScriptedBackend>| {
+                let tc = &c.state.session.toolpath_configs()[0];
+                UndoAction::ToolpathShoeChange {
+                    tp_id: tc.id,
+                    old: rs_cam_core::machine::head::ShoeSetting::Raised,
+                    new: tc.shoe,
+                }
+            }),
+        ),
     ];
 
     for (name, build) in arms {

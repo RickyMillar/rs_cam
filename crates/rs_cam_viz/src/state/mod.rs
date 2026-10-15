@@ -8,6 +8,7 @@ pub mod panels;
 pub mod pin_view;
 pub mod runtime;
 pub mod selection;
+pub mod shoe_plan;
 pub mod simulation;
 pub mod stale;
 pub mod toolpath;

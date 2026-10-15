@@ -21,7 +21,10 @@ pub fn diagnostics_from_project(diag: &ProjectDiagnostics) -> Vec<Diagnostic> {
     diag.verdicts.iter().map(verdict_to_diagnostic).collect()
 }
 
-fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
+/// One project verdict as a unified [`Diagnostic`]. The GUI toolpath panel
+/// reads it for a finding it shows in its own footer (H2: the shoe gap).
+#[must_use]
+pub fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
     let (id, category) = id_and_category_for(v.kind);
     let evidence = if v.offender_toolpath_ids.is_empty() {
         v.evidence

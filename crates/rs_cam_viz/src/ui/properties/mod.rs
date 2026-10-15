@@ -1,4 +1,5 @@
 mod feeds_speeds;
+pub mod head;
 mod linking_dressup;
 mod machine_panel;
 mod model_sim_panels;
@@ -9,6 +10,7 @@ mod pills;
 pub mod pins;
 pub mod post;
 pub mod setup;
+mod shoe_row;
 pub mod stock;
 pub mod stock_changes;
 mod tab_badges;
@@ -20,6 +22,8 @@ pub use operations::{
     collect_diagnostics, depth_beyond_stock, draw_height_diagram, profile_through_cut,
     profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
+#[cfg(test)]
+pub(crate) use panel_apply::apply_head;
 pub(crate) use panel_apply::{
     apply_obstacle_draft, apply_stock_draft, commit_tool_draft, part_models_first,
     stock_edit_command,
@@ -374,6 +378,53 @@ pub(crate) struct ToolpathPanelInputs {
     /// with fresh stock, when one was asked for
     /// (`ProjectSession::current_rest_fresh_comparisons`).
     pub rest_fresh: Option<rs_cam_core::compute::toolpath_stats::FreshTwinTime>,
+    /// H2: the dust shoe row of the Heights tab. `None` when the machine
+    /// head has no dust shoe.
+    pub shoe: Option<ShoeRowInputs>,
+}
+
+/// H2: what the toolpath panel's dust shoe row reads. Every text comes from
+/// the core shoe plan (`state::shoe_plan`), the plan `inspect_machine`
+/// prints.
+#[derive(Debug, Clone)]
+pub(crate) struct ShoeRowInputs {
+    /// The stored setting of this toolpath.
+    pub setting: rs_cam_core::machine::head::ShoeSetting,
+    /// The text under the Auto choice: the solver's answer for this run.
+    pub auto_text: String,
+    /// The solver's lowest clear gap (mm) for this toolpath's run.
+    pub needed_gap_mm: Option<f64>,
+    /// The shoe's normal gap (mm): a switch to Gap starts here when the
+    /// solver has no answer.
+    pub normal_gap_mm: f64,
+    /// The `project.shoe_gap_too_low` finding of this toolpath, when the
+    /// stated gap is below the solver gap. The panel footer shows it.
+    pub finding: Option<rs_cam_core::diagnostics::Diagnostic>,
+}
+
+/// H2: build the shoe row inputs of toolpath `id`.
+fn shoe_row_inputs(
+    id: crate::state::toolpath::ToolpathId,
+    session: &rs_cam_core::session::ProjectSession,
+    gui: &crate::state::runtime::GuiState,
+) -> Option<ShoeRowInputs> {
+    let normal_gap_mm = session.machine().head.shoe.as_ref()?.normal_gap_mm;
+    let (index, tc) = session.find_toolpath_config_by_id(id)?;
+    let plan = gui.shoe_plan.plan(session);
+    let row = plan.row(index);
+    Some(ShoeRowInputs {
+        setting: tc.shoe,
+        auto_text: crate::state::shoe_plan::auto_text(&plan, index),
+        needed_gap_mm: row.and_then(|row| row.needed_gap_mm),
+        normal_gap_mm,
+        finding: row
+            .and_then(rs_cam_core::session::ShoePlanRow::gap_too_low_verdict)
+            .map(|verdict| {
+                rs_cam_core::diagnostics::adapters::from_project_diagnostics::verdict_to_diagnostic(
+                    &verdict,
+                )
+            }),
+    })
 }
 
 impl ToolpathPanelInputs {
@@ -624,6 +675,7 @@ pub(crate) fn toolpath_panel_inputs(
         freshness: freshness_for_tp,
         feed_stage,
         rest_fresh,
+        shoe: shoe_row_inputs(id, session, gui),
     }
 }
 
@@ -1072,8 +1124,9 @@ fn draw_tool_selection(ui: &mut egui::Ui, state: &mut AppState, id: ToolId) {
         // UI-09: the draft and the panel's own typed state are
         // disjoint fields of `AppState`, so both borrow at once.
         let panels = &mut state.panels;
+        let head = &state.session.machine().head;
         if let Some((_, draft)) = state.history.tool_draft.as_mut() {
-            action = tool::draw(ui, draft, modified, panels);
+            action = tool::draw(ui, draft, modified, panels, head);
         }
         match action {
             tool::ToolEditAction::Apply => {

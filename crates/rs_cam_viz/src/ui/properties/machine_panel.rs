@@ -6,7 +6,8 @@
 
 use super::PanelEdit;
 use super::panel_apply::{
-    apply_machine, apply_machine_import, apply_machine_kinematics, machine_panel_fields_moved,
+    apply_head, apply_machine, apply_machine_import, apply_machine_kinematics,
+    machine_panel_fields_moved,
 };
 use crate::state::AppState;
 use crate::ui::AppEvent;
@@ -245,6 +246,78 @@ pub(super) fn draw_machine_panel(
     // Ruling R4 Q8 (2026-09-24): the workholding rigidity selector is
     // gone. It was an unsourced feed scale; the aggressiveness dial above is
     // the one load margin.
+
+    draw_head_section(ui, state);
+}
+
+/// H2: the Head section. The draft lives in `state.panels.head_editor`
+/// while it differs from the stored head or holds a refusal; otherwise the
+/// section reads the stored head, so an MCP edit shows on the next frame.
+fn draw_head_section(ui: &mut egui::Ui, state: &mut AppState) {
+    use super::head::{HeadAction, draw_head};
+    let stored = state.session.machine().head.clone();
+    let mut editor =
+        state
+            .panels
+            .head_editor
+            .take()
+            .unwrap_or_else(|| crate::state::panels::HeadEditor {
+                draft: stored.clone(),
+                refusal: None,
+            });
+    let mut open = state.panels.head_part_open.take();
+    // IC1: the head is a rare edit, so the section is closed by default and
+    // its header names the head. The open state is a view toggle in egui
+    // memory.
+    ui.add_space(8.0);
+    let title = if editor.draft == stored {
+        format!("Head: {}", stored.name)
+    } else {
+        format!("Head: {} (not applied)", editor.draft.name)
+    };
+    let section = egui::CollapsingHeader::new(
+        egui::RichText::new(title).color(crate::ui::tokens::TEXT_STRONG),
+    )
+    .id_salt("machine_head_section")
+    .default_open(false)
+    .show(ui, |ui| draw_head(ui, &stored, &mut editor, &mut open));
+    let _ = section
+        .header_response
+        .on_hover_text(super::head::SECTION_HOVER);
+    let action = section.body_returned.unwrap_or(HeadAction::None);
+    state.panels.head_part_open = open;
+    let keep = match action {
+        HeadAction::None => true,
+        HeadAction::Preset(name) => {
+            match rs_cam_core::machine::head::MachineHead::preset(name)
+                .map(|h| apply_head(state, h))
+            {
+                Some(Ok(())) => {
+                    state.panels.head_part_open = None;
+                    false
+                }
+                Some(Err(text)) => {
+                    editor.refusal = Some(text);
+                    true
+                }
+                None => true,
+            }
+        }
+        HeadAction::Apply => match apply_head(state, editor.draft.clone()) {
+            Ok(()) => false,
+            Err(text) => {
+                editor.refusal = Some(text);
+                true
+            }
+        },
+        HeadAction::Cancel => {
+            state.panels.head_part_open = None;
+            false
+        }
+    };
+    if keep && (editor.draft != stored || editor.refusal.is_some()) {
+        state.panels.head_editor = Some(editor);
+    }
 }
 
 /// Kinematics editor (per-axis accel + junction deviation + optional

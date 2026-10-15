@@ -28,6 +28,7 @@ pub(super) fn compute_tab_badges(
     entry: &ToolpathEntry,
     diagnostics: &[rs_cam_core::diagnostics::Diagnostic],
     height_ctx: Option<&HeightContext>,
+    shoe_gap_too_low: bool,
 ) -> TabBadges {
     use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
 
@@ -57,7 +58,11 @@ pub(super) fn compute_tab_badges(
     ]
     .into_iter()
     .any(|mode| !mode.is_auto());
-    let heights_badge = heights_warning.or(any_pinned.then_some(crate::ui::tokens::INFO));
+    // H2: a stated shoe gap below the solver gap is a Caution about the
+    // shoe row, which this tab holds.
+    let heights_badge = heights_warning
+        .or(shoe_gap_too_low.then_some(crate::ui::tokens::CAUTION))
+        .or(any_pinned.then_some(crate::ui::tokens::INFO));
 
     // Feeds: badge if any feed warning from core
     let feeds_badge = entry.feeds_result.as_ref().and_then(|r| {

@@ -14,6 +14,7 @@ use crate::compute::tool_config::ToolId;
 use crate::ids::ToolpathId;
 use crate::machine::head::{HeadFit, ResolvedShoe, ShoeSetting};
 
+use super::diagnostics_types::{Verdict, VerdictEvidence, VerdictKind, VerdictSeverity};
 use super::{ProjectSession, SessionError, SetupEvalContext};
 
 /// The shoe state of one toolpath.
@@ -48,6 +49,39 @@ impl ShoePlanRow {
             (ShoeSetting::Gap { gap_mm }, Some(needed)) => gap_mm < needed,
             _ => false,
         }
+    }
+
+    /// The `project.shoe_gap_too_low` finding of this row (H1, Caution),
+    /// or `None` when the stated gap is not below the solver gap. The
+    /// project diagnostics and the GUI toolpath panel read this one text.
+    #[must_use]
+    pub fn gap_too_low_verdict(&self) -> Option<Verdict> {
+        let (ShoeSetting::Gap { gap_mm }, Some(needed)) = (self.setting, self.needed_gap_mm) else {
+            return None;
+        };
+        if gap_mm >= needed {
+            return None;
+        }
+        Some(Verdict {
+            severity: VerdictSeverity::Important,
+            kind: VerdictKind::ShoeGapTooLow,
+            headline: format!(
+                "'{}' sets the dust shoe gap to {gap_mm:.0} mm; it needs \
+                 {needed:.0} mm to keep the shoe plate clear of the stock \
+                 and the obstacles",
+                self.toolpath_name
+            ),
+            offender_toolpath_ids: vec![self.toolpath_id],
+            fix_hint: format!(
+                "Set the shoe gap to {needed:.0} mm or more, or set the shoe \
+                 to Auto, Raised or Off"
+            ),
+            evidence: VerdictEvidence {
+                move_index: None,
+                z_value: Some(needed),
+                count: None,
+            },
+        })
     }
 }
 

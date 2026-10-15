@@ -18,7 +18,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
   and the viewport dock and catalogue state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo, the export
   wizard and the planner.
-- `panels.rs`, `app_settings.rs`, `pin_view.rs` — drafts; settings; pin frame (C8).
+- `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts; settings; pin frame (C8); the shoe plan memo and run sheet (H2).
 
 ## Invariants
 

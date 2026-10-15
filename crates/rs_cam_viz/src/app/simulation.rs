@@ -640,6 +640,19 @@ impl RsCamApp {
                     let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
                     (tool, tool_def)
                 });
+            // H2: the ghost draws the shoe where the check reads it: the
+            // toolpath's resolved shoe from the one core shoe plan. A
+            // toolpath with no plan row reads Clear, as the check does.
+            let shoe = session
+                .find_toolpath_config_by_id(toolpath_id)
+                .and_then(|(index, _)| {
+                    gui.shoe_plan
+                        .plan(session)
+                        .row(index)
+                        .map(|row| row.resolved.position())
+                })
+                .unwrap_or_default();
+            let tool_info = tool_info.map(|(tool, tool_def)| (tool, tool_def, shoe));
             // `peak_deflection_for_move` is a linear scan of the whole cut
             // trace (up to ~600k samples), and this runs every frame —
             // continuously, given the 100 ms MCP heartbeat. It is a pure
@@ -653,7 +666,7 @@ impl RsCamApp {
             let deflection_mm = if state.simulation.playback.tool_gpu_move == Some(current) {
                 state.simulation.playback.tool_deflection_mm
             } else {
-                tool_info.as_ref().and_then(|(_, tool_def)| {
+                tool_info.as_ref().and_then(|(_, tool_def, _)| {
                     state
                         .simulation
                         .results
@@ -698,7 +711,7 @@ impl RsCamApp {
             let pb = &mut self.controller.state_mut().simulation.playback;
             pb.tool_position = Some([pos.x, pos.y, pos.z]);
             pb.tool_deflection_mm = deflection_mm;
-            if let Some((tool, tool_def)) = &tool_info {
+            if let Some((tool, tool_def, _)) = &tool_info {
                 pb.tool_radius = tool.diameter / 2.0;
                 pb.tool_type_label = tool.tool_type.label().to_owned();
                 pb.tool_stickout = tool_def.stickout;
@@ -710,13 +723,14 @@ impl RsCamApp {
             return;
         }
 
-        if let Some((tool, tool_def)) = tool_info
+        if let Some((tool, tool_def, shoe)) = tool_info
             && let Some(rs) = frame.wgpu_render_state()
         {
             let geom = ToolGeometry::from_tool_config(&tool);
             let assembly_info = crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(
                 &tool_def,
                 &self.controller.state().session.machine().head,
+                shoe,
             );
             let mut renderer = rs.renderer.write();
             // SAFETY: RenderResources inserted in RsCamApp::new; always present.

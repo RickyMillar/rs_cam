@@ -1305,33 +1305,10 @@ impl ProjectSession {
         if self.machine.head.shoe.is_some() {
             match self.shoe_plan() {
                 Ok(rows) => {
-                    for row in rows.iter().filter(|row| row.gap_too_low()) {
-                        let (crate::machine::head::ShoeSetting::Gap { gap_mm }, Some(needed)) =
-                            (row.setting, row.needed_gap_mm)
-                        else {
-                            continue;
-                        };
-                        verdicts.push(Verdict {
-                            severity: VerdictSeverity::Important,
-                            kind: VerdictKind::ShoeGapTooLow,
-                            headline: format!(
-                                "'{}' sets the dust shoe gap to {gap_mm:.0} mm; it needs \
-                                 {needed:.0} mm to keep the shoe plate clear of the stock \
-                                 and the obstacles",
-                                row.toolpath_name
-                            ),
-                            offender_toolpath_ids: vec![row.toolpath_id],
-                            fix_hint: format!(
-                                "Set the shoe gap to {needed:.0} mm or more, or set the shoe \
-                                 to Auto, Raised or Off"
-                            ),
-                            evidence: VerdictEvidence {
-                                move_index: None,
-                                z_value: Some(needed),
-                                count: None,
-                            },
-                        });
-                    }
+                    verdicts.extend(
+                        rows.iter()
+                            .filter_map(crate::session::ShoePlanRow::gap_too_low_verdict),
+                    );
                 }
                 Err(e) => tracing::warn!(error = %e, "the shoe plan failed; no shoe verdict"),
             }

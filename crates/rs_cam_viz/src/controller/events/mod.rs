@@ -213,6 +213,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::SetObstacleEnabled(setup_id, obstacle_id, enabled) => {
                 self.handle_set_obstacle_enabled(setup_id, obstacle_id, enabled);
             }
+            AppEvent::SetToolpathShoe { tp_id, shoe, merge } => {
+                self.handle_set_toolpath_shoe(tp_id, shoe, merge);
+            }
             AppEvent::EditStockChanges(setup_id, intent) => {
                 self.handle_stock_change_intent(setup_id, intent);
             }

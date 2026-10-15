@@ -412,9 +412,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetMachineHead, "set_machine_head", SetMachineHeadArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "H2: the machine-profile head editor is not built yet",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -422,9 +420,7 @@ macro_rules! for_each_command {
              }),
             (Command, SetToolpathShoe, "set_toolpath_shoe", SetToolpathShoeArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "H2: the per-toolpath shoe setting is not in the operation panel yet",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",

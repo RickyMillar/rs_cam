@@ -523,6 +523,11 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         );
     }
 
+    // H2: the run sheet, the same list the Readiness page draws. The
+    // G-code carries no shoe prompt (operator ruling 2026-10-16).
+    ui.add_space(12.0);
+    crate::ui::shoe_list::draw_run_sheet(ui, state);
+
     ui.add_space(12.0);
 
     // ── Tool-change handling ──

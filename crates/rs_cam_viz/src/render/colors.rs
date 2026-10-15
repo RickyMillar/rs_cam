@@ -28,6 +28,9 @@ pub fn palette_color(index: usize) -> [f32; 3] {
 pub const TOOL_CUTTER: [f32; 3] = [0.8, 0.8, 0.3];
 pub const TOOL_SHANK: [f32; 3] = [0.6, 0.6, 0.5];
 pub const TOOL_HOLDER: [f32; 3] = [0.4, 0.4, 0.35];
+/// H2: a soft head part (a dust shoe brush). Fainter than [`TOOL_HOLDER`]:
+/// it may touch the stock, so it is drawn lighter than a part that blocks.
+pub const TOOL_HEAD_SOFT: [f32; 3] = [0.26, 0.26, 0.23];
 
 // ── Stock & simulation ──────────────────────────────────────────────────
 

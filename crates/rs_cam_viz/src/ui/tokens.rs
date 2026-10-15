@@ -264,6 +264,10 @@ pub const DIAGRAM_PART: Color32 = ACCENT_QUIET;
 pub const DIAGRAM_TOOL: Color32 = INK_65;
 /// Construction lines and retired geometry.
 pub const DIAGRAM_DIM: Color32 = INK_35;
+/// H2: a soft head part (a dust shoe brush) in a tool diagram. Fainter than
+/// [`DIAGRAM_DIM`]: it may touch the stock, so it is drawn lighter than a
+/// part that blocks.
+pub const DIAGRAM_DIM_SOFT: Color32 = INK_25;
 
 // ===========================================================================
 // §2.9 Data scales
