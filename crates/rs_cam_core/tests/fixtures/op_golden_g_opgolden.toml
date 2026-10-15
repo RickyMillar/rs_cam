@@ -59,9 +59,9 @@ linear_count = 6
 arc_count = 0
 cutting_length_mm = 19.5
 rapid_length_mm = 109.5
-bbox_min = [-55.0, -20.0, -12.0]
-bbox_max = [-55.0, -20.0, 10.0]
-moves_hash = "996e3c5140e25e8c"
+bbox_min = [-25.0, 0.0, -12.0]
+bbox_max = [-25.0, 0.0, 10.0]
+moves_hash = "d6c18a3443571930"
 
 ["chamfer/fresh"]
 outcome = "ok"
