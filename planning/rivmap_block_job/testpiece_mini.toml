@@ -366,8 +366,16 @@ clearance = 2.0
 
 [setups.obstacles.geometry]
 kind = "box"
-min = [-15.0, 22.5, -5.0]
-max = [5.0, 42.5, 29.5]
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
 
 [[setups.obstacles]]
 id = 1
@@ -377,8 +385,16 @@ clearance = 2.0
 
 [setups.obstacles.geometry]
 kind = "box"
-min = [60.0, 22.5, -5.0]
-max = [80.0, 42.5, 29.5]
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
 
 [[setups.toolpaths]]
 id = 0
@@ -425,7 +441,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -532,7 +547,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -612,7 +626,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -709,7 +722,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -807,7 +819,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -866,6 +877,44 @@ xy_datum = "pins"
 z_datum = "table"
 datum_notes = "TESTPIECE setup 3, after the pour and the cure. Same zero."
 
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max"
+enabled = true
+clearance = 2.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
+
 [[setups.stock_changes]]
 id = 0
 name = "epoxy"
@@ -884,28 +933,6 @@ level_z = 16.5
 [setups.stock_changes.material.Custom]
 name = "Epoxy"
 feed_scale_factor = 1.0
-
-[[setups.obstacles]]
-id = 0
-name = "Clamp X min"
-enabled = true
-clearance = 2.0
-
-[setups.obstacles.geometry]
-kind = "box"
-min = [-15.0, 22.5, -5.0]
-max = [5.0, 42.5, 29.5]
-
-[[setups.obstacles]]
-id = 1
-name = "Clamp X max"
-enabled = true
-clearance = 2.0
-
-[setups.obstacles.geometry]
-kind = "box"
-min = [60.0, 22.5, -5.0]
-max = [80.0, 42.5, 29.5]
 
 [[setups.toolpaths]]
 id = 5
@@ -952,7 +979,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1050,7 +1076,6 @@ feed_optimization = true
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1116,8 +1141,16 @@ clearance = 2.0
 
 [setups.obstacles.geometry]
 kind = "box"
-min = [60.0, 22.5, -5.0]
-max = [80.0, 42.5, 29.5]
+min = [
+    60.0,
+    22.5,
+    -5.0,
+]
+max = [
+    80.0,
+    42.5,
+    29.5,
+]
 
 [[setups.obstacles]]
 id = 1
@@ -1127,19 +1160,16 @@ clearance = 2.0
 
 [setups.obstacles.geometry]
 kind = "box"
-min = [-15.0, 22.5, -5.0]
-max = [5.0, 42.5, 29.5]
-
-[[setups.obstacles]]
-id = 2
-name = "Keep-Out 1"
-enabled = false
-clearance = 0.0
-
-[setups.obstacles.geometry]
-kind = "box"
-min = [45.0, 0.0, -5.0]
-max = [65.0, 20.0, 29.5]
+min = [
+    -15.0,
+    22.5,
+    -5.0,
+]
+max = [
+    5.0,
+    42.5,
+    29.5,
+]
 
 [[setups.toolpaths]]
 id = 7
@@ -1186,7 +1216,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1293,7 +1322,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1386,7 +1414,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
