@@ -16,7 +16,7 @@
 //! consume this list instead.
 
 use crate::compute::catalog::{OperationConfig, UiProcessRole};
-use crate::compute::config::{HeightContext, HeightsConfig, ObstacleHeightRaise};
+use crate::compute::config::{HeightContext, HeightsConfig};
 use crate::compute::operation_configs::{PROJECT_CURVE_POINT_CAUTION, ProjectCurveProjection};
 use crate::compute::tool_config::{ToolConfig, ToolType};
 use crate::diagnostics::{
@@ -70,10 +70,6 @@ pub struct ResolvedHeights {
     /// Bottom of the stock this setup presents. Same contract as
     /// [`Self::stock_top_z`].
     pub stock_bottom_z: Option<f64>,
-    /// K1: the operator-set heights the resolver raised to the obstacle
-    /// plane (`HeightsConfig::obstacle_raises`). Empty when none was
-    /// raised or the context has no plane.
-    pub obstacle_raises: Vec<ObstacleHeightRaise>,
 }
 
 impl ResolvedHeights {
@@ -100,7 +96,6 @@ impl ResolvedHeights {
             clearance_z: ctx.safe_z,
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
-            obstacle_raises: Vec::new(),
         }
     }
 
@@ -128,7 +123,6 @@ impl ResolvedHeights {
             clearance_z: resolved.clearance_z,
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
-            obstacle_raises: heights.obstacle_raises(ctx),
         }
     }
 }
@@ -625,33 +619,6 @@ fn anchored_top_z(op: &OperationConfig, h: &ResolvedHeights) -> f64 {
 
 fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    // K1: the verdict is the resolver's (`HeightsConfig::obstacle_raises`).
-    for raise in &h.obstacle_raises {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_HEIGHT_RAISED_TO_OBSTACLE),
-            scope: scope.clone(),
-            category: Category::Geometry,
-            severity: Severity::Caution,
-            confidence: Confidence::Static,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: format!(
-                "{} ({:.1}) is below the plane of obstacle '{}' ({:.1}). The toolpath \
-                 retracts to {:.1}. Set {} to {:.1} or higher to remove this note.",
-                raise.height.label(),
-                raise.requested_z,
-                raise.obstacle,
-                raise.plane_z,
-                raise.plane_z,
-                raise.height.label(),
-                raise.plane_z,
-            ),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
     let top_z = anchored_top_z(op, h);
     if h.bottom_z > top_z {
         out.push(Diagnostic {

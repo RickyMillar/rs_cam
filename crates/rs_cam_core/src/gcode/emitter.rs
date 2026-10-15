@@ -931,6 +931,51 @@ M3 S{spindle_rpm}
         assert!(gcode.contains("G1 X3.000 Y0.000 Z-2.000 F200"), "{gcode}");
     }
 
+    /// K3: a drill toolpath in a setup with an obstacle starts with a
+    /// rapid to the obstacle plane above the first hole. Native cycles
+    /// read it as a lead-in: the program reaches the plane first, then
+    /// the G98 start level, then the cycles.
+    #[test]
+    fn native_drill_cycles_keep_the_obstacle_lead_in_k3() {
+        use crate::gcode::{CoolantMode, GcodePhase, PhaseDrill};
+        use crate::ops::drill::DrillCycle;
+        use crate::toolpath::MoveIntent;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 30.0));
+        for x in [0.0, 10.0] {
+            tp.rapid_to(P3::new(x, 0.0, 5.0));
+            tp.rapid_to(P3::new(x, 0.0, 2.0));
+            tp.feed_to_with_intent(P3::new(x, 0.0, -4.0), 200.0, MoveIntent::Drilling);
+            tp.rapid_to(P3::new(x, 0.0, 2.0));
+        }
+        let phase = GcodePhase {
+            toolpath: &tp,
+            spindle_rpm: 12_000,
+            label: "Drill",
+            pre_gcode: None,
+            post_gcode: None,
+            tool: None,
+            coolant: CoolantMode::Off,
+            controller_compensation: None,
+            drill: Some(PhaseDrill {
+                cycle: DrillCycle::Simple,
+            }),
+            feeds: None,
+        };
+        let program = program_builder::build_phased_with(
+            &[phase],
+            program_builder::BuildOptions {
+                native_drill_cycles: true,
+            },
+        );
+        let gcode = emit_program(&program, post::grblhal());
+        assert!(gcode.contains("G81"), "{gcode}");
+        let plane = gcode.find("Z30.000").expect("the lead-in");
+        let start = gcode.find("Z5.000").expect("the start level");
+        let cycle = gcode.find("G81").expect("the cycle");
+        assert!(plane < start && start < cycle, "{gcode}");
+    }
+
     /// G2: on grblHAL each program file starts with `M6 T<first tool>`
     /// before the first spindle start, so the first probe after homing
     /// sets the tool length reference with the tool the operator zeroes

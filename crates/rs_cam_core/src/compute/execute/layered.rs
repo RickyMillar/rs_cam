@@ -335,8 +335,8 @@ pub(crate) fn run_layered<O: LayeredOp>(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let outlines = op.outlines(prepared)?;
     let levels = op.ladder(ctx);
+    let outlines = area_outlines_less_obstacles(op, prepared, op.outlines(prepared)?, &levels);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let tool_radius = ctx.tool_def.radius();
@@ -404,6 +404,40 @@ pub(crate) fn run_layered<O: LayeredOp>(
 
     let linked = op.link(combined, ctx);
     Ok(op.annotate(op.spans(linked, &levels), ctx.semantic_ctx))
+}
+
+/// K3: the outlines of an area op ([`RestUse::LevelClip`]: Pocket,
+/// Zigzag, Face) less the obstacles, through the one territory rule
+/// ([`super::Territory::area_outlines`]) at the lowest level of the
+/// ladder. The op then plans around a clamp, and a row links to the next
+/// row on its own side instead of a lift over the clamp. A contour op and
+/// an input with no outline keep their outlines.
+fn area_outlines_less_obstacles<'p, O: LayeredOp>(
+    op: &O,
+    prepared: &Prepared<'_>,
+    outlines: Cow<'p, [O::Input]>,
+    levels: &[f64],
+) -> Cow<'p, [O::Input]> {
+    if op.rest_use() != RestUse::LevelClip {
+        return outlines;
+    }
+    let lowest = levels.iter().copied().fold(f64::INFINITY, f64::min);
+    let Some(polygons) = outlines
+        .iter()
+        .map(|input| input.outline().cloned())
+        .collect::<Option<Vec<Polygon2>>>()
+    else {
+        return outlines;
+    };
+    match prepared
+        .territory()
+        .area_outlines(Cow::Borrowed(polygons.as_slice()), lowest)
+    {
+        Cow::Borrowed(_) => outlines,
+        Cow::Owned(clipped) => {
+            Cow::Owned(O::Input::from_polygons(Cow::Owned(clipped)).into_owned())
+        }
+    }
 }
 
 /// The cut of one outline at level `i`, or `None` for an empty level.

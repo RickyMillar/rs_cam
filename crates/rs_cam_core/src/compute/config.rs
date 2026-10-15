@@ -198,7 +198,7 @@ pub struct ReferenceOffset {
 }
 
 /// Context needed to resolve heights -- stock/model geometry and post config.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct HeightContext {
     pub safe_z: f64,
     pub op_depth: f64,
@@ -206,10 +206,6 @@ pub struct HeightContext {
     pub stock_bottom_z: f64,
     pub model_top_z: Option<f64>,
     pub model_bottom_z: Option<f64>,
-    /// K1: the obstacle plane of the setup and the obstacle that sets it.
-    /// [`HeightsConfig::resolve`] raises the retract and the clearance to
-    /// its Z in every mode. `None` when the setup has no enabled obstacle.
-    pub obstacle_plane: Option<crate::compute::obstacle::ObstaclePlane>,
 }
 
 impl HeightContext {
@@ -223,43 +219,8 @@ impl HeightContext {
             stock_bottom_z: -op_depth,
             model_top_z: None,
             model_bottom_z: None,
-            obstacle_plane: None,
         }
     }
-}
-
-/// A height plane that the obstacle floor can raise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RaisedHeight {
-    /// The clearance Z.
-    Clearance,
-    /// The retract Z.
-    Retract,
-}
-
-impl RaisedHeight {
-    /// The plane name an operator reads.
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Clearance => "Clearance Z",
-            Self::Retract => "Retract Z",
-        }
-    }
-}
-
-/// K1: a height the operator set (Manual or From Reference) that the
-/// resolver raised to the obstacle plane.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ObstacleHeightRaise {
-    /// Which plane.
-    pub height: RaisedHeight,
-    /// The value the operator's setting gives (mm).
-    pub requested_z: f64,
-    /// The obstacle plane, the value the toolpath uses (mm).
-    pub plane_z: f64,
-    /// The obstacle that sets the plane.
-    pub obstacle: String,
 }
 
 /// Controls whether a height value is auto-computed, manually set, or relative to a reference.
@@ -348,21 +309,15 @@ impl HeightsConfig {
     /// at the model top rapided a fresh-stock rough into the overhead above
     /// the model (Wanaka Back Rough, 1.47 mm).
     ///
-    /// K1: the retract and the clearance are at least the obstacle plane
-    /// (`ctx.obstacle_plane`) in EVERY mode. A Manual or From Reference
-    /// value below the plane rises to it; [`Self::obstacle_raises`] names
-    /// each one so the static checks report it. The Auto feed Z follows
-    /// the raised retract.
+    /// K3: the resolver does not read the obstacles of the setup. The
+    /// retract and the clearance stay at the op's own values; the per-op
+    /// obstacle step lifts only the moves that cross an obstacle to the
+    /// obstacle plane (`compute::obstacle::clip_annotated_to_obstacles`).
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
-        let floor = |z: f64| {
-            ctx.obstacle_plane
-                .as_ref()
-                .map_or(z, |plane| z.max(plane.z))
-        };
-        let retract = floor(self.retract_z.resolve_value(ctx.safe_z, ctx));
+        let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         let top_z = self.top_z.resolve_value(ctx.stock_top_z, ctx);
         ResolvedHeights {
-            clearance_z: floor(self.clearance_z.resolve_value(retract + 10.0, ctx)),
+            clearance_z: self.clearance_z.resolve_value(retract + 10.0, ctx),
             retract_z: retract,
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
             top_z,
@@ -372,38 +327,6 @@ impl HeightsConfig {
             top_pinned: !self.top_z.is_auto(),
             bottom_pinned: !self.bottom_z.is_auto(),
         }
-    }
-
-    /// K1: every operator-set height (not Auto) that [`Self::resolve`]
-    /// raises to the obstacle plane. Empty without a plane. An Auto value
-    /// is not listed: it is not the operator's number.
-    #[must_use]
-    pub fn obstacle_raises(&self, ctx: &HeightContext) -> Vec<ObstacleHeightRaise> {
-        let Some(plane) = ctx.obstacle_plane.as_ref() else {
-            return Vec::new();
-        };
-        let plane_z = plane.z;
-        let raw_retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
-        let retract = raw_retract.max(plane_z);
-        let mut out = Vec::new();
-        for (height, mode, requested_z) in [
-            (
-                RaisedHeight::Clearance,
-                self.clearance_z,
-                self.clearance_z.resolve_value(retract + 10.0, ctx),
-            ),
-            (RaisedHeight::Retract, self.retract_z, raw_retract),
-        ] {
-            if !mode.is_auto() && requested_z < plane_z {
-                out.push(ObstacleHeightRaise {
-                    height,
-                    requested_z,
-                    plane_z,
-                    obstacle: plane.obstacle.clone(),
-                });
-            }
-        }
-        out
     }
 
     /// The Auto bottom for a resolved `top_z` (R3).
@@ -1555,7 +1478,6 @@ mod tests {
             stock_bottom_z: 0.0,
             model_top_z: Some(20.0),
             model_bottom_z: Some(2.0),
-            obstacle_plane: None,
         }
     }
 

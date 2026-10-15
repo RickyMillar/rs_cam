@@ -10,9 +10,7 @@ use crate::tool::MillingCutter;
 use super::shared::{
     generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
 };
-use super::{
-    ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared, XyTerritory,
-};
+use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
 /// Read the single leave-stock scalar the adaptive3d planner consumes.
 ///
@@ -51,10 +49,7 @@ pub(crate) fn generate_adaptive3d(
     } = prepared.mesh()?;
     // W6.2: the row states `TerritoryXy::PlannerBounds`, so the territory
     // carries the outline and the centre containment.
-    let (outline, centre) = match prepared.territory().xy {
-        XyTerritory::PlannerBounds { outline, centre } => (outline, centre),
-        XyTerritory::ClipAfter | XyTerritory::Regions(_) => (None, None),
-    };
+    let (outline, centre) = prepared.territory().planner_bounds();
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {

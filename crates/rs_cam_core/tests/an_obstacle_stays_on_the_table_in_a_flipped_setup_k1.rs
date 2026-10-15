@@ -27,7 +27,7 @@ mod common;
 use common::meshes::plateau;
 use common::session::{mesh_model, polygon_model, stock_over};
 
-use rs_cam_core::compute::obstacle::obstacle_plane;
+use rs_cam_core::compute::config::SAFE_Z_CLEARANCE_MM;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::ids::{ModelId, ObstacleId};
 use rs_cam_core::polygon::Polygon2;
@@ -122,9 +122,12 @@ fn a_model_obstacle_keeps_its_xy_and_top_on_a_bottom_setup_k1() {
     // The top is the mesh top (Z 0), not the turned-over bottom.
     assert_eq!(set.top_z(), Some(0.0));
     assert_eq!(set.obstacles()[0].bottom_z, -MESH_DEPTH);
-    let plane = obstacle_plane(&setup.obstacles, session.models()).expect("a plane");
-    assert_eq!(Some(plane.z), set.plane_z(), "plane and set agree");
-    assert_eq!(plane.obstacle, "Clamp");
+    assert_eq!(
+        set.plane_z(),
+        Some(SAFE_Z_CLEARANCE_MM),
+        "the plane is over the mesh top"
+    );
+    assert_eq!(set.obstacles()[0].name, "Clamp");
     // The silhouette sits about the origin, where the mesh is. It grows by
     // up to two raster cells (1 mm), never more.
     let b = footprint_bbox(&session);

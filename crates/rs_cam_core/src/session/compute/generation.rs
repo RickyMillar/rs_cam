@@ -238,8 +238,8 @@ impl ProjectSession {
         let safe_z = ctx.safe_z;
 
         let model_bbox = mesh.as_ref().map(|m| &m.bbox);
-        // K1: the context carries the obstacle plane, so the resolver
-        // raises every retract and clearance to it, in every mode.
+        // K3: the heights do not read the obstacles. The obstacle step
+        // after the dressups lifts only the moves that cross one.
         let height_ctx = ctx.height_context(tc.operation.default_depth_for_heights(), model_bbox);
         debug_assert_eq!(height_ctx.safe_z, safe_z);
         let mut heights = tc.heights.resolve(&height_ctx);
@@ -471,24 +471,10 @@ impl ProjectSession {
                 )
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?
             }
-        } else if !obstacles.is_empty() {
-            // K1: with the boundary off, the 3D Rough planner still reads
-            // the obstacles as holes in its outline, so it pre-clears the
-            // cells under them and never plans a cut there. The rectangle
-            // is the stock, one tool diameter wider on each side.
-            let b = &emission_stock_bbox;
-            let margin = tool.diameter;
-            let rect = crate::polygon::Polygon2::rectangle(
-                b.min.x - margin,
-                b.min.y - margin,
-                b.max.x + margin,
-                b.max.y + margin,
-            );
-            Some(crate::geometry::boundary::subtract_keepouts(
-                &rect,
-                &keep_out_footprints,
-            ))
         } else {
+            // K3: with the boundary off, the territory resolver gives the
+            // 3D Rough planner its obstacle outline
+            // (`compute::execute::territory`).
             None
         };
 

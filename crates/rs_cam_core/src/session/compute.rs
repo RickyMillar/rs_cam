@@ -130,30 +130,10 @@ impl ResolvedGenInputs {
     ///
     /// An offset that fails yields no polygon for that region; the clip
     /// refuses the generation on the same failure.
+    ///
+    /// K3: the obstacles are not in it. The territory resolver
+    /// (`compute::execute::territory`) subtracts them, for every op.
     fn boundary_centre(&self) -> Option<Vec<crate::polygon::Polygon2>> {
-        let set = self.boundary_centre_without_obstacles();
-        if self.obstacles.is_empty() {
-            return set;
-        }
-        // K1: the obstacles leave the centre containment as holes, grown
-        // by every band radius that reaches them over the stock depth.
-        let holes = self
-            .obstacle_view
-            .reach_footprints(self.emission_stock_bbox.min.z);
-        let set = match (set, self.pre_boundary.as_ref()) {
-            (Some(set), _) => set,
-            (None, Some(outline)) => vec![crate::polygon::Polygon2::new(outline.exterior.clone())],
-            (None, None) => return None,
-        };
-        Some(
-            set.iter()
-                .map(|p| crate::geometry::boundary::subtract_keepouts(p, &holes))
-                .collect(),
-        )
-    }
-
-    /// [`Self::boundary_centre`] of the machining boundary alone.
-    fn boundary_centre_without_obstacles(&self) -> Option<Vec<crate::polygon::Polygon2>> {
         use crate::geometry::boundary::{ToolContainment, effective_boundary};
         if !self.boundary_config.enabled {
             return None;

@@ -15,7 +15,7 @@
 //!
 //! W6.2: after the checks, the prologue resolves the op's [`Territory`]
 //! once. [`Prepared::territory`] gives it to the adapter. K1: the territory
-//! carries the setup's obstacles for every op.
+//! carries the setup's obstacles for every op; K3: it pre-clips them.
 
 use crate::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -77,8 +77,8 @@ impl<'a> Prepared<'a> {
 
     /// W6.2: the territory, resolved once for this op
     /// ([`Territory::resolve`]).
-    pub fn territory(&self) -> Territory<'a> {
-        self.territory
+    pub fn territory(&self) -> &Territory<'a> {
+        &self.territory
     }
 
     fn mismatch(&self, what: &str) -> OperationError {

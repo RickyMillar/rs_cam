@@ -677,11 +677,31 @@ struct DrillHole {
 /// then only drilling feeds and rapids at the same XY, at or below R,
 /// ending with a rapid back to R. Every hole has the same start Z (the
 /// G98 return level) and one feed.
-fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<Vec<DrillHole>> {
+///
+/// K3: in a setup with an obstacle the toolpath starts with a rapid to
+/// the obstacle plane above the first hole. Three rapids at one XY that
+/// fall in Z (plane, start, R) read as that lead-in and the first hole.
+/// The lead-in Z comes back with the holes.
+fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<(Option<f64>, Vec<DrillHole>)> {
     const EPS: f64 = 1e-9;
     let moves = &phase.toolpath.moves;
     let mut holes: Vec<DrillHole> = Vec::new();
-    let mut i = 0;
+    let lead_in = match moves.get(..3) {
+        Some([a, b, c])
+            if [a, b, c]
+                .iter()
+                .all(|m| matches!(m.move_type, MoveType::Rapid))
+                && [b, c].iter().all(|m| {
+                    (m.target.x - a.target.x).abs() < EPS && (m.target.y - a.target.y).abs() < EPS
+                })
+                && a.target.z > b.target.z
+                && b.target.z > c.target.z =>
+        {
+            Some(a.target.z)
+        }
+        _ => None,
+    };
+    let mut i = usize::from(lead_in.is_some());
     while i < moves.len() {
         let first = moves.get(i)?;
         let second = moves.get(i + 1)?;
@@ -739,7 +759,11 @@ fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<Vec<DrillHole>> {
         });
         i = j;
     }
-    if holes.is_empty() { None } else { Some(holes) }
+    if holes.is_empty() {
+        None
+    } else {
+        Some((lead_in, holes))
+    }
 }
 
 /// G7: write a drill phase as native canned cycles. Returns false (and
@@ -773,7 +797,7 @@ fn push_native_drill_cycles(
         }
         DrillCycle::Peck(_) | DrillCycle::ChipBreak(..) => return false,
     };
-    let Some(holes) = read_drill_holes(phase) else {
+    let Some((lead_in, holes)) = read_drill_holes(phase) else {
         program.push(Statement::Comment(
             "native drill cycles not used: the moves are not plain drill holes".to_owned(),
         ));
@@ -782,6 +806,10 @@ fn push_native_drill_cycles(
     let Some(first) = holes.first() else {
         return false;
     };
+    // K3: the lead-in reaches the first hole at the obstacle plane.
+    if let Some(z) = lead_in {
+        push_rapid(program, &mut state.prev_pos, first.x, first.y, z);
+    }
     // Reach the start level above the first hole: the G98 return level.
     push_rapid(
         program,

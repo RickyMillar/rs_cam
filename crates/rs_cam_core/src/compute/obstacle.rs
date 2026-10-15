@@ -34,13 +34,13 @@
 //! - the per-op step (`session::compute`, after the dressups), through
 //!   [`ObstaclePermit`] and the shared clip walk;
 //! - the link ceiling (`finish::surface_link::LinkCeiling::obstacles`);
-//! - the 3D Rough pre-clip (`session::compute::generation`);
+//! - the territory pre-clip (`compute::execute::territory`), for the 3D
+//!   ops and the area ops;
 //! - the simulation check and `collision_check`
 //!   ([`ObstacleToolView::check_toolpath`]).
 //!
 //! [`ObstacleSet::plane_z`] is the one obstacle plane: the highest grown
-//! top plus [`SAFE_Z_CLEARANCE_MM`]. The height resolver, the clip and
-//! the link ceiling read it.
+//! top plus [`SAFE_Z_CLEARANCE_MM`].
 //!
 //! # The check height and the plane
 //!
@@ -49,8 +49,20 @@
 //! grown top (top plus clearance) is the physical limit. The PLANE (grown
 //! top plus [`SAFE_Z_CLEARANCE_MM`]) is only the height the tool retracts
 //! to and crosses at; it is a margin above the limit, and the check does
-//! not read it. Every height the resolver gives (retract, clearance, safe
-//! Z) is at least the plane (`compute::config::HeightsConfig::resolve`).
+//! not read it.
+//!
+//! # The plane is local (K3)
+//!
+//! The height resolver does not read the obstacles: an op keeps its own
+//! retract and clearance. A move rises to the plane only where it must:
+//!
+//! - the per-op step splits each move that the check forbids, and the
+//!   tool crosses the obstacle at the plane;
+//! - the first move of every toolpath in a setup with an obstacle is a
+//!   rapid at the plane or higher ([`clip_annotated_to_obstacles`]). So the
+//!   G-code builder's join into a toolpath rises to the plane before it
+//!   traverses, from a known start ([`JoinStart::After`]) and from an
+//!   unknown one ([`JoinStart::Unknown`]).
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -439,43 +451,6 @@ fn geometry_z_range(
     }
 }
 
-/// The obstacle plane of a setup: its height and the obstacle that sets
-/// it (the one with the highest grown top).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ObstaclePlane {
-    /// The plane Z: the highest grown top plus [`SAFE_Z_CLEARANCE_MM`].
-    pub z: f64,
-    /// The name of the obstacle with the highest grown top.
-    pub obstacle: String,
-}
-
-/// THE obstacle plane of a setup's obstacle list, without resolving the
-/// footprints: the highest enabled grown top plus [`SAFE_Z_CLEARANCE_MM`],
-/// with the name of the obstacle that sets it. `None` when no enabled
-/// obstacle gives a top.
-///
-/// The height context reads it (`session::SetupEvalContext`), so every
-/// consumer of the setup's safe Z sees the plane. It agrees with
-/// [`ObstacleSet::plane_z`] by construction: both read
-/// `geometry_z_range`.
-#[must_use]
-pub fn obstacle_plane(
-    obstacles: &[Obstacle],
-    models: &[crate::session::LoadedModel],
-) -> Option<ObstaclePlane> {
-    obstacles
-        .iter()
-        .filter(|o| o.enabled)
-        .filter_map(|o| {
-            geometry_z_range(&o.geometry, models).map(|(_, top)| (top + o.clearance, o))
-        })
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(top, o)| ObstaclePlane {
-            z: top + SAFE_Z_CLEARANCE_MM,
-            obstacle: o.name.clone(),
-        })
-}
-
 impl ObstacleSet {
     /// THE resolver: one setup's enabled obstacles, in the setup frame,
     /// grown by their clearance.
@@ -602,12 +577,6 @@ impl ObstacleSet {
         self.top_z().map(|top| top + SAFE_Z_CLEARANCE_MM)
     }
 
-    /// `safe_z` raised to the obstacle plane when the plane is higher.
-    #[must_use]
-    pub fn raise(&self, safe_z: f64) -> f64 {
-        self.plane_z().map_or(safe_z, |plane| safe_z.max(plane))
-    }
-
     /// Every grown footprint, for a pre-clip that subtracts them.
     #[must_use]
     pub fn footprints(&self) -> Vec<Polygon2> {
@@ -636,11 +605,23 @@ impl ObstacleSet {
         );
         let mut entries = Vec::new();
         for (index, obstacle) in self.obstacles.iter().enumerate() {
-            for &(segment, offset, radius) in &bands {
+            for (band_index, &(segment, offset, radius)) in bands.iter().enumerate() {
                 if radius <= 0.0 || !radius.is_finite() {
                     continue;
                 }
                 let grown = grow(&obstacle.footprint, radius, &obstacle.name)?;
+                // K3: only the cutter band (the first band, offset 0) takes
+                // part in the territory pre-clip. Its material form is the
+                // footprint plus the margin: an area op insets its outline
+                // by the cutter radius, and the margin keeps the inset
+                // centre path clear of the flattened chords of both
+                // offsets.
+                let cutter = band_index == 0;
+                let material = if cutter {
+                    grow(&obstacle.footprint, MATERIAL_MARGIN_MM, &obstacle.name)?
+                } else {
+                    Vec::new()
+                };
                 let mut lo = [f64::INFINITY, f64::INFINITY];
                 let mut hi = [f64::NEG_INFINITY, f64::NEG_INFINITY];
                 for p in &grown {
@@ -652,7 +633,9 @@ impl ObstacleSet {
                     obstacle: index,
                     segment,
                     tip_ceiling_z: obstacle.top_z - offset,
+                    cutter,
                     grown,
+                    material,
                     bbox: [lo[0], lo[1], hi[0], hi[1]],
                 });
             }
@@ -660,10 +643,20 @@ impl ObstacleSet {
         Ok(ObstacleToolView {
             names: self.obstacles.iter().map(|o| o.name.clone()).collect(),
             plane_z: self.plane_z(),
+            footprints: self.footprints(),
             entries,
         })
     }
 }
+
+/// The margin (mm) of a material footprint ([`BandEntry::material`])
+/// past the cutter band. An area op insets its clipped outline by the cutter
+/// radius with its own flattened arcs, and the band footprint grows by the
+/// flatten deviation. Without a margin the inset path can end a few
+/// hundredths of a millimetre inside the band, and the obstacle step then
+/// lifts at every row end. 0.1 mm is ten flatten deviations; the cost is
+/// 0.1 mm of cut near an obstacle.
+const MATERIAL_MARGIN_MM: f64 = 0.1;
 
 /// One obstacle, for one assembly band: the footprint grown by the band
 /// radius, and the tip Z below which the band reaches the obstacle.
@@ -674,7 +667,15 @@ struct BandEntry {
     /// The band strikes the obstacle when the tip is below this Z and the
     /// tip XY is inside `grown`.
     tip_ceiling_z: f64,
+    /// The cutter band: the band whose ceiling is the grown top. Only it
+    /// takes part in the territory pre-clip (K3).
+    cutter: bool,
     grown: Vec<Polygon2>,
+    /// For the cutter band, the footprint grown by [`MATERIAL_MARGIN_MM`]:
+    /// the region an area op's OUTLINE must lose so that its tool centre,
+    /// inset by the cutter radius, keeps out of `grown` (K3). Empty for
+    /// the other bands.
+    material: Vec<Polygon2>,
     /// The XY box of `grown`: `[x_min, y_min, x_max, y_max]`.
     bbox: [f64; 4],
 }
@@ -721,6 +722,8 @@ struct Forbidden {
 pub struct ObstacleToolView {
     names: Vec<String>,
     plane_z: Option<f64>,
+    /// The grown footprints of the set ([`ObstacleSet::footprints`]).
+    footprints: Vec<Polygon2>,
     entries: Vec<BandEntry>,
 }
 
@@ -731,17 +734,42 @@ impl ObstacleToolView {
         self.entries.is_empty()
     }
 
-    /// The grown footprint of every band that reaches its obstacle with
-    /// the tip at or above `min_tip_z`. The 3D Rough planner keeps its
-    /// cut centres out of them, so it stamps only the cut the per-op step
-    /// keeps (G-BOUNDARYPHANTOM). XY only, so it is conservative.
+    /// K3: the CUTTER band footprint of every obstacle whose grown top is
+    /// above `min_tip_z`, for the territory pre-clip of the tool centre
+    /// (the 3D finishes, Waterline, Project Curve, the 3D Rough centre).
+    ///
+    /// The shank and holder bands are not in it. Whether they reach an
+    /// obstacle depends on the real tip Z, which the pre-clip does not
+    /// know; read at the op's lowest Z they cut real territory away (the
+    /// holder footprint on testpiece_mini, 2026-10-15). The post-dressup
+    /// step judges them at the real Z, as in K1.
     #[must_use]
-    pub fn reach_footprints(&self, min_tip_z: f64) -> Vec<Polygon2> {
+    pub fn cutter_footprints(&self, min_tip_z: f64) -> Vec<Polygon2> {
         self.entries
             .iter()
-            .filter(|e| e.tip_ceiling_z > min_tip_z)
+            .filter(|e| e.cutter && e.tip_ceiling_z > min_tip_z)
             .flat_map(|e| e.grown.iter().cloned())
             .collect()
+    }
+
+    /// The material form of [`Self::cutter_footprints`]: each footprint
+    /// grown by [`MATERIAL_MARGIN_MM`]. An area op (Pocket, Zigzag, Face,
+    /// 2D Adaptive) removes them from its outline before it insets the
+    /// outline by the cutter radius (K3).
+    #[must_use]
+    pub fn cutter_material_footprints(&self, min_tip_z: f64) -> Vec<Polygon2> {
+        self.entries
+            .iter()
+            .filter(|e| e.cutter && e.tip_ceiling_z > min_tip_z)
+            .flat_map(|e| e.material.iter().cloned())
+            .collect()
+    }
+
+    /// The grown footprints of the set, without a band radius
+    /// ([`ObstacleSet::footprints`]). The 3D Rough pre-clear reads them.
+    #[must_use]
+    pub fn footprints(&self) -> &[Polygon2] {
+        &self.footprints
     }
 
     /// The obstacle plane of the set. See [`ObstacleSet::plane_z`].
@@ -1105,8 +1133,17 @@ impl ClipPermit for ObstaclePermit<'_> {
 }
 
 /// THE per-op step (K1): split every move of `annotated` that would put
-/// the tool inside an obstacle. The tool goes up to `safe_z` (at least the
-/// obstacle plane), across, and back down, through the shared clip walk.
+/// the tool inside an obstacle. The tool goes up to the obstacle plane (or
+/// `safe_z` when it is higher), across, and back down, through the shared
+/// clip walk. A move that the check allows keeps its own height: the plane
+/// is local to the crossings (K3).
+///
+/// K3: the step also starts the toolpath at the plane. When the first
+/// move is below it, a rapid to the plane at the same XY goes before it.
+/// The G-code builder then reaches the toolpath at the plane from any
+/// start: a rising join lifts first, then traverses
+/// ([`JoinStart::After`]), and a join from an unknown position goes Z
+/// first ([`JoinStart::Unknown`]).
 ///
 /// An empty view passes the toolpath through with an identity mapping.
 pub fn clip_annotated_to_obstacles(
@@ -1129,12 +1166,14 @@ pub fn clip_annotated_to_obstacles(
         (toolpath, (0..=n).collect::<Vec<usize>>())
     } else {
         let plane = view.plane_z().map_or(safe_z, |p| p.max(safe_z));
-        crate::geometry::boundary::clip_walk(
+        let (mut clipped, mut mapping) = crate::geometry::boundary::clip_walk(
             &toolpath,
             &ObstaclePermit { view },
             plane,
             plunge_rate_mm_min,
-        )
+        );
+        start_at_the_plane(&mut clipped, &mut mapping, plane);
+        (clipped, mapping)
     };
     let spans: Vec<crate::trace::toolpath_spans::Span> =
         spans.iter().map(|s| s.remap(&mapping)).collect();
@@ -1147,6 +1186,27 @@ pub fn clip_annotated_to_obstacles(
         },
         mapping,
     )
+}
+
+/// K3: put a rapid to `plane` at the XY of the first move in front of
+/// it, when the first move is below `plane`. The inserted move belongs to
+/// input move 0, so every later entry of `mapping` moves up by one.
+fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64) {
+    let Some(first) = toolpath.moves.first() else {
+        return;
+    };
+    if first.target.z >= plane - Z_EPS_MM {
+        return;
+    }
+    let lift = Move {
+        target: P3::new(first.target.x, first.target.y, plane),
+        move_type: MoveType::Rapid,
+        intent: crate::toolpath::MoveIntent::Linking,
+    };
+    toolpath.moves.insert(0, lift);
+    for entry in mapping.iter_mut().skip(1) {
+        *entry += 1;
+    }
 }
 
 #[cfg(test)]
@@ -1194,8 +1254,36 @@ mod tests {
         let set = clamp(20.0);
         assert_eq!(set.top_z(), Some(21.0));
         assert_eq!(set.plane_z(), Some(21.0 + SAFE_Z_CLEARANCE_MM));
-        assert_eq!(set.raise(10.0), 26.0);
-        assert_eq!(set.raise(40.0), 40.0);
+    }
+
+    /// K3: a toolpath that starts below the plane gets a rapid to the
+    /// plane in front of it; one that starts at the plane does not. A move
+    /// far from the clamp keeps its own height.
+    #[test]
+    fn the_step_starts_the_toolpath_at_the_plane_k3() {
+        let set = clamp(20.0);
+        let view = set.for_tool(&assembly()).unwrap();
+        let plane = set.plane_z().unwrap();
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-50.0, 5.0, 10.0));
+        tp.feed_to(P3::new(-50.0, 5.0, 0.0), 300.0);
+        tp.rapid_to(P3::new(-50.0, 5.0, 10.0));
+        tp.rapid_to(P3::new(-50.0, 40.0, 10.0));
+        let n = tp.moves.len();
+        let annotated = crate::trace::toolpath_spans::AnnotatedToolpath::new(tp);
+        let mut channels = crate::trace::transform_provenance::ReconcileSet::new(None, None);
+        let out = clip_annotated_to_obstacles(annotated, &view, 10.0, Some(300.0))
+            .reconcile(&mut channels)
+            .into_inner();
+        assert_eq!(out.toolpath.moves.len(), n + 1);
+        assert_eq!(out.toolpath.moves[0].target, P3::new(-50.0, 5.0, plane));
+        // The traverse far from the clamp stays at its own Z.
+        assert_eq!(out.toolpath.moves[n].target, P3::new(-50.0, 40.0, 10.0));
+        // A second pass changes nothing.
+        let again = clip_annotated_to_obstacles(out, &view, 10.0, Some(300.0))
+            .reconcile(&mut channels)
+            .into_inner();
+        assert_eq!(again.toolpath.moves.len(), n + 1);
     }
 
     #[test]

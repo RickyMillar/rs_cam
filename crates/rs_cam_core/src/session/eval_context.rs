@@ -77,8 +77,8 @@ pub struct SetupEvalContext {
 
     /// Effective safe_z. Floored at `heights_stock_bbox.max.z +
     /// SAFE_Z_CLEARANCE_MM` — the frame the toolpath emits in
-    /// (G-SAFEZ-LOCAL). K1: [`Self::build_for_setup`] raises it to the
-    /// obstacle plane of the setup when the plane is higher.
+    /// (G-SAFEZ-LOCAL). K3: the obstacles of the setup do not raise it;
+    /// the per-op obstacle step lifts only the moves that cross one.
     pub safe_z: f64,
 
     /// Setup orientation. Kept here so consumers don't have to plumb
@@ -86,12 +86,6 @@ pub struct SetupEvalContext {
     /// `setup_z_flipped` flag, AS-style cut-direction selection).
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
-
-    /// K1: the obstacle plane of the setup and the obstacle that sets it.
-    /// `None` when the setup has no enabled obstacle (or no setup).
-    /// [`Self::height_context`] copies the Z into the height context, and
-    /// the height resolver raises every retract and clearance to it.
-    pub obstacle_plane: Option<crate::compute::obstacle::ObstaclePlane>,
 
     /// How this setup establishes program Z zero. Consumed only by
     /// [`Self::export_datum_shift`] to place the emitted Z0.
@@ -136,7 +130,6 @@ impl SetupEvalContext {
             // export behaviour on a correctly-configured stock (top at
             // Z0). `build_for_setup` overrides this from the setup.
             z_datum: ZDatum::default(),
-            obstacle_plane: None,
         }
     }
 
@@ -152,14 +145,6 @@ impl SetupEvalContext {
         let z_rotation = setup.map(|s| s.z_rotation).unwrap_or_default();
         let mut ctx = Self::build(session, face_up, z_rotation);
         ctx.z_datum = setup.map(|s| s.datum.z_method.clone()).unwrap_or_default();
-        // K1: the safe Z rises to the obstacle plane when the plane is
-        // higher, so every rapid at the safe or retract Z clears the
-        // obstacles of the setup.
-        ctx.obstacle_plane = setup
-            .and_then(|s| crate::compute::obstacle::obstacle_plane(&s.obstacles, &session.models));
-        if let Some(plane) = &ctx.obstacle_plane {
-            ctx.safe_z = ctx.safe_z.max(plane.z);
-        }
         ctx
     }
 
@@ -180,7 +165,6 @@ impl SetupEvalContext {
             stock_bottom_z: self.heights_stock_bbox.min.z,
             model_top_z: model_bbox.map(|b| b.max.z),
             model_bottom_z: model_bbox.map(|b| b.min.z),
-            obstacle_plane: self.obstacle_plane.clone(),
         }
     }
 

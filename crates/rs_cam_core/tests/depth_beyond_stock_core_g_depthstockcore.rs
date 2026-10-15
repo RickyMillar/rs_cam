@@ -100,7 +100,6 @@ fn snapshot(op_depth: f64) -> ResolvedHeights {
         stock_bottom_z: STOCK_BOTTOM_Z,
         model_top_z: None,
         model_bottom_z: None,
-        obstacle_plane: None,
     })
 }
 

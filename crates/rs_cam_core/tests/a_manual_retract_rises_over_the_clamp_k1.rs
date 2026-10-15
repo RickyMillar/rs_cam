@@ -1,6 +1,6 @@
-//! Sentry (K1 review, finding 2): **an operator-set retract below a clamp
-//! top rises to the obstacle plane, and the move between two toolpaths is
-//! checked**.
+//! Sentry (K1 review, finding 2; K3): **an operator-set retract below a
+//! clamp top never crosses the clamp, and the move between two toolpaths
+//! is checked**.
 //!
 //! ## The defect this pins
 //!
@@ -14,8 +14,10 @@
 //!
 //! ## The fix this pins
 //!
-//! 1. `HeightsConfig::resolve` raises the retract and the clearance to the
-//!    plane in every mode, and the static checks name the raise.
+//! 1. K3: the op keeps its own retract (the plane is local). The per-op
+//!    obstacle step lifts each move that crosses the clamp to the plane,
+//!    and starts every toolpath at the plane, so the join into it rises
+//!    before it traverses.
 //! 2. `ObstacleToolView::check_toolpath` checks the join from the previous
 //!    toolpath of the setup (`JoinStart`) as the G-code builder emits it.
 
@@ -38,7 +40,6 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{HeightMode, HeightsConfig, SAFE_Z_CLEARANCE_MM};
 use rs_cam_core::compute::obstacle::JoinStart;
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::diagnostics::ids;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::polygon::Polygon2;
@@ -113,48 +114,51 @@ fn plane() -> f64 {
     CLAMP_TOP + CLEARANCE + SAFE_Z_CLEARANCE_MM
 }
 
+/// The XY half-width (mm) of the clamp footprint the cutter (r 3) must
+/// keep out of: the clamp half-width 3, the clearance 1 and the radius 3.
+const KEEP_OUT_HALF_X: f64 = 3.0 + CLEARANCE + 3.0;
+
 #[test]
-fn a_manual_retract_below_the_clamp_rises_to_the_plane_k1() {
+fn a_manual_retract_below_the_clamp_never_crosses_it_k1() {
     let session = two_traces_across_the_clamp();
     for index in 0..2 {
         let tc = &session.toolpath_configs()[index];
         let ctx = session.height_context_for_toolpath(tc);
         let resolved = tc.heights.resolve(&ctx);
+        // K3: the op keeps the operator's retract; only a crossing rises.
         assert!(
-            (resolved.retract_z - plane()).abs() < 1e-9,
-            "TP{index}: the Manual retract {MANUAL_RETRACT} must rise to the plane {}, got {}",
-            plane(),
+            (resolved.retract_z - MANUAL_RETRACT).abs() < 1e-9,
+            "TP{index}: the Manual retract must stay {MANUAL_RETRACT}, got {}",
             resolved.retract_z
         );
-        assert!(resolved.clearance_z >= plane() - 1e-9);
-        // Every rapid that moves in XY travels at the plane or higher.
         let toolpath = session.get_result(index).expect("a result").toolpath();
+        // The toolpath starts at the plane, so the join into it rises first.
+        assert!(
+            toolpath.moves[0].target.z >= plane() - 1e-9,
+            "TP{index}: the first move is at Z {}, below the plane {}",
+            toolpath.moves[0].target.z,
+            plane()
+        );
+        // Non-vacuity of the local plane: the op's own retract is used.
+        assert!(
+            toolpath
+                .moves
+                .iter()
+                .any(|m| (m.target.z - MANUAL_RETRACT).abs() < 1e-9),
+            "TP{index}: no move at the Manual retract"
+        );
+        // Every move whose XY span meets the clamp keep-out is at the plane
+        // or higher. The clamp spans the whole stock in Y.
         for w in toolpath.moves.windows(2) {
             let (a, b) = (w[0].target, w[1].target);
-            let xy = (b.x - a.x).hypot(b.y - a.y);
-            if matches!(w[1].move_type, rs_cam_core::toolpath::MoveType::Rapid) && xy > 1e-9 {
+            let meets = a.x.min(b.x) < KEEP_OUT_HALF_X && a.x.max(b.x) > -KEEP_OUT_HALF_X;
+            if meets {
                 assert!(
                     a.z.min(b.z) >= plane() - 1e-9,
-                    "TP{index}: a traverse at Z {} is below the plane",
-                    a.z.min(b.z)
+                    "TP{index}: a move from {a:?} to {b:?} crosses the clamp below the plane"
                 );
             }
         }
-        // The static checks name the raise, the op and the obstacle.
-        let diagnostics = session.diagnose_toolpath(index).expect("diagnose");
-        let raised: Vec<_> = diagnostics
-            .iter()
-            .filter(|d| d.id.as_str() == ids::GEOM_HEIGHT_RAISED_TO_OBSTACLE)
-            .collect();
-        assert_eq!(
-            raised.len(),
-            2,
-            "TP{index}: retract and clearance: {raised:?}"
-        );
-        assert!(
-            raised.iter().all(|d| d.message.contains("Middle clamp")),
-            "{raised:?}"
-        );
     }
 }
 

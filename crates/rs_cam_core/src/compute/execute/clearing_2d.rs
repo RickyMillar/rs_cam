@@ -630,8 +630,12 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
-    let polys = prepared.polygons()?;
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    // K3: an area op plans around the obstacles (the territory rule).
+    let polys = prepared.territory().area_outlines(
+        std::borrow::Cow::Borrowed(prepared.polygons()?),
+        levels.iter().copied().fold(f64::INFINITY, f64::min),
+    );
     let cancel_fn = ctx.cancel_fn();
     let safe_z = ctx.heights.retract_z;
     let mut combined = Toolpath::new();

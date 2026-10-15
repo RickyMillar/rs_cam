@@ -214,10 +214,6 @@ pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
 pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
 pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
 pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
-/// K1: an operator-set Retract Z or Clearance Z is below the obstacle plane
-/// of the setup. The resolver raised it to the plane
-/// (`HeightsConfig::obstacle_raises`); the toolpath uses the plane.
-pub const GEOM_HEIGHT_RAISED_TO_OBSTACLE: &str = "geom.height_raised_to_obstacle";
 
 /// A 2.5D operation's own depth dial puts its cut floor below the bottom of
 /// the stock: the tool goes through the board and into whatever holds it.
@@ -469,7 +465,6 @@ pub const ALL: &[&str] = &[
     GEOM_RETRACT_Z_BELOW_FEED_Z,
     GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
     GEOM_PLUNGE_EXCEEDS_FEED,
-    GEOM_HEIGHT_RAISED_TO_OBSTACLE,
     GEOM_DEPTH_BEYOND_STOCK,
     GEOM_STANDING_MATERIAL,
     GEOM_UNMACHINED_BAND,

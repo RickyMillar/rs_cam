@@ -99,7 +99,6 @@ fn solid_ctx() -> HeightContext {
         stock_bottom_z: -17.2,
         model_top_z: Some(9.8),
         model_bottom_z: Some(0.0),
-        obstacle_plane: None,
     }
 }
 
@@ -247,7 +246,6 @@ fn the_diagram_draws_inside_its_own_rect_f2() {
                 stock_bottom_z: -500.0,
                 model_top_z: Some(-100.0),
                 model_bottom_z: Some(-480.0),
-                obstacle_plane: None,
             },
             BOTTOM_HONOURED,
         ),
@@ -393,7 +391,6 @@ fn the_layout_still_measures_its_text_f2() {
             stock_bottom_z: -1.0,
             model_top_z: Some(0.0),
             model_bottom_z: Some(-1.0),
-            obstacle_plane: None,
         },
         BOTTOM_HONOURED,
     );
@@ -405,7 +402,6 @@ fn the_layout_still_measures_its_text_f2() {
             stock_bottom_z: -200.0,
             model_top_z: Some(200.0),
             model_bottom_z: Some(-100.0),
-            obstacle_plane: None,
         },
         BOTTOM_HONOURED,
     );
