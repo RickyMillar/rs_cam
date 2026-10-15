@@ -194,11 +194,11 @@ fn every_alias_names_a_field_of_its_own_operation() {
             );
         }
     }
-    // The three the finding names: Waterline and RampFinish alias
-    // `depth_per_pass`, Pencil aliases `stepover`.
+    // RampFinish aliases `depth_per_pass`, Pencil aliases `stepover`. C1
+    // deleted the Waterline `depth_per_pass` alias.
     assert_eq!(
-        aliases_seen, 3,
-        "the alias population moved. Three alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
+        aliases_seen, 2,
+        "the alias population moved. Two alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
     );
 }
 

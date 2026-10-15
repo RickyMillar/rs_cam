@@ -66,7 +66,6 @@ fn make_vbit_12_7mm_60deg() -> ToolConfig {
     tool.cutting_length = 11.0;
     tool.included_angle = 60.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 30.0;
     tool.flute_count = 2;
     tool.name = "V-bit 60deg".to_owned();

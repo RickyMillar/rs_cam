@@ -372,7 +372,6 @@ fn b3_tool(flutes: u32) -> ToolDefinition {
     ToolDefinition::new(
         Box::new(TaperedBallEndmill::new(1.0, 5.26, 6.0, 20.0)),
         6.0,
-        30.0,
         20.0,
         40.0,
         flutes,

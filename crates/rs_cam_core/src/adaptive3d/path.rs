@@ -559,10 +559,8 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// for Global. Evidence only: no planner stage reads it.
     pub area_regions: Option<AreaRegionMap>,
     /// Test-only: planner's internal dexel state at the end of the run.
-    #[allow(dead_code)]
     pub final_material_stock: TriDexelStock,
     /// Test-only: heightmap used to surface-drape Cut paths.
-    #[allow(dead_code)]
     pub surface_heightmap: SurfaceHeightmap,
 }
 
@@ -891,15 +889,6 @@ pub(super) fn adaptive_3d_segments(
     let step_len = cell_size * 1.5;
     let max_link_dist = default_max_link_dist(tool_radius, params.geometry.stepover);
 
-    // Bbox margins use the envelope radius (full shank for tapered tools) so
-    // the tool body can't overrun the working footprint. Engagement-related
-    // computations below use tool_radius (effective contact radius at DOC).
-    let envelope_radius = params.geometry.envelope_radius;
-    let bbox_x_min = origin_x + envelope_radius;
-    let bbox_x_max = extent_x - envelope_radius;
-    let bbox_y_min = origin_y + envelope_radius;
-    let bbox_y_max = extent_y - envelope_radius;
-
     let lut = RadialProfileLUT::from_cutter(cutter, crate::stock::radial_profile::LUT_SAMPLES);
     // G-BOUNDARYPHANTOM: the session clips this path to the containment
     // polygons after generation; the planner applies the same clip before it
@@ -917,7 +906,6 @@ pub(super) fn adaptive_3d_segments(
         index,
         cutter,
         lut: &lut,
-        slope_map: &slope_map,
         debug: debug_ctx.cloned(),
         tool_radius,
         stepover: params.geometry.stepover,
@@ -930,10 +918,6 @@ pub(super) fn adaptive_3d_segments(
         target_frac,
         step_len,
         max_link_dist,
-        bbox_x_min,
-        bbox_x_max,
-        bbox_y_min,
-        bbox_y_max,
         clearing_strategy: params.clearing_strategy,
         trochoid_cap_mult: params.trochoid_cap_mult,
         engagement_measure: params.engagement_measure,
@@ -962,7 +946,6 @@ pub(super) fn adaptive_3d_segments(
                 &material_stock,
                 &surface_hm,
                 params.depth.stock_to_leave,
-                tool_radius,
             );
             // Record the detection for the overlay. No planner stage reads it.
             let mut region_map =

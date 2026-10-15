@@ -288,9 +288,11 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
 ) {
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
     let extra = cfg.selected_holes.as_ref().map_or(0, Vec::len);
+    // The op drills the live stock pins of its diameter (W6.5); the config
+    // holds no copy of them.
     ui.label(format!(
-        "{} pin(s) + {extra} picked hole(s)",
-        cfg.holes.len()
+        "The stock pins of {:.2} mm + {extra} picked hole(s)",
+        cfg.diameter
     ));
     ui.param_grid("pin_drill_p", |ui| {
         dv(

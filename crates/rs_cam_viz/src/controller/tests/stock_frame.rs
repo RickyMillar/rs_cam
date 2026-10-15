@@ -45,7 +45,6 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
@@ -177,7 +176,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();

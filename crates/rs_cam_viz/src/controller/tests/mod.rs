@@ -1236,6 +1236,20 @@ enabled = true
 tool_id = 1
 model_id = 1
 "#;
+    // C1: a toolpath needs its operation table to load. The default
+    // 3D Rough parameters, written as the saver writes them.
+    #[derive(serde::Serialize)]
+    struct OperationOnly {
+        operation: rs_cam_core::compute::catalog::OperationConfig,
+    }
+    let operation = toml::to_string(&OperationOnly {
+        operation: rs_cam_core::compute::catalog::OperationConfig::new_default(
+            rs_cam_core::compute::catalog::OperationType::Adaptive3d,
+        ),
+    })
+    .expect("serialize the operation")
+    .replace("[operation", "[setups.toolpaths.operation");
+    let toml = format!("{toml}{operation}");
     std::fs::write(dir.join("job.toml"), toml).expect("write fixture job");
     dir
 }

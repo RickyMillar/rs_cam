@@ -117,7 +117,6 @@ fn endmill() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(TOOL_DIAMETER, 25.0)),
         TOOL_DIAMETER,
-        20.0,
         25.0,
         45.0,
         2,

@@ -54,7 +54,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ### Tool metadata exposed in the GUI
 
 - geometry: diameter, cutting length, corner radius, included angle, taper angle
-- collision envelope: holder diameter, shank diameter, shank length, stickout
+- collision envelope: holder diameter, shank diameter, stickout (the exposed shank is `stickout - cutting_length`)
 - cutting metadata: flute count, tool material, cut direction
 - catalog metadata: vendor, product ID
 

@@ -89,11 +89,11 @@ pub struct StockConfig {
     pub pin_part_models: Option<Vec<usize>>,
     // P3 (2026-10-12): `flip_axis` is gone. It was a cache of the setups,
     // and a stale cache drew the wrong axis line. Every reader derives the
-    // axis from the setups through [`Self::pin_flip_map`]. An old file's key
-    // is ignored on load.
+    // axis from the setups through [`Self::pin_flip_map`].
     // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The machine
-    // aggressiveness dial is the one load margin. An old file's key is
-    // ignored on load (no alias, no `deny_unknown_fields`).
+    // aggressiveness dial is the one load margin.
+    // The project loader refuses an old file that holds either key
+    // (`session::project_file::RETIRED_KEYS`).
 }
 
 impl Default for StockConfig {

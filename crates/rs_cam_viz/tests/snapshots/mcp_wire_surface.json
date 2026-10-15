@@ -379,14 +379,6 @@
             "null"
           ]
         },
-        "shank_length": {
-          "description": "Shank length in mm. Default 20.0.",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
         "size_units": {
           "anyOf": [
             {
@@ -2980,7 +2972,7 @@
           "type": "integer"
         },
         "param": {
-          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"shank_length\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
+          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
           "type": "string"
         },
         "value": {

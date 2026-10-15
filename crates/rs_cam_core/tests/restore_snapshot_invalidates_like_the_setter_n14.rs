@@ -328,9 +328,9 @@ fn the_payload_writes_the_feeds_provenance() {
 /// N6 closed. A drill pick changes which holes the operation cuts, so it
 /// changes the stock the downstream row inherits.
 ///
-/// `set_alignment_pin_drill_holes` already walked the chain. The two
-/// setters sit 30 lines apart in one file and gave opposite answers to
-/// two edits of the same kind.
+/// Its sibling, the pin-hole setter, walked the chain then. C1 deleted
+/// that setter: the pin drill reads the live pins (W6.5), and a pin edit
+/// stales it through `SetAlignmentPins` (P4).
 #[test]
 fn a_drill_pick_drops_the_chain_n6() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
@@ -346,7 +346,7 @@ fn a_drill_pick_drops_the_chain_n6() {
         effects.stale,
         set(&[0, 1]),
         "N6: the drill-pick setter used to drop {{0}} alone. It now \
-         answers what set_alignment_pin_drill_holes answers."
+         walks the chain."
     );
     assert!(
         s.get_result(0).is_none() && s.get_result(1).is_none(),

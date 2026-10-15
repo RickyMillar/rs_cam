@@ -53,7 +53,6 @@ fn live_tapered_ball(name: &str, diameter: f64, taper_half_angle: f64, loc: f64)
     tool.taper_half_angle = taper_half_angle;
     tool.shaft_diameter = 6.0;
     tool.shank_diameter = 6.0;
-    tool.shank_length = 20.0;
     tool.stickout = 35.0;
     tool
 }
@@ -134,7 +133,6 @@ taper_half_angle = 7.1
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_material = "carbide"

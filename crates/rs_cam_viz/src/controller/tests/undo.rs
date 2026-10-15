@@ -697,10 +697,10 @@ mod pin_edit_one_door_p5 {
     }
 
     /// What a toolpath list says, by row: the operation, the setup index and
-    /// the pin-drill holes.
+    /// the pin-drill diameter.
     fn toolpath_list(
         controller: &AppController<ScriptedBackend>,
-    ) -> Vec<(String, Option<usize>, Vec<[f64; 2]>)> {
+    ) -> Vec<(String, Option<usize>, Option<f64>)> {
         let session = &controller.state.session;
         session
             .toolpath_configs()
@@ -711,11 +711,11 @@ mod pin_edit_one_door_p5 {
                     .list_setups()
                     .iter()
                     .position(|s| s.toolpath_indices.contains(&index));
-                let holes = match &tc.operation {
-                    OperationConfig::AlignmentPinDrill(c) => c.holes.clone(),
-                    _ => Vec::new(),
+                let diameter = match &tc.operation {
+                    OperationConfig::AlignmentPinDrill(c) => Some(c.diameter),
+                    _ => None,
                 };
-                (format!("{:?}", tc.operation.op_type()), setup, holes)
+                (format!("{:?}", tc.operation.op_type()), setup, diameter)
             })
             .collect()
     }
@@ -774,23 +774,41 @@ mod pin_edit_one_door_p5 {
             "the MCP door created the pin drill in setup 1, got {:?}",
             edit.pin_drill
         );
-        let (label, setup, holes) = after.last().expect("the pin drill").clone();
+        let (label, setup, diameter) = after.last().expect("the pin drill").clone();
         assert_eq!(label, "AlignmentPinDrill");
         assert_eq!(
             setup,
             Some(1),
             "C7: the pin drill goes in the first Top setup, not in setup index 0"
         );
-        assert_eq!(holes, vec![[pin.x, pin.y]]);
+        assert_eq!(diameter, Some(pin.diameter));
 
-        // A second edit moves the holes the same way on both routes.
+        // A second edit stales the pin drill the same way on both routes.
+        // C1: the op reads the live pins (W6.5), so the door leaves it
+        // `Unchanged`; the pin row's stale set (P4) names it.
         let moved = AlignmentPin::new(30.0, 20.0, 6.0);
+        // Non-vacuity: the GUI pin drill starts the move with no stale stamp.
+        let first_drill_id = gui.state.session.toolpath_configs()[after.len() - 1].id;
+        gui.state
+            .gui
+            .toolpath_rt_or_default(first_drill_id)
+            .stale_since = None;
         gui_add_pin(&mut gui, moved.clone());
         let edit = mcp_add_pin(&mut mcp, &moved);
         assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
         let drill_index = toolpath_list(&mcp).len() - 1;
+        // The GUI route (the stock draft) stales the pin drill too.
+        let gui_drill_id = gui.state.session.toolpath_configs()[drill_index].id;
         assert!(
-            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Updated { .. })),
+            gui.state
+                .gui
+                .toolpath_rt
+                .get(&gui_drill_id)
+                .is_some_and(|rt| rt.stale_since.is_some()),
+            "the stock draft's pin move stales the pin drill on the GUI route"
+        );
+        assert!(
+            matches!(edit.outcome_of(6.0), Some(PinDrillSync::Unchanged)),
             "{:?}",
             edit.pin_drill
         );
@@ -959,9 +977,9 @@ mod pin_edit_one_door_p5 {
         assert_eq!(controller.state.session.toolpath_configs().len(), count);
     }
 
-    /// The pin-drill operations of the project: (diameter, tool diameter,
-    /// holes), in toolpath order.
-    fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64, Vec<[f64; 2]>)> {
+    /// The pin-drill operations of the project: (diameter, tool diameter),
+    /// in toolpath order.
+    fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64)> {
         let session = &controller.state.session;
         session
             .toolpath_configs()
@@ -973,7 +991,7 @@ mod pin_edit_one_door_p5 {
                         .iter()
                         .find(|t| t.id.0 == tc.tool_id)
                         .map_or(0.0, |t| t.diameter);
-                    Some((c.diameter, tool, c.holes.clone()))
+                    Some((c.diameter, tool))
                 }
                 _ => None,
             })
@@ -1008,10 +1026,7 @@ mod pin_edit_one_door_p5 {
             edit.outcome_of(8.0),
             Some(&PinDrillSync::Refused(pin_drill_needs_tool(8.0)))
         );
-        assert_eq!(
-            pin_drills(&controller),
-            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
 
         // The wizard's "Add a 8.00 mm drill", then Apply: one tool, and the
         // 8 mm operation with it.
@@ -1035,21 +1050,26 @@ mod pin_edit_one_door_p5 {
         assert!((tool.diameter - 8.0).abs() < 1e-12, "{tool:?}");
         assert_eq!(
             pin_drills(&controller),
-            vec![
-                (6.0, 6.0, vec![[10.0, 20.0]]),
-                (8.0, 8.0, vec![[40.0, 20.0]]),
-            ],
-            "one operation per size, each with its own holes and a tool of its size"
+            vec![(6.0, 6.0), (8.0, 8.0)],
+            "one operation per size, each with a tool of its size"
         );
 
-        // A pin move updates only the holes of its size.
+        // A pin move leaves both operations in place. The 8 mm operation
+        // reads the live pins (W6.5); the pin row stales it (P4).
         let moved = AlignmentPin::new(42.0, 20.0, 8.0);
         let edit = set_pins(&mut controller, vec![small.clone(), moved]);
         assert_eq!(edit.outcome_of(6.0), Some(&PinDrillSync::Unchanged));
-        assert!(matches!(
-            edit.outcome_of(8.0),
-            Some(PinDrillSync::Updated { .. })
-        ));
+        assert_eq!(edit.outcome_of(8.0), Some(&PinDrillSync::Unchanged));
+        let large_index = controller
+            .state
+            .session
+            .pin_drill_op_for(8.0)
+            .expect("the 8 mm operation stays");
+        assert!(
+            edit.stale.contains(&large_index),
+            "the pin move stales the 8 mm pin drill: {:?}",
+            edit.stale
+        );
 
         // The 8 mm pin goes: its operation goes, the 6 mm one stays.
         let edit = set_pins(&mut controller, vec![small]);
@@ -1057,10 +1077,7 @@ mod pin_edit_one_door_p5 {
             edit.outcome_of(8.0),
             Some(PinDrillSync::Removed { .. })
         ));
-        assert_eq!(
-            pin_drills(&controller),
-            vec![(6.0, 6.0, vec![[10.0, 20.0]])]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
     }
 
     /// R2, round 2: the wizard's per-size tool chooser queues a tool; Apply
@@ -1135,13 +1152,7 @@ mod pin_edit_one_door_p5 {
             "{edit:?}"
         );
         assert_eq!(controller.state.session.stock_config().alignment_pins, pins);
-        assert_eq!(
-            pin_drills(&controller),
-            vec![
-                (6.0, 6.0, vec![[10.0, 20.0]]),
-                (8.0, 8.0, vec![[40.0, 20.0]]),
-            ]
-        );
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0), (8.0, 8.0)]);
         assert_eq!(
             controller.state.history.undo_len(),
             undo_before + 1,
@@ -1325,8 +1336,8 @@ mod pin_edit_one_door_p5 {
     }
 
     /// The mini test piece (`planning/rivmap_block_job/testpiece_mini.toml`)
-    /// still loads with ONE pin-drill operation of 6 mm and the same three
-    /// holes. A pin edit that keeps the pins leaves it unchanged.
+    /// still loads with ONE pin-drill operation of 6 mm and its three pins.
+    /// A pin edit that keeps the pins leaves it unchanged.
     #[test]
     fn the_mini_project_keeps_one_pin_drill_r1() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1335,11 +1346,10 @@ mod pin_edit_one_door_p5 {
         controller
             .open_job_from_path(&path)
             .expect("the mini project loads");
-        let expected = vec![[32.5, 6.8], [47.5, 58.2], [17.5, 58.2]];
         assert_eq!(
             pin_drills(&controller),
-            vec![(6.0, 6.0, expected.clone())],
-            "one 6 mm pin drill with the three holes"
+            vec![(6.0, 6.0)],
+            "one 6 mm pin drill"
         );
         let pins = controller
             .state
@@ -1347,6 +1357,12 @@ mod pin_edit_one_door_p5 {
             .stock_config()
             .alignment_pins
             .clone();
+        let xys: Vec<[f64; 2]> = pins.iter().map(|p| [p.x, p.y]).collect();
+        assert_eq!(
+            xys,
+            vec![[32.5, 6.8], [47.5, 58.2], [17.5, 58.2]],
+            "the three stock pins the drill reads"
+        );
         let edit = set_pins(&mut controller, pins);
         assert!(
             edit.pin_drill
@@ -1354,6 +1370,6 @@ mod pin_edit_one_door_p5 {
                 .all(|s| s.outcome == PinDrillSync::Unchanged),
             "{edit:?}"
         );
-        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0, expected)]);
+        assert_eq!(pin_drills(&controller), vec![(6.0, 6.0)]);
     }
 }

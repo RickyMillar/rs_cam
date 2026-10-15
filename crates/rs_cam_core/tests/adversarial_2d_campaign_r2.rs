@@ -137,7 +137,6 @@ fn endmill(diameter: f64) -> ToolConfig {
     t.diameter = diameter;
     t.cutting_length = 25.0;
     t.shank_diameter = diameter;
-    t.shank_length = 20.0;
     t.stickout = 40.0;
     t.flute_count = 2;
     t.name = format!("End Mill {diameter}mm");
@@ -154,7 +153,6 @@ fn vbit() -> ToolConfig {
     t.cutting_length = 11.0;
     t.included_angle = 60.0;
     t.shank_diameter = 6.35;
-    t.shank_length = 20.0;
     t.stickout = 30.0;
     t.flute_count = 2;
     t.name = "V-bit 60deg".to_owned();

@@ -166,7 +166,7 @@ where
 ///
 /// What stays viz's: the phase string the lane shows, the trace `Arc`s the
 /// drain parks on `toolpath_rt`, and the debug artifact file.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(super) fn run_compute(req: &ComputeRequest) -> ComputeExecutionOutcome {
     run_compute_with_phase_tracker(req, None)
 }

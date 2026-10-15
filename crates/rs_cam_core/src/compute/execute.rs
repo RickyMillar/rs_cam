@@ -116,10 +116,6 @@ pub struct GenerationFindings {
     /// operation emits no centrelines, so nothing was measured.
     /// See [`crate::compute::toolpath_stats::TipFloatFinding`].
     pub tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding>,
-    /// PR-5: a retired dial still set to a non-default value in the loaded
-    /// project. `None` = nothing retired is set.
-    /// See [`crate::compute::toolpath_stats::DeprecatedDialFinding`].
-    pub deprecated_dial: Option<crate::compute::toolpath_stats::DeprecatedDialFinding>,
     /// PR-6a: the offset stepovers this operation derived from the canonical
     /// reach policy. EMPTY = the operation derives none.
     ///

@@ -153,7 +153,6 @@ fn six_mm_flat() -> ToolConfig {
         shaft_diameter: DIAMETER_MM,
         holder_diameter: 25.0,
         shank_diameter: DIAMETER_MM,
-        shank_length: 20.0,
         stickout: 30.0,
         flute_count: FLUTES,
         tool_material: ToolMaterial::Carbide,

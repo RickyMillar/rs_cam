@@ -2416,7 +2416,6 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();

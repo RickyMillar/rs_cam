@@ -178,7 +178,6 @@ fn drill_op(picks: &[[f64; 2]]) -> OperationConfig {
 fn pin_drill_op(picks: &[[f64; 2]]) -> OperationConfig {
     OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
         diameter: 6.0,
-        holes: Vec::new(),
         cycle: DrillCycleType::Simple,
         selected_holes: Some(picks.to_vec()),
         ..AlignmentPinDrillConfig::default()

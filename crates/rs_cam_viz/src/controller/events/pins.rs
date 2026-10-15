@@ -9,9 +9,10 @@
 //! - the view mirrors the [`Effects`] (the stale stamps, the simulation,
 //!   the GPU upload, the edited flag);
 //! - the pin-drill operations follow the pins: ONE operation for each
-//!   distinct pin diameter. The door creates a missing one, moves the
-//!   holes of each, and removes an operation whose diameter no pin has
-//!   ([`AppController::sync_alignment_pin_drill`]);
+//!   distinct pin diameter. The door creates a missing one and removes an
+//!   operation whose diameter no pin has
+//!   ([`AppController::sync_alignment_pin_drill`]). An operation reads the
+//!   live pins at generation (W6.5), and the pin row stales it (P4);
 //! - a load-time pin warning that the live pins no longer give leaves the
 //!   load-warning list (R5a).
 //!
@@ -28,10 +29,10 @@
 //! part-model choice applies here too
 //! ([`AppController::set_pin_part_models`]).
 
-use rs_cam_core::compute::alignment_pins::{pin_diameters, pin_holes_of_diameter};
+use rs_cam_core::compute::alignment_pins::pin_diameters;
 use rs_cam_core::session::{
     AddToolArgs, AddToolpathArgs, Command, Effects, RemoveToolpathArgs, SessionError,
-    SetAlignmentPinDrillHolesArgs, SetToolpathToolArgs,
+    SetToolpathToolArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -50,8 +51,7 @@ pub(crate) enum PinDrillSync {
         toolpath_id: ToolpathId,
         setup_index: usize,
     },
-    /// The door moved the holes of the operation to the pins of the size,
-    /// or bound the operation to another tool of the size.
+    /// The door bound the operation to another tool of the size.
     Updated { toolpath_id: ToolpathId },
     /// No pin has the size of the operation any more, so the door removed
     /// it. A second operation of one size is removed too.
@@ -201,7 +201,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The MCP dispatch applies every row through one arm, so its describe
     /// step calls this with the row's [`Effects`].
     pub(crate) fn finish_pin_edit(&mut self, effects: &Effects) -> PinEdit {
-        let mut stale_ids: Vec<ToolpathId> = effects
+        let stale_ids: Vec<ToolpathId> = effects
             .stale
             .iter()
             .filter_map(|&index| self.state.session.toolpath_configs().get(index))
@@ -214,8 +214,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_upload = true;
         self.state.gui.mark_edited();
 
-        let (pin_drill, sync_stale) = self.sync_pin_drill_inner();
-        stale_ids.extend(sync_stale);
+        let pin_drill = self.sync_pin_drill_inner();
         self.refresh_pin_load_warnings();
 
         let stale: Vec<usize> = self
@@ -238,7 +237,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// a notification: its reply carries the refusal, and the MCP toast
     /// reads the reply (one toast per request).
     pub(crate) fn sync_alignment_pin_drill(&mut self) -> Vec<PinDrillSizeSync> {
-        let (outcome, _) = self.sync_pin_drill_inner();
+        let outcome = self.sync_pin_drill_inner();
         self.refresh_pin_load_warnings();
         // A refusal toasts once. A nudge of a set with a size that has no
         // drill refuses on every edit, and the pin block and the wizard
@@ -286,13 +285,7 @@ impl<B: ComputeBackend> AppController<B> {
                     ),
                 }
             }
-            None => {
-                let holes = pin_holes_of_diameter(
-                    &self.state.session.stock_config().alignment_pins,
-                    diameter,
-                );
-                self.create_pin_drill(diameter, holes, Some(tool_id))
-            }
+            None => self.create_pin_drill(diameter, Some(tool_id)),
         };
         self.pending_upload = true;
         self.state.gui.mark_edited();
@@ -442,20 +435,17 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// The synchronisation, and the ids of the toolpaths it made stale.
+    /// The synchronisation.
     ///
     /// 1. Remove each pin-drill operation whose diameter no pin has, and
     ///    each second operation of one size.
-    /// 2. For each pin size: create the missing operation, or move its
-    ///    holes to the pins of the size.
-    fn sync_pin_drill_inner(&mut self) -> (Vec<PinDrillSizeSync>, Vec<ToolpathId>) {
-        use crate::state::toolpath::OperationConfig;
+    /// 2. For each pin size: create the missing operation.
+    fn sync_pin_drill_inner(&mut self) -> Vec<PinDrillSizeSync> {
         use rs_cam_core::compute::alignment_pins::same_pin_diameter;
 
         let pins = self.state.session.stock_config().alignment_pins.clone();
         let sizes = pin_diameters(&pins);
         let mut out = Vec::new();
-        let mut stale_out = Vec::new();
 
         // 1. Remove. The indices shift after each removal, so scan again.
         loop {
@@ -489,55 +479,17 @@ impl<B: ComputeBackend> AppController<B> {
             });
         }
 
-        // 2. One operation for each size.
+        // 2. One operation for each size. An existing operation reads the
+        // live pins at generation (W6.5), so a pin move changes nothing
+        // here: the `SetAlignmentPins` row already staled it (P4).
         for diameter in sizes {
-            let holes = pin_holes_of_diameter(&pins, diameter);
-            let existing = self
-                .state
-                .session
-                .pin_drill_op_for(diameter)
-                .and_then(|index| {
-                    let tc = self.state.session.toolpath_configs().get(index)?;
-                    match &tc.operation {
-                        OperationConfig::AlignmentPinDrill(c) => {
-                            Some((index, tc.id, c.holes.clone()))
-                        }
-                        _ => None,
-                    }
-                });
-            let outcome = match existing {
-                None => self.create_pin_drill(diameter, holes, None),
-                Some((_, _, stored)) if stored == holes => PinDrillSync::Unchanged,
-                Some((index, toolpath_id, _)) => {
-                    let command =
-                        Command::SetAlignmentPinDrillHoles(SetAlignmentPinDrillHolesArgs {
-                            index,
-                            holes,
-                        });
-                    let stale: Vec<ToolpathId> = self
-                        .apply_quietly(command)
-                        .map(|effects| {
-                            effects
-                                .stale
-                                .iter()
-                                .filter_map(|&i| self.state.session.toolpath_configs().get(i))
-                                .map(|tc| tc.id)
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    stale_out.extend(stale);
-                    // The row stamps `stale_since` on every index it
-                    // dropped. Dropping the cached geometry is a view
-                    // decision, and no core answer carries it.
-                    if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-                        rt.result = None;
-                    }
-                    PinDrillSync::Updated { toolpath_id }
-                }
+            let outcome = match self.state.session.pin_drill_op_for(diameter) {
+                None => self.create_pin_drill(diameter, None),
+                Some(_) => PinDrillSync::Unchanged,
             };
             out.push(PinDrillSizeSync { diameter, outcome });
         }
-        (out, stale_out)
+        out
     }
 
     /// Create the pin-drill operation of the pin size `diameter` in the
@@ -548,12 +500,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// (the spoilboard penetration, the cycle, the peck and the retract),
     /// so every dowel hole goes to the same depth. The feeds come from the
     /// suggest funnel of the new tool.
-    fn create_pin_drill(
-        &mut self,
-        diameter: f64,
-        holes: Vec<[f64; 2]>,
-        tool: Option<usize>,
-    ) -> PinDrillSync {
+    fn create_pin_drill(&mut self, diameter: f64, tool: Option<usize>) -> PinDrillSync {
         use crate::state::toolpath::{AlignmentPinDrillConfig, OperationConfig};
 
         let Some(setup_idx) = pin_drill_setup(&self.state.session) else {
@@ -640,7 +587,6 @@ impl<B: ComputeBackend> AppController<B> {
             }
         };
         cfg.diameter = diameter;
-        cfg.holes = holes;
         if let Some(sibling) = &sibling {
             cfg.spoilboard_penetration = sibling.spoilboard_penetration;
             cfg.cycle = sibling.cycle;

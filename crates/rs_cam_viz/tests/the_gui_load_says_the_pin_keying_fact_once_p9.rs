@@ -1,5 +1,5 @@
-//! P9 — the GUI load path says the pin-keying fact once, and an old file
-//! with the deleted `flip_axis` key opens (P3).
+//! P9 — the GUI load path says the pin-keying fact once. C1: an old file
+//! with the deleted `flip_axis` key (P3) refuses to open and names the key.
 //!
 //! `open_job_from_path` ran the core pin check a second time and hid the
 //! copy with a dedupe. P9 deleted the second run: the GUI shows the core
@@ -85,16 +85,25 @@ face_up = "bottom"
 "#;
 
 #[test]
-fn an_old_mini_piece_opens_with_one_keying_line() {
+fn an_old_mini_piece_refuses_then_opens_with_one_keying_line() {
     let dir = std::env::temp_dir().join(format!("rs_cam_p9_load_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("mini.toml");
     std::fs::write(&path, MINI_PIECE).unwrap();
 
     let mut controller = AppController::with_backend(IdleBackend);
+    let refusal = controller
+        .open_job_from_path(&path)
+        .expect_err("C1: the deleted flip_axis key refuses the file");
+    let message = format!("{refusal:?}");
+    assert!(message.contains("job.stock.flip_axis"), "{message}");
+
+    let without_key = MINI_PIECE.replace("flip_axis = \"horizontal\"\n", "");
+    assert_ne!(without_key, MINI_PIECE, "non-vacuity: the key was there");
+    std::fs::write(&path, without_key).unwrap();
     controller
         .open_job_from_path(&path)
-        .expect("the deleted flip_axis key does not refuse the file");
+        .expect("the file without the key opens");
 
     let keying: Vec<&String> = controller
         .load_warnings()

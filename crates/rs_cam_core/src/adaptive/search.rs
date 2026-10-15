@@ -1001,7 +1001,7 @@ pub(super) fn path_bounds(path: &[P2]) -> Option<ToolpathDebugBounds2> {
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn search_direction(
     grid: &MaterialGrid,
     machinable_mask: &[bool],

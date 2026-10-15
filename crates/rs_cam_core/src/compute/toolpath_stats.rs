@@ -148,22 +148,6 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it.
     pub tip_float: Option<TipFloatFinding>,
-    /// PR-5: a loaded project carries a RETIRED dial at a non-default value,
-    /// so the number the operator set is no longer the one steering the
-    /// operation.
-    ///
-    /// `None` = **nothing retired is set** (the overwhelming majority of
-    /// toolpaths, and every project that never touched the dial). It is not
-    /// a measurement, it is a compatibility notice: the field is still
-    /// deserialized so old projects load unchanged, and this is what stops
-    /// that from being silent.
-    ///
-    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
-    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
-    /// since C5, because of `clippy::large_enum_variant`.
-    ///
-    /// Report-only: no gate consumes it, and generation is unaffected.
-    pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
     /// PR-6a (H2.3): an offset stepover this operation DERIVED from the
     /// canonical reach policy instead of taking from a dial, together with
     /// the envelope-scaled number that used to be used there.
@@ -327,7 +311,7 @@ pub struct ToolpathStats {
     /// non-default rest-CLAIMS dial that its own configuration never applies.
     /// See [`InertClaimsDialFinding`].
     ///
-    /// `None` = **nothing inert is set**. Like [`Self::deprecated_dial`] this
+    /// `None` = **nothing inert is set**. Like a config notice this
     /// is not a measurement of the part, it is a statement about the config,
     /// so the two-valued reading is the honest one — there is no "measured
     /// zero" for "the operator set nothing unusual".
@@ -1200,27 +1184,6 @@ impl InertClaimsDialFinding {
             why = self.why(),
         )
     }
-}
-
-/// A user-facing dial that a project still sets but the code no longer
-/// reads (PR-5, H2.2).
-///
-/// The alternative to reporting is one of the two failure modes this
-/// programme keeps finding: silently ignore the value (the operator's
-/// setting stops doing anything, with no way to tell), or refuse to load
-/// the project (breaks every saved job for a dial that was never
-/// load-bearing). Deserialize it, ignore it, and SAY SO.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DeprecatedDialFinding {
-    /// The dial's name as it appears in the project file and the GUI.
-    pub dial: &'static str,
-    /// The value the project carries.
-    pub value: f64,
-    /// The value that used to be the default — anything else means the
-    /// operator deliberately tuned it.
-    pub default_value: f64,
-    /// One sentence naming what replaced it.
-    pub replaced_by: &'static str,
 }
 
 /// An offset stepover an operation sized from [`crate::surface::reach`] rather than

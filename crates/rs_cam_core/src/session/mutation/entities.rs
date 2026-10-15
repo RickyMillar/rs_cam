@@ -258,36 +258,6 @@ impl ProjectSession {
         })
     }
 
-    /// Update the alignment pin drill holes for a toolpath.
-    ///
-    /// Errors if the toolpath's operation is not `AlignmentPinDrill`.
-    #[instrument(skip(self, holes))]
-    pub(crate) fn set_alignment_pin_drill_holes(
-        &mut self,
-        index: usize,
-        holes: Vec<[f64; 2]>,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
-            let tc = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            match tc.operation {
-                OperationConfig::AlignmentPinDrill(ref mut cfg) => {
-                    cfg.holes = holes;
-                }
-                _ => {
-                    return Err(SessionError::InvalidParam(
-                        "Toolpath is not an AlignmentPinDrill operation".to_owned(),
-                    ));
-                }
-            }
-            let enabled = tc.enabled;
-            session.invalidate_result_chain(index, enabled);
-            Ok(())
-        })
-    }
-
     /// Set the explicitly-selected drill holes (DXF point / circle-centre
     /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
     /// cached result and the results of every operation downstream of it.
@@ -296,9 +266,8 @@ impl ProjectSession {
     ///
     /// A pick changes which holes the operation cuts, so it changes the
     /// stock a downstream `StockSource::FromRemainingStock` operation
-    /// reads. This called `drop_result` alone until WP8 (N6), while its
-    /// sibling [`Self::set_alignment_pin_drill_holes`] 30 lines above
-    /// walked the chain. The two now answer alike.
+    /// reads. This called `drop_result` alone until WP8 (N6). It walks the
+    /// chain now.
     ///
     /// Errors if the toolpath's operation is not a drilling op.
     #[instrument(skip(self, selected_holes))]

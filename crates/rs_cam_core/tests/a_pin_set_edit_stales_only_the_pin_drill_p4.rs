@@ -8,8 +8,9 @@
 //! unrelated pocket keeps its result. Before P4 every pin edit dropped
 //! every result (`drop_all_results`).
 //!
-//! The loader half (P3, P9): a project file that still carries the
-//! deleted `flip_axis` key loads, and says the keying fact once.
+//! The loader half (P3, P9, C1): a project file that still carries the
+//! deleted `flip_axis` key refuses and names the key; without the key it
+//! loads and says the keying fact once.
 
 #![allow(
     clippy::unwrap_used,
@@ -312,17 +313,29 @@ name = "Bottom"
 face_up = "bottom"
 "#;
 
-/// An old file with `flip_axis` loads; the loader ignores the key and says
-/// the keying fact exactly once. A save writes no `flip_axis`.
+/// C1: an old file with `flip_axis` refuses to load, and the message names
+/// the key. The same file without the key loads, says the keying fact
+/// exactly once, and a save writes no `flip_axis`.
 #[test]
-fn an_old_file_with_flip_axis_loads_with_one_keying_warning() {
+fn an_old_file_with_flip_axis_refuses_and_names_the_key() {
     let dir = std::env::temp_dir().join(format!("rs_cam_p3_flip_axis_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("mini.toml");
     std::fs::write(&path, MINI_PIECE_WITH_OLD_KEY).unwrap();
+    let message = ProjectSession::load_with_warnings(&path)
+        .err()
+        .expect("the retired key refuses the file")
+        .to_string();
+    assert!(message.contains("'job.stock.flip_axis'"), "{message}");
 
+    let without_key = MINI_PIECE_WITH_OLD_KEY.replace("flip_axis = \"horizontal\"\n", "");
+    assert_ne!(
+        without_key, MINI_PIECE_WITH_OLD_KEY,
+        "non-vacuity: the key was there"
+    );
+    std::fs::write(&path, without_key).unwrap();
     let (session, warnings) =
-        ProjectSession::load_with_warnings(&path).expect("the old key does not refuse the file");
+        ProjectSession::load_with_warnings(&path).expect("the file without the key loads");
     let pin_lines: Vec<String> = warnings
         .iter()
         .filter(|w| matches!(w, ProjectLoadWarning::AlignmentPinsUnkeyed { .. }))

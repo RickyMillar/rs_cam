@@ -516,7 +516,7 @@ pub struct SetToolParamInput {
     /// refused): "diameter", "flute_count", "stickout", "corner_radius"
     /// (bull-nose corner), "cutting_length", "included_angle" (V-bit,
     /// degrees), "taper_half_angle" (tapered ball nose, degrees),
-    /// "shaft_diameter", "shank_diameter", "shank_length",
+    /// "shaft_diameter", "shank_diameter",
     /// "holder_diameter", "size_units" (display unit: "metric" or
     /// "imperial"; changes no length and invalidates nothing).
     pub param: String,
@@ -697,8 +697,6 @@ pub struct AddToolParam {
     /// Shank diameter in mm (collision + machine collet check).
     /// Default 6.35.
     pub shank_diameter: Option<f64>,
-    /// Shank length in mm. Default 20.0.
-    pub shank_length: Option<f64>,
     /// Tool stickout from the holder in mm — drives the deflection
     /// model. Default 45.0.
     pub stickout: Option<f64>,
@@ -1824,7 +1822,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     apply_f64!(cutting_length, "cutting_length");
     apply_f64!(shaft_diameter, "shaft_diameter");
     apply_f64!(shank_diameter, "shank_diameter");
-    apply_f64!(shank_length, "shank_length");
     apply_f64!(stickout, "stickout");
     apply_f64!(holder_diameter, "holder_diameter");
 
@@ -2554,7 +2551,6 @@ mod tests {
             "cutting_length",
             "shaft_diameter",
             "shank_diameter",
-            "shank_length",
             "stickout",
             "holder_diameter",
             "flute_count",

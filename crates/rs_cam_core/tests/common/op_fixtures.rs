@@ -432,10 +432,6 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         (builder.add_model(place(outline_model())), None)
     };
 
-    if let OperationConfig::AlignmentPinDrill(cfg) = &mut op {
-        // The pin door snapshots the stock pins into the op; do the same.
-        cfg.holes = stock.alignment_pins.iter().map(|p| [p.x, p.y]).collect();
-    }
     if spec.prior == Prior::RestPrior {
         // The prior op: a flat end mill, which every fixture admits.
         let prior_tool_idx =

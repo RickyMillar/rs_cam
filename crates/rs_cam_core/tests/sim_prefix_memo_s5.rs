@@ -55,7 +55,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        20.0,
         25.0,
         45.0,
         2,
@@ -452,7 +451,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -464,7 +462,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(BallEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -476,7 +473,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(VBitEndmill::new(6.0, 90.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -488,7 +484,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 60.0,
                 2,
@@ -500,7 +495,6 @@ fn tool_key_separates_every_shipped_shape() {
             ToolDefinition::new(
                 Box::new(FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 3,
@@ -552,7 +546,6 @@ fn clone_tool(src: &ToolDefinition) -> ToolDefinition {
     ToolDefinition::new(
         cutter,
         src.shank_diameter,
-        src.shank_length,
         src.holder_diameter,
         src.stickout,
         src.flute_count,

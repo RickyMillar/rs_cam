@@ -636,7 +636,7 @@ pub(crate) enum AdaptiveSegment {
 }
 
 /// Generate the 2D adaptive clearing path segments.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(super) fn adaptive_segments(
     polygon: &Polygon2,
     tool_radius: f64,

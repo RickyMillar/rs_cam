@@ -194,7 +194,7 @@ fn both_loader_doors_reproduce_a_planned_chain_identically() {
     // Door A: path -> session.
     let door_a = ProjectSession::load(&path).unwrap();
     // Door B: text -> ProjectFile -> session.
-    let parsed: ProjectFile = toml::from_str(&text).unwrap();
+    let parsed = ProjectFile::from_toml_str(&text).unwrap();
     let door_b = ProjectSession::from_project_file(parsed, path.parent().unwrap()).unwrap();
 
     assert_matches_original(&door_a, coarse_id, fine_id, "door A (load)");

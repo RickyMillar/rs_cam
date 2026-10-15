@@ -132,7 +132,11 @@ fn default_sim_resolution() -> f64 {
     0.25
 }
 
+/// One `[tools.<key>]` table. An unknown key refuses to parse: C1 (B18)
+/// deleted `shank_length` and `holder_length`, and a silent ignore would
+/// hide the edit.
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToolDef {
     /// Cutter shape. CLI-08: one vocabulary for every surface — the
     /// canonical [`ToolType`] serde token, the same token `run --tool`
@@ -161,16 +165,13 @@ pub struct ToolDef {
     /// Shank diameter above the cutting flutes (mm).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shank_diameter: Option<f64>,
-    /// Shank length above the cutting flutes (mm).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shank_length: Option<f64>,
+    /// The length from the holder face to the tip (mm). Default: the
+    /// cutting length, so the holder face sits at the top of the flutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stickout: Option<f64>,
     /// Holder diameter (mm).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub holder_diameter: Option<f64>,
-    /// Holder length (mm).
-    #[allow(dead_code)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub holder_length: Option<f64>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -877,11 +878,10 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
     Ok(ToolDefinition::new(
         cutter,
         def.shank_diameter.unwrap_or(d),
-        def.shank_length.unwrap_or(0.0),
         def.holder_diameter.unwrap_or(d * 2.0),
-        // The default stickout puts the holder face at the top of the shank
-        // blank: the stickout is the holder face height above the tip.
-        def.shank_length.unwrap_or(0.0) + cl,
+        // The stickout is the holder face height above the tip. The
+        // default puts the face at the top of the flutes.
+        def.stickout.unwrap_or(cl),
         def.flute_count.unwrap_or(2),
         rs_cam_core::compute::ToolMaterial::Carbide,
     ))
@@ -1083,8 +1083,8 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
     if let Some(sd) = def.shank_diameter {
         tc.shank_diameter = sd;
     }
-    if let Some(sl) = def.shank_length {
-        tc.shank_length = sl;
+    if let Some(stickout) = def.stickout {
+        tc.stickout = stickout;
     }
     if let Some(hd) = def.holder_diameter {
         tc.holder_diameter = hd;
@@ -1523,9 +1523,8 @@ mod tests {
             taper_angle: None,
             shaft_diameter: None,
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let cutter = build_tool(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -1540,9 +1539,8 @@ mod tests {
             taper_angle: None,
             shaft_diameter: None,
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let ball_cutter = build_tool(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -1560,9 +1558,8 @@ mod tests {
             taper_angle: Some(10.0),
             shaft_diameter: Some(12.0),
             shank_diameter: None,
-            shank_length: None,
+            stickout: None,
             holder_diameter: None,
-            holder_length: None,
         };
         let tapered_cutter = build_tool(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0

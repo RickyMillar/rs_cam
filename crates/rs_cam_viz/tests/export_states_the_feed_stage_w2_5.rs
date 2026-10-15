@@ -80,7 +80,6 @@ fn end_mill_6mm() -> ToolConfig {
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
-    tool.shank_length = 20.0;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm (W2.5)".to_owned();

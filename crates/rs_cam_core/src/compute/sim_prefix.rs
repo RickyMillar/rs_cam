@@ -412,7 +412,6 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
         tool.helix_deg(),
         tool.corner_radius_mm(),
         tool.shank_diameter,
-        tool.shank_length,
         tool.holder_diameter,
         tool.stickout,
     ] {

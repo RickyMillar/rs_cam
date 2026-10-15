@@ -59,41 +59,117 @@ fn check_format_version(project: &ProjectFile) -> Result<(), SessionError> {
     })
 }
 
-/// K1: refuse a project file whose setup holds an entry under the retired
-/// `fixtures` or `keep_out_zones` key.
+/// One retired project-file key: the table that held it, its name, and
+/// what replaced it.
 ///
-/// Fixtures and keep-out zones are one concept now, the obstacle, written
-/// as `[[setups.obstacles]]` in the setup frame. Nothing converts the old
-/// keys: the old fixture was a world box and the old keep-out zone had no
-/// Z extent, so a silent conversion would guess the solid. The file fails
-/// to open and the message names the new key.
+/// `table` is a path from the file root. The step `"[]"` enters every
+/// entry of an array of tables.
+struct RetiredKey {
+    table: &'static [&'static str],
+    key: &'static str,
+    replacement: &'static str,
+}
+
+const OBSTACLE_REPLACEMENT: &str = "Fixtures and keep-out zones are one concept now: write each \
+     one as an obstacle, [[setups.obstacles]] with an id, a name, a clearance and a geometry \
+     (kind = \"box\" with min and max, \"outline_extrude\" or \"model\"), with every value in \
+     the setup frame. Delete the old key, an empty list too";
+
+/// Every retired project-file key. The loader refuses a file that holds
+/// one of them, and the message names the key and what replaced it.
 ///
-/// An EMPTY old list (`fixtures = []`, which the old writer put in every
-/// file) holds no obstacle, so nothing can vanish; it loads, and the next
-/// save drops the key.
-fn check_retired_keys(project: &ProjectFile) -> Result<(), SessionError> {
-    let holds_an_entry = |value: &Option<toml::Value>| match value {
-        None => false,
-        Some(toml::Value::Array(entries)) => !entries.is_empty(),
-        Some(_) => true,
-    };
-    for setup in &project.setups {
-        let key = if holds_an_entry(&setup.fixtures) {
-            "fixtures"
-        } else if holds_an_entry(&setup.keep_out_zones) {
-            "keep_out_zones"
+/// Nothing converts an old key, and nothing ignores one. Ruling of
+/// 2026-09-16: no legacy, breaking is acceptable. Ruling of 2026-10-15:
+/// old code that is left behind is retired. A key that the loader ignores
+/// hides an edit the operator thinks is live. Add a row here when a key
+/// leaves the file format.
+const RETIRED_KEYS: &[RetiredKey] = &[
+    RetiredKey {
+        table: &["setups", "[]"],
+        key: "fixtures",
+        replacement: OBSTACLE_REPLACEMENT,
+    },
+    RetiredKey {
+        table: &["setups", "[]"],
+        key: "keep_out_zones",
+        replacement: OBSTACLE_REPLACEMENT,
+    },
+    RetiredKey {
+        table: &["job", "stock"],
+        key: "flip_axis",
+        replacement: "Removed (P3): rs_cam derives the flip axis from the setups. Delete the key",
+    },
+    RetiredKey {
+        table: &["job", "stock"],
+        key: "workholding_rigidity",
+        replacement: "Removed (ruling R4 Q8): the machine aggressiveness dial is the one load \
+                      margin. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "dressups"],
+        key: "air_bridge_policy",
+        replacement: "Removed: one rule (retract_saves_time) bridges each air stretch with a \
+                      retract only when the retract is faster than the feed. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "operation", "params"],
+        key: "holes",
+        replacement: "Removed (W6.5, C1): the pin drill reads the live stock pins of its \
+                      diameter. Delete the key",
+    },
+    RetiredKey {
+        table: &["tools", "[]"],
+        key: "shank_length",
+        replacement: "Removed (B18): the holder face is at the stickout above the tip, and the \
+                      exposed shank is stickout - cutting_length. Set stickout. Delete the key",
+    },
+];
+
+/// The path of the first `key` under the tables that `steps` names, or
+/// `None` when no such table holds the key.
+fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str) -> Option<String> {
+    let join = |name: &str| {
+        if at.is_empty() {
+            name.to_owned()
         } else {
-            continue;
-        };
-        return Err(SessionError::TomlParse(format!(
-            "setup '{}' uses the retired key '{key}'. Fixtures and keep-out zones are one \
-             concept now: write each one as an obstacle, [[setups.obstacles]] with an id, \
-             a name, a clearance and a geometry (kind = \"box\" with min and max, \
-             \"outline_extrude\" or \"model\"), with every value in the setup frame",
-            setup.name
-        )));
+            format!("{at}.{name}")
+        }
+    };
+    match steps.split_first() {
+        None => value.as_table()?.contains_key(key).then(|| join(key)),
+        Some((&"[]", rest)) => value
+            .as_array()?
+            .iter()
+            .enumerate()
+            .find_map(|(i, entry)| find_retired(entry, rest, key, &format!("{at}[{i}]"))),
+        Some((step, rest)) => find_retired(value.as_table()?.get(*step)?, rest, key, &join(step)),
+    }
+}
+
+/// Refuse a project file that holds a key from [`RETIRED_KEYS`].
+fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
+    for retired in RETIRED_KEYS {
+        if let Some(path) = find_retired(raw, retired.table, retired.key, "") {
+            return Err(SessionError::RetiredKey {
+                path,
+                replacement: retired.replacement,
+            });
+        }
     }
     Ok(())
+}
+
+impl ProjectFile {
+    /// Parse a project file from its text. This is the one text door:
+    /// it refuses a retired key ([`RETIRED_KEYS`]) before it reads the
+    /// typed sections.
+    pub fn from_toml_str(text: &str) -> Result<Self, SessionError> {
+        let raw: toml::Value =
+            toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))?;
+        check_retired_keys(&raw)?;
+        // The second parse keeps the line and column in a typed error.
+        toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))
+    }
 }
 
 /// Something a project load noticed, kept for the operator to read.
@@ -305,8 +381,8 @@ pub struct ProjectStockConfig {
     pub origin_z: f64,
     #[serde(default = "default_stock_padding")]
     pub padding: f64,
-    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone; an old
-    // file's key is ignored on load.
+    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The
+    // loader refuses an old file's key (`RETIRED_KEYS`).
     #[serde(default = "default_true")]
     pub auto_from_model: bool,
     #[serde(default)]
@@ -318,7 +394,7 @@ pub struct ProjectStockConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pin_part_models: Option<Vec<usize>>,
     // P3 (2026-10-12): `flip_axis` is gone. The flip axis is derived from
-    // the setups; an old file's key is ignored on load.
+    // the setups. The loader refuses an old file's key (`RETIRED_KEYS`).
 }
 
 impl Default for ProjectStockConfig {
@@ -384,8 +460,6 @@ pub struct ProjectToolSection {
     pub holder_diameter: f64,
     #[serde(default = "default_shank_diameter")]
     pub shank_diameter: f64,
-    #[serde(default = "default_shank_length")]
-    pub shank_length: f64,
     #[serde(default = "default_stickout")]
     pub stickout: f64,
     #[serde(default = "default_flute_count")]
@@ -438,9 +512,6 @@ fn default_holder_diameter() -> f64 {
 }
 fn default_shank_diameter() -> f64 {
     6.35
-}
-fn default_shank_length() -> f64 {
-    20.0
 }
 fn default_stickout() -> f64 {
     45.0
@@ -504,13 +575,6 @@ pub struct ProjectSetupSection {
     /// An empty list writes no key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obstacles: Vec<crate::compute::obstacle::Obstacle>,
-    /// The retired `fixtures` key. Read only to refuse a file whose list
-    /// holds an entry ([`check_retired_keys`]); never written.
-    #[serde(default, skip_serializing)]
-    pub fixtures: Option<toml::Value>,
-    /// The retired `keep_out_zones` key. Read only, as `fixtures` is.
-    #[serde(default, skip_serializing)]
-    pub keep_out_zones: Option<toml::Value>,
     /// S2: `[[setups.stock_changes]]`, the setup's stock changes in
     /// application order. Additive under `format_version = 3`: a file with
     /// no key loads an empty list, and an empty list writes no key, so a
@@ -713,7 +777,6 @@ pub(crate) fn tool_from_project_section(
         shaft_diameter: ts.shaft_diameter,
         holder_diameter: ts.holder_diameter,
         shank_diameter: ts.shank_diameter,
-        shank_length: ts.shank_length,
         stickout: ts.stickout,
         flute_count: ts.flute_count,
         tool_material: parse_tool_material(&ts.tool_material),
@@ -956,7 +1019,6 @@ pub(super) fn build_session_from_project(
 ) -> Result<super::ProjectSession, SessionError> {
     validate_looks_like_cam_project(&project, None)?;
     check_format_version(&project)?;
-    check_retired_keys(&project)?;
 
     let mut stock = stock_from_project(&project.job.stock);
 
@@ -1114,17 +1176,14 @@ pub(super) fn build_session_from_project(
         for tp_section in &setup_section.toolpaths {
             let tp_idx = toolpath_configs.len();
             let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
-            let operation = match &tp_section.operation {
-                Some(op) => op.clone(),
-                None => {
-                    let op_type = tp_section.op_type.unwrap_or(OperationType::Pocket);
-                    tracing::warn!(
-                        toolpath_id = tp_id.0,
-                        ?op_type,
-                        "loaded toolpath with default operation; TOML was missing [setups.toolpaths.operation]"
-                    );
-                    OperationConfig::new_default(op_type)
-                }
+            // A toolpath with no `[setups.toolpaths.operation]` table has no
+            // parameters. The loader refuses it: a default operation would
+            // cut with values the operator never set.
+            let Some(operation) = tp_section.operation.clone() else {
+                return Err(SessionError::MissingOperation {
+                    setup: setup_section.name.clone(),
+                    toolpath: tp_section.name.clone(),
+                });
             };
             toolpath_configs.push(toolpath_config_from_section(
                 tp_section, tp_id, &operation, warnings,

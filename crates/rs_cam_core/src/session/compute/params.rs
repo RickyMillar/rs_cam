@@ -40,11 +40,11 @@ fn unknown_param_error(
     operation: &crate::compute::catalog::OperationConfig,
     param: &str,
 ) -> SessionError {
-    // CMP-08: `param_names` now carries the three aliases this module's
-    // named arms write, and the toolpath-level names follow it. Before
-    // that the list was wrong in both directions for Waterline, RampFinish
-    // and Pencil — it omitted a name this setter accepts, so the message
-    // told the caller a name was invalid while the setter took it.
+    // CMP-08: `param_names` carries the aliases this module's named arms
+    // write (RampFinish `depth_per_pass`, Pencil `stepover`), and the
+    // toolpath-level names follow it. Before that the list omitted a name
+    // this setter accepts, so the message told the caller a name was
+    // invalid while the setter took it.
     SessionError::InvalidParam(format!(
         "unknown parameter '{param}' for {} operation. Valid parameters: {}. \
          Toolpath parameters: {}",
@@ -119,6 +119,8 @@ impl ProjectSession {
     /// reads — that arm panics when no `impl ProjectSession` block
     /// declares it. And it is the one setter whose own body proves the
     /// two routes are one.
+    // SAFETY: the declared wrapper exemption above; the non-test build
+    // has no caller, and the WP15a sentry reads the body as text.
     #[allow(dead_code)]
     pub(crate) fn set_toolpath_param(
         &mut self,
@@ -227,15 +229,16 @@ impl ProjectSession {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;
                 check_param_range(&tc.operation, param, v)?;
-                // N5, as for `stepover` above. Note the three ALIAS
-                // setters this arm is the only route to: Waterline maps
-                // `depth_per_pass` onto `z_step`, RampFinish onto
-                // `max_stepdown`, and Pencil maps `stepover` onto
-                // `offset_stepover`. Since CMP-08 the registry PUBLISHES
-                // those three names, as `ParamDef::aliases` on the field
-                // each one writes, so the schema and the refusal message
-                // agree with this arm.
-                if !tc.operation.set_depth_per_pass(v) {
+                // N5, as for `stepover` above. This arm writes through the
+                // feeds accessor, which also reaches a field with another
+                // name: RampFinish `max_stepdown` (an alias the registry
+                // publishes, CMP-08) and Waterline `z_step` (C1: no alias,
+                // so the name refuses here). The arm accepts only a name
+                // the registry publishes for the op, so the setter and
+                // the schema agree.
+                if !tc.operation.param_names().contains(&param)
+                    || !tc.operation.set_depth_per_pass(v)
+                {
                     return Err(unknown_param_error(&tc.operation, param));
                 }
                 tc.feeds_provenance.set(
@@ -498,7 +501,7 @@ impl ProjectSession {
     ///
     /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
     /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
-    /// `shank_diameter`, `shank_length`, `holder_diameter`, and `size_units`
+    /// `shank_diameter`, `holder_diameter`, and `size_units`
     /// (`"metric"` or `"imperial"`).
     ///
     /// Invalidates cached results for all toolpaths that reference this tool.
@@ -579,11 +582,6 @@ impl ProjectSession {
             "shank_diameter" => {
                 tool.shank_diameter = value.as_f64().ok_or_else(|| {
                     SessionError::InvalidParam("shank_diameter must be a number".to_owned())
-                })?;
-            }
-            "shank_length" => {
-                tool.shank_length = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("shank_length must be a number".to_owned())
                 })?;
             }
             "holder_diameter" => {

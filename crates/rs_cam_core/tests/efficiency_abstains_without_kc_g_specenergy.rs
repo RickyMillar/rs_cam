@@ -91,7 +91,6 @@ fn endmill(stickout: f64) -> ToolConfig {
         shaft_diameter: DIAMETER_MM,
         holder_diameter: 25.0,
         shank_diameter: DIAMETER_MM,
-        shank_length: 20.0,
         stickout,
         flute_count: FLUTES,
         tool_material: ToolMaterial::Carbide,

@@ -370,15 +370,6 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 )
                 .show(ui);
 
-                ValueRow::new(
-                    "Shank Length:",
-                    &mut tool.shank_length,
-                    " mm",
-                    0.5,
-                    0.0..=200.0,
-                )
-                .show(ui);
-
                 ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, 0.0..=300.0).show(ui);
             });
         });

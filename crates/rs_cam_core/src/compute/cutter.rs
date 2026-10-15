@@ -44,7 +44,6 @@ pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
     ToolDefinition::new(
         cutter,
         tool.shank_diameter,
-        tool.shank_length,
         tool.holder_diameter,
         tool.stickout,
         tool.flute_count,

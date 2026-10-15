@@ -314,7 +314,6 @@ pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated";
 /// machined stock, so it cut the whole outline at every level. A REPORT:
 /// the fallback cuts more, never less.
 pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback";
-pub const CONFIG_DEPRECATED_DIAL: &str = "config.deprecated_dial";
 /// An operation sized an offset stepover from the canonical reach policy
 /// rather than from any dial, and the value differs from the envelope-scaled
 /// number that used to be used there. Report-only: it says which number is

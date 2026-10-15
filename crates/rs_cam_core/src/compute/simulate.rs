@@ -974,7 +974,6 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
                     hash_f64(hasher, entry.tool.diameter());
                     hash_f64(hasher, entry.tool.length());
                     hash_f64(hasher, entry.tool.shank_diameter);
-                    hash_f64(hasher, entry.tool.shank_length);
                     hash_f64(hasher, entry.tool.holder_diameter);
                     hash_f64(hasher, entry.tool.stickout);
                     entry.tool.flute_count.hash(hasher);
@@ -2736,7 +2735,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -3061,7 +3059,6 @@ mod tests {
         let tool_def = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.35, 25.0)),
             6.35,
-            20.0,
             25.0,
             45.0,
             2,
@@ -3141,7 +3138,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,

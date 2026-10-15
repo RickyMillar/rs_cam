@@ -626,10 +626,6 @@ pub struct ToolDefinition {
     cutter: Box<dyn MillingCutter>,
     /// Shank diameter above the cutting flutes (mm).
     pub shank_diameter: f64,
-    /// Length of the shank blank above the cutting flutes (mm). The
-    /// assembly does not read it: the exposed shank follows from
-    /// `stickout` ([`Self::exposed_shank_length`]).
-    pub shank_length: f64,
     /// Holder / collet diameter (mm).
     pub holder_diameter: f64,
     /// Total stickout from holder face to cutter tip (mm).
@@ -644,7 +640,6 @@ impl ToolDefinition {
     pub fn new(
         cutter: Box<dyn MillingCutter>,
         shank_diameter: f64,
-        shank_length: f64,
         holder_diameter: f64,
         stickout: f64,
         flute_count: u32,
@@ -653,7 +648,6 @@ impl ToolDefinition {
         Self {
             cutter,
             shank_diameter,
-            shank_length,
             holder_diameter,
             stickout,
             flute_count,
@@ -663,8 +657,7 @@ impl ToolDefinition {
 
     /// The shank length between the flutes and the holder face (mm):
     /// `max(stickout - cutting length, 0)`. The holder face is at
-    /// `stickout` above the tip, always; `shank_length` is the length of
-    /// the shank blank and does not move the face.
+    /// `stickout` above the tip, always (K1b, B18).
     pub fn exposed_shank_length(&self) -> f64 {
         self.to_assembly().exposed_shank_length()
     }
@@ -1232,7 +1225,7 @@ mod tests {
     #[test]
     fn test_tool_definition_delegates() {
         let cutter = Box::new(BallEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.35, 25.0, 45.0, 2, ToolMaterial::Carbide);
         // Trait methods delegate correctly
         assert!((td.diameter() - 10.0).abs() < 1e-10);
         assert!((td.radius() - 5.0).abs() < 1e-10);
@@ -1246,7 +1239,7 @@ mod tests {
     #[test]
     fn test_tool_definition_assembly_flat() {
         let cutter = Box::new(FlatEndmill::new(10.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.35, 25.0, 50.0, 2, ToolMaterial::Carbide);
         let asm = td.to_assembly();
         assert!((asm.cutter_radius - 5.0).abs() < 1e-10);
         assert!((asm.cutter_length - 25.0).abs() < 1e-10);
@@ -1262,7 +1255,7 @@ mod tests {
     fn test_tool_definition_assembly_tapered_ball_uses_shaft_radius() {
         // This is the bug regression: collision must use shaft_radius, not ball_radius
         let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.35, 25.0, 50.0, 2, ToolMaterial::Carbide);
         let asm = td.to_assembly();
         // cutter_radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
         assert!(
@@ -1276,7 +1269,7 @@ mod tests {
     #[test]
     fn test_tool_definition_geometry_hint() {
         let cutter = Box::new(BullNoseEndmill::new(10.0, 2.0, 25.0));
-        let td = ToolDefinition::new(cutter, 6.35, 20.0, 25.0, 50.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.35, 25.0, 50.0, 2, ToolMaterial::Carbide);
         match td.to_geometry_hint() {
             crate::feeds::ToolGeometryHint::Bull { corner_radius } => {
                 assert!((corner_radius - 2.0).abs() < 1e-10);
@@ -1301,7 +1294,7 @@ mod tests {
         // `tests/the_bending_diameter_knows_the_flute_count_g_bendeq.rs`; this
         // test reads it from the same function so the two cannot drift.
         let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
-        let td = ToolDefinition::new(cutter, 6.0, 100.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         let force = 270.0;
         let axial_doc = 6.0;
         let l = 45.0;
@@ -1342,7 +1335,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(FlatEndmill::new(d, l)),
             d,
-            0.0,
             25.0,
             l,
             2,
@@ -1401,7 +1393,7 @@ mod tests {
         // and not a fit to the new output.
         //   δ_tip = (F/E) × 80.149 mm³
         let cutter = Box::new(FlatEndmill::new(6.0, 20.0));
-        let td = ToolDefinition::new(cutter, 12.0, 30.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 12.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
         let force = 270.0;
         let axial_doc = 10.0;
         let e = 600_000.0;
@@ -1434,11 +1426,10 @@ mod tests {
         // three geometries identical apart from the cutter profile, which is
         // the only thing this test is about.
         let tapered = Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 35.0));
-        let td_real = ToolDefinition::new(tapered, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td_real = ToolDefinition::new(tapered, 6.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         let td_shank = ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 35.0)),
             6.0,
-            30.0,
             25.0,
             45.0,
             2,
@@ -1447,7 +1438,6 @@ mod tests {
         let td_tip = ToolDefinition::new(
             Box::new(FlatEndmill::new(2.0, 35.0)),
             2.0,
-            30.0,
             25.0,
             45.0,
             2,
@@ -1468,7 +1458,7 @@ mod tests {
     #[test]
     fn tip_deflection_zero_force_is_zero() {
         let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
-        let td = ToolDefinition::new(cutter, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         assert_eq!(td.tip_deflection_mm(0.0, 6.0, 600_000.0), 0.0);
     }
 
@@ -1477,7 +1467,7 @@ mod tests {
         // Same tool, same load, swap E. δ ∝ 1/E so the HSS deflection is 3×
         // the carbide deflection (200 vs 600 GPa).
         let cutter = Box::new(FlatEndmill::new(6.0, 60.0));
-        let td = ToolDefinition::new(cutter, 6.0, 30.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
+        let td = ToolDefinition::new(cutter, 6.0, 25.0, 45.0, 2, ToolMaterial::Carbide);
         let carbide = td.tip_deflection_mm(100.0, 5.0, 600_000.0);
         let hss = td.tip_deflection_mm(100.0, 5.0, 200_000.0);
         let ratio = hss / carbide;
@@ -1496,7 +1486,6 @@ mod tests {
         let td = ToolDefinition::new(
             Box::new(FlatEndmill::new(10.0, 25.0)),
             6.35,
-            20.0,
             25.0,
             30.0,
             2,
@@ -1513,7 +1502,6 @@ mod tests {
         let short = ToolDefinition::new(
             Box::new(FlatEndmill::new(10.0, 25.0)),
             6.35,
-            20.0,
             25.0,
             20.0,
             2,

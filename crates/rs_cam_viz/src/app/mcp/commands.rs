@@ -1884,12 +1884,11 @@ impl RsCamApp {
             | CommandId::PreviewTierMap
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so no
-            // wire tool builds one. The GUI dispatches thirteen of them;
+            // wire tool builds one. The GUI dispatches twelve of them;
             // eleven carry no caller at all.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
-            | CommandId::SetAlignmentPinDrillHoles
             | CommandId::SetDrillSelectedHoles
             | CommandId::AddObstacle
             | CommandId::RemoveObstacle
@@ -2772,11 +2771,10 @@ impl RsCamApp {
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so
             // `CoreRequest` names no variant for any of them either. The
-            // GUI dispatches thirteen of them; eleven carry no caller.
+            // GUI dispatches twelve of them; eleven carry no caller.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
-            | CommandId::SetAlignmentPinDrillHoles
             | CommandId::SetPinPartModels
             | CommandId::SetDrillSelectedHoles
             | CommandId::AutoEnableRestAnalysis

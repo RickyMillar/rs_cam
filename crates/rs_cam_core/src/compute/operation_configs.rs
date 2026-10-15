@@ -359,16 +359,6 @@ pub struct AlignmentPinDrillConfig {
                       the pin set instead"
     )]
     pub diameter: f64,
-    /// Pin hole XY positions: the pins of [`Self::diameter`], a snapshot
-    /// of `stock.alignment_pins` (`alignment_pins::pin_holes_of_diameter`).
-    ///
-    /// W6.5 (C7): generation does NOT read this field. The op reads the
-    /// live pins (`ExecutionContext::alignment_pins`). Only the GUI pin door
-    /// writes it, to tell a moved pin set from an unchanged one, and the
-    /// pin-drill panel counts it. Open: delete it with the
-    /// `set_alignment_pin_drill_holes` command.
-    #[serde(default)]
-    pub holes: Vec<[f64; 2]>,
     /// How far below stock bottom to drill into spoilboard (mm).
     #[param(
         help = "How far the drill penetrates into the spoilboard below the stock.",
@@ -386,7 +376,8 @@ pub struct AlignmentPinDrillConfig {
     pub spindle_rpm: Option<u32>,
     /// Extra drill locations (XY, mm) picked from the model — DXF POINT
     /// entities or circle/arc centres. These are drilled in addition to the
-    /// stock alignment pins in [`Self::holes`].
+    /// stock alignment pins of [`Self::diameter`], which the op reads live
+    /// (`ExecutionContext::alignment_pins`, W6.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
     pub selected_holes: Option<Vec<[f64; 2]>>,
@@ -426,7 +417,6 @@ impl Default for AlignmentPinDrillConfig {
     fn default() -> Self {
         Self {
             diameter: crate::compute::alignment_pins::NOMINAL_DOWEL_MM,
-            holes: Vec::new(),
             spoilboard_penetration: 2.0,
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
@@ -1249,7 +1239,7 @@ impl Adaptive3dConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
-    #[param(help = HELP_Z_STEP, range = 0.05..=20.0, alias = "depth_per_pass")]
+    #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
     pub z_step: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,

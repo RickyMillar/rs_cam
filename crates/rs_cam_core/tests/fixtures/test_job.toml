@@ -11,7 +11,6 @@ origin_x = -15.0
 origin_y = -15.0
 origin_z = -15.0
 padding = 5.0
-workholding_rigidity = "Medium"
 auto_from_model = false
 
 [job.stock.material.SolidWood]
@@ -83,7 +82,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -104,7 +102,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 2
@@ -125,7 +122,6 @@ taper_half_angle = 7.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 3
@@ -146,7 +142,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 1
@@ -187,8 +182,6 @@ id = 0
 name = "Setup 1"
 face_up = "bottom"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 3
@@ -561,24 +554,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = [
-    [
-    10.0,
-    10.0,
-],
-    [
-    120.0,
-    120.0,
-],
-    [
-    120.0,
-    10.0,
-],
-    [
-    10.0,
-    120.0,
-],
-]
 spoilboard_penetration = 2.0
 cycle = "peck"
 peck_depth = 3.0
@@ -735,8 +710,6 @@ id = 1
 name = "Setup 2"
 face_up = "top"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 4

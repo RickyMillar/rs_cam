@@ -186,7 +186,6 @@ impl ProjectSession {
                 shaft_diameter: t.shaft_diameter,
                 holder_diameter: t.holder_diameter,
                 shank_diameter: t.shank_diameter,
-                shank_length: t.shank_length,
                 stickout: t.stickout,
                 flute_count: t.flute_count,
                 tool_number: Some(t.tool_number as usize),
@@ -272,8 +271,6 @@ impl ProjectSession {
                     datum_notes,
                     model_ids: s.model_ids.iter().map(|id| id.0).collect(),
                     obstacles: s.obstacles.clone(),
-                    fixtures: None,
-                    keep_out_zones: None,
                     stock_changes: s.stock_changes.clone(),
                     toolpaths,
                 }
@@ -443,14 +440,16 @@ mod tests {
         let path = temp_path("retired_fixture_key");
         s.save(&path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        // An empty old list holds no obstacle and loads.
+        // B17: an empty old list refuses too. Nothing ignores an old key.
         let empty = text.replacen("[[setups]]\n", "[[setups]]\nkeep_out_zones = []\n", 1);
         assert!(empty.contains("keep_out_zones = []"), "{empty}");
         std::fs::write(&path, &empty).unwrap();
-        assert!(
-            ProjectSession::load(&path).is_ok(),
-            "an empty old list loads"
-        );
+        let message = ProjectSession::load(&path)
+            .err()
+            .expect("an empty old list refuses")
+            .to_string();
+        assert!(message.contains("setups[0].keep_out_zones"), "{message}");
+        assert!(message.contains("[[setups.obstacles]]"), "{message}");
         // A table at the end of the file belongs to the last setup.
         let text = format!("{text}\n[[setups.keep_out_zones]]\nid = 0\nname = \"Zone\"\n");
         assert!(text.contains("keep_out_zones"), "{text}");
@@ -461,6 +460,115 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("keep_out_zones"), "{message}");
         assert!(message.contains("[[setups.obstacles]]"), "{message}");
+        cleanup(&path);
+    }
+
+    /// C1: each retired key refuses to load, and the message names the
+    /// key and what replaced it. One row per key in `RETIRED_KEYS`.
+    #[test]
+    fn every_retired_key_refuses_and_names_its_replacement_c1() {
+        let mut s = ProjectSession::new_empty();
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        let path = temp_path("retired_keys_c1");
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(ProjectSession::load(&path).is_ok(), "the clean file loads");
+        // (anchor line, inserted line, path in the message, word in the replacement)
+        let cases = [
+            (
+                "[[setups]]\n",
+                "fixtures = []\n",
+                "setups[0].fixtures",
+                "[[setups.obstacles]]",
+            ),
+            (
+                "[[setups]]\n",
+                "keep_out_zones = []\n",
+                "setups[0].keep_out_zones",
+                "[[setups.obstacles]]",
+            ),
+            (
+                "[job.stock]\n",
+                "flip_axis = \"horizontal\"\n",
+                "job.stock.flip_axis",
+                "setups",
+            ),
+            (
+                "[job.stock]\n",
+                "workholding_rigidity = \"Medium\"\n",
+                "job.stock.workholding_rigidity",
+                "aggressiveness",
+            ),
+            (
+                "[setups.toolpaths.dressups]\n",
+                "air_bridge_policy = \"always\"\n",
+                "setups[0].toolpaths[0].dressups.air_bridge_policy",
+                "retract_saves_time",
+            ),
+            (
+                "[[tools]]\n",
+                "shank_length = 20.0\n",
+                "tools[0].shank_length",
+                "stickout",
+            ),
+            (
+                "[setups.toolpaths.operation.params]\n",
+                "holes = [[1.0, 2.0]]\n",
+                "setups[0].toolpaths[0].operation.params.holes",
+                "live stock pins",
+            ),
+        ];
+        for (anchor, line, key_path, replacement) in cases {
+            assert!(
+                text.contains(anchor),
+                "the saved file holds {anchor:?}:\n{text}"
+            );
+            let edited = text.replacen(anchor, &format!("{anchor}{line}"), 1);
+            std::fs::write(&path, &edited).unwrap();
+            let message = ProjectSession::load(&path)
+                .err()
+                .unwrap_or_else(|| panic!("{key_path} must refuse"))
+                .to_string();
+            assert!(message.contains(&format!("'{key_path}'")), "{message}");
+            assert!(message.contains(replacement), "{message}");
+        }
+        cleanup(&path);
+    }
+
+    /// C1: a toolpath with no `[setups.toolpaths.operation]` table refuses
+    /// to load. It does not load as a default Pocket.
+    #[test]
+    fn a_toolpath_without_an_operation_table_refuses_c1() {
+        let mut s = ProjectSession::new_empty();
+        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+        let tool_id = s.tools()[0].id.0;
+        let mut tc = make_tc(tool_id, 0);
+        tc.name = "Lonely".to_owned();
+        let _ = s.add_toolpath(0, tc).unwrap();
+        let path = temp_path("missing_operation_c1");
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut value: toml::Value = toml::from_str(&text).unwrap();
+        let toolpath = value
+            .get_mut("setups")
+            .and_then(|v| v.get_mut(0))
+            .and_then(|v| v.get_mut("toolpaths"))
+            .and_then(|v| v.get_mut(0))
+            .and_then(toml::Value::as_table_mut)
+            .expect("the saved file holds one toolpath");
+        assert!(toolpath.remove("operation").is_some(), "{text}");
+        std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+        let message = ProjectSession::load(&path)
+            .err()
+            .expect("a toolpath with no operation refuses")
+            .to_string();
+        assert!(message.contains("Lonely"), "{message}");
+        assert!(
+            message.contains("[setups.toolpaths.operation]"),
+            "{message}"
+        );
         cleanup(&path);
     }
 

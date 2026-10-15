@@ -24,7 +24,6 @@ origin_y = -8.0
 origin_z = 0.0
 padding = 0.0
 auto_from_model = false
-flip_axis = "horizontal"
 
 [job.stock.material.SolidWoodByJanka]
 janka_lbf = 1290.0
@@ -104,7 +103,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 1
@@ -129,7 +127,6 @@ taper_half_angle = 0.0
 shaft_diameter = 3.0
 holder_diameter = 25.0
 shank_diameter = 3.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 2
@@ -154,7 +151,6 @@ taper_half_angle = 10.0
 shaft_diameter = 3.175
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 25.0
 flute_count = 1
 tool_number = 3
@@ -179,7 +175,6 @@ taper_half_angle = 30.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 25.0
 flute_count = 2
 tool_number = 4
@@ -204,7 +199,6 @@ taper_half_angle = 0.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 5
@@ -229,7 +223,6 @@ taper_half_angle = 2.2
 shaft_diameter = 3.175
 holder_diameter = 25.0
 shank_diameter = 3.175
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 6
@@ -527,8 +520,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Back up. Z0 = spoilboard (MachineTable). XY0 = stock corner = pin 1 - (5.0, 177.0)."
-fixtures = []
-keep_out_zones = []
 
 
 # Face from the raw top 27.0 to T1 25.5 (the model stock is T1 thick: the sim cuts air).
@@ -579,7 +570,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -616,7 +606,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = []
 spoilboard_penetration = 4.5
 cycle = "peck"
 peck_depth = 6.0
@@ -644,7 +633,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -710,7 +698,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -777,7 +764,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -846,7 +832,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -915,7 +900,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -984,7 +968,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1053,7 +1036,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1122,7 +1104,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1190,7 +1171,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1258,7 +1238,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1326,7 +1305,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1396,7 +1374,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1465,7 +1442,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1534,7 +1510,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1603,7 +1578,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1670,7 +1644,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1737,7 +1710,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1804,7 +1776,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1871,7 +1842,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -1938,7 +1908,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2005,7 +1974,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2072,7 +2040,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2139,7 +2106,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2206,7 +2172,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2273,7 +2238,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2340,7 +2304,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2402,7 +2365,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2429,8 +2391,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Back up, on the pins, after the cure. Same zero as setup 1."
-fixtures = []
-keep_out_zones = []
 
 
 # CAVITY_SKIM_D9.00: one pass 16.7 -> 16.5. Generation does not read the stock
@@ -2482,7 +2442,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2509,8 +2468,6 @@ z_rotation = "0"
 xy_datum = "pins"
 z_datum = "table"
 datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. Local Z = block Z."
-fixtures = []
-keep_out_zones = []
 
 
 # Face the front from 25.5 to the block front face 25.0.
@@ -2559,7 +2516,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2636,7 +2592,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2712,7 +2667,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -2790,7 +2744,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-air_bridge_policy = "always"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"

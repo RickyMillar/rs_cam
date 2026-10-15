@@ -194,7 +194,7 @@ impl Default for ScallopParams {
 /// statement of what shipped, and the unit tests below pin it — deleting it
 /// would leave `ScallopStepoverPolicy::SHIPPED` as the only description of
 /// the shipped behaviour, which is a worse place for it to live.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 fn ring_stepover(
     ring: &[P2],
     slope_map: &crate::surface::slope::SlopeMap,

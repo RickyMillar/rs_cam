@@ -11,7 +11,6 @@ origin_x = -20.0
 origin_y = -25.0
 origin_z = -20.0
 padding = 5.0
-workholding_rigidity = "Medium"
 auto_from_model = false
 
 [job.stock.material.SolidWood]
@@ -78,7 +77,6 @@ taper_half_angle = 7.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 2
@@ -101,7 +99,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 45.0
 flute_count = 2
 tool_number = 3
@@ -124,7 +121,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 20.0
 flute_count = 3
 tool_number = 4
@@ -147,7 +143,6 @@ taper_half_angle = 2.9
 shaft_diameter = 6.026312585724034
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 5
@@ -170,7 +165,6 @@ taper_half_angle = 5.7
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 6
@@ -193,7 +187,6 @@ taper_half_angle = 7.1
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 35.0
 flute_count = 2
 tool_number = 7
@@ -216,7 +209,6 @@ taper_half_angle = 2.8
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 45.5
 flute_count = 2
 tool_number = 8
@@ -239,7 +231,6 @@ taper_half_angle = 45.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 27.7
 flute_count = 2
 tool_number = 9
@@ -262,7 +253,6 @@ taper_half_angle = 30.0
 shaft_diameter = 6.35
 holder_diameter = 25.0
 shank_diameter = 6.35
-shank_length = 20.0
 stickout = 27.7
 flute_count = 2
 tool_number = 10
@@ -285,7 +275,6 @@ taper_half_angle = 10.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 30.0
 flute_count = 2
 tool_number = 11
@@ -308,7 +297,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 40.0
 flute_count = 2
 tool_number = 12
@@ -331,7 +319,6 @@ taper_half_angle = 15.0
 shaft_diameter = 6.0
 holder_diameter = 25.0
 shank_diameter = 6.0
-shank_length = 20.0
 stickout = 27.0
 flute_count = 3
 tool_number = 13
@@ -381,8 +368,6 @@ id = 0
 name = "Setup 1"
 face_up = "bottom"
 z_rotation = "0"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 14
@@ -400,16 +385,6 @@ kind = "alignment_pin_drill"
 
 [setups.toolpaths.operation.params]
 diameter = 6.0
-holes = [
-    [
-    2.5,
-    2.5,
-],
-    [
-    137.5,
-    147.5,
-],
-]
 spoilboard_penetration = 2.0
 cycle = "peck"
 peck_depth = 3.0
@@ -830,8 +805,6 @@ id = 1
 name = "Setup 2"
 face_up = "top"
 z_rotation = "90"
-fixtures = []
-keep_out_zones = []
 
 [[setups.toolpaths]]
 id = 10

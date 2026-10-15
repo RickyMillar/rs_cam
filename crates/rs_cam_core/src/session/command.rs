@@ -564,17 +564,6 @@ macro_rules! for_each_command {
                      "the batch CLI picks no faces",
                  ),
              }),
-            (Command, SetAlignmentPinDrillHoles, "set_alignment_pin_drill_holes",
-             SetAlignmentPinDrillHolesArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool writes the pin holes; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
-             }),
             (Command, SetDrillSelectedHoles, "set_drill_selected_holes",
              SetDrillSelectedHolesArgs, Effects,
              Surfaces {
@@ -1713,18 +1702,6 @@ pub struct SetFaceSelectionArgs {
     pub face_ids: Option<Vec<FaceGroupId>>,
 }
 
-/// The arguments of the `set_alignment_pin_drill_holes` command.
-///
-/// The command refuses a toolpath whose operation is not
-/// `AlignmentPinDrill`.
-#[derive(Debug, Clone)]
-pub struct SetAlignmentPinDrillHolesArgs {
-    /// The index of the toolpath the command writes.
-    pub index: usize,
-    /// The hole centres, in millimetres.
-    pub holes: Vec<[f64; 2]>,
-}
-
 /// The arguments of the `set_drill_selected_holes` command.
 ///
 /// `selected_holes` is `None` when a `Drill` operation reverts to every
@@ -2472,9 +2449,6 @@ impl ProjectSession {
             Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
             Command::RemoveModel(args) => self.remove_model(args.index),
             Command::SetFaceSelection(args) => self.set_face_selection(args.index, args.face_ids),
-            Command::SetAlignmentPinDrillHoles(args) => {
-                self.set_alignment_pin_drill_holes(args.index, args.holes)
-            }
             Command::SetDrillSelectedHoles(args) => {
                 self.set_drill_selected_holes(args.index, args.selected_holes)
             }

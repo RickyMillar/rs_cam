@@ -45,15 +45,15 @@ pub use command::{
     RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
-    SetAlignmentPinDrillHolesArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs,
-    SetDressupConfigArgs, SetDressupFieldArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs,
-    SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs,
-    SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
-    SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs,
-    SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
-    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
-    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
+    SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
+    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
+    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
@@ -237,6 +237,16 @@ pub enum SessionError {
     /// ([`crate::compute::stock_change::StockChangeRefusal`]). The session
     /// writes nothing.
     StockChangeRefused(crate::compute::stock_change::StockChangeRefusal),
+    /// The project file holds a retired key. `path` names the key in the
+    /// file. `replacement` says what replaced it, or that it is removed.
+    /// The table of retired keys is `project_file::RETIRED_KEYS`.
+    RetiredKey {
+        path: String,
+        replacement: &'static str,
+    },
+    /// A toolpath in the project file has no `[setups.toolpaths.operation]`
+    /// table, so it has no parameters. The loader refuses it.
+    MissingOperation { setup: String, toolpath: String },
 }
 
 impl std::fmt::Display for SessionError {
@@ -287,6 +297,15 @@ impl std::fmt::Display for SessionError {
                  at epoch {current}. Simulate it again."
             ),
             Self::StockChangeRefused(refusal) => write!(f, "Stock change refused: {refusal}"),
+            Self::RetiredKey { path, replacement } => write!(
+                f,
+                "The project file uses the retired key '{path}'. {replacement}."
+            ),
+            Self::MissingOperation { setup, toolpath } => write!(
+                f,
+                "Toolpath '{toolpath}' in setup '{setup}' has no [setups.toolpaths.operation] \
+                 table. rs_cam does not invent the parameters of a toolpath."
+            ),
         }
     }
 }
@@ -325,6 +344,8 @@ pub(crate) enum LoadedGeometry {
     /// Only constructed when the `step` cargo feature is on; the
     /// match arm consuming it is also gated, but the variant lives
     /// outside the cfg so callers needn't sprinkle cfg-pattern matches.
+    // SAFETY: only the `step` feature constructs this variant; without it
+    // the variant is dead by design, as the doc above says.
     #[cfg_attr(not(feature = "step"), allow(dead_code))]
     Enriched(EnrichedMesh),
 }
@@ -1372,8 +1393,7 @@ impl ProjectSession {
         path: &Path,
     ) -> Result<(Self, Vec<ProjectLoadWarning>), SessionError> {
         let content = std::fs::read_to_string(path)?;
-        let project: ProjectFile =
-            toml::from_str(&content).map_err(|e| SessionError::TomlParse(e.to_string()))?;
+        let project = ProjectFile::from_toml_str(&content)?;
         project_file::validate_looks_like_cam_project(&project, Some(path))?;
         let base_dir = path.parent().unwrap_or(Path::new("."));
         let (mut session, warnings) = Self::from_project_file_with_warnings(project, base_dir)?;
@@ -1981,9 +2001,11 @@ mod tests {
         assert!(diag.per_toolpath.is_empty());
     }
 
+    /// C1: a toolpath with no `[setups.toolpaths.operation]` table refuses
+    /// to load. Before C1 it loaded as a default of its `type`.
     #[test]
-    fn toolpath_missing_operation_falls_back_to_default() {
-        use crate::compute::catalog::{OperationConfig, OperationType};
+    fn toolpath_missing_operation_refuses() {
+        use crate::compute::catalog::OperationType;
 
         let project = ProjectFile {
             format_version: 3,
@@ -2024,18 +2046,16 @@ mod tests {
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
-                fixtures: None,
-                keep_out_zones: None,
             }],
         };
 
-        let session = ProjectSession::from_project_file(project, Path::new(".")).unwrap();
-        assert_eq!(session.setup_count(), 1);
-        assert_eq!(session.toolpath_count(), 1);
-        let tp = &session.toolpath_configs[0];
-        assert_eq!(tp.operation.op_type(), OperationType::Profile);
-        let expected = OperationConfig::new_default(OperationType::Profile);
-        assert_eq!(tp.operation.op_type(), expected.op_type());
+        match ProjectSession::from_project_file(project, Path::new(".")) {
+            Err(SessionError::MissingOperation { toolpath, .. }) => {
+                assert_eq!(toolpath, "Bare");
+            }
+            Err(other) => panic!("expected MissingOperation, got {other:?}"),
+            Ok(_) => panic!("a toolpath with no operation must refuse"),
+        }
     }
 
     #[test]
@@ -2137,7 +2157,12 @@ mod tests {
             "feed_ramp_rate = 200.0\n",
             "optimize_rapid_order = true\n",
         );
-        let project: ProjectFile = toml::from_str(toml_str).unwrap();
+        let mut project: ProjectFile = toml::from_str(toml_str).unwrap();
+        // C1: a toolpath needs its operation table to load.
+        project.setups[0].toolpaths[0].operation =
+            Some(crate::compute::catalog::OperationConfig::new_default(
+                crate::compute::catalog::OperationType::ProjectCurve,
+            ));
         let (session, warnings) =
             ProjectSession::from_project_file_with_warnings(project, Path::new(".")).unwrap();
 
@@ -2281,7 +2306,6 @@ mod tests {
                 shaft_diameter: 6.35,
                 holder_diameter: 25.0,
                 shank_diameter: 6.35,
-                shank_length: 20.0,
                 stickout: 45.0,
                 flute_count: 2,
                 tool_number: None,
@@ -2328,8 +2352,6 @@ mod tests {
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
                     planner_origin: None,
                 }],
-                fixtures: None,
-                keep_out_zones: None,
             }],
         };
         ProjectSession::from_project_file(project, Path::new(".")).unwrap()

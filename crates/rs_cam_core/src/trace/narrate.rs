@@ -301,10 +301,8 @@ impl<'a> ToolpathNarrationContext<'a> {
 
             // NOT rendered by narration. Deliberate, and listed so the
             // omission is a decision on the record rather than an oversight:
-            //  - deprecated_dial:   surfaced as a load/diagnostic notice
             //  - derived_stepovers: an audit trail, not a part measurement
             //  - claims_reference:  surfaced by `get_toolpath_params.runtime`
-            deprecated_dial: _,
             derived_stepovers: _,
             claims_reference: _,
             //  - buried_curve:      surfaced as a diagnostic (W6.5, Info)
@@ -324,7 +322,7 @@ impl<'a> ToolpathNarrationContext<'a> {
             planned_cycle_time_s: _,
             //  - region_cap (F3):   surfaced as a diagnostic notice
             //    (`geom.region_cap_truncated`), on the same rule as
-            //    `deprecated_dial`. It is a statement about the rest-region
+            //    `zero_removal`. It is a statement about the rest-region
             //    ARTIFACTS a downstream boundary consumer will read, not
             //    about the moves this narration walks — and the healthy case
             //    is a line on every rest-analysis toolpath saying nothing

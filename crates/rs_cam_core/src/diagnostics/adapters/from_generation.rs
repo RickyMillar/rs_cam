@@ -39,7 +39,6 @@ pub fn diagnostics_from_generation(
     out.extend(truncated_core(toolpath_id, stats));
     out.extend(unmachined_band(toolpath_id, stats));
     out.extend(tip_float(toolpath_id, stats));
-    out.extend(deprecated_dial(toolpath_id, stats));
     out.extend(derived_stepover(toolpath_id, stats));
     out.extend(clipped_band(toolpath_id, stats));
     out.extend(ramp_reach_clamp(toolpath_id, stats));
@@ -111,7 +110,7 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
 ///
 /// Silent on a measured-clean extraction. `Some` with nothing truncated is a
 /// real measurement, but a per-toolpath notice that nothing happened is a
-/// notice nobody reads — the same rule [`deprecated_dial`] and
+/// notice nobody reads — the same rule [`zero_removal`] and
 /// [`offset_library_failures`] follow. `None` (no extraction ran) is silent
 /// for the A/M9 reason: an absence is not a claim.
 fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
@@ -158,7 +157,7 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
 /// F4: a rest-claims dial the operator set that this operation never applies.
 ///
 /// `Caution`, not `Info` and not `Blocking` — the same call
-/// [`deprecated_dial`] makes, and for the same reason. Nothing is wrong with
+/// a config notice makes, and for the same reason. Nothing is wrong with
 /// the geometry; what is wrong is that the operator's setting has no effect
 /// and only this says so. The measured cost of the silence is the T4 arm:
 /// `min_rest_depth_mm` 0.03 → 0.05 produced a byte-identical toolpath, and
@@ -277,7 +276,7 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
 ///
 /// `Some(0)` is silent. It is a real measurement — every offset was clean —
 /// but a per-toolpath notice that nothing happened is a notice nobody reads,
-/// and the same rule already governs `zero_removal` and `deprecated_dial`.
+/// and the same rule already governs `zero_removal`.
 fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     // `None` = no offset ran through the reporting name, so nothing was
     // measured. Not a claim of any kind (A/M9's rule).
@@ -532,7 +531,7 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
 ///
 /// Silent when the two agree (every plain ball, at every depth). A notice on
 /// every toolpath is a notice nobody reads — the same rule
-/// `record_deprecated_dial` follows.
+/// [`zero_removal`] follows.
 fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     // C8: one diagnostic per derivation. Empty = this operation derived no
     // stepover, which is not a claim of any kind. Filtering out the
@@ -593,44 +592,6 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             suppressed_diagnostics: vec![],
         })
         .collect()
-}
-
-/// PR-5: a retired dial the loaded project still sets.
-///
-/// `Caution`, not `Warning`: nothing is wrong with the geometry, and the
-/// operation is doing the right thing — but the operator's setting has
-/// stopped having an effect and only this says so. Silence here is the
-/// failure mode the programme keeps re-learning ("a warning nobody sees is
-/// not a warning"); refusing to load the project would be worse.
-fn deprecated_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    // `None` = the project sets nothing retired. Not a claim of any kind.
-    let Some(f) = stats.deprecated_dial.as_deref() else {
-        return Vec::new();
-    };
-    vec![Diagnostic {
-        id: DiagnosticId::from(ids::CONFIG_DEPRECATED_DIAL),
-        scope: Scope::Toolpath { id: toolpath_id },
-        category: Category::Geometry,
-        severity: Severity::Caution,
-        // Read straight off the loaded config — nothing inferred.
-        confidence: Confidence::Verified,
-        state: DiagnosticState::Current,
-        source: Source::StaticValidation,
-        message: format!(
-            "`{dial}` is set to {value} (default {default}) but is NO LONGER \
-             READ: it was replaced by {replaced_by}. The value still loads and \
-             saves so this project is unchanged, but it is not steering the \
-             operation. [Report-only — no gate.]",
-            dial = f.dial,
-            value = f.value,
-            default = f.default_value,
-            replaced_by = f.replaced_by,
-        ),
-        evidence: None,
-        fix: None,
-        supersedes: vec![],
-        suppressed_diagnostics: vec![],
-    }]
 }
 
 /// The A/M9 finding: a ring cascade that hit its cap and left the interior

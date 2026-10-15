@@ -56,7 +56,6 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // only honestly say "not measured".
         dropped_band: None,
         tip_float: None,
-        deprecated_dial: None,
         derived_stepovers: Vec::new(),
         clipped_band: None,
         // PR-8b: same rule again — no ramp descent is visible from a move
@@ -197,7 +196,6 @@ pub fn stats_with_findings(
         reached_uncut_estimate_mm2: _,
         dropped_band: _,
         tip_float: _,
-        deprecated_dial: _,
         derived_stepovers: _,
         clipped_band: _,
         ramp_reach_clamp: _,
@@ -229,7 +227,6 @@ pub fn stats_with_findings(
         dropped_band,
         clipped_band,
         tip_float,
-        deprecated_dial,
         derived_stepovers,
         ramp_reach_clamp,
         claims_reference,
@@ -260,7 +257,6 @@ pub fn stats_with_findings(
         // pays a pointer and the short-lived findings do not.
         dropped_band: dropped_band.map(Box::new),
         tip_float,
-        deprecated_dial: deprecated_dial.map(Box::new),
         derived_stepovers,
         clipped_band: clipped_band.map(Box::new),
         ramp_reach_clamp: ramp_reach_clamp.map(Box::new),

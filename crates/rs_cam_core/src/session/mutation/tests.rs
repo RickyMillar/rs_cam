@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
 use crate::compute::obstacle::{Obstacle, ObstacleGeometry};
-use crate::compute::operation_configs::{AlignmentPinDrillConfig, PencilConfig, PocketConfig};
+use crate::compute::operation_configs::{PencilConfig, PocketConfig};
 use crate::compute::toolpath_stats::ToolpathStats;
 use crate::gcode::CoolantMode;
 use crate::ids::ObstacleId;
@@ -827,43 +827,6 @@ fn remove_obstacle_by_id_and_refuse_a_bad_box() {
 
     let _ = s.remove_obstacle(0, ObstacleId(42)).unwrap();
     assert!(s.list_setups()[0].obstacles.is_empty());
-}
-
-// ── Alignment pin drill ──────────────────────────────────────
-
-#[test]
-fn set_alignment_pin_drill_holes() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-
-    let tc = ToolpathConfig {
-        operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
-        ..make_tc(s.tools()[0].id.0, 0)
-    };
-    let _ = s.add_toolpath(0, tc).unwrap();
-    s.results.insert(0, fake_result());
-
-    let holes = vec![[10.0, 20.0], [90.0, 20.0]];
-    let _ = s.set_alignment_pin_drill_holes(0, holes).unwrap();
-
-    match &s.toolpath_configs()[0].operation {
-        OperationConfig::AlignmentPinDrill(cfg) => {
-            assert_eq!(cfg.holes.len(), 2);
-            assert_eq!(cfg.holes[0], [10.0, 20.0]);
-        }
-        _ => panic!("Expected AlignmentPinDrill"),
-    }
-    assert!(!s.results.contains_key(&0));
-}
-
-#[test]
-fn set_alignment_pin_drill_holes_wrong_op() {
-    let mut s = make_session();
-    let _ = s.add_tool(make_tool());
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
-
-    let result = s.set_alignment_pin_drill_holes(0, vec![]);
-    assert!(matches!(result, Err(SessionError::InvalidParam(_))));
 }
 
 // ── Invalidation helpers ─────────────────────────────────────

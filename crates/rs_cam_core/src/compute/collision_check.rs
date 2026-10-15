@@ -169,7 +169,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,
@@ -202,7 +201,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                20.0,
                 25.0,
                 45.0,
                 2,
@@ -254,7 +252,6 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            20.0,
             25.0,
             45.0,
             2,

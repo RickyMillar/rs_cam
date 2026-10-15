@@ -43,9 +43,9 @@ use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
-    ClippedBandFinding, DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding,
-    HeightClip, InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding,
-    TipFloatFinding, ToolpathStats, WaterlineLadderFinding, ZeroRemovalFinding,
+    ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
+    InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding, TipFloatFinding,
+    ToolpathStats, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
@@ -136,12 +136,6 @@ fn every_finding_recorded() -> GenerationFindings {
             centreline_points: 100,
             floating_points: 7,
             max_float_mm: 0.25,
-        }),
-        deprecated_dial: Some(DeprecatedDialFinding {
-            dial: "route_width_factor",
-            value: 1.5,
-            default_value: 1.0,
-            replaced_by: "the canonical reach policy",
         }),
         derived_stepovers: vec![
             DerivedStepoverFinding {
@@ -304,7 +298,6 @@ fn every_recorded_finding_survives_the_single_join() {
         reached_uncut_estimate_mm2,
         dropped_band,
         tip_float,
-        deprecated_dial,
         derived_stepovers,
         clipped_band,
         ramp_reach_clamp,
@@ -348,10 +341,6 @@ fn every_recorded_finding_survives_the_single_join() {
         "the boxing on the stats side must not change the value"
     );
     assert_eq!(tip_float, findings.tip_float);
-    assert_eq!(
-        deprecated_dial.as_deref().copied(),
-        findings.deprecated_dial
-    );
     assert_eq!(
         derived_stepovers, findings.derived_stepovers,
         "a Vec channel: both derivations must survive, in firing order"
@@ -419,7 +408,6 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert!(stats.dropped_band.is_none());
     assert!(stats.clipped_band.is_none());
     assert_eq!(stats.tip_float, None);
-    assert!(stats.deprecated_dial.is_none());
     assert!(
         stats.derived_stepovers.is_empty(),
         "the documented Vec exception: empty means nothing derived"

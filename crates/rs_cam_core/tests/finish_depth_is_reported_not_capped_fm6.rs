@@ -152,7 +152,6 @@ fn flat6() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 20.0)),
         6.0,
-        30.0,
         20.0,
         30.0,
         2,

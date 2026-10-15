@@ -54,15 +54,7 @@ fn tapered_ball_reports_shaft_radius_and_tip_cusp_radius() {
     // `ToolDefinition` delegates `diameter()`/`geometry_hint()`; if that
     // delegation ever breaks, the default trait impl silently falls back to
     // `radius()` and the whole fix evaporates at the only layer that ships.
-    let def = ToolDefinition::new(
-        Box::new(taper()),
-        6.0,
-        30.0,
-        25.0,
-        40.0,
-        2,
-        ToolMaterial::Carbide,
-    );
+    let def = ToolDefinition::new(Box::new(taper()), 6.0, 25.0, 40.0, 2, ToolMaterial::Carbide);
     assert!((def.radius() - 3.0).abs() < 1e-9);
     assert!(
         (def.cusp_radius() - 0.5).abs() < 1e-9,
@@ -87,7 +79,6 @@ fn ball_nose_cusp_radius_equals_radius() {
     let def = ToolDefinition::new(
         Box::new(BallEndmill::new(6.0, 25.0)),
         6.0,
-        30.0,
         25.0,
         40.0,
         2,
