@@ -86,6 +86,31 @@ pub enum ClearingStrategy3d {
     ContourSpiral,
 }
 
+impl From<crate::compute::operation_configs::RegionOrdering> for RegionOrdering {
+    /// The config order to the planner order (W6.5). The Layered runner
+    /// reads the same config enum for its own ops (R4).
+    fn from(o: crate::compute::operation_configs::RegionOrdering) -> Self {
+        use crate::compute::operation_configs::RegionOrdering as Config;
+        match o {
+            Config::Global => Self::Global,
+            Config::ByArea => Self::ByArea,
+        }
+    }
+}
+
+impl From<crate::compute::operation_configs::ClearingStrategy> for ClearingStrategy3d {
+    /// The config strategy to the planner strategy (W6.5).
+    fn from(s: crate::compute::operation_configs::ClearingStrategy) -> Self {
+        use crate::compute::operation_configs::ClearingStrategy as Config;
+        match s {
+            Config::ContourParallel => Self::ContourParallel,
+            Config::Adaptive => Self::Adaptive,
+            Config::AgentSearch => Self::AgentSearch,
+            Config::ContourSpiral => Self::ContourSpiral,
+        }
+    }
+}
+
 /// Entry strategy for 3D adaptive (replaces vertical plunge).
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EntryStyle3d {

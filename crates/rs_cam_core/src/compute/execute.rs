@@ -150,6 +150,10 @@ pub struct GenerationFindings {
     /// no cutting geometry) or it ran and found real engagement.
     /// See [`crate::compute::toolpath_stats::ZeroRemovalFinding`].
     pub zero_removal: Option<crate::compute::toolpath_stats::ZeroRemovalFinding>,
+    /// W6.5: a projected curve that cuts deeper than its commanded depth.
+    /// `None` = not measured, or not deeper. Written by `run_curve`. See
+    /// [`crate::compute::toolpath_stats::BuriedCurveFinding`].
+    pub buried_curve: Option<crate::compute::toolpath_stats::BuriedCurveFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
     /// calls came back with a [`crate::polygon::OffsetFailure`].
     ///
@@ -325,6 +329,13 @@ pub struct ExecutionContext<'a> {
     /// (G-DRILLCENTROID); every other family ignores it. Empty for meshes
     /// and SVG, and for callers that resolve no model.
     pub drill_targets: &'a [DrillTarget],
+    /// The live stock alignment pins, stock-relative (X0Y0 at the stock
+    /// min corner). The Alignment Pin Drill reads the pins of its own
+    /// diameter (`alignment_pins::pin_holes_of_diameter`, R1); every other
+    /// family ignores them. W6.5 (C7): the op reads them here; no session
+    /// patch writes them into a config copy. Empty for a caller with no
+    /// pins.
+    pub alignment_pins: &'a [crate::compute::alignment_pins::AlignmentPin],
     pub tool_def: &'a ToolDefinition,
     pub tool_cfg: &'a ToolConfig,
     pub heights: &'a ResolvedHeights,
@@ -438,6 +449,15 @@ impl<'a> ExecutionContext<'a> {
         move || cancel.load(Ordering::SeqCst)
     }
 
+    /// W6.5: true when the setup transform inverts Z (a Bottom setup). The
+    /// one rule of the Z frame; `SetupTransformInfo::is_z_flipped` holds it.
+    /// `None` (an identity setup, or a caller with no setup) is not
+    /// flipped.
+    pub(crate) fn z_flipped(&self) -> bool {
+        self.setup_transform
+            .is_some_and(crate::compute::transform::SetupTransformInfo::is_z_flipped)
+    }
+
     /// One read of the cancel flag, for a poll between units of work.
     pub(crate) fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
@@ -465,6 +485,7 @@ impl<'a> ExecutionContext<'a> {
             index: None,
             polygons: None,
             drill_targets: &[],
+            alignment_pins: &[],
             tool_def,
             tool_cfg,
             heights,
@@ -533,6 +554,7 @@ macro_rules! config_guard {
 
 mod clearing_2d;
 mod composed;
+mod curve;
 mod curve_engrave;
 mod dressup_apply;
 mod drilling;
@@ -542,9 +564,11 @@ mod finish_raster;
 mod height_field;
 mod layered;
 mod prologue;
+mod rough_3d;
 mod shared;
 pub(crate) mod standing_material;
 mod territory;
+mod volumetric;
 
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,
@@ -565,11 +589,12 @@ pub use drilling::{
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{
-    generate_adaptive3d, generate_horizontal_finish, generate_pencil, generate_radial_finish,
-    generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
+    generate_horizontal_finish, generate_pencil, generate_radial_finish, generate_ramp_finish,
+    generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
 pub use prologue::{MeshInput, Prepared};
+pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
 pub use territory::{SurfaceMask, Territory, XyTerritory};
 

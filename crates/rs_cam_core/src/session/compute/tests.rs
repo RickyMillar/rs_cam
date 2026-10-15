@@ -2191,6 +2191,7 @@ fn fake_result_with_regions(
             ramp_reach_clamp: None,
             claims_reference: None,
             zero_removal: None,
+            buried_curve: None,
             offset_library_failures: None,
             boundary_clip_dropped: None,
             // Nor a waterline ladder (R3 / R4).

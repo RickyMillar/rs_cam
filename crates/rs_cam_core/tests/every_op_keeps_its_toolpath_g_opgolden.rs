@@ -85,11 +85,16 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
-use rs_cam_core::compute::operation_configs::{DrillCycleType, PocketPattern, SpiralDirection};
+use rs_cam_core::compute::operation_configs::{
+    Adaptive3dEntryStyle, ClearingStrategy, DrillCycleType, PocketPattern, ProjectCurveDirection,
+    ProjectCurveProjection, ProjectCurveSide, RegionOrdering, SpiralDirection,
+};
 use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::finish::unified_finish::ClaimsReference;
 use rs_cam_core::ops::profile::ProfileSide;
-use rs_cam_core::session::{AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs};
+use rs_cam_core::session::{
+    AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs, SetToolpathModelArgs,
+};
 
 /// The environment switch that rewrites the golden file.
 const BLESS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN";
@@ -115,6 +120,10 @@ struct Case {
     source: Source,
     /// True: a `ModelOutline` boundary of [`REGION_RECT`] (W6.3.0).
     regions: bool,
+    /// The setup of the op (W6.5.0: the flipped Project Curve arm).
+    frame: Frame,
+    /// The curve the op projects (W6.5.0).
+    curve: CurveModel,
 }
 
 impl Case {
@@ -240,6 +249,197 @@ fn ramp_bottom_up(op: &mut OperationConfig) {
     cfg.order_bottom_up = true;
 }
 
+/// W6.5.0: By Area order, a helix entry and the ContourSpiral strategy.
+/// It covers the three config-to-planner enum maps of 3D Rough, the By
+/// Area detection and the planner engagement samples.
+fn adaptive3d_by_area_helix_spiral(op: &mut OperationConfig) {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        unreachable!("adaptive3d arm on another op")
+    };
+    cfg.region_ordering = RegionOrdering::ByArea;
+    cfg.entry_style = Adaptive3dEntryStyle::Helix;
+    cfg.clearing_strategy = ClearingStrategy::ContourSpiral;
+}
+
+/// W6.5.0: a ramp entry and the AgentSearch strategy (the other arms of
+/// the two enum maps).
+fn adaptive3d_ramp_agent(op: &mut OperationConfig) {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        unreachable!("adaptive3d arm on another op")
+    };
+    cfg.entry_style = Adaptive3dEntryStyle::Ramp;
+    cfg.clearing_strategy = ClearingStrategy::AgentSearch;
+}
+
+/// W6.5.0: the Adaptive strategy (the last arm of the strategy map).
+fn adaptive3d_adaptive(op: &mut OperationConfig) {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        unreachable!("adaptive3d arm on another op")
+    };
+    cfg.clearing_strategy = ClearingStrategy::Adaptive;
+}
+
+/// W6.5.0: radius compensation inside the closed fixture curve.
+fn project_curve_side_inside(op: &mut OperationConfig) {
+    let OperationConfig::ProjectCurve(cfg) = op else {
+        unreachable!("project curve arm on another op")
+    };
+    cfg.side = ProjectCurveSide::Inside;
+}
+
+/// W6.5.0: the point projection.
+fn project_curve_point(op: &mut OperationConfig) {
+    let OperationConfig::ProjectCurve(cfg) = op else {
+        unreachable!("project curve arm on another op")
+    };
+    cfg.projection = ProjectCurveProjection::Point;
+}
+
+/// W6.5.0: the link stage of Project Curve on (`chain_distance_mm`).
+fn project_curve_chained(op: &mut OperationConfig) {
+    let OperationConfig::ProjectCurve(cfg) = op else {
+        unreachable!("project curve arm on another op")
+    };
+    cfg.chain_distance_mm = PROJECT_CURVE_CHAIN_MM;
+}
+
+/// W6.5.0: projection from below.
+fn project_curve_from_below(op: &mut OperationConfig) {
+    let OperationConfig::ProjectCurve(cfg) = op else {
+        unreachable!("project curve arm on another op")
+    };
+    cfg.direction = ProjectCurveDirection::FromBelow;
+}
+
+/// The Project Curve link-stage cap (mm) of the `split_chained` arm. It is
+/// wider than each gap of [`split_curve_model`] (1 mm and 2 mm).
+const PROJECT_CURVE_CHAIN_MM: f64 = 3.0;
+
+/// The curve a Project Curve case projects.
+#[derive(Clone, Copy)]
+enum CurveModel {
+    /// The fixture curve (`common::op_fixtures::curve_model`).
+    Fixture,
+    /// [`split_curve_model`]: three open curves (the link stage).
+    Split,
+    /// [`square_curve_model`]: one closed square (the side compensation).
+    Square,
+}
+
+/// The W6.5.0 arms: op, arm, tweak, frame, curve. All on fresh stock.
+const W650_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
+    (
+        OperationType::Adaptive3d,
+        "by_area_helix_spiral",
+        adaptive3d_by_area_helix_spiral,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::Adaptive3d,
+        "ramp_agent",
+        adaptive3d_ramp_agent,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::Adaptive3d,
+        "adaptive",
+        adaptive3d_adaptive,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "square",
+        no_tweak,
+        Frame::TopUp,
+        CurveModel::Square,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "side_inside",
+        project_curve_side_inside,
+        Frame::TopUp,
+        CurveModel::Square,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "point",
+        project_curve_point,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "split",
+        no_tweak,
+        Frame::TopUp,
+        CurveModel::Split,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "split_chained",
+        project_curve_chained,
+        Frame::TopUp,
+        CurveModel::Split,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "from_below_topup",
+        project_curve_from_below,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::ProjectCurve,
+        "from_below_flipped",
+        project_curve_from_below,
+        Frame::Flipped,
+        CurveModel::Fixture,
+    ),
+];
+
+/// Three open curves over the cap, with gaps of 1 mm and 2 mm between
+/// them. Each curve is one chain, so the link stage has two gaps to join.
+fn split_curve_model() -> rs_cam_core::session::LoadedModel {
+    use rs_cam_core::geo::P2;
+    use rs_cam_core::polygon::Polygon2;
+    common::session::polygon_model(
+        vec![
+            Polygon2::open_path(vec![P2::new(-7.0, -2.0), P2::new(-2.0, 2.0)]),
+            Polygon2::open_path(vec![P2::new(-1.0, 2.0), P2::new(3.0, -2.0)]),
+            Polygon2::open_path(vec![P2::new(5.0, -2.0), P2::new(7.0, 2.0)]),
+        ],
+        "opgolden_split_curve",
+    )
+}
+
+/// One closed 8 mm square over the cap.
+fn square_curve_model() -> rs_cam_core::session::LoadedModel {
+    common::session::polygon_model(
+        vec![common::op_fixtures::rectangle(-4.0, -4.0, 4.0, 4.0)],
+        "opgolden_square_curve",
+    )
+}
+
+/// Project `model` with toolpath `index`.
+fn use_curve(session: &mut ProjectSession, index: usize, model: rs_cam_core::session::LoadedModel) {
+    let model_id = session
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }))
+        .expect("add the curve model")
+        .created
+        .expect("the add reports the model id");
+    let _ = session
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index,
+            model_id,
+        }))
+        .expect("bind the curve model");
+}
+
 /// The Drop Cutter link-stage cap (mm) of the `hookup` arms. It is wider
 /// than the flat cap top that the slope band leaves out (slope below 20
 /// degrees: radius `R sin 20` = 3.4 mm), so the stage can join a row over it.
@@ -297,6 +497,8 @@ fn cases() -> Vec<Case> {
             tweak: no_tweak,
             source: Source::Fresh,
             regions: false,
+            frame: Frame::TopUp,
+            curve: CurveModel::Fixture,
         })
         .collect();
     let variants: [(OperationType, &'static str, Tweak, Source, bool); 17] = [
@@ -429,6 +631,19 @@ fn cases() -> Vec<Case> {
             tweak,
             source,
             regions,
+            frame: Frame::TopUp,
+            curve: CurveModel::Fixture,
+        });
+    }
+    for (op, arm, tweak, frame, curve) in W650_CASES {
+        cases.push(Case {
+            op: *op,
+            arm,
+            tweak: *tweak,
+            source: Source::Fresh,
+            regions: false,
+            frame: *frame,
+            curve: *curve,
         });
     }
     for &op in REGION_OPS {
@@ -438,6 +653,8 @@ fn cases() -> Vec<Case> {
             tweak: no_tweak,
             source: Source::Fresh,
             regions: true,
+            frame: Frame::TopUp,
+            curve: CurveModel::Fixture,
         });
     }
     for &op in REST_READERS {
@@ -447,6 +664,8 @@ fn cases() -> Vec<Case> {
             tweak: no_tweak,
             source: Source::Rest,
             regions: false,
+            frame: Frame::TopUp,
+            curve: CurveModel::Fixture,
         });
     }
     cases
@@ -507,12 +726,17 @@ fn run(case: &Case) -> Generated {
         } else {
             StockSource::Fresh
         },
-        frame: Frame::TopUp,
+        frame: case.frame,
         fixture: Fixture::Standard,
         tool: None,
     });
     if case.regions {
         add_region_boundary(&mut session, index);
+    }
+    match case.curve {
+        CurveModel::Fixture => {}
+        CurveModel::Split => use_curve(&mut session, index, split_curve_model()),
+        CurveModel::Square => use_curve(&mut session, index, square_curve_model()),
     }
     if rest {
         run_prior(&mut session);
@@ -730,6 +954,31 @@ fn every_op_keeps_its_toolpath() {
             );
         }
     }
+    // W6.5.0 non-vacuity: each new arm cuts and differs from its op's fresh
+    // arm, and the Project Curve link stage joins at least one gap.
+    for (op, arm, ..) in W650_CASES {
+        let key = format!("{}/{arm}", op.kind_str());
+        let got = &actual[&key];
+        let fresh = &actual[&format!("{}/fresh", op.kind_str())];
+        eprintln!(
+            "{key}: {} moves, {} rapids, {}",
+            got.move_count, got.rapid_count, got.outcome
+        );
+        assert!(got.move_count > 0, "{key}: the arm emits no moves");
+        assert_ne!(
+            got.moves_hash, fresh.moves_hash,
+            "{key}: the arm is the fresh toolpath, so its switch does nothing"
+        );
+    }
+    assert_ne!(
+        actual["project_curve/side_inside"].moves_hash, actual["project_curve/square"].moves_hash,
+        "project_curve/side_inside: the side switch changes nothing on the square"
+    );
+    assert!(
+        actual["project_curve/split_chained"].rapid_count
+            < actual["project_curve/split"].rapid_count,
+        "project_curve/split_chained: the link stage joins no gap, so the arm proves nothing"
+    );
     // The link stage acts: it changes the arm it is added to.
     assert_ne!(
         actual["drop_cutter/slope_band_hookup"].moves_hash,

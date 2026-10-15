@@ -361,6 +361,12 @@ pub struct AlignmentPinDrillConfig {
     pub diameter: f64,
     /// Pin hole XY positions: the pins of [`Self::diameter`], a snapshot
     /// of `stock.alignment_pins` (`alignment_pins::pin_holes_of_diameter`).
+    ///
+    /// W6.5 (C7): generation does NOT read this field. The op reads the
+    /// live pins (`ExecutionContext::alignment_pins`). Only the GUI pin door
+    /// writes it, to tell a moved pin set from an unchanged one, and the
+    /// pin-drill panel counts it. Open: delete it with the
+    /// `set_alignment_pin_drill_holes` command.
     #[serde(default)]
     pub holes: Vec<[f64; 2]>,
     /// How far below stock bottom to drill into spoilboard (mm).
@@ -2564,11 +2570,6 @@ pub struct ProjectCurveConfig {
                 or into material that is removed later."
     )]
     pub projection: ProjectCurveProjection,
-    /// Set by the compute pipeline when the mesh has already been Z-inverted
-    /// by a bottom-facing setup transform. Not persisted.
-    #[serde(skip)]
-    #[param(driver_set = "the setup transform writes this from the setup face")]
-    pub setup_z_flipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
     /// Cap (mm) on the XY gap between two projected chains that may be
@@ -2620,7 +2621,6 @@ impl Default for ProjectCurveConfig {
             direction: ProjectCurveDirection::FromAbove,
             side: ProjectCurveSide::Center,
             projection: ProjectCurveProjection::Cutter,
-            setup_z_flipped: false,
             spindle_rpm: None,
             chain_distance_mm: default_project_curve_chain_distance_mm(),
         }

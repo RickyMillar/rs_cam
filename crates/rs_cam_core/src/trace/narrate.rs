@@ -307,6 +307,8 @@ impl<'a> ToolpathNarrationContext<'a> {
             deprecated_dial: _,
             derived_stepovers: _,
             claims_reference: _,
+            //  - buried_curve:      surfaced as a diagnostic (W6.5, Info)
+            buried_curve: _,
             //  - stock_snapshot:    S-4 provenance, not a part measurement.
             //    It answers "were these two generations handed the same
             //    stock", which is a question about a COMPARISON, not about

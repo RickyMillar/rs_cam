@@ -15,9 +15,9 @@
 use super::GenerationFindings;
 use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use crate::compute::toolpath_stats::{
-    BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding, DerivedStepoverFinding,
-    DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding, SlopeDerateDetail,
-    TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
+    BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding, ClippedBandFinding,
+    DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding,
+    SlopeDerateDetail, TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
 };
 
 /// A report that writes itself into [`GenerationFindings`].
@@ -363,6 +363,14 @@ impl RecordFindings for ZeroRemovalFinding {
     }
 }
 
+/// W6.5: a projected curve that cuts deeper than its commanded depth.
+/// Build it with [`BuriedCurveFinding::measure`].
+impl RecordFindings for BuriedCurveFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.buried_curve = Some(*self);
+    }
+}
+
 /// An offset stepover derived from the reach policy (PR-6a, H2.3).
 ///
 /// Not suppressed at the no-change case: the finding carries both numbers
@@ -451,6 +459,39 @@ impl ZeroRemovalFinding {
             deepest_engagement_mm: engagement.deepest_mm,
             sampled_positions: engagement.sampled_positions,
             cutting_distance_mm: toolpath.total_cutting_distance(),
+            floor_mm,
+        })
+    }
+}
+
+impl BuriedCurveFinding {
+    /// W6.5: measure the planned cutting moves of a curve op against the
+    /// stock it reads. `Some` when the tool tip reaches deeper below that
+    /// stock than `|commanded_depth_mm|` plus the sampling floor of the
+    /// stock ([`zero_removal_engagement_floor_mm`]).
+    ///
+    /// `None` without a stock (fresh stock: no measurement, no claim,
+    /// X-19), with nothing sampled, or when the cut is not deeper.
+    pub(crate) fn measure(
+        toolpath: &crate::toolpath::Toolpath,
+        commanded_depth_mm: f64,
+        stock: Option<&crate::dexel_stock::TriDexelStock>,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> Option<Self> {
+        let stock = stock?;
+        let engagement =
+            crate::dressup::reference_engagement_of_cutting_moves(toolpath, stock, cutter);
+        if engagement.sampled_positions == 0 {
+            return None;
+        }
+        let floor_mm = zero_removal_engagement_floor_mm(stock, cutter);
+        if engagement.deepest_mm <= commanded_depth_mm.abs() + floor_mm {
+            return None;
+        }
+        Some(Self {
+            deepest_engagement_mm: engagement.deepest_mm,
+            commanded_depth_mm,
+            sampled_positions: engagement.sampled_positions,
             floor_mm,
         })
     }

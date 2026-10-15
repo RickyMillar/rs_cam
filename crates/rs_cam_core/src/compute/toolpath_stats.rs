@@ -260,6 +260,10 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it and generation is unaffected.
     pub zero_removal: Option<ZeroRemovalFinding>,
+    /// W6.5: a projected curve that cuts deeper than its commanded depth
+    /// ([`BuriedCurveFinding`]). `None` = not measured (fresh stock, or not
+    /// a curve op) or the cut is not deeper. Report-only.
+    pub buried_curve: Option<BuriedCurveFinding>,
     /// Checkpoint C (Q1 / D-2): how many times this generation's 2D offsets
     /// came back with a [`crate::polygon::OffsetFailure`] instead of a
     /// result — a `cavalier_contours` panic the chokepoint contained, or an
@@ -983,6 +987,57 @@ impl ZeroRemovalFinding {
             deepest = self.deepest_engagement_mm,
             floor = self.floor_mm,
             cutting = self.cutting_distance_mm,
+        )
+    }
+}
+
+/// W6.5: a projected curve whose tool cuts deeper than its commanded depth,
+/// because stock stands above the surface it was projected on.
+///
+/// Project Curve projects onto the MESH. On a remaining stock (after a
+/// rough that leaves an allowance or terraces), the tool tip at
+/// `surface - depth` is deeper below the stock than `depth`. The feeds and
+/// the chip load were chosen for `depth`. The finding states the measured
+/// depth. It does not change a move.
+///
+/// Measured on the planned moves, before the link, against the stock the
+/// op reads (`ExecutionContext::initial_stock`). Only on a remaining stock:
+/// on fresh stock nothing is measured, and an absent measurement is not a
+/// claim (X-19). Lead ruling (W6.5): severity Info; it fires also after a
+/// normal rough, because it states a measured fact.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BuriedCurveFinding {
+    /// The deepest the tool tip reaches below the stock surface, mm, over
+    /// every sampled cutting position.
+    pub deepest_engagement_mm: f64,
+    /// The commanded cut depth below the projection surface, mm.
+    pub commanded_depth_mm: f64,
+    /// The positions the verdict rests on. Never `0` on a recorded finding.
+    pub sampled_positions: usize,
+    /// The sampling floor of the stock, mm
+    /// (`zero_removal_engagement_floor_mm`): the finding fires only when the
+    /// tool cuts deeper than the commanded depth plus this floor.
+    pub floor_mm: f64,
+}
+
+impl BuriedCurveFinding {
+    /// The operator-facing sentence. The diagnostic adapter adds the id and
+    /// the severity.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "The tool cuts {deepest:.3} mm into the stock, not the commanded \
+             {commanded:.3} mm: stock stands above the surface the curve is \
+             projected on. The feeds and the chip load are for the commanded \
+             depth. Rough the stock nearer to the surface first, or set the \
+             feeds for the deeper cut. [Tool tip below the remaining stock, \
+             mm; measured at generation over {samples} sampled cutting \
+             positions against the stock this operation reads, {floor:.4} mm \
+             sampling floor. Report-only: no gate consumes this.]",
+            deepest = self.deepest_engagement_mm,
+            commanded = self.commanded_depth_mm,
+            samples = self.sampled_positions,
+            floor = self.floor_mm,
         )
     }
 }

@@ -86,6 +86,10 @@ pub struct ResolvedGenInputs {
     /// no tool list).
     reference_tool_cfg: Option<ToolConfig>,
     operation: crate::compute::OperationConfig,
+    /// W6.5 (C7): the stock alignment pins, stock-relative. The Alignment
+    /// Pin Drill reads the pins of its diameter through
+    /// `ExecutionContext::alignment_pins`; no config copy carries them.
+    alignment_pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
     pre_boundary: Option<crate::polygon::Polygon2>,
     /// P2.3: the per-region processed polygon set for a `DerivedRestRegions`
     /// boundary — the same set [`ProjectSession::apply_boundary_clip_multi`]
@@ -1172,6 +1176,7 @@ impl JobPhases<'_, '_> {
         let drill_op = crate::compute::execute::build_drill_op_for_config(
             &self.inputs.operation,
             &self.inputs.drill_targets,
+            &self.inputs.alignment_pins,
             &self.inputs.tool_def,
             &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
@@ -1244,6 +1249,7 @@ pub fn execute_generation(
         index: inputs.spatial_index(),
         polygons: inputs.polygons.as_deref().map(|v| v.as_slice()),
         drill_targets: &inputs.drill_targets,
+        alignment_pins: &inputs.alignment_pins,
         setup_transform: inputs.setup_transform.as_ref(),
         reference_tool_cfg: inputs.reference_tool_cfg.clone(),
         debug_ctx: observer.debug_ctx(),
@@ -2391,10 +2397,9 @@ impl ProjectSession {
         // the generation tail reads. The resolved bundle owns everything
         // else; this borrow touches only `self.toolpath_configs`.
         //
-        // The five operation dials below come from the RAW `tc.operation`,
-        // never from `inputs.operation`, which the resolver patches at
-        // compute time. The monolith read them this way, and reading them
-        // off the patched copy would change the answer.
+        // The five operation dials below come from `tc.operation`. The
+        // resolver patches no config copy since W6.5, so it equals
+        // `inputs.operation`.
         let tc = self
             .toolpath_configs
             .get(index)

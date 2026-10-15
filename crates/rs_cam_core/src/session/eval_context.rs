@@ -82,8 +82,8 @@ pub struct SetupEvalContext {
     pub safe_z: f64,
 
     /// Setup orientation. Kept here so consumers don't have to plumb
-    /// the raw enum through alongside the context (e.g. ProjectCurve's
-    /// `setup_z_flipped` flag, AS-style cut-direction selection).
+    /// the raw enum through alongside the context (e.g. AS-style
+    /// cut-direction selection).
     pub face_up: FaceUp,
     pub z_rotation: ZRotation,
 
@@ -172,14 +172,6 @@ impl SetupEvalContext {
     /// transform. Equivalent to `self.local_to_global.is_some()`.
     pub fn needs_transform(&self) -> bool {
         self.local_to_global.is_some()
-    }
-
-    /// `true` when the setup transform Z-inverts the toolpath
-    /// (`face_up == Bottom`). Drives `ProjectCurve::setup_z_flipped`.
-    pub fn is_z_flipped(&self) -> bool {
-        self.local_to_global
-            .as_ref()
-            .is_some_and(|info| info.is_z_flipped())
     }
 
     /// Translation applied to this setup's emitted toolpath so every

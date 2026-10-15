@@ -265,6 +265,8 @@ pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
 /// A REPORT, not a refusal. An operator may legitimately want a pass that
 /// finds nothing; what is not acceptable is nothing saying so.
 pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
+/// W6.5: a projected curve cuts deeper than its commanded depth.
+pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve";
 /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
 /// `cavalier_contours` panicked and was contained, or one of the offset
 /// module's own input guards refused the ring — rather than collapsing.
@@ -470,6 +472,7 @@ pub const ALL: &[&str] = &[
     GEOM_UNMACHINED_BAND,
     GEOM_TIP_FLOAT,
     GEOM_ZERO_REMOVAL,
+    GEOM_BURIED_CURVE,
     GEOM_REGION_CAP_TRUNCATED,
     GEOM_REST_LEVELS_FALLBACK,
     CONFIG_INERT_CLAIMS_DIAL,

@@ -75,6 +75,11 @@ impl<'a> Prepared<'a> {
         }
     }
 
+    /// The op type of the row the prologue checked.
+    pub(crate) fn op_type(&self) -> OperationType {
+        self.op_type
+    }
+
     /// W6.2: the territory, resolved once for this op
     /// ([`Territory::resolve`]).
     pub fn territory(&self) -> &Territory<'a> {

@@ -64,6 +64,37 @@ pub enum ProjectProjection {
     Point,
 }
 
+impl From<crate::compute::operation_configs::ProjectCurveDirection> for ProjectDirection {
+    fn from(d: crate::compute::operation_configs::ProjectCurveDirection) -> Self {
+        use crate::compute::operation_configs::ProjectCurveDirection as Config;
+        match d {
+            Config::FromAbove => Self::FromAbove,
+            Config::FromBelow => Self::FromBelow,
+        }
+    }
+}
+
+impl From<crate::compute::operation_configs::ProjectCurveSide> for ProjectSide {
+    fn from(s: crate::compute::operation_configs::ProjectCurveSide) -> Self {
+        use crate::compute::operation_configs::ProjectCurveSide as Config;
+        match s {
+            Config::Center => Self::Center,
+            Config::Inside => Self::Inside,
+            Config::Outside => Self::Outside,
+        }
+    }
+}
+
+impl From<crate::compute::operation_configs::ProjectCurveProjection> for ProjectProjection {
+    fn from(p: crate::compute::operation_configs::ProjectCurveProjection) -> Self {
+        use crate::compute::operation_configs::ProjectCurveProjection as Config;
+        match p {
+            Config::Cutter => Self::Cutter,
+            Config::Point => Self::Point,
+        }
+    }
+}
+
 /// Parameters for the project-curve-on-surface operation.
 pub struct ProjectCurveParams {
     /// Cut depth below (or above) the mesh surface (positive = into material).
@@ -86,7 +117,8 @@ pub struct ProjectCurveParams {
     pub projection: ProjectProjection,
     /// When true, the mesh has already been Z-inverted by a bottom-facing setup
     /// transform. `FromBelow` should NOT apply its own Z-flip in this case
-    /// (it would double-flip, cancelling the setup transform).
+    /// (it would double-flip, cancelling the setup transform). The Curve
+    /// runner sets it from `ExecutionContext::z_flipped` (W6.5).
     pub setup_z_flipped: bool,
 }
 

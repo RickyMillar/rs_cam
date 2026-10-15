@@ -84,7 +84,8 @@ fn every_config_field_is_published_driver_set_or_skipped() {
         }
     }
     // Non-vacuity anchors: the tables are the real ones (269 defs and four
-    // driver-set field names over six rows on 2026-10-15).
+    // driver-set field names over six rows on 2026-10-15; W6.5 deleted the
+    // Project Curve `setup_z_flipped`, so three names over five rows).
     assert!(
         field_total > 200,
         "only {field_total} config fields over 24 structs"
@@ -94,7 +95,7 @@ fn every_config_field_is_published_driver_set_or_skipped() {
         "only {def_total} param defs over 24 operations"
     );
     assert!(
-        driver_set_total >= 6,
+        driver_set_total >= 5,
         "only {driver_set_total} driver-set rows"
     );
 }

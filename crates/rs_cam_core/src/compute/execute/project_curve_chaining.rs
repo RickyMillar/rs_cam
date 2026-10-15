@@ -9,7 +9,7 @@
 //! hundreds of those across dozens of entities. Finishing/engraving air is
 //! **count-bound** — every hop pays two full safe-Z legs whatever its XY
 //! length — so on this family the round trips, not the cutting, set the wall
-//! clock. `compute::execute::chain_project_curve` applies
+//! clock. The Project Curve link body (`ProjectCurveOp::link`, W6.5) applies
 //! `surface_link::relink_fragments` to the COMBINED path (not per polygon),
 //! so chains from different DXF entities can join.
 //!
@@ -852,13 +852,14 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
 /// the wrong surface. The adapter refuses to chain there — it emits the
 /// unchained path rather than geometry from two frames.
 ///
-/// (The GUI/session pipeline never reaches this: a bottom-facing setup sets
-/// `setup_z_flipped`, which takes the other arm.)
+/// (The session never reaches this: on a bottom-facing setup the runner
+/// reads a flipped frame from `ExecutionContext::z_flipped`, which takes the
+/// other arm. This context has no setup transform, so the frame is not
+/// flipped.)
 #[test]
 fn standalone_from_below_refuses_to_chain() {
     let mut cfg = project_curve_config(CANDIDATE_CHAIN_MM);
     cfg.direction = ProjectCurveDirection::FromBelow;
-    cfg.setup_z_flipped = false;
     let chained = generate_with(cfg.clone(), SAFE_Z_MM, None, None);
 
     let mut off = cfg;

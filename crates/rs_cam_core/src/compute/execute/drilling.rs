@@ -28,8 +28,9 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 /// - `OperationConfig::Drill`: holes are the model's drill targets
 ///   (`HoleSource::ModelDerived`); re-resolved every regenerate. An
 ///   explicit pick round-trips as a `Snapshot` instead.
-/// - `OperationConfig::AlignmentPinDrill`: holes are snapshotted in
-///   `cfg.holes`; `HoleSource::Snapshot` round-trips through project IO.
+/// - `OperationConfig::AlignmentPinDrill`: the live stock pins of its
+///   diameter (`alignment_pins`, W6.5), recorded as a
+///   `HoleSource::Snapshot` of the holes this generation drilled.
 ///
 /// `setup_transform` is the same value the generation pass was given (see
 /// [`ExecutionContext::setup_transform`]) and must stay that way: the
@@ -45,6 +46,7 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
     drill_targets: &[DrillTarget],
+    alignment_pins: &[crate::compute::alignment_pins::AlignmentPin],
     tool_def: &ToolDefinition,
     tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
@@ -85,8 +87,13 @@ pub fn build_drill_op_for_config(
             // Both frame corrections `generate_alignment_pin_drill` applies,
             // applied identically here — this view has to name the holes
             // that toolpath drills, not the raw config numbers.
-            let pin_holes =
-                pin_holes_in_emission_frame(cfg, stock_bbox, setup_transform, drill_targets);
+            let pin_holes = pin_holes_in_emission_frame(
+                cfg,
+                alignment_pins,
+                stock_bbox,
+                setup_transform,
+                drill_targets,
+            );
             let hole_xys = pin_holes.ok()?;
             if hole_xys.is_empty() {
                 return None;
@@ -170,8 +177,8 @@ fn pick_to_emission_frame(
 ///
 /// The two sources genuinely are in different frames:
 ///
-/// - `cfg.holes` snapshots `StockConfig::alignment_pins`, which are
-///   dimensioned STOCK-RELATIVE (X0Y0 at the stock's min corner) — the
+/// - the pins of `cfg.diameter` (`pin_holes_of_diameter` over the live
+///   `StockConfig::alignment_pins`, R1) are dimensioned STOCK-RELATIVE (X0Y0 at the stock's min corner) — the
 ///   frame the export datum converges on, because the pins are what
 ///   physically registers a flip. `ctx.stock_bbox` IS the stock in the
 ///   emission frame, so translating by its min corner serves both cases:
@@ -186,20 +193,21 @@ fn pick_to_emission_frame(
 /// this function refuses when one names none of them — the same
 /// G-DRILLPICKSTALE contract [`drill_holes_for_config`] carries, through the
 /// same two shared functions, because the two families store the identical
-/// frozen coordinate. `cfg.holes` is a stock snapshot and is untouched by
+/// frozen coordinate. The pins are live stock state and are untouched by
 /// that check.
 fn pin_holes_in_emission_frame(
     cfg: &crate::compute::operation_configs::AlignmentPinDrillConfig,
+    pins: &[crate::compute::alignment_pins::AlignmentPin],
     stock_bbox: &BoundingBox3,
     setup_transform: Option<&crate::compute::transform::SetupTransformInfo>,
     drill_targets: &[DrillTarget],
 ) -> Result<Vec<[f64; 2]>, OperationError> {
     let stock_origin = stock_bbox.min;
-    let mut holes: Vec<[f64; 2]> = cfg
-        .holes
-        .iter()
-        .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
-        .collect();
+    let mut holes: Vec<[f64; 2]> =
+        crate::compute::alignment_pins::pin_holes_of_diameter(pins, cfg.diameter)
+            .iter()
+            .map(|h| [h[0] + stock_origin.x, h[1] + stock_origin.y])
+            .collect();
     if let Some(selected) = &cfg.selected_holes {
         if let Some(msg) = stale_drill_picks_refusal(selected, drill_targets) {
             return Err(OperationError::MissingGeometry(msg));
@@ -584,7 +592,13 @@ pub(crate) fn generate_alignment_pin_drill(
     // why neither correction may be applied to the other's holes
     // (G-PINDRILL-FRAME, G-DRILLPICK-FRAME).
     let targets = ctx.drill_targets;
-    let holes = pin_holes_in_emission_frame(cfg, ctx.stock_bbox, ctx.setup_transform, targets)?;
+    let holes = pin_holes_in_emission_frame(
+        cfg,
+        ctx.alignment_pins,
+        ctx.stock_bbox,
+        ctx.setup_transform,
+        targets,
+    )?;
     if holes.is_empty() {
         return Err(OperationError::MissingGeometry(
             "No alignment pin positions defined".to_owned(),

@@ -16,7 +16,7 @@ use crate::trace::transform_provenance::ReconcileSet;
 use crate::toolpath::Toolpath;
 
 use super::drilling::drill_holes_for_config;
-use super::finish_3d::adaptive3d_effective_stock_to_leave;
+use super::rough_3d::adaptive3d_effective_stock_to_leave;
 use super::*;
 
 // ── C8: findings collections ────────────────────────────────────────
@@ -320,6 +320,19 @@ fn op_with_updates(
     op
 }
 
+/// Two stock pins of the default pin-drill diameter, stock-relative.
+fn span_coverage_pins() -> Vec<crate::compute::alignment_pins::AlignmentPin> {
+    let OperationConfig::AlignmentPinDrill(cfg) =
+        OperationConfig::new_default(OperationType::AlignmentPinDrill)
+    else {
+        unreachable!("default op kind mismatch");
+    };
+    [[25.0, 25.0], [55.0, 55.0]]
+        .into_iter()
+        .map(|[x, y]| crate::compute::alignment_pins::AlignmentPin::new(x, y, cfg.diameter))
+        .collect()
+}
+
 fn span_coverage_cases() -> Vec<SpanCoverageCase> {
     let depth_expected = vec![
         SpanKind::RapidOrderBarrier,
@@ -337,12 +350,9 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         cfg.detect_flat_areas = true;
         cfg.region_ordering = crate::compute::operation_configs::RegionOrdering::ByArea;
     });
-    let alignment_pin = op_with_updates(OperationType::AlignmentPinDrill, |op| {
-        let OperationConfig::AlignmentPinDrill(cfg) = op else {
-            unreachable!("default op kind mismatch");
-        };
-        cfg.holes = vec![[25.0, 25.0], [55.0, 55.0]];
-    });
+    // W6.5 (C7): the holes come from the pins of the context
+    // (`span_coverage_pins`), not from the config.
+    let alignment_pin = OperationConfig::new_default(OperationType::AlignmentPinDrill);
     let drop_cutter = op_with_updates(OperationType::DropCutter, |op| {
         let OperationConfig::DropCutter(cfg) = op else {
             unreachable!("default op kind mismatch");
@@ -849,6 +859,7 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
     let groove_mesh = make_v_groove_mesh(60.0, 8.0, 14.0);
     let groove_index = SpatialIndex::build_auto(&groove_mesh);
 
+    let pins = span_coverage_pins();
     for case in span_coverage_cases() {
         let (tool_def, tool_cfg) = make_tool(case.tool_type);
         let cutting_levels = case.op.cutting_levels(heights.top_z);
@@ -870,6 +881,7 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
             mesh: mesh_and_index.map(|(mesh, _)| mesh),
             index: mesh_and_index.map(|(_, index)| index),
             polygons,
+            alignment_pins: &pins,
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,

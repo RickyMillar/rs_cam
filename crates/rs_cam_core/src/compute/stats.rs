@@ -67,6 +67,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // A4: same rule — a move list carries no reference stock to be
         // measured against, so this helper cannot answer the question.
         zero_removal: None,
+        // W6.5: same rule — the stock the curve was measured against is
+        // not in the move list.
+        buried_curve: None,
         // Checkpoint C: same rule again — whether an offset failed is a
         // generation-time event and leaves no trace on the moves. `None`
         // here means "this helper never watched an offset", never "no
@@ -200,6 +203,7 @@ pub fn stats_with_findings(
         ramp_reach_clamp: _,
         claims_reference: _,
         zero_removal: _,
+        buried_curve: _,
         offset_library_failures: _,
         boundary_clip_dropped: _,
         waterline_ladder: _,
@@ -230,6 +234,7 @@ pub fn stats_with_findings(
         ramp_reach_clamp,
         claims_reference,
         zero_removal,
+        buried_curve,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,
@@ -261,6 +266,7 @@ pub fn stats_with_findings(
         ramp_reach_clamp: ramp_reach_clamp.map(Box::new),
         claims_reference,
         zero_removal,
+        buried_curve,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,

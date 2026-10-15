@@ -45,6 +45,7 @@ pub fn diagnostics_from_generation(
     out.extend(ramp_reach_clamp(toolpath_id, stats));
     out.extend(claims_reference(toolpath_id, stats));
     out.extend(zero_removal(toolpath_id, stats));
+    out.extend(buried_curve(toolpath_id, stats));
     out.extend(offset_library_failures(toolpath_id, stats));
     out.extend(boundary_clip_dropped(toolpath_id, stats));
     out.extend(waterline_ladder(toolpath_id, stats));
@@ -346,6 +347,30 @@ fn zero_removal(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         // was planned on — the same nearest-cell lookup the air-cut filter
         // uses. A simulation cannot supersede it: a sim of this pass removes
         // nothing either, and says so only as an absence.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: f.message(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// W6.5: a projected curve that cuts deeper than its commanded depth.
+/// `Info` by the lead ruling: it states a measured fact, and it fires also
+/// after a normal rough. Silent when nothing was measured.
+fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = stats.buried_curve else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_BURIED_CURVE),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Info,
+        // Measured at generation against the stock this operation reads.
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,

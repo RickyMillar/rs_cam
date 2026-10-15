@@ -313,30 +313,11 @@ impl ProjectSession {
                 None
             };
 
-        // Clone operation so we can patch `setup_z_flipped` on ProjectCurve.
-        // This flag is #[serde(skip)] and set at compute time — single source of
-        // truth is the setup transform's `is_z_flipped()`.
-        let mut operation = tc.operation.clone();
-        if let crate::compute::OperationConfig::ProjectCurve(ref mut cfg) = operation {
-            // F-030: `SetupEvalContext::is_z_flipped()` returns false for
-            // identity setups and `xform.is_z_flipped()` otherwise — same
-            // combined predicate as the previous `needs_transform && xform.is_z_flipped()`.
-            cfg.setup_z_flipped = ctx.is_z_flipped();
-        }
-        // N12 item 9: the alignment-pin drill's holes come from the LIVE
-        // stock, never from the stored config. The GUI controller
-        // refreshed them at submit and this resolver did not, so the two
-        // doors drilled different holes after a pin edit. Patched on the
-        // compute-time copy beside `setup_z_flipped`, for the same reason:
-        // the stored config records the operator's intent and this is a
-        // derived value.
-        if let crate::compute::OperationConfig::AlignmentPinDrill(ref mut cfg) = operation {
-            // R1: the operation drills the pins of its own diameter only.
-            cfg.holes = crate::compute::alignment_pins::pin_holes_of_diameter(
-                &self.stock.alignment_pins,
-                cfg.diameter,
-            );
-        }
+        // W6.5: the resolver patches no config copy. The setup frame reaches
+        // an op through `ExecutionContext::setup_transform` and the stock
+        // pins through `ExecutionContext::alignment_pins`.
+        let operation = tc.operation.clone();
+        let alignment_pins = self.stock.alignment_pins.clone();
 
         // Pre-resolve the effective boundary polygon so adaptive3d can
         // pre-clip its internal stock. `apply_boundary_clip` (below) resolves
@@ -504,6 +485,7 @@ impl ProjectSession {
             cutting_levels,
             reference_tool_cfg,
             operation,
+            alignment_pins,
             pre_boundary,
             pre_boundary_regions,
             face_boundary,
