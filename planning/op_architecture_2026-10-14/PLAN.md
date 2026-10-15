@@ -144,7 +144,7 @@ and W4, from what they measure. It is not scheduled now.
 | W3 | W3.0/W3.1 86692c56, W3.2 b6c83a81, W3.3/W3.4 29183d95, W3.5 Chamfer (Waterline moved to W6: needs fallible emit_level with cancel + per-level stock, and a link hook); B5-B7 7f820c42; live check passed (mini 2675 s vs 2673 s, only Face front changed, B8); merged to master; open: 2D Adaptive shared-mask ruling |
 | W4 | DONE: every_op_conforms_w4 (c7de79a0, 10 checks over ALL, ~8 s); found G-RAMPCHORD (SAFETY, entry ramps cut arc chords; fixed 981ff4ed) and the classification_sampler schema null; R6 bd7cf9f4; B8-B11 b523905a; merged to master |
 | W5 | DONE: rs_cam_derive #[derive(OpParams)] + ParamEnum, all 24 ops (95ee4b3c), floors in the schema; live mini export identical; merged to master |
-| W6 | not planned yet |
+| W6 | W6.1 Waterline on the framework c6301ee7; rest efficiency (one feed-or-retract rule, no ramp over cleared stock, compare-with-fresh on demand) 1ffbcab3; next W6.2 territory resolver + side channel, W6.3 height field, W6.4 composed surface, W6.5 volumetric/curve wrappers |
 
 ## Backlog (not scheduled)
 
@@ -163,3 +163,4 @@ and W4, from what they measure. It is not scheduled now.
 - B12 (from B10): at the level at a prior op's own floor, the rest 2D Adaptive still places an entry helix at the piece centre 7.4 mm from material with no cuts near it (level mask reads material, air filter reads air, the filter never drops a helix).
 - B13 (W5): planning/fixtures/nz_south.toml holds four ProjectCurve point_spacing = 0.05, below the W5 range 0.1..=5.0 (the old GUI literal). Operator ruling 2026-10-15: allow down to 0.01 (ProjectCurve point_spacing min 0.01).
 - B14 (W5): feeds clamp_peck_to_depth bypasses the setter and can write a peck under the 0.5 mm floor on a shallow hole (0.75 x depth).
+- B15: feed optimisation is refused on rest ops (catalog feed_optimization_unavailable_reason), so rest ramps run at the plunge-derived rate (250 vs 1000 mm/min on the Waterline cap). Revisit with the optimizer rebuild ruling (optimizer culled 2026-10-13).
