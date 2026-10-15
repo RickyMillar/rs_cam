@@ -161,6 +161,7 @@ impl<B: ComputeBackend> AppController<B> {
             return None;
         }
         let tc = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0), // will be assigned by session
             name: format!(
                 "{} {}",
@@ -240,6 +241,7 @@ impl<B: ComputeBackend> AppController<B> {
             .find_toolpath_config_by_id(tp_id)
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
+                    shoe: src.shoe,
                     id: rs_cam_core::ToolpathId(0), // will be assigned by session
                     name: format!("{} (copy)", src.name),
                     enabled: src.enabled,

@@ -108,6 +108,7 @@ fn state_for(fixture: &Fixture) -> AppState {
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Force line fixture".to_owned(),
         enabled: true,

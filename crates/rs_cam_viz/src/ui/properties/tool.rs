@@ -331,34 +331,13 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.label("Cross-Section Preview:");
     draw_tool_preview(ui, tool);
 
-    // Holder section (collapsible). TOO-006: the "collision check skipped"
-    // safety state is promoted onto the header itself — a warning glyph +
-    // phrase in the WARNING colour, visible *without* expanding the section
-    // (the old free-floating italic prose below the collapsed section was
-    // effectively invisible). UI wins, not prose.
     ui.add_space(12.0);
-    let no_holder = tool.holder_diameter < 0.01;
-    let (header_text, header_color) = if no_holder {
-        (
-            "\u{26A0} Holder / Shank — no holder, collision check skipped".to_owned(),
-            theme::WARNING,
-        )
-    } else {
-        ("Holder / Shank".to_owned(), theme::TEXT_HEADING)
-    };
-    egui::CollapsingHeader::new(egui::RichText::new(header_text).color(header_color))
+    // H1: the holder is the machine head, one for every tool, so the tool
+    // panel holds the shank only. H2 adds the head editor.
+    egui::CollapsingHeader::new(egui::RichText::new("Shank").color(theme::TEXT_HEADING))
         .id_salt("tool_holder_shank")
         .show(ui, |ui| {
             ui.param_grid("holder_params", |ui| {
-                ValueRow::new(
-                    "Holder Diameter:",
-                    &mut tool.holder_diameter,
-                    " mm",
-                    0.5,
-                    0.0..=200.0,
-                )
-                .show(ui);
-
                 // TOO-005: role-bearing label, distinct from the tapered
                 // "Upper shaft Ø" in the Cutter geometry group above.
                 ValueRow::new(
@@ -416,7 +395,9 @@ pub(crate) fn draw_tool_preview(ui: &mut egui::Ui, tool: &ToolConfig) {
     // the preview draws it `HOLDER_DRAW_LENGTH_OVER_DIAMETER` diameters tall.
     let shank_len = tool_def.exposed_shank_length() as f32;
     let holder_face = tool_def.stickout as f32;
-    let holder_r = (tool_def.holder_diameter / 2.0) as f32;
+    // H1: the panel has no machine; it draws the head a project without a
+    // `head` table reads. H2 draws the machine head.
+    let holder_r = (rs_cam_core::machine::head::UNMODELLED_HEAD_DIAMETER_MM / 2.0) as f32;
     let holder_len = 2.0 * holder_r * crate::render::sim_render::HOLDER_DRAW_LENGTH_OVER_DIAMETER;
 
     // Total height to display; clamp so preview isn't squished

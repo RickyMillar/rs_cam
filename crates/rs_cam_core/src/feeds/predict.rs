@@ -860,7 +860,6 @@ mod tests {
             included_angle: 90.0,
             taper_half_angle: 15.0,
             shaft_diameter: diameter,
-            holder_diameter: 25.0,
             shank_diameter: diameter,
             stickout,
             flute_count: 2,

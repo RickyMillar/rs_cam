@@ -65,7 +65,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.35, 20.0)),
         6.35,
-        20.0,
         30.0,
         2,
         ToolMaterial::Carbide,

@@ -715,6 +715,7 @@ fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
         ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     for name in ["Unused", "Adaptive"] {
         let config = ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0),
             name: name.to_owned(),
             enabled: true,

@@ -168,6 +168,7 @@ fn unified_finish_op() -> OperationConfig {
 fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Unified Finish".to_owned(),
         enabled: true,

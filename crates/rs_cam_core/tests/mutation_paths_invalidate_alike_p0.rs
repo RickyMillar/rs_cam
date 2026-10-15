@@ -152,6 +152,7 @@ fn tc(
     model_id: usize,
 ) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

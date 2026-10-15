@@ -71,6 +71,7 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Tool size fixture".to_owned(),
         enabled: true,

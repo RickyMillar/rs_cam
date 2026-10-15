@@ -35,7 +35,6 @@ fn r3_ball() -> ToolConfig {
     t.cutting_length = 25.0;
     t.shaft_diameter = 6.0;
     t.shank_diameter = 6.0;
-    t.holder_diameter = 25.0;
     t.stickout = 40.0;
     t.flute_count = 2;
     t.tool_material = ToolMaterial::Carbide;

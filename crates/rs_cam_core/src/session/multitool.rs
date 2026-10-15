@@ -489,6 +489,7 @@ impl ProjectSession {
             TierStrategy::IsoScallop => " iso",
         };
         ToolpathConfig {
+            shoe: Default::default(),
             id: ToolpathId(0),
             name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
             enabled: true,
@@ -693,6 +694,7 @@ impl ProjectSession {
             index,
             tools,
             spec: spec.clone(),
+            head: crate::machine::head::HeadFit::fixed(&self.machine.head),
         })
     }
 
@@ -1409,6 +1411,8 @@ pub struct PreviewTierMapHandle {
     tools: Vec<ToolConfig>,
     /// The dials the operator previewed.
     spec: MultitoolPlanSpec,
+    /// H1: the fixed machine head, for the flute-reach body bands.
+    head: crate::machine::head::HeadFit,
 }
 
 impl PreviewTierMapHandle {
@@ -1506,7 +1510,7 @@ fn preview_flute_reach(
         .iter()
         .map(|d| TierTool {
             cutter: d as &dyn MillingCutter,
-            assembly: d.to_assembly(),
+            assembly: d.to_assembly(&handle.head),
         })
         .collect();
     tier_flute_reach(

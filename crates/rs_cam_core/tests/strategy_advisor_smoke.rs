@@ -84,6 +84,7 @@ fn build_terrain_adaptive3d_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,

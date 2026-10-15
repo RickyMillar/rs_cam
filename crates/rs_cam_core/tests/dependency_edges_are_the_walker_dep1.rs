@@ -107,6 +107,7 @@ fn tc(
     boundary: BoundaryConfig,
 ) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0), // overwritten by `add_toolpath`
         name: name.to_owned(),
         enabled: true,

@@ -228,7 +228,6 @@ fn calculator_and_gate_match_same_observation_id() {
         let tool = ToolDefinition::new(
             case.cutter,
             6.35,
-            20.0,
             60.0,
             case.flute_count,
             ToolMaterial::Carbide,

@@ -275,7 +275,14 @@ impl ProjectSession {
         // the obstacles. Only a toolpath with NEITHER a mesh NOR an
         // enabled obstacle has nothing to answer, and that is the 2D case
         // the CLI expects.
-        if model.is_none() && obstacles.is_empty() {
+        // H1: a head shelf or a fitted shoe reads the stock box, so the
+        // check then applies with no mesh and no obstacle too.
+        let head = self.head_fit_for_toolpath(index);
+        let head_reads_stock = head.head.bands(0.0, head.shoe).iter().any(|band| {
+            band.radius_mm.is_none()
+                || band.segment == crate::stock::collision::AssemblySegment::Shoe
+        });
+        if model.is_none() && obstacles.is_empty() && !head_reads_stock {
             return Err(SessionError::MissingGeometry(
                 "Collision check requires a 3D mesh or an enabled obstacle".to_owned(),
             ));
@@ -287,6 +294,8 @@ impl ProjectSession {
         let tool_def = build_cutter(tool);
 
         let request = CollisionCheckRequest {
+            head,
+            stock: Some(self.setup_stock_box_for_toolpath(index)),
             toolpath: result.toolpath(),
             tool: tool_def,
             mesh: model,
@@ -993,6 +1002,8 @@ impl ProjectSession {
                             crate::stock::collision::CollisionKind::Obstacle { name } => {
                                 Some(name.as_str())
                             }
+                            // H1: a shoe part or a shelf struck the stock box.
+                            crate::stock::collision::CollisionKind::Stock => Some("stock"),
                             crate::stock::collision::CollisionKind::Workpiece => None,
                         })
                         .collect();
@@ -1286,6 +1297,44 @@ impl ProjectSession {
                     count: None,
                 },
             });
+        }
+
+        // Important (Caution): a stated shoe gap below the solver gap (H1).
+        // The check reads the stated gap, so the simulation reports the
+        // strike; this names the op and the gap it needs.
+        if self.machine.head.shoe.is_some() {
+            match self.shoe_plan() {
+                Ok(rows) => {
+                    for row in rows.iter().filter(|row| row.gap_too_low()) {
+                        let (crate::machine::head::ShoeSetting::Gap { gap_mm }, Some(needed)) =
+                            (row.setting, row.needed_gap_mm)
+                        else {
+                            continue;
+                        };
+                        verdicts.push(Verdict {
+                            severity: VerdictSeverity::Important,
+                            kind: VerdictKind::ShoeGapTooLow,
+                            headline: format!(
+                                "'{}' sets the dust shoe gap to {gap_mm:.0} mm; it needs \
+                                 {needed:.0} mm to keep the shoe plate clear of the stock \
+                                 and the obstacles",
+                                row.toolpath_name
+                            ),
+                            offender_toolpath_ids: vec![row.toolpath_id],
+                            fix_hint: format!(
+                                "Set the shoe gap to {needed:.0} mm or more, or set the shoe \
+                                 to Auto, Raised or Off"
+                            ),
+                            evidence: VerdictEvidence {
+                                move_index: None,
+                                z_value: Some(needed),
+                                count: None,
+                            },
+                        });
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "the shoe plan failed; no shoe verdict"),
+            }
         }
 
         // Critical: a holder/shank check that could not answer. The

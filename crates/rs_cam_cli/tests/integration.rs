@@ -247,6 +247,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         .add_toolpath(
             0,
             ToolpathConfig {
+                shoe: Default::default(),
                 id: rs_cam_core::ToolpathId(0),
                 name: "Pocket".to_owned(),
                 enabled: true,

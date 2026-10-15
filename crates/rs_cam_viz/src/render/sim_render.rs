@@ -514,7 +514,8 @@ pub struct ToolAssemblyInfo {
     /// Exposed shank length between the flutes and the holder face
     /// (`ToolDefinition::exposed_shank_length`).
     pub shank_length: f32,
-    /// Holder cylinder radius (holder_diameter / 2).
+    /// Holder cylinder radius: half the first fixed head part's diameter
+    /// (H1, `MachineHead::holder_diameter_mm`).
     pub holder_radius: f32,
     /// Length from the holder face to the tool tip. The holder face is at
     /// this height above the tip.
@@ -550,11 +551,14 @@ impl ToolGeometry {
 
 impl ToolAssemblyInfo {
     /// Build from a `ToolDefinition`.
-    pub fn from_tool_definition(td: &rs_cam_core::tool::ToolDefinition) -> Self {
+    pub fn from_tool_definition(
+        td: &rs_cam_core::tool::ToolDefinition,
+        head: &rs_cam_core::machine::head::MachineHead,
+    ) -> Self {
         Self {
             shank_radius: (td.shank_diameter / 2.0) as f32,
             shank_length: td.exposed_shank_length() as f32,
-            holder_radius: (td.holder_diameter / 2.0) as f32,
+            holder_radius: (head.holder_diameter_mm().unwrap_or(0.0) / 2.0) as f32,
             stickout: td.stickout as f32,
         }
     }

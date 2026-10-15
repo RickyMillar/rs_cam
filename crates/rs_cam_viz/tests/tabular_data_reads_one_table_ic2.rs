@@ -67,6 +67,7 @@ fn fixture() -> AppState {
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "IC2 fixture".to_owned(),
         enabled: true,

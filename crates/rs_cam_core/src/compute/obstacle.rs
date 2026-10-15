@@ -604,11 +604,24 @@ impl ObstacleSet {
     /// The per-tool view: one footprint per assembly band, grown by the
     /// band radius.
     ///
+    /// H1: the bands are the cutter, the shank and every hard head part of
+    /// `assembly` (each part with a diameter). Two more rules read `stock`,
+    /// the fresh stock box of the setup in the setup frame:
+    ///
+    /// - A hard SHOE part also keeps out of the stock box. The cutter, the
+    ///   shank and the fixed head parts do not: the cutter is in the stock
+    ///   by design, and the workpiece check (`stock::collision`) judges the
+    ///   fixed parts against the part mesh.
+    /// - A shelf (a part with no width limit) is a Z floor for the tip: the
+    ///   highest top (the stock top and every grown obstacle top) minus the
+    ///   shelf height above the tip. The floor holds at every XY.
+    ///
     /// # Errors
     /// [`ObstacleResolveError`] when an outward offset fails.
     pub fn for_tool(
         &self,
         assembly: &ToolAssembly,
+        stock: Option<&crate::geo::BoundingBox3>,
     ) -> Result<ObstacleToolView, ObstacleResolveError> {
         let mut bands: Vec<(AssemblySegment, f64, f64)> =
             vec![(AssemblySegment::Cutter, 0.0, assembly.cutter_radius)];
@@ -616,7 +629,7 @@ impl ObstacleSet {
             assembly
                 .segments()
                 .into_iter()
-                .map(|(offset, radius, _len)| (assembly.segment_at(radius), offset, radius)),
+                .map(|band| (band.segment, band.z_offset, band.radius)),
         );
         let mut entries = Vec::new();
         for (index, obstacle) in self.obstacles.iter().enumerate() {
@@ -637,32 +650,81 @@ impl ObstacleSet {
                 } else {
                     Vec::new()
                 };
-                let mut lo = [f64::INFINITY, f64::INFINITY];
-                let mut hi = [f64::NEG_INFINITY, f64::NEG_INFINITY];
-                for p in &grown {
-                    let [x0, y0, x1, y1] = p.bbox();
-                    lo = [lo[0].min(x0), lo[1].min(y0)];
-                    hi = [hi[0].max(x1), hi[1].max(y1)];
-                }
-                entries.push(BandEntry {
-                    obstacle: index,
+                entries.push(BandEntry::new(
+                    index,
                     segment,
-                    tip_ceiling_z: obstacle.top_z - offset,
+                    obstacle.top_z - offset,
                     cutter,
                     grown,
                     material,
-                    bbox: [lo[0], lo[1], hi[0], hi[1]],
-                });
+                ));
+            }
+        }
+        let mut names: Vec<String> = self.obstacles.iter().map(|o| o.name.clone()).collect();
+        // H1: the hard shoe parts against the fresh stock box.
+        let mut stock_index = None;
+        if let Some(stock) = stock {
+            let stock_footprint = [Polygon2::rectangle(
+                stock.min.x,
+                stock.min.y,
+                stock.max.x,
+                stock.max.y,
+            )];
+            for &(segment, offset, radius) in &bands {
+                if segment != AssemblySegment::Shoe || radius <= 0.0 || !radius.is_finite() {
+                    continue;
+                }
+                let index = *stock_index.get_or_insert(names.len());
+                let grown = grow(&stock_footprint, radius, STOCK_NAME)?;
+                entries.push(BandEntry::new(
+                    index,
+                    segment,
+                    stock.max.z - offset,
+                    false,
+                    grown,
+                    Vec::new(),
+                ));
+            }
+            if stock_index.is_some() {
+                names.push(STOCK_NAME.to_owned());
+            }
+        }
+        // H1: the lowest shelf is a Z floor under the highest top.
+        if let Some((shelf, segment)) = assembly.shelf_offset() {
+            let stock_top = stock.map(|b| (b.max.z, None));
+            let obstacle_top = self
+                .obstacles
+                .iter()
+                .enumerate()
+                .map(|(i, o)| (o.top_z, Some(i)))
+                .max_by(|a, b| a.0.total_cmp(&b.0));
+            let highest = [stock_top, obstacle_top]
+                .into_iter()
+                .flatten()
+                .max_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((top, source)) = highest {
+                let index = match source {
+                    Some(i) => i,
+                    None => *stock_index.get_or_insert_with(|| {
+                        names.push(STOCK_NAME.to_owned());
+                        names.len() - 1
+                    }),
+                };
+                entries.push(BandEntry::floor(index, segment, top - shelf));
             }
         }
         Ok(ObstacleToolView {
-            names: self.obstacles.iter().map(|o| o.name.clone()).collect(),
+            names,
+            stock_index,
             plane_z: self.plane_z(),
             footprints: self.footprints(),
             entries,
         })
     }
 }
+
+/// The name a hit on the stock box prints (H1).
+const STOCK_NAME: &str = "stock";
 
 /// The margin (mm) of a material footprint ([`BandEntry::material`])
 /// past the cutter band. An area op insets its clipped outline by the cutter
@@ -675,8 +737,13 @@ const MATERIAL_MARGIN_MM: f64 = 0.1;
 
 /// One obstacle, for one assembly band: the footprint grown by the band
 /// radius, and the tip Z below which the band reaches the obstacle.
+///
+/// H1: a shelf FLOOR is an entry with no footprint that holds at every XY
+/// (`everywhere`).
 #[derive(Debug, Clone)]
 struct BandEntry {
+    /// A floor: the entry holds at every XY, and `grown` is empty.
+    everywhere: bool,
     obstacle: usize,
     segment: AssemblySegment,
     /// The band strikes the obstacle when the tip is below this Z and the
@@ -693,6 +760,64 @@ struct BandEntry {
     material: Vec<Polygon2>,
     /// The XY box of `grown`: `[x_min, y_min, x_max, y_max]`.
     bbox: [f64; 4],
+}
+
+impl BandEntry {
+    fn new(
+        obstacle: usize,
+        segment: AssemblySegment,
+        tip_ceiling_z: f64,
+        cutter: bool,
+        grown: Vec<Polygon2>,
+        material: Vec<Polygon2>,
+    ) -> Self {
+        let mut lo = [f64::INFINITY, f64::INFINITY];
+        let mut hi = [f64::NEG_INFINITY, f64::NEG_INFINITY];
+        for p in &grown {
+            let [x0, y0, x1, y1] = p.bbox();
+            lo = [lo[0].min(x0), lo[1].min(y0)];
+            hi = [hi[0].max(x1), hi[1].max(y1)];
+        }
+        Self {
+            everywhere: false,
+            obstacle,
+            segment,
+            tip_ceiling_z,
+            cutter,
+            grown,
+            material,
+            bbox: [lo[0], lo[1], hi[0], hi[1]],
+        }
+    }
+
+    /// A shelf floor at `tip_floor_z`, at every XY (H1).
+    fn floor(obstacle: usize, segment: AssemblySegment, tip_floor_z: f64) -> Self {
+        Self {
+            everywhere: true,
+            obstacle,
+            segment,
+            tip_ceiling_z: tip_floor_z,
+            cutter: false,
+            grown: Vec::new(),
+            material: Vec::new(),
+            bbox: [
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+                f64::INFINITY,
+                f64::INFINITY,
+            ],
+        }
+    }
+
+    /// Does the entry hold at the tip XY `p`?
+    fn holds_at(&self, p: &crate::geo::P2) -> bool {
+        self.everywhere
+            || (p.x >= self.bbox[0]
+                && p.x <= self.bbox[2]
+                && p.y >= self.bbox[1]
+                && p.y <= self.bbox[3]
+                && strictly_inside(&self.grown, p))
+    }
 }
 
 /// A Z tolerance (mm): a tip this close to a band ceiling is at it, not
@@ -736,6 +861,8 @@ struct Forbidden {
 #[derive(Debug, Clone)]
 pub struct ObstacleToolView {
     names: Vec<String>,
+    /// H1: the index in `names` of the stock box, when an entry reads it.
+    stock_index: Option<usize>,
     plane_z: Option<f64>,
     /// The grown footprints of the set ([`ObstacleSet::footprints`]).
     footprints: Vec<Polygon2>,
@@ -743,10 +870,22 @@ pub struct ObstacleToolView {
 }
 
 impl ObstacleToolView {
-    /// No obstacle.
+    /// No entry: no obstacle, no stock entry and no shelf floor.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// H1: the shelf floor of the view, the lowest tip Z the shelf allows
+    /// at any XY. `None` when the head has no shelf or the view has no top
+    /// to read.
+    #[must_use]
+    pub fn floor_z(&self) -> Option<f64> {
+        self.entries
+            .iter()
+            .filter(|e| e.everywhere)
+            .map(|e| e.tip_ceiling_z)
+            .max_by(f64::total_cmp)
     }
 
     /// K3: the CUTTER band footprint of every obstacle whose grown top is
@@ -822,7 +961,9 @@ impl ObstacleToolView {
             }
             // The XY part: the tip XY is inside the grown footprint. A
             // stationary move (a vertical one) is a point in XY.
-            let xy: Vec<(f64, f64)> = if (b.x - a.x).abs() < 1e-12 && (b.y - a.y).abs() < 1e-12 {
+            let xy: Vec<(f64, f64)> = if entry.everywhere {
+                vec![(0.0, 1.0)]
+            } else if (b.x - a.x).abs() < 1e-12 && (b.y - a.y).abs() < 1e-12 {
                 let p = crate::geo::P2::new(a.x, a.y);
                 if strictly_inside(&entry.grown, &p) {
                     vec![(0.0, 1.0)]
@@ -853,14 +994,9 @@ impl ObstacleToolView {
     /// first band entry that strikes.
     fn point_hit(&self, p: P3) -> Option<&BandEntry> {
         let xy = crate::geo::P2::new(p.x, p.y);
-        self.entries.iter().find(|e| {
-            p.z < e.tip_ceiling_z - Z_EPS_MM
-                && xy.x >= e.bbox[0]
-                && xy.x <= e.bbox[2]
-                && xy.y >= e.bbox[1]
-                && xy.y <= e.bbox[3]
-                && strictly_inside(&e.grown, &xy)
-        })
+        self.entries
+            .iter()
+            .find(|e| p.z < e.tip_ceiling_z - Z_EPS_MM && e.holds_at(&xy))
     }
 
     /// The lowest tip Z at `(x, y)` that keeps every band above the
@@ -871,13 +1007,7 @@ impl ObstacleToolView {
         let xy = crate::geo::P2::new(x, y);
         self.entries
             .iter()
-            .filter(|e| {
-                x >= e.bbox[0]
-                    && x <= e.bbox[2]
-                    && y >= e.bbox[1]
-                    && y <= e.bbox[3]
-                    && strictly_inside(&e.grown, &xy)
-            })
+            .filter(|e| e.holds_at(&xy))
             .map(|e| e.tip_ceiling_z)
             .fold(f64::NEG_INFINITY, f64::max)
     }
@@ -956,31 +1086,7 @@ impl ObstacleToolView {
     fn join_hit(&self, start: JoinStart, m: &Move) -> Option<(P3, Forbidden)> {
         let t = m.target;
         match start {
-            JoinStart::After(p) => {
-                let points = match m.move_type {
-                    // `gcode::program_builder::push_rapid`: a rising
-                    // diagonal lifts first, then traverses; a falling one
-                    // traverses at the old Z, then plunges.
-                    MoveType::Rapid => {
-                        let xy_changed = t.x != p.x || t.y != p.y;
-                        if xy_changed && t.z != p.z {
-                            let corner = if t.z > p.z {
-                                P3::new(p.x, p.y, t.z)
-                            } else {
-                                P3::new(t.x, t.y, p.z)
-                            };
-                            vec![p, corner, t]
-                        } else {
-                            vec![p, t]
-                        }
-                    }
-                    // A feed or an arc runs from the last position as it is.
-                    MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                        Self::arc_points(p, m)
-                    }
-                };
-                self.polyline_hit(&points)
-            }
+            JoinStart::After(p) => self.polyline_hit(&Self::join_points(p, m)),
             JoinStart::Unknown => {
                 // The XY before the move is not known: a Z-first rapid
                 // traverses at `t.z` from anywhere, and a feed comes from
@@ -1019,6 +1125,116 @@ impl ObstacleToolView {
         }
     }
 
+    /// H1, the shoe solver: how far every band of the view must rise so
+    /// that `toolpath` (with its join, as [`Self::check_toolpath`] reads it)
+    /// strikes nothing. The answer is the largest
+    /// `tip_ceiling_z - z` over every point of every move where a band holds
+    /// at the tip XY. `NEG_INFINITY` when no band holds anywhere on it.
+    ///
+    /// The tip Z is linear on each straight piece, so the lowest tip Z on
+    /// an inside interval is at one of its ends: the answer is exact for
+    /// lines and for the chords of an arc.
+    #[must_use]
+    pub fn required_lift(&self, toolpath: &Toolpath, join: JoinStart) -> f64 {
+        let mut lift = f64::NEG_INFINITY;
+        if self.is_empty() {
+            return lift;
+        }
+        let mut prev: Option<P3> = None;
+        for m in &toolpath.moves {
+            let points = match (prev, join) {
+                (Some(start), _) => Self::arc_points(start, m),
+                (None, JoinStart::After(p)) => Self::join_points(p, m),
+                (None, JoinStart::Unknown) => {
+                    // The XY before the move is not known: the target must
+                    // be at or above every ceiling.
+                    if let Some(ceiling) = self.max_ceiling_z() {
+                        lift = lift.max(ceiling - m.target.z);
+                    }
+                    vec![m.target, m.target]
+                }
+            };
+            prev = Some(m.target);
+            for w in points.windows(2) {
+                let &[a, b] = w else {
+                    continue;
+                };
+                lift = lift.max(self.segment_lift(a, b));
+            }
+        }
+        lift
+    }
+
+    /// [`Self::required_lift`] for one straight piece `a`→`b`.
+    fn segment_lift(&self, a: P3, b: P3) -> f64 {
+        let (mx0, mx1) = (a.x.min(b.x), a.x.max(b.x));
+        let (my0, my1) = (a.y.min(b.y), a.y.max(b.y));
+        let z_at = |t: f64| a.z + t * (b.z - a.z);
+        let mut lift = f64::NEG_INFINITY;
+        for entry in &self.entries {
+            let [x0, y0, x1, y1] = entry.bbox;
+            if mx1 < x0 || mx0 > x1 || my1 < y0 || my0 > y1 {
+                continue;
+            }
+            let xy: Vec<(f64, f64)> = if entry.everywhere {
+                vec![(0.0, 1.0)]
+            } else if (b.x - a.x).abs() < 1e-12 && (b.y - a.y).abs() < 1e-12 {
+                if strictly_inside(&entry.grown, &crate::geo::P2::new(a.x, a.y)) {
+                    vec![(0.0, 1.0)]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                maximal_inside_intervals(a, b, &entry.grown)
+            };
+            for (s0, s1) in xy {
+                let low = z_at(s0).min(z_at(s1));
+                lift = lift.max(entry.tip_ceiling_z - low);
+            }
+        }
+        lift
+    }
+
+    /// The motion the G-code builder emits from `p` into the first move
+    /// `m` of a toolpath, as a polyline (see [`JoinStart::After`]).
+    fn join_points(p: P3, m: &Move) -> Vec<P3> {
+        let t = m.target;
+        match m.move_type {
+            // `gcode::program_builder::push_rapid`: a rising diagonal lifts
+            // first, then traverses; a falling one traverses at the old Z,
+            // then plunges.
+            MoveType::Rapid => {
+                let xy_changed = t.x != p.x || t.y != p.y;
+                if xy_changed && t.z != p.z {
+                    let corner = if t.z > p.z {
+                        P3::new(p.x, p.y, t.z)
+                    } else {
+                        P3::new(t.x, t.y, p.z)
+                    };
+                    vec![p, corner, t]
+                } else {
+                    vec![p, t]
+                }
+            }
+            // A feed or an arc runs from the last position as it is.
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                Self::arc_points(p, m)
+            }
+        }
+    }
+
+    /// What a hit on entry obstacle `index` struck: the stock box (H1) or
+    /// the named obstacle.
+    fn kind_of(&self, index: usize) -> CollisionKind {
+        if Some(index) == self.stock_index {
+            CollisionKind::Stock
+        } else {
+            CollisionKind::Obstacle {
+                name: self.names.get(index).cloned().unwrap_or_default(),
+            }
+        }
+    }
+
     /// Every hit of `toolpath`, at most one per move: every move class,
     /// the rapids included, with the cutter, shank and holder. The move
     /// index is the toolpath's own.
@@ -1045,9 +1261,7 @@ impl ObstacleToolView {
                     position,
                     penetration_depth: f.tip_ceiling_z - position.z,
                     segment: f.segment,
-                    kind: CollisionKind::Obstacle {
-                        name: self.names.get(f.obstacle).cloned().unwrap_or_default(),
-                    },
+                    kind: self.kind_of(f.obstacle),
                 });
             }
         }
@@ -1176,7 +1390,12 @@ pub fn clip_annotated_to_obstacles(
         spans_valid,
         produced,
     } = annotated;
-    let (clipped, mapping) = if view.is_empty() {
+    // H1: a view with only a shelf floor (no obstacle) passes a toolpath
+    // that stays above the floor through untouched, and it never adds the
+    // K3 start rapid: that rapid is the obstacle join rule.
+    let floor_only_and_clear =
+        view.plane_z().is_none() && toolpath.moves.iter().all(|m| view.point_allowed(m.target));
+    let (clipped, mapping) = if view.is_empty() || floor_only_and_clear {
         let n = toolpath.moves.len();
         (toolpath, (0..=n).collect::<Vec<usize>>())
     } else {
@@ -1187,7 +1406,9 @@ pub fn clip_annotated_to_obstacles(
             plane,
             plunge_rate_mm_min,
         );
-        start_at_the_plane(&mut clipped, &mut mapping, plane);
+        if view.plane_z().is_some() {
+            start_at_the_plane(&mut clipped, &mut mapping, plane);
+        }
         (clipped, mapping)
     };
     let spans: Vec<crate::trace::toolpath_spans::Span> =
@@ -1245,7 +1466,9 @@ mod tests {
             cutter_radius: 3.0,
             cutter_length: 20.0,
             shank_diameter: 6.0,
-            holder_diameter: 35.0,
+            head: vec![crate::stock::collision::HeadBand::holder_at_face(
+                35.0, 40.0,
+            )],
             stickout: 40.0,
         }
     }
@@ -1359,7 +1582,7 @@ mod tests {
     #[test]
     fn the_step_starts_the_toolpath_at_the_plane_k3() {
         let set = clamp(20.0);
-        let view = set.for_tool(&assembly()).unwrap();
+        let view = set.for_tool(&assembly(), None).unwrap();
         let plane = set.plane_z().unwrap();
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(-50.0, 5.0, 10.0));
@@ -1389,7 +1612,7 @@ mod tests {
 
     #[test]
     fn a_cut_beside_the_clamp_keeps_the_cutter_radius_and_clearance() {
-        let view = clamp(20.0).for_tool(&assembly()).unwrap();
+        let view = clamp(20.0).for_tool(&assembly(), None).unwrap();
         // Grown footprint: x -1..11. The cutter (r 3) reaches it below
         // x = -4.
         assert!(!view.point_allowed(P3::new(-3.9, 5.0, 0.0)));
@@ -1402,21 +1625,21 @@ mod tests {
     fn the_holder_band_applies_where_it_reaches_the_obstacle() {
         // Tall clamp, top 50 (grown 51). The holder (r 17.5) starts 40
         // above the tip, so with the tip below 11 it reaches the clamp.
-        let view = clamp(50.0).for_tool(&assembly()).unwrap();
+        let view = clamp(50.0).for_tool(&assembly(), None).unwrap();
         // 10 mm left of the grown edge: clear of the cutter, inside the
         // holder radius.
         assert!(!view.point_allowed(P3::new(-11.0, 5.0, 0.0)));
         // Same XY with the tip at 12: the holder is above the grown top.
         assert!(view.point_allowed(P3::new(-11.0, 5.0, 12.0)));
         // A low clamp (grown top 21): the holder never reaches it.
-        let low = clamp(20.0).for_tool(&assembly()).unwrap();
+        let low = clamp(20.0).for_tool(&assembly(), None).unwrap();
         assert!(low.point_allowed(P3::new(-11.0, 5.0, 0.0)));
     }
 
     #[test]
     fn a_move_across_the_clamp_is_split_and_crosses_at_the_plane() {
         let set = clamp(20.0);
-        let view = set.for_tool(&assembly()).unwrap();
+        let view = set.for_tool(&assembly(), None).unwrap();
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(-20.0, 5.0, 30.0));
         tp.rapid_to(P3::new(-20.0, 5.0, 0.0));
@@ -1457,7 +1680,7 @@ mod tests {
 
     #[test]
     fn the_check_sees_a_rapid_through_the_clamp() {
-        let view = clamp(20.0).for_tool(&assembly()).unwrap();
+        let view = clamp(20.0).for_tool(&assembly(), None).unwrap();
         let mut tp = Toolpath::new();
         tp.rapid_to(P3::new(-20.0, 5.0, 15.0));
         tp.rapid_to(P3::new(30.0, 5.0, 15.0));
@@ -1476,7 +1699,7 @@ mod tests {
 
     #[test]
     fn an_arc_that_sweeps_through_the_clamp_is_not_kept() {
-        let view = clamp(20.0).for_tool(&assembly()).unwrap();
+        let view = clamp(20.0).for_tool(&assembly(), None).unwrap();
         // A half circle of radius 15 about (5, -12): both ends are far
         // from the clamp, the middle passes through it.
         let start = P3::new(-10.0, -12.0, 0.0);

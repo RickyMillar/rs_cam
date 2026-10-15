@@ -89,7 +89,6 @@ fn endmill(stickout: f64) -> ToolConfig {
         included_angle: 90.0,
         taper_half_angle: 15.0,
         shaft_diameter: DIAMETER_MM,
-        holder_diameter: 25.0,
         shank_diameter: DIAMETER_MM,
         stickout,
         flute_count: FLUTES,

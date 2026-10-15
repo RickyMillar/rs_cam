@@ -410,6 +410,26 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
+            (Command, SetMachineHead, "set_machine_head", SetMachineHeadArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "H2: the machine-profile head editor is not built yet",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Command, SetToolpathShoe, "set_toolpath_shoe", SetToolpathShoeArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "H2: the per-toolpath shoe setting is not in the operation panel yet",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no such command",
+                 ),
+             }),
             (Command, ImportMachineSettings, "import_machine_settings",
              ImportMachineSettingsArgs, Effects,
              Surfaces {
@@ -1521,6 +1541,26 @@ pub struct SetMachineKinematicsArgs {
     pub kinematics: Box<crate::machine::kinematics::MachineKinematics>,
 }
 
+/// The arguments of the `set_machine_head` command (H1).
+///
+/// The payload is the whole head: the fixed parts and the optional dust
+/// shoe. The session refuses a head that breaks a rule of
+/// `MachineHead::validate`.
+#[derive(Debug, Clone)]
+pub struct SetMachineHeadArgs {
+    /// The head to write.
+    pub head: Box<crate::machine::head::MachineHead>,
+}
+
+/// The arguments of the `set_toolpath_shoe` command (H1).
+#[derive(Debug, Clone)]
+pub struct SetToolpathShoeArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The shoe setting.
+    pub shoe: crate::machine::head::ShoeSetting,
+}
+
 /// The arguments of the `import_machine_settings` command.
 ///
 /// A GRBL `$$` dump carries more than [`SetMachineKinematicsArgs`] — the
@@ -2425,6 +2465,8 @@ impl ProjectSession {
                 Ok(self.set_machine_kinematics(*args.kinematics))
             }
             Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(&args.import)),
+            Command::SetMachineHead(args) => self.set_machine_head(*args.head),
+            Command::SetToolpathShoe(args) => self.set_toolpath_shoe(args.index, args.shoe),
             Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
             Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
             Command::SetRestAnalysisConfig(args) => {

@@ -869,6 +869,12 @@ declare_core_requests! {
             => SetStockSource, None;
         SetMachineKinematics(rs_cam_mcp::server::SetMachineKinematicsParam)
             => SetMachineKinematics, Some(Workspace::Setup);
+        /// Row `SetMachineHead` (H1). The preset and the patch merge here.
+        SetMachineHead(rs_cam_mcp::server::SetMachineHeadParam)
+            => SetMachineHead, Some(Workspace::Setup);
+        /// Row `SetToolpathShoe` (H1).
+        SetToolpathShoe(rs_cam_mcp::server::SetToolpathShoeParam)
+            => SetToolpathShoe, None;
         /// Row `ImportMachineSettings`. The GRBL parse stays on this surface.
         ImportMachineSettings(rs_cam_mcp::server::ImportMachineSettingsParam)
             => ImportMachineSettings, Some(Workspace::Setup);

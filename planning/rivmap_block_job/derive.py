@@ -409,7 +409,7 @@ def tool_table(tid: int, number: int, name: str, ttype: str, diameter: float, cu
         "id": tid, "name": name, "type": ttype, "diameter": diameter,
         "cutting_length": cutting_length, "helix_deg": 30.0, "corner_radius_mm": corner_radius,
         "corner_radius": corner_radius, "included_angle": included_angle,
-        "taper_half_angle": taper_half_angle, "shaft_diameter": shank, "holder_diameter": 25.0,
+        "taper_half_angle": taper_half_angle, "shaft_diameter": shank,
         "shank_diameter": shank, "shank_length": 20.0, "stickout": stickout, "flute_count": flutes,
         "tool_number": number, "tool_material": "carbide", "cut_direction": "up_cut",
         "vendor": "", "product_id": ""}, comment).replace("[[[tools]]]", "[[tools]]")

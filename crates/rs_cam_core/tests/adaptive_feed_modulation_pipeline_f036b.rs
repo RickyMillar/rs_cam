@@ -160,6 +160,7 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
     };
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

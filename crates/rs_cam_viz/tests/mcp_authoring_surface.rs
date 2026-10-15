@@ -118,7 +118,6 @@ fn set_tool_param_description_lists_every_parameter_it_accepts() {
         "taper_half_angle",
         "shaft_diameter",
         "shank_diameter",
-        "holder_diameter",
         "size_units",
     ] {
         assert!(
@@ -177,7 +176,6 @@ fn add_tool_takes_per_type_geometry_and_a_tool_number() {
         "shaft_diameter",
         "shank_diameter",
         "stickout",
-        "holder_diameter",
         "tool_number",
     ] {
         let _ = property(&facts, field);

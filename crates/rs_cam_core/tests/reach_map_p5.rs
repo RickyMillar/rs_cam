@@ -398,7 +398,6 @@ fn request_for(mesh: &Arc<TriangleMesh>, diameter: f64, tolerance_mm: f64) -> Re
     let cutter = Arc::new(ToolDefinition::new(
         Box::new(BallEndmill::new(diameter, 25.0)),
         6.0,
-        20.0,
         40.0,
         2,
         rs_cam_core::compute::tool_config::ToolMaterial::Carbide,

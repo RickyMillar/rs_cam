@@ -174,6 +174,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
     });
     let op_type = operation.op_type();
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Limits fixture".to_owned(),
         enabled: true,

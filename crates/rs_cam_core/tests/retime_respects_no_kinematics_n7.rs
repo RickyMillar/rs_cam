@@ -205,6 +205,7 @@ fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
     };
     ToolpathConfig {
+        shoe: Default::default(),
         id: POCKET,
         name: "Pocket".to_owned(),
         enabled: true,
@@ -238,6 +239,7 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         ..DrillConfig::default()
     };
     ToolpathConfig {
+        shoe: Default::default(),
         id: DRILL,
         name: "Holes".to_owned(),
         enabled: true,

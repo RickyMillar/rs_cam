@@ -151,6 +151,7 @@ fn pocket_session() -> ProjectSession {
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
     };
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

@@ -400,15 +400,19 @@ impl SimulationTriage {
         }
 
         for (i, hit) in inputs.obstacle_collisions.iter().enumerate() {
-            let name = match &hit.event.kind {
-                crate::stock::collision::CollisionKind::Obstacle { name } => name.as_str(),
-                crate::stock::collision::CollisionKind::Workpiece => "",
+            let what = match &hit.event.kind {
+                crate::stock::collision::CollisionKind::Obstacle { name } => {
+                    format!("obstacle '{name}'")
+                }
+                // H1: a shoe part or a shelf of the head struck the stock.
+                crate::stock::collision::CollisionKind::Stock => "the stock".to_owned(),
+                crate::stock::collision::CollisionKind::Workpiece => "obstacle ''".to_owned(),
             };
             let p = hit.event.position;
             safety.push(collision_finding(
                 ids::PROJECT_OBSTACLE_COLLISION,
                 format!(
-                    "The {} enters obstacle '{name}' at move {} ({:.2} mm below its clear height)",
+                    "The {} enters {what} at move {} ({:.2} mm below its clear height)",
                     hit.event.segment, hit.event.move_index, hit.event.penetration_depth
                 ),
                 Some(hit.toolpath_id),

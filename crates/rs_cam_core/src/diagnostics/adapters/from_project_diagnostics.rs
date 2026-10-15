@@ -88,6 +88,7 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
         VerdictKind::DowelHolesDisagree => (ids::PROJECT_DOWEL_HOLES_DISAGREE, Category::Safety),
         VerdictKind::PinWallThin => (ids::PROJECT_PIN_WALL_THIN, Category::Safety),
         VerdictKind::PinToolMismatch => (ids::PROJECT_PIN_TOOL_MISMATCH, Category::Safety),
+        VerdictKind::ShoeGapTooLow => (ids::PROJECT_SHOE_GAP_TOO_LOW, Category::Safety),
         VerdictKind::MeasurabilityAbstained => {
             (ids::PROJECT_MEASURABILITY_ABSTAINED, Category::State)
         }

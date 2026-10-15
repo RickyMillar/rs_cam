@@ -5,14 +5,14 @@
 - `execute.rs`/`execute/` — the dispatch (`execute_operation_annotated`), `prologue.rs` (W2.2), `findings.rs`
   (W2.3), `standing_material.rs` (G-RESTLEVELS), `layered.rs` (W3.0), `territory.rs` (W6.2), `height_field.rs` (W6.3), `composed.rs` (W6.4), `volumetric.rs` + `rough_3d.rs`, `curve.rs` (W6.5); `catalog.rs` — the registry, `catalog/capabilities.rs` (W2.4); `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`, `cutter.rs`, `transform.rs`.
 - Simulation: `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs`, `stock_carry.rs`
-  (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3), `obstacle.rs` (K1). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
+  (S0), `stock_change.rs` (S2), `stock_change_apply.rs` (S3), `obstacle.rs` (K1), `shoe.rs` (H1, the shoe solver). Also `toolpath_stats.rs`, `stats.rs`, `annotate.rs`,
   `alignment_pins/` (keying, 2D placer, walls, setup map and flip axis, P4 set patterns, P8 hole sources, P10 setup notes), `spans.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
-- One request, two builders (`ProjectSession::run_simulation`, the GUI). Six SHARED decisions in
+- One request, two builders (`ProjectSession::run_simulation`, the GUI). Seven SHARED decisions in
   `simulate.rs`: `PhantomPriorStockScan`, `entry_tool_fields`, `group_stock_cut_direction`,
-  `entry_metrics_not_applicable`, `group_stock_changes` (S2), `group_obstacles` (K1). Put a seventh there, not in one builder.
+  `entry_metrics_not_applicable`, `group_stock_changes` (S2), `group_obstacles` (K1), `entry_head_fit` (H1). Put an eighth there, not in one builder.
   Both builders carve every enabled result, an empty one too (G-RESTLEVELS: no phantom theft).
 - A new operation needs a catalogue row and a config variant that derives `OpParams` (W5: its `#[param]`
   attributes ARE the schema, and the GUI row and the setter read one range). The row's `generate` IS the dispatch; add no second path. The prologue runs first: cancel, the row's `GeometryRequirement`,
@@ -26,7 +26,7 @@
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig` (CUT-13), with no value field beside its bool; wire: `DressupConfigWire`. G10: a helix radius is `helix_radius_for` (None =
   `HELIX_RADIUS_OVER_D` x D), capped at the flat bottom; an entry feed is `entry_feed_rate()` (<= the cut feed). `DefaultHelix` is read by `for_op` only (D3).
 - K1: EVERY op keeps the tool out of the setup's obstacles, boundary on or off, no opt-in. ONE `ObstacleSet::resolve` (setup frame, NO part transform: table-fixed; refuses a missing model) and ONE `ObstacleToolView` serve the post-dressup step, `link_ceiling_for`, the territory pre-clip (K3:
-  `Territory::resolve`, `Territory::area_outlines`), the simulation and `collision_check` (with the `JoinStart`). An obstacle is solid from its top down. The check forbids a band below the GROWN top; the plane (+`SAFE_Z_CLEARANCE_MM`) is LOCAL (K3): heights ignore obstacles, the step lifts only a forbidden move and starts each toolpath at the plane (the join rule) with a `MoveIntent::ObstacleClearance` rapid; a reader skips that move by its intent, never by its shape. Do not gate any of them on the boundary. K2: a mesh obstacle reads `geom_cache::cached_silhouette`; the cell is `boundary::SILHOUETTE_CELL_SIZE`.
+  `Territory::resolve`, `Territory::area_outlines`), the simulation and `collision_check` (with the `JoinStart`). An obstacle is solid from its top down. The check forbids a band below the GROWN top; the plane (+`SAFE_Z_CLEARANCE_MM`) is LOCAL (K3): heights ignore obstacles, the step lifts only a forbidden move and starts each toolpath at the plane (the join rule) with a `MoveIntent::ObstacleClearance` rapid; a reader skips that move by its intent, never by its shape. Do not gate any of them on the boundary. H1: the head bands, the shoe against the stock box and the shelf Z floor are entries of the same view. K2: a mesh obstacle reads `geom_cache::cached_silhouette`; the cell is `boundary::SILHOUETTE_CELL_SIZE`.
 - G-SIMMEM: the loop holds the cut trace ONCE. The memo asks `admits` BEFORE it clones a snapshot; share the trace by `Arc`, never `clone()` it. A checkpoint keeps its mesh inputs; `build_mesh` builds on demand (M2). Checkpoint k's `mesh_stock` is prior k+1: one `Arc`, same group (M3).
   S0: a Z-axis group starts from the last Z-axis group's final stock. S3: its stock changes then apply, to it and (not lateral) to `global_stock`.
 

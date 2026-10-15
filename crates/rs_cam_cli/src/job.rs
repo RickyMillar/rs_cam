@@ -176,9 +176,6 @@ pub struct ToolDef {
     /// cutting length, so the holder face sits at the top of the flutes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stickout: Option<f64>,
-    /// Holder diameter (mm).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub holder_diameter: Option<f64>,
 }
 
 /// One `[[operation]]` table.
@@ -881,7 +878,6 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
     Ok(ToolDefinition::new(
         cutter,
         def.shank_diameter.unwrap_or(d),
-        def.holder_diameter.unwrap_or(d * 2.0),
         // The stickout is the holder face height above the tip. The
         // default puts the face at the top of the flutes.
         def.stickout.unwrap_or(cl),
@@ -1075,9 +1071,6 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
     if let Some(stickout) = def.stickout {
         tc.stickout = stickout;
     }
-    if let Some(hd) = def.holder_diameter {
-        tc.holder_diameter = hd;
-    }
     tc
 }
 
@@ -1146,6 +1139,7 @@ fn execute_op_via_session(
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(ToolpathConfig {
+                shoe: Default::default(),
                 id: rs_cam_core::ToolpathId(0),
                 name: format!("op_{}_{}", i, op_type.kind_str()),
                 enabled: true,
@@ -1321,7 +1315,6 @@ mod tests {
             shaft_diameter: None,
             shank_diameter: None,
             stickout: None,
-            holder_diameter: None,
         };
         let cutter = build_tool(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -1337,7 +1330,6 @@ mod tests {
             shaft_diameter: None,
             shank_diameter: None,
             stickout: None,
-            holder_diameter: None,
         };
         let ball_cutter = build_tool(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -1356,7 +1348,6 @@ mod tests {
             shaft_diameter: Some(12.0),
             shank_diameter: None,
             stickout: None,
-            holder_diameter: None,
         };
         let tapered_cutter = build_tool(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0

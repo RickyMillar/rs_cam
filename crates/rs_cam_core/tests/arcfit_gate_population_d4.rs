@@ -517,7 +517,6 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
     let tool = ToolDefinition::new(
         Box::new(FlatEndmill::new(TOOL_RADIUS_MM * 2.0, 25.0)),
         TOOL_RADIUS_MM * 2.0,
-        20.0,
         30.0,
         2,
         ToolMaterial::Carbide,

@@ -335,7 +335,6 @@ fn h1_tool() -> ToolConfig {
     t.included_angle = 90.0;
     t.taper_half_angle = 15.0;
     t.shaft_diameter = 6.35;
-    t.holder_diameter = 25.0;
     t.shank_diameter = 6.35;
     t.stickout = 40.0;
     t.flute_count = 2;
@@ -1173,6 +1172,7 @@ struct EntryParts {
 impl EntryParts {
     fn entry(&self) -> SimToolpathEntry {
         SimToolpathEntry {
+            head: Default::default(),
             id: self.id,
             name: self.name.clone(),
             annotated: Arc::clone(&self.annotated),

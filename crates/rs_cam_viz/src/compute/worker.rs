@@ -308,6 +308,12 @@ pub struct CollisionRequest {
     /// `ProjectSession::obstacle_join_for_toolpath`, the door the core
     /// collision check reads.
     pub join: rs_cam_core::compute::obstacle::JoinStart,
+    /// H1: the head fit of the toolpath, from
+    /// `ProjectSession::head_fit_for_toolpath`.
+    pub head: rs_cam_core::machine::head::HeadFit,
+    /// H1: the fresh stock box of the setup, from
+    /// `ProjectSession::setup_stock_box_for_toolpath`.
+    pub stock: Option<rs_cam_core::geo::BoundingBox3>,
 }
 
 pub struct CollisionResult {

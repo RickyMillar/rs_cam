@@ -224,6 +224,7 @@ fn dihedral_pencil_op() -> OperationConfig {
 fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pencil".to_owned(),
         enabled: true,

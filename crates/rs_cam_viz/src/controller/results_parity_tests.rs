@@ -96,6 +96,7 @@ fn parity_controller() -> AppController<InertBackend> {
         load_error: None,
     });
     let tp_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

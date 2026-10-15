@@ -129,6 +129,12 @@ const RETIRED_KEYS: &[RetiredKey] = &[
         replacement: "Removed (B18): the holder face is at the stickout above the tip, and the \
                       exposed shank is stickout - cutting_length. Set stickout. Delete the key",
     },
+    RetiredKey {
+        table: &["tools", "[]"],
+        key: "holder_diameter",
+        replacement: "Removed (H1): the collet and the parts above the holder face are the \
+                      machine head, [job.machine.head], one for every tool. Delete the key",
+    },
 ];
 
 /// Push the path of every `key` under the tables that `steps` names onto
@@ -477,8 +483,6 @@ pub struct ProjectToolSection {
     pub taper_half_angle: f64,
     #[serde(default = "default_shaft_diameter")]
     pub shaft_diameter: f64,
-    #[serde(default = "default_holder_diameter")]
-    pub holder_diameter: f64,
     #[serde(default = "default_shank_diameter")]
     pub shank_diameter: f64,
     #[serde(default = "default_stickout")]
@@ -527,9 +531,6 @@ fn default_taper_half_angle() -> f64 {
 }
 fn default_shaft_diameter() -> f64 {
     6.35
-}
-fn default_holder_diameter() -> f64 {
-    25.0
 }
 fn default_shank_diameter() -> f64 {
     6.35
@@ -670,6 +671,12 @@ pub struct ProjectToolpathSection {
     /// rather than written as an empty table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner_origin: Option<crate::session::PlannerOrigin>,
+    /// H1: the dust shoe setting. Absent: Auto.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::machine::head::ShoeSetting::is_auto"
+    )]
+    pub shoe: crate::machine::head::ShoeSetting,
 }
 
 fn rest_analysis_is_default(r: &crate::compute::config::RestAnalysisConfig) -> bool {
@@ -794,7 +801,6 @@ pub(crate) fn tool_from_project_section(
         included_angle: ts.included_angle,
         taper_half_angle: ts.taper_half_angle,
         shaft_diameter: ts.shaft_diameter,
-        holder_diameter: ts.holder_diameter,
         shank_diameter: ts.shank_diameter,
         stickout: ts.stickout,
         flute_count: ts.flute_count,
@@ -970,6 +976,7 @@ fn toolpath_config_from_section(
         feeds_provenance: tp.feeds_provenance.clone(),
         rest_analysis: tp.rest_analysis.clone(),
         planner_origin: tp.planner_origin.clone(),
+        shoe: tp.shoe,
     }
 }
 

@@ -114,6 +114,7 @@ fn cut_trace_fixture(
         );
         let op_type = operation.op_type();
         let config = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             // Overwritten by `add_toolpath`, which assigns a fresh id —
             // which is precisely why ids and indices diverge.
             id: rs_cam_core::ToolpathId(0),
@@ -874,6 +875,7 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     );
     let op_type = operation.op_type();
     let config = rs_cam_core::session::ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

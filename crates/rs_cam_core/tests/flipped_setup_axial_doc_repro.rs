@@ -127,6 +127,7 @@ fn build_flipped_pocket_session() -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket (flipped)".to_owned(),
         enabled: true,

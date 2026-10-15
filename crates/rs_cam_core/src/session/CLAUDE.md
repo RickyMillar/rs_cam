@@ -8,7 +8,7 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
   the `Effects` door. `dependencies.rs`, `generation_plan.rs` — edges, order.
 - `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/` (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`;
   `stock_change_report.rs` (S4 rows); `diagnostics_types.rs` (keep the `mod.rs` re-export).
-- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`, `pins.rs` (P6 pin inputs, P10 setup notes), `pin_report.rs` (P7, the one pin report); `rest_stock.rs` — the
+- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`, `pins.rs` (P6 pin inputs, P10 setup notes), `pin_report.rs` (P7, the one pin report); `shoe.rs` (H1, the one shoe plan); `rest_stock.rs` — the
   stored resolution; `load_report.rs` — the memo; `result_provenance.rs` — the feed stage (W2.5).
 
 ## Invariants

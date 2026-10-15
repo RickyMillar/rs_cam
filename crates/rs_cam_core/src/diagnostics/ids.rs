@@ -102,6 +102,10 @@ pub const PROJECT_PIN_WALL_THIN: &str = "project.pin_wall_thin";
 /// (P6). The judgement lives in
 /// [`crate::compute::alignment_pins::pin_tool_findings`].
 pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch";
+/// H1: a toolpath states a dust shoe gap below the gap the shoe solver
+/// needs (`compute::shoe`). Caution: the check reads the stated gap, so the
+/// simulation reports the strike.
+pub const PROJECT_SHOE_GAP_TOO_LOW: &str = "project.shoe_gap_too_low";
 /// A gate declined to produce a verdict because the metric it reads is not
 /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
 /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
@@ -433,6 +437,7 @@ pub const ALL: &[&str] = &[
     PROJECT_DOWEL_HOLES_DISAGREE,
     PROJECT_PIN_WALL_THIN,
     PROJECT_PIN_TOOL_MISMATCH,
+    PROJECT_SHOE_GAP_TOO_LOW,
     PROJECT_MEASURABILITY_ABSTAINED,
     PROJECT_CROSSES_STANDING_MATERIAL,
     PROJECT_ENTRY_LOAD,

@@ -66,7 +66,6 @@ fn tool() -> Arc<ToolDefinition> {
     Arc::new(ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        25.0,
         45.0,
         2,
         ToolMaterial::Carbide,
@@ -99,6 +98,7 @@ fn entry(
     tool: &Arc<ToolDefinition>,
 ) -> SimToolpathEntry {
     SimToolpathEntry {
+        head: Default::default(),
         id: ToolpathId(id),
         name: format!("tp{id}"),
         annotated: Arc::clone(annotated),

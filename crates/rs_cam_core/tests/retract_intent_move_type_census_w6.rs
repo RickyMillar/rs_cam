@@ -267,6 +267,7 @@ fn toolpath_config(
 ) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: format!("{op_type:?}"),
         enabled: true,

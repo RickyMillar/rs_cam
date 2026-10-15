@@ -79,6 +79,7 @@ fn drill_op(tool_id: usize, model_id: usize) -> rs_cam_core::session::ToolpathCo
     use rs_cam_core::compute::operation_configs::DrillConfig;
 
     rs_cam_core::session::ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ids::ToolpathId(0),
         name: "Dowel holes, 6 mm drill".to_owned(),
         enabled: true,

@@ -68,7 +68,6 @@ fn tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(FlatEndmill::new(6.0, 25.0)),
         6.0,
-        25.0,
         45.0,
         2,
         ToolMaterial::Carbide,
@@ -98,6 +97,7 @@ fn pass(pass_index: usize) -> Arc<AnnotatedToolpath> {
 
 fn entry(index: usize) -> SimToolpathEntry {
     SimToolpathEntry {
+        head: Default::default(),
         id: ToolpathId(index + 1),
         name: format!("Pass{index}"),
         annotated: pass(index),

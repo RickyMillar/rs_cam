@@ -714,8 +714,10 @@ impl RsCamApp {
             && let Some(rs) = frame.wgpu_render_state()
         {
             let geom = ToolGeometry::from_tool_config(&tool);
-            let assembly_info =
-                crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(&tool_def);
+            let assembly_info = crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(
+                &tool_def,
+                &self.controller.state().session.machine().head,
+            );
             let mut renderer = rs.renderer.write();
             // SAFETY: RenderResources inserted in RsCamApp::new; always present.
             #[allow(clippy::unwrap_used)]
@@ -899,6 +901,7 @@ mod tests {
 
     fn entry(id: usize, tp: Toolpath, tool: &Arc<ToolDefinition>) -> SimToolpathEntry {
         SimToolpathEntry {
+            head: Default::default(),
             id: ToolpathId(id),
             name: format!("tp{id}"),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
@@ -930,7 +933,6 @@ mod tests {
         let tool = Arc::new(ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             ToolMaterial::Carbide,

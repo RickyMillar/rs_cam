@@ -436,6 +436,42 @@ impl ProjectSession {
         })
     }
 
+    /// Write the shoe setting of a toolpath (H1).
+    ///
+    /// The door of the `SetToolpathShoe` command row. The shoe moves no
+    /// toolpath, so every result stays. The simulation drops: its check
+    /// read the old shoe position. A stated gap must be finite and 0 or
+    /// more.
+    ///
+    /// # Errors
+    /// [`SessionError::ToolpathNotFound`], or [`SessionError::InvalidParam`]
+    /// for a bad gap.
+    #[instrument(skip(self))]
+    pub(crate) fn set_toolpath_shoe(
+        &mut self,
+        index: usize,
+        shoe: crate::machine::head::ShoeSetting,
+    ) -> Result<Effects, SessionError> {
+        if let crate::machine::head::ShoeSetting::Gap { gap_mm } = shoe
+            && !(gap_mm.is_finite() && gap_mm >= 0.0)
+        {
+            return Err(SessionError::InvalidParam(format!(
+                "a shoe gap must be a finite value of 0 or more, and it is {gap_mm}"
+            )));
+        }
+        self.try_with_effects(None, |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.shoe != shoe {
+                tc.shoe = shoe;
+                session.drop_simulation(SimulationDropCause::Machine);
+            }
+            Ok(())
+        })
+    }
+
     /// Replace a toolpath's operation config wholesale — including switching
     /// the operation KIND — while keeping its tool, heights, boundary,
     /// dressups, and position in the machining order. This is the supported

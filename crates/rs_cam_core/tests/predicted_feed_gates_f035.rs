@@ -116,7 +116,6 @@ fn make_burn_fixture_tool() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(BallEndmill::new(6.0, 20.0)),
         6.0,
-        20.0,
         30.0,
         2,
         ToolMaterial::Carbide,
@@ -406,6 +405,7 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
     };
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Pocket".to_owned(),
         enabled: true,

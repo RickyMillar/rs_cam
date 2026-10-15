@@ -42,6 +42,12 @@ pub struct CollisionCheckRequest<'a> {
     /// an index over another mesh reports collisions against that other
     /// geometry.
     pub index: Option<&'a SpatialIndex>,
+    /// H1: the machine head and the shoe position of this toolpath
+    /// (`ProjectSession::head_fit_for_toolpath`).
+    pub head: crate::machine::head::HeadFit,
+    /// H1: the fresh stock box of the setup, in the toolpath's frame, for
+    /// the shoe parts and the shelf floor. `None` reads no stock.
+    pub stock: Option<crate::geo::BoundingBox3>,
 }
 
 /// Result of a collision check.
@@ -94,7 +100,7 @@ pub fn run_collision_check(
     request: &CollisionCheckRequest<'_>,
     cancel: &AtomicBool,
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
-    let assembly = request.tool.to_assembly();
+    let assembly = request.tool.to_assembly(&request.head);
     let cancel_check = || cancel.load(Ordering::SeqCst);
 
     let mut report = match request.mesh {
@@ -129,11 +135,13 @@ pub fn run_collision_check(
     // K1: the obstacle half, the same kernel the simulation runs. An
     // obstacle hit raises no stickout remedy: a longer tool does not clear
     // a clamp.
-    if !request.obstacles.is_empty() {
-        let view = request
-            .obstacles
-            .for_tool(&assembly)
-            .map_err(|e| CollisionCheckError::Obstacles(e.to_string()))?;
+    // H1: the view also holds the shoe parts against the stock box and the
+    // shelf floor, so it can have entries with no obstacle.
+    let view = request
+        .obstacles
+        .for_tool(&assembly, request.stock.as_ref())
+        .map_err(|e| CollisionCheckError::Obstacles(e.to_string()))?;
+    if !view.is_empty() {
         if cancel_check() {
             return Err(CollisionCheckError::Cancelled);
         }
@@ -169,13 +177,14 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let req = CollisionCheckRequest {
+            head: Default::default(),
+            stock: None,
             toolpath: &tp,
             tool,
             mesh: Some(&mesh),
@@ -201,7 +210,6 @@ mod tests {
             ToolDefinition::new(
                 Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
                 6.0,
-                25.0,
                 45.0,
                 2,
                 crate::compute::tool_config::ToolMaterial::Carbide,
@@ -211,6 +219,8 @@ mod tests {
 
         let built_here = run_collision_check(
             &CollisionCheckRequest {
+                head: Default::default(),
+                stock: None,
                 toolpath: &tp,
                 tool: tool(),
                 mesh: Some(&mesh),
@@ -225,6 +235,8 @@ mod tests {
         let index = SpatialIndex::build_auto(&mesh);
         let handed_in = run_collision_check(
             &CollisionCheckRequest {
+                head: Default::default(),
+                stock: None,
                 toolpath: &tp,
                 tool: tool(),
                 mesh: Some(&mesh),
@@ -252,13 +264,14 @@ mod tests {
         let tool = ToolDefinition::new(
             Box::new(crate::tool::FlatEndmill::new(6.0, 25.0)),
             6.0,
-            25.0,
             45.0,
             2,
             crate::compute::tool_config::ToolMaterial::Carbide,
         );
 
         let req = CollisionCheckRequest {
+            head: Default::default(),
+            stock: None,
             toolpath: &tp,
             tool,
             mesh: Some(&mesh),

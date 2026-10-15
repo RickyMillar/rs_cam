@@ -93,6 +93,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     // way `add_derived_rest_dependent` does above — this test exercises the
     // setter itself).
     let consumer_config = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
         name: "Consumer".to_owned(),
         enabled: true,

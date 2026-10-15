@@ -202,7 +202,12 @@ fn a_join_below_the_clamp_top_is_a_hit_k1() {
     let session = two_traces_across_the_clamp();
     let set = session.obstacle_set_for_toolpath(1).expect("the clamp");
     let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
-    let view = set.for_tool(&tool.to_assembly()).expect("a tool view");
+    let view = set
+        .for_tool(
+            &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),
+            None,
+        )
+        .expect("a tool view");
 
     let mut second = Toolpath::new();
     second.rapid_to(P3::new(15.0, 0.0, MANUAL_RETRACT));

@@ -351,6 +351,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(99),
                     name: "Long Sim".to_owned(),
                     annotated: Arc::new(
@@ -403,6 +404,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(1),
                     name: "Metrics".to_owned(),
                     annotated: Arc::new(
@@ -1525,6 +1527,8 @@ fn analysis_requests_replace_stale_work() {
         mesh: Arc::new(make_test_flat(20.0)),
         obstacles: Arc::default(),
         join: rs_cam_core::compute::obstacle::JoinStart::Unknown,
+        head: Default::default(),
+        stock: None,
     });
 
     let snapshot = backend.lane_snapshot(ComputeLane::Analysis);
@@ -1620,6 +1624,7 @@ fn multi_setup_top_bottom_simulation() {
             groups: vec![
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
+                        head: Default::default(),
                         id: ToolpathId(1),
                         name: "Top Cut".to_owned(),
                         annotated: Arc::new(
@@ -1644,6 +1649,7 @@ fn multi_setup_top_bottom_simulation() {
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
+                        head: Default::default(),
                         id: ToolpathId(2),
                         name: "Bottom Cut".to_owned(),
                         annotated: Arc::new(
@@ -1783,6 +1789,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
             groups: vec![
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
+                        head: Default::default(),
                         id: ToolpathId(1),
                         name: "Top".to_owned(),
                         annotated: Arc::new(
@@ -1807,6 +1814,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 },
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
+                        head: Default::default(),
                         id: ToolpathId(2),
                         name: "Bottom".to_owned(),
                         annotated: Arc::new(
@@ -2048,6 +2056,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(42),
                     name: "Drill".to_owned(),
                     annotated: Arc::new(
@@ -2152,6 +2161,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(7),
                     name: "Drill (back)".to_owned(),
                     annotated: Arc::new(
@@ -2260,6 +2270,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(11),
                     name: "Front groove".to_owned(),
                     annotated: Arc::new(
@@ -2446,6 +2457,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         core: rs_cam_core::compute::simulate::SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
+                    head: Default::default(),
                     id: ToolpathId(1),
                     name: "AS001 Pocket Pass 1".to_owned(),
                     annotated: Arc::new(

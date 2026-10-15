@@ -582,6 +582,7 @@ mod tests {
         op: OperationConfig,
     ) -> rs_cam_core::session::ToolpathConfig {
         rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0), // assigned by session.add_toolpath
             name: name.to_owned(),
             enabled: true,

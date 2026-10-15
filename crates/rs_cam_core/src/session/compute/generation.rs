@@ -460,9 +460,15 @@ impl ProjectSession {
         };
 
         // K1: the obstacles for this tool, one footprint per assembly band.
+        // H1: the FIXED head only (no shoe: the shoe moves to fit the
+        // toolpath), and the stock top for the shelf floor.
         let obstacle_view = Arc::new(
             obstacles
-                .for_tool(&tool_def.to_assembly())
+                .for_tool(
+                    &tool_def
+                        .to_assembly(&crate::machine::head::HeadFit::fixed(&self.machine.head)),
+                    Some(&emission_stock_bbox),
+                )
                 .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
         );
 

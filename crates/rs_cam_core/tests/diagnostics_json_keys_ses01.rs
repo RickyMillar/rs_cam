@@ -226,6 +226,7 @@ fn the_verdict_enums_write_their_own_string_tags() {
         VerdictKind::PinWallThin,
         VerdictKind::PinToolMismatch,
         VerdictKind::MeasurabilityAbstained,
+        VerdictKind::ShoeGapTooLow,
     ];
     for kind in kinds {
         let json = serde_json::to_string(&kind).expect("a kind serialises");

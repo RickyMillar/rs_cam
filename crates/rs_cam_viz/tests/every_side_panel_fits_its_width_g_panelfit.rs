@@ -186,6 +186,7 @@ fn fixture_with_a_toolpath() -> AppState {
         config.spindle_rpm = Some(18_000);
     }
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Panel width fixture".to_owned(),
         enabled: true,

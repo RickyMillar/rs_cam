@@ -33,12 +33,12 @@ use rs_cam_mcp::server::{
     PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
     RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
     ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
-    SetDressupFieldParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
-    SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
-    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathToolParam,
-    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
-    SimulationParam, json_str,
+    SetDressupFieldParam, SetMachineHeadParam, SetMachineKinematicsParam,
+    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
+    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
+    SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
+    SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam,
+    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -1125,7 +1125,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_tool_param",
-        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, holder_diameter, size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
+        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
     )]
     async fn set_tool_param(&self, Parameters(param): Parameters<SetToolParamInput>) -> String {
         Self::format_result(
@@ -1172,7 +1172,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_tool",
-        description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), stickout (45), holder_diameter (25), tool_number, size_units ('metric' or 'imperial': the unit the size is SHOWN in; omitted, it is inferred from the name, and every length stays mm). Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
+        description = "Add a new tool to the project. Types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose. The geometry that DEFINES the tool for its type is REQUIRED, not defaulted — `included_angle` for v_bit (a 20-degree V-bit is 20.0), `taper_half_angle` for tapered_ball_nose (cone HALF angle), `corner_radius` for bull_nose — and the call is refused if it is missing, because guessing one silently creates a different cutter. Optional: flute_count (2), cutting_length (25 mm), shaft_diameter (6.35 — the cutting ENVELOPE of a tapered ball), shank_diameter (6.35), stickout (45), tool_number, size_units ('metric' or 'imperial': the unit the size is SHOWN in; omitted, it is inferred from the name, and every length stays mm). Every value NOT supplied is listed in the reply's `defaulted` array — read it, those defaults are generic, not your tool. `tool_number` auto-allocates to the next free number in the project so M6 tool changes re-trigger; geometry belonging to another tool type is stored as zero rather than a misleading placeholder. Returns the new tool index."
     )]
     async fn add_tool(&self, Parameters(param): Parameters<AddToolParam>) -> String {
         Self::format_result(
@@ -1801,6 +1801,31 @@ impl EmbeddedCamServer {
                 param,
             )))
             .await,
+        )
+    }
+
+    #[tool(
+        name = "set_machine_head",
+        description = "Set the machine head (H1): the hard and soft parts above the tool holder face (collet nut, spindle shelf) and the optional dust shoe. Start from a preset (`bare_collet`, `dust_shoe`, `unmodelled`) or from the current head, then patch: `parts` (fixed parts, bottom first; omit diameter_mm for a shelf, which must be last), `mount_mm`, `shoe_parts` (brush end first), `normal_gap_mm` (the lowest gap the shoe solver gives, brush end above the bit end), `travel_min_mm`/`travel_max_mm` (brush-end range from the holder face, positive up; omit both when not known: then the solver has no upper limit), `remove_shoe`. Hard parts and shelves join every safety check (the obstacle step, the link ceiling, the simulation, collision_check); soft parts never block. A change of the fixed parts drops every result; a shoe-only change drops only the simulation. Verify with inspect_machine."
+    )]
+    async fn set_machine_head(&self, Parameters(param): Parameters<SetMachineHeadParam>) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetMachineHead(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_shoe",
+        description = "Set one toolpath's dust shoe setting (H1): `auto` (the shoe solver gives the lowest gap that keeps the hard shoe parts clear of the stock and the obstacles; Raised when no gap in the travel range clears), `gap` with `gap_mm` (a stated gap; one below the solver gap files a Caution and the simulation reports the strike), `raised` or `off`. The setting moves no toolpath; it drops the simulation. Read the solved setting per tool change with inspect_machine (`shoe_plan`)."
+    )]
+    async fn set_toolpath_shoe(
+        &self,
+        Parameters(param): Parameters<SetToolpathShoeParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathShoe(param)))
+                .await,
         )
     }
 

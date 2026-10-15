@@ -152,6 +152,7 @@ fn toolpath(heights: HeightsConfig, tool_id: usize, model_id: usize) -> Toolpath
     let op = unified_finish_op();
     let op_type = op.op_type();
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Unified Finish".to_owned(),
         enabled: true,

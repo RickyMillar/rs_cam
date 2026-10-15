@@ -97,6 +97,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
     };
 
     let tc = ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: "Drill".to_owned(),
         enabled: true,

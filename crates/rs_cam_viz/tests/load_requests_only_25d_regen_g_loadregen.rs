@@ -108,6 +108,7 @@ fn clean_up(path: &std::path::Path) {
 
 fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(id),
         name: name.to_owned(),
         enabled: true,

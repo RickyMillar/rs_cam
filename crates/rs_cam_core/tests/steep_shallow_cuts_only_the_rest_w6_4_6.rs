@@ -163,6 +163,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
     let heights = || pinned_heights(MESH_STOCK_Z, 0.0);
     let configs = [
         ToolpathConfig {
+            shoe: Default::default(),
             heights: heights(),
             ..toolpath_config(
                 "rough",
@@ -172,10 +173,12 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
             )
         },
         ToolpathConfig {
+            shoe: Default::default(),
             heights: heights(),
             ..toolpath_config("finish", steep_shallow(0.0), tool_id, model_id)
         },
         ToolpathConfig {
+            shoe: Default::default(),
             heights: heights(),
             stock_source: source,
             ..toolpath_config("steep_shallow_w6_4_6", op, tool_id, model_id)

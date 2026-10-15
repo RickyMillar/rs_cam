@@ -678,6 +678,38 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SetMachineKinematics(p) => self.core_set_machine_kinematics(&p, before),
+            CoreRequest::SetMachineHead(p) => self.core_set_machine_head(&p, before),
+            CoreRequest::SetToolpathShoe(p) => {
+                use rs_cam_core::machine::head::ShoeSetting;
+                use rs_cam_mcp::server::ShoeModeParam;
+                let shoe = match (p.mode, p.gap_mm) {
+                    (ShoeModeParam::Gap, Some(gap_mm)) => ShoeSetting::Gap { gap_mm },
+                    (ShoeModeParam::Gap, None) => {
+                        return CorePlan::Answered(json_str(serde_json::json!({
+                            "ok": false,
+                            "error": "mode `gap` needs `gap_mm`",
+                        })));
+                    }
+                    (_, Some(_)) => {
+                        return CorePlan::Answered(json_str(serde_json::json!({
+                            "ok": false,
+                            "error": "`gap_mm` is only for mode `gap`",
+                        })));
+                    }
+                    (ShoeModeParam::Auto, None) => ShoeSetting::Auto,
+                    (ShoeModeParam::Raised, None) => ShoeSetting::Raised,
+                    (ShoeModeParam::Off, None) => ShoeSetting::Off,
+                };
+                before.index = Some(p.index);
+                before.extra = serde_json::to_value(shoe).unwrap_or_default();
+                CorePlan::Apply(
+                    Command::SetToolpathShoe(rs_cam_core::session::SetToolpathShoeArgs {
+                        index: p.index,
+                        shoe,
+                    }),
+                    Box::new(before),
+                )
+            }
             CoreRequest::ImportMachineSettings(p) => self.core_import_machine_settings(&p, before),
             CoreRequest::LoadMachineFromLibrary(p) => {
                 let profile = match rs_cam_core::io::machine_library::load(&p.name) {
@@ -908,6 +940,7 @@ impl RsCamApp {
         };
 
         let config = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
             id: rs_cam_core::ToolpathId(0),
             name: tp_name,
             enabled: true,
@@ -1329,6 +1362,84 @@ impl RsCamApp {
         )
     }
 
+    /// Build the `set_machine_head` command (H1): the preset (or the
+    /// current head), then the patch. Core validates the result.
+    fn core_set_machine_head(
+        &mut self,
+        spec: &rs_cam_mcp::server::SetMachineHeadParam,
+        mut before: CoreBefore,
+    ) -> CorePlan {
+        use rs_cam_core::machine::head::{HeadPart, MachineHead, PartKind, ShoeTravel};
+        use rs_cam_mcp::server::{HeadPartKindParam, HeadPresetParam};
+        let refuse = |error: String| {
+            CorePlan::Answered(json_str(serde_json::json!({ "ok": false, "error": error })))
+        };
+        let parts = |wire: &[rs_cam_mcp::server::HeadPartParam]| -> Vec<HeadPart> {
+            wire.iter()
+                .map(|p| HeadPart {
+                    name: p.name.clone(),
+                    diameter_mm: p.diameter_mm,
+                    height_mm: p.height_mm,
+                    kind: match p.kind {
+                        HeadPartKindParam::Hard => PartKind::Hard,
+                        HeadPartKindParam::Soft => PartKind::Soft,
+                    },
+                })
+                .collect()
+        };
+        let mut head = match spec.preset {
+            Some(HeadPresetParam::BareCollet) => MachineHead::bare_collet(),
+            Some(HeadPresetParam::DustShoe) => MachineHead::dust_shoe(),
+            Some(HeadPresetParam::Unmodelled) => MachineHead::unmodelled(),
+            None => self.controller.state().session.machine().head.clone(),
+        };
+        if let Some(wire) = &spec.parts {
+            head.parts = parts(wire);
+        }
+        if let Some(mount) = spec.mount_mm {
+            head.mount_mm = mount;
+        }
+        if spec.remove_shoe {
+            head.shoe = None;
+        }
+        let touches_shoe = spec.shoe_parts.is_some()
+            || spec.normal_gap_mm.is_some()
+            || spec.travel_min_mm.is_some()
+            || spec.travel_max_mm.is_some();
+        if touches_shoe {
+            if spec.remove_shoe {
+                return refuse("`remove_shoe` cannot be given with a shoe field".to_owned());
+            }
+            let Some(shoe) = head.shoe.as_mut() else {
+                return refuse(
+                    "the head has no dust shoe: start from the `dust_shoe` preset".to_owned(),
+                );
+            };
+            if let Some(wire) = &spec.shoe_parts {
+                shoe.parts = parts(wire);
+            }
+            if let Some(gap) = spec.normal_gap_mm {
+                shoe.normal_gap_mm = gap;
+            }
+            match (spec.travel_min_mm, spec.travel_max_mm) {
+                (Some(min_mm), Some(max_mm)) => {
+                    shoe.travel_mm = Some(ShoeTravel { min_mm, max_mm });
+                }
+                (None, None) => {}
+                _ => {
+                    return refuse("give `travel_min_mm` and `travel_max_mm` together".to_owned());
+                }
+            }
+        }
+        before.extra = serde_json::to_value(&head).unwrap_or_default();
+        CorePlan::Apply(
+            Command::SetMachineHead(rs_cam_core::session::SetMachineHeadArgs {
+                head: Box::new(head),
+            }),
+            Box::new(before),
+        )
+    }
+
     /// Build the `import_machine_settings` command from a GRBL `$$` dump.
     ///
     /// The parse belongs to this surface, which also decides whether the
@@ -1740,6 +1851,8 @@ impl RsCamApp {
             | CoreRequest::SetStockConfig(_)
             | CoreRequest::SetStockSource(_)
             | CoreRequest::SetMachineKinematics(_)
+            | CoreRequest::SetMachineHead(_)
+            | CoreRequest::SetToolpathShoe(_)
             | CoreRequest::ImportMachineSettings(_)
             | CoreRequest::LoadMachineFromLibrary(_)
             | CoreRequest::SetSpindleStrategy(_)
@@ -1865,6 +1978,8 @@ impl RsCamApp {
             | CommandId::SetStockSource
             | CommandId::SetMachine
             | CommandId::SetMachineKinematics
+            | CommandId::SetMachineHead
+            | CommandId::SetToolpathShoe
             | CommandId::ImportMachineSettings
             | CommandId::SetPostConfig
             | CommandId::SetBoundaryConfig
@@ -2561,6 +2676,28 @@ impl RsCamApp {
                     "imported": before.extra("imported"),
                     "profile_name": profile_name,
                     "note": "snapshot copy applied to the project's inline machine; verify with inspect_machine",
+                })))
+            }
+            CommandId::SetMachineHead => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.core_stale(&effects);
+                CoreReply::quiet(json_str(serde_json::json!({
+                    "ok": true,
+                    "head": before.extra.clone(),
+                    "stale_toolpaths": stale,
+                    "note": "Head applied. Hard parts and shelves join every safety check; \
+                             a change of the fixed parts drops every result. Verify with \
+                             inspect_machine (`head`, `shoe_plan`).",
+                })))
+            }
+            CommandId::SetToolpathShoe => {
+                self.controller.state_mut().gui.mark_edited();
+                CoreReply::quiet(json_str(serde_json::json!({
+                    "ok": true,
+                    "index": before.index(),
+                    "shoe": before.extra.clone(),
+                    "note": "The shoe setting moves no toolpath; the simulation dropped. \
+                             Read the solved setting with inspect_machine (`shoe_plan`).",
                 })))
             }
             CommandId::SetMachineKinematics => {

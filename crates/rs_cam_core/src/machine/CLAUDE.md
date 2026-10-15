@@ -6,15 +6,18 @@ principal type is `MachineProfile` in `mod.rs`.
 ## Files
 
 - `mod.rs` — the machine profile: spindle, power, per-axis rates and accel.
+  `head.rs` — the machine head and the dust shoe (H1).
 - `kinematics.rs` — the kinematics model for cycle-time estimation.
 - `kinematic_utilization.rs` — the machine-confidence instrument.
 - `strategy_advisor.rs` — suggests the clearing strategy from the profile.
 
 ## Invariants
 
-- The per-axis maximum rate is per axis. A single scalar rate over-estimates
-  a diagonal move.
+- The per-axis maximum rate is per axis. A single scalar rate over-estimates a diagonal move.
 - Machine acceleration decides parallel against spiral. The advisor reads the profile; do not hard-code a strategy preference.
+- H1: the head is a machine part, not a tool part; `MachineHead::bands` is the one band builder.
+  Hard parts block, soft parts never; a shelf is a Z floor. The generation step reads the fixed
+  head (`HeadFit::fixed`); the shoe enters only the checks, at the resolved gap (`compute::shoe`).
 - The cycle time and the predicted feed come from ONE pass: `digest_moves`
   then `walk_junctions`, over the one physics site `solve_move`. Do not add a
   second digest loop or a second junction walk (EDG-07).
@@ -28,13 +31,10 @@ principal type is `MachineProfile` in `mod.rs`.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test kinematics_per_axis_rate_p1`
-- `cargo test -p rs_cam_core -q --test kinematic_utilization_p2`
-- `cargo test -p rs_cam_core -q --test kinematic_surfacing_p4`
-- `cargo test -p rs_cam_core -q --test a_downward_traverse_rounds_down_g_rpmdown`
-- `cargo test -p rs_cam_core -q --test power_ceiling_parity_f2`
+`cargo test -p rs_cam_core -q --test <name>`, one per name: `kinematics_per_axis_rate_p1`,
+`kinematic_utilization_p2`, `kinematic_surfacing_p4`, `a_downward_traverse_rounds_down_g_rpmdown`,
+`power_ceiling_parity_f2`, `the_machine_head_guards_the_checks_h1` (H1).
 
 ## Do not
 
-- Do not compare a wall clock across arms without a fresh measurement on the
-  same profile.
+- Do not compare a wall clock across arms without a fresh measurement on the same profile.

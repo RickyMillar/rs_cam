@@ -39,6 +39,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn tc(name: &str, op: OperationConfig, stock_source: StockSource) -> ToolpathConfig {
     ToolpathConfig {
+        shoe: Default::default(),
         id: ToolpathId(0),
         name: name.to_owned(),
         enabled: true,

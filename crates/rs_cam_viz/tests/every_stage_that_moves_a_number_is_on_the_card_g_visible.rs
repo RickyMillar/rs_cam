@@ -422,6 +422,7 @@ fn state_for(case: &Case) -> AppState {
         ..Default::default()
     };
     let config = ToolpathConfig {
+        shoe: Default::default(),
         id: rs_cam_core::ToolpathId(0),
         name: "Visible-stage fixture".to_owned(),
         enabled: true,

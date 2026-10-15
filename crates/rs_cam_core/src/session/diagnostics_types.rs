@@ -151,6 +151,10 @@ pub enum VerdictKind {
     /// toolpath; it is a statement about the simulation, and it carries the
     /// reason plus what remains valid (collision detection always does).
     MeasurabilityAbstained,
+    /// H1: a toolpath states a dust shoe gap below the gap the shoe solver
+    /// needs: the shoe plate or the shoe shelf strikes the stock or an
+    /// obstacle at the stated gap.
+    ShoeGapTooLow,
 }
 
 impl VerdictKind {
@@ -169,6 +173,7 @@ impl VerdictKind {
             Self::PinWallThin => "pin_wall_thin",
             Self::PinToolMismatch => "pin_tool_mismatch",
             Self::MeasurabilityAbstained => "measurability_abstained",
+            Self::ShoeGapTooLow => "shoe_gap_too_low",
         }
     }
 }

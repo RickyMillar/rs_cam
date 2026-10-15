@@ -95,6 +95,44 @@ spindle_on_delay_s = 0.0
 [job.machine.controller.spindle_drive]
 plugin = "H-100 VFD"
 
+# H1: the "Dust shoe" preset (planning/op_architecture_2026-10-14/PLAN.md,
+# section H). The brush end is 25 mm above the bit end for normal work. The
+# shoe travel range is not known, so it is not stated.
+[job.machine.head]
+name = "Dust shoe"
+mount_mm = 0.0
+
+[[job.machine.head.parts]]
+name = "Collet nut"
+diameter_mm = 20.0
+height_mm = 30.0
+kind = "hard"
+
+[[job.machine.head.parts]]
+name = "Spindle"
+height_mm = 0.0
+kind = "hard"
+
+[job.machine.head.shoe]
+normal_gap_mm = 25.0
+
+[[job.machine.head.shoe.parts]]
+name = "Brush"
+diameter_mm = 80.0
+height_mm = 25.0
+kind = "soft"
+
+[[job.machine.head.shoe.parts]]
+name = "Shoe plate"
+diameter_mm = 80.0
+height_mm = 5.0
+kind = "hard"
+
+[[job.machine.head.shoe.parts]]
+name = "Shoe mount"
+height_mm = 0.0
+kind = "hard"
+
 [job.simulation]
 resolution_mm = 0.2
 
@@ -110,7 +148,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 3.0
-holder_diameter = 25.0
 shank_diameter = 3.0
 stickout = 30.0
 flute_count = 2
@@ -132,7 +169,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 6.35
-holder_diameter = 25.0
 shank_diameter = 6.35
 stickout = 25.0
 flute_count = 2
@@ -154,7 +190,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 3.175
-holder_diameter = 25.0
 shank_diameter = 3.175
 stickout = 15.0
 flute_count = 2
@@ -176,7 +211,6 @@ corner_radius = 0.0
 included_angle = 118.0
 taper_half_angle = 0.0
 shaft_diameter = 6.0
-holder_diameter = 25.0
 shank_diameter = 6.0
 stickout = 45.0
 flute_count = 2
@@ -198,7 +232,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 6.0
-holder_diameter = 25.0
 shank_diameter = 6.0
 stickout = 30.0
 flute_count = 1
@@ -221,7 +254,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 3.1
-holder_diameter = 25.0
 shank_diameter = 3.175
 stickout = 27.0
 flute_count = 1
@@ -244,7 +276,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 6.0
-holder_diameter = 25.0
 shank_diameter = 6.0
 stickout = 20.0
 flute_count = 2
@@ -267,7 +298,6 @@ corner_radius = 0.0
 included_angle = 0.0
 taper_half_angle = 0.0
 shaft_diameter = 6.0
-holder_diameter = 25.0
 shank_diameter = 6.0
 stickout = 36.0
 flute_count = 1
