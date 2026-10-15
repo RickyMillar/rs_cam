@@ -1,7 +1,9 @@
 //! The raster finishing family: scallop, drop cutter and waterline.
 //!
 //! All three relink their fragments through the shared finishing link stage
-//! before they return. Split out of `compute/execute.rs` (P4).
+//! before they return. Scallop and Drop Cutter run on the height-field
+//! runner (`height_field.rs`, W6.3); Waterline runs on the Layered runner
+//! (`layered.rs`, W6.1). Split out of `compute/execute.rs` (P4).
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -12,159 +14,24 @@ use crate::compute::toolpath_stats::RestLevelsFinding;
 use crate::geo::P2;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
-use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
-use crate::trace::toolpath_spans::AnnotatedToolpath;
-use crate::trace::transform_provenance::ReconcileSet;
+use crate::trace::semantic_trace::ToolpathSemanticContext;
 
-use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, run_layered};
-use super::shared::{
-    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
+use super::height_field::{
+    HeightFieldOp, HeightQuery, LinkRule, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
+use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, run_layered};
+use super::shared::{finishing_link_stage, relink_in_adapter};
 use super::standing_material::standing_near;
+use super::territory::Territory;
 use super::{
     ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared, SurfaceMask,
 };
 
-/// Curve chaining for `project_curve` — the op's air is COUNT-bound.
-///
-/// `project_curve::emit_path_segment_with_intent` emits one
-/// `rapid → EntryPlunge → cut → Retract` unit per contiguous projected
-/// stretch, unconditionally, however short the hop to the next one. A rivers
-/// DXF is hundreds of those units across dozens of entities, and every hop
-/// pays two full safe-Z legs whatever its XY length. This runs across the
-/// WHOLE combined path (not per polygon), so chains from different DXF
-/// entities can join, and re-decides each junction on evidence:
-/// [`crate::finish::surface_link::relink_fragments`] drop-cutter samples the link so
-/// it cannot gouge the mesh, refuses it if it would leave the operation's
-/// boundary, lifts it clear of anything standing in the input stock, refuses
-/// it outright when that clearance reaches safe Z, and (with kinematics in
-/// scope) keeps it only when it actually beats the retract on time.
-/// Fragment interiors are copied verbatim.
-///
-/// A no-op — the input returned untouched, the relinker never entered — at
-/// the shipped `chain_distance_mm` of `0.0`.
-/// THE one place a finishing adapter builds the shared surface-link stage
-/// (G-LINKSTAGE, `planning/linking_2026-09-09/SPEC.md` §3.1).
-///
-/// Every finishing family that opts in reads its ceiling, its boundary and
-/// its kinematics from here, so the three cannot drift apart family by family
-/// again. Before this existed the unified finish took its ceiling from
-/// `ctx.initial_stock` and the scallop passed `link_ceiling: None`, which on a
-/// `FromRemainingStock` island pass made every finger-to-finger hop a full
-/// safe-Z retract AND left the scallop's surface-riding links unchecked
-/// against the standing material they crossed.
-///
-/// `None` — the stage is OFF — at `hookup_mm <= 0.0`, which is the
-/// byte-identity dial every family that has not opted in keeps at `0.0`
-/// (`chain_distance_mm`'s pattern).
-///
-/// # The ceiling, and why it is the SAFETY half
-///
-/// A link that arrives laterally at cutting depth is exactly the shape
-/// G-ISOCLIPRAPID names: both endpoints under the stock surface, the span
-/// between them through whatever is standing. A surface-riding link rides the
-/// MESH, and on a rest-driven pass the mesh sits BELOW the material. The
-/// ceiling is what makes the kernel sample the whole chord against the input
-/// stock and take the lifted shape where it must — a target-only check reads
-/// 0.000 on a leg that buries itself between its endpoints.
-///
-/// The ceiling comes from the one builder, `op_link_ceiling` (ruling R1).
-/// The three callers are finishing ops (`LinkCeilingNeed::WithRemainingStock`):
-/// `ctx.initial_stock` is `Some` exactly when the op cuts what a prior op
-/// left. `None` is the fresh-stock arm, where the mesh IS the material; the
-/// stage is then byte-identical to the legacy surface-riding link, which is
-/// what `tests/island_stay_down_links_o3.rs` pins.
-///
-/// The boundary is the op's territory regions (W6.2): a link may not leave
-/// the area the op cuts.
-///
-/// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
-/// a reference to it can only live as long as the borrow of `*ctx` — while
-/// the stock and the regions live as long as the context's own parameter. The
-/// stage is therefore built in the SHORTER of the two, and each field narrows
-/// to it by ordinary covariance at its own assignment. A single-lifetime
-/// signature would instead ask the caller to coerce the whole
-/// `ExecutionContext`, which is a stronger requirement for no gain.
-fn finishing_link_stage<'c, 'a: 'c>(
-    op: OperationType,
-    ctx: &'c ExecutionContext<'a>,
-    boundary: Option<&'c RegionSet<'c>>,
-    hookup_mm: f64,
-) -> Option<crate::finish::surface_link::FinishingLinkStage<'c>> {
-    if hookup_mm <= 0.0 {
-        return None;
-    }
-    Some(crate::finish::surface_link::FinishingLinkStage {
-        hookup_distance: hookup_mm,
-        link_ceiling: op_link_ceiling(op, ctx),
-        boundary,
-        link_kinematics: ctx.link_kinematics.as_ref(),
-    })
-}
-
-/// Run the shared stage over a finishing family's emitted path, in the
-/// adapter, and report what it did.
-///
-/// For a family whose generator holds no index-carrying channel — the raster
-/// and the waterline both build their spans from the RESULT — so the
-/// reconcile set is empty and saying so is the whole contract. The scallop
-/// does hold one (its ring annotations), which is why its stage runs inside
-/// the generator instead.
-///
-/// G-LINKVISIBLE: the totals come BACK rather than being written to
-/// `ctx.findings` in here, because the context would be an eighth parameter
-/// and the two callers each already hold their own `ctx`. The caller records
-/// them unconditionally — reaching this function at all IS the measurement.
-fn relink_in_adapter(
-    stage: &crate::finish::surface_link::FinishingLinkStage<'_>,
-    geom: &crate::finish::surface_link::LinkGeometry,
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &ToolDefinition,
-    tp: Toolpath,
-    family: &'static str,
-) -> (Toolpath, crate::finish::unified_finish::RelinkTotals) {
-    let rp = stage.params(geom);
-    let (linked, rep) = crate::finish::surface_link::relink_fragments(
-        AnnotatedToolpath::new(tp),
-        mesh,
-        index,
-        cutter,
-        &rp,
-    );
-    tracing::info!(
-        family,
-        hookup_mm = stage.hookup_distance,
-        fragments = rep.fragments,
-        surface_links = rep.surface_links,
-        // The acceptance measure — only an at-depth link removes an entry.
-        at_depth_links = rep.at_depth_links,
-        clearance_hops = rep.clearance_hops,
-        retract_links = rep.retract_links,
-        too_far = rep.too_far,
-        off_surface = rep.off_surface,
-        slower_than_retract = rep.slower_than_retract,
-        outside_boundary = rep.outside_boundary,
-        ceiling_above_safe_z = rep.ceiling_above_safe_z,
-        "Finishing link stage"
-    );
-    let mut totals = crate::finish::unified_finish::RelinkTotals::default();
-    totals.add(&rep);
-    (
-        linked
-            .reconcile(&mut ReconcileSet::empty())
-            .into_inner()
-            .toolpath,
-        totals,
-    )
-}
-
-/// Scallop family adapter (labeled-event spans + annotate_scallop).
-/// The dispatch prologue refuses a tool the registry row does not admit
-/// (W2.2), so the refusal and the published schema cannot drift. Cancellable: the
-/// cooperative cancel closure is built by `ctx.cancel_fn()` (pinned by
+/// Scallop family adapter (W6.3): [`ScallopPass`] on the height-field
+/// runner. The dispatch prologue refuses a tool the registry row does not
+/// admit (W2.2). The kernel polls the cancel (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_scallop(
     ctx: &ExecutionContext<'_>,
@@ -172,76 +39,118 @@ pub(crate) fn generate_scallop(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Scallop, "generate_scallop");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    let params = cfg.params(
-        OpMotion {
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-            safe_z: ctx.heights.retract_z,
-        },
-        ctx.link_kinematics.clone(),
-    );
-    let regions = prepared.territory().regions();
-    let (tp, annotations, scallop_report) = if cfg.iso_field {
-        // M8 iso-field rings — per-point spacing, cosine slope law,
-        // completion by construction. See the wrapper's doc for evidence.
-        //
-        // NOT on the shared stage (SPEC §3.7). The field's ring list is level
-        // sets, its ring-to-ring geometry is a different population from the
-        // offset cascade's, and its fingerprint is pinned by
-        // `scallop_isofield_gouge_m4` and the multitool tiers. It keeps the
-        // legacy relink at the same `intra_pass_hookup_mm`, byte for byte.
-        crate::finish::scallop::scallop_toolpath_iso_field_with_cancel(
-            m,
-            idx,
-            ctx.tool_def,
-            &params,
-            ctx.debug_ctx,
-            regions,
-            &ctx.cancel_fn(),
-        )?
-    } else {
-        // The offset-cascade contour scallop IS the op §2 of the linking spec
-        // measured: breadth-first ring order, no reorder, no loop rotation
-        // and no stock ceiling. It opts in.
-        let stage = finishing_link_stage(op.op_type(), ctx, regions, cfg.intra_pass_hookup_mm);
-        crate::finish::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
-            m,
-            idx,
-            ctx.tool_def,
-            &params,
-            ctx.debug_ctx,
-            regions,
-            stage.as_ref(),
-            &ctx.cancel_fn(),
-        )?
+    let pass = ScallopPass {
+        params: cfg.params(
+            OpMotion {
+                feed_rate: op.feed_rate(),
+                plunge_rate: op.plunge_rate(),
+                safe_z: ctx.heights.retract_z,
+            },
+            ctx.link_kinematics.clone(),
+        ),
+        iso_field: cfg.iso_field,
+        hookup_mm: cfg.intra_pass_hookup_mm,
     };
-    // The cascade residual, and the link totals when the stage ran. The
-    // generator decided that, so a hookup above zero on a `continuous`
-    // pass, or one whose cascade produced no ring, measured nothing.
-    ctx.record(&scallop_report);
-    if let Some(sem) = ctx.semantic_ctx {
+    run_height_field(&pass, ctx, prepared)
+}
+
+/// The Scallop op: constant-scallop rings, from the offset cascade or the
+/// iso field. The territory regions are a planner INPUT: each region gets
+/// its own ring set, and the keep predicate tests them again.
+struct ScallopPass {
+    params: crate::finish::scallop::ScallopParams,
+    iso_field: bool,
+    hookup_mm: f64,
+}
+
+impl HeightFieldOp for ScallopPass {
+    type Annotation = crate::finish::scallop::ScallopRuntimeAnnotation;
+    /// The cascade residual, and the link totals when the stage ran. The
+    /// kernel decides that, so a hookup above zero on a `continuous` pass,
+    /// or one whose cascade made no ring, measured nothing.
+    type Report = crate::finish::scallop::ScallopReport;
+
+    fn op_type(&self) -> OperationType {
+        OperationType::Scallop
+    }
+
+    /// The offset cascade IS the op §2 of the linking spec measured
+    /// (breadth-first ring order, no reorder, no loop rotation, no stock
+    /// ceiling), and it opts in. It links INSIDE its kernel: the ring
+    /// annotations carry move indices that the kernel reconciles beside the
+    /// relink.
+    ///
+    /// The iso field is NOT on the shared stage (SPEC §3.7). Its ring list
+    /// is level sets, a different population from the cascade's, and its
+    /// fingerprint is pinned by `scallop_isofield_gouge_m4` and the
+    /// multitool tiers. It keeps the legacy relink at the same
+    /// `intra_pass_hookup_mm`, byte for byte.
+    fn link_rule(&self) -> LinkRule {
+        if self.iso_field {
+            LinkRule::Off
+        } else {
+            LinkRule::InPlan {
+                hookup_mm: self.hookup_mm,
+            }
+        }
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::LabeledEvents
+    }
+
+    fn annotate(
+        &self,
+        annotations: &[Self::Annotation],
+        toolpath: &Toolpath,
+        sem: &ToolpathSemanticContext,
+    ) {
         crate::compute::annotate::annotate_scallop(
-            &annotations,
-            &tp,
+            annotations,
+            toolpath,
             sem,
             crate::compute::annotate::ScallopRegionGrouping::ByBoundaryRegion,
         );
     }
-    let spans = crate::compute::spans::spans_from_labeled_events(
-        tp.moves.len(),
-        annotations
-            .iter()
-            .map(|ann| (ann.move_index, ann.event.label())),
-    );
-    Ok(generated_with_spans(tp, spans))
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<Self::Annotation, Self::Report>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let regions = territory.regions();
+        let (tp, annotations, report) = if self.iso_field {
+            // M8 iso-field rings: per-point spacing, cosine slope law,
+            // completion by construction. See the kernel's doc for evidence.
+            crate::finish::scallop::scallop_toolpath_iso_field_with_cancel(
+                surface.mesh,
+                surface.index,
+                cutter,
+                &self.params,
+                pctx.debug,
+                regions,
+                pctx.cancel,
+            )?
+        } else {
+            crate::finish::scallop::scallop_toolpath_structured_annotated_with_cancel_and_stage(
+                surface.mesh,
+                surface.index,
+                cutter,
+                &self.params,
+                pctx.debug,
+                regions,
+                pctx.link_stage,
+                pctx.cancel,
+            )?
+        };
+        Ok(Planned::new(tp, report).with_annotations(annotations))
+    }
 }
 
-/// DropCutter family adapter. Cancellable: the cooperative cancel
-/// closure is built by `ctx.cancel_fn()` (pinned by
+/// DropCutter family adapter (W6.3): [`DropCutterPass`] on the height-field
+/// runner. The grid sampler polls the cancel (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_drop_cutter(
     ctx: &ExecutionContext<'_>,
@@ -249,151 +158,137 @@ pub(crate) fn generate_drop_cutter(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, DropCutter, "generate_drop_cutter");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    // Floor the drop-cutter min_z to the mesh bottom. A 3D finish
-    // should only tip-track the mesh surface — anything lower is either
-    // a non-contact clamp or the tool's taper forcing the tip below
-    // the real surface (which would gouge). We also enforce the
-    // stock-bottom floor as a safety check.
-    let effective_min_z = cfg
-        .min_z
-        .max(m.bbox.min.z - 0.1)
-        .max(ctx.stock_bbox.min.z - 1.0);
-    let mut grid = crate::surface::dropcutter::batch_drop_cutter_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        cfg.stepover,
-        0.0,
-        effective_min_z,
-        &ctx.cancel_fn(),
-    )?;
-    // Drop grid points whose vertical ray misses every triangle
-    // in the mesh. `point_drop_cutter` marks `contacted = true`
-    // whenever the cutter (which has radius) touches ANY nearby
-    // triangle — including the rim of a mesh that doesn't cover
-    // that XY. Without this check the tool rides the edge and
-    // carves a trench around the part.
-    for pt in &mut grid.points {
-        let mut over = false;
-        for &tri_idx in &idx.query(pt.x, pt.y, 0.0) {
-            #[allow(clippy::indexing_slicing)]
-            let tri = &m.faces[tri_idx];
-            if tri.contains_point_xy(pt.x, pt.y) {
-                over = true;
-                break;
-            }
-        }
-        if !over {
-            pt.z = effective_min_z;
-            pt.contacted = false;
+    let pass = DropCutterPass {
+        stepover: cfg.stepover,
+        min_z: cfg.min_z,
+        stock_bottom_z: ctx.stock_bbox.min.z,
+        hookup_mm: cfg.hookup_mm,
+        feed_rate: op.feed_rate(),
+        plunge_rate: op.plunge_rate(),
+        safe_z: ctx.heights.retract_z,
+    };
+    run_height_field(&pass, ctx, prepared)
+}
+
+/// The Drop Cutter op: a raster over the drop-cutter grid, filtered by the
+/// slope band of the territory when the band is active.
+struct DropCutterPass {
+    stepover: f64,
+    min_z: f64,
+    stock_bottom_z: f64,
+    hookup_mm: f64,
+    feed_rate: f64,
+    plunge_rate: f64,
+    safe_z: f64,
+}
+
+impl HeightFieldOp for DropCutterPass {
+    type Annotation = NoLabel;
+    type Report = ();
+
+    fn op_type(&self) -> OperationType {
+        OperationType::DropCutter
+    }
+
+    /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
+    /// op's fingerprint does not move until an operator asks for it.
+    ///
+    /// Why it is wired at all: the raster's only linker is the serpentine
+    /// hookup in `toolpath.rs`, whose cap is one grid diagonal, so two runs
+    /// of one row split by an excluded cell (two steps apart) cannot join.
+    /// On the wanaka island raster that is 953 row fragments and 954
+    /// retracts (`planning/linking_2026-09-09/SPEC.md` §1). Raster rows are
+    /// OPEN runs, so no fragment kind is declared: a reversed row flips its
+    /// cut direction, and rotation does not apply.
+    fn link_rule(&self) -> LinkRule {
+        LinkRule::AfterPlan {
+            hookup_mm: self.hookup_mm,
         }
     }
-    // Non-contacted grid points get clamped to effective_min_z (floored
-    // at the mesh bottom). Filter them so the finish never cuts past
-    // the mesh boundary.
-    let min_z_filter = Some(effective_min_z);
-    let feed_rate = op.feed_rate();
-    let plunge_rate = op.plunge_rate();
-    let safe_z = ctx.heights.retract_z;
-    // W6.2: the territory holds the slope band only when it is active
-    // (`OperationConfig::surface_mask`), and the boundary regions.
-    let territory = prepared.territory();
-    let regions = territory.regions();
-    let tp = if let Some(SurfaceMask::SlopeBand { from_deg, to_deg }) = territory.mask {
-        // P1.3 (planning/finishing_stack_review_2026-07.md): derive the
-        // slope filter from `SlopeMap` (radians + normals + curvature)
-        // instead of the retired degrees-only `compute_grid_slopes`. The
-        // grid above is always sampled at `direction_deg = 0.0`, so its
-        // rotated sampling frame coincides with world frame and its
-        // u_start/v_start read as world mins with square (x_step ==
-        // y_step) cells — safe to feed straight into `SlopeMap::from_z_grid`.
-        // Convert the config's degree bounds to radians at this boundary,
-        // since `SlopeMap::angles` is radians-native.
-        debug_assert!(
-            (grid.x_step - grid.y_step).abs() < 1e-9,
-            "drop_cutter grid must have square cells for SlopeMap conversion"
-        );
-        let z_values: Vec<f64> = grid.points.iter().map(|cl| cl.z).collect();
-        let slope_map = crate::surface::slope::SlopeMap::from_z_grid(
-            &z_values,
-            grid.rows,
-            grid.cols,
-            grid.u_start,
-            grid.v_start,
-            grid.x_step,
-        );
-        crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
-            &grid,
-            &slope_map.angles,
-            from_deg.to_radians(),
-            to_deg.to_radians(),
-            feed_rate,
-            plunge_rate,
-            safe_z,
-            min_z_filter,
-            crate::toolpath::MoveIntent::FinishingCut,
-            regions,
-        )
-    } else {
-        crate::toolpath::raster_toolpath_from_grid(
-            &grid,
-            feed_rate,
-            plunge_rate,
-            safe_z,
-            min_z_filter,
-            regions,
-        )
-    };
-    // G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
-    // family's fingerprint does not move until an operator asks for it.
-    //
-    // Why it is wired at all: the raster's only linker today is the
-    // serpentine hookup in `toolpath.rs`, whose cap is one grid diagonal, so
-    // two runs of the same row split by an excluded cell — two steps apart —
-    // cannot join. On the wanaka island raster that is 953 row fragments and
-    // 954 retracts (`planning/linking_2026-09-09/SPEC.md` §1). Raster rows
-    // are OPEN runs, so no fragment kind is declared: reversing a row would
-    // flip its cut direction and rotation does not apply.
-    // G-LINKVISIBLE: `None` here reaches `ToolpathStats::relink` as `None`,
-    // which is the honest "the stage never ran" — `hookup_mm` at its shipped
-    // `0.0`. A recorded zero would claim a measurement that never happened.
-    let tp = match finishing_link_stage(op.op_type(), ctx, regions, cfg.hookup_mm) {
-        None => tp,
-        Some(stage) => {
-            let (tp, totals) = relink_in_adapter(
-                &stage,
-                &crate::finish::surface_link::LinkGeometry {
-                    // The raster rides the drop-cutter grid itself, so there
-                    // is no crest to stand off from and no separate leave
-                    // dial on this op (`WaterlineConfig`'s
-                    // absent-capability note).
-                    stock_to_leave: 0.0,
-                    sampling: grid.x_step.max(0.01),
-                    feed_rate,
-                    plunge_rate,
-                    safe_z,
-                    // `DropCutterConfig` has no path tolerance: the link
-                    // is not refined (G-TIERBURIAL, open).
-                    link_tolerance: None,
-                },
-                m,
-                idx,
-                ctx.tool_def,
-                tp,
-                "drop_cutter",
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::CutRuns("Raster row")
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<NoLabel, ()>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let (grid, floor_z) = crate::surface::dropcutter::finish_raster_grid(
+            surface.mesh,
+            surface.index,
+            cutter,
+            self.stepover,
+            self.min_z,
+            self.stock_bottom_z,
+            pctx.cancel,
+        )?;
+        // The raster drops the points at the floor (off the mesh), so the
+        // finish never cuts past the mesh edge.
+        let min_z_filter = Some(floor_z);
+        let regions = territory.regions();
+        // W6.2: the territory holds the slope band only when it is active
+        // (`OperationConfig::surface_mask`).
+        let tp = if let Some(SurfaceMask::SlopeBand { from_deg, to_deg }) = territory.mask {
+            // P1.3 (planning/finishing_stack_review_2026-07.md): the slope
+            // filter reads `SlopeMap` (radians + normals + curvature). The
+            // grid is always sampled at `direction_deg = 0.0`, so its
+            // sampling frame is the world frame and its square cells read
+            // straight into `SlopeMap::from_z_grid`. The degree bounds of
+            // the config become radians here: `SlopeMap::angles` is radians.
+            debug_assert!(
+                (grid.x_step - grid.y_step).abs() < 1e-9,
+                "drop_cutter grid must have square cells for SlopeMap conversion"
             );
-            ctx.record(&totals);
-            tp
-        }
-    };
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(tp, "Raster row"),
-        ctx.semantic_ctx,
-    ))
+            let z_values: Vec<f64> = grid.points.iter().map(|cl| cl.z).collect();
+            let slope_map = crate::surface::slope::SlopeMap::from_z_grid(
+                &z_values,
+                grid.rows,
+                grid.cols,
+                grid.u_start,
+                grid.v_start,
+                grid.x_step,
+            );
+            crate::toolpath::raster_toolpath_from_grid_with_slope_filter(
+                &grid,
+                &slope_map.angles,
+                from_deg.to_radians(),
+                to_deg.to_radians(),
+                self.feed_rate,
+                self.plunge_rate,
+                self.safe_z,
+                min_z_filter,
+                crate::toolpath::MoveIntent::FinishingCut,
+                regions,
+            )
+        } else {
+            crate::toolpath::raster_toolpath_from_grid(
+                &grid,
+                self.feed_rate,
+                self.plunge_rate,
+                self.safe_z,
+                min_z_filter,
+                regions,
+            )
+        };
+        Ok(
+            Planned::new(tp, ()).with_link_geometry(crate::finish::surface_link::LinkGeometry {
+                // The raster rides the drop-cutter grid itself, so there is
+                // no crest to stand off from and no leave dial on this op.
+                stock_to_leave: 0.0,
+                sampling: grid.x_step.max(0.01),
+                feed_rate: self.feed_rate,
+                plunge_rate: self.plunge_rate,
+                safe_z: self.safe_z,
+                // `DropCutterConfig` has no path tolerance: the link is not
+                // refined (G-TIERBURIAL, open).
+                link_tolerance: None,
+            }),
+        )
+    }
 }
 
 /// Waterline family adapter (W6.1): [`WaterlinePass`] on the Layered

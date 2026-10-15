@@ -1,15 +1,20 @@
 //! The 3D finishing family: 3D adaptive, pencil, unified finish and the five
 //! single-strategy finishers.
 //!
-//! Split out of `compute/execute.rs` (P4).
+//! Horizontal, Radial, Spiral and Ramp Finish run on the height-field
+//! runner (`height_field.rs`, W6.3). Split out of `compute/execute.rs` (P4).
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
 use crate::tool::MillingCutter;
+use crate::toolpath::Toolpath;
+use crate::trace::semantic_trace::ToolpathSemanticContext;
 
-use super::shared::{
-    generated_with_cut_run_spans, generated_with_spans, op_link_ceiling, with_depth_run_annotation,
+use super::height_field::{
+    HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
+use super::shared::{generated_with_spans, op_link_ceiling, with_depth_run_annotation};
+use super::territory::Territory;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
 /// Read the single leave-stock scalar the adaptive3d planner consumes.
@@ -526,55 +531,78 @@ pub(crate) fn generate_steep_shallow(
     ))
 }
 
-/// RampFinish family adapter (labeled-event spans + annotate_ramp_finish).
-/// Cancellable: the cooperative cancel closure is built by
-/// `ctx.cancel_fn()` (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// RampFinish family adapter (W6.3): [`RampPass`] on the height-field
+/// runner. The spans come from the kernel's labels, and the semantic trace
+/// from `annotate_ramp_finish`. The kernel polls the cancel (pinned by
+/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_ramp_finish(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    let params = cfg.params(OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-    });
-    let (tp, annotations, reach_clamp) =
-        crate::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
-            m,
-            idx,
-            ctx.tool_def,
-            &params,
-            ctx.debug_ctx,
-            prepared.territory().regions(),
-            &ctx.cancel_fn(),
-        )?;
-    // PR-8b: unconditional, including when the clamp was inert — this is the
-    // only adapter that runs a ramp descent, so `None` downstream means "no
-    // descent ran" and never "a descent ran and I did not look".
-    ctx.record(&reach_clamp);
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_ramp_finish(&annotations, &tp, sem);
-    }
-    let spans = crate::compute::spans::spans_from_labeled_events(
-        tp.moves.len(),
-        annotations
-            .iter()
-            .map(|ann| (ann.move_index, ann.event.label())),
-    );
-    Ok(generated_with_spans(tp, spans))
+    let pass = RampPass {
+        params: cfg.params(op_motion(ctx, op)),
+    };
+    run_height_field(&pass, ctx, prepared)
 }
 
-/// SpiralFinish family adapter. NOTE: spans come from
-/// `spans_from_labeled_events` over the generator's annotations, and
-/// the family annotate fn is `annotate_spiral_finish` — both part of
-/// the contract. Cancellable: the cooperative cancel closure is rebuilt
-/// from `ctx.cancel` (pinned by
+/// The Ramp Finish op: ramps between the levels of its own terrace ladder.
+/// The ladder stays inside the kernel: it cuts between two levels, and its
+/// bottom comes from the surface reach clamp. Nothing outside the kernel
+/// reads it.
+struct RampPass {
+    params: crate::finish::ramp_finish::RampFinishParams,
+}
+
+impl HeightFieldOp for RampPass {
+    type Annotation = crate::finish::ramp_finish::RampFinishRuntimeAnnotation;
+    /// PR-8b: the runner records it always, an inert clamp too. This is the
+    /// only op that runs a ramp descent, so `None` downstream means "no
+    /// descent ran" and never "a descent ran and nobody looked".
+    type Report = crate::finish::ramp_finish::RampReachClamp;
+
+    fn op_type(&self) -> OperationType {
+        OperationType::RampFinish
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::LabeledEvents
+    }
+
+    fn annotate(
+        &self,
+        annotations: &[Self::Annotation],
+        toolpath: &Toolpath,
+        sem: &ToolpathSemanticContext,
+    ) {
+        crate::compute::annotate::annotate_ramp_finish(annotations, toolpath, sem);
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<Self::Annotation, Self::Report>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let (tp, annotations, reach_clamp) =
+            crate::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
+                surface.mesh,
+                surface.index,
+                cutter,
+                &self.params,
+                pctx.debug,
+                territory.regions(),
+                pctx.cancel,
+            )?;
+        Ok(Planned::new(tp, reach_clamp).with_annotations(annotations))
+    }
+}
+
+/// SpiralFinish family adapter (W6.3): [`SpiralPass`] on the height-field
+/// runner. The spans come from the kernel's labels, and the semantic trace
+/// from `annotate_spiral_finish`. The kernel polls the cancel (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_spiral_finish(
     ctx: &ExecutionContext<'_>,
@@ -582,39 +610,62 @@ pub(crate) fn generate_spiral_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    let params = cfg.params(OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-    });
-    let (tp, annotations) =
-        crate::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
-            m,
-            idx,
-            ctx.tool_def,
-            &params,
-            ctx.debug_ctx,
-            prepared.territory().regions(),
-            &ctx.cancel_fn(),
-        )?;
-    if let Some(sem) = ctx.semantic_ctx {
-        crate::compute::annotate::annotate_spiral_finish(&annotations, &tp, sem);
-    }
-    let spans = crate::compute::spans::spans_from_labeled_events(
-        tp.moves.len(),
-        annotations
-            .iter()
-            .map(|ann| (ann.move_index, ann.event.label())),
-    );
-    Ok(generated_with_spans(tp, spans))
+    let pass = SpiralPass {
+        params: cfg.params(op_motion(ctx, op)),
+    };
+    run_height_field(&pass, ctx, prepared)
 }
 
-/// RadialFinish family adapter. Cancellable: the cooperative cancel
-/// closure is built by `ctx.cancel_fn()` (pinned by
+/// The Spiral Finish op: one spiral about the mesh bbox centre. The centre
+/// is not read from the territory (that is an output change).
+struct SpiralPass {
+    params: crate::finish::spiral_finish::SpiralFinishParams,
+}
+
+impl HeightFieldOp for SpiralPass {
+    type Annotation = crate::finish::spiral_finish::SpiralFinishRuntimeAnnotation;
+    type Report = ();
+
+    fn op_type(&self) -> OperationType {
+        OperationType::SpiralFinish
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::LabeledEvents
+    }
+
+    fn annotate(
+        &self,
+        annotations: &[Self::Annotation],
+        toolpath: &Toolpath,
+        sem: &ToolpathSemanticContext,
+    ) {
+        crate::compute::annotate::annotate_spiral_finish(annotations, toolpath, sem);
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<Self::Annotation, ()>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let (tp, annotations) =
+            crate::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
+                surface.mesh,
+                surface.index,
+                cutter,
+                &self.params,
+                pctx.debug,
+                territory.regions(),
+                pctx.cancel,
+            )?;
+        Ok(Planned::new(tp, ()).with_annotations(annotations))
+    }
+}
+
+/// RadialFinish family adapter (W6.3): [`RadialPass`] on the height-field
+/// runner. The kernel polls the cancel (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_radial_finish(
     ctx: &ExecutionContext<'_>,
@@ -622,53 +673,76 @@ pub(crate) fn generate_radial_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
-    // N10: the registry gate in `set_toolpath_param` guards the MCP and
-    // CLI route only. A project file and the GUI inspector write the
-    // config directly, so the generator reads the SAME declared domain
-    // and refuses here. `ParamRange::accepts` also rejects a non-finite
-    // value, which a bare `<= 0.0` comparison lets through.
-    let op_type = OperationType::RadialFinish;
-    for (name, value) in [
-        ("angular_step", cfg.angular_step),
-        ("point_spacing", cfg.point_spacing),
-    ] {
-        let Some(range) = OperationConfig::param_range_for_type(op_type, name) else {
-            continue;
-        };
-        if !range.accepts(value) {
-            return Err(OperationError::Other(format!(
-                "Radial Finish '{name}' = {value} is outside the accepted range ({}). \
-                 The generator divides by this dial, so a value outside the range \
-                 emits nothing or runs without end. Set a value inside the range.",
-                range.describe()
-            )));
-        }
-    }
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    let params = cfg.params(OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-    });
-    let tp = crate::finish::radial_finish::radial_finish_toolpath_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        prepared.territory().regions(),
-        &ctx.cancel_fn(),
-    )?;
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(tp, "Radial ray"),
-        ctx.semantic_ctx,
-    ))
+    let pass = RadialPass {
+        params: cfg.params(op_motion(ctx, op)),
+    };
+    run_height_field(&pass, ctx, prepared)
 }
 
-/// HorizontalFinish family adapter. Cancellable: the cooperative
-/// cancel closure is built by `ctx.cancel_fn()` (pinned by
+/// The Radial Finish op: spokes from the mesh bbox centre. The centre is
+/// not read from the territory (that is an output change).
+struct RadialPass {
+    params: crate::finish::radial_finish::RadialFinishParams,
+}
+
+impl HeightFieldOp for RadialPass {
+    type Annotation = NoLabel;
+    type Report = ();
+
+    fn op_type(&self) -> OperationType {
+        OperationType::RadialFinish
+    }
+
+    /// N10: the registry gate in `set_toolpath_param` guards the MCP and
+    /// CLI route only. A project file and the GUI inspector write the
+    /// config directly, so the generator reads the SAME declared domain
+    /// and refuses here. `ParamRange::accepts` also rejects a non-finite
+    /// value, which a bare `<= 0.0` comparison lets through.
+    fn refuse(&self) -> Result<(), OperationError> {
+        for (name, value) in [
+            ("angular_step", self.params.angular_step),
+            ("point_spacing", self.params.point_spacing),
+        ] {
+            let Some(range) = OperationConfig::param_range_for_type(self.op_type(), name) else {
+                continue;
+            };
+            if !range.accepts(value) {
+                return Err(OperationError::Other(format!(
+                    "Radial Finish '{name}' = {value} is outside the accepted range ({}). \
+                     The generator divides by this dial, so a value outside the range \
+                     emits nothing or runs without end. Set a value inside the range.",
+                    range.describe()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::CutRuns("Radial ray")
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<NoLabel, ()>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let tp = crate::finish::radial_finish::radial_finish_toolpath_with_cancel(
+            surface.mesh,
+            surface.index,
+            cutter,
+            &self.params,
+            territory.regions(),
+            pctx.cancel,
+        )?;
+        Ok(Planned::new(tp, ()))
+    }
+}
+
+/// HorizontalFinish family adapter (W6.3): [`HorizontalPass`] on the
+/// height-field runner. The kernel polls the cancel (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_horizontal_finish(
     ctx: &ExecutionContext<'_>,
@@ -676,25 +750,55 @@ pub(crate) fn generate_horizontal_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
-    let MeshInput {
-        mesh: m,
-        index: idx,
-    } = prepared.mesh()?;
-    let params = cfg.params(OpMotion {
+    let pass = HorizontalPass {
+        params: cfg.params(op_motion(ctx, op)),
+    };
+    run_height_field(&pass, ctx, prepared)
+}
+
+/// The Horizontal Finish op: a raster over each group of flat triangles.
+/// The kernel tests the triangle normals, not the territory's `Flat` cell
+/// mask (`height_field` module doc).
+struct HorizontalPass {
+    params: crate::finish::horizontal_finish::HorizontalFinishParams,
+}
+
+impl HeightFieldOp for HorizontalPass {
+    type Annotation = NoLabel;
+    type Report = ();
+
+    fn op_type(&self) -> OperationType {
+        OperationType::HorizontalFinish
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::CutRuns("Horizontal slice")
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<NoLabel, ()>, OperationError> {
+        let (surface, cutter) = query.mesh(self.op_type())?;
+        let tp = crate::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
+            surface.mesh,
+            surface.index,
+            cutter,
+            &self.params,
+            territory.regions(),
+            pctx.cancel,
+        )?;
+        Ok(Planned::new(tp, ()))
+    }
+}
+
+/// The feed, the plunge and the safe Z of one op.
+fn op_motion(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> OpMotion {
+    OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-    });
-    let tp = crate::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        prepared.territory().regions(),
-        &ctx.cancel_fn(),
-    )?;
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(tp, "Horizontal slice"),
-        ctx.semantic_ctx,
-    ))
+    }
 }

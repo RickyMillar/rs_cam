@@ -5,9 +5,11 @@
 //! share the V-bit half-angle read and the projected-curve chaining pass.
 //! Chamfer runs on the Layered runner (`layered.rs`, W3.5): one level from
 //! the tool angle, and the `LevelSkip` rest rule.
+//! V-Carve runs on the height-field runner (`height_field.rs`, W6.3), on
+//! the analytic V-depth field of its outlines.
 //! Split out of `compute/execute.rs` (P4).
 
-use crate::compute::catalog::{OperationConfig, RestUse};
+use crate::compute::catalog::{OperationConfig, OperationType, RestUse};
 use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::RegionOrdering;
 use crate::compute::tool_config::ToolConfig;
@@ -20,8 +22,13 @@ use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
+use super::height_field::{
+    AnalyticField, HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule,
+    run_height_field,
+};
 use super::layered::{LayerCtx, LayeredOp, LevelInfo, LevelStock, ReachBand, run_layered};
 use super::shared::{generated_with_cut_run_spans, op_link_ceiling, with_depth_run_annotation};
+use super::territory::Territory;
 use super::{
     ExecutionContext, GeneratedToolpath, MeshInput, OffsetFailures, OperationError, Prepared,
 };
@@ -113,42 +120,94 @@ pub(crate) fn generate_inlay_plug(
     ))
 }
 
-/// VCarve family adapter. Cut-run spans labeled "V-carve run"; the
-/// dispatch prologue refuses a tool that is not a V-bit. Cancellable: the cooperative
-/// cancel closure is built by `ctx.cancel_fn()` (pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// VCarve family adapter (W6.3): [`VCarvePass`] on the height-field runner,
+/// on the analytic V-depth field of the outlines. The dispatch prologue
+/// refuses a tool that is not a V-bit. The kernel polls the cancel (pinned
+/// by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_vcarve(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, VCarve, "generate_vcarve");
-    let polys = prepared.polygons()?;
-    let ha = vbit_half_angle(ctx.tool_cfg);
-    let safe_z = ctx.heights.retract_z;
-    let cancel_fn = ctx.cancel_fn();
-    let mut combined = Toolpath::new();
-    for poly in polys {
-        let tp = crate::ops::vcarve::vcarve_toolpath_with_cancel(
-            poly,
-            &crate::ops::vcarve::VCarveParams {
-                half_angle: ha,
-                max_depth: cfg.max_depth,
-                stepover: cfg.stepover,
-                feed_rate: op.feed_rate(),
-                plunge_rate: op.plunge_rate(),
-                safe_z,
-                tolerance: cfg.tolerance,
-                top_z: ctx.heights.top_z,
-            },
-            &cancel_fn,
-        )?;
-        combined.moves.extend(tp.moves);
+    let pass = VCarvePass {
+        field: VCarveField {
+            outlines: prepared.polygons()?,
+        },
+        params: crate::ops::vcarve::VCarveParams {
+            half_angle: vbit_half_angle(ctx.tool_cfg),
+            max_depth: cfg.max_depth,
+            stepover: cfg.stepover,
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z: ctx.heights.retract_z,
+            tolerance: cfg.tolerance,
+            top_z: ctx.heights.top_z,
+        },
+    };
+    run_height_field(&pass, ctx, prepared)
+}
+
+/// The domain of the V-depth field: the checked outlines. The depth at a
+/// point is `top_z - min(dist / tan(a), max_depth)`, with `dist` the
+/// distance to the outline edge; the kernel (`ops::vcarve`) holds that
+/// formula.
+struct VCarveField<'a> {
+    outlines: &'a [Polygon2],
+}
+
+impl AnalyticField for VCarveField<'_> {
+    fn outlines(&self) -> &[Polygon2] {
+        self.outlines
     }
-    Ok(with_depth_run_annotation(
-        generated_with_cut_run_spans(combined, "V-carve run"),
-        ctx.semantic_ctx,
-    ))
+}
+
+/// The V-Carve op: the V-depth field of each outline, one outline after
+/// the other in input order. The territory XY is `ClipAfter`: the field
+/// domain is the outline itself.
+struct VCarvePass<'a> {
+    field: VCarveField<'a>,
+    params: crate::ops::vcarve::VCarveParams,
+}
+
+impl HeightFieldOp for VCarvePass<'_> {
+    type Annotation = NoLabel;
+    type Report = ();
+
+    fn op_type(&self) -> OperationType {
+        OperationType::VCarve
+    }
+
+    fn query<'q>(
+        &'q self,
+        _ctx: &'q ExecutionContext<'_>,
+        _prepared: &'q Prepared<'_>,
+    ) -> Result<HeightQuery<'q>, OperationError> {
+        Ok(HeightQuery::Analytic(&self.field))
+    }
+
+    fn span_rule(&self) -> SpanRule {
+        SpanRule::CutRuns("V-carve run")
+    }
+
+    fn plan(
+        &self,
+        query: HeightQuery<'_>,
+        _territory: &Territory<'_>,
+        pctx: &PlanCtx<'_>,
+    ) -> Result<Planned<NoLabel, ()>, OperationError> {
+        let field = query.analytic(self.op_type())?;
+        let mut combined = Toolpath::new();
+        for outline in field.outlines() {
+            let tp = crate::ops::vcarve::vcarve_toolpath_with_cancel(
+                outline,
+                &self.params,
+                pctx.cancel,
+            )?;
+            combined.moves.extend(tp.moves);
+        }
+        Ok(Planned::new(combined, ()))
+    }
 }
 
 /// Chamfer family adapter (W3.5): [`ChamferPass`] on the Layered runner.

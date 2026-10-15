@@ -10,8 +10,12 @@ use crate::trace::toolpath_spans::AnnotatedToolpath;
 
 use crate::compute::catalog::OperationType;
 use crate::dexel_stock::TriDexelStock;
-use crate::finish::surface_link::LinkCeiling;
-use crate::tool::MillingCutter;
+use crate::finish::surface_link::{FinishingLinkStage, LinkCeiling, LinkGeometry};
+use crate::finish::unified_finish::RelinkTotals;
+use crate::geometry::region_set::RegionSet;
+use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::tool::{MillingCutter, ToolDefinition};
+use crate::trace::transform_provenance::ReconcileSet;
 
 use super::{ExecutionContext, GeneratedToolpath};
 
@@ -137,5 +141,122 @@ pub(super) fn op_link_ceiling<'a>(
         ctx.stock_bbox.max.z,
         ctx.heights.top_z,
         ctx.obstacles,
+    )
+}
+
+/// THE one place a finishing adapter builds the shared surface-link stage
+/// (G-LINKSTAGE, `planning/linking_2026-09-09/SPEC.md` §3.1).
+///
+/// Every finishing family that opts in reads its ceiling, its boundary and
+/// its kinematics from here, so the three cannot drift apart family by family
+/// again. Before this existed the unified finish took its ceiling from
+/// `ctx.initial_stock` and the scallop passed `link_ceiling: None`, which on a
+/// `FromRemainingStock` island pass made every finger-to-finger hop a full
+/// safe-Z retract AND left the scallop's surface-riding links unchecked
+/// against the standing material they crossed.
+///
+/// `None` — the stage is OFF — at `hookup_mm <= 0.0`, which is the
+/// byte-identity dial every family that has not opted in keeps at `0.0`
+/// (`chain_distance_mm`'s pattern).
+///
+/// # The ceiling, and why it is the SAFETY half
+///
+/// A link that arrives laterally at cutting depth is exactly the shape
+/// G-ISOCLIPRAPID names: both endpoints under the stock surface, the span
+/// between them through whatever is standing. A surface-riding link rides the
+/// MESH, and on a rest-driven pass the mesh sits BELOW the material. The
+/// ceiling is what makes the kernel sample the whole chord against the input
+/// stock and take the lifted shape where it must — a target-only check reads
+/// 0.000 on a leg that buries itself between its endpoints.
+///
+/// The ceiling comes from the one builder, `op_link_ceiling` (ruling R1).
+/// The three callers are finishing ops (`LinkCeilingNeed::WithRemainingStock`):
+/// `ctx.initial_stock` is `Some` exactly when the op cuts what a prior op
+/// left. `None` is the fresh-stock arm, where the mesh IS the material; the
+/// stage is then byte-identical to the legacy surface-riding link, which is
+/// what `tests/island_stay_down_links_o3.rs` pins.
+///
+/// The boundary is the op's territory regions (W6.2): a link may not leave
+/// the area the op cuts.
+///
+/// TWO lifetimes on purpose. `ctx.link_kinematics` is OWNED by the context, so
+/// a reference to it can only live as long as the borrow of `*ctx` — while
+/// the stock and the regions live as long as the context's own parameter. The
+/// stage is therefore built in the SHORTER of the two, and each field narrows
+/// to it by ordinary covariance at its own assignment. A single-lifetime
+/// signature would instead ask the caller to coerce the whole
+/// `ExecutionContext`, which is a stronger requirement for no gain.
+pub(super) fn finishing_link_stage<'c, 'a: 'c>(
+    op: OperationType,
+    ctx: &'c ExecutionContext<'a>,
+    boundary: Option<&'c RegionSet<'c>>,
+    hookup_mm: f64,
+) -> Option<FinishingLinkStage<'c>> {
+    if hookup_mm <= 0.0 {
+        return None;
+    }
+    Some(FinishingLinkStage {
+        hookup_distance: hookup_mm,
+        link_ceiling: op_link_ceiling(op, ctx),
+        boundary,
+        link_kinematics: ctx.link_kinematics.as_ref(),
+    })
+}
+
+/// Run the shared stage over a finishing family's emitted path, in the
+/// adapter, and report what it did.
+///
+/// For a family whose generator holds no index-carrying channel (the raster
+/// and the waterline both build their spans from the RESULT), so the
+/// reconcile set is empty and saying so is the whole contract. The scallop
+/// does hold one (its ring annotations), which is why its stage runs inside
+/// the generator instead.
+///
+/// G-LINKVISIBLE: the totals come BACK rather than being written to
+/// `ctx.findings` in here. The two callers (the height-field runner for
+/// `LinkRule::AfterPlan`, and the Waterline `link` hook) each hold their own
+/// `ctx` and record the totals unconditionally: reaching this function at
+/// all IS the measurement.
+pub(super) fn relink_in_adapter(
+    stage: &FinishingLinkStage<'_>,
+    geom: &LinkGeometry,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &ToolDefinition,
+    tp: Toolpath,
+    family: &'static str,
+) -> (Toolpath, RelinkTotals) {
+    let rp = stage.params(geom);
+    let (linked, rep) = crate::finish::surface_link::relink_fragments(
+        AnnotatedToolpath::new(tp),
+        mesh,
+        index,
+        cutter,
+        &rp,
+    );
+    tracing::info!(
+        family,
+        hookup_mm = stage.hookup_distance,
+        fragments = rep.fragments,
+        surface_links = rep.surface_links,
+        // The acceptance measure — only an at-depth link removes an entry.
+        at_depth_links = rep.at_depth_links,
+        clearance_hops = rep.clearance_hops,
+        retract_links = rep.retract_links,
+        too_far = rep.too_far,
+        off_surface = rep.off_surface,
+        slower_than_retract = rep.slower_than_retract,
+        outside_boundary = rep.outside_boundary,
+        ceiling_above_safe_z = rep.ceiling_above_safe_z,
+        "Finishing link stage"
+    );
+    let mut totals = RelinkTotals::default();
+    totals.add(&rep);
+    (
+        linked
+            .reconcile(&mut ReconcileSet::empty())
+            .into_inner()
+            .toolpath,
+        totals,
     )
 }

@@ -538,6 +538,7 @@ mod drilling;
 mod findings;
 mod finish_3d;
 mod finish_raster;
+mod height_field;
 mod layered;
 mod prologue;
 mod shared;

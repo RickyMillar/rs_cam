@@ -99,6 +99,7 @@ use rs_cam_core::session::{
     SessionError, SetToolpathParamArgs, SetupEvalContext,
 };
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// The band (cells) at the edge of a cut that a cellwise claim skips: the
 /// simulator blends a cell the tool covers in part.
@@ -117,8 +118,8 @@ fn threshold() -> f32 {
 
 /// What one generation gave.
 enum Outcome {
-    /// The adopted toolpath.
-    Done(Toolpath),
+    /// The adopted toolpath and its spans.
+    Done(AnnotatedToolpath),
     /// The session refused. Kept whole, so a check can read the variant.
     Refused(SessionError),
     /// The generation panicked. The text is the panic payload.
@@ -128,14 +129,14 @@ enum Outcome {
 impl Outcome {
     fn toolpath(&self) -> Option<&Toolpath> {
         match self {
-            Self::Done(tp) => Some(tp),
+            Self::Done(at) => Some(&at.toolpath),
             Self::Refused(_) | Self::Panicked(_) => None,
         }
     }
 
     fn golden(&self) -> Golden {
         match self {
-            Self::Done(tp) => Golden::of(tp),
+            Self::Done(at) => Golden::of(at),
             Self::Refused(e) => Golden::refused(&e.to_string()),
             Self::Panicked(p) => Golden::refused(&format!("panic: {p}")),
         }
@@ -143,7 +144,7 @@ impl Outcome {
 
     fn describe(&self) -> String {
         match self {
-            Self::Done(tp) => format!("done, {} moves", tp.moves.len()),
+            Self::Done(at) => format!("done, {} moves", at.toolpath.moves.len()),
             Self::Refused(e) => format!("refused: {e:?}"),
             Self::Panicked(p) => format!("panicked: {p}"),
         }
@@ -165,9 +166,9 @@ fn generate(session: &mut ProjectSession, index: usize) -> Outcome {
     match std::panic::catch_unwind(AssertUnwindSafe(|| {
         session
             .generate_toolpath(index, &cancel)
-            .map(|r| r.toolpath().clone())
+            .map(|r| AnnotatedToolpath::clone(r.annotated()))
     })) {
-        Ok(Ok(tp)) => Outcome::Done(tp),
+        Ok(Ok(at)) => Outcome::Done(at),
         Ok(Err(e)) => Outcome::Refused(e),
         Err(payload) => Outcome::Panicked(panic_text(payload.as_ref())),
     }
@@ -858,8 +859,13 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
     let policy = op.registry_entry().policy;
     let exempt = policy.empty_is_feature_selective;
     match outcome {
-        Outcome::Done(tp) => {
-            if tp.moves.iter().any(|m| m.move_type != MoveType::Rapid) {
+        Outcome::Done(at) => {
+            if at
+                .toolpath
+                .moves
+                .iter()
+                .any(|m| m.move_type != MoveType::Rapid)
+            {
                 Ok("done")
             } else if exempt || rest || policy.kinematics == Kinematics::DrillZOnly {
                 Ok("done-empty")
@@ -1451,7 +1457,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
             let mut defects = Vec::new();
             let (mut session, index, strip) = strip_session(op, frame);
             let tp = match generate(&mut session, index) {
-                Outcome::Done(tp) => tp,
+                Outcome::Done(at) => at.toolpath,
                 other => {
                     defects.push(format!("{label}/obstacle: {}", other.describe()));
                     return (label, defects, false);

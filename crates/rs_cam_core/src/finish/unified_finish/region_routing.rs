@@ -82,9 +82,9 @@ pub(super) fn build_shallow_raster_grid(
     window: Option<[f64; 4]>,
     cancel: &dyn CancelCheck,
 ) -> Result<DropCutterGrid, Cancelled> {
-    // Mesh-bottom floor, mirroring `generate_drop_cutter`'s
-    // `effective_min_z` (compute::execute.rs). The stock-bbox floor
-    // (`ctx.stock_bbox.min.z - 1.0` there) is the op-adapter's job — this
+    // Mesh-bottom floor, mirroring the floor of
+    // `surface::dropcutter::finish_raster_grid` (the Drop Cutter op). Its
+    // stock-bbox floor (`stock_bottom_z - 1.0` there) is the op's job — this
     // pure-core function only sees a mesh, not a stock model, so callers
     // needing that extra floor should pre-max it into `bottom_z` before
     // calling in.
@@ -112,17 +112,18 @@ pub(super) fn build_shallow_raster_grid(
         &never_cancel,
     )?;
     // Drop grid points whose vertical ray misses every triangle in the mesh.
-    // Replicated from `compute::execute::generate_drop_cutter`'s identical
-    // guard: `point_drop_cutter` marks a point contacted whenever the cutter
-    // (which has radius) touches ANY nearby triangle — including the rim of
+    // Replicated from the identical guard of
+    // `surface::dropcutter::finish_raster_grid`: `point_drop_cutter` marks a
+    // point contacted whenever the cutter (which has radius) touches ANY
+    // nearby triangle — including the rim of
     // a mesh that doesn't cover that XY. Without this check the tool rides
     // the edge and carves a trench around the part.
     for pt in &mut grid.points {
         let mut over = false;
         for &tri_idx in &index.query(pt.x, pt.y, 0.0) {
             // SAFETY: tri_idx comes from `index.query`, which only ever
-            // returns indices into `mesh.faces` (mirrors
-            // `generate_drop_cutter`'s identical loop in compute::execute.rs).
+            // returns indices into `mesh.faces` (the same test as
+            // `surface::dropcutter::point_is_over_mesh_xy`).
             #[allow(clippy::indexing_slicing)]
             let tri = &mesh.faces[tri_idx];
             if tri.contains_point_xy(pt.x, pt.y) {

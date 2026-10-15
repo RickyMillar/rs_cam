@@ -29,6 +29,13 @@
 //! - `rest`: every op that reads the remaining stock in its adapter
 //!   (`ctx.initial_stock`). A prior op cuts part of the stock, the session
 //!   simulates it, and the op then generates with `FromRemainingStock`.
+//! - `regions` (W6.3.0): each height-field op whose territory is a region
+//!   set, with a `ModelOutline` boundary rectangle that cuts through the
+//!   cap ([`REGION_RECT`]). It pins the region keep of each kernel and the
+//!   ring boundaries of Scallop.
+//! - W6.3.0 non-default arms of the height-field ops: an active slope band
+//!   and the link stage of Drop Cutter, the iso field of Scallop, the
+//!   outside-in Spiral and the bottom-up Ramp.
 //!
 //! # The fingerprint
 //!
@@ -39,6 +46,9 @@
 //! quantum cannot change a G-code word, and float noise across platforms
 //! (about 1e-12 relative) is many decades below it. The hash also covers the
 //! move kind, the feed (at the finest feed precision) and the move intent.
+//!
+//! The record also holds a span digest (W6.3.0): the span count and a hash
+//! of each span's kind, label and move range.
 //!
 //! # Blessing
 //!
@@ -72,9 +82,12 @@ use common::op_fixtures::{
 };
 use rayon::prelude::*;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RestUse};
-use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::operation_configs::{DrillCycleType, PocketPattern};
+use rs_cam_core::compute::config::{
+    BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
+};
+use rs_cam_core::compute::operation_configs::{DrillCycleType, PocketPattern, SpiralDirection};
 use rs_cam_core::ops::profile::ProfileSide;
+use rs_cam_core::session::{AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs};
 
 /// The environment switch that rewrites the golden file.
 const BLESS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN";
@@ -90,14 +103,16 @@ enum Source {
 /// A change to an op's default parameters.
 type Tweak = fn(&mut OperationConfig);
 
-/// One generated toolpath: an op, an arm name, a parameter change and a
-/// stock source.
+/// One generated toolpath: an op, an arm name, a parameter change, a
+/// stock source and the boundary.
 #[derive(Clone, Copy)]
 struct Case {
     op: OperationType,
     arm: &'static str,
     tweak: Tweak,
     source: Source,
+    /// True: a `ModelOutline` boundary of [`REGION_RECT`] (W6.3.0).
+    regions: bool,
 }
 
 impl Case {
@@ -136,6 +151,72 @@ fn drill_simple_cycle(op: &mut OperationConfig) {
     cfg.cycle = DrillCycleType::Simple;
 }
 
+/// An active slope band: only the cap's mid slopes.
+fn drop_cutter_slope_band(op: &mut OperationConfig) {
+    let OperationConfig::DropCutter(cfg) = op else {
+        unreachable!("drop cutter arm on another op")
+    };
+    cfg.slope_from = 20.0;
+    cfg.slope_to = 60.0;
+}
+
+/// The link stage on (`hookup_mm > 0`).
+fn drop_cutter_hookup(op: &mut OperationConfig) {
+    let OperationConfig::DropCutter(cfg) = op else {
+        unreachable!("drop cutter arm on another op")
+    };
+    cfg.hookup_mm = DROP_CUTTER_HOOKUP_MM;
+}
+
+/// The slope band splits each row at the flat cap top, and the link
+/// stage joins the two runs over it.
+fn drop_cutter_slope_band_hookup(op: &mut OperationConfig) {
+    drop_cutter_slope_band(op);
+    drop_cutter_hookup(op);
+}
+
+fn scallop_iso_field(op: &mut OperationConfig) {
+    let OperationConfig::Scallop(cfg) = op else {
+        unreachable!("scallop arm on a non-scallop op")
+    };
+    cfg.iso_field = true;
+}
+
+fn spiral_outside_in(op: &mut OperationConfig) {
+    let OperationConfig::SpiralFinish(cfg) = op else {
+        unreachable!("spiral arm on another op")
+    };
+    cfg.direction = SpiralDirection::OutsideIn;
+}
+
+fn ramp_bottom_up(op: &mut OperationConfig) {
+    let OperationConfig::RampFinish(cfg) = op else {
+        unreachable!("ramp arm on another op")
+    };
+    cfg.order_bottom_up = true;
+}
+
+/// The Drop Cutter link-stage cap (mm) of the `hookup` arms. It is wider
+/// than the flat cap top that the slope band leaves out (slope below 20
+/// degrees: radius `R sin 20` = 3.4 mm), so the stage can join a row over it.
+const DROP_CUTTER_HOOKUP_MM: f64 = 10.0;
+
+/// The boundary rectangle `[x0, y0, x1, y1]` (mm) of the `regions` arms.
+/// It is off centre and cuts through the cap (foot radius about 9.2 mm),
+/// so a kernel keeps only a part of the cap.
+const REGION_RECT: [f64; 4] = [-12.0, -10.0, 5.0, 9.0];
+
+/// The height-field ops whose territory is a region set (W6.3.0). Each
+/// gets a `regions` arm.
+const REGION_OPS: &[OperationType] = &[
+    OperationType::DropCutter,
+    OperationType::Scallop,
+    OperationType::HorizontalFinish,
+    OperationType::RadialFinish,
+    OperationType::SpiralFinish,
+    OperationType::RampFinish,
+];
+
 /// The ops whose adapter reads the remaining stock today
 /// (`ctx.initial_stock` in `compute/execute/`): Pocket, Zigzag, Profile,
 /// Trace, Face and 2D Adaptive (`clearing_2d.rs`, the Layered rest rules
@@ -171,24 +252,105 @@ fn cases() -> Vec<Case> {
             arm: "fresh",
             tweak: no_tweak,
             source: Source::Fresh,
+            regions: false,
         })
         .collect();
-    let variants: [(OperationType, &'static str, Tweak); 4] = [
-        (OperationType::Pocket, "zigzag", pocket_zigzag),
-        (OperationType::Profile, "inside", profile_inside),
+    let variants: [(OperationType, &'static str, Tweak, Source, bool); 11] = [
+        (
+            OperationType::Pocket,
+            "zigzag",
+            pocket_zigzag,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::Profile,
+            "inside",
+            profile_inside,
+            Source::Fresh,
+            false,
+        ),
         (
             OperationType::Scallop,
             "continuous_flipped",
             scallop_continuous,
+            Source::Fresh,
+            false,
         ),
-        (OperationType::Drill, "simple_cycle", drill_simple_cycle),
+        (
+            OperationType::Drill,
+            "simple_cycle",
+            drill_simple_cycle,
+            Source::Fresh,
+            false,
+        ),
+        // W6.3.0: the non-default arms of the height-field ops.
+        (
+            OperationType::DropCutter,
+            "slope_band",
+            drop_cutter_slope_band,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::DropCutter,
+            "slope_band_hookup",
+            drop_cutter_slope_band_hookup,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::DropCutter,
+            "regions_hookup_rest",
+            drop_cutter_hookup,
+            Source::Rest,
+            true,
+        ),
+        (
+            OperationType::Scallop,
+            "iso_field",
+            scallop_iso_field,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::Scallop,
+            "regions_rest",
+            no_tweak,
+            Source::Rest,
+            true,
+        ),
+        (
+            OperationType::SpiralFinish,
+            "outside_in",
+            spiral_outside_in,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::RampFinish,
+            "bottom_up",
+            ramp_bottom_up,
+            Source::Fresh,
+            false,
+        ),
     ];
-    for (op, arm, tweak) in variants {
+    for (op, arm, tweak, source, regions) in variants {
         cases.push(Case {
             op,
             arm,
             tweak,
+            source,
+            regions,
+        });
+    }
+    for &op in REGION_OPS {
+        cases.push(Case {
+            op,
+            arm: "regions",
+            tweak: no_tweak,
             source: Source::Fresh,
+            regions: true,
         });
     }
     for &op in REST_READERS {
@@ -197,9 +359,43 @@ fn cases() -> Vec<Case> {
             arm: "rest",
             tweak: no_tweak,
             source: Source::Rest,
+            regions: false,
         });
     }
     cases
+}
+
+/// Put the `regions` boundary on toolpath `index`: a polygon model of
+/// [`REGION_RECT`] and a `ModelOutline` boundary on it, `Center`
+/// containment. A `ModelOutline` boundary fills the region set of the op
+/// (`pre_boundary_regions`).
+fn add_region_boundary(session: &mut ProjectSession, index: usize) {
+    let [x0, y0, x1, y1] = REGION_RECT;
+    let model = common::session::polygon_model(
+        vec![common::op_fixtures::rectangle(x0, y0, x1, y1)],
+        "opgolden_regions",
+    );
+    let model_id = session
+        .apply(Command::AddModel(AddModelArgs {
+            model: Box::new(model),
+        }))
+        .expect("add the region model")
+        .created
+        .expect("the add reports the model id");
+    let _ = session
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index,
+            boundary: BoundaryConfig {
+                enabled: true,
+                source: BoundarySource::ModelOutline {
+                    model_id,
+                    holes: false,
+                },
+                containment: BoundaryContainment::Center,
+                offset: 0.0,
+            },
+        }))
+        .expect("set the region boundary");
 }
 
 /// One generated case: its fingerprint and the count of its moves with
@@ -228,13 +424,16 @@ fn run(case: &Case) -> Generated {
         fixture: Fixture::Standard,
         tool: None,
     });
+    if case.regions {
+        add_region_boundary(&mut session, index);
+    }
     if rest {
         run_prior(&mut session);
     }
     let cancel = AtomicBool::new(false);
     match session.generate_toolpath(index, &cancel) {
         Ok(result) => Generated {
-            golden: Golden::of(result.toolpath()),
+            golden: Golden::of(result.annotated()),
             unknown_intents: unknown_intents(result.toolpath()),
         },
         Err(e) => Generated {
@@ -243,6 +442,16 @@ fn run(case: &Case) -> Generated {
         },
     }
 }
+
+/// The non-default arms W6.3.0 added (the `regions*` arms are found by
+/// their boundary).
+const W630_ARMS: &[&str] = &[
+    "slope_band",
+    "slope_band_hookup",
+    "iso_field",
+    "outside_in",
+    "bottom_up",
+];
 
 // ── The golden file ─────────────────────────────────────────────────────
 
@@ -358,6 +567,50 @@ fn every_op_keeps_its_toolpath() {
     assert!(
         empty.is_empty(),
         "these fresh arms emit no moves, so their golden proves nothing: {empty:?}\n{actual:#?}"
+    );
+
+    // W6.3.0 non-vacuity: each new arm cuts, and differs from its op's
+    // fresh arm, so its switch acts. A `regions` arm also stays inside the
+    // XY box of the fresh arm and is smaller on at least one side.
+    for case in cases
+        .iter()
+        .filter(|c| c.regions || W630_ARMS.contains(&c.arm))
+    {
+        let key = case.key();
+        let got = &actual[&key];
+        let fresh = &actual[&format!("{}/fresh", case.op.kind_str())];
+        assert!(got.move_count > 0, "{key}: the arm emits no moves");
+        if case.source == Source::Fresh {
+            assert_ne!(
+                got.moves_hash, fresh.moves_hash,
+                "{key}: the arm is the fresh toolpath, so its switch does nothing"
+            );
+        }
+        if case.regions {
+            let inside = (0..2).all(|i| {
+                got.bbox_min[i] >= fresh.bbox_min[i] - 1e-9
+                    && got.bbox_max[i] <= fresh.bbox_max[i] + 1e-9
+            });
+            let smaller = (0..2).any(|i| {
+                got.bbox_min[i] > fresh.bbox_min[i] + 1.0
+                    || got.bbox_max[i] < fresh.bbox_max[i] - 1.0
+            });
+            assert!(
+                inside && smaller,
+                "{key}: the region arm is not confined inside the fresh arm \
+                 (got {:?}..{:?}, fresh {:?}..{:?})",
+                got.bbox_min,
+                got.bbox_max,
+                fresh.bbox_min,
+                fresh.bbox_max
+            );
+        }
+    }
+    // The link stage acts: it changes the arm it is added to.
+    assert_ne!(
+        actual["drop_cutter/slope_band_hookup"].moves_hash,
+        actual["drop_cutter/slope_band"].moves_hash,
+        "drop_cutter/slope_band_hookup: the link stage changes nothing, so the arm proves nothing"
     );
 
     if std::env::var_os(BLESS_ENV).is_some() {

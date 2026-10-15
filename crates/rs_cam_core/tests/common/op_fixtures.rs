@@ -59,6 +59,7 @@ use rs_cam_core::session::{
     SimulationOptions, SimulationResolution, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use serde::{Deserialize, Serialize};
 
 use super::fingerprint::fnv1a_debug;
@@ -558,10 +559,17 @@ pub struct Golden {
     pub bbox_max: [f64; 3],
     /// FNV-1a over the quantized moves, as hex (TOML holds only i64).
     pub moves_hash: String,
+    /// The count of the spans (W6.3.0).
+    pub span_count: usize,
+    /// FNV-1a over `spans_valid` and `(kind, label, start, end)` of each
+    /// span, in order, as hex. The payload is not in the hash (W6.3.0).
+    pub spans_hash: String,
 }
 
 impl Golden {
-    pub fn of(tp: &Toolpath) -> Self {
+    /// The record of one generated result: its moves and its spans.
+    pub fn of(annotated: &AnnotatedToolpath) -> Self {
+        let tp = &annotated.toolpath;
         let d = finest_decimals();
         let fp = ToolpathFingerprint::from_toolpath(tp);
         let quantized: Vec<QuantizedMove> = tp
@@ -603,6 +611,11 @@ impl Golden {
             bbox_min: fp.bbox_min.map(|v| round_to(v, d.xyz)),
             bbox_max: fp.bbox_max.map(|v| round_to(v, d.xyz)),
             moves_hash: format!("{:016x}", fnv1a_debug(&quantized)),
+            span_count: annotated.spans.len(),
+            spans_hash: format!(
+                "{:016x}",
+                fnv1a_debug(&(annotated.spans_valid, span_digest(annotated)))
+            ),
         }
     }
 
@@ -618,6 +631,27 @@ impl Golden {
             bbox_min: [0.0; 3],
             bbox_max: [0.0; 3],
             moves_hash: String::new(),
+            span_count: 0,
+            spans_hash: String::new(),
         }
     }
+}
+
+/// One span as the golden hashes it: kind, label, start move, end move.
+type SpanKey = (String, String, usize, usize);
+
+/// The spans of a result as [`Golden::of`] hashes them, in order.
+fn span_digest(annotated: &AnnotatedToolpath) -> Vec<SpanKey> {
+    annotated
+        .spans
+        .iter()
+        .map(|s| {
+            (
+                format!("{:?}", s.kind),
+                s.label.to_string(),
+                s.start_move,
+                s.end_move,
+            )
+        })
+        .collect()
 }
