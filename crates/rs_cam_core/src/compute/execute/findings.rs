@@ -184,6 +184,12 @@ impl RecordFindings for crate::finish::unified_finish::UnifiedFinishReport {
     }
 }
 
+/// A Steep and Shallow pass (W6.4.4): the split is span input, not a
+/// finding. Nothing to record.
+impl RecordFindings for crate::finish::steep_shallow::SteepShallowSplit {
+    fn record_into(&self, _findings: &mut GenerationFindings) {}
+}
+
 /// A pencil pass: its tip float (a centreline op always measures it, zero
 /// included) and its own link-stage report, `Some` exactly when the
 /// emitter ran.

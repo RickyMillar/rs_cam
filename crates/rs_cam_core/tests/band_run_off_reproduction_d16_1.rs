@@ -417,6 +417,7 @@ fn probe(overlap_mm: f64) -> Probe {
         /* link_kinematics */ None,
         /* claims */ None,
         /* debug */ None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");

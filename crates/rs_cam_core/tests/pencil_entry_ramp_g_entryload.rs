@@ -140,6 +140,7 @@ fn generate(stock: Option<&TriDexelStock>) -> Toolpath {
         PencilStock {
             remaining: stock,
             rest_reference: None,
+            link_ceiling: None,
         },
         None,
     );

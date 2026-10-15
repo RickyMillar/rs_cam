@@ -1084,7 +1084,7 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 /// The shape this op takes for `planning/linking_2026-09-09/SPEC.md` §3.1,
 /// decided and recorded here: the stage RUNS INSIDE THE GENERATOR and its
 /// configuration is threaded in as a parameter, exactly as
-/// `unified_finish_toolpath_with_cancel_and_ceiling` threads its ceiling. The
+/// `unified_finish_toolpath_with_cancel` threads its ceiling. The
 /// alternative — run the stage in the `execute.rs` adapter — would have to
 /// expose the per-ring annotations as a provenance channel, and the
 /// annotation reconcile already lives beside the relink call. The stage is

@@ -486,32 +486,48 @@ pub(super) enum LinkLift {
 /// there and no second drop-cutter pass is needed. Lifting the endpoints too
 /// is what makes the transit's ends vertical: the tool leaves the cut straight
 /// up and arrives straight above the next one.
+///
+/// # The ceiling
+///
+/// `op_ceiling` is the op's own ceiling from the one builder
+/// (`compute::execute::link_ceiling_for`, ruling R1): its fallback top and
+/// its obstacles (K1, leftover-audit item C8). This lift keeps two rules of
+/// its own on top of it:
+///
+/// * the stock is `stock`, the input stock the entries read;
+/// * B1 (backlog, ruling R1): the search reads the TIP radius, not the
+///   envelope radius the builder uses.
+///
+/// `None` is a library caller with no op heights: the fallback top is the
+/// snapshot's own top, and no obstacle is in scope.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_link_lift(
     from: P3,
     to: P3,
     link_pts: &[P3],
     stock: &crate::dexel_stock::TriDexelStock,
+    op_ceiling: Option<crate::finish::surface_link::LinkCeiling<'_>>,
     cutter: &dyn MillingCutter,
     contact_radius: f64,
     contact_rise: f64,
     params: &PencilParams,
 ) -> LinkLift {
-    let ceiling = crate::finish::surface_link::LinkCeiling {
-        obstacles: None,
+    let base = op_ceiling.unwrap_or(crate::finish::surface_link::LinkCeiling {
         stock: Some(stock),
-        // B1 (backlog): the search reads the TIP radius, not the envelope
-        // radius the one builder uses. Ruling R1 leaves this as it is.
         tool_radius: contact_radius,
-        // Off-grid the dexel has no answer. The op's builder gives the
-        // fresh-stock top (`compute::execute::link_ceiling_for`, R1); a
-        // library caller with no op heights reads the snapshot's own top.
-        fallback_top_z: params.link_fallback_top_z.unwrap_or(stock.stock_bbox.max.z),
-    };
-    // Same stock, same fallback, one column wide — `max_conservative_top_z_in_disc`
-    // dilates by half a cell, so radius 0 is "the cells the tip is over".
-    let tip_column = crate::finish::surface_link::LinkCeiling {
+        fallback_top_z: stock.stock_bbox.max.z,
         obstacles: None,
+    });
+    let ceiling = crate::finish::surface_link::LinkCeiling {
+        stock: Some(stock),
+        // B1: the TIP radius, not the envelope radius.
+        tool_radius: contact_radius,
+        ..base
+    };
+    // Same stock, same fallback, same obstacles, one column wide —
+    // `max_conservative_top_z_in_disc` dilates by half a cell, so radius 0
+    // is "the cells the tip is over".
+    let tip_column = crate::finish::surface_link::LinkCeiling {
         tool_radius: 0.0,
         ..ceiling
     };
@@ -591,7 +607,7 @@ pub(crate) fn emit_paths(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
-    emit_paths_with_entry_stock(all_paths, mesh, index, cutter, params, None)
+    emit_paths_with_entry_stock(all_paths, mesh, index, cutter, params, None, None)
 }
 
 /// [`emit_paths`] with the input stock this pass is cutting into.
@@ -609,6 +625,10 @@ pub(crate) fn emit_paths(
 /// neither manoeuvre can engage without a stock reading — which is what makes
 /// the A/Bs in `tests/pencil_entry_ramp_g_entryload.rs` and
 /// `tests/pencil_surface_link_g_linkload.rs` controlled ones.
+///
+/// `link_ceiling` is the op's ceiling from the one builder (R1); the link
+/// lift reads its fallback top and its obstacles ([`plan_link_lift`]).
+#[allow(clippy::too_many_arguments)] // the emitter inputs plus the two stock readings
 pub(crate) fn emit_paths_with_entry_stock(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
@@ -616,9 +636,17 @@ pub(crate) fn emit_paths_with_entry_stock(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
     entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'_>>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
-    let (tp, anns, _report) =
-        emit_paths_with_entry_stock_reported(all_paths, mesh, index, cutter, params, entry_stock);
+    let (tp, anns, _report) = emit_paths_with_entry_stock_reported(
+        all_paths,
+        mesh,
+        index,
+        cutter,
+        params,
+        entry_stock,
+        link_ceiling,
+    );
     (tp, anns)
 }
 
@@ -671,6 +699,7 @@ pub struct PencilLinkReport {
 }
 
 /// [`emit_paths_with_entry_stock`] with the link report a sentry can read.
+#[allow(clippy::too_many_arguments)] // the emitter inputs plus the two stock readings
 pub(crate) fn emit_paths_with_entry_stock_reported(
     all_paths: &[PencilPath],
     mesh: &TriangleMesh,
@@ -678,6 +707,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
     entry_stock: Option<&crate::dexel_stock::TriDexelStock>,
+    link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'_>>,
 ) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilLinkReport) {
     use crate::toolpath::MoveIntent;
 
@@ -764,6 +794,7 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                             first,
                             &link_pts,
                             stock,
+                            link_ceiling,
                             cutter,
                             contact_radius,
                             contact_rise,

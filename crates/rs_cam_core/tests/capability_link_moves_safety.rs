@@ -816,8 +816,6 @@ fn pencil_link_moves_preserves_material_state() {
             // G-LINKSTAGE: `None` = the hop cap IS `hookup_distance`, i.e.
             // the pre-stage emitter, which is what this suite measures.
             link_hop_distance_mm: None,
-            // No op heights: no stock is in scope, so the lift never runs.
-            link_fallback_top_z: None,
         },
     );
     if raw.moves.is_empty() {
@@ -1694,6 +1692,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
         /* bottom_z */ -1.0,
         &params,
         &planner,
+        None,
         None,
         None,
         None,

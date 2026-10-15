@@ -23,13 +23,14 @@ use super::{GeneratedToolpath, GenerationFindings};
 /// rest-depth detector `pencil::rest_depth_arm` uses
 /// (`rest_field::detect_rest_valleys`), with THIS toolpath's own tool as the
 /// fine cutter, and attaches `rest_grid` / `rest_regions` to `generated` —
-/// no centerline toolpath is emitted, only the analysis artifacts. Reference
-/// resolution: prefer the actual machined stock (`rest_reference`: the
-/// territory's stock after the shared W2.1 guard, W6.2), else the configured real
-/// reference tool (`reference_tool_cfg`, resolved upstream from
+/// no centerline toolpath is emitted, only the analysis artifacts. The rest
+/// detector stage (`finish::rest_detector`, W6.4.1) resolves the reference:
+/// the actual machined stock (`rest_reference`: the territory's stock after
+/// the shared W2.1 guard, W6.2), else the configured real reference tool
+/// (`reference_tool_cfg`, resolved upstream from
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
-/// `reference_tool_id` is resolved), else a self-referenced bare-surface
-/// probe. Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
+/// `reference_tool_id` is resolved), else the stage's bare-surface probe.
+/// Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
 #[allow(clippy::too_many_arguments)] // post-generation attach point; every
 // argument is a distinct upstream source (geometry, tool, reference, stock,
 // dials, findings sink)
@@ -44,15 +45,13 @@ pub(super) fn attach_generic_rest_analysis(
     findings: &std::cell::RefCell<GenerationFindings>,
 ) {
     let reference_tool = reference_tool_cfg.map(build_cutter);
-    let probe_ball = crate::tool::BallEndmill::new(
-        crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-        crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
-    );
-    let reference = resolve_rest_reference(
-        reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
-        rest_reference,
-        &probe_ball,
-    );
+    // W6.4.1: this pass's POLICY is its tier list — the machined stock, else
+    // the configured reference tool. It offers no nominal ball; the stage
+    // falls back to its own probe.
+    let choice = crate::finish::rest_detector::RestReferenceChoice {
+        stock: rest_reference,
+        tool: reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+    };
     let defaults = crate::surface::rest_field::RestFieldParams::default();
     // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
     //
@@ -97,9 +96,12 @@ pub(super) fn attach_generic_rest_analysis(
                 slope_derate: None,
             });
     }
-    let rf = crate::surface::rest_field::detect_rest_valleys(
-        mesh, index, tool_def, reference, &rf_params,
-    );
+    let rf = crate::finish::rest_detector::detect_rest(mesh, index, tool_def, choice, &rf_params);
+    let regions = rf
+        .produced
+        .rest_regions
+        .as_deref()
+        .map_or(&[][..], Vec::as_slice);
     // F3: the regions these artifacts carry are what a `DerivedRestRegions`
     // consumer will be confined to, and the MAX_REST_REGIONS cap can have
     // silently dropped some of them. Record the pre-cap count alongside —
@@ -109,21 +111,15 @@ pub(super) fn attach_generic_rest_analysis(
     // and no headless output carries its polygons — this line is the one
     // place the numbers are observable off the GUI (multitool Phase T).
     tracing::info!(
-        regions = rf.region_polygons.len(),
+        regions = regions.len(),
         pre_cap = rf.region_cap.total_before_cap,
-        total_area_mm2 = format!(
-            "{:.1}",
-            rf.region_polygons
-                .iter()
-                .map(|p| p.area().abs())
-                .sum::<f64>()
-        ),
+        total_area_mm2 = format!("{:.1}", regions.iter().map(|p| p.area().abs()).sum::<f64>()),
         cell_mm = rf_params.cell_mm,
         min_valley_depth = rf_params.min_valley_depth,
         "generic rest analysis attached region set"
     );
-    generated.produced.rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
-    generated.produced.rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+    generated.produced.rest_grid = rf.produced.rest_grid;
+    generated.produced.rest_regions = rf.produced.rest_regions;
 }
 
 /// Why [`attach_generic_rest_analysis`] sizes the reach policy at
@@ -135,32 +131,6 @@ const GENERIC_REST_STEPOVER_DEPTH_BASIS: &str = "the configured min_valley_depth
 /// depth-keyed, and its `reference_depth_mm` is a fixed 0.0.
 pub(super) const SHALLOW_SLOPE_DERATE_BASIS: &str =
     "slope-keyed — cos(theta_max) of the region's covered cells, not a depth";
-
-/// Resolve the rest-depth reference (P2.5 chain): the machined stock when
-/// the shared guard (`surface::stock_reference::StockReference::resolve`,
-/// W2.1) accepted it → a configured real reference tool → a self-referenced
-/// bare-surface probe. The territory resolver ran the guard once for the op
-/// (W6.2), the one the unified finish claims and the pencil `RestDepth`
-/// detector also read; the tool tier after it is this pass's own dial.
-fn resolve_rest_reference<'a>(
-    reference_tool: Option<&'a dyn MillingCutter>,
-    rest_reference: Option<&'a crate::dexel_stock::TriDexelStock>,
-    probe_ball: &'a crate::tool::BallEndmill,
-) -> crate::surface::rest_field::RestReference<'a> {
-    if let Some(stock) = rest_reference {
-        crate::surface::rest_field::RestReference::Stock(stock)
-    } else if let Some(tool) = reference_tool {
-        crate::surface::rest_field::RestReference::Cutter {
-            tool,
-            is_surface_probe: false,
-        }
-    } else {
-        crate::surface::rest_field::RestReference::Cutter {
-            tool: probe_ball,
-            is_surface_probe: true,
-        }
-    }
-}
 
 // ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
 

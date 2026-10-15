@@ -311,6 +311,20 @@ moves_hash = "aa2061f206e3642b"
 span_count = 721
 spans_hash = "ca62681e8342ab89"
 
+["pencil/curvature"]
+outcome = "ok"
+move_count = 159
+rapid_count = 7
+linear_count = 74
+arc_count = 78
+cutting_length_mm = 162.086
+rapid_length_mm = 47.203
+bbox_min = [-10.4933, -10.5577, 0.0698]
+bbox_max = [10.4917, 12.0764, 13.0]
+moves_hash = "a64f333e58c9964a"
+span_count = 118
+spans_hash = "0e6db03f86c1cb75"
+
 ["pencil/fresh"]
 outcome = "ok"
 move_count = 457
@@ -338,6 +352,46 @@ bbox_max = [12.4805, 11.5387, 13.0]
 moves_hash = "b4fa72c97e502152"
 span_count = 701
 spans_hash = "285a0e4380a51522"
+
+["pencil/rest_depth"]
+outcome = "ok"
+move_count = 458
+rapid_count = 24
+linear_count = 331
+arc_count = 103
+cutting_length_mm = 330.861
+rapid_length_mm = 117.753
+bbox_min = [-11.3284, -10.5875, 0.0]
+bbox_max = [10.5875, 10.5875, 13.0]
+moves_hash = "3b137cfed47d1ea2"
+span_count = 178
+spans_hash = "a2612237e70cc6cb"
+
+["pencil/rest_depth".produced]
+rest_grid_cells = 5929
+rest_grid_hash = "8b56c28011f474ef"
+rest_region_count = 1
+rest_regions_hash = "81f970936b56f930"
+
+["pencil/rest_depth_rest"]
+outcome = "ok"
+move_count = 2744
+rapid_count = 252
+linear_count = 1864
+arc_count = 628
+cutting_length_mm = 1906.203
+rapid_length_mm = 1076.707
+bbox_min = [-11.8523, -13.3592, 0.0]
+bbox_max = [12.9172, 14.2969, 13.0]
+moves_hash = "1d5a254ae2a8d82e"
+span_count = 1001
+spans_hash = "859de69d3e592091"
+
+["pencil/rest_depth_rest".produced]
+rest_grid_cells = 5929
+rest_grid_hash = "a7c4bdd066a8f57f"
+rest_region_count = 1
+rest_regions_hash = "0da8d20a13fde4c4"
 
 ["pocket/fresh"]
 outcome = "ok"
@@ -689,6 +743,46 @@ moves_hash = "addcf065fae77e0d"
 span_count = 19
 spans_hash = "b514055838bc3920"
 
+["unified_finish/claims"]
+outcome = "ok"
+move_count = 2648
+rapid_count = 182
+linear_count = 2168
+arc_count = 298
+cutting_length_mm = 2368.77
+rapid_length_mm = 1331.17
+bbox_min = [-15.3498, -15.3484, -0.0193]
+bbox_max = [15.2672, 15.3484, 13.0]
+moves_hash = "9f7175c639408280"
+span_count = 469
+spans_hash = "b18b48a5624611e7"
+
+["unified_finish/claims".produced]
+rest_grid_cells = 5929
+rest_grid_hash = "8b56c28011f474ef"
+rest_region_count = 1
+rest_regions_hash = "81f970936b56f930"
+
+["unified_finish/claims_rest_clip"]
+outcome = "ok"
+move_count = 9444
+rapid_count = 283
+linear_count = 7664
+arc_count = 1497
+cutting_length_mm = 7342.281
+rapid_length_mm = 2208.159
+bbox_min = [-13.9324, -13.9324, 0.0]
+bbox_max = [13.6448, 13.6448, 13.0]
+moves_hash = "649a5dd93dc75ead"
+span_count = 2076
+spans_hash = "5c471a820a08c06c"
+
+["unified_finish/claims_rest_clip".produced]
+rest_grid_cells = 5929
+rest_grid_hash = "e398f07fe053263c"
+rest_region_count = 1
+rest_regions_hash = "0da8d20a13fde4c4"
+
 ["unified_finish/fresh"]
 outcome = "ok"
 move_count = 1635
@@ -703,19 +797,33 @@ moves_hash = "a42b3a4fa7794cb5"
 span_count = 155
 spans_hash = "5a3985766c848bf2"
 
-["unified_finish/rest"]
+["unified_finish/no_c2_no_hookup"]
 outcome = "ok"
-move_count = 1847
-rapid_count = 14
-linear_count = 1708
+move_count = 1686
+rapid_count = 83
+linear_count = 1478
 arc_count = 125
-cutting_length_mm = 1475.283
-rapid_length_mm = 129.763
+cutting_length_mm = 1426.012
+rapid_length_mm = 440.016
 bbox_min = [-13.9324, -13.9324, 0.0]
 bbox_max = [13.6448, 13.6448, 13.0]
-moves_hash = "28cb81cba6d9d1ae"
-span_count = 153
-spans_hash = "51bfc9b62c38176e"
+moves_hash = "cc3ae7625f73a963"
+span_count = 193
+spans_hash = "6e03ca3f231fc768"
+
+["unified_finish/rest"]
+outcome = "ok"
+move_count = 1813
+rapid_count = 16
+linear_count = 1672
+arc_count = 125
+cutting_length_mm = 1450.737
+rapid_length_mm = 158.189
+bbox_min = [-13.9324, -13.9324, 0.0]
+bbox_max = [13.6448, 13.6448, 13.0]
+moves_hash = "da8b720187397443"
+span_count = 154
+spans_hash = "82d44d742d378621"
 
 ["v_carve/fresh"]
 outcome = "ok"

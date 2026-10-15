@@ -179,6 +179,7 @@ fn generate_at(stock: Option<&TriDexelStock>, safe_z: f64) -> Toolpath {
         PencilStock {
             remaining: stock,
             rest_reference: None,
+            link_ceiling: None,
         },
         None,
     );

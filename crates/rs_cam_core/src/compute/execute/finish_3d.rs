@@ -10,10 +10,11 @@ use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
+use super::composed::run_composed;
 use super::height_field::{
     HeightFieldOp, HeightQuery, NoLabel, PlanCtx, Planned, SpanRule, run_height_field,
 };
-use super::shared::{generated_with_spans, op_link_ceiling, with_depth_run_annotation};
+use super::shared::{generated_with_spans, op_link_ceiling};
 use super::territory::Territory;
 use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prepared};
 
@@ -216,22 +217,17 @@ pub(crate) fn generate_pencil(
         mesh: m,
         index: idx,
     } = prepared.mesh()?;
-    let params = crate::finish::pencil::PencilParams {
-        // R1: the link lift's fallback top comes from the one builder.
-        // `None` on fresh stock, where the lift never runs.
-        link_fallback_top_z: op_link_ceiling(op.op_type(), ctx).map(|c| c.fallback_top_z),
-        ..cfg.params(
-            OpMotion {
-                feed_rate: op.feed_rate(),
-                plunge_rate: op.plunge_rate(),
-                safe_z: ctx.heights.retract_z,
-            },
-            ctx.reference_tool_cfg
-                .as_ref()
-                .map(crate::compute::cutter::build_cutter),
-            ctx.link_kinematics.clone(),
-        )
-    };
+    let params = cfg.params(
+        OpMotion {
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z: ctx.heights.retract_z,
+        },
+        ctx.reference_tool_cfg
+            .as_ref()
+            .map(crate::compute::cutter::build_cutter),
+        ctx.link_kinematics.clone(),
+    );
     let (tp, annotations, report) =
         crate::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
             m,
@@ -245,6 +241,10 @@ pub(crate) fn generate_pencil(
             crate::finish::pencil::PencilStock {
                 remaining: ctx.initial_stock,
                 rest_reference: prepared.territory().reference_stock(),
+                // R1 / C8: the link lift reads the one builder's ceiling
+                // (its fallback top and its obstacles). `None` on fresh
+                // stock, where the lift never runs.
+                link_ceiling: op_link_ceiling(op.op_type(), ctx),
             },
             ctx.debug_ctx,
             &ctx.cancel_fn(),
@@ -419,29 +419,30 @@ pub(crate) fn generate_unified_finish(
     // byte-identical to the flat disc, which is the safety anchor.
     // R1: the one builder (`op_link_ceiling`) sets all three values.
     let link_ceiling = op_link_ceiling(op.op_type(), ctx);
-    let (tp, annotations, report) =
-        crate::finish::unified_finish::unified_finish_toolpath_with_cancel_and_ceiling(
-            m,
-            idx,
-            ctx.tool_def,
-            ctx.heights.top_z,
-            ctx.heights.bottom_z,
-            &params,
-            &planner,
-            territory.regions(),
-            // P2.d: cost the region route against the real machine envelope
-            // when one is in scope (same plumbing as pencil's P1 W4a hookup).
-            ctx.link_kinematics.as_ref(),
-            claims_cfg.as_ref(),
-            ctx.debug_ctx,
-            link_ceiling,
-            &ctx.cancel_fn(),
-        )?;
-    // W2.3: the whole report in one record — the link totals and the C2
-    // cells only when their pass ran, the cascade residual, the dropped and
-    // clipped bands, the crease tip float and the derived stepovers (see
-    // the `UnifiedFinishReport` impl in `findings.rs`).
-    ctx.record(&report);
+    // W6.4: the composed op. `run_composed` records the whole report (the
+    // link totals and the C2 cells only when their pass ran, the cascade
+    // residual, the dropped and clipped bands, the crease tip float and the
+    // derived stepovers — the `UnifiedFinishReport` impl in `findings.rs`),
+    // builds the spans (the Region attribution, then the barriers of
+    // `order_constraints`), writes the semantic trace and moves the claims
+    // detector's rest output onto the result.
+    let unified = crate::finish::unified_finish::UnifiedFinishOp {
+        mesh: m,
+        index: idx,
+        cutter: ctx.tool_def,
+        top_z: ctx.heights.top_z,
+        bottom_z: ctx.heights.bottom_z,
+        params: &params,
+        planner: &planner,
+        machining_boundary: territory.regions(),
+        // P2.d: cost the region route against the real machine envelope
+        // when one is in scope (same plumbing as pencil's P1 W4a hookup).
+        link_kinematics: ctx.link_kinematics.as_ref(),
+        claims: claims_cfg.as_ref(),
+        debug: ctx.debug_ctx,
+        link_ceiling,
+    };
+    let generated = run_composed(&unified, ctx)?;
     // A4: the pass has just been planned against a reference stock, and this
     // is the only point where the emitted geometry and that reference are
     // both in scope. Gated on the reference having RESOLVED to a real
@@ -455,47 +456,19 @@ pub(crate) fn generate_unified_finish(
         && let Some(stock) = cfg.territory_stock
     {
         ctx.record(
-            &crate::compute::toolpath_stats::ZeroRemovalFinding::measure(&tp, stock, ctx.tool_def),
+            &crate::compute::toolpath_stats::ZeroRemovalFinding::measure(
+                &generated.toolpath,
+                stock,
+                ctx.tool_def,
+            ),
         );
     }
-    if let Some(sem) = ctx.semantic_ctx {
-        // C8: FLAT. Scallop is a sub-generator here, filling one of the
-        // planner's mid-steep nodes; the region population this operation
-        // publishes is `annotate_unified_finish_regions`' below, and a
-        // second one would double-count and break A/M8's 1:1 gate.
-        crate::compute::annotate::annotate_scallop(
-            &annotations,
-            &tp,
-            sem,
-            crate::compute::annotate::ScallopRegionGrouping::Flat,
-        );
-        // A/M8: the SEMANTIC region trace `narrate_toolpath` reads, built
-        // from the same `RegionAnnotation` table `unified_finish_spans`
-        // builds the STRUCTURAL region-node spans from. Annotation only —
-        // no move is touched.
-        crate::compute::annotate::annotate_unified_finish_regions(
-            &crate::finish::unified_finish::unified_finish_region_annotations(&report),
-            &tp,
-            sem,
-        );
-    }
-    // Spans (Region attribution + the rapid-order barriers that make this
-    // op's barriered TSP safe) are built by `unified_finish::
-    // unified_finish_spans` so the capability sentries can assert against
-    // the same definition production ships.
-    let spans = crate::finish::unified_finish::unified_finish_spans(&tp, &annotations, &report);
-    let mut generated = generated_with_spans(tp, spans);
-    // §2.4 carry-through: the claims detector's rest field + region
-    // polygons ride the generated result exactly like the pencil
-    // RestDepth arm's (GUI heatmap, DerivedRestRegions, probes). `None`
-    // when claims didn't run — the generic post-pass fallback still
-    // applies then.
-    generated.produced = report.produced;
     Ok(generated)
 }
 
-/// SteepShallow family adapter. Cancellable: the cooperative cancel
-/// closure is built by `ctx.cancel_fn()` (pinned by
+/// SteepShallow family adapter (W6.4.4): `SteepShallowOp` on the composed
+/// runner. Cancellable: the cooperative cancel closure is built by
+/// `ctx.cancel_fn()` (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_steep_shallow(
     ctx: &ExecutionContext<'_>,
@@ -512,23 +485,23 @@ pub(crate) fn generate_steep_shallow(
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
     });
-    let (tp, split) = crate::finish::steep_shallow::steep_shallow_toolpath_split_with_cancel(
-        m,
-        idx,
-        ctx.tool_def,
-        &params,
-        prepared.territory().regions(),
-        &ctx.cancel_fn(),
-    )?;
-    // Two concatenated passes, not one continuous trace: barriers keep the
-    // halves in their emitted order and keep the steep half's Z ladder,
-    // which is what lets `UnifiedFinish`-style intra-node reordering apply
-    // here too (capability arm in `compute/catalog.rs`).
-    let spans = crate::finish::steep_shallow::steep_shallow_spans(&tp, &split);
-    Ok(with_depth_run_annotation(
-        generated_with_spans(tp, spans),
-        ctx.semantic_ctx,
-    ))
+    // W6.4.4: the composed op. Two concatenated passes, not one continuous
+    // trace: the barriers of its `order_constraints` keep the halves in
+    // their emitted order and keep the steep half's Z ladder, which is what
+    // lets `UnifiedFinish`-style intra-node reordering apply here too
+    // (capability arm in `compute/catalog.rs`).
+    let steep_shallow = crate::finish::steep_shallow::SteepShallowOp {
+        mesh: m,
+        index: idx,
+        cutter: ctx.tool_def,
+        params: &params,
+        boundary_regions: prepared.territory().regions(),
+        resolution: crate::finish::steep_shallow::steep_shallow_generation_resolution(
+            ctx.tool_def,
+            params.tolerance,
+        ),
+    };
+    run_composed(&steep_shallow, ctx)
 }
 
 /// RampFinish family adapter (W6.3): [`RampPass`] on the height-field

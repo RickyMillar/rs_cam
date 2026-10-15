@@ -96,6 +96,7 @@ fn run_shipped(mesh: &TriangleMesh) -> (Toolpath, UnifiedFinishReport) {
         /* link_kinematics */ None,
         /* claims */ None,
         /* debug */ None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");

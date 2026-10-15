@@ -59,6 +59,7 @@ use rs_cam_core::session::{
     SimulationOptions, SimulationResolution, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
+use rs_cam_core::trace::produced::Produced;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use serde::{Deserialize, Serialize};
 
@@ -564,6 +565,90 @@ pub struct Golden {
     /// FNV-1a over `spans_valid` and `(kind, label, start, end)` of each
     /// span, in order, as hex. The payload is not in the hash (W6.3.0).
     pub spans_hash: String,
+    /// W6.4.0: the digest of the rest output of a rest detector
+    /// (`Produced::rest_grid`, `Produced::rest_regions`). `None` when no
+    /// detector attached one, and then the record has no such field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub produced: Option<ProducedDigest>,
+}
+
+/// One polygon at the post precision: the exterior ring, then the holes.
+type QuantizedPolygon = (Vec<(i64, i64)>, Vec<Vec<(i64, i64)>>);
+
+/// The rest output of a rest detector, at the post precision (W6.4.0).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProducedDigest {
+    /// The cell count of the rest grid. 0 when there is no grid.
+    pub rest_grid_cells: usize,
+    /// FNV-1a over the grid spec, the quantized rest and surface Z of each
+    /// cell (`NaN` is its own value) and the threshold, as hex.
+    pub rest_grid_hash: String,
+    /// The count of the rest region polygons.
+    pub rest_region_count: usize,
+    /// FNV-1a over the quantized vertices of each region polygon, as hex.
+    pub rest_regions_hash: String,
+}
+
+impl ProducedDigest {
+    /// The digest of `produced`, or `None` when it holds no rest output.
+    pub fn of(produced: &Produced) -> Option<Self> {
+        if produced.rest_grid.is_none() && produced.rest_regions.is_none() {
+            return None;
+        }
+        let d = finest_decimals().xyz;
+        let q32 = |v: f32| {
+            if v.is_nan() {
+                i64::MIN
+            } else {
+                quantize(f64::from(v), d)
+            }
+        };
+        let (cells, grid_hash) = produced.rest_grid.as_deref().map_or_else(
+            || (0, String::new()),
+            |g| {
+                let spec = (
+                    g.grid.nx,
+                    g.grid.ny,
+                    quantize(g.grid.origin_x, d),
+                    quantize(g.grid.origin_y, d),
+                    quantize(g.grid.cell_mm, d),
+                    quantize(g.threshold, d),
+                );
+                let rest: Vec<i64> = g.rest.iter().map(|&v| q32(v)).collect();
+                let z: Vec<i64> = g.surface_z.iter().map(|&v| q32(v)).collect();
+                (
+                    g.rest.len(),
+                    format!("{:016x}", fnv1a_debug(&(spec, rest, z))),
+                )
+            },
+        );
+        let (count, regions_hash) = produced.rest_regions.as_deref().map_or_else(
+            || (0, String::new()),
+            |regions| {
+                let ring = |pts: &[P2]| -> Vec<(i64, i64)> {
+                    pts.iter()
+                        .map(|p| (quantize(p.x, d), quantize(p.y, d)))
+                        .collect()
+                };
+                let quantized: Vec<QuantizedPolygon> = regions
+                    .iter()
+                    .map(|poly| {
+                        (
+                            ring(&poly.exterior),
+                            poly.holes.iter().map(|h| ring(h)).collect(),
+                        )
+                    })
+                    .collect();
+                (regions.len(), format!("{:016x}", fnv1a_debug(&quantized)))
+            },
+        );
+        Some(Self {
+            rest_grid_cells: cells,
+            rest_grid_hash: grid_hash,
+            rest_region_count: count,
+            rest_regions_hash: regions_hash,
+        })
+    }
 }
 
 impl Golden {
@@ -616,6 +701,7 @@ impl Golden {
                 "{:016x}",
                 fnv1a_debug(&(annotated.spans_valid, span_digest(annotated)))
             ),
+            produced: ProducedDigest::of(&annotated.produced),
         }
     }
 
@@ -633,6 +719,7 @@ impl Golden {
             moves_hash: String::new(),
             span_count: 0,
             spans_hash: String::new(),
+            produced: None,
         }
     }
 }

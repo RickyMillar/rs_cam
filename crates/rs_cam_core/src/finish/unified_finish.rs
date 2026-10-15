@@ -21,7 +21,7 @@
 //!
 //! Creases fold into the claims pipeline (v3 S1,
 //! `planning/unified_v3_design.md` §2.1): when [`ClaimsConfig`] is `Some`,
-//! [`detect_rest_valleys`] runs against THIS op's own tip cutter before
+//! [`crate::surface::rest_field::detect_rest_valleys`] runs against THIS op's own tip cutter before
 //! [`decompose`], its centerlines feed `decompose`'s `creases` param (every
 //! claimed corridor is carved out of the band label grid there), and every
 //! crease that actually claimed a corridor gets its cut paths emitted as
@@ -91,6 +91,7 @@
 //! clip, `optimize_entry_descents`, feed modulation, F-034 accounting)
 //! exactly like every other op's raw generator output.
 
+mod band_kernels;
 mod region_routing;
 
 use std::ops::Range;
@@ -99,31 +100,26 @@ use crate::finish::classify_probe::ClassificationSampler;
 use crate::finish::crease_paths::centerline_cut_paths;
 use crate::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose};
 use crate::finish::finish_setup::{
-    FinishResolutionPolicy, SLOPE_FILTER_MAX_DEG, SLOPE_FILTER_MIN_DEG,
-    build_classification_surface_with_sampler_and_cancel,
+    FinishResolutionPolicy, build_classification_surface_with_sampler_and_cancel,
 };
 use crate::finish::pencil::PencilParams;
-use crate::finish::scallop::{
-    ScallopDirection, ScallopParams, ScallopRuntimeAnnotation,
-    scallop_toolpath_structured_annotated_with_cancel,
-};
+use crate::finish::rest_detector::{RestReferenceChoice, detect_rest};
+use crate::finish::scallop::ScallopRuntimeAnnotation;
 use crate::geo::P2;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine::kinematics::LinkKinematics;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::ops::waterline::{WaterlineParams, waterline_toolpath_with_cancel, waterline_z_levels};
-use crate::polygon::Polygon2;
 use crate::surface::dropcutter::DropCutterGrid;
-use crate::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use crate::surface::rest_field::RestFieldParams;
 use crate::tool::MillingCutter;
-use crate::toolpath::{MoveIntent, Toolpath, raster_toolpath_from_grid};
+use crate::toolpath::{MoveIntent, Toolpath};
 use crate::trace::debug_trace::ToolpathDebugContext;
 
+use crate::finish::composed::{ComposedSurfaceOp, Routed, compose, composed_spans};
+use band_kernels::{BandCtx, BandCut, cut_mid_steep, cut_shallow, cut_very_steep};
 use region_routing::{
-    RegionPath, SHALLOW_DERATE_MIN_SLOPE_DEG, band_rank, band_z_range, build_shallow_raster_grid,
-    cutting_length_mm, region_sampling_window, route_greedy, shallow_region_max_slope_deg,
-    strippable_preamble, trailing_retracts,
+    RegionPath, band_rank, cutting_length_mm, route_greedy, strippable_preamble, trailing_retracts,
 };
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -318,6 +314,11 @@ pub struct RoutedLink {
     /// True when the gouge-checked surface link won the integrator
     /// comparison and was emitted as Linking feeds; false when the native
     /// retract+rapid+replunge was kept.
+    ///
+    /// B16 (W6.4): under a link ceiling a `true` link is the surface link
+    /// only where the stock is flush with it; else it is the LIFTED shape
+    /// (`surface_link::CeilingShape::Lifted`), the same shape as a
+    /// clearance hop of `relink_fragments`.
     pub surface: bool,
     /// Integrated time (s) of the winning candidate.
     pub cost_s: f64,
@@ -1298,14 +1299,25 @@ impl RelinkTotals {
 ///    [`crate::trace::toolpath_spans::RegionSpanRole`] (`Node` here,
 ///    `GeneratorPass` for the ring spans), never by parsing the label.
 /// 3. `RapidOrderBarrier`s at each node start, plus per-Z barriers inside
-///    waterline (VerySteep) nodes. See
-///    [`crate::compute::spans::region_node_barriers`].
+///    waterline (VerySteep) nodes: the op's `order_constraints` (W6.4)
+///    through [`crate::compute::spans::region_node_barriers`].
 pub fn unified_finish_spans(
     toolpath: &Toolpath,
     annotations: &[ScallopRuntimeAnnotation],
     report: &UnifiedFinishReport,
 ) -> Vec<crate::trace::toolpath_spans::Span> {
-    use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_labeled_events};
+    // W6.4: the barriers come from `order_constraints` only.
+    composed_spans::<UnifiedFinishOp<'_>>(toolpath, annotations, report)
+}
+
+/// Layers 1 and 2 of [`unified_finish_spans`]: the ring labels and the node
+/// `Region` spans, no barriers.
+fn unified_finish_label_spans(
+    toolpath: &Toolpath,
+    annotations: &[ScallopRuntimeAnnotation],
+    report: &UnifiedFinishReport,
+) -> Vec<crate::trace::toolpath_spans::Span> {
+    use crate::compute::spans::spans_from_labeled_events;
     use crate::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPayload};
 
     let mut spans = spans_from_labeled_events(
@@ -1339,21 +1351,6 @@ pub fn unified_finish_spans(
         .collect();
     let insert_at = 1.min(spans.len());
     spans.splice(insert_at..insert_at, node_spans);
-
-    let nodes: Vec<RegionNode> = report
-        .region_table
-        .iter()
-        .map(|entry| RegionNode {
-            move_range: entry.move_range.clone(),
-            // Only the VerySteep band ladders in Z (it routes to
-            // `waterline_toolpath_with_cancel`). MidSteep scallop rings and
-            // Shallow raster rows are single-pass over a height field, so
-            // their runs are materially independent of visiting order.
-            depth_ordered: matches!(entry.kind, RegionKind::Band(FinishBand::VerySteep)),
-        })
-        .collect();
-    spans.extend(region_node_barriers(toolpath, &nodes));
-
     spans
 }
 
@@ -1404,54 +1401,15 @@ pub fn unified_finish_mid_steep_generation_resolution(
 /// the appropriate EXISTING strategy generator, route the regions (greedy
 /// nearest-by-integrated-link-time when `link_kinematics` is `Some`;
 /// steep-first band-major otherwise), and stitch them with the winning
-/// link candidate emitted at each junction.
+/// link candidate emitted at each junction. W6.4: the sequence is
+/// [`crate::finish::composed::compose`] over [`UnifiedFinishOp`].
+///
+/// # The link ceiling
 ///
 /// The intra-region relink rides the mesh surface. That is only correct when
 /// the mesh IS the material; a `FromRemainingStock` op has standing stock
-/// above it wherever nothing has cut yet. Callers that hold that op's input
-/// stock snapshot must use
-/// [`unified_finish_toolpath_with_cancel_and_ceiling`] — this entry point is
-/// the fresh-stock arm, and is defined as that one with no ceiling so the two
-/// cannot drift.
-#[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
-pub fn unified_finish_toolpath_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    top_z: f64,
-    bottom_z: f64,
-    params: &UnifiedFinishParams,
-    planner: &FinishPlannerParams,
-    machining_boundary: Option<&RegionSet<'_>>,
-    link_kinematics: Option<&LinkKinematics>,
-    // v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
-    claims: Option<&ClaimsConfig<'_>>,
-    debug: Option<&ToolpathDebugContext>,
-    cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
-    unified_finish_toolpath_with_cancel_and_ceiling(
-        mesh,
-        index,
-        cutter,
-        top_z,
-        bottom_z,
-        params,
-        planner,
-        machining_boundary,
-        link_kinematics,
-        claims,
-        debug,
-        None,
-        cancel,
-    )
-}
-
-/// [`unified_finish_toolpath_with_cancel`] plus a stock-aware ceiling for the
-/// INTRA-REGION relink (Phase O item 3, `ORCHESTRATION_PLAN.md`).
-///
-/// `link_ceiling: None` is the fresh-stock arm and is byte-identical to the
-/// entry point above — `tests/island_stay_down_links_o3.rs` asserts that
-/// rather than leaving it to the delegation's shape.
+/// above it wherever nothing has cut yet (Phase O item 3,
+/// `ORCHESTRATION_PLAN.md`). `link_ceiling: None` is the fresh-stock arm.
 ///
 /// `Some(ceiling)` makes every intra-region link leave the cut vertically,
 /// traverse at `max(mesh surface, standing material) + PLUNGE_CLEARANCE_MM`,
@@ -1466,7 +1424,7 @@ pub fn unified_finish_toolpath_with_cancel(
 /// and whether a link cuts through standing material has nothing to do with
 /// whether the crease detector ran.
 #[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
-pub fn unified_finish_toolpath_with_cancel_and_ceiling(
+pub fn unified_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -1482,74 +1440,45 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, Vec<ScallopRuntimeAnnotation>, UnifiedFinishReport), Cancelled> {
-    check_cancel(cancel)?;
-
-    // ── Step 1: classify on the TRUE surface ────────────────────────────
-    // P2.b decision (`finish_setup::build_classification_surface_with_cancel`
-    // doc): a ball tool's offset (generation) surface geometrically hides
-    // steepness at feature scales at/below the ball radius. Classification
-    // MUST read the true surface or band assignment collapses to
-    // all-shallow on relief at that scale — never swap this for
-    // `build_finish_surface_with_cancel`.
-    // The RESOLUTION is UnifiedFinish's own choice (H3 step 2) — see
-    // `unified_finish_classification_resolution`.
-    // The SAMPLER is `params.classification_sampler` (M3 wave 7b), defaulting
-    // to `ClassificationSampler::PRODUCTION`. It is threaded rather than
-    // pinned here so the COLUMNS A/B can drive both classifiers through this
-    // exact code path.
-    let surface = build_classification_surface_with_sampler_and_cancel(
+    let op = UnifiedFinishOp {
         mesh,
         index,
         cutter,
-        unified_finish_classification_resolution(cutter, params.tolerance),
-        params.classification_sampler,
-        cancel,
-    )?;
-    check_cancel(cancel)?;
+        top_z,
+        bottom_z,
+        params,
+        planner,
+        machining_boundary,
+        link_kinematics,
+        claims,
+        debug,
+        link_ceiling,
+    };
+    let composed = compose(&op, cancel)?;
+    Ok((composed.toolpath, composed.annotations, composed.report))
+}
 
-    // ── Step 2: coverage ∧ machining boundary ───────────────────────────
-    let cols = surface.cols();
-    let cell = surface.cell_size();
-    let origin_x = surface.slope_map.origin_x;
-    let origin_y = surface.slope_map.origin_y;
-    // Mutable: the S4 rest-territory confinement (below, after Step 2.5)
-    // may AND the per-cell rest verdict into this before decompose —
-    // `ClaimsConfig::territory_clip` doc.
-    let mut covered: Vec<bool> = surface
-        .heightmap
-        .covered_flags()
-        .iter()
-        .enumerate()
-        .map(|(i, &cov)| {
-            if !cov {
-                return false;
-            }
-            let Some(boundary) = machining_boundary else {
-                return true;
-            };
-            let row = i / cols;
-            let col = i % cols;
-            let x = origin_x + col as f64 * cell;
-            let y = origin_y + row as f64 * cell;
-            boundary.contains(&P2::new(x, y))
-        })
-        .collect();
-    check_cancel(cancel)?;
+/// What the claims stage (Step 2.5) gives the classifier.
+struct ClaimsStage {
+    /// The cut paths of every centreline that materialised.
+    paths: Vec<crate::finish::pencil::PencilPath>,
+    tip_float: crate::compute::toolpath_stats::TipFloatFinding,
+    /// The S4 and crease fields are filled in later in the classifier.
+    report: ClaimsReport,
+    /// The detector's rest grid and region polygons.
+    produced: crate::trace::produced::Produced,
+}
 
-    // ── Step 2.5: in-op rest analysis + territory (v3 S1, design doc §2.1
-    // steps 2+4) ──────────────────────────────────────────────────────────
-    // `claims: None` leaves `creases` empty and `covered` untouched —
-    // byte-identical to the pre-v3 op (module doc).
-    let mut claimed_creases = 0usize;
-    let mut claims_paths: Vec<crate::finish::pencil::PencilPath> = Vec::new();
-    // Wave D1: `None` until the claims pipeline actually emits a centreline,
-    // so "the claims pass never ran" stays distinguishable from "it ran and
-    // nothing floated".
-    let mut claims_tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding> = None;
-    let mut claims_report: Option<ClaimsReport> = None;
-    let mut claims_rest_grid: Option<std::sync::Arc<crate::surface::rest_field::RestGrid>> = None;
-    let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
-    if let Some(cfg) = claims {
+impl UnifiedFinishOp<'_> {
+    /// Step 2.5: the crease detector (the rest DETECTOR stage, W6.4.1) and
+    /// the cut paths of every centreline that materialises.
+    fn claims_stage(
+        &self,
+        cfg: &ClaimsConfig<'_>,
+        cancel: &dyn CancelCheck,
+    ) -> Result<ClaimsStage, Cancelled> {
+        let (mesh, index, cutter, params) = (self.mesh, self.index, self.cutter, self.params);
+        let mut claimed_creases = 0usize;
         check_cancel(cancel)?;
         // PR-6a (H2.3): the crease/pencil fan's stepover comes from the
         // CANONICAL REACH POLICY, not from the cutter envelope. See
@@ -1602,34 +1531,32 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // pass, the R2-validated arm) — never on a rough→finish chain,
         // where the S1 A/B proved the same swap reads roughing terraces as
         // a phantom dendritic crease network. See `CreaseReference` doc.
-        let probe = crate::tool::BallEndmill::new(
-            crate::finish::pencil::SURFACE_PROBE_BALL_DIAMETER_MM,
-            crate::finish::pencil::SURFACE_PROBE_BALL_LENGTH_MM,
-        );
-        let self_probe_reference = || RestReference::Cutter {
-            tool: &probe,
-            is_surface_probe: true,
-        };
-        let crease_reference = match cfg.crease_reference {
-            CreaseReference::SelfProbe => self_probe_reference(),
-            CreaseReference::MachinedStock => match cfg.territory_stock {
-                Some(stock) => RestReference::Stock(stock),
-                None => {
-                    tracing::warn!(
-                        "unified_finish: ClaimsConfig::crease_reference is \
-                         MachinedStock but no territory_stock is in scope; \
-                         falling back to the analytic self-probe"
-                    );
-                    self_probe_reference()
+        //
+        // W6.4.1: this op's POLICY is that tier list — the stock only under
+        // `MachinedStock`, and never a tool. The detector stage owns the
+        // rule and its probe of last resort.
+        let choice = RestReferenceChoice {
+            stock: match cfg.crease_reference {
+                CreaseReference::SelfProbe => None,
+                CreaseReference::MachinedStock => {
+                    if cfg.territory_stock.is_none() {
+                        tracing::warn!(
+                            "unified_finish: ClaimsConfig::crease_reference is \
+                             MachinedStock but no territory_stock is in scope; \
+                             falling back to the analytic self-probe"
+                        );
+                    }
+                    cfg.territory_stock
                 }
             },
+            tool: None,
         };
-        let rf = detect_rest_valleys(mesh, index, cutter, crease_reference, &rf_params);
+        let rf = detect_rest(mesh, index, cutter, choice, &rf_params);
         check_cancel(cancel)?;
 
         // Territory = rest islands (design doc §2.1 step 4), measured
         // directly as stock top − pencil drop per classification cell.
-        // `rf.rest_grid.surface_z` IS the pencil drop regardless of which
+        // The rest grid's `surface_z` IS the pencil drop regardless of which
         // `crease_reference` arm fed `rf` — confirmed in
         // `rest_field::detect_rest_valleys`'s sample closure: `surface_z`
         // is populated from the pencil-only drop (`pc.z`) before the
@@ -1691,18 +1618,16 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 claimed_creases += 1;
             }
         }
-        claims_paths = emitted_paths;
-        claims_tip_float = Some(float);
         tracing::debug!(
             detected,
             claimed = claimed_creases,
-            paths = claims_paths.len(),
+            paths = emitted_paths.len(),
             offset_stepover_mm = claims_offset_stepover_mm,
             envelope_rule_stepover_mm = cutter.envelope_radius_mm() * 0.5,
             "unified_finish claims: centerlines whose cut paths materialized"
         );
 
-        claims_report = Some(ClaimsReport {
+        let report = ClaimsReport {
             territory_mode,
             crease_path_count: 0,
             crease_path_length_mm: 0.0,
@@ -1714,159 +1639,26 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             offset_stepover_mm: claims_offset_stepover_mm,
             offset_stepover_reference_depth_mm: cfg.rest_field_params.min_valley_depth,
             envelope_rule_stepover_mm: cutter.envelope_radius_mm() * 0.5,
-        });
+        };
         // §2.4 carry-through: the detector's field + region polygons ride
         // the report so the adapter can attach them to the generated
         // toolpath (GUI heatmap, DerivedRestRegions, probes).
-        claims_rest_grid = Some(std::sync::Arc::new(rf.rest_grid));
-        claims_rest_regions = Some(std::sync::Arc::new(rf.region_polygons));
+        Ok(ClaimsStage {
+            paths: emitted_paths,
+            tip_float: float,
+            report,
+            // §2.4 carry-through: the detector's field + region polygons
+            // ride the report so the adapter can attach them to the
+            // generated toolpath (GUI heatmap, DerivedRestRegions, probes).
+            produced: rf.produced,
+        })
     }
 
-    // ── Step 2.6: S4 rest-territory confinement (mask-AND) ──────────────
-    // `ClaimsConfig::territory_clip` doc: AND a rest keep-mask into
-    // `covered` BEFORE decompose, so conditioning normalizes the rest
-    // islands themselves (design doc §2.1 step 4's prescribed one-liner;
-    // the sparse-pinprick fragmentation lesson and the capped-polygon-clip
-    // dead end are documented on the config field).
-    //
-    // MASK SOURCE (wanaka ×2 run 4, 2026-07-13): NOT a per-cell footprint
-    // verdict grid (5-point max-top vs min-drop across TWO grids,
-    // measured and since removed — see `unified_v3_design.md` §7/§8).
-    // That measurement is deliberately keep-biased for drop-safety, which
-    // SATURATES on sloped or textured terrain when used as a mask (the
-    // neighborhood z-span alone exceeds any mm-class dial: at 45° a
-    // 0.5 mm sample offset reads
-    // 0.5 mm of phantom "rest"), so the AND kept ~everything and Op B ran
-    // all-over again (54 k s). The honest per-cell quantity is the
-    // detector's own stock-referenced `rest` FIELD — a single consistent
-    // differencing at the detector's own sample points, the same field
-    // the tail probe validated against standing material — thresholded at
-    // `min_rest_depth_mm` with NaN keeping (untrusted keeps coverage),
-    // DILATED by pencil radius + region margin on the rest grid (EDT,
-    // same dilation the detector's own region polygons get) and then
-    // nearest-resampled onto the classification grid. Only meaningful
-    // under `CreaseReference::MachinedStock` — the self-probe field is
-    // geometric float, not material.
-    let mut territory_masked_cells = 0usize;
-    if let Some(cfg) = claims
-        && cfg.territory_clip
-    {
-        let stock_backed = matches!(cfg.crease_reference, CreaseReference::MachinedStock)
-            && cfg.territory_stock.is_some();
-        if !stock_backed {
-            tracing::warn!(
-                "unified_finish S4: territory_clip needs crease_reference = \
-                 MachinedStock with a territory_stock in scope (the mask \
-                 source is the stock-referenced rest field); skipping \
-                 confinement"
-            );
-        } else if let Some(grid) = claims_rest_grid.as_deref() {
-            // keep = NaN ∪ (rest ≥ dial), dilated on the REST grid.
-            let keep: Vec<bool> = grid
-                .rest
-                .iter()
-                .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
-                .collect();
-            // Dilation = one rest-grid cell (the sampling quantum,
-            // bridges speckle) + the user's region-margin reach dial.
-            // NOT `cutter.radius()`: for tapered tools that is the SHAFT
-            // radius (`MillingCutter::radius` = diameter()/2 = widest
-            // cutting point — 3 mm on the Ø1-tip ball), and a 3.5 mm
-            // dilation welds a dendritic keep-mask into full coverage
-            // (measured, run 5: Op B all-over again at 58.5 k s).
-            // Reach-back over the mask edge is separately provided by
-            // decompose's own `overlap_mm` dilation at extraction.
-            let spec = grid.grid;
-            let dilate_mm = spec.cell_mm + cfg.rest_field_params.region_margin_mm;
-            let radius_cells = dilate_mm / spec.cell_mm.max(1e-9);
-            let dist = crate::geometry::grid_field::distance_transform_2d(&keep, spec.ny, spec.nx);
-            let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
-            // Nearest-resample onto the classification grid and AND.
-            for (i, cov) in covered.iter_mut().enumerate() {
-                if !*cov {
-                    continue;
-                }
-                let row = i / cols;
-                let col = i % cols;
-                let x = origin_x + col as f64 * cell;
-                let y = origin_y + row as f64 * cell;
-                let gc = ((x - spec.origin_x) / spec.cell_mm).round();
-                let gr = ((y - spec.origin_y) / spec.cell_mm).round();
-                let keep_here =
-                    if gc < 0.0 || gr < 0.0 || gc >= spec.nx as f64 || gr >= spec.ny as f64 {
-                        // Outside the detector's grid: no evidence — keep
-                        // (untrusted keeps coverage).
-                        true
-                    } else {
-                        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                        let gi = spec.index_of(gr as usize, gc as usize);
-                        keep_dilated.get(gi).copied().unwrap_or(true)
-                    };
-                if !keep_here {
-                    *cov = false;
-                    territory_masked_cells += 1;
-                }
-            }
-            tracing::debug!(
-                territory_masked_cells,
-                masked_area_mm2 = territory_masked_cells as f64 * cell * cell,
-                dilate_mm,
-                "unified_finish S4: rest-territory mask-AND applied before decompose"
-            );
-        }
-    }
-    if let Some(report) = claims_report.as_mut() {
-        report.territory_masked_cells = territory_masked_cells;
-        report.territory_masked_area_mm2 = territory_masked_cells as f64 * cell * cell;
-    }
-
-    // ── Step 3: decompose ────────────────────────────────────────────────
-    // S1: crease claims are ADDITIVE — the pencil node cuts along the
-    // detected valleys, but corridors are NOT carved out of the bands
-    // (`&[]` below, always). The third live validation (2026-07-13)
-    // closed the loop on carving: the pencil's emitted fan is only
-    // ~tip-wide on this tool (offset passes don't fit under a Ø6 shank),
-    // while corridors claim the full valley half-width — every carved
-    // corridor leaves an uncut RING around its centerline, and the
-    // fragments shred the conditioned decomposition. Width-honest carving
-    // (claim exactly the emitted fan) + region-level conditioning is S2
-    // scope; until then bands overlap the crease cut, which costs a
-    // little double-cutting along centerlines and can never abandon
-    // territory.
-    let mut planned = decompose(&surface.slope_map, &covered, &[], planner);
-    // `decompose` is handed a bare `SlopeMap` and stamps `Explicit`; this
-    // caller knows the grid came from the CLASSIFICATION surface (M1).
-    planned.stats.provenance.cell_source = surface.cell_source;
-    check_cancel(cancel)?;
-
-    // ── Step 3.4: S4 territory-clip bookkeeping (design doc §2.1 step 4 /
-    // §0.a) ──────────────────────────────────────────────────────────────
-    // S4's territory confinement happens BEFORE decompose — Step 2.6's
-    // mask-AND — so by the time regions exist here they are already
-    // conditioned rest islands; nothing is dropped at the region level in
-    // this step. R1 guard: make over-fragmentation visible; no hard fail —
-    // the A/B gates catch pathology.
-    if planned.regions.len() > 256 {
-        tracing::warn!(
-            post_territory_region_count = planned.regions.len(),
-            "unified_finish: post-territory region count exceeds 256; \
-             check for over-fragmentation"
-        );
-    }
-
-    if let Some(report) = claims_report.as_mut() {
-        report.post_territory_region_count = planned.regions.len();
-    }
-
-    // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
-    // The cut paths were already produced in Step 2.5 (claim == emitted
-    // output, the carve-and-abandon-proof contract); this step only turns
-    // them into the trailing crease node, appended AFTER the routed bands
-    // in Step 6, natively linked — not threaded through `route_greedy`
-    // (module doc, deferred to S3's fused router).
-    let mut crease_tp = Toolpath::new();
-    if !claims_paths.is_empty() {
-        check_cancel(cancel)?;
+    /// Step 3.5: the trailing crease node from the claimed cut paths.
+    fn crease_node(&self, claims_paths: &[crate::finish::pencil::PencilPath]) -> Toolpath {
+        let (mesh, index, cutter, params) = (self.mesh, self.index, self.cutter, self.params);
+        let (claims, link_kinematics, link_ceiling) =
+            (self.claims, self.link_kinematics, self.link_ceiling);
         let pencil_params = PencilParams {
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
@@ -1876,430 +1668,420 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             link_kinematics: link_kinematics.cloned(),
             // Boundary-less: see `ClaimsConfig::crease_hookup_mm`.
             hookup_distance: claims.map_or(0.0, |c| c.crease_hookup_mm),
-            // R1: the crease link lift reads the op's own ceiling top. A
-            // territory stock implies the op's snapshot, so the ceiling is
-            // `Some` whenever the lift can run.
-            link_fallback_top_z: link_ceiling.map(|c| c.fallback_top_z),
             ..PencilParams::default()
         };
         // G-ENTRYLOAD: give crease entries the same bite-budgeted ramp the
         // standalone pencil gets; the claims territory stock is the input
         // stock the entries descend through.
         let (tp, _anns) = crate::finish::pencil::emit_paths_with_entry_stock(
-            &claims_paths,
+            claims_paths,
             mesh,
             index,
             cutter,
             &pencil_params,
             claims.and_then(|c| c.territory_stock),
+            // R1 / C8: the crease link lift reads the op's own ceiling (its
+            // fallback top and its obstacles). A territory stock implies
+            // the op's snapshot, so the ceiling is `Some` whenever the lift
+            // can run.
+            link_ceiling,
         );
-        crease_tp = tp;
+        tp
     }
-    if let Some(report) = claims_report.as_mut() {
-        report.crease_path_count = claims_paths.len();
-        report.crease_path_length_mm = cutting_length_mm(&crease_tp);
+}
+
+/// Step 2.6: AND the S4 rest keep-mask (from the detector's rest `grid`)
+/// into `covered`, on the classification grid of `surface`. Returns the
+/// count of covered cells it removed.
+fn apply_territory_clip(
+    cfg: &ClaimsConfig<'_>,
+    grid: &crate::surface::rest_field::RestGrid,
+    surface: &crate::finish::finish_setup::FinishSurface,
+    covered: &mut [bool],
+) -> usize {
+    let cols = surface.cols();
+    let cell = surface.cell_size();
+    let origin_x = surface.slope_map.origin_x;
+    let origin_y = surface.slope_map.origin_y;
+    let mut territory_masked_cells = 0usize;
+    // keep = NaN ∪ (rest ≥ dial), dilated on the REST grid.
+    let keep: Vec<bool> = grid
+        .rest
+        .iter()
+        .map(|&r| r.is_nan() || f64::from(r) >= cfg.min_rest_depth_mm)
+        .collect();
+    // Dilation = one rest-grid cell (the sampling quantum,
+    // bridges speckle) + the user's region-margin reach dial.
+    // NOT `cutter.radius()`: for tapered tools that is the SHAFT
+    // radius (`MillingCutter::radius` = diameter()/2 = widest
+    // cutting point — 3 mm on the Ø1-tip ball), and a 3.5 mm
+    // dilation welds a dendritic keep-mask into full coverage
+    // (measured, run 5: Op B all-over again at 58.5 k s).
+    // Reach-back over the mask edge is separately provided by
+    // decompose's own `overlap_mm` dilation at extraction.
+    let spec = grid.grid;
+    let dilate_mm = spec.cell_mm + cfg.rest_field_params.region_margin_mm;
+    let radius_cells = dilate_mm / spec.cell_mm.max(1e-9);
+    let dist = crate::geometry::grid_field::distance_transform_2d(&keep, spec.ny, spec.nx);
+    let keep_dilated: Vec<bool> = dist.iter().map(|&d| d <= radius_cells).collect();
+    // Nearest-resample onto the classification grid and AND.
+    for (i, cov) in covered.iter_mut().enumerate() {
+        if !*cov {
+            continue;
+        }
+        let row = i / cols;
+        let col = i % cols;
+        let x = origin_x + col as f64 * cell;
+        let y = origin_y + row as f64 * cell;
+        let gc = ((x - spec.origin_x) / spec.cell_mm).round();
+        let gr = ((y - spec.origin_y) / spec.cell_mm).round();
+        let keep_here = if gc < 0.0 || gr < 0.0 || gc >= spec.nx as f64 || gr >= spec.ny as f64 {
+            // Outside the detector's grid: no evidence — keep
+            // (untrusted keeps coverage).
+            true
+        } else {
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            let gi = spec.index_of(gr as usize, gc as usize);
+            keep_dilated.get(gi).copied().unwrap_or(true)
+        };
+        if !keep_here {
+            *cov = false;
+            territory_masked_cells += 1;
+        }
     }
+    tracing::debug!(
+        territory_masked_cells,
+        masked_area_mm2 = territory_masked_cells as f64 * cell * cell,
+        dilate_mm,
+        "unified_finish S4: rest-territory mask-AND applied before decompose"
+    );
+    territory_masked_cells
+}
 
-    // ── Step 4: per-region generation ───────────────────────────────────
-    // P2.d: one strategy call PER REGION (single-polygon RegionSet) so the
-    // router can order regions freely. The raster grid is mesh-global and
-    // region-independent, so it is computed once (lazily) and shared by
-    // every Shallow region; scallop and waterline rebuild their internal
-    // surfaces per call — O(1) regions per band on wanaka today, so this
-    // duplication is accepted and flagged as a P2.e datapoint if
-    // conditioned region counts ever grow.
-    let mut report = UnifiedFinishReport {
-        decompose: planned.stats,
-        provenance: planned.stats.provenance,
-        produced: crate::trace::produced::Produced {
-            rest_grid: claims_rest_grid,
-            rest_regions: claims_rest_regions,
-            ..crate::trace::produced::Produced::default()
-        },
-        tip_float: claims_tip_float,
-        // W2.3: `Some` exactly when the intra-region link pass runs, so the
-        // findings door records it only then.
-        relink: (params.intra_region_hookup_mm > 0.0).then(RelinkTotals::default),
-        ..UnifiedFinishReport::default()
-    };
-    let mut region_paths: Vec<RegionPath> = Vec::new();
-    let mut shallow_grid: Option<DropCutterGrid> = None;
-    // C2: stays `None` unless the decomposition actually runs on at least
-    // one Shallow region, so absence reads as "not measured" and never as
-    // "measured zero" (X6 / the `ToolpathStats` finding contract).
-    let mut monotone_cell_totals: Option<MonotoneCellTotals> = None;
+// ── The composed op (W6.4) ───────────────────────────────────────────────
 
-    let mut uncut_core_mm2 = 0.0_f64;
-    // M4 §5b: accumulated in lockstep with `uncut_core_mm2` below.
-    let mut untouched_mm2 = 0.0_f64;
-    let mut standing_mm2 = 0.0_f64;
-    for (region_index, region) in planned.regions.iter().enumerate() {
+/// The unified finish as a composed-surface op ([`crate::finish::composed`]):
+/// the classifier (Steps 1 – 3.5), one band sub-kernel per region
+/// ([`band_kernels`], Step 4) and the router (Steps 5 – 6). The fields are
+/// the inputs of [`unified_finish_toolpath_with_cancel`].
+pub(crate) struct UnifiedFinishOp<'a> {
+    pub mesh: &'a TriangleMesh,
+    pub index: &'a SpatialIndex,
+    pub cutter: &'a dyn MillingCutter,
+    pub top_z: f64,
+    pub bottom_z: f64,
+    pub params: &'a UnifiedFinishParams,
+    pub planner: &'a FinishPlannerParams,
+    pub machining_boundary: Option<&'a RegionSet<'a>>,
+    pub link_kinematics: Option<&'a LinkKinematics>,
+    /// v3 S1 claims pipeline (module doc). `None` is a byte-identical no-op.
+    pub claims: Option<&'a ClaimsConfig<'a>>,
+    pub debug: Option<&'a ToolpathDebugContext>,
+    /// The stock-aware ceiling of the intra-region relink and the crease
+    /// link lift. `None`: the fresh-stock arm.
+    pub link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'a>>,
+}
+
+/// What the unified classifier gives every region cut and the router.
+pub(crate) struct UnifiedClassified {
+    /// The classification surface (true surface, `cusp_quarter`).
+    surface: crate::finish::finish_setup::FinishSurface,
+    /// The covered classification cells, after the boundary and the S4
+    /// territory clip.
+    covered: Vec<bool>,
+    /// The decomposition: the band regions, in planned order.
+    planned: crate::finish::finish_planner::PlannedRegions,
+    /// The crease node (claims), appended after the routed bands.
+    crease_tp: Toolpath,
+}
+
+impl ComposedSurfaceOp for UnifiedFinishOp<'_> {
+    type Classified = UnifiedClassified;
+    type Fragment = RegionPath;
+    /// The shared 0 deg raster grid of the Shallow band (unwindowed; only
+    /// for non-rotated, non-derated regions).
+    type Memo = Option<DropCutterGrid>;
+    type Annotation = ScallopRuntimeAnnotation;
+    type Report = UnifiedFinishReport;
+
+    /// Steps 1 – 3.5: classify on the true surface, AND the coverage with
+    /// the boundary, run the claims detector and the S4 territory clip,
+    /// decompose, and build the crease node.
+    fn classify(
+        &self,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(UnifiedClassified, UnifiedFinishReport), Cancelled> {
+        let (mesh, index, cutter, params, planner) = (
+            self.mesh,
+            self.index,
+            self.cutter,
+            self.params,
+            self.planner,
+        );
+        let (machining_boundary, claims) = (self.machining_boundary, self.claims);
+        // ── Step 1: classify on the TRUE surface ────────────────────────────
+        // P2.b decision (`finish_setup::build_classification_surface_with_cancel`
+        // doc): a ball tool's offset (generation) surface geometrically hides
+        // steepness at feature scales at/below the ball radius. Classification
+        // MUST read the true surface or band assignment collapses to
+        // all-shallow on relief at that scale — never swap this for
+        // `build_finish_surface_with_cancel`.
+        // The RESOLUTION is UnifiedFinish's own choice (H3 step 2) — see
+        // `unified_finish_classification_resolution`.
+        // The SAMPLER is `params.classification_sampler` (M3 wave 7b), defaulting
+        // to `ClassificationSampler::PRODUCTION`. It is threaded rather than
+        // pinned here so the COLUMNS A/B can drive both classifiers through this
+        // exact code path.
+        let surface = build_classification_surface_with_sampler_and_cancel(
+            mesh,
+            index,
+            cutter,
+            unified_finish_classification_resolution(cutter, params.tolerance),
+            params.classification_sampler,
+            cancel,
+        )?;
         check_cancel(cancel)?;
-        let region_set = RegionSet::new(vec![region.polygon.clone()]);
-        // Wave D1: set by any band arm whose Z range the resolved heights
-        // narrowed. Consulted AFTER generation, because a narrowed range is
-        // only a FINDING when nothing came out of it.
-        let mut height_clip: Option<crate::compute::toolpath_stats::BandHeightClip> = None;
-        let (tp, anns) = match region.band {
-            FinishBand::VerySteep => {
-                let Some((band_min_z, band_max_z)) = band_z_range(&surface, &covered, &region_set)
-                else {
-                    tracing::warn!(
-                        region_index,
-                        "unified_finish: VerySteep region has no covered cells inside its own polygon; skipping"
-                    );
-                    continue;
-                };
-                let start_z = band_max_z.min(top_z);
-                let final_z = band_min_z.max(bottom_z);
-                // Wave D1 instrument (ledger task #15). `UnifiedFinishConfig`
-                // declares `DepthSemantics::None`, so an Auto `bottom_z`
-                // resolves to `top_z - 0.0` — the STOCK TOP — and the two
-                // `.max`/`.min` clamps above then pin this ladder to the rim
-                // of a groove that may be centimetres deep. Compare the
-                // levels the band's own surface span asks for against the
-                // ones the heights allow; if the difference turns out to
-                // have cost the whole region its cutting, say so out loud
-                // instead of leaving an unmachined feature with a
-                // `region_count += 1` for a headstone.
-                let planned_levels =
-                    waterline_z_levels(band_max_z, band_min_z, params.z_step).len();
-                let resolved_levels = waterline_z_levels(start_z, final_z, params.z_step).len();
-                // FIN-14: the comparison happened, whatever it found. The
-                // record of WHERE the instrument was taken travels with the
-                // finding, so a `MidSteep` or `Shallow` region — whose arm
-                // reads neither resolved height — reads as "not measured"
-                // and never as a clean band.
-                report.height_clip_measured.insert(FinishBand::VerySteep);
-                if resolved_levels < planned_levels {
-                    // Attribute to whichever clamp actually bit. When both
-                    // did, the floor is the one an operator can act on
-                    // (a raised `bottom_z` removes the DEEP levels).
-                    let (clip, clip_z_mm) = if final_z > band_min_z {
-                        (
-                            crate::compute::toolpath_stats::HeightClip::BottomZ,
-                            bottom_z,
-                        )
-                    } else {
-                        (crate::compute::toolpath_stats::HeightClip::TopZ, top_z)
-                    };
-                    // C8: the BOUNDS travel with the level counts. Counts say
-                    // how much of the ladder was lost; bounds say where, which
-                    // is what an operator can act on.
-                    height_clip = Some(crate::compute::toolpath_stats::BandHeightClip {
-                        clip,
-                        clip_z_mm,
-                        planned_levels,
-                        resolved_levels,
-                        requested_top_z_mm: band_max_z,
-                        requested_bottom_z_mm: band_min_z,
-                        delivered_top_z_mm: start_z,
-                        delivered_bottom_z_mm: final_z,
-                    });
+
+        // ── Step 2: coverage ∧ machining boundary ───────────────────────────
+        let cols = surface.cols();
+        let cell = surface.cell_size();
+        let origin_x = surface.slope_map.origin_x;
+        let origin_y = surface.slope_map.origin_y;
+        // Mutable: the S4 rest-territory confinement (below, after Step 2.5)
+        // may AND the per-cell rest verdict into this before decompose —
+        // `ClaimsConfig::territory_clip` doc.
+        let mut covered: Vec<bool> = surface
+            .heightmap
+            .covered_flags()
+            .iter()
+            .enumerate()
+            .map(|(i, &cov)| {
+                if !cov {
+                    return false;
                 }
-                let wp = WaterlineParams {
-                    sampling: params.sampling,
-                    feed_rate: params.feed_rate,
-                    plunge_rate: params.plunge_rate,
-                    safe_z: params.safe_z,
-                    // D-16.2 (F3): the VerySteep band honours the dial too.
-                    // Before this the field did not exist on
-                    // `WaterlineParams` at all, so this arm could not pass
-                    // one — the twin defect of the Shallow band's.
-                    stock_to_leave: params.stock_to_leave,
+                let Some(boundary) = machining_boundary else {
+                    return true;
                 };
-                // `waterline_toolpath_with_cancel` ladders start_z..final_z
-                // by `z_step` internally — no need to precompute levels.
-                // Per-region z-range: each region only ladders the levels
-                // its own surface patch spans.
-                let tp = waterline_toolpath_with_cancel(
-                    mesh,
-                    index,
-                    cutter,
-                    start_z,
-                    final_z,
-                    params.z_step,
-                    &wp,
-                    Some(&region_set),
-                    cancel,
-                )?;
-                // G-TIERBURIAL: a contour chord between two fiber crossings is
-                // straight; where it cuts below the drop-cutter surface it is split
-                // at a point pushed off the wall at the contour's own Z.
-                (
-                    refine_band_chords(tp, mesh, index, cutter, params, true),
-                    Vec::new(),
-                )
-            }
-            FinishBand::MidSteep => {
-                let sp = ScallopParams {
-                    scallop_height: params.scallop_height,
-                    tolerance: params.tolerance,
-                    direction: ScallopDirection::default(),
-                    // Design decision #1: scallop-continuous rings for the
-                    // mid-steep band.
-                    continuous: true,
-                    // Full slope window: the REGION is the confinement now
-                    // (the band's polygon already IS the slope-selection),
-                    // so scallop's own slope_from/slope_to filter is
-                    // deliberately a no-op — see `finish_setup::
-                    // {SLOPE_FILTER_MIN_DEG, SLOPE_FILTER_MAX_DEG}`.
-                    slope_from: SLOPE_FILTER_MIN_DEG,
-                    slope_to: SLOPE_FILTER_MAX_DEG,
-                    feed_rate: params.feed_rate,
-                    plunge_rate: params.plunge_rate,
-                    safe_z: params.safe_z,
-                    stock_to_leave: params.stock_to_leave,
-                    // A/M7: deliberately OFF here, and not for lack of
-                    // value. This band runs `continuous: true` (scallop's
-                    // own spiral already chains the contours), and whatever
-                    // junctions survive are relinked one level up by
-                    // `intra_region_hookup_mm` against the REGION's polygon
-                    // — the correct boundary for a band that owns only part
-                    // of the surface. Relinking here as well would decide
-                    // the same junctions twice, against a weaker boundary.
-                    intra_pass_hookup_mm: 0.0,
-                    link_kinematics: None,
-                };
-                // Generation intentionally uses the ball-center OFFSET
-                // surface here (`scallop_toolpath_structured_annotated_
-                // with_cancel` builds its own under
-                // `scallop::scallop_generation_resolution`, mirrored by
-                // `unified_finish_mid_steep_generation_resolution`) — only
-                // classification (step 1, above) reads the true surface.
-                // This is the P2.b "classify true, generate offset" split
-                // from the design doc, not an inconsistency.
-                let (tp, anns, scallop_report) = scallop_toolpath_structured_annotated_with_cancel(
-                    mesh,
-                    index,
-                    cutter,
-                    &sp,
-                    debug,
-                    Some(&region_set),
-                    cancel,
-                )?;
-                // Summed across every mid-steep region, so a truncated
-                // cascade in ANY of them reaches the op's report.
-                uncut_core_mm2 += scallop_report.uncut_core_mm2;
-                // M4 §5b: the hole-aware and estimator siblings, summed the
-                // same way.
-                untouched_mm2 += scallop_report.untouched_mm2;
-                standing_mm2 += scallop_report.standing_mm2;
-                (tp, anns)
-            }
-            FinishBand::Shallow => {
-                // Honest raster (Track B fix, 2026-09-01, ALWAYS ON): the
-                // raster spaces its passes in XY projection, so on a slope
-                // theta the achieved SURFACE spacing is s_XY / cos(theta) —
-                // up to 1.31x the configured scallop spec at 40°
-                // (`planning/honest_raster_2026-09-01/FINDINGS.md`). Derate
-                // the effective stepover by cos(theta_max) of THIS region,
-                // BEFORE any lattice is built, so the derated value flows
-                // identically into the undivided raster and the C2 cell
-                // decomposition — one frame, one lattice (§0j).
-                //
-                // theta_max is the total slope, not the cross-feed slope, so
-                // the derate is exact on the worst cross-feed slope and
-                // conservative elsewhere. On convex ground contact focusing
-                // refunds sec(theta) up to ~18°, so the derate is knowingly
-                // conservative there too — accepted for v1 (synthesis §1
-                // caveat); no curvature-aware refund is built.
-                let theta_max_deg = shallow_region_max_slope_deg(
-                    &surface,
-                    &covered,
-                    &region_set,
-                    planner.steep_threshold_deg,
+                let row = i / cols;
+                let col = i % cols;
+                let x = origin_x + col as f64 * cell;
+                let y = origin_y + row as f64 * cell;
+                boundary.contains(&P2::new(x, y))
+            })
+            .collect();
+        check_cancel(cancel)?;
+
+        // ── Step 2.5: in-op rest analysis + territory (v3 S1, design doc §2.1
+        // steps 2+4) ──────────────────────────────────────────────────────────
+        // `claims: None` leaves `creases` empty and `covered` untouched —
+        // byte-identical to the pre-v3 op (module doc). Wave D1: the tip float
+        // stays `None` until the claims pipeline actually emits a centreline,
+        // so "the claims pass never ran" stays distinguishable from "it ran and
+        // nothing floated".
+        let mut claims_report: Option<ClaimsReport> = None;
+        let mut claims_paths: Vec<crate::finish::pencil::PencilPath> = Vec::new();
+        let mut claims_tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding> = None;
+        // W6.4.1: the detector stage's grid and regions, already wrapped.
+        let mut claims_produced = crate::trace::produced::Produced::default();
+        if let Some(cfg) = claims {
+            let stage = self.claims_stage(cfg, cancel)?;
+            claims_paths = stage.paths;
+            claims_tip_float = Some(stage.tip_float);
+            claims_report = Some(stage.report);
+            claims_produced = stage.produced;
+        }
+
+        // ── Step 2.6: S4 rest-territory confinement (mask-AND) ──────────────
+        // `ClaimsConfig::territory_clip` doc: AND a rest keep-mask into
+        // `covered` BEFORE decompose, so conditioning normalizes the rest
+        // islands themselves (design doc §2.1 step 4's prescribed one-liner;
+        // the sparse-pinprick fragmentation lesson and the capped-polygon-clip
+        // dead end are documented on the config field).
+        //
+        // MASK SOURCE (wanaka ×2 run 4, 2026-07-13): NOT a per-cell footprint
+        // verdict grid (5-point max-top vs min-drop across TWO grids,
+        // measured and since removed — see `unified_v3_design.md` §7/§8).
+        // That measurement is deliberately keep-biased for drop-safety, which
+        // SATURATES on sloped or textured terrain when used as a mask (the
+        // neighborhood z-span alone exceeds any mm-class dial: at 45° a
+        // 0.5 mm sample offset reads
+        // 0.5 mm of phantom "rest"), so the AND kept ~everything and Op B ran
+        // all-over again (54 k s). The honest per-cell quantity is the
+        // detector's own stock-referenced `rest` FIELD — a single consistent
+        // differencing at the detector's own sample points, the same field
+        // the tail probe validated against standing material — thresholded at
+        // `min_rest_depth_mm` with NaN keeping (untrusted keeps coverage),
+        // DILATED by pencil radius + region margin on the rest grid (EDT,
+        // same dilation the detector's own region polygons get) and then
+        // nearest-resampled onto the classification grid. Only meaningful
+        // under `CreaseReference::MachinedStock` — the self-probe field is
+        // geometric float, not material.
+        let mut territory_masked_cells = 0usize;
+        if let Some(cfg) = claims
+            && cfg.territory_clip
+        {
+            let stock_backed = matches!(cfg.crease_reference, CreaseReference::MachinedStock)
+                && cfg.territory_stock.is_some();
+            if !stock_backed {
+                tracing::warn!(
+                    "unified_finish S4: territory_clip needs crease_reference = \
+                     MachinedStock with a territory_stock in scope (the mask \
+                     source is the stock-referenced rest field); skipping \
+                     confinement"
                 );
-                let derated = theta_max_deg > SHALLOW_DERATE_MIN_SLOPE_DEG;
-                let step_over_mm = if derated {
-                    params.raster_stepover * theta_max_deg.to_radians().cos()
-                } else {
-                    // cos(0) = 1: a flat region's lattice is bit-identical
-                    // to the pre-fix one (it IS the shared memo below).
-                    params.raster_stepover
-                };
-                if derated {
-                    report.shallow_slope_derates.push(ShallowSlopeDerate {
-                        region_index,
-                        slope_max_deg: theta_max_deg,
-                        configured_stepover_mm: params.raster_stepover,
-                        derated_stepover_mm: step_over_mm,
-                    });
-                }
-                // C2: choose this region's working FRAME before any lattice
-                // is touched. Cheap — polygon-only — and it decides whether
-                // the shared 0° memo can serve this region at all.
-                //
-                // `None` is the dial-off arm and reproduces the pre-C2 band
-                // exactly: shared grid, one raster call, whole region.
-                let frame = if params.monotone_cell_decomposition {
-                    Some(crate::geometry::monotone_cells::region_frame(
-                        &region.polygon,
-                        step_over_mm,
-                    ))
-                } else {
-                    None
-                };
-                // A gate-passing region gets its OWN whole-mesh lattice at
-                // its PCA-minor axis, and it cannot share the memo: the
-                // decomposition and the emission must sit on ONE frame
-                // (§0j measured the mixed-frame candidate as a cost).
-                //
-                // The lattice deliberately keeps `batch_drop_cutter`'s
-                // whole-mesh origin/phase/step rather than being trimmed to
-                // the region bbox — trimming would move the lattice ORIGIN,
-                // and §0j priced phase/origin alone at 0.954–0.962×, a cost
-                // on its own.
-                //
-                // What IS clipped to the region is the set of lattice points
-                // actually sampled (`region_sampling_window`). Same lattice,
-                // same phase, fewer points computed — and fewer points then
-                // swept by the decomposition, the membership check and the
-                // per-cell rasters, all three of which are O(grid × polygon
-                // containment). A whole-mesh lattice per gate-passing region
-                // measured ~35 min of generation on the 192-region mt2
-                // board against ~2 min dial-off (§7 follow-up 1).
-                // A rotated OR derated region gets its OWN lattice: the
-                // shared memo is built at the configured stepover and 0°,
-                // and a derated region's lattice must carry the derated
-                // step. Same whole-mesh origin/phase, region-windowed —
-                // the construction the rotated C2 arm already uses.
-                let direction_deg = frame.as_ref().map_or(0.0, |f| f.direction_deg);
-                let private_grid = if frame.as_ref().is_some_and(|f| f.rotated) || derated {
-                    Some(build_shallow_raster_grid(
-                        mesh,
-                        index,
-                        cutter,
-                        params,
-                        step_over_mm,
-                        direction_deg,
-                        Some(region_sampling_window(&region.polygon, step_over_mm)),
-                        cancel,
-                    )?)
-                } else {
-                    None
-                };
-                let grid = if let Some(grid) = private_grid.as_ref() {
-                    grid
-                } else {
-                    match shallow_grid.as_ref() {
-                        Some(grid) => grid,
-                        // NO window: this lattice is the memo SHARED by every
-                        // non-rotated, non-derated Shallow region, so it must
-                        // cover all of them. Windowing it to whichever region
-                        // happened to build it first would blind the rest.
-                        None => shallow_grid.insert(build_shallow_raster_grid(
-                            mesh,
-                            index,
-                            cutter,
-                            params,
-                            params.raster_stepover,
-                            0.0,
-                            None,
-                            cancel,
-                        )?),
-                    }
-                };
-                let effective_min_z = mesh.bbox.min.z - 0.1 + params.stock_to_leave;
-                // The undivided arm, kept as a closure so every C2 fallback
-                // path emits the identical pre-C2 geometry rather than a
-                // second transcription of it.
-                let undivided = |grid: &DropCutterGrid| {
-                    raster_toolpath_from_grid(
-                        grid,
-                        params.feed_rate,
-                        params.plunge_rate,
-                        params.safe_z,
-                        Some(effective_min_z),
-                        Some(&region_set),
-                    )
-                };
-                let tp = match frame {
-                    None => undivided(grid),
-                    Some(f) => {
-                        let decomposed = crate::geometry::monotone_cells::lattice_monotone_cells(
-                            grid,
-                            &region.polygon,
-                            effective_min_z,
-                        );
-                        check_cancel(cancel)?;
-                        let totals = monotone_cell_totals.get_or_insert_default();
-                        totals.regions = totals.regions.saturating_add(1);
-                        if f.rotated {
-                            totals.regions_rotated = totals.regions_rotated.saturating_add(1);
-                        }
-                        if decomposed.cells.is_empty() {
-                            totals.empty_fallbacks = totals.empty_fallbacks.saturating_add(1);
-                            tracing::warn!(
-                                region_index,
-                                topology_cells = decomposed.topology_cells,
-                                "unified_finish: monotone decomposition produced no cell \
-                                 polygons; emitting the undivided raster for this region"
-                            );
-                            undivided(grid)
-                        } else {
-                            // The REFUSE discipline the rig imposed on every
-                            // cell arm it costed (`FINDINGS.md` §0g, Stage
-                            // J). Both sides sit on this same grid, so it is
-                            // an exact population test, not a proxy — and a
-                            // cell set that lost a lattice point would be
-                            // uncut material, so the disagreement arm falls
-                            // back rather than emitting.
-                            let mismatches =
-                                crate::geometry::monotone_cells::cells_select_same_lattice(
-                                    grid,
-                                    &region.polygon,
-                                    &decomposed.cells,
-                                    effective_min_z,
-                                );
-                            if mismatches > 0 {
-                                totals.membership_fallbacks =
-                                    totals.membership_fallbacks.saturating_add(1);
-                                tracing::warn!(
-                                    region_index,
-                                    mismatches,
-                                    cells = decomposed.cells.len(),
-                                    "unified_finish: monotone cells disagree with the \
-                                     undivided region on emitted lattice points; emitting \
-                                     the undivided raster for this region"
-                                );
-                                undivided(grid)
-                            } else {
-                                totals.cells_emitted =
-                                    totals.cells_emitted.saturating_add(decomposed.cells.len());
-                                // One raster call per cell, on the ONE
-                                // shared lattice — §0i's construction. The
-                                // relinker downstream then sees cell-shaped
-                                // fragments; it keeps `reorder: true`, which
-                                // is why no cell TSP is emitted here (§0j
-                                // measured a greedy cell order as
-                                // byte-identical).
-                                let mut out = Toolpath::new();
-                                for cell in &decomposed.cells {
-                                    let cell_set = RegionSet::new(vec![cell.clone()]);
-                                    let cell_tp = raster_toolpath_from_grid(
-                                        grid,
-                                        params.feed_rate,
-                                        params.plunge_rate,
-                                        params.safe_z,
-                                        Some(effective_min_z),
-                                        Some(&cell_set),
-                                    );
-                                    out.moves.extend(cell_tp.moves);
-                                }
-                                out
-                            }
-                        }
-                    }
-                };
-                // G-TIERBURIAL: a raster chord between two lattice points (and a
-                // row turnaround) is straight; where it cuts below the drop-cutter
-                // surface it is split at exact surface points.
-                (
-                    refine_band_chords(tp, mesh, index, cutter, params, false),
-                    Vec::new(),
-                )
+            } else if let Some(grid) = claims_produced.rest_grid.as_deref() {
+                territory_masked_cells = apply_territory_clip(cfg, grid, &surface, &mut covered);
             }
+        }
+        if let Some(report) = claims_report.as_mut() {
+            report.territory_masked_cells = territory_masked_cells;
+            report.territory_masked_area_mm2 = territory_masked_cells as f64 * cell * cell;
+        }
+
+        // ── Step 3: decompose ────────────────────────────────────────────────
+        // S1: crease claims are ADDITIVE — the pencil node cuts along the
+        // detected valleys, but corridors are NOT carved out of the bands
+        // (`&[]` below, always). The third live validation (2026-07-13)
+        // closed the loop on carving: the pencil's emitted fan is only
+        // ~tip-wide on this tool (offset passes don't fit under a Ø6 shank),
+        // while corridors claim the full valley half-width — every carved
+        // corridor leaves an uncut RING around its centerline, and the
+        // fragments shred the conditioned decomposition. Width-honest carving
+        // (claim exactly the emitted fan) + region-level conditioning is S2
+        // scope; until then bands overlap the crease cut, which costs a
+        // little double-cutting along centerlines and can never abandon
+        // territory.
+        let mut planned = decompose(&surface.slope_map, &covered, &[], planner);
+        // `decompose` is handed a bare `SlopeMap` and stamps `Explicit`; this
+        // caller knows the grid came from the CLASSIFICATION surface (M1).
+        planned.stats.provenance.cell_source = surface.cell_source;
+        check_cancel(cancel)?;
+
+        // ── Step 3.4: S4 territory-clip bookkeeping (design doc §2.1 step 4 /
+        // §0.a) ──────────────────────────────────────────────────────────────
+        // S4's territory confinement happens BEFORE decompose — Step 2.6's
+        // mask-AND — so by the time regions exist here they are already
+        // conditioned rest islands; nothing is dropped at the region level in
+        // this step. R1 guard: make over-fragmentation visible; no hard fail —
+        // the A/B gates catch pathology.
+        if planned.regions.len() > 256 {
+            tracing::warn!(
+                post_territory_region_count = planned.regions.len(),
+                "unified_finish: post-territory region count exceeds 256; \
+             check for over-fragmentation"
+            );
+        }
+
+        if let Some(report) = claims_report.as_mut() {
+            report.post_territory_region_count = planned.regions.len();
+        }
+
+        // ── Step 3.5: crease-claims emission (v3 S1, design doc §2.1 step 5) ──
+        // The cut paths were already produced in Step 2.5 (claim == emitted
+        // output, the carve-and-abandon-proof contract); this step only turns
+        // them into the trailing crease node, appended AFTER the routed bands
+        // in Step 6, natively linked — not threaded through `route_greedy`
+        // (module doc, deferred to S3's fused router).
+        let crease_tp = if claims_paths.is_empty() {
+            Toolpath::new()
+        } else {
+            check_cancel(cancel)?;
+            self.crease_node(&claims_paths)
+        };
+        if let Some(report) = claims_report.as_mut() {
+            report.crease_path_count = claims_paths.len();
+            report.crease_path_length_mm = cutting_length_mm(&crease_tp);
+        }
+
+        // The report the region cuts and the router add to. P2.d: one
+        // strategy call PER REGION (single-polygon RegionSet) so the router
+        // can order regions freely.
+        let report = UnifiedFinishReport {
+            claims: claims_report,
+            decompose: planned.stats,
+            provenance: planned.stats.provenance,
+            produced: claims_produced,
+            tip_float: claims_tip_float,
+            // W2.3: `Some` exactly when the intra-region link pass runs, so the
+            // findings door records it only then.
+            relink: (params.intra_region_hookup_mm > 0.0).then(RelinkTotals::default),
+            ..UnifiedFinishReport::default()
+        };
+        Ok((
+            UnifiedClassified {
+                surface,
+                covered,
+                planned,
+                crease_tp,
+            },
+            report,
+        ))
+    }
+
+    fn region_count(&self, classified: &UnifiedClassified) -> usize {
+        classified.planned.regions.len()
+    }
+
+    /// Step 4, one region: the band sub-kernel, then the intra-region
+    /// relink, then the height-clip bookkeeping. The relink stays here,
+    /// before the router: `strippable_preamble` and `trailing_retracts`
+    /// read the relinked path.
+    fn cut_region(
+        &self,
+        classified: &UnifiedClassified,
+        region_index: usize,
+        shallow_grid: &mut Option<DropCutterGrid>,
+        report: &mut UnifiedFinishReport,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Option<RegionPath>, Cancelled> {
+        let params = self.params;
+        let (mesh, index, cutter, link_kinematics, link_ceiling) = (
+            self.mesh,
+            self.index,
+            self.cutter,
+            self.link_kinematics,
+            self.link_ceiling,
+        );
+        let Some(region) = classified.planned.regions.get(region_index) else {
+            return Ok(None);
+        };
+        let region_set = RegionSet::new(vec![region.polygon.clone()]);
+        let b = BandCtx {
+            mesh,
+            index,
+            cutter,
+            params,
+            planner: self.planner,
+            surface: &classified.surface,
+            covered: &classified.covered,
+            top_z: self.top_z,
+            bottom_z: self.bottom_z,
+            debug: self.debug,
+        };
+        // Wave D1: `height_clip` is set by any band whose Z range the
+        // resolved heights narrowed. Consulted AFTER generation, because a
+        // narrowed range is only a FINDING when nothing came out of it.
+        let BandCut {
+            tp,
+            anns,
+            height_clip,
+        } = match region.band {
+            FinishBand::VerySteep => {
+                match cut_very_steep(&b, region_index, &region_set, report, cancel)? {
+                    Some(cut) => cut,
+                    None => return Ok(None),
+                }
+            }
+            FinishBand::MidSteep => cut_mid_steep(&b, &region_set, report, cancel)?,
+            FinishBand::Shallow => cut_shallow(
+                &b,
+                region_index,
+                region,
+                &region_set,
+                shallow_grid,
+                report,
+                cancel,
+            )?,
         };
 
         // §9 lever: keep the tool DOWN between this region's own fragments.
@@ -2443,12 +2225,12 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         stats.region_count += 1;
         stats.move_count += tp.moves.len();
         if tp.moves.is_empty() {
-            continue;
+            return Ok(None);
         }
 
         let (head_strip, entry) = strippable_preamble(&tp).map_or((0, None), |(k, p)| (k, Some(p)));
         let (tail_strip, exit) = trailing_retracts(&tp);
-        region_paths.push(RegionPath {
+        Ok(Some(RegionPath {
             region_index,
             band: region.band,
             tp,
@@ -2457,202 +2239,251 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
             entry,
             tail_strip,
             exit,
-        });
-    }
-    // C2: `None` unless the pass ran on at least one Shallow region.
-    report.monotone_cells = monotone_cell_totals;
-
-    // No early return on `region_paths.is_empty()`: both branches below
-    // already degrade to an empty `order`/`junctions` in that case
-    // (`route_greedy`'s own empty-seed guard; the steep-first branch's
-    // `order` is built from `region_paths.len()`), and a claims-only run
-    // (bands empty, crease node non-empty — an unusual but legal territory
-    // outcome) still needs Step 6 to run so the crease node gets emitted.
-
-    // ── Step 5: route ─────────────────────────────────────────────────────
-    let (order, junctions) = match link_kinematics {
-        Some(lk) => route_greedy(
-            &region_paths,
-            mesh,
-            index,
-            cutter,
-            params,
-            machining_boundary,
-            lk,
-            cancel,
-        )?,
-        // No machine envelope in scope: steep-first band-major order
-        // (P2.c's naive concat), native links only. NEVER a
-        // distance-costed guess — the P0 probe measured distance/feed
-        // misjudging segmented finishing paths by up to 10×.
-        None => {
-            let mut order: Vec<usize> = (0..region_paths.len()).collect();
-            order.sort_by_key(|&i| {
-                let band = region_paths
-                    .get(i)
-                    .map_or(FinishBand::Shallow, |rp| rp.band);
-                (std::cmp::Reverse(band_rank(band)), i)
-            });
-            let junctions = (0..order.len().saturating_sub(1)).map(|_| None).collect();
-            (order, junctions)
-        }
-    };
-
-    report.route = order
-        .iter()
-        .filter_map(|&i| region_paths.get(i).map(|rp| rp.region_index))
-        .collect();
-    for (j, junction) in junctions.iter().enumerate() {
-        let (Some(&from), Some(&to)) = (order.get(j), order.get(j + 1)) else {
-            continue;
-        };
-        let (Some(from_rp), Some(to_rp)) = (region_paths.get(from), region_paths.get(to)) else {
-            continue;
-        };
-        if let Some(link) = junction {
-            report.links.push(RoutedLink {
-                from_region: from_rp.region_index,
-                to_region: to_rp.region_index,
-                surface: link.surface,
-                cost_s: link.cost_s,
-                alt_cost_s: link.alt_cost_s,
-            });
-        }
+        }))
     }
 
-    // ── Step 6: stitch in route order, emitting the winning links ───────
-    let mut stitched = Toolpath::new();
-    let mut annotations: Vec<ScallopRuntimeAnnotation> = Vec::new();
-    let mut region_table: Vec<RegionTableEntry> = Vec::new();
-    for (pos, &pi) in order.iter().enumerate() {
-        let incoming_surface = pos
-            .checked_sub(1)
-            .and_then(|j| junctions.get(j))
-            .and_then(|l| l.as_ref())
-            .filter(|l| l.surface);
-        let outgoing_surface = junctions
-            .get(pos)
-            .and_then(|l| l.as_ref())
-            .is_some_and(|l| l.surface);
-        let Some(rp) = region_paths.get_mut(pi) else {
-            continue;
-        };
+    /// Steps 5 – 6: route the regions, stitch them with the winning links,
+    /// and append the crease node last with a native link.
+    fn route(
+        &self,
+        classified: UnifiedClassified,
+        mut region_paths: Vec<RegionPath>,
+        report: &mut UnifiedFinishReport,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Routed<ScallopRuntimeAnnotation>, Cancelled> {
+        let (mesh, index, cutter, params) = (self.mesh, self.index, self.cutter, self.params);
+        let (machining_boundary, link_kinematics) = (self.machining_boundary, self.link_kinematics);
+        let UnifiedClassified {
+            planned, crease_tp, ..
+        } = classified;
+        // No early return on `region_paths.is_empty()`: both branches below
+        // already degrade to an empty `order`/`junctions` in that case
+        // (`route_greedy`'s own empty-seed guard; the steep-first branch's
+        // `order` is built from `region_paths.len()`), and a claims-only run
+        // (bands empty, crease node non-empty — an unusual but legal territory
+        // outcome) still needs Step 6 to run so the crease node gets emitted.
 
-        // The incoming surface link replaces the follower's rapid+plunge
-        // preamble; the outgoing one replaces this region's trailing
-        // retract(s). Native junctions keep both untouched.
-        let head = if incoming_surface.is_some() {
-            rp.head_strip
-        } else {
-            0
-        };
-        let tail = if outgoing_surface { rp.tail_strip } else { 0 };
-
-        // The node's range OPENS here, before its incoming surface link —
-        // not after it. The link is this region's approach, so including it
-        // is the truthful model, and it is also what keeps the region-node
-        // ranges TILING.
-        //
-        // That tiling is load-bearing. A surface link is a *feed* move, and
-        // `tsp::split_into_segments` only ever splits on `MoveType::Rapid`,
-        // so a link left outside every node range still gets glued into a
-        // cutting segment that straddles the node boundary. The reorder then
-        // relocates that segment — carrying the link — into the middle of the
-        // region it just left, and `tsp::remap_spans`'s foreign-intrusion
-        // guard drops the region span for containing a move from outside
-        // itself. Measured on wanaka ×2 before this fix: all five dropped
-        // region nodes were tripped by exactly one intruder, in every case
-        // the single `MoveIntent::Linking` move at `span.end_move` (design
-        // doc §14d/§14g). The five carried 87% of the operation's cutting
-        // length, so their loss left `narrate_toolpath` reporting
-        // `regions 0`.
-        let node_start = stitched.moves.len();
-        if let (Some(link), Some(entry)) = (incoming_surface, rp.entry) {
-            for p in &link.pts {
-                stitched.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
+        // ── Step 5: route ─────────────────────────────────────────────────────
+        let (order, junctions) = match link_kinematics {
+            Some(lk) => route_greedy(
+                &region_paths,
+                mesh,
+                index,
+                cutter,
+                params,
+                machining_boundary,
+                // B16: the router link reads the op's ceiling too.
+                self.link_ceiling,
+                lk,
+                cancel,
+            )?,
+            // No machine envelope in scope: steep-first band-major order
+            // (P2.c's naive concat), native links only. NEVER a
+            // distance-costed guess — the P0 probe measured distance/feed
+            // misjudging segmented finishing paths by up to 10×.
+            None => {
+                let mut order: Vec<usize> = (0..region_paths.len()).collect();
+                order.sort_by_key(|&i| {
+                    let band = region_paths
+                        .get(i)
+                        .map_or(FinishBand::Shallow, |rp| rp.band);
+                    (std::cmp::Reverse(band_rank(band)), i)
+                });
+                let junctions = (0..order.len().saturating_sub(1)).map(|_| None).collect();
+                (order, junctions)
             }
-            stitched.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
-        }
+        };
 
-        // `offset` stays the region's OWN first move — annotation rebasing
-        // below is expressed in the region toolpath's local frame and must
-        // not be shifted by the link.
-        let offset = stitched.moves.len();
-        let kept = rp.tp.moves.len().saturating_sub(head + tail);
-        stitched
-            .moves
-            .extend(rp.tp.moves.iter().skip(head).take(kept).cloned());
-        let end = stitched.moves.len();
-        region_table.push(RegionTableEntry {
-            kind: RegionKind::Band(rp.band),
-            move_range: node_start..end,
-            area_mm2: planned
-                .regions
-                .get(rp.region_index)
-                .map(|r| r.polygon.area()),
-        });
-
-        // Annotation `move_index` is local to this region's own toolpath;
-        // shift into the stitched frame. An annotation pointing into a
-        // stripped preamble clamps to the first kept move (the ring it
-        // labels now begins right at the link's landing point).
-        let anns = std::mem::take(&mut rp.anns);
-        annotations.extend(anns.into_iter().map(|a| {
-            let move_index = if a.move_index < head {
-                offset
-            } else if a.move_index >= head + kept {
-                (offset + kept).saturating_sub(1)
-            } else {
-                offset + (a.move_index - head)
-            };
-            ScallopRuntimeAnnotation {
-                move_index,
-                event: a.event,
-            }
-        }));
-    }
-
-    // ── Crease node: appended AFTER every routed band, natively linked —
-    // S1 does not thread it through `route_greedy` (module doc; S3's fused
-    // router is where corridor endpoints become routable junctions).
-    if !crease_tp.moves.is_empty() {
-        let offset = stitched.moves.len();
-        stitched.moves.extend(crease_tp.moves);
-        let end = stitched.moves.len();
-        let area_mm2: f64 = planned
-            .creases
+        report.route = order
             .iter()
-            .filter_map(|c| c.corridor.as_ref())
-            .map(|p| p.area())
-            .sum();
-        region_table.push(RegionTableEntry {
-            kind: RegionKind::Crease,
-            move_range: offset..end,
-            area_mm2: Some(area_mm2),
-        });
+            .filter_map(|&i| region_paths.get(i).map(|rp| rp.region_index))
+            .collect();
+        for (j, junction) in junctions.iter().enumerate() {
+            let (Some(&from), Some(&to)) = (order.get(j), order.get(j + 1)) else {
+                continue;
+            };
+            let (Some(from_rp), Some(to_rp)) = (region_paths.get(from), region_paths.get(to))
+            else {
+                continue;
+            };
+            if let Some(link) = junction {
+                report.links.push(RoutedLink {
+                    from_region: from_rp.region_index,
+                    to_region: to_rp.region_index,
+                    surface: link.surface,
+                    cost_s: link.cost_s,
+                    alt_cost_s: link.alt_cost_s,
+                });
+            }
+        }
+
+        // ── Step 6: stitch in route order, emitting the winning links ───────
+        let mut stitched = Toolpath::new();
+        let mut annotations: Vec<ScallopRuntimeAnnotation> = Vec::new();
+        let mut region_table: Vec<RegionTableEntry> = Vec::new();
+        for (pos, &pi) in order.iter().enumerate() {
+            let incoming_surface = pos
+                .checked_sub(1)
+                .and_then(|j| junctions.get(j))
+                .and_then(|l| l.as_ref())
+                .filter(|l| l.surface);
+            let outgoing_surface = junctions
+                .get(pos)
+                .and_then(|l| l.as_ref())
+                .is_some_and(|l| l.surface);
+            let Some(rp) = region_paths.get_mut(pi) else {
+                continue;
+            };
+
+            // The incoming surface link replaces the follower's rapid+plunge
+            // preamble; the outgoing one replaces this region's trailing
+            // retract(s). Native junctions keep both untouched.
+            let head = if incoming_surface.is_some() {
+                rp.head_strip
+            } else {
+                0
+            };
+            let tail = if outgoing_surface { rp.tail_strip } else { 0 };
+
+            // The node's range OPENS here, before its incoming surface link —
+            // not after it. The link is this region's approach, so including it
+            // is the truthful model, and it is also what keeps the region-node
+            // ranges TILING.
+            //
+            // That tiling is load-bearing. A surface link is a *feed* move, and
+            // `tsp::split_into_segments` only ever splits on `MoveType::Rapid`,
+            // so a link left outside every node range still gets glued into a
+            // cutting segment that straddles the node boundary. The reorder then
+            // relocates that segment — carrying the link — into the middle of the
+            // region it just left, and `tsp::remap_spans`'s foreign-intrusion
+            // guard drops the region span for containing a move from outside
+            // itself. Measured on wanaka ×2 before this fix: all five dropped
+            // region nodes were tripped by exactly one intruder, in every case
+            // the single `MoveIntent::Linking` move at `span.end_move` (design
+            // doc §14d/§14g). The five carried 87% of the operation's cutting
+            // length, so their loss left `narrate_toolpath` reporting
+            // `regions 0`.
+            let node_start = stitched.moves.len();
+            if let (Some(link), Some(entry)) = (incoming_surface, rp.entry) {
+                for p in &link.pts {
+                    stitched.feed_to_with_intent(*p, params.feed_rate, MoveIntent::Linking);
+                }
+                stitched.feed_to_with_intent(entry, params.feed_rate, MoveIntent::Linking);
+            }
+
+            // `offset` stays the region's OWN first move — annotation rebasing
+            // below is expressed in the region toolpath's local frame and must
+            // not be shifted by the link.
+            let offset = stitched.moves.len();
+            let kept = rp.tp.moves.len().saturating_sub(head + tail);
+            stitched
+                .moves
+                .extend(rp.tp.moves.iter().skip(head).take(kept).cloned());
+            let end = stitched.moves.len();
+            region_table.push(RegionTableEntry {
+                kind: RegionKind::Band(rp.band),
+                move_range: node_start..end,
+                area_mm2: planned
+                    .regions
+                    .get(rp.region_index)
+                    .map(|r| r.polygon.area()),
+            });
+
+            // Annotation `move_index` is local to this region's own toolpath;
+            // shift into the stitched frame. An annotation pointing into a
+            // stripped preamble clamps to the first kept move (the ring it
+            // labels now begins right at the link's landing point).
+            let anns = std::mem::take(&mut rp.anns);
+            annotations.extend(anns.into_iter().map(|a| {
+                let move_index = if a.move_index < head {
+                    offset
+                } else if a.move_index >= head + kept {
+                    (offset + kept).saturating_sub(1)
+                } else {
+                    offset + (a.move_index - head)
+                };
+                ScallopRuntimeAnnotation {
+                    move_index,
+                    event: a.event,
+                }
+            }));
+        }
+
+        // ── Crease node: appended AFTER every routed band, natively linked —
+        // S1 does not thread it through `route_greedy` (module doc; S3's fused
+        // router is where corridor endpoints become routable junctions).
+        if !crease_tp.moves.is_empty() {
+            let offset = stitched.moves.len();
+            stitched.moves.extend(crease_tp.moves);
+            let end = stitched.moves.len();
+            let area_mm2: f64 = planned
+                .creases
+                .iter()
+                .filter_map(|c| c.corridor.as_ref())
+                .map(|p| p.area())
+                .sum();
+            region_table.push(RegionTableEntry {
+                kind: RegionKind::Crease,
+                move_range: offset..end,
+                area_mm2: Some(area_mm2),
+            });
+        }
+
+        if let Some(relink) = report.relink {
+            tracing::info!(
+                fragments = relink.fragments,
+                surface_links = relink.surface_links,
+                retract_links = relink.retract_links,
+                too_far = relink.too_far,
+                off_surface = relink.off_surface,
+                outside_boundary = relink.outside_boundary,
+                slower_than_retract = relink.slower_than_retract,
+                ceiling_above_safe_z = relink.ceiling_above_safe_z,
+                link_rate = relink.link_rate().unwrap_or(0.0),
+                "unified_finish: intra-region stay-down linking"
+            );
+        }
+        report.region_table = region_table;
+        Ok(Routed {
+            toolpath: stitched,
+            annotations,
+        })
     }
 
-    if let Some(relink) = report.relink {
-        tracing::info!(
-            fragments = relink.fragments,
-            surface_links = relink.surface_links,
-            retract_links = relink.retract_links,
-            too_far = relink.too_far,
-            off_surface = relink.off_surface,
-            outside_boundary = relink.outside_boundary,
-            slower_than_retract = relink.slower_than_retract,
-            ceiling_above_safe_z = relink.ceiling_above_safe_z,
-            link_rate = relink.link_rate().unwrap_or(0.0),
-            "unified_finish: intra-region stay-down linking"
-        );
+    /// One node per region-table entry. Only the VerySteep band ladders in
+    /// Z (it routes to `waterline_toolpath_with_cancel`). MidSteep scallop
+    /// rings and Shallow raster rows are single-pass over a height field,
+    /// so their runs are materially independent of visiting order. The
+    /// crease node is not depth-ordered.
+    fn order_constraints(report: &UnifiedFinishReport) -> Vec<crate::compute::spans::RegionNode> {
+        report
+            .region_table
+            .iter()
+            .map(|entry| crate::compute::spans::RegionNode {
+                move_range: entry.move_range.clone(),
+                depth_ordered: matches!(entry.kind, RegionKind::Band(FinishBand::VerySteep)),
+            })
+            .collect()
     }
-    report.claims = claims_report;
-    report.region_table = region_table;
-    report.uncut_core_mm2 = uncut_core_mm2;
-    report.untouched_mm2 = untouched_mm2;
-    report.standing_mm2 = standing_mm2;
 
-    Ok((stitched, annotations, report))
+    /// The scallop ring labels and the node `Region` spans (see
+    /// [`unified_finish_spans`]).
+    fn label_spans(
+        toolpath: &Toolpath,
+        annotations: &[ScallopRuntimeAnnotation],
+        report: &UnifiedFinishReport,
+    ) -> Vec<crate::trace::toolpath_spans::Span> {
+        unified_finish_label_spans(toolpath, annotations, report)
+    }
+
+    /// §2.4 carry-through: the claims detector's rest field + region
+    /// polygons ride the generated result exactly like the pencil
+    /// RestDepth arm's (GUI heatmap, DerivedRestRegions, probes). Empty
+    /// when claims didn't run — the generic post-pass fallback still
+    /// applies then.
+    fn take_produced(report: &mut UnifiedFinishReport) -> crate::trace::produced::Produced {
+        std::mem::take(&mut report.produced)
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────

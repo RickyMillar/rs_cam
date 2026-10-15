@@ -10,7 +10,8 @@
 
 use crate::geo::P3;
 
-use super::region_routing::rest_grid_index;
+use super::region_routing::{build_shallow_raster_grid, region_sampling_window, rest_grid_index};
+use crate::toolpath::raster_toolpath_from_grid;
 
 use super::*;
 use crate::mesh::{make_test_flat, make_test_hemisphere};
@@ -386,6 +387,7 @@ fn flat_plate_generates_raster_only() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -450,6 +452,7 @@ fn steep_cone_generates_multiple_bands() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -495,6 +498,7 @@ fn a_clamped_mid_steep_band_reads_as_not_measured() {
         15.0,
         &params,
         &planner,
+        None,
         None,
         None,
         None,
@@ -559,6 +563,7 @@ fn annotations_shifted_by_concat_offset() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -601,6 +606,7 @@ fn deterministic() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -612,6 +618,7 @@ fn deterministic() {
         0.0,
         &params,
         &planner,
+        None,
         None,
         None,
         None,
@@ -672,6 +679,7 @@ fn cancellation_propagates() {
         -5.0,
         &params,
         &planner,
+        None,
         None,
         None,
         None,
@@ -745,6 +753,7 @@ fn router_orders_regions_and_reports_links() {
         Some(&lk),
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -798,6 +807,7 @@ fn router_is_deterministic() {
             &planner,
             None,
             Some(&lk),
+            None,
             None,
             None,
             &never_cancel,
@@ -871,6 +881,7 @@ fn route_greedy_seeds_at_steepest_and_chains_nearest() {
         &cutter,
         &params,
         None,
+        None,
         &lk,
         &never_cancel,
     )
@@ -914,6 +925,7 @@ fn boundary_restricts_output() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -931,6 +943,7 @@ fn boundary_restricts_output() {
         &params,
         &planner,
         Some(&boundary),
+        None,
         None,
         None,
         None,
@@ -1076,6 +1089,7 @@ fn region_node_ranges_tile_the_stitched_toolpath() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -1123,6 +1137,7 @@ fn claims_off_matches_legacy_band_only_output() {
         -5.0,
         &params,
         &planner,
+        None,
         None,
         None,
         None,
@@ -1190,6 +1205,7 @@ fn claims_on_emits_crease_node_after_bands() {
         None,
         None,
         Some(&claims_cfg),
+        None,
         None,
         &never_cancel,
     )
@@ -1266,6 +1282,7 @@ fn region_table_ranges_are_within_bounds_and_non_overlapping() {
         None,
         None,
         Some(&claims_cfg),
+        None,
         None,
         &never_cancel,
     )
@@ -1355,6 +1372,7 @@ fn crease_reference_machined_stock_runs_and_falls_back_without_stock() {
         None,
         Some(&self_probe_cfg),
         None,
+        None,
         &never_cancel,
     )
     .expect("self-probe crease detection must complete");
@@ -1389,6 +1407,7 @@ fn crease_reference_machined_stock_runs_and_falls_back_without_stock() {
         None,
         None,
         Some(&stock_cfg),
+        None,
         None,
         &never_cancel,
     )
@@ -1454,6 +1473,7 @@ fn crease_reference_machined_stock_runs_and_falls_back_without_stock() {
         None,
         Some(&fallback_cfg),
         None,
+        None,
         &never_cancel,
     )
     .expect("MachinedStock with no territory_stock must fall back cleanly, not error");
@@ -1517,6 +1537,7 @@ fn territory_clip_off_is_a_total_no_op() {
         None,
         Some(&cfg),
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -1566,6 +1587,7 @@ fn territory_clip_without_stock_is_inert() {
         None,
         None,
         Some(&cfg),
+        None,
         None,
         &never_cancel,
     )
@@ -1620,6 +1642,7 @@ fn territory_clip_confines_bands_to_rest_islands_and_shrinks_the_toolpath() {
         None,
         Some(&unclipped_cfg),
         None,
+        None,
         &never_cancel,
     )
     .unwrap();
@@ -1660,6 +1683,7 @@ fn territory_clip_confines_bands_to_rest_islands_and_shrinks_the_toolpath() {
         None,
         None,
         Some(&clipped_cfg),
+        None,
         None,
         &never_cancel,
     )

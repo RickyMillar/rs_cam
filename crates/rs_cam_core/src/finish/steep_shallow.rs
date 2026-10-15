@@ -16,6 +16,8 @@
 
 use std::ops::Range;
 
+use crate::compute::spans::RegionNode;
+use crate::finish::composed::{ComposedSurfaceOp, Routed, compose, composed_spans};
 use crate::finish::finish_setup::FinishResolutionPolicy;
 use crate::geo::{P2, P3};
 use crate::geometry::region_set::RegionSet;
@@ -128,60 +130,21 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
     dilated_inv.iter().map(|&v| !v).collect()
 }
 
-#[allow(
-    clippy::indexing_slicing,
-    clippy::too_many_arguments,
-    clippy::expect_used
-)]
-// Production goes through the _with_cancel variant; this never-cancel
-// convenience wrapper is exercised by the unit tests below.
-#[cfg_attr(not(test), allow(dead_code))]
-/// Generate steep (waterline) passes filtered to steep+overlap region.
-fn generate_steep_passes(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    slope_map: &SlopeMap,
-    steep_expanded: &[bool],
-    z_top: f64,
-    z_bottom: f64,
-    z_step: f64,
-    sampling: f64,
-    stock_to_leave: f64,
-    feed_rate: f64,
-    plunge_rate: f64,
-    safe_z: f64,
-) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        generate_steep_passes_with_cancel(
-            mesh,
-            index,
-            cutter,
-            slope_map,
-            steep_expanded,
-            z_top,
-            z_bottom,
-            z_step,
-            sampling,
-            stock_to_leave,
-            feed_rate,
-            plunge_rate,
-            safe_z,
-            None,
-            cancel,
-        )
-    })
-}
-
-/// Cancellable variant of [`generate_steep_passes`]. Polls `cancel` once per
-/// Z level (the outer waterline-contour loop).
+/// The steep sub-kernel: waterline contours filtered to the steep+overlap
+/// cells. Polls `cancel` once per Z level (the outer waterline-contour
+/// loop).
+///
+/// W6.4.4: this is the op's OWN emitter, not the waterline kernel of
+/// Unified Finish: the 30° contour-majority filter, the per-point keep on
+/// the steep GRID, the closed-run split, the PR-8d minimum-segment floor and
+/// `snap_to_bottom: false` are this op's output.
 ///
 /// `boundary_regions` (P2.3): folded into the existing steep-grid keep
 /// predicate below — a contour point survives only when it's both in the
 /// expanded steep grid AND inside a machining-boundary region (when one is
 /// given). `None` reproduces today's steep-grid-only filtering byte-for-byte.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
-fn generate_steep_passes_with_cancel(
+fn emit_steep_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -363,47 +326,11 @@ fn generate_steep_passes_with_cancel(
     Ok(tp)
 }
 
-#[allow(
-    clippy::indexing_slicing,
-    clippy::too_many_arguments,
-    clippy::expect_used
-)]
-// Production goes through the _with_cancel variant; this never-cancel
-// convenience wrapper is exercised by the unit tests below.
-#[cfg_attr(not(test), allow(dead_code))]
-/// Generate shallow (parallel raster) passes filtered to shallow+overlap region.
-fn generate_shallow_passes(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    shallow_eroded: &[bool],
-    slope_map: &SlopeMap,
-    stepover: f64,
-    stock_to_leave: f64,
-    feed_rate: f64,
-    plunge_rate: f64,
-    safe_z: f64,
-) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        generate_shallow_passes_with_cancel(
-            mesh,
-            index,
-            cutter,
-            shallow_eroded,
-            slope_map,
-            stepover,
-            stock_to_leave,
-            feed_rate,
-            plunge_rate,
-            safe_z,
-            None,
-            cancel,
-        )
-    })
-}
-
-/// Cancellable variant of [`generate_shallow_passes`]. Polls `cancel` once
-/// per raster row.
+/// The shallow sub-kernel: a zigzag raster filtered to the shallow+overlap
+/// cells. Polls `cancel` once per raster row.
+///
+/// W6.4.4: the op's OWN emitter (its own drop-cutter grid and hand-walked
+/// zigzag, no chord refinement), not the raster kernel of Unified Finish.
 ///
 /// `boundary_regions` (P2.3): folded into the existing `is_shallow`
 /// per-point keep check below (the drop-cutter batch already ran before
@@ -412,7 +339,7 @@ fn generate_shallow_passes(
 /// emitted). `None` reproduces today's shallow-grid-only filtering
 /// byte-for-byte.
 #[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
-fn generate_shallow_passes_with_cancel(
+fn emit_shallow_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
@@ -559,28 +486,6 @@ pub fn steep_shallow_generation_resolution(
     FinishResolutionPolicy::legacy_envelope_quarter(cutter, tolerance)
 }
 
-/// Generate a steep-and-shallow finishing toolpath.
-///
-/// Splits the surface into steep and shallow regions based on slope angle,
-/// then generates waterline passes for steep areas and parallel raster passes
-/// for shallow areas, with configurable overlap and wall clearance.
-///
-/// **Test-only (FIN-11).** The product path calls the cancellable form; this
-/// wrapper only saved the module's own tests a `run_uncancellable` line, so
-/// it is `#[cfg(test)]` and no longer public API.
-#[cfg(test)]
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(threshold = params.threshold_angle))]
-fn steep_shallow_toolpath(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &SteepShallowParams,
-) -> Toolpath {
-    crate::interrupt::run_uncancellable(|cancel| {
-        steep_shallow_toolpath_with_cancel(mesh, index, cutter, params, None, cancel)
-    })
-}
-
 /// Where each half of the merged toolpath ended up.
 ///
 /// The op is two independently generated passes concatenated — a Z-laddered
@@ -595,75 +500,18 @@ pub struct SteepShallowSplit {
     pub shallow: Range<usize>,
 }
 
-/// Cancellable variant of [`steep_shallow_toolpath`]. Propagates `cancel`
-/// into heightmap construction and both pass generators (per-Z-level for
-/// steep, per-raster-row for shallow).
-///
-/// `boundary_regions` (P2.3): forwarded to both pass generators, which fold
-/// it into their existing per-point keep checks (steep grid / shallow grid
-/// respectively). `None` reproduces today's output byte-for-byte.
-#[tracing::instrument(skip(mesh, index, cutter, params, cancel), fields(threshold = params.threshold_angle))]
-pub fn steep_shallow_toolpath_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &SteepShallowParams,
-    boundary_regions: Option<&RegionSet<'_>>,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    steep_shallow_toolpath_split_with_cancel(mesh, index, cutter, params, boundary_regions, cancel)
-        .map(|(tp, _)| tp)
-}
-
 /// Spans for a [`steep_shallow_toolpath_split_with_cancel`] result, shared
 /// by the op adapter and the capability sentry so neither can drift from
 /// the other. Per-run `Region` spans as before, plus a labelled `Region`
 /// span for each half (so the halves stay identifiable after the TSP
 /// remaps spans), plus the rapid-order barriers that make the reorder safe:
-/// one at each half's start, and one per Z level inside the steep half.
+/// one at each half's start, and one per Z level inside the steep half
+/// (W6.4: the op's `order_constraints`).
 pub fn steep_shallow_spans(
     toolpath: &Toolpath,
     split: &SteepShallowSplit,
 ) -> Vec<crate::trace::toolpath_spans::Span> {
-    use crate::compute::spans::{RegionNode, region_node_barriers, spans_from_cutting_runs};
-    use crate::trace::toolpath_spans::{Span, SpanKind};
-
-    let mut spans = spans_from_cutting_runs(toolpath, "Steep/shallow run");
-    let insert_at = 1.min(spans.len());
-    let mut halves: Vec<Span> = Vec::new();
-    if !split.steep.is_empty() {
-        halves.push(
-            Span::new(split.steep.start, split.steep.end, SpanKind::Region)
-                .with_label(STEEP_HALF_LABEL),
-        );
-    }
-    if !split.shallow.is_empty() {
-        halves.push(
-            Span::new(split.shallow.start, split.shallow.end, SpanKind::Region)
-                .with_label(SHALLOW_HALF_LABEL),
-        );
-    }
-    halves.sort_by_key(|s| s.start_move);
-    spans.splice(insert_at..insert_at, halves);
-
-    spans.extend(region_node_barriers(
-        toolpath,
-        &[
-            RegionNode {
-                move_range: split.steep.clone(),
-                // Waterline: ladders down in Z, so its runs must keep their
-                // relative depth order.
-                depth_ordered: true,
-            },
-            RegionNode {
-                move_range: split.shallow.clone(),
-                // Raster over a height field: runs are materially
-                // independent of visiting order.
-                depth_ordered: false,
-            },
-        ],
-    ));
-    spans
+    composed_spans::<SteepShallowOp<'_>>(toolpath, &[], split)
 }
 
 /// Label on the steep half's `Region` span — the handle sentries use to
@@ -672,9 +520,19 @@ pub const STEEP_HALF_LABEL: &str = "Steep pass";
 /// Label on the shallow half's `Region` span.
 pub(crate) const SHALLOW_HALF_LABEL: &str = "Shallow pass";
 
-/// [`steep_shallow_toolpath_with_cancel`] plus the [`SteepShallowSplit`]
-/// describing where each half landed. Byte-identical toolpath output.
-#[allow(clippy::too_many_arguments)] // mirrors the sibling above, plus the split
+/// Generate a steep-and-shallow finishing toolpath, and the
+/// [`SteepShallowSplit`] describing where each half landed.
+///
+/// Splits the surface into steep and shallow regions based on slope angle,
+/// then generates waterline passes for steep areas and parallel raster passes
+/// for shallow areas, with configurable overlap and wall clearance. Polls
+/// `cancel` in the heightmap construction and in both pass generators
+/// (per-Z-level for steep, per-raster-row for shallow).
+///
+/// `boundary_regions` (P2.3): forwarded to both pass generators, which fold
+/// it into their existing per-point keep checks (steep grid / shallow grid
+/// respectively). `None` reproduces today's output byte-for-byte.
+#[tracing::instrument(skip(mesh, index, cutter, params, boundary_regions, cancel), fields(threshold = params.threshold_angle))]
 pub fn steep_shallow_toolpath_split_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -704,7 +562,6 @@ pub fn steep_shallow_toolpath_split_with_cancel(
 /// grid), so it is the sharpest of the three arms. Passing
 /// `steep_shallow_generation_resolution(cutter, params.tolerance)` reproduces
 /// the shipped path exactly.
-#[allow(clippy::too_many_arguments)]
 pub fn steep_shallow_toolpath_split_with_resolution(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -714,147 +571,321 @@ pub fn steep_shallow_toolpath_split_with_resolution(
     resolution: FinishResolutionPolicy,
     cancel: &dyn CancelCheck,
 ) -> Result<(Toolpath, SteepShallowSplit), Cancelled> {
-    check_cancel(cancel)?;
-    let bbox = &mesh.bbox;
-
-    // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
-    // The RESOLUTION is steep/shallow's own choice (H3 step 2) — see
-    // `steep_shallow_generation_resolution`, which the shipped wrapper above
-    // passes in.
-    //
-    // MEMOISED — see `finish_surface_cache`'s module doc. Like `ramp_finish`,
-    // this op builds one surface per call rather than per region; it shares the
-    // entry so every generation consumer reads one memo.
-    let surface = crate::maps::finish_surface_cache::cached_finish_surface(
-        mesh, index, cutter, resolution, cancel,
-    )?;
-    let surface_hm = &surface.heightmap;
-    let slope_map = &surface.slope_map;
-    let cell_size = surface_hm.cell_size;
-    let rows = surface_hm.rows;
-    let cols = surface_hm.cols;
-
-    // Classify steep vs shallow
-    let steep_grid = classify_steep_shallow(slope_map, params.threshold_angle);
-
-    let steep_count = steep_grid.iter().filter(|&&s| s).count();
-    let shallow_count = steep_grid.iter().filter(|&&s| !s).count();
-    info!(
-        steep = steep_count,
-        shallow = shallow_count,
-        threshold = params.threshold_angle,
-        "Steep/shallow classification"
-    );
-
-    // Expand steep region by overlap_distance for waterline pass extension
-    let overlap_cells = (params.overlap_distance / cell_size).ceil() as usize;
-    let steep_expanded = dilate_grid(&steep_grid, rows, cols, overlap_cells);
-
-    // Create shallow region: invert steep, then erode by wall_clearance
-    let shallow_grid: Vec<bool> = steep_grid.iter().map(|&s| !s).collect();
-    let clearance_cells = (params.wall_clearance / cell_size).ceil() as usize;
-    let shallow_eroded = erode_grid(&shallow_grid, rows, cols, clearance_cells);
-
-    // Expand shallow region by overlap_distance for raster pass extension
-    let shallow_expanded = dilate_grid(&shallow_eroded, rows, cols, overlap_cells);
-
-    // Z range.
-    //
-    // C2 AUDIT (2026-07-30), the consumer PR-8b flagged as unaudited: the
-    // ladder bottom WANTS the bbox floor, and `min_covered_z()` would be a
-    // regression here. The steep half is a WATERLINE pass — it slices the
-    // mesh with `waterline_contours` at each level, and a vertical wall
-    // extends from the top face all the way down while the drop-cutter grid
-    // only ever sees the top face. On a plateau (a box with vertical sides)
-    // `min_covered_z()` IS the top face, so a covered-only bottom would
-    // collapse the ladder to a single level and drop every wall pass — the
-    // exact passes the operation exists to make. Levels below real material
-    // are free: `waterline_contours` returns nothing there.
-    // Sentry: `steep_ladder_bottom_is_the_bbox_floor_not_the_covered_minimum`.
-    // (This differs from `ramp_finish`, whose ladder bottom is a DEPTH THE
-    // CUTTER MUST HOLD at a sampled surface point — that one is clamped to
-    // `min_covered_z()`, PR-8b.)
-    let z_top = bbox.max.z;
-    let z_bottom = surface_hm.min_z_or_bbox_floor();
-
-    debug!(
-        z_top = format!("{:.1}", z_top),
-        z_bottom = format!("{:.1}", z_bottom),
-        overlap_cells = overlap_cells,
-        clearance_cells = clearance_cells,
-        "Generating steep and shallow passes"
-    );
-
-    // Generate steep (waterline) passes
-    let steep_tp = generate_steep_passes_with_cancel(
+    let op = SteepShallowOp {
         mesh,
         index,
         cutter,
-        slope_map,
-        &steep_expanded,
-        z_top,
-        z_bottom,
-        params.z_step,
-        params.sampling,
-        params.stock_to_leave,
-        params.feed_rate,
-        params.plunge_rate,
-        params.safe_z,
+        params,
         boundary_regions,
-        cancel,
-    )?;
-
-    // Generate shallow (parallel) passes
-    let shallow_tp = generate_shallow_passes_with_cancel(
-        mesh,
-        index,
-        cutter,
-        &shallow_expanded,
-        slope_map,
-        params.stepover,
-        params.stock_to_leave,
-        params.feed_rate,
-        params.plunge_rate,
-        params.safe_z,
-        boundary_regions,
-        cancel,
-    )?;
-
-    info!(
-        steep_moves = steep_tp.moves.len(),
-        shallow_moves = shallow_tp.moves.len(),
-        steep_cut_mm = format!("{:.0}", steep_tp.total_cutting_distance()),
-        shallow_cut_mm = format!("{:.0}", shallow_tp.total_cutting_distance()),
-        "Steep and shallow passes generated"
-    );
-
-    // Merge: steep_first means steep toolpath comes first
-    let (n_steep, n_shallow) = (steep_tp.moves.len(), shallow_tp.moves.len());
-    let mut tp = Toolpath::new();
-    let split = if params.steep_first {
-        tp.moves.extend(steep_tp.moves);
-        tp.moves.extend(shallow_tp.moves);
-        SteepShallowSplit {
-            steep: 0..n_steep,
-            shallow: n_steep..n_steep + n_shallow,
-        }
-    } else {
-        tp.moves.extend(shallow_tp.moves);
-        tp.moves.extend(steep_tp.moves);
-        SteepShallowSplit {
-            shallow: 0..n_shallow,
-            steep: n_shallow..n_shallow + n_steep,
-        }
+        resolution,
     };
+    let composed = compose(&op, cancel)?;
+    Ok((composed.toolpath, composed.report))
+}
 
-    info!(
-        moves = tp.moves.len(),
-        cutting_mm = format!("{:.1}", tp.total_cutting_distance()),
-        rapid_mm = format!("{:.1}", tp.total_rapid_distance()),
-        "Steep and shallow toolpath complete"
-    );
+// ── The composed op (W6.4.4) ─────────────────────────────────────────────
 
-    Ok((tp, split))
+/// Steep and Shallow as a composed-surface op ([`crate::finish::composed`]):
+/// the slope classifier on its own offset surface (`legacy_envelope_quarter`,
+/// PR-8c), two cell-mask regions (steep, shallow) cut by the op's own two
+/// emitters, and a fixed order (`steep_first`).
+pub(crate) struct SteepShallowOp<'a> {
+    pub mesh: &'a TriangleMesh,
+    pub index: &'a SpatialIndex,
+    pub cutter: &'a dyn MillingCutter,
+    pub params: &'a SteepShallowParams,
+    /// The territory regions (P2.3). Each emitter folds them into its
+    /// per-point keep.
+    pub boundary_regions: Option<&'a RegionSet<'a>>,
+    /// The generation and classification grid
+    /// ([`steep_shallow_generation_resolution`] in production).
+    pub resolution: FinishResolutionPolicy,
+}
+
+/// The two regions of the op. Each one is a cell mask on the classifier
+/// grid, not a polygon: a polygon form changes the contour run splits and
+/// the raster run ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SteepShallowRegion {
+    /// Waterline passes over the steep cells, dilated by the overlap.
+    Steep,
+    /// Raster passes over the shallow cells, eroded by the wall clearance
+    /// and dilated by the overlap.
+    Shallow,
+}
+
+/// What the steep/shallow classifier gives the two emitters.
+pub(crate) struct SteepShallowClassified {
+    surface: std::sync::Arc<crate::finish::finish_setup::FinishSurface>,
+    steep_expanded: Vec<bool>,
+    shallow_expanded: Vec<bool>,
+    z_top: f64,
+    z_bottom: f64,
+}
+
+impl ComposedSurfaceOp for SteepShallowOp<'_> {
+    type Classified = SteepShallowClassified;
+    type Fragment = (SteepShallowRegion, Toolpath);
+    type Memo = ();
+    type Annotation = ();
+    type Report = SteepShallowSplit;
+
+    fn classify(
+        &self,
+        cancel: &dyn CancelCheck,
+    ) -> Result<(SteepShallowClassified, SteepShallowSplit), Cancelled> {
+        let (mesh, index, cutter, params, resolution) = (
+            self.mesh,
+            self.index,
+            self.cutter,
+            self.params,
+            self.resolution,
+        );
+        let bbox = &mesh.bbox;
+
+        // Build surface heightmap and slope map (shared setup, see finish_setup.rs).
+        // The RESOLUTION is steep/shallow's own choice (H3 step 2) — see
+        // `steep_shallow_generation_resolution`, which the shipped entry passes
+        // in.
+        //
+        // MEMOISED — see `finish_surface_cache`'s module doc. Like `ramp_finish`,
+        // this op builds one surface per call rather than per region; it shares the
+        // entry so every generation consumer reads one memo.
+        let surface = crate::maps::finish_surface_cache::cached_finish_surface(
+            mesh, index, cutter, resolution, cancel,
+        )?;
+        let surface_hm = &surface.heightmap;
+        let slope_map = &surface.slope_map;
+        let cell_size = surface_hm.cell_size;
+        let rows = surface_hm.rows;
+        let cols = surface_hm.cols;
+
+        // Classify steep vs shallow
+        let steep_grid = classify_steep_shallow(slope_map, params.threshold_angle);
+
+        let steep_count = steep_grid.iter().filter(|&&s| s).count();
+        let shallow_count = steep_grid.iter().filter(|&&s| !s).count();
+        info!(
+            steep = steep_count,
+            shallow = shallow_count,
+            threshold = params.threshold_angle,
+            "Steep/shallow classification"
+        );
+
+        // Expand steep region by overlap_distance for waterline pass extension
+        let overlap_cells = (params.overlap_distance / cell_size).ceil() as usize;
+        let steep_expanded = dilate_grid(&steep_grid, rows, cols, overlap_cells);
+
+        // Create shallow region: invert steep, then erode by wall_clearance
+        let shallow_grid: Vec<bool> = steep_grid.iter().map(|&s| !s).collect();
+        let clearance_cells = (params.wall_clearance / cell_size).ceil() as usize;
+        let shallow_eroded = erode_grid(&shallow_grid, rows, cols, clearance_cells);
+
+        // Expand shallow region by overlap_distance for raster pass extension
+        let shallow_expanded = dilate_grid(&shallow_eroded, rows, cols, overlap_cells);
+
+        // Z range.
+        //
+        // C2 AUDIT (2026-07-30), the consumer PR-8b flagged as unaudited: the
+        // ladder bottom WANTS the bbox floor, and `min_covered_z()` would be a
+        // regression here. The steep half is a WATERLINE pass — it slices the
+        // mesh with `waterline_contours` at each level, and a vertical wall
+        // extends from the top face all the way down while the drop-cutter grid
+        // only ever sees the top face. On a plateau (a box with vertical sides)
+        // `min_covered_z()` IS the top face, so a covered-only bottom would
+        // collapse the ladder to a single level and drop every wall pass — the
+        // exact passes the operation exists to make. Levels below real material
+        // are free: `waterline_contours` returns nothing there.
+        // Sentry: `steep_ladder_bottom_is_the_bbox_floor_not_the_covered_minimum`.
+        // (This differs from `ramp_finish`, whose ladder bottom is a DEPTH THE
+        // CUTTER MUST HOLD at a sampled surface point — that one is clamped to
+        // `min_covered_z()`, PR-8b.)
+        let z_top = bbox.max.z;
+        let z_bottom = surface_hm.min_z_or_bbox_floor();
+
+        debug!(
+            z_top = format!("{:.1}", z_top),
+            z_bottom = format!("{:.1}", z_bottom),
+            overlap_cells = overlap_cells,
+            clearance_cells = clearance_cells,
+            "Generating steep and shallow passes"
+        );
+
+        Ok((
+            SteepShallowClassified {
+                surface,
+                steep_expanded,
+                shallow_expanded,
+                z_top,
+                z_bottom,
+            },
+            SteepShallowSplit {
+                steep: 0..0,
+                shallow: 0..0,
+            },
+        ))
+    }
+
+    /// Two regions, always: 0 is the steep half, 1 the shallow half. The
+    /// emit order is fixed; `route` applies `steep_first`.
+    fn region_count(&self, _classified: &SteepShallowClassified) -> usize {
+        2
+    }
+
+    fn cut_region(
+        &self,
+        classified: &SteepShallowClassified,
+        region: usize,
+        _memo: &mut (),
+        _report: &mut SteepShallowSplit,
+        cancel: &dyn CancelCheck,
+    ) -> Result<Option<(SteepShallowRegion, Toolpath)>, Cancelled> {
+        let params = self.params;
+        let slope_map = &classified.surface.slope_map;
+        match region {
+            // Generate steep (waterline) passes
+            0 => Ok(Some((
+                SteepShallowRegion::Steep,
+                emit_steep_passes(
+                    self.mesh,
+                    self.index,
+                    self.cutter,
+                    slope_map,
+                    &classified.steep_expanded,
+                    classified.z_top,
+                    classified.z_bottom,
+                    params.z_step,
+                    params.sampling,
+                    params.stock_to_leave,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    params.safe_z,
+                    self.boundary_regions,
+                    cancel,
+                )?,
+            ))),
+            // Generate shallow (parallel) passes
+            1 => Ok(Some((
+                SteepShallowRegion::Shallow,
+                emit_shallow_passes(
+                    self.mesh,
+                    self.index,
+                    self.cutter,
+                    &classified.shallow_expanded,
+                    slope_map,
+                    params.stepover,
+                    params.stock_to_leave,
+                    params.feed_rate,
+                    params.plunge_rate,
+                    params.safe_z,
+                    self.boundary_regions,
+                    cancel,
+                )?,
+            ))),
+            _ => Ok(None),
+        }
+    }
+
+    /// Concatenate the two halves; `steep_first` puts the steep half first.
+    fn route(
+        &self,
+        _classified: SteepShallowClassified,
+        fragments: Vec<(SteepShallowRegion, Toolpath)>,
+        split: &mut SteepShallowSplit,
+        _cancel: &dyn CancelCheck,
+    ) -> Result<Routed<()>, Cancelled> {
+        let mut steep_tp = Toolpath::new();
+        let mut shallow_tp = Toolpath::new();
+        for (region, tp) in fragments {
+            match region {
+                SteepShallowRegion::Steep => steep_tp = tp,
+                SteepShallowRegion::Shallow => shallow_tp = tp,
+            }
+        }
+        info!(
+            steep_moves = steep_tp.moves.len(),
+            shallow_moves = shallow_tp.moves.len(),
+            steep_cut_mm = format!("{:.0}", steep_tp.total_cutting_distance()),
+            shallow_cut_mm = format!("{:.0}", shallow_tp.total_cutting_distance()),
+            "Steep and shallow passes generated"
+        );
+
+        // Merge: steep_first means steep toolpath comes first
+        let (n_steep, n_shallow) = (steep_tp.moves.len(), shallow_tp.moves.len());
+        let mut tp = Toolpath::new();
+        *split = if self.params.steep_first {
+            tp.moves.extend(steep_tp.moves);
+            tp.moves.extend(shallow_tp.moves);
+            SteepShallowSplit {
+                steep: 0..n_steep,
+                shallow: n_steep..n_steep + n_shallow,
+            }
+        } else {
+            tp.moves.extend(shallow_tp.moves);
+            tp.moves.extend(steep_tp.moves);
+            SteepShallowSplit {
+                shallow: 0..n_shallow,
+                steep: n_shallow..n_shallow + n_steep,
+            }
+        };
+
+        info!(
+            moves = tp.moves.len(),
+            cutting_mm = format!("{:.1}", tp.total_cutting_distance()),
+            rapid_mm = format!("{:.1}", tp.total_rapid_distance()),
+            "Steep and shallow toolpath complete"
+        );
+        Ok(Routed {
+            toolpath: tp,
+            annotations: Vec::new(),
+        })
+    }
+
+    /// The two halves. The steep half is a waterline: it ladders down in
+    /// Z, so its runs must keep their relative depth order. The shallow
+    /// half is a raster over a height field: its runs are materially
+    /// independent of visiting order.
+    fn order_constraints(split: &SteepShallowSplit) -> Vec<RegionNode> {
+        vec![
+            RegionNode {
+                move_range: split.steep.clone(),
+                depth_ordered: true,
+            },
+            RegionNode {
+                move_range: split.shallow.clone(),
+                depth_ordered: false,
+            },
+        ]
+    }
+
+    /// The cutting-run spans and one labelled `Region` span per half.
+    fn label_spans(
+        toolpath: &Toolpath,
+        _annotations: &[()],
+        split: &SteepShallowSplit,
+    ) -> Vec<crate::trace::toolpath_spans::Span> {
+        use crate::compute::spans::spans_from_cutting_runs;
+        use crate::trace::toolpath_spans::{Span, SpanKind};
+
+        let mut spans = spans_from_cutting_runs(toolpath, "Steep/shallow run");
+        let insert_at = 1.min(spans.len());
+        let mut halves: Vec<Span> = Vec::new();
+        if !split.steep.is_empty() {
+            halves.push(
+                Span::new(split.steep.start, split.steep.end, SpanKind::Region)
+                    .with_label(STEEP_HALF_LABEL),
+            );
+        }
+        if !split.shallow.is_empty() {
+            halves.push(
+                Span::new(split.shallow.start, split.shallow.end, SpanKind::Region)
+                    .with_label(SHALLOW_HALF_LABEL),
+            );
+        }
+        halves.sort_by_key(|s| s.start_move);
+        spans.splice(insert_at..insert_at, halves);
+        spans
+    }
 }
 
 #[cfg(test)]
@@ -878,6 +909,19 @@ mod tests {
 
     fn ball_cutter() -> BallEndmill {
         BallEndmill::new(6.35, 25.0)
+    }
+
+    /// The whole op, never cancelled, with no boundary.
+    fn toolpath(
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+        cutter: &dyn MillingCutter,
+        params: &SteepShallowParams,
+    ) -> Toolpath {
+        crate::interrupt::run_uncancellable(|c| {
+            steep_shallow_toolpath_split_with_cancel(mesh, index, cutter, params, None, c)
+        })
+        .0
     }
 
     // ── Grid morphology tests ───────────────────────────────────────
@@ -1009,7 +1053,7 @@ mod tests {
             ..SteepShallowParams::default()
         };
 
-        let tp = steep_shallow_toolpath(&mesh, &si, &cutter, &params);
+        let tp = toolpath(&mesh, &si, &cutter, &params);
         assert!(
             tp.moves.len() > 10,
             "Should produce non-trivial toolpath, got {} moves",
@@ -1040,21 +1084,25 @@ mod tests {
         let steep_grid = classify_steep_shallow(&slope_map, 40.0);
         let steep_expanded = dilate_grid(&steep_grid, rows, cols, 2);
 
-        let steep_tp = generate_steep_passes(
-            &mesh,
-            &si,
-            &cutter,
-            &slope_map,
-            &steep_expanded,
-            bbox.max.z,
-            surface_hm.min_z_or_bbox_floor(),
-            2.0,
-            3.0,
-            0.0,
-            1000.0,
-            500.0,
-            30.0,
-        );
+        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+            emit_steep_passes(
+                &mesh,
+                &si,
+                &cutter,
+                &slope_map,
+                &steep_expanded,
+                bbox.max.z,
+                surface_hm.min_z_or_bbox_floor(),
+                2.0,
+                3.0,
+                0.0,
+                1000.0,
+                500.0,
+                30.0,
+                None,
+                c,
+            )
+        });
 
         // Steep waterline passes should have constant Z within each contour
         // (between rapids). Collect Z values of feed moves between rapids.
@@ -1115,18 +1163,22 @@ mod tests {
         let shallow_grid: Vec<bool> = steep_grid.iter().map(|&s| !s).collect();
         let shallow_expanded = dilate_grid(&shallow_grid, rows, cols, 2);
 
-        let shallow_tp = generate_shallow_passes(
-            &mesh,
-            &si,
-            &cutter,
-            &shallow_expanded,
-            &slope_map,
-            2.0,
-            0.0,
-            1000.0,
-            500.0,
-            30.0,
-        );
+        let shallow_tp = crate::interrupt::run_uncancellable(|c| {
+            emit_shallow_passes(
+                &mesh,
+                &si,
+                &cutter,
+                &shallow_expanded,
+                &slope_map,
+                2.0,
+                0.0,
+                1000.0,
+                500.0,
+                30.0,
+                None,
+                c,
+            )
+        });
 
         // Shallow raster should have variable Z across the surface
         let cutting_z: Vec<f64> = shallow_tp
@@ -1162,7 +1214,7 @@ mod tests {
             ..SteepShallowParams::default()
         };
 
-        let tp = steep_shallow_toolpath(&mesh, &si, &cutter, &params);
+        let tp = toolpath(&mesh, &si, &cutter, &params);
         // With steep_first, waterline passes (constant Z) should come before
         // raster passes (variable Z). We can't perfectly distinguish in the
         // merged toolpath, but at minimum it should produce output.
@@ -1187,14 +1239,14 @@ mod tests {
             overlap_distance: 0.0,
             ..SteepShallowParams::default()
         };
-        let tp_no = steep_shallow_toolpath(&mesh, &si, &cutter, &params_no_overlap);
+        let tp_no = toolpath(&mesh, &si, &cutter, &params_no_overlap);
 
         // With overlap
         let params_overlap = SteepShallowParams {
             overlap_distance: 5.0,
             ..params_no_overlap
         };
-        let tp_yes = steep_shallow_toolpath(&mesh, &si, &cutter, &params_overlap);
+        let tp_yes = toolpath(&mesh, &si, &cutter, &params_overlap);
 
         // Overlap should produce more or equal cutting distance
         assert!(
@@ -1277,21 +1329,25 @@ mod tests {
             max_adjacent_spacing = max_adjacent_spacing.max(d);
         }
 
-        let steep_tp = generate_steep_passes(
-            &mesh,
-            &si,
-            &cutter,
-            &slope_map,
-            &steep_mask,
-            z_test,
-            z_test - 0.5, // z_bottom: keeps the loop to a single Z level
-            100.0,        // z_step larger than the range: exactly one pass
-            sampling,
-            0.0,
-            1000.0,
-            500.0,
-            30.0,
-        );
+        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+            emit_steep_passes(
+                &mesh,
+                &si,
+                &cutter,
+                &slope_map,
+                &steep_mask,
+                z_test,
+                z_test - 0.5, // z_bottom: keeps the loop to a single Z level
+                100.0,        // z_step larger than the range: exactly one pass
+                sampling,
+                0.0,
+                1000.0,
+                500.0,
+                30.0,
+                None,
+                c,
+            )
+        });
 
         // No consecutive pair of cutting (FinishingCut) moves may be farther
         // apart than a small multiple of the contour's own point spacing —
@@ -1356,10 +1412,12 @@ mod tests {
         // Every cell steep: the whole contour should survive the filter.
         let all_steep = vec![true; rows * cols];
 
-        let steep_tp = generate_steep_passes(
-            &mesh, &si, &cutter, &slope_map, &all_steep, 8.0, 7.5, 100.0, 1.0, 0.0, 1000.0, 500.0,
-            30.0,
-        );
+        let steep_tp = crate::interrupt::run_uncancellable(|c| {
+            emit_steep_passes(
+                &mesh, &si, &cutter, &slope_map, &all_steep, 8.0, 7.5, 100.0, 1.0, 0.0, 1000.0,
+                500.0, 30.0, None, c,
+            )
+        });
 
         // Reconstruct each pass (a run of plunge+cut moves between rapids)
         // and assert every pass returns to its own starting XY.
@@ -1404,32 +1462,6 @@ mod tests {
     // ── P2.3: boundary_regions pre-clip ──────────────────────────────
 
     #[test]
-    fn steep_shallow_boundary_regions_none_matches_call_without_param() {
-        let (mesh, si) = make_hemisphere();
-        let cutter = ball_cutter();
-        let params = SteepShallowParams {
-            stepover: 2.0,
-            z_step: 2.0,
-            sampling: 3.0,
-            tolerance: 0.5,
-            ..SteepShallowParams::default()
-        };
-        let never_cancel = || false;
-
-        let tp_default = steep_shallow_toolpath(&mesh, &si, &cutter, &params);
-        let tp_none =
-            steep_shallow_toolpath_with_cancel(&mesh, &si, &cutter, &params, None, &never_cancel)
-                .unwrap();
-
-        assert_eq!(tp_default.moves.len(), tp_none.moves.len());
-        for (a, b) in tp_default.moves.iter().zip(tp_none.moves.iter()) {
-            assert!((a.target.x - b.target.x).abs() < 1e-9);
-            assert!((a.target.y - b.target.y).abs() < 1e-9);
-            assert!((a.target.z - b.target.z).abs() < 1e-9);
-        }
-    }
-
-    #[test]
     fn steep_shallow_boundary_regions_confines_cuts_to_region() {
         let (mesh, si) = make_hemisphere();
         let cutter = ball_cutter();
@@ -1453,7 +1485,7 @@ mod tests {
 
         let left_half_regions = std::slice::from_ref(&left_half);
         let region_set = RegionSet::from_slice(left_half_regions);
-        let tp = steep_shallow_toolpath_with_cancel(
+        let (tp, _) = steep_shallow_toolpath_split_with_cancel(
             &mesh,
             &si,
             &cutter,

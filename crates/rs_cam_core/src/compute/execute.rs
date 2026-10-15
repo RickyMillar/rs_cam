@@ -532,6 +532,7 @@ macro_rules! config_guard {
 // it, and every family child calls `config_guard!`.
 
 mod clearing_2d;
+mod composed;
 mod curve_engrave;
 mod dressup_apply;
 mod drilling;

@@ -1636,7 +1636,6 @@ fn default_pencil_params() -> PencilParams {
         reference_cutter: None,
         link_kinematics: None,
         link_hop_distance_mm: None,
-        link_fallback_top_z: None,
     }
 }
 
@@ -1807,9 +1806,10 @@ fn sweep_steep_shallow_threshold() {
                 p.threshold_angle = v.as_f64().unwrap();
             }
             rs_cam_core::interrupt::run_uncancellable(|cancel| {
-                rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_with_cancel(
+                rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_split_with_cancel(
                     &mesh, &index, &cutter, &p, None, cancel,
                 )
+                .map(|(tp, _)| tp)
             })
         },
     );

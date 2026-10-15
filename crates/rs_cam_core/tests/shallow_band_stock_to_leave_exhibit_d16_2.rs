@@ -250,6 +250,7 @@ fn run(fixture: &Fixture, stock_to_leave: f64) -> Arm {
         /* link_kinematics */ None,
         /* claims */ None,
         /* debug */ None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");

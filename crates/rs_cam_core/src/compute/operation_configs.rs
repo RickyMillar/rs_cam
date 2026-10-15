@@ -1511,8 +1511,6 @@ impl PencilConfig {
             // measured pair needs (`planning/pencil_linking_2026-09-04.md`,
             // `planning/linking_2026-09-09/SPEC.md` §8).
             link_hop_distance_mm: self.link_hop_distance_mm,
-            // R1: the adapter sets it from the one link-ceiling builder.
-            link_fallback_top_z: None,
         }
     }
 }

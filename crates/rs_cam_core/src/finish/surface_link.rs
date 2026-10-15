@@ -241,6 +241,103 @@ impl LinkCeiling<'_> {
     }
 }
 
+/// The shape a link candidate takes under a [`LinkCeiling`]: the ONE
+/// ceiling arm of every finishing link (G-LINKLOAD). The relink inside a
+/// fragment set ([`relink_fragments`]) and the Unified Finish router link
+/// between regions (B16, W6.4) both read it.
+pub(crate) enum CeilingShape {
+    /// The stock is already AT the surface along the whole hop: the mesh IS
+    /// the material, so the surface-riding candidate is correct. Only with
+    /// `flush_ride`.
+    Flush(Vec<P3>),
+    /// The exit lift, the interior samples and the re-entry lift, all at
+    /// clearance: nothing standing between the two ends is crossed at cut
+    /// depth.
+    Lifted(Vec<P3>),
+    /// The clearance reaches `safe_z`: the caller keeps the retract.
+    AboveSafeZ,
+}
+
+/// Shape the surface-link candidate `pts` from `from` to `entry` under
+/// `ceiling`. See [`CeilingShape`].
+///
+/// # The flush arm
+///
+/// Pencil's prior, applied PER JUNCTION (operator-observed 2026-08-27):
+/// where the dexel says the stock is already AT the surface along the whole
+/// hop, the mesh IS the material — the legacy surface-riding link is correct
+/// and strictly cheaper than a lift (on the wanaka tier-1 raster, 2,569
+/// links each paid two clearance legs for a sub-millimetre row hop: a hedge
+/// of staples along every raster edge).
+///
+/// `material_top` is a conservative MAX over the tool disc, so on sloped
+/// ground it reads above the centre surface even with zero standing stock —
+/// there the test fails and the safe lifted shape stays. Deliberate: the
+/// flush ride is a flat-ground optimisation, never a slope gamble.
+///
+/// This one stays the FLAT-CYLINDER read on purpose. The profile-aware
+/// ceiling (`required_tip_z`, used by `clear_z` below) reads LOWER wherever
+/// the tool rises above its tip, and a lower reading here would widen the
+/// flush arm — i.e. ride the surface more often. Relaxing the LIFT HEIGHT
+/// is provably safe; relaxing the decision to lift at all is not the same
+/// question.
+///
+/// # The lifted arm
+///
+/// Exit lift, then the interior samples, then the re-entry lift: the
+/// traverse is entirely at clearance and both ends of it are vertical. The
+/// degenerate case — a gap shorter than one sample spacing, where
+/// `build_surface_link` yields no interior points at all — is the same rule
+/// with an empty middle, not a special case that feeds across at depth.
+#[allow(clippy::too_many_arguments)] // the candidate, the surface and the ceiling are separate inputs
+pub(crate) fn shape_under_ceiling(
+    ceiling: &LinkCeiling<'_>,
+    from: P3,
+    pts: Vec<P3>,
+    entry: P3,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    stock_to_leave: f64,
+    safe_z: f64,
+    flush_ride: bool,
+) -> CeilingShape {
+    let surface_z_at = |x: f64, y: f64| {
+        let cl = point_drop_cutter(x, y, mesh, index, cutter);
+        if cl.contacted {
+            cl.z
+        } else {
+            f64::NEG_INFINITY
+        }
+    };
+    let samples: Vec<(f64, f64, f64)> =
+        std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
+            .chain(pts.iter().map(|p| (p.x, p.y, p.z - stock_to_leave)))
+            .chain(std::iter::once((
+                entry.x,
+                entry.y,
+                surface_z_at(entry.x, entry.y),
+            )))
+            .collect();
+    const FLUSH_EPS_MM: f64 = 0.15;
+    let flush = flush_ride
+        && samples
+            .iter()
+            .all(|&(x, y, sz)| sz.is_finite() && ceiling.material_top(x, y) <= sz + FLUSH_EPS_MM);
+    if flush {
+        return CeilingShape::Flush(pts);
+    }
+    let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
+    for &(x, y, surface_z) in &samples {
+        let z = ceiling.clear_z(cutter, x, y, surface_z);
+        if z >= safe_z - 1e-6 {
+            return CeilingShape::AboveSafeZ;
+        }
+        lifted.push(P3::new(x, y, z));
+    }
+    CeilingShape::Lifted(lifted)
+}
+
 /// What one fragment IS, so the stage knows whether it may change where the
 /// fragment starts.
 ///
@@ -991,57 +1088,25 @@ pub fn relink_fragments_with_kinds(
             // reads flush, and otherwise the lifted clearance hop (b).
             let (pts, tier) = match params.link_ceiling {
                 None => (pts, LinkTier::AtDepth),
-                Some(ceiling) => {
-                    let surface_z_at = |x: f64, y: f64| {
-                        let cl = point_drop_cutter(x, y, mesh, index, cutter);
-                        if cl.contacted {
-                            cl.z
-                        } else {
-                            f64::NEG_INFINITY
-                        }
-                    };
-                    let samples: Vec<(f64, f64, f64)> =
-                        std::iter::once((from.x, from.y, surface_z_at(from.x, from.y)))
-                            .chain(pts.iter().map(|p| (p.x, p.y, p.z - params.stock_to_leave)))
-                            .chain(std::iter::once((
-                                entry.x,
-                                entry.y,
-                                surface_z_at(entry.x, entry.y),
-                            )))
-                            .collect();
-                    // Pencil's prior, applied PER JUNCTION (operator-observed
-                    // 2026-08-27): where the dexel says the stock is already
-                    // AT the surface along the whole hop, the mesh IS the
-                    // material — the legacy surface-riding link is correct
-                    // and strictly cheaper than a lift (on the wanaka tier-1
-                    // raster, 2,569 links each paid two clearance legs for a
-                    // sub-millimetre row hop: a hedge of staples along every
-                    // raster edge). A surface-riding link is a CUTTING feed,
-                    // so the territory veto — which
-                    // `airborne_links_may_leave_territory` can waive only for
-                    // LIFTED links — applies here after all, and is re-run
-                    // below because the exemption above may have skipped it.
-                    //
-                    // `material_top` is a conservative MAX over the tool
-                    // disc, so on sloped ground it reads above the centre
-                    // surface even with zero standing stock — there the test
-                    // fails and the safe lifted shape stays. Deliberate: the
-                    // flush ride is a flat-ground optimisation, never a
-                    // slope gamble.
-                    //
-                    // This one stays the FLAT-CYLINDER read on purpose. The
-                    // profile-aware ceiling (`required_tip_z`, used by
-                    // `clear_z` below) reads LOWER wherever the tool rises
-                    // above its tip, and a lower reading here would widen the
-                    // flush arm — i.e. ride the surface more often. Relaxing
-                    // the LIFT HEIGHT is provably safe; relaxing the decision
-                    // to lift at all is not the same question.
-                    const FLUSH_EPS_MM: f64 = 0.15;
-                    let flush = params.flush_ride
-                        && samples.iter().all(|&(x, y, sz)| {
-                            sz.is_finite() && ceiling.material_top(x, y) <= sz + FLUSH_EPS_MM
-                        });
-                    if flush {
+                Some(ceiling) => match shape_under_ceiling(
+                    &ceiling,
+                    from,
+                    pts,
+                    entry,
+                    mesh,
+                    index,
+                    cutter,
+                    params.stock_to_leave,
+                    params.safe_z,
+                    params.flush_ride,
+                ) {
+                    CeilingShape::Flush(pts) => {
+                        // A surface-riding link is a CUTTING feed, so the
+                        // territory veto — which
+                        // `airborne_links_may_leave_territory` can waive
+                        // only for LIFTED links — applies here after all,
+                        // and is re-run because the exemption above may
+                        // have skipped it.
                         if let Some(boundary) = params.boundary
                             && !pts
                                 .iter()
@@ -1051,32 +1116,16 @@ pub fn relink_fragments_with_kinds(
                             return None;
                         }
                         (pts, LinkTier::AtDepth)
-                    } else {
-                        // Exit lift, then the interior samples, then the
-                        // re-entry lift: the traverse is entirely at
-                        // clearance and both ends of it are vertical, so
-                        // nothing standing between the two fragments is
-                        // crossed at cut depth. The degenerate case — a gap
-                        // shorter than one sample spacing, where
-                        // `build_surface_link` yields no interior points at
-                        // all — is the same rule with an empty middle, not a
-                        // special case that feeds across at depth.
-                        let mut lifted: Vec<P3> = Vec::with_capacity(samples.len());
-                        for &(x, y, surface_z) in &samples {
-                            let z = ceiling.clear_z(cutter, x, y, surface_z);
-                            if z >= params.safe_z - 1e-6 {
-                                // Clearing the standing material costs the
-                                // whole retract anyway — keep the rapid,
-                                // which is faster than feeding to the same
-                                // height.
-                                report.ceiling_above_safe_z += 1;
-                                return None;
-                            }
-                            lifted.push(P3::new(x, y, z));
-                        }
-                        (lifted, LinkTier::ClearanceHop)
                     }
-                }
+                    CeilingShape::Lifted(pts) => (pts, LinkTier::ClearanceHop),
+                    CeilingShape::AboveSafeZ => {
+                        // Clearing the standing material costs the whole
+                        // retract anyway — keep the rapid, which is faster
+                        // than feeding to the same height.
+                        report.ceiling_above_safe_z += 1;
+                        return None;
+                    }
+                },
             };
             match params.link_kinematics {
                 Some(lk) => {

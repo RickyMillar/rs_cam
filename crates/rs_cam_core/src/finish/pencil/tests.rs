@@ -947,6 +947,7 @@ fn two_run_link_report_over(
         &tool,
         &params,
         stock,
+        None,
     );
     report
 }
@@ -1043,7 +1044,7 @@ fn link_lift_does_not_fire_on_a_link_riding_its_own_crease() {
 
     assert!(
         matches!(
-            plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &link_params()),
+            plan_link_lift(from, to, &pts, &stock, None, &tool, r, rise, &link_params()),
             LinkLift::NotNeeded
         ),
         "the valley wall under the flank is the surface this pass is \
@@ -1063,7 +1064,8 @@ fn link_lift_fires_on_a_rib_standing_across_the_link() {
     let stock = v_valley_stock(-1.5, Some((0.5, 1.5, rib_top)));
     let (from, pts, to) = v_valley_link(-1.5, r, -3.0, 3.0);
 
-    let lifted = match plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &link_params()) {
+    let lifted = match plan_link_lift(from, to, &pts, &stock, None, &tool, r, rise, &link_params())
+    {
         LinkLift::Lifted(v) => v,
         LinkLift::NotNeeded => panic!("a rib standing 2.3mm over the link was ridden through"),
         LinkLift::Refused => panic!("clearing a rib at z=1.0 does not reach safe_z=5.0"),
@@ -1126,7 +1128,7 @@ fn link_lift_refuses_when_the_clearance_reaches_safe_z() {
     };
     assert!(
         matches!(
-            plan_link_lift(from, to, &pts, &stock, &tool, r, rise, &params),
+            plan_link_lift(from, to, &pts, &stock, None, &tool, r, rise, &params),
             LinkLift::Refused
         ),
         "a fed link at retract height is strictly worse than the rapid it \

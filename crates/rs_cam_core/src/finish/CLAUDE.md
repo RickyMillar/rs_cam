@@ -5,18 +5,15 @@ Every 3D finishing strategy and the unified planner. The entry point is
 
 ## Files
 
-- `mod.rs`, `finish_setup.rs` — facade, shared surface sampling. `finish_planner.rs`,
-  `unified_finish.rs`, `unified_finish/` — planner, pass composer, region router.
-- `scallop.rs`, `scallop_math.rs`, `scallop_isofield.rs` and `scallop/` —
-  constant-scallop rings, the height formulas and the iso-field arm.
-- `pencil.rs`, `pencil_dihedral.rs` and `pencil/` — pencil finishing: the
-  detectors, the chaining and the pass emission.
-- `crest_lines.rs`, `crease_paths.rs`, `classify_probe.rs` — crest lines,
-  centreline paths, the fine classification grid. `steep_shallow.rs`,
-  `horizontal_finish.rs`, `ramp_finish.rs`, `radial_finish.rs`,
-  `spiral_finish*.rs` — the single-strategy finishes.
-- `conformal_spiral.rs` + `conformal_spiral/`, `direction_field.rs`, `spiral_finish_compact.rs`
-  — research arms (`research` only). `surface_link.rs` — the link kernel `relink_fragments`.
+- `mod.rs`, `finish_setup.rs` (facade, surface sampling); `finish_planner.rs`, `unified_finish.rs`,
+  `unified_finish/` (planner; the composed op; `band_kernels.rs`, `region_routing.rs`).
+- `composed.rs` — the W6.4 composed shape: `compose` (classify, cut each region, route).
+  `rest_detector.rs` — the rest DETECTOR stage (W6.4.1) and the probe ball.
+- `scallop*.rs`, `scallop/` — rings, height formulas, iso-field. `pencil*.rs`, `pencil/` —
+  detectors, chaining, emission. `crest_lines.rs`, `crease_paths.rs`, `classify_probe.rs`.
+- `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs`, `radial_finish.rs`, `spiral_finish*.rs`
+  — single-strategy finishes. `surface_link.rs` — `relink_fragments`, `shape_under_ceiling`.
+- Research (`--features research`, `-- --ignored`): `conformal_spiral*`, `direction_field.rs`, `spiral_finish_compact.rs`.
 
 ## Invariants
 
@@ -29,6 +26,9 @@ Every 3D finishing strategy and the unified planner. The entry point is
 - Every straight feed tracks the drop-cutter surface (G-TIERBURIAL,
   `surface/chord_refine.rs`): ring chords and connectors, the raster and
   waterline bands (`refine_band_chords`), a link with a tolerance.
+- W6.4: a composed op (Unified Finish, Steep and Shallow) states its barriers only through
+  `order_constraints`. A product rest field comes only from `rest_detector::detect_rest`; a caller keeps its
+  own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16).
 
 ## Sentries
 
@@ -37,4 +37,4 @@ Every 3D finishing strategy and the unified planner. The entry point is
 - `... --test scallop_iso_field_config --test the_research_arms_are_feature_gated_fin01`
 - `wanaka_decomposes_to_order_ten_regions` (`#[ignore]`; long) in `--test
   finish_planner_wanaka_decompose`; its tables: `..._wanaka_diagnostics`.
-- A research harness: `--features research` (off by default), `-- --ignored`.
+- W6.4: `--test a_link_between_regions_clears_standing_stock_b16`, `--lib finish::unified_finish`.

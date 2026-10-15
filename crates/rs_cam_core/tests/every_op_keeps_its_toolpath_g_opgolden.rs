@@ -86,6 +86,8 @@ use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{DrillCycleType, PocketPattern, SpiralDirection};
+use rs_cam_core::finish::pencil::PencilDetector;
+use rs_cam_core::finish::unified_finish::ClaimsReference;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::session::{AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs};
 
@@ -182,6 +184,48 @@ fn scallop_iso_field(op: &mut OperationConfig) {
     cfg.iso_field = true;
 }
 
+/// W6.4.0: the claims pipeline on (the crease detector and node).
+fn unified_claims(op: &mut OperationConfig) {
+    let OperationConfig::UnifiedFinish(cfg) = op else {
+        unreachable!("unified arm on another op")
+    };
+    cfg.pencil_claims = true;
+}
+
+/// W6.4.0: the claims pipeline against the machined stock, with the S4
+/// territory clip.
+fn unified_claims_rest_clip(op: &mut OperationConfig) {
+    unified_claims(op);
+    let OperationConfig::UnifiedFinish(cfg) = op else {
+        unreachable!("unified arm on another op")
+    };
+    cfg.claims_reference = ClaimsReference::MachinedStock;
+    cfg.territory_clip = true;
+}
+
+/// W6.4.0: no C2 monotone cells and no intra-region link stage.
+fn unified_no_c2_no_hookup(op: &mut OperationConfig) {
+    let OperationConfig::UnifiedFinish(cfg) = op else {
+        unreachable!("unified arm on another op")
+    };
+    cfg.monotone_cell_decomposition = false;
+    cfg.intra_region_hookup_mm = 0.0;
+}
+
+fn pencil_rest_depth(op: &mut OperationConfig) {
+    let OperationConfig::Pencil(cfg) = op else {
+        unreachable!("pencil arm on another op")
+    };
+    cfg.detector = PencilDetector::RestDepth;
+}
+
+fn pencil_curvature(op: &mut OperationConfig) {
+    let OperationConfig::Pencil(cfg) = op else {
+        unreachable!("pencil arm on another op")
+    };
+    cfg.detector = PencilDetector::Curvature;
+}
+
 fn spiral_outside_in(op: &mut OperationConfig) {
     let OperationConfig::SpiralFinish(cfg) = op else {
         unreachable!("spiral arm on another op")
@@ -255,7 +299,7 @@ fn cases() -> Vec<Case> {
             regions: false,
         })
         .collect();
-    let variants: [(OperationType, &'static str, Tweak, Source, bool); 11] = [
+    let variants: [(OperationType, &'static str, Tweak, Source, bool); 17] = [
         (
             OperationType::Pocket,
             "zigzag",
@@ -331,6 +375,49 @@ fn cases() -> Vec<Case> {
             OperationType::RampFinish,
             "bottom_up",
             ramp_bottom_up,
+            Source::Fresh,
+            false,
+        ),
+        // W6.4.0: the composed-surface ops and the rest detector stage.
+        (
+            OperationType::UnifiedFinish,
+            "claims",
+            unified_claims,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::UnifiedFinish,
+            "claims_rest_clip",
+            unified_claims_rest_clip,
+            Source::Rest,
+            false,
+        ),
+        (
+            OperationType::UnifiedFinish,
+            "no_c2_no_hookup",
+            unified_no_c2_no_hookup,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::Pencil,
+            "rest_depth",
+            pencil_rest_depth,
+            Source::Fresh,
+            false,
+        ),
+        (
+            OperationType::Pencil,
+            "rest_depth_rest",
+            pencil_rest_depth,
+            Source::Rest,
+            false,
+        ),
+        (
+            OperationType::Pencil,
+            "curvature",
+            pencil_curvature,
             Source::Fresh,
             false,
         ),
@@ -453,6 +540,17 @@ const W630_ARMS: &[&str] = &[
     "bottom_up",
 ];
 
+/// The non-default arms W6.4.0 added: the composed-surface ops (Unified
+/// Finish) and the rest detector stage (Pencil).
+const W640_ARMS: &[&str] = &[
+    "claims",
+    "claims_rest_clip",
+    "no_c2_no_hookup",
+    "rest_depth",
+    "rest_depth_rest",
+    "curvature",
+];
+
 // ── The golden file ─────────────────────────────────────────────────────
 
 fn golden_path() -> PathBuf {
@@ -497,10 +595,17 @@ fn diff(expected: &BTreeMap<String, Golden>, actual: &BTreeMap<String, Golden>) 
                 let (Some(old_t), Some(new_t)) = (old_v.as_table(), new_v.as_table()) else {
                     unreachable!("a struct serializes to a table")
                 };
-                for (field, ov) in old_t {
-                    let nv = &new_t[field];
-                    if ov != nv {
-                        lines.push(format!("{key}  {field}  {ov} -> {nv}"));
+                // A field can be in one record only (W6.4.0: the optional
+                // `produced` digest), so walk the union of the fields.
+                let fields: BTreeSet<&String> = old_t.keys().chain(new_t.keys()).collect();
+                for field in fields {
+                    match (old_t.get(field), new_t.get(field)) {
+                        (Some(ov), Some(nv)) if ov != nv => {
+                            lines.push(format!("{key}  {field}  {ov} -> {nv}"));
+                        }
+                        (Some(ov), None) => lines.push(format!("{key}  {field}  {ov} -> (none)")),
+                        (None, Some(nv)) => lines.push(format!("{key}  {field}  (none) -> {nv}")),
+                        _ => {}
                     }
                 }
             }
@@ -603,6 +708,25 @@ fn every_op_keeps_its_toolpath() {
                 got.bbox_max,
                 fresh.bbox_min,
                 fresh.bbox_max
+            );
+        }
+    }
+    // W6.4.0 non-vacuity: each new arm states its move count and whether a
+    // rest detector attached its output, and a fresh-source arm differs from
+    // its op's fresh arm, so its switch acts.
+    for case in cases.iter().filter(|c| W640_ARMS.contains(&c.arm)) {
+        let key = case.key();
+        let got = &actual[&key];
+        let fresh = &actual[&format!("{}/fresh", case.op.kind_str())];
+        eprintln!(
+            "{key}: {} moves, rest output {}",
+            got.move_count,
+            got.produced.is_some()
+        );
+        if case.source == Source::Fresh {
+            assert_ne!(
+                got.moves_hash, fresh.moves_hash,
+                "{key}: the arm is the fresh toolpath, so its switch does nothing"
             );
         }
     }

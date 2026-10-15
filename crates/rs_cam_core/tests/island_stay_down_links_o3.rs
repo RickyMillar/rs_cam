@@ -64,7 +64,6 @@ use rs_cam_core::finish::finish_planner::FinishPlannerParams;
 use rs_cam_core::finish::surface_link::LinkCeiling;
 use rs_cam_core::finish::unified_finish::{
     UnifiedFinishParams, unified_finish_toolpath_with_cancel,
-    unified_finish_toolpath_with_cancel_and_ceiling,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
@@ -152,7 +151,7 @@ fn intra_region_links_clear_standing_stock_g_linkload() {
     let stock = standing_block();
     let cancel = AtomicBool::new(false);
 
-    let (tp, _anns, report) = unified_finish_toolpath_with_cancel_and_ceiling(
+    let (tp, _anns, report) = unified_finish_toolpath_with_cancel(
         &mesh,
         &index,
         &cutter,
@@ -214,13 +213,15 @@ fn intra_region_links_clear_standing_stock_g_linkload() {
     );
 }
 
-/// The fresh-stock golden: with no ceiling in scope the op must be
-/// **byte-identical** to the entry point every existing caller uses. The
-/// `_and_ceiling` arm is a strict extension, not a rewrite — so the two
-/// entry points are asserted to produce the same move list rather than the
-/// delegation being taken on trust.
+/// The fresh-stock golden: a ceiling that stands nowhere above the surface
+/// (no stock, a fallback top far below the cone) must give the
+/// **byte-identical** move list of the fresh-stock arm (`link_ceiling:
+/// None`). Every junction then reads flush and keeps the surface-riding
+/// link, so the ceiling is a strict extension, not a rewrite. (W6.4 merged
+/// the two entry points into one; this arm now compares its two ceiling
+/// arms, which is the invariant the old delegation stood for.)
 #[test]
-fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
+fn a_ceiling_below_the_surface_reproduces_the_fresh_arm_exactly() {
     let mesh = cone();
     let index = SpatialIndex::build(&mesh, 5.0);
     let cutter = ball_cutter(2.0);
@@ -239,11 +240,12 @@ fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
         None,
         None,
         None,
+        None,
         &never,
     )
     .expect("the fixture must generate");
 
-    let (extended, _b, extended_report) = unified_finish_toolpath_with_cancel_and_ceiling(
+    let (extended, _b, extended_report) = unified_finish_toolpath_with_cancel(
         &mesh,
         &index,
         &cutter,
@@ -255,7 +257,12 @@ fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
         None,
         None,
         None,
-        None,
+        Some(LinkCeiling {
+            stock: None,
+            tool_radius: 1.0,
+            fallback_top_z: -1000.0,
+            obstacles: None,
+        }),
         &never,
     )
     .expect("the fixture must generate");
@@ -263,14 +270,14 @@ fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
     assert_eq!(
         legacy.moves.len(),
         extended.moves.len(),
-        "move count must not move when no ceiling is supplied"
+        "move count must not move when the ceiling stands below the surface"
     );
     for (i, (a, b)) in legacy.moves.iter().zip(extended.moves.iter()).enumerate() {
         assert_eq!(
             format!("{a:?}"),
             format!("{b:?}"),
-            "move {i} differs between the legacy entry point and the \
-             no-ceiling extended one"
+            "move {i} differs between the fresh arm and the \
+             below-surface ceiling arm"
         );
     }
     assert_eq!(
@@ -281,6 +288,6 @@ fn no_ceiling_reproduces_the_legacy_entry_point_exactly() {
     assert_eq!(
         extended_report.relink.map_or(0, |r| r.ceiling_above_safe_z),
         0,
-        "structurally impossible without a ceiling"
+        "a flush junction never computes a clearance"
     );
 }

@@ -111,6 +111,7 @@ fn wanaka_unified_topo_dump_e3() {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("unified finish");

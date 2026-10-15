@@ -31,7 +31,6 @@ pub(crate) use chain_paths::{OffsetFan, paths_from_sampled, reach_gap_threshold}
 /// module, so the re-export is `cfg(test)` to keep the lib build warning-free.
 #[cfg(test)]
 pub(crate) use detectors::NOMINAL_REFERENCE_BALL_LENGTH_MM;
-pub(crate) use detectors::{SURFACE_PROBE_BALL_DIAMETER_MM, SURFACE_PROBE_BALL_LENGTH_MM};
 pub use emission::{
     ENTRY_RAMP_MIN_BITE_MM, PencilLinkReport, entry_bite_budget_mm, entry_ramp_window_mm,
     tip_contact_radius,
@@ -214,12 +213,6 @@ pub struct PencilParams {
     /// keeps the at-depth tier, which is the control arm that measures what
     /// each tier is worth on its own.
     pub link_hop_distance_mm: Option<f64>,
-    /// The `fallback_top_z` of the op's link ceiling, from the one builder
-    /// (`compute::execute::link_ceiling_for`, ruling R1). The link lift
-    /// ([`emission::plan_link_lift`]) reads it where the dexel query has no
-    /// answer. `None`: no op heights are in scope (a library caller), and
-    /// the lift reads the stock snapshot's own top.
-    pub link_fallback_top_z: Option<f64>,
 }
 
 /// Sensible test/prototyping defaults, sourced from the field-level
@@ -255,7 +248,6 @@ impl Default for PencilParams {
             link_kinematics: None,
             // "Same cap as `hookup_distance`" — byte-identical.
             link_hop_distance_mm: None,
-            link_fallback_top_z: None,
         }
     }
 }
@@ -645,6 +637,11 @@ pub struct PencilStock<'a> {
     /// toolpath pattern). `None` ⇒ fall back to the tool/nominal reference
     /// (R1).
     pub rest_reference: Option<&'a crate::dexel_stock::TriDexelStock>,
+    /// The op's link ceiling from the one builder
+    /// (`compute::execute::link_ceiling_for`, ruling R1; leftover-audit item
+    /// C8). The link lift reads its fallback top and its obstacles. `None`
+    /// on fresh stock, where the lift never runs, and for a library caller.
+    pub link_ceiling: Option<crate::finish::surface_link::LinkCeiling<'a>>,
 }
 
 /// Cancellable variant of [`pencil_toolpath_structured_annotated`]. Polls
@@ -709,6 +706,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
         cutter,
         params,
         stock.remaining,
+        stock.link_ceiling,
     );
     // G-LINKVISIBLE: recorded even when every counter is zero — the emitter
     // ran, so the measurement exists.

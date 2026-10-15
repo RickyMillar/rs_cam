@@ -117,6 +117,7 @@ fn unified(mesh: &TriangleMesh, planner: &FinishPlannerParams) -> Toolpath {
         None,
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled");

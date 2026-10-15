@@ -921,6 +921,7 @@ fn ledger_cal_unified_whole_board() {
         Some(&link_kinematics),
         None,
         None,
+        None,
         &never_cancel,
     )
     .expect("uncancelled generation");
