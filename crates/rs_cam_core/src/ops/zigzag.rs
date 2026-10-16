@@ -172,16 +172,7 @@ pub(crate) fn zigzag_lines_on_lattice_reported(
             break;
         }
 
-        // Find intersections of this scan line with all polygon edges
-        let mut intersections = scan_line_intersections(&all_edges, perp_pos, cos_a, sin_a);
-        intersections.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Pair up intersections (enter/exit pairs)
-        let mut j = 0;
-        while j + 1 < intersections.len() {
-            let t_enter = intersections[j];
-            let t_exit = intersections[j + 1];
-
+        for (t_enter, t_exit) in scan_line_intervals(&all_edges, perp_pos, cos_a, sin_a) {
             // Convert back to XY: point = perp_pos * perp_dir + t * scan_dir
             let x_enter = perp_pos * perp_x + t_enter * cos_a;
             let y_enter = perp_pos * perp_y + t_enter * sin_a;
@@ -197,8 +188,6 @@ pub(crate) fn zigzag_lines_on_lattice_reported(
             } else {
                 lines.push([p2, p1]);
             }
-
-            j += 2;
         }
     }
 
@@ -209,11 +198,59 @@ pub(crate) fn zigzag_lines_on_lattice_reported(
 /// the offset must not drop a row that lies on the edge of a region.
 const LATTICE_EPS: f64 = 1e-9;
 
-/// Find intersection parameters along the scan direction for a scan line.
+/// The parts of a scan line inside the polygon or on its edge, as sorted,
+/// disjoint `(t_enter, t_exit)` intervals along the scan direction.
+///
+/// A vertex ON the line is the degenerate case. Counted on both of its
+/// edges, a vertex where the outline crosses the line gives a duplicate
+/// entry; the duplicate pairs with itself and every later enter/exit pair
+/// shifts, so the row is dropped or cuts across a gap. A half-open count
+/// (the vertex belongs to ONE side) fixes that, but then a row along an
+/// edge on the other side is lost (the top row of a rectangle). So each
+/// side is counted half-open in turn and the two interval sets are merged:
+/// the result is the closed intersection, with no duplicate.
+fn scan_line_intervals(
+    edges: &[(P2, P2)],
+    perp_pos: f64,
+    cos_a: f64,
+    sin_a: f64,
+) -> Vec<(f64, f64)> {
+    let mut intervals: Vec<(f64, f64)> = [false, true]
+        .into_iter()
+        .flat_map(|vertex_above| {
+            let mut ts = scan_line_intersections(edges, perp_pos, cos_a, sin_a, vertex_above);
+            ts.sort_by(f64::total_cmp);
+            ts.as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&[enter, exit]| (enter, exit))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    intervals.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut merged: Vec<(f64, f64)> = Vec::with_capacity(intervals.len());
+    for (enter, exit) in intervals {
+        match merged.last_mut() {
+            Some(last) if enter <= last.1 => last.1 = last.1.max(exit),
+            _ => merged.push((enter, exit)),
+        }
+    }
+    merged
+}
+
+/// Find intersection parameters along the scan direction for a scan line,
+/// counting a vertex ON the line as part of one side only: the side above
+/// when `vertex_above`, else the side below.
 ///
 /// The scan line is defined by: point = perp_pos * perp_dir + t * scan_dir
 /// where scan_dir = (cos_a, sin_a) and perp_dir = (-sin_a, cos_a).
-fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a: f64) -> Vec<f64> {
+fn scan_line_intersections(
+    edges: &[(P2, P2)],
+    perp_pos: f64,
+    cos_a: f64,
+    sin_a: f64,
+    vertex_above: bool,
+) -> Vec<f64> {
     let perp_x = -sin_a;
     let perp_y = cos_a;
 
@@ -224,9 +261,10 @@ fn scan_line_intersections(edges: &[(P2, P2)], perp_pos: f64, cos_a: f64, sin_a:
         let da = a.x * perp_x + a.y * perp_y - perp_pos;
         let db = b.x * perp_x + b.y * perp_y - perp_pos;
 
-        // Check if edge crosses the scan line
-        if da * db > 0.0 {
-            continue; // Both on same side
+        // Check if edge crosses the scan line (half-open, see above).
+        let above = |d: f64| if vertex_above { d >= 0.0 } else { d > 0.0 };
+        if above(da) == above(db) {
+            continue; // Both on same side, or along the line
         }
         if (da - db).abs() < 1e-15 {
             continue; // Edge parallel to scan line
@@ -310,6 +348,73 @@ mod tests {
             safe_z: 10.0,
             angle: 0.0,
         }
+    }
+
+    fn edges_of(pts: &[P2]) -> Vec<(P2, P2)> {
+        (0..pts.len())
+            .map(|i| (pts[i], pts[(i + 1) % pts.len()]))
+            .collect()
+    }
+
+    /// A scan line through a vertex where the outline crosses the line meets
+    /// that vertex ONCE. Counted twice, the duplicate pairs with itself and
+    /// every later enter/exit pair shifts: the row is dropped or cuts
+    /// across a gap.
+    #[test]
+    fn scan_line_through_a_crossing_vertex_counts_it_once() {
+        // Square 0..10 with a point at (-2, 5) on the left side.
+        let edges = edges_of(&[
+            P2::new(0.0, 0.0),
+            P2::new(10.0, 0.0),
+            P2::new(10.0, 10.0),
+            P2::new(0.0, 10.0),
+            P2::new(-2.0, 5.0),
+        ]);
+        let spans = scan_line_intervals(&edges, 5.0, 1.0, 0.0);
+        assert_eq!(spans.len(), 1, "{spans:?}");
+        assert!(
+            (spans[0].0 + 2.0).abs() < 1e-9 && (spans[0].1 - 10.0).abs() < 1e-9,
+            "{spans:?}"
+        );
+    }
+
+    /// A row ON a horizontal edge is kept, at the bottom AND at the top: a
+    /// one-sided half-open count drops the top row of a rectangle (the
+    /// inlay plug's outer row, G-OPGOLDEN).
+    #[test]
+    fn scan_line_along_an_edge_is_kept_on_both_sides() {
+        let edges = edges_of(&[
+            P2::new(0.0, 0.0),
+            P2::new(10.0, 0.0),
+            P2::new(10.0, 10.0),
+            P2::new(0.0, 10.0),
+        ]);
+        for y in [0.0, 10.0] {
+            let spans = scan_line_intervals(&edges, y, 1.0, 0.0);
+            assert_eq!(spans, vec![(0.0, 10.0)], "row at y = {y}");
+        }
+    }
+
+    /// Two crossing vertices on one row with a gap between: two spans, and
+    /// nothing across the gap.
+    #[test]
+    fn scan_line_through_two_crossing_vertices_keeps_the_gap() {
+        // A "U": two prongs joined at the bottom; the row at y = 5 meets a
+        // side vertex on each outer wall.
+        let edges = edges_of(&[
+            P2::new(0.0, 0.0),
+            P2::new(10.0, 0.0),
+            P2::new(12.0, 5.0),
+            P2::new(10.0, 10.0),
+            P2::new(7.0, 10.0),
+            P2::new(7.0, 3.0),
+            P2::new(3.0, 3.0),
+            P2::new(3.0, 10.0),
+            P2::new(0.0, 10.0),
+            P2::new(-2.0, 5.0),
+        ]);
+        let spans = scan_line_intervals(&edges, 5.0, 1.0, 0.0);
+        assert_eq!(spans, vec![(-2.0, 3.0), (7.0, 12.0)]);
     }
 
     #[test]
