@@ -20,6 +20,7 @@ pub const KEY_MATCH_EPS_MM: f64 = crate::compute::execute::DRILL_PICK_MATCH_EPS_
 pub struct MatchKey {
     pub source: SourceRef,
     pub kind: ItemKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
     /// Loop, Face: the area centroid of the outer ring. Path: the first
     /// vertex. Point: the point. Circle: the centre.
@@ -29,6 +30,7 @@ pub struct MatchKey {
     pub measure: f64,
     /// Face only: the BREP id, a tie-break when two faces share anchor and
     /// measure. The key has no Z: a face that moves in Z still matches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brep: Option<u16>,
 }
 
@@ -63,12 +65,20 @@ impl MatchKey {
         }
     }
 
-    /// True when the two keys name one item: source, kind, layer and the
-    /// BREP id are equal, and anchor and measure agree within
-    /// [`KEY_MATCH_EPS_MM`].
+    /// True when the two keys name one item: the source is equal and
+    /// [`Self::names_same_geometry`] holds.
     pub fn matches(&self, other: &MatchKey) -> bool {
-        self.source == other.source
-            && self.kind == other.kind
+        self.source == other.source && self.names_same_geometry(other)
+    }
+
+    /// True when the two keys name one item of ONE source: kind, layer and
+    /// the BREP id are equal, and anchor and measure agree within
+    /// [`KEY_MATCH_EPS_MM`]. The source is not compared. A stored pick
+    /// names its source as [`SourceRef::ToolpathModel`], but the session
+    /// binds the items to [`SourceRef::Model`]; the resolver finds the
+    /// item set of the pick's source first and then calls this.
+    pub fn names_same_geometry(&self, other: &MatchKey) -> bool {
+        self.kind == other.kind
             && self.layer == other.layer
             && self.brep == other.brep
             && (self.anchor[0] - other.anchor[0]).abs() < KEY_MATCH_EPS_MM

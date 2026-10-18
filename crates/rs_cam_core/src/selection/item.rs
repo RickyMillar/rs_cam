@@ -28,6 +28,7 @@ const CIRCLE_ARC_STEP_DEG: f64 = 5.0;
 
 /// Where an item comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceRef {
     /// The model of the toolpath (`ToolpathConfig::model_id`). An item set
     /// that is not in a session yet uses this value; the session binds it
@@ -42,6 +43,7 @@ pub enum SourceRef {
 
 /// The fieldless mirror of [`Shape`], for rules, keys and refusal text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ItemKind {
     Loop,
     Path,
@@ -293,6 +295,13 @@ impl Item {
 
     pub fn kind(&self) -> ItemKind {
         self.shape.kind()
+    }
+
+    /// The same item (source and layer) with `shape` in place of its shape.
+    /// The key is computed again, so it matches the new shape. The frame
+    /// door (`ResolvedSelection::to_setup_frame`) calls this.
+    pub(crate) fn with_shape(&self, shape: Shape) -> Result<Self, ItemError> {
+        Self::new(self.source, self.layer.clone(), shape)
     }
 
     /// The same item with a different source. The key is computed again.

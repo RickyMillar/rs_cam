@@ -40,8 +40,6 @@ fixtures/gui_step/plate_100x60x10.step Millimeters | polygons None | targets 0 |
 fixtures/gui_step/plate_100x60x10.step Inches | polygons None | targets 0 | fnv 6224314e552e2948
 fixtures/gui_step/stepped_block.step Millimeters | polygons None | targets 0 | fnv e3704895d80ba38c
 fixtures/gui_step/stepped_block.step Inches | polygons None | targets 0 | fnv 87071d6a2b291287
-planning/feed_modulation_calibration/bench_batch_2026-05-27/demo_star.svg Millimeters | polygons 1 | targets 0 | fnv b16797e99d834608
-planning/feed_modulation_calibration/bench_batch_2026-05-27/demo_star.svg Inches | polygons 1 | targets 0 | fnv 368f243ca1be4150
 planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Millimeters | polygons 1 | targets 0 | fnv 01e65e163685fce3
 planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Inches | polygons 1 | targets 0 | fnv 40f70f2817f7ec1f
 planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters | polygons 36 | targets 0 | fnv e9516f79980344a4

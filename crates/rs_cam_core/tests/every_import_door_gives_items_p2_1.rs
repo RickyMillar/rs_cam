@@ -20,7 +20,8 @@
 //! hash of the canonical dump (`dump` below: the bit pattern of every point,
 //! the closed flag, the holes, the order, the targets, the bbox). A hash
 //! keeps the baseline small; the counts tell you where a change landed.
-//! The fixtures are every tracked DXF, SVG and STEP file of the repo and the
+//! The fixtures are every tracked DXF, SVG and STEP file of the repo (less a
+//! planning copy of `fixtures/demo_star.svg`) and the
 //! flat drawings of `common/op_fixtures.rs`, each at mm and at inches (the
 //! inch arm pins the order of the two scales).
 //!
@@ -406,10 +407,12 @@ fn the_bridges_give_the_lists_of_the_import_before_p2_1() {
         assert_eq!(line(label, &model), expected, "the bridge moved");
         checked += 1;
     }
-    // Non-vacuity: 21 files and 4 synthetic files at two units (less the
+    // Non-vacuity: 20 files and 4 synthetic files at two units (less the
     // 2 entries of the designed change), plus 3 in-test drawings; without
-    // the `step` feature the 8 STEP files (16 entries) are skipped.
-    let want = if cfg!(feature = "step") { 51 } else { 35 };
+    // the `step` feature the 8 STEP files (16 entries) are skipped. P2.2
+    // removed the planning copy of `fixtures/demo_star.svg` (the bytes are
+    // equal), so a planning edit cannot move this sentry.
+    let want = if cfg!(feature = "step") { 49 } else { 33 };
     assert_eq!(checked, want, "the baseline lines that ran");
 }
 
