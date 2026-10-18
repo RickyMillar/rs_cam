@@ -385,6 +385,7 @@ fn lead_in_arcs_never_cut_below_surface() {
         // No retract plane offered: this arm measures the LEG geometry, not
         // the pre-position rapid's height (G-ISOCLIPRAPID).
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     )
     .reconcile(&mut ReconcileSet::empty())
     .into_inner();
@@ -407,6 +408,7 @@ fn lead_in_arcs_never_cut_below_surface() {
         None,
         Some(&probe),
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     )
     .reconcile(&mut ReconcileSet::empty())
     .into_inner();

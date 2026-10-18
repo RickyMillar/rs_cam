@@ -508,6 +508,12 @@ pub const TRANSFORM_ORDERED_LINKABLE: OperationTransformCapabilities =
 pub const TRANSFORM_DEPTH_ORDER: OperationTransformCapabilities =
     OperationTransformCapabilities::new(false, true, false, false);
 
+/// Trace: the depth order of [`TRANSFORM_DEPTH_ORDER`], and leads only on
+/// closed loops. An open path is cut exactly on the drawn line, from its
+/// first point to its last (P1b, lead ruling 2026-10-19).
+pub const TRANSFORM_TRACE: OperationTransformCapabilities =
+    TRANSFORM_DEPTH_ORDER.with_leads_on_closed_passes_only();
+
 /// 2D Adaptive: the planner clears one material grid per level in the
 /// order it emits its runs, and admits a keep-down link only when the grid
 /// that EARLIER runs left holds it to the pass load

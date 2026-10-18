@@ -452,6 +452,7 @@ fn test_lead_in_adds_arc_moves() {
         None,
         None,
         None,
+        crate::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 
@@ -474,6 +475,7 @@ fn test_lead_in_reaches_cut_point() {
         None,
         None,
         None,
+        crate::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 
@@ -499,6 +501,7 @@ fn test_lead_in_preserves_rapids() {
         None,
         None,
         None,
+        crate::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 
@@ -1706,7 +1709,15 @@ fn apply_lead_in_out_remaps_spans_through_transform() {
         Span::new(0, 2, SpanKind::DepthPass),
     ];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        crate::dressup::LeadScope::EveryPass,
+    ));
     result
         .check_invariants()
         .expect("post-lead spans pass invariants");
@@ -1727,7 +1738,15 @@ fn apply_lead_in_out_tags_new_moves_with_correct_kind() {
     let n_in = tp.moves.len();
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
     let annotated = AnnotatedToolpath::with_spans(tp, spans);
-    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        crate::dressup::LeadScope::EveryPass,
+    ));
     let entries: Vec<&Span> = result
         .spans
         .iter()
@@ -1754,7 +1773,15 @@ fn apply_lead_in_out_preserves_invalid_flag() {
     let mut annotated = AnnotatedToolpath::new(tp);
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
-    let result = without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None));
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        crate::dressup::LeadScope::EveryPass,
+    ));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
 }

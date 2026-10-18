@@ -99,6 +99,7 @@ fn the_closing_retract_lifts_from_the_lead_out_endpoint_not_the_cut_endpoint() {
         None,
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ));
     let tp = &out.toolpath;
 
@@ -185,6 +186,7 @@ fn a_rapid_heading_elsewhere_is_left_alone() {
         None,
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ));
 
     let (_, retract) = last_rapid(&out.toolpath);

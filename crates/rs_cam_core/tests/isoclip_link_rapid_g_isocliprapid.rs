@@ -191,6 +191,7 @@ fn led(tp: Toolpath, retract_z: Option<f64>) -> Toolpath {
         None,
         None,
         retract_z,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     )
     .reconcile(&mut ReconcileSet::empty())
     .into_inner()

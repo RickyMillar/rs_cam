@@ -1031,6 +1031,52 @@ fn column_already_cut(emitted: &[Move], x: f64, y: f64, xy_eps: f64) -> bool {
         .any(|m| m.move_type.is_cutting())
 }
 
+/// Which passes [`apply_lead_in_out`] gives a lead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeadScope {
+    /// Every pass that starts with a plunge and ends with a retract.
+    EveryPass,
+    /// Only a pass that ends where it starts (a closed loop). An open pass
+    /// keeps its plunge and retract, so no lead goes past its ends (P1b:
+    /// Trace cuts exactly the drawn line).
+    ClosedPassesOnly,
+}
+
+/// True when move `i` is the last cut of a pass: a fed move that a rapid
+/// up of more than 1 mm follows. [`apply_lead_in_out`] puts a lead-out
+/// there.
+#[allow(clippy::indexing_slicing)] // i + 1 < moves.len() checked first
+fn is_pass_end(moves: &[Move], i: usize) -> bool {
+    i + 1 < moves.len()
+        && matches!(moves[i].move_type, MoveType::Linear { .. })
+        && moves[i + 1].move_type == MoveType::Rapid
+        && moves[i + 1].target.z > moves[i].target.z + 1.0
+}
+
+/// For each move, true when it is the plunge or the last cut of an OPEN
+/// pass. A pass runs from a plunge ([`is_plunge`]) to the next pass end
+/// ([`is_pass_end`]). It is open when the last cut does not come back to
+/// the plunge point in XY (within [`XY_STATIONARY_EPS_MM`]).
+#[allow(clippy::indexing_slicing)] // i, j < moves.len() by loop bounds
+fn open_pass_ends(moves: &[Move]) -> Vec<bool> {
+    let mut ends = vec![false; moves.len()];
+    for i in 1..moves.len() {
+        if !is_plunge(&moves[i - 1], &moves[i]) {
+            continue;
+        }
+        let Some(j) = (i..moves.len()).find(|&j| is_pass_end(moves, j)) else {
+            continue;
+        };
+        let start = moves[i].target;
+        let end = moves[j].target;
+        if (end.x - start.x).hypot(end.y - start.y) >= XY_STATIONARY_EPS_MM {
+            ends[i] = true;
+            ends[j] = true;
+        }
+    }
+    ends
+}
+
 fn is_plunge(prev: &Move, current: &Move) -> bool {
     if let MoveType::Linear { .. } = current.move_type {
         let dz = current.target.z - prev.target.z;
@@ -1365,6 +1411,13 @@ fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
 /// no sample lifts, the emitted moves are byte-identical to the
 /// probe-less output.
 ///
+/// # `scope` (P1b, geometry selection)
+///
+/// [`LeadScope::ClosedPassesOnly`] gives a lead only to a pass that ends
+/// where it starts (a closed loop). An open pass keeps the generator's
+/// plunge and retract, because both lead arcs go past the ends of the
+/// drawn path. Trace states this scope through its transform capabilities.
+///
 /// # `retract_z` (G-ISOCLIPRAPID, 2026-09-09)
 ///
 /// The height of the lead-in's PRE-POSITION rapid — the one move of the
@@ -1400,6 +1453,7 @@ pub fn apply_lead_in_out(
     lead_out_feed_rate: Option<f64>,
     surface: Option<&EntrySurfaceProbe<'_>>,
     retract_z: Option<f64>,
+    scope: LeadScope,
 ) -> Transformed {
     let AnnotatedToolpath {
         toolpath,
@@ -1417,6 +1471,13 @@ pub fn apply_lead_in_out(
             produced,
         });
     }
+    // The plunge and the last cut of each open pass, when the scope keeps
+    // leads off open passes.
+    let open_pass_ends = match scope {
+        LeadScope::EveryPass => None,
+        LeadScope::ClosedPassesOnly => Some(open_pass_ends(moves)),
+    };
+    let no_lead_at = |i: usize| open_pass_ends.as_ref().is_some_and(|ends| ends[i]);
 
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(moves.len());
     let mut entry_ranges: Vec<std::ops::Range<usize>> = Vec::new();
@@ -1470,7 +1531,7 @@ pub fn apply_lead_in_out(
 
         // Detect the start of a cutting pass: a plunge (downward feed) followed
         // by horizontal feed moves at the same Z.
-        if i > 0 && is_plunge(&moves[i - 1], &moves[i]) {
+        if i > 0 && is_plunge(&moves[i - 1], &moves[i]) && !no_lead_at(i) {
             let cut_z = moves[i].target.z;
             let plunge_end = moves[i].target;
 
@@ -1607,11 +1668,7 @@ pub fn apply_lead_in_out(
         }
 
         // Detect end of a cutting pass: feed at cut_z followed by retract (rapid up)
-        if i + 1 < moves.len()
-            && matches!(moves[i].move_type, MoveType::Linear { .. })
-            && moves[i + 1].move_type == MoveType::Rapid
-            && moves[i + 1].target.z > moves[i].target.z + 1.0
-        {
+        if is_pass_end(moves, i) && !no_lead_at(i) {
             let cut_z = moves[i].target.z;
             let cut_end = moves[i].target;
 

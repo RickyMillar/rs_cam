@@ -51,8 +51,16 @@ fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
     let plunge_feed = 300.0;
     let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
     let annotated = AnnotatedToolpath::new(tp);
-    let result =
-        without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None)).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
+    ))
+    .toolpath;
 
     // The first lead-in move should be a Rapid (pre-position over lead_start).
     let lead_in_idx = result
@@ -139,6 +147,7 @@ fn lead_in_feed_rate_applied_when_set() {
         None,
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 
@@ -193,8 +202,16 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
     let plunge_feed = 300.0;
     let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
     let annotated = AnnotatedToolpath::new(tp);
-    let result =
-        without_provenance(apply_lead_in_out(annotated, 2.0, None, None, None, None)).toolpath;
+    let result = without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
+    ))
+    .toolpath;
 
     // F-040a: LeadIn set includes both the pre-position Rapid and the
     // tangent-arc Linear moves. With `None` default, the Linear arc moves
@@ -233,6 +250,7 @@ fn lead_out_feed_rate_applied_when_set() {
         Some(lo_feed),
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 
@@ -276,6 +294,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         Some(lo_feed),
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ))
     .toolpath;
 

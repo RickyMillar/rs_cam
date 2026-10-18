@@ -24,7 +24,8 @@ use super::capabilities::{
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, ItemUse, LutRoute,
     MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D,
     TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE,
-    TRANSFORM_ORDERED_LINKABLE, TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT, TerritoryXy,
+    TRANSFORM_ORDERED_LINKABLE, TRANSFORM_TRACE, TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT,
+    TerritoryXy,
 };
 use super::schema::{
     DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
@@ -457,7 +458,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
-        transform: TRANSFORM_DEPTH_ORDER,
+        transform: TRANSFORM_TRACE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
         honors_pinned_bottom_z: false,
         entry_probe: EntryProbeRule::Prism,

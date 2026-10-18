@@ -22,12 +22,21 @@
 //!   path on the line, with no chord, and cuts a 2-point line.
 //! - (d) Trace `Left` (`ItemUse::Regions`) is a closed-region op: (a) and
 //!   (b) cover it.
+//! - (e) P1b (lead ruling 2026-10-19): Trace on the line cuts exactly the
+//!   drawn open path. With the default dressups of Trace (lead-in/out on),
+//!   no move goes past the start or the end of an open path. A closed loop
+//!   keeps its leads.
 //!
 //! Red proof (2026-10-19): with `trace_polygons_at_z` sent through
 //! `emit_closed_contour_with_intent` for open paths again, (c) fails on
 //! the chord and (with the chord check off) on the missing 2-point line.
 //! With the prologue giving a `Regions` op every polygon again, (a) and
 //! (b) fail.
+//!
+//! Red proof (P1b, 2026-10-19): with Trace back on `TRANSFORM_DEPTH_ORDER`
+//! (leads on every pass), (e) fails: the lead-in plunge of the V lands at
+//! X 12.3 Y -10.9, outside the drawn extent. (c) fails too: the line cut
+//! no longer starts at the drawn start.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test open_paths_are_never_chord_closed_p1
@@ -48,13 +57,14 @@ use common::op_fixtures::{no_dressups, rectangle, tool_for};
 use common::session::{polygon_model, single_op_session_with};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
+use rs_cam_core::compute::config::ArcFitParams;
 use rs_cam_core::compute::toolpath_stats::SelectionNoteFinding;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ops::trace_path::TraceCompensation;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{ProjectSession, ToolpathConfig};
-use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// A 100 x 60 x 10 mm board, centred on X0 Y0, its top at Z0.
 fn board() -> StockConfig {
@@ -293,15 +303,12 @@ fn trace_cuts_an_open_path_on_the_line_with_no_chord_p1() {
         assert!(cut_to(V[1][0], V[1][1]), "{what}: the V apex is cut");
         assert!(cut_to(V[2][0], V[2][1]), "{what}: the V end is cut");
 
-        // The 2-point line is cut, from end to end. The default lead-in
-        // of Trace lands on the extension of the first segment (as it does
-        // on a closed loop), so the cut may start before X 10.
+        // The 2-point line is cut, from end to end, and no further: P1b
+        // gives an open Trace path no lead (see the test below).
         let line_cut = fed.iter().any(|(a, b, z)| {
             *z < 0.0
-                && (a.y - LINE[0][1]).abs() < 1e-6
-                && (b.y - LINE[1][1]).abs() < 1e-6
-                && a.x <= LINE[0][0] + 1e-6
-                && (b.x - LINE[1][0]).abs() < 1e-6
+                && (a - P2::new(LINE[0][0], LINE[0][1])).norm() < 1e-6
+                && (b - P2::new(LINE[1][0], LINE[1][1])).norm() < 1e-6
         });
         assert!(line_cut, "{what}: the 2-point line is cut");
         // No fed move comes back along the line to its start.
@@ -312,4 +319,69 @@ fn trace_cuts_an_open_path_on_the_line_with_no_chord_p1() {
         });
         assert!(!back, "{what}: the line is not cut back to its start");
     }
+}
+
+/// The XY box of `points`, as (min, max).
+fn extent(points: &[[f64; 2]]) -> (P2, P2) {
+    let mut lo = P2::new(f64::INFINITY, f64::INFINITY);
+    let mut hi = P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for &[x, y] in points {
+        lo = P2::new(lo.x.min(x), lo.y.min(y));
+        hi = P2::new(hi.x.max(x), hi.y.max(y));
+    }
+    (lo, hi)
+}
+
+/// (e): with the default dressups of Trace (lead-in/out on), every fed
+/// move of an open path lands inside the XY extent of the path it cuts.
+/// A lead arc starts or ends one lead radius past the drawn end, so it
+/// lands outside. The tolerance is the default arc-fit budget: the arc fit
+/// of Trace may move a fed point by that much and no more. A closed square
+/// in the same drawing keeps its lead-in (non-vacuity: the leads are on).
+#[test]
+fn trace_cuts_an_open_path_with_no_lead_past_its_ends_p1b() {
+    let op = trace(TraceCompensation::None);
+    let mut s = session(&op, vec![square(), open(&V), open(&LINE)], |tc| {
+        assert!(
+            tc.dressups.lead_in_out.is_some(),
+            "non-vacuity: the default Trace dressups hold a lead"
+        );
+    });
+    let tp = generate(&mut s).expect("Trace generates");
+    let tol = ArcFitParams::default().tolerance;
+    let boxes = [extent(&V), extent(&LINE)];
+    let inside = |p: P2, (lo, hi): (P2, P2)| {
+        p.x >= lo.x - tol && p.x <= hi.x + tol && p.y >= lo.y - tol && p.y <= hi.y + tol
+    };
+
+    // Every fed move to the right of X 0 (the open paths) lands in the
+    // box of V or of LINE.
+    let mut open_fed = 0;
+    for m in &tp.moves {
+        if m.move_type == MoveType::Rapid || m.target.x < 0.0 {
+            continue;
+        }
+        open_fed += 1;
+        let p = P2::new(m.target.x, m.target.y);
+        assert!(
+            inside(p, boxes[0]) || inside(p, boxes[1]),
+            "a fed move of an open path goes past its drawn ends: {:?} ({:?})",
+            m.target,
+            m.intent
+        );
+        assert!(
+            !matches!(m.intent, MoveIntent::LeadIn | MoveIntent::LeadOut),
+            "an open path takes no lead: {:?}",
+            m.target
+        );
+    }
+    assert!(open_fed > 0, "non-vacuity: the open paths are cut");
+
+    // The closed square (left of X 0) keeps its lead-in.
+    let square_leads = tp
+        .moves
+        .iter()
+        .filter(|m| m.target.x < 0.0 && m.intent == MoveIntent::LeadIn)
+        .count();
+    assert!(square_leads > 0, "a closed Trace loop keeps its lead-in");
 }

@@ -739,6 +739,8 @@ pub fn apply_dressups(
                     // plane, never to whatever height the move before the
                     // plunge stopped at.
                     Some(safe_z),
+                    // P1b: Trace leaves an open path without leads.
+                    transform_capabilities.lead_scope(),
                 )
             },
         );

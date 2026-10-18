@@ -6,13 +6,13 @@ Every door that reads a file. The entry point is `io::load_model_file`.
 
 - `mod.rs` — the model import helpers `rs_cam_viz` and `rs_cam_mcp` share,
   and the file-size guard every importer calls.
-- `dxf_input.rs` — DXF entities to `Polygon2`, including POINT and circle
-  centres for drill targets. A partial ARC or ELLIPSE is an open path (P1).
+- `dxf_input.rs` — DXF entities to `Polygon2`, POINT and circle centres
+  for drill targets. P1b: `chain_open_pieces` joins the open pieces (LINE,
+  partial ARC, ...) of one layer; a chain back at its start is closed.
 - `svg_input.rs` — SVG paths to `Polygon2`, closed and open (P1).
 - `step_input.rs` — STEP import through the `truck` crate.
-- `tool_library.rs`, `machine_library.rs` — the two TOML catalogues; the
-  folder comes from `crate::settings::paths` (env > file > default).
-- `named_toml_library.rs` — the directory mechanics both libraries share.
+- `tool_library.rs`, `machine_library.rs` — the two TOML catalogues (folder:
+  `crate::settings::paths`); `named_toml_library.rs` — their directory code.
 
 ## Invariants
 

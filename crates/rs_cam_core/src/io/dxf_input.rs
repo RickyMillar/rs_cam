@@ -8,11 +8,19 @@
 //!   open path (P1: no chord joins its ends)
 //! - **Arc** — full-circle arcs become circles; a partial arc is an open path
 //!   (P1: no chord joins its ends)
-//! - **Line** — individual 2-point segments are chain-linked by shared endpoints;
-//!   closed chains become closed polygons, open chains become open-path polygons
-//!   (useful for trace/engraving toolpaths)
+//! - **Line** — a 2-point segment, an open piece
 //! - **Spline** — B-spline curves evaluated via De Boor's algorithm; both closed
 //!   and open splines are returned
+//!
+//! ### Chaining of open pieces (P1b)
+//! A CAD export often draws one outline as separate entities: LINE and ARC
+//! for a rounded rectangle, or open polylines, splines and partial ellipses.
+//! The importer joins every OPEN piece (LINE, partial ARC, partial ELLIPSE,
+//! SPLINE, open LWPOLYLINE and POLYLINE) end to end where two ends meet
+//! within [`CLOSE_TOL_MM`]. A piece may join reversed. A chain that comes
+//! back to its start is a closed polygon; other chains are open paths. A
+//! chain holds the pieces of one layer only (DESIGN D14). See
+//! [`chain_open_pieces`] for the order and the branch rule.
 //!
 //! Both closed and open paths are returned. Closed paths are suitable for pocket
 //! and profile operations; open paths are suitable for trace and engraving
@@ -129,7 +137,7 @@ pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<P
 /// detecting polygon containment.
 pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport {
     let scale = insunits_to_mm_scale(drawing.header.default_drawing_units);
-    let (mut raw, mut drill_targets) = extract_polygons_flat(drawing, arc_tolerance_deg);
+    let (mut raw, mut drill_targets) = extract_polygons_flat(drawing, arc_tolerance_deg, scale);
     if (scale - 1.0).abs() > 1e-12 {
         for poly in &mut raw {
             for pt in &mut poly.exterior {
@@ -167,19 +175,34 @@ pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport 
 }
 
 /// Extract polygons (without containment detection) and drill targets as flat lists.
+///
+/// `scale` is the `$INSUNITS` factor to mm. The coordinates here are still
+/// in drawing units, so the chaining tolerance is `CLOSE_TOL_MM / scale`.
+///
+/// The polygons come out in entity order: a closed entity at its own
+/// index, a chain at the lowest index of its pieces.
 fn extract_polygons_flat(
     drawing: &dxf::Drawing,
     arc_tolerance_deg: f64,
+    scale: f64,
 ) -> (Vec<Polygon2>, Vec<DrillTarget>) {
-    let mut polygons = Vec::new();
+    // Each closed polygon with the index of its entity.
+    let mut polygons: Vec<(usize, Polygon2)> = Vec::new();
     let mut drill_targets: Vec<DrillTarget> = Vec::new();
     let arc_step_rad = arc_tolerance_deg.to_radians();
 
-    // Collect Line segments for chain-linking after the main loop.
-    let mut line_segments: Vec<(P2, P2)> = Vec::new();
+    // The open pieces, for the chaining step after the main loop.
+    let mut pieces: Vec<OpenPiece> = Vec::new();
 
-    for entity in drawing.entities() {
+    for (index, entity) in drawing.entities().enumerate() {
         let layer = entity.common.layer.clone();
+        let mut open_piece = |pts: Vec<P2>| {
+            pieces.push(OpenPiece {
+                index,
+                layer: layer.clone(),
+                pts,
+            });
+        };
         match &entity.specific {
             dxf::entities::EntityType::LwPolyline(lwp) => {
                 if lwp.vertices.len() >= 2 {
@@ -187,11 +210,11 @@ fn extract_polygons_flat(
                     if lwp.is_closed() && pts.len() >= 3 {
                         let mut poly = Polygon2::new(pts);
                         poly.ensure_winding();
-                        polygons.push(poly);
+                        polygons.push((index, poly));
                     } else if !lwp.is_closed() && pts.len() >= 2 {
-                        // Open polylines imported as unclosed paths
-                        // (usable for Trace, Project Curve, and engraving operations)
-                        polygons.push(Polygon2::open_path(pts));
+                        // An open polyline is an open piece: it can join
+                        // other pieces of its layer.
+                        open_piece(pts);
                     }
                 }
             }
@@ -202,9 +225,9 @@ fn extract_polygons_flat(
                     if poly_ent.is_closed() && pts.len() >= 3 {
                         let mut poly = Polygon2::new(pts);
                         poly.ensure_winding();
-                        polygons.push(poly);
+                        polygons.push((index, poly));
                     } else if !poly_ent.is_closed() && pts.len() >= 2 {
-                        polygons.push(Polygon2::open_path(pts));
+                        open_piece(pts);
                     }
                 }
             }
@@ -228,7 +251,7 @@ fn extract_polygons_flat(
                 if pts.len() >= 3 {
                     let mut poly = Polygon2::new(pts);
                     poly.ensure_winding();
-                    polygons.push(poly);
+                    polygons.push((index, poly));
                 }
             }
             dxf::entities::EntityType::ModelPoint(mp) => {
@@ -241,15 +264,15 @@ fn extract_polygons_flat(
                 });
             }
             dxf::entities::EntityType::Ellipse(ell) => {
-                // P1: a partial ellipse is an open path. A chord from end to
-                // start would cut a line that the drawing does not hold.
+                // P1: a partial ellipse is an open piece. A chord from end
+                // to start would cut a line that the drawing does not hold.
                 let (pts, closed) = ellipse_to_points(ell, arc_step_rad);
                 if closed && pts.len() >= 3 {
                     let mut poly = Polygon2::new(pts);
                     poly.ensure_winding();
-                    polygons.push(poly);
+                    polygons.push((index, poly));
                 } else if !closed && pts.len() >= 2 {
-                    polygons.push(Polygon2::open_path(pts));
+                    open_piece(pts);
                 }
             }
             dxf::entities::EntityType::Arc(arc) => {
@@ -269,48 +292,50 @@ fn extract_polygons_flat(
                     if pts.len() >= 3 {
                         let mut poly = Polygon2::new(pts);
                         poly.ensure_winding();
-                        polygons.push(poly);
+                        polygons.push((index, poly));
                     }
                 } else if pts.len() >= 2 {
-                    // P1: a partial arc is an open path. A chord from end to
-                    // start would cut a line that the drawing does not hold.
-                    polygons.push(Polygon2::open_path(pts));
+                    // P1: a partial arc is an open piece. A chord from end
+                    // to start would cut a line that the drawing does not
+                    // hold.
+                    open_piece(pts);
                 }
             }
             dxf::entities::EntityType::Line(line) => {
                 let p1 = P2::new(line.p1.x, line.p1.y);
                 let p2 = P2::new(line.p2.x, line.p2.y);
-                line_segments.push((p1, p2));
+                open_piece(vec![p1, p2]);
             }
             dxf::entities::EntityType::Spline(spline) => {
                 let pts = spline_to_points(spline, arc_step_rad);
                 if pts.len() >= 2 {
-                    // Detect closedness from geometry: splines don't carry an
-                    // is_closed flag the way LwPolyline does. Open rivers
-                    // imported as splines must stay open, otherwise
-                    // project_curve traces a phantom segment from end to
-                    // start across the stock.
-                    polygons.push(polygon_from_unknown_closure(pts));
+                    // A spline carries no closed flag that the importer
+                    // reads. The chaining step decides from the geometry:
+                    // an open river stays open, so project_curve traces no
+                    // phantom segment from end to start across the stock.
+                    open_piece(pts);
                 }
             }
             _ => {}
         }
     }
 
-    // Chain-link Line segments into polygons. Respect open-vs-closed
-    // geometry: if the resulting chain doesn't close on itself it must be
-    // imported as an open path, otherwise project_curve will trace a
-    // phantom line spanning the whole chain.
-    if !line_segments.is_empty() {
-        let chains = chain_line_segments(&line_segments);
-        for chain in chains {
-            if chain.len() >= 2 {
-                polygons.push(polygon_from_unknown_closure(chain));
-            }
+    // Join the open pieces. A chain that does not come back to its start
+    // is an open path; a chord there would make project_curve trace a
+    // phantom line across the whole chain.
+    let tol = CLOSE_TOL_MM / scale;
+    for (index, chain) in chain_open_pieces(&pieces, tol) {
+        if chain.len() >= 2 {
+            polygons.push((index, polygon_from_unknown_closure(chain, tol)));
         }
     }
+    // Entity order. The sort is stable and the indices are distinct.
+    polygons.sort_by_key(|(index, _)| *index);
 
-    (polygons, drill_targets)
+    (
+        polygons.into_iter().map(|(_, poly)| poly).collect(),
+        drill_targets,
+    )
 }
 
 /// True if a DXF Arc spans a full circle (sweep ~360°), in which case its
@@ -532,37 +557,35 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> (Vec<P2>, b
 }
 
 // ---------------------------------------------------------------------------
-// Line chain-linking
+// Chaining of open pieces (P1b)
 // ---------------------------------------------------------------------------
 
-/// Epsilon for endpoint matching when chain-linking line segments.
-const CHAIN_EPS: f64 = 1e-6;
+/// Two piece ends closer than this (in mm) meet: the chainer joins them,
+/// and a chain whose two ends meet is closed. Hand-drawn CAD rarely snaps
+/// to exact coincidence. 0.01 mm is well below the kerf of any CAM
+/// operation on this geometry.
+const CLOSE_TOL_MM: f64 = 0.01;
 
-fn pts_near(a: P2, b: P2) -> bool {
-    let dx = a.x - b.x;
-    let dy = a.y - b.y;
-    dx * dx + dy * dy < CHAIN_EPS * CHAIN_EPS
+/// One open piece of a drawing: its entity index, its layer and its
+/// points in drawing units (at least 2).
+struct OpenPiece {
+    index: usize,
+    layer: String,
+    pts: Vec<P2>,
 }
 
 /// Wrap an ordered point list as either a closed polygon (if the head and
-/// tail coincide) or an open path. Use this when importing entities that
-/// don't have an explicit is_closed flag — Spline, chained Line segments —
-/// so we don't auto-close open paths and produce a phantom segment that
-/// spans the entire curve.
+/// tail are closer than `tol`) or an open path. The chaining step uses it
+/// for every chain, so no open path is auto-closed and no phantom segment
+/// spans the whole curve.
 #[allow(clippy::indexing_slicing)] // len >= 2 guarded below
-fn polygon_from_unknown_closure(pts: Vec<P2>) -> Polygon2 {
+fn polygon_from_unknown_closure(pts: Vec<P2>, tol: f64) -> Polygon2 {
     if pts.len() < 2 {
         return Polygon2::open_path(pts);
     }
     let head = pts[0];
     let tail = pts[pts.len() - 1];
-    // Use a looser tolerance than CHAIN_EPS: hand-drawn splines in CAD apps
-    // rarely snap to exact coincidence. 0.01 mm is well below the kerf of
-    // any CAM operation on this geometry.
-    let dx = head.x - tail.x;
-    let dy = head.y - tail.y;
-    const CLOSE_TOL_MM: f64 = 0.01;
-    if (dx * dx + dy * dy).sqrt() < CLOSE_TOL_MM && pts.len() >= 3 {
+    if (head - tail).norm() < tol && pts.len() >= 3 {
         let mut poly = Polygon2::new(pts);
         poly.ensure_winding();
         poly
@@ -571,63 +594,141 @@ fn polygon_from_unknown_closure(pts: Vec<P2>) -> Polygon2 {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Chain-link a set of individual line segments into connected polyline chains.
-///
-/// Greedy algorithm: pick an unused segment, then extend the chain in both
-/// directions by finding unused segments whose endpoint matches the chain's
-/// current head or tail.  Returns one `Vec<P2>` per chain.
-fn chain_line_segments(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
-    let n = segments.len();
-    let mut used = vec![false; n];
-    let mut chains: Vec<Vec<P2>> = Vec::new();
+/// The grid cell of `p` for an end lookup with cells of size `tol`.
+fn end_cell(p: P2, tol: f64) -> (i64, i64) {
+    // `as` saturates a huge or non-finite value; such a point then only
+    // meets points in the same saturated cell, which the distance test
+    // still checks.
+    ((p.x / tol).floor() as i64, (p.y / tol).floor() as i64)
+}
 
-    for seed in 0..n {
+/// Join the open pieces end to end into chains. Returns each chain with
+/// the lowest entity index of its pieces, in the order of that index.
+///
+/// The rule, so the same file always gives the same chains:
+///
+/// 1. The seed of the next chain is the unused piece of the lowest entity
+///    index. The chain starts with the seed in its drawn direction.
+/// 2. The chain grows at its tail while a piece meets the tail, then at
+///    its head while a piece meets the head. Two ends meet when they are
+///    closer than `tol`.
+/// 3. Only an unused piece of the seed's layer can join (DESIGN D14).
+/// 4. Where two or more pieces meet an end (a branch point), the piece of
+///    the lowest entity index joins. When both ends of that piece meet,
+///    its start end joins. The other pieces start chains of their own.
+/// 5. A piece joins reversed when its end, not its start, meets. The
+///    joined end point is not repeated in the chain.
+/// 6. The chain stops when its tail meets its head (with 3 or more
+///    points): it is closed.
+#[allow(clippy::indexing_slicing)] // piece indices come from 0..pieces.len()
+fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<(usize, Vec<P2>)> {
+    use std::collections::HashMap;
+
+    // The pieces arrive in entity order, so the position in `pieces` sorts
+    // like the entity index.
+    let mut ends: HashMap<(i64, i64), Vec<(usize, bool)>> = HashMap::new();
+    for (k, piece) in pieces.iter().enumerate() {
+        if let (Some(&first), Some(&last)) = (piece.pts.first(), piece.pts.last()) {
+            ends.entry(end_cell(first, tol))
+                .or_default()
+                .push((k, true));
+            ends.entry(end_cell(last, tol))
+                .or_default()
+                .push((k, false));
+        }
+    }
+    // The unused piece of `layer` with an end that meets `p`: the lowest
+    // index, its start end first. `true` = the start end meets.
+    let find = |p: P2, layer: &str, used: &[bool]| -> Option<(usize, bool)> {
+        let (cx, cy) = end_cell(p, tol);
+        let mut best: Option<(usize, bool)> = None;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let Some(list) = ends.get(&(cx.saturating_add(dx), cy.saturating_add(dy))) else {
+                    continue;
+                };
+                for &(k, at_start) in list {
+                    let piece = &pieces[k];
+                    if used[k] || piece.layer != layer {
+                        continue;
+                    }
+                    let end = if at_start {
+                        piece.pts[0]
+                    } else {
+                        piece.pts[piece.pts.len() - 1]
+                    };
+                    if (end - p).norm() >= tol {
+                        continue;
+                    }
+                    // Lower index wins; at one index the start end wins.
+                    let better = match best {
+                        None => true,
+                        Some((bk, b_start)) => k < bk || (k == bk && at_start && !b_start),
+                    };
+                    if better {
+                        best = Some((k, at_start));
+                    }
+                }
+            }
+        }
+        best
+    };
+    let closed =
+        |chain: &[P2]| chain.len() >= 3 && (chain[0] - chain[chain.len() - 1]).norm() < tol;
+
+    let mut used = vec![false; pieces.len()];
+    let mut chains = Vec::new();
+    for seed in 0..pieces.len() {
         if used[seed] {
             continue;
         }
         used[seed] = true;
-        let mut chain = vec![segments[seed].0, segments[seed].1];
+        let layer = pieces[seed].layer.as_str();
+        let mut chain: Vec<P2> = pieces[seed].pts.clone();
 
-        // Extend the chain until no more segments attach.
-        let mut changed = true;
-        while changed {
-            changed = false;
+        // Grow the tail.
+        while !closed(&chain) {
             let tail = chain[chain.len() - 1];
-            let head = chain[0];
-
-            for i in 0..n {
-                if used[i] {
-                    continue;
-                }
-                let (a, b) = segments[i];
-                if pts_near(tail, a) {
-                    // a matches tail — append b
-                    chain.push(b);
-                    used[i] = true;
-                    changed = true;
-                } else if pts_near(tail, b) {
-                    // b matches tail — append a
-                    chain.push(a);
-                    used[i] = true;
-                    changed = true;
-                } else if pts_near(head, b) {
-                    // b matches head — prepend a
-                    chain.insert(0, a);
-                    used[i] = true;
-                    changed = true;
-                } else if pts_near(head, a) {
-                    // a matches head — prepend b
-                    chain.insert(0, b);
-                    used[i] = true;
-                    changed = true;
-                }
+            let Some((k, at_start)) = find(tail, layer, &used) else {
+                break;
+            };
+            used[k] = true;
+            let pts = &pieces[k].pts;
+            if at_start {
+                chain.extend(pts.iter().skip(1));
+            } else {
+                chain.extend(pts.iter().rev().skip(1));
             }
         }
-
-        chains.push(chain);
+        // Grow the head. The points go in front, so collect them reversed.
+        let mut front: Vec<P2> = Vec::new();
+        while !closed(&chain) {
+            let head = front.last().copied().unwrap_or(chain[0]);
+            let Some((k, at_start)) = find(head, layer, &used) else {
+                break;
+            };
+            used[k] = true;
+            let pts = &pieces[k].pts;
+            // The piece runs away from the head: from its meeting end to
+            // its far end, and `front` holds the head side reversed.
+            if at_start {
+                front.extend(pts.iter().skip(1));
+            } else {
+                front.extend(pts.iter().rev().skip(1));
+            }
+            if let Some(&far) = front.last()
+                && (far - chain[chain.len() - 1]).norm() < tol
+            {
+                break;
+            }
+        }
+        if !front.is_empty() {
+            front.reverse();
+            front.extend(chain);
+            chain = front;
+        }
+        chains.push((pieces[seed].index, chain));
     }
-
     chains
 }
 
@@ -1247,17 +1348,202 @@ mod tests {
         );
     }
 
+    /// An open piece of layer `layer` with entity index `index`.
+    fn piece(index: usize, layer: &str, pts: &[(f64, f64)]) -> OpenPiece {
+        OpenPiece {
+            index,
+            layer: layer.to_owned(),
+            pts: pts.iter().map(|&(x, y)| P2::new(x, y)).collect(),
+        }
+    }
+
     #[test]
-    fn test_chain_line_segments_direct() {
+    fn test_chain_open_pieces_direct() {
         // Unit test on the chaining function itself.
-        let segs = vec![
-            (P2::new(0.0, 0.0), P2::new(1.0, 0.0)),
-            (P2::new(2.0, 0.0), P2::new(1.0, 0.0)), // reversed segment
-            (P2::new(2.0, 0.0), P2::new(3.0, 0.0)),
+        let pieces = vec![
+            piece(0, "0", &[(0.0, 0.0), (1.0, 0.0)]),
+            piece(1, "0", &[(2.0, 0.0), (1.0, 0.0)]), // reversed segment
+            piece(2, "0", &[(2.0, 0.0), (3.0, 0.0)]),
         ];
-        let chains = chain_line_segments(&segs);
+        let chains = chain_open_pieces(&pieces, CLOSE_TOL_MM);
         assert_eq!(chains.len(), 1, "All segments connect into one chain");
-        assert_eq!(chains[0].len(), 4, "Chain should have 4 points");
+        assert_eq!(chains[0].0, 0, "the chain carries its lowest index");
+        assert_eq!(chains[0].1.len(), 4, "Chain should have 4 points");
+    }
+
+    // ----- P1b: chaining of open pieces -----
+
+    /// One piece of a P1b drawing.
+    enum Draw {
+        /// A LINE from (x1, y1) to (x2, y2).
+        Line(f64, f64, f64, f64),
+        /// An ARC: centre (cx, cy), radius, start and end angle in degrees.
+        Arc(f64, f64, f64, f64, f64),
+    }
+
+    /// A drawing of `items` in this order, each on its layer.
+    fn drawing_of(items: &[(&str, Draw)]) -> dxf::Drawing {
+        let mut drawing = dxf::Drawing::new();
+        for (layer, item) in items {
+            let specific = match *item {
+                Draw::Line(x1, y1, x2, y2) => {
+                    dxf::entities::EntityType::Line(dxf::entities::Line {
+                        p1: dxf::Point::new(x1, y1, 0.0),
+                        p2: dxf::Point::new(x2, y2, 0.0),
+                        ..Default::default()
+                    })
+                }
+                Draw::Arc(cx, cy, r, a0, a1) => dxf::entities::EntityType::Arc(
+                    dxf::entities::Arc::new(dxf::Point::new(cx, cy, 0.0), r, a0, a1),
+                ),
+            };
+            let mut entity = dxf::entities::Entity::new(specific);
+            entity.common.layer = (*layer).to_owned();
+            drawing.add_entity(entity);
+        }
+        drawing
+    }
+
+    /// The rounded rectangle of the P1b sentry: 40 x 20 mm, corner radius
+    /// 5 mm, its lower left corner at the origin. The entities are in a
+    /// mixed order. The bottom and the top LINE run clockwise and every ARC
+    /// runs counter-clockwise (DXF), so the chain takes some pieces
+    /// reversed: with the seed (the top-left ARC) the bottom and the top
+    /// LINE join reversed.
+    fn rounded_rectangle() -> Vec<(&'static str, Draw)> {
+        vec![
+            ("0", Draw::Arc(5.0, 15.0, 5.0, 90.0, 180.0)),
+            ("0", Draw::Line(35.0, 0.0, 5.0, 0.0)),
+            ("0", Draw::Arc(35.0, 5.0, 5.0, 270.0, 360.0)),
+            ("0", Draw::Line(0.0, 15.0, 0.0, 5.0)),
+            ("0", Draw::Line(5.0, 20.0, 35.0, 20.0)),
+            ("0", Draw::Arc(35.0, 15.0, 5.0, 0.0, 90.0)),
+            ("0", Draw::Line(40.0, 5.0, 40.0, 15.0)),
+            ("0", Draw::Arc(5.0, 5.0, 5.0, 180.0, 270.0)),
+        ]
+    }
+
+    /// P1b sentry: a rounded rectangle drawn as 4 LINE + 4 ARC imports as
+    /// ONE closed polygon with the area of the tessellated outline.
+    ///
+    /// Red proof (2026-10-19): with the ARC pieces kept out of the chainer
+    /// (imported as open paths of their own, as after P1), this test fails:
+    /// the import holds 8 open paths, not one closed polygon.
+    #[test]
+    fn a_rounded_rectangle_of_lines_and_arcs_imports_closed_p1b() {
+        let arc_tol_deg = 5.0;
+        let polys = extract_polygons(&drawing_of(&rounded_rectangle()), arc_tol_deg);
+        assert_eq!(polys.len(), 1, "one outline: {} polygons", polys.len());
+        let outline = &polys[0];
+        assert!(outline.closed, "the outline is closed");
+        assert!(outline.holes.is_empty());
+
+        // `arc_entity_to_points` cuts a 90 degree arc into
+        // n = ceil(90 / 5) chords. The polygon area is the rectangle less,
+        // at each corner, the r x r square less the fan of n triangles
+        // from the arc centre: n * r^2 / 2 * sin(90 deg / n).
+        let (w, h, r) = (40.0_f64, 20.0_f64, 5.0_f64);
+        let n = (90.0_f64 / arc_tol_deg).ceil();
+        let fan = n * r * r / 2.0 * (std::f64::consts::FRAC_PI_2 / n).sin();
+        let expected = w * h - 4.0 * (r * r - fan);
+        let area = outline.area().abs();
+        assert!(
+            (area - expected).abs() < 1e-9 * expected,
+            "area {area} vs the tessellated outline {expected}"
+        );
+    }
+
+    /// P1b sentry: an open L of a LINE and an ARC stays ONE open path.
+    #[test]
+    fn an_open_l_of_a_line_and_an_arc_stays_one_open_path_p1b() {
+        let polys = extract_polygons(
+            &drawing_of(&[
+                ("0", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("0", Draw::Arc(10.0, 5.0, 5.0, 270.0, 360.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(polys.len(), 1, "one path");
+        let path = &polys[0];
+        assert!(!path.closed, "the L is open");
+        assert!((path.exterior[0] - P2::new(0.0, 0.0)).norm() < 1e-9);
+        assert!((*path.exterior.last().unwrap() - P2::new(15.0, 5.0)).norm() < 1e-9);
+    }
+
+    /// P1b sentry (DESIGN D14): two pieces that touch at a point but lie
+    /// on two layers do not chain. On one layer they do.
+    #[test]
+    fn pieces_on_two_layers_do_not_chain_p1b() {
+        let two = extract_polygons(
+            &drawing_of(&[
+                ("A", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("B", Draw::Line(10.0, 0.0, 10.0, 10.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(two.len(), 2, "two layers: two paths");
+        assert!(two.iter().all(|p| !p.closed && p.exterior.len() == 2));
+
+        let one = extract_polygons(
+            &drawing_of(&[
+                ("A", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("A", Draw::Line(10.0, 0.0, 10.0, 10.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(one.len(), 1, "one layer: one path");
+    }
+
+    /// P1b sentry: a piece joins reversed (its end meets the chain end),
+    /// and an end within `CLOSE_TOL_MM` meets while one outside it does not.
+    #[test]
+    fn a_reversed_piece_joins_within_the_closing_tolerance_p1b() {
+        let joined = extract_polygons(
+            &drawing_of(&[
+                ("0", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("0", Draw::Line(20.0, 0.0, 10.0 + 0.5 * CLOSE_TOL_MM, 0.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(joined.len(), 1, "the reversed line joins");
+        let path = &joined[0];
+        assert_eq!(path.exterior.len(), 3, "the joint point is not repeated");
+        assert!((*path.exterior.last().unwrap() - P2::new(20.0, 0.0)).norm() < 1e-9);
+
+        let apart = extract_polygons(
+            &drawing_of(&[
+                ("0", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("0", Draw::Line(20.0, 0.0, 10.0 + 2.0 * CLOSE_TOL_MM, 0.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(apart.len(), 2, "a gap over the tolerance does not join");
+    }
+
+    /// P1b: at a branch point (three ends at one point) the piece of the
+    /// lowest entity index joins, and the others start chains of their own.
+    /// The output is in entity order.
+    #[test]
+    fn a_branch_point_takes_the_lowest_entity_index_p1b() {
+        let polys = extract_polygons(
+            &drawing_of(&[
+                ("0", Draw::Line(0.0, 0.0, 10.0, 0.0)),
+                ("0", Draw::Line(10.0, 0.0, 10.0, 10.0)),
+                ("0", Draw::Line(10.0, 0.0, 20.0, 0.0)),
+            ]),
+            5.0,
+        );
+        assert_eq!(polys.len(), 2);
+        let first: Vec<P2> = polys[0].exterior.clone();
+        assert_eq!(
+            first,
+            vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0), P2::new(10.0, 10.0)],
+            "the seed takes entity 1 at the branch"
+        );
+        assert_eq!(
+            polys[1].exterior,
+            vec![P2::new(10.0, 0.0), P2::new(20.0, 0.0)]
+        );
     }
 
     // ----- Spline tests -----

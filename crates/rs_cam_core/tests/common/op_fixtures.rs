@@ -222,7 +222,10 @@ pub fn plate_model() -> LoadedModel {
     )
 }
 
-/// An open zigzag "river" over the cap, for Project Curve.
+/// A zigzag "river" over the cap, for Project Curve. `Polygon2::new`
+/// makes it a CLOSED polygon of four points, so Project Curve also cuts
+/// the closing segment from the last point back to the first. The golden
+/// holds that toolpath; do not change the geometry here.
 pub fn curve_model() -> LoadedModel {
     polygon_model(
         vec![Polygon2::new(vec![

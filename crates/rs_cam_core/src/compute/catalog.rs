@@ -182,6 +182,13 @@ pub struct OperationTransformCapabilities {
     /// models a plunge as its own disc, which the XY-unchanged plunge
     /// keeps. `new` leaves it `false`.
     pub stock_aware_plunge: bool,
+    /// P1b (geometry selection, lead ruling 2026-10-19): the lead-in/out
+    /// dressup gives a lead only to a pass that ends where it starts
+    /// ([`crate::dressup::LeadScope::ClosedPassesOnly`]). Trace sets it, so
+    /// an open path is cut exactly on the drawn line: no lead arc goes past
+    /// its start or its end. A closed loop keeps its leads. `new` leaves it
+    /// `false`.
+    pub leads_on_closed_passes_only: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -201,6 +208,24 @@ impl OperationTransformCapabilities {
             planner_applies_segment_merge: false,
             helix_floor_lap: false,
             stock_aware_plunge: false,
+            leads_on_closed_passes_only: false,
+        }
+    }
+
+    /// The lead dressup leaves open passes alone (P1b).
+    pub const fn with_leads_on_closed_passes_only(self) -> Self {
+        Self {
+            leads_on_closed_passes_only: true,
+            ..self
+        }
+    }
+
+    /// The scope the lead-in/out dressup applies for this op.
+    pub fn lead_scope(self) -> crate::dressup::LeadScope {
+        if self.leads_on_closed_passes_only {
+            crate::dressup::LeadScope::ClosedPassesOnly
+        } else {
+            crate::dressup::LeadScope::EveryPass
         }
     }
 

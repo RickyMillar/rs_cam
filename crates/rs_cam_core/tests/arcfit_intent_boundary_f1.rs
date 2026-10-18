@@ -274,6 +274,7 @@ fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
         None,
         None,
         None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
     ));
     let lead_outs = count_intent(&led.toolpath, MoveIntent::LeadOut);
     assert_eq!(
@@ -379,7 +380,15 @@ fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
     let n = tp.moves.len();
     let annotated = AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
 
-    let led = without_provenance(apply_lead_in_out(annotated, r, None, None, None, None));
+    let led = without_provenance(apply_lead_in_out(
+        annotated,
+        r,
+        None,
+        None,
+        None,
+        None,
+        rs_cam_core::dressup::LeadScope::EveryPass,
+    ));
     assert!(
         led.spans.iter().any(|s| s.kind == SpanKind::LeadOut),
         "fixture precondition: apply_lead_in_out must push a LeadOut span"
