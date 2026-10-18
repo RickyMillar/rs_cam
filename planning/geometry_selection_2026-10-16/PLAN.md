@@ -196,7 +196,13 @@ Goal: R6. The user sees and edits the selection.
    layer, open/closed, circle diameter ± tolerance.
 3. STL flat-region pick (idea: the fork's `face_region.rs`, rebuilt as a
    core source).
-4. SVG scale shown and editable at import.
+4. SVG scale shown and editable at import. The join tolerance (default
+   0.01 mm) is settable per import; the import reports pieces joined and
+   open shapes left.
+4b. Open paths in their own colour, ends marked, a "select open" filter,
+   a "show me" action on the `SelectionNote`; a join/close tool (by
+   distance, close with a line, move ends together). See the GAP_ANALYSIS
+   addendum 2026-10-19.
 5. MCP parity for every UI action (GUI/MCP number parity rule).
 
 Proof: viz controller tests per action, the MCP tests, a live look by the
@@ -295,7 +301,7 @@ The lead approves `DESIGN.md`. These rulings override it where they differ.
 | Phase | State | Commits | Notes |
 |---|---|---|---|
 | P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
-| P1 open paths | research done; editor running | | research: every region op chord-closes open paths in silence |
+| P1 open paths | P1 done; P1b running (DXF chaining, Trace leads) | bba80b4d | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | blocked on P0 | | |
 | P3 depth refs | blocked on P2 | | |
 | P4 UI + sources | blocked on P2 | | |

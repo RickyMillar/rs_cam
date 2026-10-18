@@ -96,3 +96,45 @@ Kiri:Moto, MeshCAM, SolidCAM, Mastercam and FeatureCAM. Sources are at the end.
 - FeatureCAM tool choice: https://help.autodesk.com/cloudhelp/2019/ENU/FCAM/files/GUID-9F769884-3F9B-4306-AA42-FD19FBE72D77.htm
 - Kiri:Moto, Estlcam and Carbide Create points partly from forums; Mastercam
   FBM material is from about 2008-2012.
+
+## Addendum 2026-10-19: open vectors in other tools
+
+A web research pass (forum posts and docs; Kiri:Moto, Easel and CamBam
+have little documentation) found these patterns:
+
+| Topic | What other tools do |
+|---|---|
+| Join at import | Most tools do not join automatically. LightBurn auto-joins at 0.05 mm (fixed), closes a path at 0.5 mm, and has a user-set "close with tolerance" command. FreeCAD has a DXF "join geometry" preference. |
+| Manual join | Vectric: Join Open Vectors with a user tolerance; close with a line or a smooth curve. Carbide Create: Join Vectors (open only). LightBurn: Move Ends Together, Join with Line. |
+| Display | Carbide Create shows open vectors in magenta and can select all open vectors. LightBurn marks start and end nodes, has "select open shapes", and warns at preview with "Show Me". Fusion discards an open contour in silence. |
+| Closed-only ops | Vectric, Carbide Create: need closed vectors. Easel: "Cannot offset open paths". LightBurn: warns, then skips. Fusion: discards in silence. |
+| Open-path ops | Estlcam cuts on, left or right of an open line. Fusion 2D Contour follows an open chain and extends it tangent to the stock (Tangential Extension distance). |
+| Duplicates | No tool removes them at import. LightBurn has a separate "Delete duplicates" command. |
+
+Tolerances seen: 0.001–0.01 mm (general CAM advice), 0.05 mm (LightBurn
+auto-join), about 0.1 mm (one Vectric user), 0.5 mm (LightBurn close).
+
+What rs_cam takes from this:
+
+- Import join: the existing 0.01 mm closing tolerance stays the default
+  (P1b). P4 makes it settable per import and reports the counts: pieces
+  joined, open shapes left.
+- Display (P4): open paths in their own colour, start and end marked, a
+  "select open" filter and a count, and a "show me" action on the
+  `SelectionNote` finding.
+- Join and close tool (P4): by distance, close with a line, move ends
+  together. The import never closes a gap with a chord in silence.
+- Closed-only ops: rs_cam skips an open path under the default rule with a
+  visible note (as LightBurn does) and refuses an explicit pick of one
+  (lead ruling D2 in `PLAN.md`). Fusion's silent discard is the defect to
+  avoid.
+- Open paths (P6): on the line, left or right (side by path direction,
+  start shown), tangent extension to the stock. No lead past the drawn
+  ends (lead ruling, P1b).
+
+Sources: docs.vectric.com (Join Vectors V9.5, V12), docs.lightburnsoftware.com
+(OpenvsClosedShapes, AutoJoinSelectedShapes), community.carbide3d.com
+(joining-vectors-not-working/71460, find-open-vectors-on-imported-dxf/70527),
+resources.imaginit.com (fusion-360-milling-chains-boundaries-and-containment),
+forums.autodesk.com (unwanted-extension-milling-open-pocket), v1engineering.com
+(estlcam-basics), forum.easel.com (cut-path-issue…/26803), wiki.freecad.org/Draft_Join.
