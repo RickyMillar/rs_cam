@@ -301,8 +301,8 @@ The lead approves `DESIGN.md`. These rulings override it where they differ.
 | Phase | State | Commits | Notes |
 |---|---|---|---|
 | P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
-| P1 open paths | P1 done; P1b running (DXF chaining, Trace leads) | bba80b4d | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
-| P2 selection core | blocked on P0 | | |
+| P1 open paths | done (operator look pending) | bba80b4d, P1b next commit | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
+| P2 selection core | P2.1 running | | DESIGN.md section 14 items |
 | P3 depth refs | blocked on P2 | | |
 | P4 UI + sources | blocked on P2 | | |
 | P5 tabs | not started | | can follow P1 |
