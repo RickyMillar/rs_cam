@@ -1078,10 +1078,9 @@ pub(super) fn build_session_from_project(
                         tris = mesh.triangles.len(),
                         "Loaded mesh model"
                     ),
-                    LoadedGeometry::Polygons(polys, drill_targets, _) => tracing::info!(
+                    LoadedGeometry::Drawing(items) => tracing::info!(
                         name = %model_section.name,
-                        polygons = polys.len(),
-                        drill_targets = drill_targets.len(),
+                        items = items.len(),
                         "Loaded 2D model"
                     ),
                     LoadedGeometry::Enriched(enriched) => tracing::info!(
@@ -1117,9 +1116,7 @@ pub(super) fn build_session_from_project(
                     id: model_id,
                     name: model_section.name.clone(),
                     mesh: None,
-                    polygons: None,
-                    drill_targets: Arc::new(Vec::new()),
-                    layers: Arc::new(Vec::new()),
+                    items: Arc::new(crate::selection::ItemSet::default()),
                     path: model_path,
                     kind: model_kind,
                     units: model_units,
@@ -1160,12 +1157,7 @@ pub(super) fn build_session_from_project(
     if stock.auto_from_model {
         let mut combined: Option<crate::geo::BoundingBox3> = None;
         for model in &models {
-            let model_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                model
-                    .polygons
-                    .as_ref()
-                    .and_then(|polys| crate::session::mutation::polygons_bbox(polys))
-            });
+            let model_bbox = model.bbox();
             if let Some(bb) = model_bbox {
                 combined = Some(match combined {
                     None => bb,

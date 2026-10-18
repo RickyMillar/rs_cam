@@ -6,7 +6,7 @@ diagnostics, session state and G-code export. Keep it GUI-free. Read the root
 
 ## The folder map
 
-`src/` holds 8 files and 26 folders. The 8 root files are the crate spine —
+`src/` holds 8 files and 27 folders. The 8 root files are the crate spine —
 the vocabulary every layer names: `lib.rs`, `geo.rs`, `polygon.rs`, `mesh.rs`,
 `toolpath.rs`, `ids.rs`, `interrupt.rs` and `measurement.rs`. Everything else
 sits in a folder. Most folders carry their own `CLAUDE.md`; read that file
@@ -20,6 +20,7 @@ sentries and traps, which this file does not repeat.
 | `material/` | Material catalogue and the wood species library | `material/CLAUDE.md` |
 | `machine/` | Machine profile, kinematics, utilisation, strategy advisor | `machine/CLAUDE.md` |
 | `geometry/` | Regions, grids, distance fields, contours, the machining boundary | `geometry/CLAUDE.md` |
+| `selection/` | The items of a model (loop, path, point, circle, face), their match keys, the stock source | `selection/CLAUDE.md` |
 | `surface/` | Drop and push cutter, slope, rest field, flow routing, reach | `surface/CLAUDE.md` |
 | `maps/` | Tier and reach maps, islands, and their bounded caches | `maps/CLAUDE.md` |
 | `ops/` | 2.5D and drilling operations, and the depth-stepping helper | `ops/CLAUDE.md` |

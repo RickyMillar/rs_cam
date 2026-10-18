@@ -51,6 +51,7 @@ pub mod mesh;
 pub mod metrology;
 pub mod ops;
 pub mod polygon;
+pub mod selection;
 pub mod session;
 pub mod settings;
 pub mod stock;

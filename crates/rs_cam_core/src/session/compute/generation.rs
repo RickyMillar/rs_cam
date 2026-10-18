@@ -61,7 +61,8 @@ impl ProjectSession {
         let model = self.find_model_by_raw_id(tc.model_id);
 
         let mut mesh = model.and_then(|m| m.mesh.clone());
-        let mut polygons = model.and_then(|m| m.polygons.clone());
+        // P2.3 replaces the bridge with the resolved selection.
+        let mut polygons = model.and_then(|m| m.outlines_pre_selection());
 
         // ProjectCurve optionally references a separate surface model for
         // the mesh (so polygons can come from a DXF while the projection
@@ -477,9 +478,11 @@ impl ProjectSession {
             tool,
             mesh,
             polygons,
-            drill_targets: model
-                .map(|m| Arc::clone(&m.drill_targets))
-                .unwrap_or_default(),
+            drill_targets: Arc::new(
+                model
+                    .map(crate::session::LoadedModel::drill_targets_pre_selection)
+                    .unwrap_or_default(),
+            ),
             keep_out_footprints,
             obstacles,
             obstacle_view,
@@ -602,8 +605,8 @@ impl ProjectSession {
         };
         let name = &model.name;
 
-        let closed: Vec<crate::polygon::Polygon2> = model
-            .polygons
+        let outlines = model.outlines_pre_selection();
+        let closed: Vec<crate::polygon::Polygon2> = outlines
             .as_deref()
             .map(|polys| {
                 polys
@@ -614,7 +617,7 @@ impl ProjectSession {
             })
             .unwrap_or_default();
         if closed.is_empty() {
-            let reason = match (&model.load_error, model.polygons.as_deref()) {
+            let reason = match (&model.load_error, outlines.as_deref()) {
                 (Some(error), _) => format!("the model did not load ({error})"),
                 (None, None) => "the model has no 2D geometry (it is not a DXF or SVG)".to_owned(),
                 (None, Some(polys)) if polys.is_empty() => "the model has no 2D shapes".to_owned(),

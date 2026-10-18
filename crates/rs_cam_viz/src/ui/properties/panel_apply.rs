@@ -76,14 +76,11 @@ pub(crate) fn commit_tool_draft(
 /// a draw site cannot reach the controller. The two read the same two
 /// sources in the same order.
 fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
-    state.session.models().iter().find_map(|model| {
-        model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-            model
-                .polygons
-                .as_deref()
-                .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
-        })
-    })
+    state
+        .session
+        .models()
+        .iter()
+        .find_map(rs_cam_core::session::LoadedModel::bbox)
 }
 
 /// Apply the stock panel's draft through the one command door.

@@ -104,11 +104,9 @@ fn fresh_state() -> AppState {
             name: "2D".to_owned(),
             kind: Some(ModelKind::Svg),
             mesh: None,
-            polygons: Some(Arc::new(vec![Polygon2::rectangle(
-                -10.0, -10.0, 10.0, 10.0,
-            )])),
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
+            items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+                Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0),
+            ])),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,

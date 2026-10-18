@@ -804,9 +804,7 @@ fn make_session_with_pocket_model() -> ProjectSession {
         id: 0,
         name: "phantom_prior_stock_fixture".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![polygon])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(crate::selection::ItemSet::from_polygons(vec![polygon])),
         path: std::path::PathBuf::from("synthetic://phantom_prior_stock_fixture.svg"),
         kind: None,
         units: None,
@@ -1230,9 +1228,7 @@ fn the_collision_sweep_builds_one_index_per_model() {
             id,
             name: name.to_owned(),
             mesh: Some(Arc::new(crate::mesh::make_test_hemisphere(10.0, 8))),
-            polygons: None,
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
+            items: Default::default(),
             path: std::path::PathBuf::from(format!("synthetic://{name}.stl")),
             kind: None,
             units: None,
@@ -2681,7 +2677,7 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
         .map(|c| c.change.id.0)
         .collect();
     assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
-    let model_polys = s.models()[0].polygons.clone().unwrap();
+    let model_polys = s.models()[0].outlines_pre_selection().unwrap();
     for resolved in &groups[1].stock_changes {
         assert_eq!(resolved.setup_id, s.list_setups()[1].id);
         match resolved.sources.as_slice() {

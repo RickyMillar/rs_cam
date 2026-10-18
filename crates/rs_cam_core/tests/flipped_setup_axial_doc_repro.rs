@@ -95,9 +95,9 @@ fn build_flipped_pocket_session() -> ProjectSession {
         id: 0,
         name: "as001_pocket".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            rounded_rect_with_island(),
+        ])),
         path: PathBuf::from("synthetic://as001_pocket.svg"),
         kind: None,
         units: None,

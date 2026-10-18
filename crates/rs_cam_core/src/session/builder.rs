@@ -138,7 +138,8 @@ impl ProjectSessionBuilder {
     }
 
     /// Append a model. The builder keeps `model.id` and moves no stock.
-    pub fn model(mut self, model: LoadedModel) -> Self {
+    pub fn model(mut self, mut model: LoadedModel) -> Self {
+        model.bind_items();
         self.session.models.push(model);
         self
     }

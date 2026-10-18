@@ -32,8 +32,7 @@ pub(crate) fn loaded_model_facts(
             name: &m.name,
             has_mesh: m.mesh.is_some(),
             has_closed_outline: m
-                .polygons
-                .as_deref()
+                .outlines_pre_selection()
                 .is_some_and(|polys| polys.iter().any(is_closed_outline)),
         })
 }

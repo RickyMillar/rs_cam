@@ -1,4 +1,8 @@
-//! DXF file input — extracts entities as [`Polygon2`].
+//! DXF file input — extracts entities as selection items (P2.1).
+//!
+//! Each entity gives one item with its layer: a closed entity a `Loop`, a
+//! CIRCLE or full ARC one `Circle`, a POINT a `Point`. A chain of open
+//! pieces gives a `Loop` or a `Path` with the layer of its pieces.
 //!
 //! ### Supported entity types
 //! - **LwPolyline** — closed lightweight polylines (with optional bulge arcs)
@@ -33,7 +37,9 @@
 
 use crate::geo::P2;
 use crate::polygon::Polygon2;
+use crate::selection::{Item, ItemError, ItemSet, Shape, SourceRef};
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -46,6 +52,9 @@ pub enum DxfError {
     /// refuses before the parser reads a byte (EDG-03).
     #[error("DXF file too large ({size_mb} MB, limit {limit_mb} MB)")]
     FileTooLarge { size_mb: u64, limit_mb: u64 },
+    /// A shape that breaks an item invariant: a defect in this door.
+    #[error("DXF import made an invalid item: {0}")]
+    Item(#[from] ItemError),
 }
 
 /// What kind of DXF feature a [`DrillTarget`] was derived from.
@@ -69,14 +78,13 @@ pub struct DrillTarget {
     pub kind: DrillTargetKind,
 }
 
-/// The full result of importing a DXF: closed/open polygons (as before) plus
-/// pickable drill targets and the distinct layer names that contain targets.
+/// The result of importing a DXF: one item per entity, and one item per
+/// chain of open pieces (P2.1).
 #[derive(Debug, Clone, Default)]
 pub struct DxfImport {
-    pub polygons: Vec<Polygon2>,
-    pub drill_targets: Vec<DrillTarget>,
-    /// Distinct layer names that contain at least one drill target, sorted.
-    pub layers: Vec<String>,
+    /// The items in entity order: an entity at its own index, a chain at the
+    /// lowest index of its pieces. Each item carries its entity's layer.
+    pub items: ItemSet,
 }
 
 /// Return a scale factor to convert from `$INSUNITS` to millimeters.
@@ -104,18 +112,12 @@ fn insunits_to_mm_scale(units: dxf::enums::Units) -> f64 {
     }
 }
 
-/// Load closed polygon entities from a DXF file.
+/// Load a DXF file as a [`DxfImport`]: one item per entity and per chain.
 ///
 /// Arc segments (bulge values in polylines, circles, ellipses) are
 /// tessellated to line segments with the given angular tolerance in degrees.
 /// Coordinates are scaled from `$INSUNITS` to millimeters automatically.
-pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, DxfError> {
-    Ok(load_dxf_full(path, arc_tolerance_deg)?.polygons)
-}
-
-/// Load a DXF file as a full [`DxfImport`]: polygons plus pickable drill
-/// targets (POINT entities, circle/arc centres) and their layer names.
-pub fn load_dxf_full(path: &Path, arc_tolerance_deg: f64) -> Result<DxfImport, DxfError> {
+pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<DxfImport, DxfError> {
     if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)
         .map_err(|e| DxfError::Io(e.into()))?
     {
@@ -125,21 +127,33 @@ pub fn load_dxf_full(path: &Path, arc_tolerance_deg: f64) -> Result<DxfImport, D
         });
     }
     let drawing = dxf::Drawing::load_file(path.to_str().unwrap_or(""))?;
-    Ok(extract_dxf(&drawing, arc_tolerance_deg))
+    extract_dxf(&drawing, arc_tolerance_deg)
 }
 
-/// Load closed polygon entities from a DXF Drawing.
-pub fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
-    extract_dxf(drawing, arc_tolerance_deg).polygons
+/// The geometry of one entity or chain, in drawing units, before it becomes
+/// an item.
+enum RawShape {
+    /// A closed ring (wound CCW) or an open path.
+    Ring(Polygon2),
+    /// A CIRCLE or a full-circle ARC: its centre, diameter and ring.
+    Circle {
+        centre: P2,
+        diameter: f64,
+        ring: Polygon2,
+    },
+    /// A POINT.
+    Point(P2),
 }
 
-/// Extract polygons and drill targets from a DXF Drawing, scaling to mm and
-/// detecting polygon containment.
-pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport {
+/// Extract the items of a DXF Drawing, scaled to mm.
+///
+/// Containment does not run here (P2.1): the nesting runs over the selected
+/// loops at resolution.
+pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Result<DxfImport, DxfError> {
     let scale = insunits_to_mm_scale(drawing.header.default_drawing_units);
-    let (mut raw, mut drill_targets) = extract_polygons_flat(drawing, arc_tolerance_deg, scale);
+    let mut raw = extract_flat(drawing, arc_tolerance_deg, scale);
     if (scale - 1.0).abs() > 1e-12 {
-        for poly in &mut raw {
+        let scale_ring = |poly: &mut Polygon2| {
             for pt in &mut poly.exterior {
                 pt.x *= scale;
                 pt.y *= scale;
@@ -152,43 +166,68 @@ pub fn extract_dxf(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> DxfImport 
             }
             // `exterior` moved — see the mutation contract on `Polygon2`.
             poly.invalidate_bbox();
-        }
-        for t in &mut drill_targets {
-            t.x *= scale;
-            t.y *= scale;
-            if let DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
-                *diameter *= scale;
+        };
+        for (_, _, shape) in &mut raw {
+            match shape {
+                RawShape::Ring(poly) => scale_ring(poly),
+                RawShape::Circle {
+                    centre,
+                    diameter,
+                    ring,
+                } => {
+                    centre.x *= scale;
+                    centre.y *= scale;
+                    *diameter *= scale;
+                    scale_ring(ring);
+                }
+                RawShape::Point(p) => {
+                    p.x *= scale;
+                    p.y *= scale;
+                }
             }
         }
     }
-    // Distinct layer names that carry targets, sorted for stable UI ordering.
-    let mut layers: Vec<String> = drill_targets.iter().map(|t| t.layer.clone()).collect();
-    layers.sort();
-    layers.dedup();
-    // Detect containment: inner shapes become holes of outer shapes
-    let polygons = crate::polygon::detect_containment(raw);
-    DxfImport {
-        polygons,
-        drill_targets,
-        layers,
-    }
+    let items = raw
+        .into_iter()
+        .map(|(_, layer, shape)| {
+            let shape = match shape {
+                RawShape::Ring(poly) if poly.closed => Shape::Loop(poly),
+                RawShape::Ring(poly) => Shape::Path(poly),
+                RawShape::Circle {
+                    centre,
+                    diameter,
+                    ring,
+                } => Shape::Circle {
+                    centre,
+                    diameter,
+                    ring,
+                },
+                RawShape::Point(p) => Shape::Point(p),
+            };
+            Item::new(SourceRef::ToolpathModel, Some(Arc::from(layer)), shape)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DxfImport {
+        items: ItemSet::new(items),
+    })
 }
 
-/// Extract polygons (without containment detection) and drill targets as flat lists.
+/// Extract the raw shapes as one flat list, each with its entity index and
+/// layer.
 ///
 /// `scale` is the `$INSUNITS` factor to mm. The coordinates here are still
 /// in drawing units, so the chaining tolerance is `CLOSE_TOL_MM / scale`.
 ///
-/// The polygons come out in entity order: a closed entity at its own
-/// index, a chain at the lowest index of its pieces.
-fn extract_polygons_flat(
+/// The shapes come out in entity order: an entity at its own index, a chain
+/// at the lowest index of its pieces. A closed polyline of fewer than 3
+/// points is an open path of its points (DESIGN 2.2; before P2.1 the import
+/// dropped it in silence).
+fn extract_flat(
     drawing: &dxf::Drawing,
     arc_tolerance_deg: f64,
     scale: f64,
-) -> (Vec<Polygon2>, Vec<DrillTarget>) {
-    // Each closed polygon with the index of its entity.
-    let mut polygons: Vec<(usize, Polygon2)> = Vec::new();
-    let mut drill_targets: Vec<DrillTarget> = Vec::new();
+) -> Vec<(usize, String, RawShape)> {
+    let mut shapes: Vec<(usize, String, RawShape)> = Vec::new();
     let arc_step_rad = arc_tolerance_deg.to_radians();
 
     // The open pieces, for the chaining step after the main loop.
@@ -203,15 +242,28 @@ fn extract_polygons_flat(
                 pts,
             });
         };
+        let closed_ring = |pts: Vec<P2>, shapes: &mut Vec<(usize, String, RawShape)>| {
+            if pts.len() >= 3 {
+                let mut poly = Polygon2::new(pts);
+                poly.ensure_winding();
+                shapes.push((index, layer.clone(), RawShape::Ring(poly)));
+            } else {
+                // A closed entity of 2 points holds no area: it is the
+                // line between them.
+                shapes.push((
+                    index,
+                    layer.clone(),
+                    RawShape::Ring(Polygon2::open_path(pts)),
+                ));
+            }
+        };
         match &entity.specific {
             dxf::entities::EntityType::LwPolyline(lwp) => {
                 if lwp.vertices.len() >= 2 {
                     let pts = lwpolyline_to_points(lwp, arc_step_rad);
-                    if lwp.is_closed() && pts.len() >= 3 {
-                        let mut poly = Polygon2::new(pts);
-                        poly.ensure_winding();
-                        polygons.push((index, poly));
-                    } else if !lwp.is_closed() && pts.len() >= 2 {
+                    if lwp.is_closed() {
+                        closed_ring(pts, &mut shapes);
+                    } else if pts.len() >= 2 {
                         // An open polyline is an open piece: it can join
                         // other pieces of its layer.
                         open_piece(pts);
@@ -222,46 +274,41 @@ fn extract_polygons_flat(
                 let verts: Vec<_> = poly_ent.vertices().collect();
                 if verts.len() >= 2 {
                     let pts = polyline_to_points(&verts, arc_step_rad);
-                    if poly_ent.is_closed() && pts.len() >= 3 {
-                        let mut poly = Polygon2::new(pts);
-                        poly.ensure_winding();
-                        polygons.push((index, poly));
-                    } else if !poly_ent.is_closed() && pts.len() >= 2 {
+                    if poly_ent.is_closed() {
+                        closed_ring(pts, &mut shapes);
+                    } else if pts.len() >= 2 {
                         open_piece(pts);
                     }
                 }
             }
             dxf::entities::EntityType::Circle(circle) => {
-                // A circle is both a closed region (for pocket/profile) and a
-                // drillable hole — record its centre + diameter as a target.
-                drill_targets.push(DrillTarget {
-                    x: circle.center.x,
-                    y: circle.center.y,
-                    layer: layer.clone(),
-                    kind: DrillTargetKind::CircleCenter {
-                        diameter: 2.0 * circle.radius,
-                    },
-                });
+                // A circle is ONE item: a closed region (for pocket and
+                // profile) and a drillable hole.
                 let pts = circle_to_points(
                     circle.center.x,
                     circle.center.y,
                     circle.radius,
                     arc_step_rad,
                 );
-                if pts.len() >= 3 {
-                    let mut poly = Polygon2::new(pts);
-                    poly.ensure_winding();
-                    polygons.push((index, poly));
-                }
+                let mut ring = Polygon2::new(pts);
+                ring.ensure_winding();
+                shapes.push((
+                    index,
+                    layer.clone(),
+                    RawShape::Circle {
+                        centre: P2::new(circle.center.x, circle.center.y),
+                        diameter: 2.0 * circle.radius,
+                        ring,
+                    },
+                ));
             }
             dxf::entities::EntityType::ModelPoint(mp) => {
                 // A bare DXF POINT entity marks a location — a drill target.
-                drill_targets.push(DrillTarget {
-                    x: mp.location.x,
-                    y: mp.location.y,
-                    layer: layer.clone(),
-                    kind: DrillTargetKind::Point,
-                });
+                shapes.push((
+                    index,
+                    layer.clone(),
+                    RawShape::Point(P2::new(mp.location.x, mp.location.y)),
+                ));
             }
             dxf::entities::EntityType::Ellipse(ell) => {
                 // P1: a partial ellipse is an open piece. A chord from end
@@ -270,30 +317,26 @@ fn extract_polygons_flat(
                 if closed && pts.len() >= 3 {
                     let mut poly = Polygon2::new(pts);
                     poly.ensure_winding();
-                    polygons.push((index, poly));
+                    shapes.push((index, layer.clone(), RawShape::Ring(poly)));
                 } else if !closed && pts.len() >= 2 {
                     open_piece(pts);
                 }
             }
             dxf::entities::EntityType::Arc(arc) => {
-                // Only full-circle arcs are drillable holes; record the centre.
-                if arc_is_full_circle(arc) {
-                    drill_targets.push(DrillTarget {
-                        x: arc.center.x,
-                        y: arc.center.y,
-                        layer: layer.clone(),
-                        kind: DrillTargetKind::CircleCenter {
-                            diameter: 2.0 * arc.radius,
-                        },
-                    });
-                }
                 let pts = arc_entity_to_points(arc, arc_step_rad);
                 if arc_is_full_circle(arc) {
-                    if pts.len() >= 3 {
-                        let mut poly = Polygon2::new(pts);
-                        poly.ensure_winding();
-                        polygons.push((index, poly));
-                    }
+                    // A full-circle arc is a circle: one item.
+                    let mut ring = Polygon2::new(pts);
+                    ring.ensure_winding();
+                    shapes.push((
+                        index,
+                        layer.clone(),
+                        RawShape::Circle {
+                            centre: P2::new(arc.center.x, arc.center.y),
+                            diameter: 2.0 * arc.radius,
+                            ring,
+                        },
+                    ));
                 } else if pts.len() >= 2 {
                     // P1: a partial arc is an open piece. A chord from end
                     // to start would cut a line that the drawing does not
@@ -324,18 +367,18 @@ fn extract_polygons_flat(
     // is an open path; a chord there would make project_curve trace a
     // phantom line across the whole chain.
     let tol = CLOSE_TOL_MM / scale;
-    for (index, chain) in chain_open_pieces(&pieces, tol) {
+    for (index, layer, chain) in chain_open_pieces(&pieces, tol) {
         if chain.len() >= 2 {
-            polygons.push((index, polygon_from_unknown_closure(chain, tol)));
+            shapes.push((
+                index,
+                layer,
+                RawShape::Ring(polygon_from_unknown_closure(chain, tol)),
+            ));
         }
     }
     // Entity order. The sort is stable and the indices are distinct.
-    polygons.sort_by_key(|(index, _)| *index);
-
-    (
-        polygons.into_iter().map(|(_, poly)| poly).collect(),
-        drill_targets,
-    )
+    shapes.sort_by_key(|(index, _, _)| *index);
+    shapes
 }
 
 /// True if a DXF Arc spans a full circle (sweep ~360°), in which case its
@@ -603,7 +646,8 @@ fn end_cell(p: P2, tol: f64) -> (i64, i64) {
 }
 
 /// Join the open pieces end to end into chains. Returns each chain with
-/// the lowest entity index of its pieces, in the order of that index.
+/// the lowest entity index of its pieces and its layer, in the order of
+/// that index.
 ///
 /// The rule, so the same file always gives the same chains:
 ///
@@ -621,7 +665,7 @@ fn end_cell(p: P2, tol: f64) -> (i64, i64) {
 /// 6. The chain stops when its tail meets its head (with 3 or more
 ///    points): it is closed.
 #[allow(clippy::indexing_slicing)] // piece indices come from 0..pieces.len()
-fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<(usize, Vec<P2>)> {
+fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<(usize, String, Vec<P2>)> {
     use std::collections::HashMap;
 
     // The pieces arrive in entity order, so the position in `pieces` sorts
@@ -727,7 +771,7 @@ fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<(usize, Vec<P2>)> {
             front.extend(chain);
             chain = front;
         }
-        chains.push((pieces[seed].index, chain));
+        chains.push((pieces[seed].index, pieces[seed].layer.clone(), chain));
     }
     chains
 }
@@ -838,6 +882,22 @@ fn spline_to_points(spline: &dxf::entities::Spline, arc_step: f64) -> Vec<P2> {
 mod tests {
     use super::*;
 
+    /// The items of a drawing.
+    fn items_of(drawing: &dxf::Drawing) -> ItemSet {
+        extract_dxf(drawing, 5.0).unwrap().items
+    }
+
+    /// The polygon list of the import before P2.1 (the bridge): the drawn
+    /// rings, nested.
+    fn extract_polygons(drawing: &dxf::Drawing, arc_tolerance_deg: f64) -> Vec<Polygon2> {
+        extract_dxf(drawing, arc_tolerance_deg)
+            .unwrap()
+            .items
+            .outlines_pre_selection()
+            .as_ref()
+            .clone()
+    }
+
     fn make_lwpolyline_drawing(vertices: Vec<(f64, f64, f64)>, closed: bool) -> dxf::Drawing {
         let mut drawing = dxf::Drawing::new();
         let mut lwp = dxf::entities::LwPolyline::default();
@@ -921,44 +981,51 @@ mod tests {
         );
     }
 
-    // ----- Drill target extraction tests -----
+    // ----- Circles and points (P2.1: one item each) -----
 
     #[test]
-    fn test_circle_emits_drill_target() {
+    fn a_circle_is_one_item() {
         let drawing = make_circle_drawing(50.0, 60.0, 4.0);
-        let import = extract_dxf(&drawing, 5.0);
-        assert_eq!(import.drill_targets.len(), 1, "circle should emit 1 target");
-        let t = &import.drill_targets[0];
-        assert!((t.x - 50.0).abs() < 1e-9 && (t.y - 60.0).abs() < 1e-9);
-        match t.kind {
-            DrillTargetKind::CircleCenter { diameter } => {
+        let items = items_of(&drawing);
+        assert_eq!(
+            items.len(),
+            1,
+            "a circle is one item, not a loop and a target"
+        );
+        match items.iter().next().unwrap().shape() {
+            Shape::Circle {
+                centre, diameter, ..
+            } => {
+                assert!((centre.x - 50.0).abs() < 1e-9 && (centre.y - 60.0).abs() < 1e-9);
                 assert!((diameter - 8.0).abs() < 1e-9, "diameter should be 2*radius");
             }
-            _ => panic!("circle should emit a CircleCenter target"),
+            other => panic!("expected a circle, got {other:?}"),
         }
     }
 
     #[test]
-    fn test_point_entity_emits_drill_target() {
+    fn a_point_entity_is_a_point_item() {
         let mut drawing = dxf::Drawing::new();
         let mut ent = dxf::entities::Entity::new(dxf::entities::EntityType::ModelPoint(
             dxf::entities::ModelPoint::new(dxf::Point::new(12.0, 34.0, 0.0)),
         ));
         ent.common.layer = "holes".to_owned();
         drawing.add_entity(ent);
-        let import = extract_dxf(&drawing, 5.0);
-        assert_eq!(import.drill_targets.len(), 1, "POINT should emit 1 target");
-        let t = &import.drill_targets[0];
-        assert_eq!(t.kind, DrillTargetKind::Point);
-        assert!((t.x - 12.0).abs() < 1e-9 && (t.y - 34.0).abs() < 1e-9);
-        assert_eq!(t.layer, "holes");
-        assert_eq!(import.layers, vec!["holes".to_owned()]);
-        // A bare POINT is not a closed region, so no polygon is produced.
-        assert!(import.polygons.is_empty());
+        let items = items_of(&drawing);
+        assert_eq!(items.len(), 1);
+        let item = items.iter().next().unwrap();
+        assert_eq!(item.layer(), Some("holes"));
+        match item.shape() {
+            Shape::Point(p) => assert!((p.x - 12.0).abs() < 1e-9 && (p.y - 34.0).abs() < 1e-9),
+            other => panic!("expected a point, got {other:?}"),
+        }
+        assert_eq!(items.layers(), vec!["holes".to_owned()]);
+        // A bare POINT is not a ring, so the polygon list is empty.
+        assert!(extract_polygons(&drawing, 5.0).is_empty());
     }
 
     #[test]
-    fn test_drill_target_layers_collected_and_scaled() {
+    fn item_layers_are_collected_and_items_scaled() {
         let mut drawing = dxf::Drawing::new();
         drawing.header.default_drawing_units = dxf::enums::Units::Inches;
         // Two circles on layer "a", one POINT on layer "b".
@@ -979,21 +1046,21 @@ mod tests {
         pt.common.layer = "b".to_owned();
         drawing.add_entity(pt);
 
-        let import = extract_dxf(&drawing, 5.0);
-        assert_eq!(import.drill_targets.len(), 3);
-        assert_eq!(import.layers, vec!["a".to_owned(), "b".to_owned()]);
+        let items = items_of(&drawing);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items.layers(), vec!["a".to_owned(), "b".to_owned()]);
         // Inches → mm: x of first circle 1.0in = 25.4mm; diameter 1.0in = 25.4mm.
-        let first = import
-            .drill_targets
-            .iter()
-            .find(|t| matches!(t.kind, DrillTargetKind::CircleCenter { .. }))
-            .unwrap();
-        assert!((first.x - 25.4).abs() < 1e-6, "x should scale to mm");
-        if let DrillTargetKind::CircleCenter { diameter } = first.kind {
-            assert!(
-                (diameter - 25.4).abs() < 1e-6,
-                "diameter should scale to mm"
-            );
+        match items.iter().next().unwrap().shape() {
+            Shape::Circle {
+                centre, diameter, ..
+            } => {
+                assert!((centre.x - 25.4).abs() < 1e-6, "x should scale to mm");
+                assert!(
+                    (diameter - 25.4).abs() < 1e-6,
+                    "diameter should scale to mm"
+                );
+            }
+            other => panic!("expected a circle, got {other:?}"),
         }
     }
 
@@ -1076,11 +1143,19 @@ mod tests {
         );
     }
 
+    /// DESIGN 2.2: a closed polyline of 2 points is the line between them,
+    /// kept as a 2-point path. Before P2.1 the import dropped it in silence.
     #[test]
-    fn test_too_few_vertices_ignored() {
+    fn a_closed_two_point_polyline_is_a_path_p2_1() {
         let drawing = make_lwpolyline_drawing(vec![(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)], true);
-        let polys = extract_polygons(&drawing, 5.0);
-        assert!(polys.is_empty(), "2-vertex polyline should be ignored");
+        let items = items_of(&drawing);
+        assert_eq!(items.len(), 1, "the 2-vertex polyline is kept");
+        let item = items.iter().next().unwrap();
+        assert_eq!(item.kind(), crate::selection::ItemKind::Path);
+        match item.shape() {
+            Shape::Path(p) => assert_eq!(p.exterior.len(), 2),
+            other => panic!("expected a path, got {other:?}"),
+        }
     }
 
     fn make_arc_drawing(
@@ -1368,7 +1443,8 @@ mod tests {
         let chains = chain_open_pieces(&pieces, CLOSE_TOL_MM);
         assert_eq!(chains.len(), 1, "All segments connect into one chain");
         assert_eq!(chains[0].0, 0, "the chain carries its lowest index");
-        assert_eq!(chains[0].1.len(), 4, "Chain should have 4 points");
+        assert_eq!(chains[0].1, "0", "the chain carries its layer");
+        assert_eq!(chains[0].2.len(), 4, "Chain should have 4 points");
     }
 
     // ----- P1b: chaining of open pieces -----

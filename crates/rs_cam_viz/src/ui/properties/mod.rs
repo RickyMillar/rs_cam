@@ -474,8 +474,7 @@ pub(crate) fn toolpath_panel_inputs(
         .models()
         .iter()
         .filter(|m| {
-            m.polygons
-                .as_deref()
+            m.outlines_pre_selection()
                 .is_some_and(|polys| polys.iter().any(|p| p.closed && p.exterior.len() >= 3))
         })
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
@@ -562,13 +561,15 @@ pub(crate) fn toolpath_panel_inputs(
     // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
 
     // Snapshot the toolpath model's drill targets + layers (DXF point /
-    // circle-centre picking) for the drill-op panels.
-    let drill_layers: Vec<String> = model_for_panel
-        .map(|m| (*m.layers).clone())
-        .unwrap_or_default();
+    // circle-centre picking) for the drill-op panels. The layers are the
+    // distinct layers of the targets, sorted, as the import listed them
+    // before P2.1.
     let drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget> = model_for_panel
-        .map(|m| (*m.drill_targets).clone())
+        .map(rs_cam_core::session::LoadedModel::drill_targets_pre_selection)
         .unwrap_or_default();
+    let mut drill_layers: Vec<String> = drill_targets.iter().map(|t| t.layer.clone()).collect();
+    drill_layers.sort();
+    drill_layers.dedup();
 
     // Snapshot height context before mutable borrow. Use the shared
     // helper so model_top/bottom_z are in the setup-local frame.
@@ -983,7 +984,7 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
         .session
         .models()
         .iter()
-        .any(|model| model.mesh.is_some() || model.polygons.is_some());
+        .any(|model| model.mesh.is_some() || model.items.has_drawing());
     // Round 2: the pin block is one status line, at most one warning and
     // the button that opens the pin wizard. It reads the one core report.
     let pin_report = state.session.pin_set_report_for(&draft.alignment_pins);

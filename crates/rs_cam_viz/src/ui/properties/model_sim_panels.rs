@@ -178,7 +178,7 @@ pub(super) fn draw_model_properties(
     // Expert-grade internals — mesh counts, BREP topology, polygon listing —
     // grouped under one default-closed disclosure (density pass 2026-06-11).
     // Dimensions, warnings, and units/scale stay top-level above.
-    if model.mesh.is_some() || model.polygons.is_some() {
+    if model.mesh.is_some() || model.items.has_drawing() {
         use crate::ui::components::{DataRow, DataTable, Details};
         ui.add_space(8.0);
         // Round 2: the one `Details` disclosure, and one table of counts.
@@ -225,7 +225,9 @@ pub(super) fn draw_model_properties(
                 ))
                 .row(DataRow::value("Surface types", parts.join(", ")));
         }
-        if let Some(polys) = &model.polygons {
+        // The nested polygon list that generation reads (the P2.1 bridge),
+        // the same list MCP `inspect_model` reports.
+        if let Some(polys) = &model.outlines_pre_selection() {
             table = table.row(DataRow::value("Polygons", polys.len().to_string()));
             for (i, p) in polys.iter().enumerate().take(5) {
                 table = table.row(DataRow::value(

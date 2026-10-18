@@ -724,7 +724,7 @@ pub const ROWS: &[OverlayRow] = &[
         get: |s| s.viewport.show_polygons,
         set: |s, on| s.viewport.show_polygons = on,
         precondition: |s| {
-            if s.session.models().iter().any(|m| m.polygons.is_some()) {
+            if s.session.models().iter().any(|m| m.items.has_drawing()) {
                 Precondition::Ready
             } else {
                 Precondition::no("this project carries no 2D curves")

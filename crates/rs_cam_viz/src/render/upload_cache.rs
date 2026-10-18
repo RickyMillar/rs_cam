@@ -132,7 +132,7 @@ pub struct ObstacleLinesKey {
 pub struct ObstacleModelKey {
     pub model_id: usize,
     pub mesh: Option<ArcId<rs_cam_core::mesh::TriangleMesh>>,
-    pub polygons: Option<ArcId<Vec<rs_cam_core::polygon::Polygon2>>>,
+    pub items: Option<ArcId<rs_cam_core::selection::ItemSet>>,
 }
 
 /// Key for `RenderResources::mesh_data_list` — the indexed, smooth-normal

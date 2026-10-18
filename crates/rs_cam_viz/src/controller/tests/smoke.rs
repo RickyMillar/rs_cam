@@ -168,7 +168,7 @@ fn fixture_projects_load_2d_and_3d_models() {
         .expect("open 2d fixture");
     assert!(controller.load_warnings().is_empty());
     assert_eq!(controller.state.session.models().len(), 1);
-    assert!(controller.state.session.models()[0].polygons.is_some());
+    assert!(controller.state.session.models()[0].items.has_drawing());
     assert!(controller.state.session.models()[0].mesh.is_none());
 
     controller
@@ -177,7 +177,7 @@ fn fixture_projects_load_2d_and_3d_models() {
     assert!(controller.load_warnings().is_empty());
     assert_eq!(controller.state.session.models().len(), 1);
     assert!(controller.state.session.models()[0].mesh.is_some());
-    assert!(controller.state.session.models()[0].polygons.is_none());
+    assert!(!controller.state.session.models()[0].items.has_drawing());
 }
 
 #[test]

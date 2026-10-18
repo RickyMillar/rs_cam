@@ -103,9 +103,9 @@ fn build_pocket_session() -> ProjectSession {
         id: 0,
         name: "demo_pocket".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![polygon])),
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            polygon,
+        ])),
         path: PathBuf::from("synthetic://demo_pocket.svg"),
         kind: None,
         units: None,

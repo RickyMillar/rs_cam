@@ -1632,7 +1632,7 @@ impl ProjectSession {
                 .models
                 .iter()
                 .find(|m| m.id == tc.model_id)
-                .map(|m| m.drill_targets.as_slice())
+                .map(crate::session::LoadedModel::drill_targets_pre_selection)
                 .unwrap_or_default();
             let diameter_of = |kind: &DrillTargetKind| match kind {
                 DrillTargetKind::CircleCenter { diameter } => Some(*diameter),

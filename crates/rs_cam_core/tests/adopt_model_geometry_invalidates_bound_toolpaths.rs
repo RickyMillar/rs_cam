@@ -33,6 +33,8 @@
     clippy::indexing_slicing
 )]
 
+mod common;
+
 use std::sync::Arc;
 
 use rs_cam_core::ToolpathId;
@@ -71,7 +73,7 @@ const SIDE_BEFORE_MM: f64 = 40.0;
 /// The side of the square the refresh brings in, in mm.
 const SIDE_AFTER_MM: f64 = 90.0;
 
-fn square_model(id: usize, name: &str, side_mm: f64, targets: Vec<DrillTarget>) -> LoadedModel {
+fn square_model(id: usize, name: &str, side_mm: f64, targets: &[DrillTarget]) -> LoadedModel {
     let square = Polygon2::new(vec![
         P2::new(0.0, 0.0),
         P2::new(side_mm, 0.0),
@@ -82,9 +84,7 @@ fn square_model(id: usize, name: &str, side_mm: f64, targets: Vec<DrillTarget>) 
         id,
         name: name.to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![square])),
-        drill_targets: Arc::new(targets),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(common::session::drawing_items(vec![square], targets)),
         path: std::path::PathBuf::from(name),
         kind: None,
         units: Some(ModelUnits::Millimeters),
@@ -149,8 +149,8 @@ fn fake_result() -> ToolpathComputeResult {
 fn fixture() -> ProjectSession {
     ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill))
-        .model(square_model(MODEL_A, "a.svg", SIDE_BEFORE_MM, Vec::new()))
-        .model(square_model(MODEL_B, "b.svg", SIDE_BEFORE_MM, Vec::new()))
+        .model(square_model(MODEL_A, "a.svg", SIDE_BEFORE_MM, &[]))
+        .model(square_model(MODEL_B, "b.svg", SIDE_BEFORE_MM, &[]))
         .setup(setup())
         .toolpath(toolpath(10, "binds a", MODEL_A))
         .toolpath(toolpath(11, "binds b", MODEL_B))
@@ -168,7 +168,9 @@ fn side_of(session: &ProjectSession, model_id: usize) -> f64 {
         .iter()
         .find(|model| model.id == model_id)
         .expect("the fixture carries the model");
-    let polygons = model.polygons.as_deref().expect("the model has polygons");
+    let polygons = model
+        .outlines_pre_selection()
+        .expect("the model has polygons");
     let mut max_x: f64 = 0.0;
     for point in &polygons[0].exterior {
         max_x = max_x.max(point.x);
@@ -185,7 +187,7 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
         MODEL_A,
         "a.svg",
         SIDE_AFTER_MM,
-        vec![DrillTarget {
+        &[DrillTarget {
             x: 1.0,
             y: 2.0,
             layer: "holes".to_owned(),
@@ -210,7 +212,7 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
         .find(|model| model.id == MODEL_A)
         .expect("the model survives");
     assert_eq!(
-        model.drill_targets.len(),
+        model.drill_targets_pre_selection().len(),
         1,
         "G-RELOADTARGETS: the row must adopt the new drill targets, or a \
          drill operation cuts the previous import's holes"
@@ -227,7 +229,7 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
 #[test]
 fn a_supplied_unit_declaration_is_written() {
     let mut session = fixture();
-    let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, Vec::new());
+    let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, &[]);
     let _ = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
             model_id: MODEL_A,
@@ -251,7 +253,7 @@ fn a_supplied_unit_declaration_is_written() {
 #[test]
 fn the_row_drops_the_bound_results_and_only_those() {
     let mut session = fixture();
-    let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, Vec::new());
+    let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, &[]);
     let effects = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
             model_id: MODEL_A,
@@ -285,7 +287,7 @@ fn the_row_drops_the_bound_results_and_only_those() {
 #[test]
 fn an_absent_model_id_is_refused_and_nothing_moves() {
     let mut session = fixture();
-    let fresh = square_model(MODEL_ABSENT, "gone.svg", SIDE_AFTER_MM, Vec::new());
+    let fresh = square_model(MODEL_ABSENT, "gone.svg", SIDE_AFTER_MM, &[]);
     let outcome = session.apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
         model_id: MODEL_ABSENT,
         geometry: Box::new(fresh),

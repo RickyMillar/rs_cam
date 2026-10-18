@@ -98,8 +98,8 @@ impl ProjectSession {
     /// line or any other outline breaks the equality, and the model stays
     /// part.
     fn is_pin_hole_drawing(model: &super::LoadedModel, pin_diameters: &[f64]) -> bool {
-        let targets = model.drill_targets.as_slice();
-        let polygon_count = model.polygons.as_deref().map_or(0, Vec::len);
+        let targets = model.drill_targets_pre_selection();
+        let polygon_count = model.outlines_pre_selection().map_or(0, |p| p.len());
         model.mesh.is_none()
             && !targets.is_empty()
             && polygon_count == targets.len()
@@ -128,7 +128,7 @@ impl ProjectSession {
             .iter()
             .filter(|m| part_models.contains(&ModelId(m.id)))
         {
-            match model.polygons.as_deref() {
+            match model.outlines_pre_selection().as_deref() {
                 Some(polygons) if !polygons.is_empty() => {
                     out.extend(polygons.iter().map(|polygon| {
                         PinObstacle::from_polygon(PinObstacleKind::Part, &model.name, polygon)

@@ -402,7 +402,9 @@ impl RsCamApp {
             }
 
             // Polygon summary (SVG/DXF-specific)
-            if let Some(ref polys) = model.polygons {
+            // The nested polygon list that generation reads (the P2.1
+            // bridge); P2.7 adds the item listing.
+            if let Some(ref polys) = model.outlines_pre_selection() {
                 let count = polys.len();
                 let total_area: f64 = polys.iter().map(|p| p.area()).sum();
                 let total_perimeter: f64 = polys.iter().map(|p| p.perimeter()).sum();

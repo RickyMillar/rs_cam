@@ -30,7 +30,8 @@ use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConf
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
+use rs_cam_core::geo::P2;
+use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetAlignmentPinsArgs,
     ToolpathConfig, VerdictKind,
@@ -71,19 +72,20 @@ fn dowel_drawing() -> LoadedModel {
         id: 0,
         name: "dowel_through.dxf".to_owned(),
         mesh: None,
-        polygons: None,
-        drill_targets: std::sync::Arc::new(
+        // P2.1: each CIRCLE entity is one item, ring and hole in one.
+        items: std::sync::Arc::new(ItemSet::new(
             DOWEL_CIRCLES
                 .iter()
-                .map(|&(x, y)| DrillTarget {
-                    x,
-                    y,
-                    layer: "0".to_owned(),
-                    kind: DrillTargetKind::CircleCenter { diameter: DOWEL_D },
+                .map(|&(x, y)| {
+                    Item::new(
+                        SourceRef::ToolpathModel,
+                        Some("0".into()),
+                        Shape::circle(P2::new(x, y), DOWEL_D),
+                    )
+                    .unwrap()
                 })
                 .collect(),
-        ),
-        layers: std::sync::Arc::new(vec!["0".to_owned()]),
+        )),
         path: std::path::PathBuf::from("dowel_through.dxf"),
         kind: None,
         units: None,

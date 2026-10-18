@@ -284,14 +284,14 @@ fn pocket_session(depth: f64) -> ProjectSession {
         id: 0,
         name: "board".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::new(vec![
-            P2::new(5.0, 5.0),
-            P2::new(75.0, 5.0),
-            P2::new(75.0, 55.0),
-            P2::new(5.0, 55.0),
-        ])])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            Polygon2::new(vec![
+                P2::new(5.0, 5.0),
+                P2::new(75.0, 5.0),
+                P2::new(75.0, 55.0),
+                P2::new(5.0, 55.0),
+            ]),
+        ])),
         path: PathBuf::from("synthetic://board.svg"),
         kind: None,
         units: None,

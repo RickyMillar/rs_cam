@@ -2548,8 +2548,15 @@ fn wanaka_valley_prize_census_h0() {
     eprintln!("     (the DECIDING window is W = {TPI_HALF_WINDOW_MM} mm)");
 
     // ── mask A: buffer the DXF network (threshold-independent) ──
-    let dxf_polys = rs_cam_core::io::dxf_input::load_dxf(dxf_path, DXF_ARC_TOLERANCE_DEG)
-        .expect("load rivers_aligned.dxf");
+    // The drawn rings, nested as the import nested them before P2.1.
+    let dxf_polys = rs_cam_core::polygon::detect_containment(
+        rs_cam_core::io::dxf_input::load_dxf(dxf_path, DXF_ARC_TOLERANCE_DEG)
+            .expect("load rivers_aligned.dxf")
+            .items
+            .iter()
+            .filter_map(|item| item.shape().drawing_ring().cloned())
+            .collect(),
+    );
     let open_count = dxf_polys.iter().filter(|p| !p.closed).count();
     let (mut dx0, mut dy0, mut dx1, mut dy1) = (
         f64::INFINITY,

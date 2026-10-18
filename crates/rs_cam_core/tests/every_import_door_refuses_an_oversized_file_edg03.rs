@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rs_cam_core::io::MAX_IMPORT_FILE_SIZE;
-use rs_cam_core::io::dxf_input::{DxfError, load_dxf, load_dxf_full};
+use rs_cam_core::io::dxf_input::{DxfError, load_dxf};
 use rs_cam_core::io::svg_input::{SvgError, load_svg};
 
 /// A sparse file one byte over the import limit, removed on drop.
@@ -81,21 +81,9 @@ fn dxf_import_refuses_an_oversized_file() {
 }
 
 #[test]
-fn the_dxf_drill_target_door_refuses_it_too() {
-    // `load_dxf_full` is the door the drill picker uses. It carries the
-    // guard; `load_dxf` only wraps it.
-    let fixture = OversizeFixture::new("dxf");
-    let error = load_dxf_full(fixture.path(), 5.0).expect_err("DXF must refuse");
-    assert!(
-        matches!(error, DxfError::FileTooLarge { .. }),
-        "load_dxf_full refused with {error:?}, not FileTooLarge"
-    );
-}
-
-#[test]
 fn svg_import_refuses_an_oversized_file() {
     let fixture = OversizeFixture::new("svg");
-    let error = load_svg(fixture.path(), 0.1).expect_err("SVG must refuse");
+    let error = load_svg(fixture.path(), 0.1, 1.0).expect_err("SVG must refuse");
     let SvgError::FileTooLarge { size_mb, limit_mb } = error else {
         panic!("SVG refused with {error:?}, not FileTooLarge");
     };
@@ -115,7 +103,7 @@ fn the_three_doors_state_the_same_refusal() {
     let dxf_text = load_dxf(dxf.path(), 5.0)
         .expect_err("DXF must refuse")
         .to_string();
-    let svg_text = load_svg(svg.path(), 0.1)
+    let svg_text = load_svg(svg.path(), 0.1, 1.0)
         .expect_err("SVG must refuse")
         .to_string();
     for text in [&dxf_text, &svg_text] {

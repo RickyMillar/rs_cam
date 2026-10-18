@@ -494,7 +494,7 @@ impl RsCamApp {
                 || state.viewport.show_pin_ghost
                 || state.viewport.show_datum,
             show_polygons: state.viewport.show_polygons
-                && state.session.models().iter().any(|m| m.polygons.is_some()),
+                && state.session.models().iter().any(|m| m.items.has_drawing()),
             show_solid_stock: state.viewport.show_stock_solid,
             show_height_planes: state.viewport.show_height_planes
                 && matches!(state.selection, Selection::Toolpath(_)),

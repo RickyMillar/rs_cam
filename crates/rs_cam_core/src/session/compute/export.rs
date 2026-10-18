@@ -261,9 +261,9 @@ impl ProjectSession {
                 .iter()
                 .find(|m| m.id == tc.model_id)
                 .map(|m| TargetModelGeometry {
-                    has_polygons: m.polygons.as_ref().is_some_and(|p| !p.is_empty()),
+                    has_polygons: m.outlines_pre_selection().is_some_and(|p| !p.is_empty()),
                     has_mesh: m.mesh.is_some(),
-                    drill_target_count: m.drill_targets.len(),
+                    drill_target_count: m.drill_targets_pre_selection().len(),
                 });
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
@@ -300,13 +300,7 @@ impl ProjectSession {
             .models
             .iter()
             .find(|m| m.id == tc.model_id)
-            .and_then(|m| {
-                m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                    m.polygons
-                        .as_deref()
-                        .and_then(|v| super::mutation::polygons_bbox(v))
-                })
-            });
+            .and_then(crate::session::LoadedModel::bbox);
         // Apply the setup transform that owns this toolpath so
         // model_top/bottom_z are in the setup-local frame for non-identity
         // setups. Identity setups leave the world bbox untouched.

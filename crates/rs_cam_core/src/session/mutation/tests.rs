@@ -9,7 +9,7 @@
     clippy::indexing_slicing
 )]
 
-use super::*;
+use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::session::{
     AddSetupArgs, AdoptResultArgs, Command, RemoveSetupArgs, ReplaceToolpathConfigArgs,
@@ -1117,9 +1117,7 @@ fn chain_fixture() -> ProjectSession {
         id: 0,
         name: "part.svg".to_owned(),
         mesh: None,
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Default::default(),
         path: std::path::PathBuf::from("part.svg"),
         kind: None,
         units: None,

@@ -69,16 +69,24 @@ fn build_drill_session(material: Material) -> ProjectSession {
         id: 0,
         name: "holes".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![unit_square_at(50.0, 50.0)])),
-        // G-DRILLCENTROID: the hole source is a drill target, not the
-        // square's centroid.
-        drill_targets: std::sync::Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
-            x: 50.5,
-            y: 50.5,
-            layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
-        }]),
-        layers: std::sync::Arc::new(Vec::new()),
+        // G-DRILLCENTROID: the hole source is a drill target (a circle
+        // item since P2.1), not the square's centroid.
+        items: Arc::new({
+            use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+            let mut items: Vec<Item> = ItemSet::from_polygons(vec![unit_square_at(50.0, 50.0)])
+                .iter()
+                .cloned()
+                .collect();
+            items.push(
+                Item::new(
+                    SourceRef::ToolpathModel,
+                    Some("holes".into()),
+                    Shape::circle(rs_cam_core::geo::P2::new(50.5, 50.5), 4.0),
+                )
+                .unwrap(),
+            );
+            ItemSet::new(items)
+        }),
         path: PathBuf::from("synthetic://f016_drill_holes.svg"),
         kind: None,
         units: None,

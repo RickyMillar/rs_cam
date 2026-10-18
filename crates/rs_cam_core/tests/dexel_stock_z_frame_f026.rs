@@ -156,7 +156,7 @@ fn auto_from_model_load_grows_stock_xy_to_enclose_polygon_model() {
     let mut model_y_min: f64 = f64::INFINITY;
     let mut have_polygon = false;
     for m in session.models() {
-        if let Some(polys) = &m.polygons {
+        if let Some(polys) = &m.outlines_pre_selection() {
             for poly in polys.iter() {
                 for p in poly.exterior.iter() {
                     have_polygon = true;

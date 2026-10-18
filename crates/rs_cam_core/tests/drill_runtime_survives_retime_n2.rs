@@ -51,6 +51,8 @@
     clippy::indexing_slicing
 )]
 
+mod common;
+
 use std::f64::consts::TAU;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -130,9 +132,9 @@ fn pocket_model() -> LoadedModel {
         id: 0,
         name: "as001_pocket".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![rounded_rect_with_island()])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            rounded_rect_with_island(),
+        ])),
         path: PathBuf::from("synthetic://as001_pocket.svg"),
         kind: None,
         units: None,
@@ -164,12 +166,10 @@ fn drill_model() -> LoadedModel {
         id: 0,
         name: "holes".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![
-            unit_square_at(85.0, 20.0),
-            unit_square_at(85.0, 70.0),
-        ])),
-        drill_targets: Arc::new(targets),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(common::session::drawing_items(
+            vec![unit_square_at(85.0, 20.0), unit_square_at(85.0, 70.0)],
+            &targets,
+        )),
         path: PathBuf::from("synthetic://n2_drill_holes.svg"),
         kind: None,
         units: None,

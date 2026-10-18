@@ -430,14 +430,7 @@ impl RsCamApp {
             .session
             .models()
             .iter()
-            .find_map(|model| {
-                model.mesh.as_ref().map(|m| m.bbox).or_else(|| {
-                    model
-                        .polygons
-                        .as_deref()
-                        .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
-                })
-            })
+            .find_map(rs_cam_core::session::LoadedModel::bbox)
         {
             self.fit_camera_to_bbox(&bbox);
         } else {

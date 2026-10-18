@@ -17,13 +17,13 @@ use crate::tool::MillingCutter;
 use crate::trace::debug_trace::ToolpathDebugRecorder;
 use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 
-// `SetupEvalContext`, `SimulationResult`, `ToolpathConfig`, `multitool` and
-// `mutation` are imported for the children: a moved body still writes
+// `SetupEvalContext`, `SimulationResult`, `ToolpathConfig` and `multitool`
+// are imported for the children: a moved body still writes
 // `super::ToolpathConfig`, and from a child `super` is this module.
 use super::{
     AdoptResultArgs, Command, GenerateToolpathArgs, Job, JobHandle, ProjectSession, SessionError,
     SetupEvalContext, SimulationOptions, SimulationResult, ToolpathComputeResult, ToolpathConfig,
-    multitool, mutation,
+    multitool,
 };
 
 mod diagnostics;

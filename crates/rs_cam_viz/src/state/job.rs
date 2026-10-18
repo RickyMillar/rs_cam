@@ -229,13 +229,7 @@ pub fn height_context_from_session(
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
-        .and_then(|m| {
-            m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                m.polygons
-                    .as_deref()
-                    .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
-            })
-        });
+        .and_then(rs_cam_core::session::LoadedModel::bbox);
     // For non-identity setups, project the raw world-frame model bbox into
     // the setup-local frame so the Heights tab numbers match the toolpath
     // generator's frame.
@@ -285,7 +279,7 @@ pub fn obstacle_display_extent(
                 f64::NEG_INFINITY,
             ];
             for id in model_ids {
-                let polygons = find(*id)?.polygons.as_ref()?;
+                let polygons = find(*id)?.outlines_pre_selection()?;
                 for p in polygons.iter().filter(|p| is_closed_outline(p)) {
                     for v in &p.exterior {
                         xy = [

@@ -101,7 +101,7 @@ fn a_relative_path_resolves_against_the_project_directory() {
         "the session holds the resolved path, not the string from the file"
     );
     assert!(
-        session.models()[0].polygons.is_some(),
+        session.models()[0].items.has_drawing(),
         "and the geometry loaded through it"
     );
 
@@ -132,7 +132,7 @@ fn a_model_under_the_project_directory_round_trips_relative() {
 
     // And it still opens.
     let reloaded = ProjectSession::load(&job).expect("reload");
-    assert!(reloaded.models()[0].polygons.is_some());
+    assert!(reloaded.models()[0].items.has_drawing());
     assert_eq!(reloaded.models()[0].path, dir.join("m.dxf"));
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -161,7 +161,7 @@ fn saving_elsewhere_writes_the_absolute_path_the_model_still_has() {
     // The point of writing it absolute: the copy opens and finds the model.
     let reloaded = ProjectSession::load(&moved_job).expect("reload from the new location");
     assert!(
-        reloaded.models()[0].polygons.is_some(),
+        reloaded.models()[0].items.has_drawing(),
         "a Save As must not break the project it just wrote"
     );
 
@@ -210,7 +210,7 @@ fn a_missing_model_still_carries_the_path_that_was_searched() {
         dir.join("models/absent.dxf"),
         "the error placeholder carries the resolved path, not the raw string"
     );
-    assert!(session.models()[0].polygons.is_none());
+    assert!(session.models()[0].items.is_empty());
     assert!(
         session.models()[0].load_error.is_some(),
         "and the loader's own reason, which the GUI now renders"

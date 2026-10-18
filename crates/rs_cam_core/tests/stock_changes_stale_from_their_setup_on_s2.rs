@@ -96,9 +96,7 @@ fn model(name: &str) -> LoadedModel {
         id: 0, // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Default::default(),
         path: std::path::PathBuf::from(name),
         kind: None,
         units: None,
@@ -114,7 +112,9 @@ fn square() -> Polygon2 {
 
 fn outline_model() -> LoadedModel {
     let mut m = model("outline.dxf");
-    m.polygons = Some(Arc::new(vec![square()]));
+    m.items = Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+        square(),
+    ]));
     m
 }
 
@@ -126,7 +126,7 @@ fn open_path_model() -> LoadedModel {
     ]);
     path.closed = false;
     let mut m = model("river.dxf");
-    m.polygons = Some(Arc::new(vec![path]));
+    m.items = Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![path]));
     m
 }
 
@@ -746,7 +746,9 @@ fn a_model_refresh_under_a_stock_change_stales_from_that_setup_on() {
     );
     let epoch = s.simulation_epoch();
     let mut geometry = outline_model();
-    geometry.polygons = Some(Arc::new(vec![Polygon2::rectangle(0.0, 0.0, 12.0, 12.0)]));
+    geometry.items = Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+        Polygon2::rectangle(0.0, 0.0, 12.0, 12.0),
+    ]));
     let _ = s
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
             model_id: m.outline.0,

@@ -284,6 +284,17 @@ fn pocket_and_profile_on_same_polygon() {
 // E-e2e2: Import SVG -> extract polygons -> pocket -> G-code
 // ---------------------------------------------------------------------------
 
+/// The drawn rings of an item set, nested as the import nested them before
+/// P2.1.
+fn nested_rings(items: &rs_cam_core::selection::ItemSet) -> Vec<Polygon2> {
+    rs_cam_core::polygon::detect_containment(
+        items
+            .iter()
+            .filter_map(|item| item.shape().drawing_ring().cloned())
+            .collect(),
+    )
+}
+
 #[test]
 fn svg_import_pocket_gcode() {
     // Minimal SVG with a rectangle: 10x10 at (5,5)
@@ -291,7 +302,8 @@ fn svg_import_pocket_gcode() {
   <rect x="5" y="5" width="30" height="20" fill="none" stroke="black" stroke-width="1" />
 </svg>"#;
 
-    let polygons = load_svg_data(svg_data, 0.1).expect("SVG should parse successfully");
+    let polygons =
+        nested_rings(&load_svg_data(svg_data, 0.1, 1.0).expect("SVG should parse successfully"));
     assert!(
         !polygons.is_empty(),
         "SVG should produce at least one polygon"
@@ -352,8 +364,10 @@ fn svg_fixture_file_import_pocket_gcode() {
         return;
     }
 
-    let polygons =
-        rs_cam_core::io::svg_input::load_svg(&svg_path, 0.1).expect("demo_pocket.svg should parse");
+    let polygons = nested_rings(
+        &rs_cam_core::io::svg_input::load_svg(&svg_path, 0.1, 1.0)
+            .expect("demo_pocket.svg should parse"),
+    );
     assert!(
         !polygons.is_empty(),
         "demo_pocket.svg should produce polygons"

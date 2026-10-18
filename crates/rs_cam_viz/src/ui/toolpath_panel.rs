@@ -1157,7 +1157,7 @@ fn add_menu_items(
     events: &mut Vec<AppEvent>,
 ) {
     let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
-    let has_polygons = state.session.models().iter().any(|m| m.polygons.is_some());
+    let has_polygons = state.session.models().iter().any(|m| m.items.has_drawing());
     ui.label(egui::RichText::new("2.5D (from SVG)").strong());
     for &op in OperationType::ALL_2D {
         add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);

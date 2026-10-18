@@ -130,18 +130,14 @@ fn target_at(xy: [f64; 2]) -> DrillTarget {
 /// drawing that exposes none.
 fn plate_model(hole: Option<[f64; 2]>) -> LoadedModel {
     let targets: Vec<DrillTarget> = hole.into_iter().map(target_at).collect();
-    let layers: Vec<String> = if targets.is_empty() {
-        Vec::new()
-    } else {
-        vec!["holes".to_owned()]
-    };
     LoadedModel {
         id: 0,
         name: "plate".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![plate_polygon()])),
-        drill_targets: Arc::new(targets),
-        layers: Arc::new(layers),
+        items: Arc::new(common::session::drawing_items(
+            vec![plate_polygon()],
+            &targets,
+        )),
         path: PathBuf::from("synthetic://plate.svg"),
         kind: None,
         units: None,
@@ -263,26 +259,18 @@ fn generate(session: &mut ProjectSession) -> Result<Vec<(i64, i64)>, String> {
 /// be tripping one of the TWO refusals that already existed.
 #[test]
 fn the_fixture_models_move_the_target_this_file_assumes() {
-    let a = plate_model(Some(HOLE_A));
-    let b = plate_model(Some(HOLE_B));
-    let none = plate_model(None);
+    let a = plate_model(Some(HOLE_A)).drill_targets_pre_selection();
+    let b = plate_model(Some(HOLE_B)).drill_targets_pre_selection();
+    let none = plate_model(None).drill_targets_pre_selection();
 
-    assert_eq!(
-        a.drill_targets.len(),
-        1,
-        "drawing A must expose exactly one drill target"
-    );
-    assert_eq!(
-        b.drill_targets.len(),
-        1,
-        "drawing B must expose exactly one drill target"
-    );
+    assert_eq!(a.len(), 1, "drawing A must expose exactly one drill target");
+    assert_eq!(b.len(), 1, "drawing B must expose exactly one drill target");
     assert!(
-        none.drill_targets.is_empty(),
+        none.is_empty(),
         "the no-hole drawing must expose no drill target"
     );
     assert!(
-        (a.drill_targets[0].x - b.drill_targets[0].x).abs() > 1.0,
+        (a[0].x - b[0].x).abs() > 1.0,
         "the hole must MOVE between A and B, else every arm below is vacuous"
     );
 

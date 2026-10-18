@@ -450,9 +450,9 @@ impl RsCamApp {
                 else {
                     break 'polygon_upload;
                 };
-                let Some(polys) = &model.polygons else {
+                if !model.items.has_drawing() {
                     break 'polygon_upload;
-                };
+                }
                 let setup_ref = model_setup.as_ref();
                 let planar_z = match &toolpath.operation {
                     rs_cam_core::compute::catalog::OperationConfig::Trace(_) => {
@@ -521,19 +521,19 @@ impl RsCamApp {
                 }?;
                     Some(z as f32 + 0.05)
                 };
+                // Each drawn ring of the drawing (P2.1): a loop, a path or a
+                // circle. An island is its own loop, so the lines are the
+                // lines of the nested list.
                 let mut verts = Vec::new();
-                for poly in polys.iter() {
+                for ring in model.items.iter().filter_map(|i| i.shape().drawing_ring()) {
                     ring_to_lines(
-                        &poly.exterior,
-                        poly.closed,
+                        &ring.exterior,
+                        ring.closed,
                         setup_ref,
                         &point_z,
                         segment_spacing,
                         &mut verts,
                     );
-                    for hole in &poly.holes {
-                        ring_to_lines(hole, true, setup_ref, &point_z, segment_spacing, &mut verts);
-                    }
                 }
 
                 // Drill target markers for the active drill op's model.
@@ -542,7 +542,7 @@ impl RsCamApp {
                 {
                     use rs_cam_core::compute::execute::drill_pick_matches;
                     use rs_cam_core::io::dxf_input::DrillTargetKind;
-                    for t in model.drill_targets.iter() {
+                    for t in model.drill_targets_pre_selection().iter() {
                         let (tx, ty) = if let Some(setup) = setup_ref {
                             let tp = setup
                                 .transform_point(rs_cam_core::geo::P3::new(t.x, t.y, 0.0), &stock);
@@ -675,9 +675,7 @@ impl RsCamApp {
                             mesh: model
                                 .and_then(|m| m.mesh.as_ref())
                                 .map(upload_cache::ArcId::new),
-                            polygons: model
-                                .and_then(|m| m.polygons.as_ref())
-                                .map(upload_cache::ArcId::new),
+                            items: model.map(|m| upload_cache::ArcId::new(&m.items)),
                         });
                     }
                 }

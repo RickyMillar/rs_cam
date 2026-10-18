@@ -210,7 +210,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
             m.name,
             m.kind,
             m.mesh.is_some(),
-            m.polygons.as_ref().map(|p| p.len()).unwrap_or(0)
+            m.outlines_pre_selection().map(|p| p.len()).unwrap_or(0)
         );
     }
 
@@ -247,8 +247,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
     // Load polygons fresh to compare. Polygons live in setup-local frame
     // after the compute step transformed them, but since face_up=Bottom
     // only flips Z (not XY), the 2D footprint matches the DXF.
-    let polygons = rs_cam_core::io::dxf_input::load_dxf(&fixture_path("rivers_aligned.dxf"), 5.0)
-        .expect("DXF loads");
+    let polygons = nested_rings(&fixture_path("rivers_aligned.dxf"));
 
     let final_tp = &result.toolpath();
     let lateral_count = count_lateral_cuts_at_depth(final_tp, 9.5, 1.0);
@@ -291,10 +290,22 @@ fn live_project_pc6_has_no_phantom_cuts() {
     );
 }
 
+/// The drawn rings of a DXF, nested as the import nested them before P2.1.
+fn nested_rings(path: &std::path::Path) -> Vec<rs_cam_core::polygon::Polygon2> {
+    rs_cam_core::polygon::detect_containment(
+        load_dxf(path, 5.0)
+            .expect("rivers_aligned.dxf loads")
+            .items
+            .iter()
+            .filter_map(|item| item.shape().drawing_ring().cloned())
+            .collect(),
+    )
+}
+
 #[test]
 fn project_curve_cutting_moves_follow_rivers_dxf() {
     let dxf_path = fixture_path("rivers_aligned.dxf");
-    let polygons = load_dxf(&dxf_path, 5.0).expect("rivers_aligned.dxf loads");
+    let polygons = nested_rings(&dxf_path);
     assert!(!polygons.is_empty(), "DXF should contain polygons");
 
     // Flat mesh spanning the DXF footprint with a small margin.

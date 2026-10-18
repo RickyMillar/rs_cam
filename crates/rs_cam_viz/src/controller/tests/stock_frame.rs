@@ -215,9 +215,9 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
                 name: "demo_pocket".to_owned(),
                 kind: Some(ModelKind::Svg),
                 mesh: None,
-                polygons: Some(Arc::new(vec![Polygon2::rectangle(20.0, 20.0, 80.0, 80.0)])),
-                drill_targets: std::sync::Arc::new(Vec::new()),
-                layers: std::sync::Arc::new(Vec::new()),
+                items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+                    Polygon2::rectangle(20.0, 20.0, 80.0, 80.0),
+                ])),
                 enriched_mesh: None,
                 units: Some(ModelUnits::Millimeters),
                 winding_report: None,

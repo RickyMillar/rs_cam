@@ -52,9 +52,9 @@ fn polygon_model(id: usize) -> LoadedModel {
         id,
         name: format!("curve_{id}"),
         mesh: None,
-        polygons: Some(Arc::new(vec![unit_square()])),
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            unit_square(),
+        ])),
         path: PathBuf::from(format!("synthetic://curve_{id}.svg")),
         kind: None,
         units: None,
@@ -64,17 +64,22 @@ fn polygon_model(id: usize) -> LoadedModel {
     }
 }
 
-/// A drawing with one circle-centre target — what a DXF with a `CIRCLE`
-/// imports to. The `Drill` precondition reads the targets, not the
+/// A drawing with one circle — what a DXF with a `CIRCLE` imports to (one
+/// item since P2.1). The `Drill` precondition reads the targets, not the
 /// polygons (G-DRILLCENTROID).
 fn target_model(id: usize) -> LoadedModel {
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
     let mut model = polygon_model(id);
-    model.drill_targets = Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
-        x: 0.0,
-        y: 0.0,
-        layer: "holes".to_owned(),
-        kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 3.0 },
-    }]);
+    let mut items: Vec<Item> = model.items.iter().cloned().collect();
+    items.push(
+        Item::new(
+            SourceRef::ToolpathModel,
+            Some("holes".into()),
+            Shape::circle(rs_cam_core::geo::P2::new(0.0, 0.0), 3.0),
+        )
+        .unwrap(),
+    );
+    model.items = Arc::new(ItemSet::new(items));
     model
 }
 
@@ -86,9 +91,7 @@ fn mesh_model(id: usize) -> LoadedModel {
         id,
         name: format!("surface_{id}"),
         mesh: Some(Arc::new(mesh)),
-        polygons: None,
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
+        items: Default::default(),
         path: PathBuf::from(format!("synthetic://surface_{id}.stl")),
         kind: None,
         units: None,

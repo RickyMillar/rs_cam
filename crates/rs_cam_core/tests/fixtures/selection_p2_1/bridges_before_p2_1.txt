@@ -1,0 +1,57 @@
+# P2.1 sentry baseline: the polygon list and the drill target list of every
+# import door BEFORE P2.1 (commit efe9d168), one line per fixture and units.
+# The hash is FNV-1a 64 over the canonical dump of the two lists (the bit
+# pattern of every point, closed flag, holes, order; see
+# `every_import_door_gives_items_p2_1.rs::dump`). Recorded once by a probe
+# on the old import code. Do not re-bless: P2.3 deletes the bridges.
+crates/rs_cam_core/tests/fixtures/rest_cascade_g_restres/square.svg Millimeters | polygons 1 | targets 0 | fnv 4521368eb0d0eb88
+crates/rs_cam_core/tests/fixtures/rest_cascade_g_restres/square.svg Inches | polygons 1 | targets 0 | fnv b200a553a80a6c26
+crates/rs_cam_core/tests/fixtures/rivers_aligned.dxf Millimeters | polygons 141 | targets 0 | fnv 5b12a72e5a5b2e23
+crates/rs_cam_core/tests/fixtures/rivers_aligned.dxf Inches | polygons 141 | targets 0 | fnv f685537c4546b0a6
+crates/rs_cam_core/tests/fixtures/step/occt-cone.step Millimeters | polygons None | targets 0 | fnv 3807a88169bddd9f
+crates/rs_cam_core/tests/fixtures/step/occt-cone.step Inches | polygons None | targets 0 | fnv b8e768d3f1c6cfd7
+crates/rs_cam_core/tests/fixtures/step/occt-cube.step Millimeters | polygons None | targets 0 | fnv 02f02f78b3f362bf
+crates/rs_cam_core/tests/fixtures/step/occt-cube.step Inches | polygons None | targets 0 | fnv 0a38799c3408bf7e
+crates/rs_cam_core/tests/fixtures/step/occt-cylinder.step Millimeters | polygons None | targets 0 | fnv bc0d37b4dd46efb0
+crates/rs_cam_core/tests/fixtures/step/occt-cylinder.step Inches | polygons None | targets 0 | fnv a56ce68e1dbfdbb3
+crates/rs_cam_core/tests/fixtures/step/occt-sphere.step Millimeters | polygons None | targets 0 | fnv a3d58be0bdb55868
+crates/rs_cam_core/tests/fixtures/step/occt-sphere.step Inches | polygons None | targets 0 | fnv fc58997a31a3b8c6
+crates/rs_cam_core/tests/fixtures/stock_change_cut_as_s6/square.svg Millimeters | polygons 1 | targets 0 | fnv 4521368eb0d0eb88
+crates/rs_cam_core/tests/fixtures/stock_change_cut_as_s6/square.svg Inches | polygons 1 | targets 0 | fnv b200a553a80a6c26
+crates/rs_cam_core/tests/fixtures/stock_change_parity_s4/square.svg Millimeters | polygons 1 | targets 0 | fnv 4521368eb0d0eb88
+crates/rs_cam_core/tests/fixtures/stock_change_parity_s4/square.svg Inches | polygons 1 | targets 0 | fnv b200a553a80a6c26
+crates/rs_cam_core/tests/fixtures/wanaka100/lakes.dxf Millimeters | polygons 34 | targets 0 | fnv a19593e8fed9ea15
+crates/rs_cam_core/tests/fixtures/wanaka100/lakes.dxf Inches | polygons 34 | targets 0 | fnv 4c5d376ee00510c0
+crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Millimeters | polygons 12 | targets 12 | fnv 53240ac153034a51
+crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Inches | polygons 12 | targets 12 | fnv 5887cdc77ea3815f
+crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/rivers.dxf Millimeters | polygons 151 | targets 0 | fnv ad733937c379d213
+crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/rivers.dxf Inches | polygons 151 | targets 0 | fnv 2a3a632acccaa5c5
+crates/rs_cam_viz/tests/fixtures/square.svg Millimeters | polygons 1 | targets 0 | fnv 4521368eb0d0eb88
+crates/rs_cam_viz/tests/fixtures/square.svg Inches | polygons 1 | targets 0 | fnv b200a553a80a6c26
+fixtures/demo_pocket.svg Millimeters | polygons 1 | targets 1 | fnv 1acf176c5e69dd96
+fixtures/demo_pocket.svg Inches | polygons 1 | targets 1 | fnv 8f1dbea90260c17e
+fixtures/demo_star.svg Millimeters | polygons 1 | targets 0 | fnv b16797e99d834608
+fixtures/demo_star.svg Inches | polygons 1 | targets 0 | fnv 368f243ca1be4150
+fixtures/gui_step/block_40x40x60.step Millimeters | polygons None | targets 0 | fnv 46ad5ae81ef73834
+fixtures/gui_step/block_40x40x60.step Inches | polygons None | targets 0 | fnv 518b3e19eb6388eb
+fixtures/gui_step/l_bracket.step Millimeters | polygons None | targets 0 | fnv f1af49148f993f74
+fixtures/gui_step/l_bracket.step Inches | polygons None | targets 0 | fnv 8da9a0976201ce9b
+fixtures/gui_step/plate_100x60x10.step Millimeters | polygons None | targets 0 | fnv a56821c61c6481e6
+fixtures/gui_step/plate_100x60x10.step Inches | polygons None | targets 0 | fnv 6224314e552e2948
+fixtures/gui_step/stepped_block.step Millimeters | polygons None | targets 0 | fnv e3704895d80ba38c
+fixtures/gui_step/stepped_block.step Inches | polygons None | targets 0 | fnv 87071d6a2b291287
+planning/feed_modulation_calibration/bench_batch_2026-05-27/demo_star.svg Millimeters | polygons 1 | targets 0 | fnv b16797e99d834608
+planning/feed_modulation_calibration/bench_batch_2026-05-27/demo_star.svg Inches | polygons 1 | targets 0 | fnv 368f243ca1be4150
+planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Millimeters | polygons 1 | targets 0 | fnv 01e65e163685fce3
+planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Inches | polygons 1 | targets 0 | fnv 40f70f2817f7ec1f
+planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters | polygons 36 | targets 0 | fnv e9516f79980344a4
+planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Inches | polygons 36 | targets 0 | fnv f2b146651e6485f4
+crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Millimeters | polygons 8 | targets 4 | fnv f8af2af18dc51749
+crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Inches | polygons 8 | targets 4 | fnv 0fbf8f0ee86e9bd5
+crates/rs_cam_core/tests/fixtures/selection_p2_1/inch.dxf Millimeters | polygons 2 | targets 2 | fnv 4667532c8be5c3c5
+crates/rs_cam_core/tests/fixtures/selection_p2_1/inch.dxf Inches | polygons 2 | targets 2 | fnv d4ae8beca974ee3d
+crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Millimeters | polygons 5 | targets 2 | fnv 22e43428c442d789
+crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Inches | polygons 5 | targets 2 | fnv 6814de66572c7750
+outline_model | polygons 1 | targets 2 | fnv 101a0574d044250b
+curve_model | polygons 1 | targets 0 | fnv 4c33db4f46c97b2a
+flat_prior_model | polygons 1 | targets 0 | fnv acdc07bf3e6e16f5

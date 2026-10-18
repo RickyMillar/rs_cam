@@ -13,7 +13,7 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ObstacleId;
 use crate::session::{Effects, ProjectSession, SessionError, SetupData, SimulationDropCause};
 
-use super::{obstacle_effects, polygons_bbox};
+use super::obstacle_effects;
 
 impl ProjectSession {
     // ── Model CRUD ────────────────────────────────────────────────
@@ -49,19 +49,11 @@ impl ProjectSession {
         model.id = self.next_model_id;
         self.next_model_id += 1;
         let id = model.id;
+        model.bind_items();
 
         // Compute bbox before moving the model into self.models.
         let auto_from_model = self.stock.auto_from_model;
-        let model_bbox = if auto_from_model {
-            model.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                model
-                    .polygons
-                    .as_ref()
-                    .and_then(|polys| polygons_bbox(polys))
-            })
-        } else {
-            None
-        };
+        let model_bbox = if auto_from_model { model.bbox() } else { None };
 
         self.models.push(model);
 

@@ -333,8 +333,7 @@ pub fn model_geometry_facts(
             name: &m.name,
             has_mesh: m.mesh.is_some(),
             has_closed_outline: m
-                .polygons
-                .as_deref()
+                .outlines_pre_selection()
                 .is_some_and(|p| p.iter().any(is_closed_outline)),
         })
 }
@@ -504,7 +503,7 @@ impl ObstacleSet {
                         let polygons = models
                             .iter()
                             .find(|m| m.id == model_id.0)
-                            .and_then(|m| m.polygons.clone())
+                            .and_then(|m| m.outlines_pre_selection())
                             .ok_or_else(|| {
                                 refuse(format!("model id {} holds no 2D outline", model_id.0))
                             })?;
@@ -1537,9 +1536,7 @@ mod tests {
             mesh: Some(std::sync::Arc::new(crate::mesh::make_test_hemisphere(
                 8.0, 12,
             ))),
-            polygons: None,
-            drill_targets: std::sync::Arc::new(Vec::new()),
-            layers: std::sync::Arc::new(Vec::new()),
+            items: Default::default(),
             path: std::path::PathBuf::from("synthetic://clamp.stl"),
             kind: None,
             units: None,

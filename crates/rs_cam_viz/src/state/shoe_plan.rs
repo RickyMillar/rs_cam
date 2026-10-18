@@ -101,11 +101,7 @@ fn plan_key(session: &ProjectSession) -> u64 {
             .as_ref()
             .map(|mesh| Arc::as_ptr(mesh) as usize)
             .hash(&mut hasher);
-        model
-            .polygons
-            .as_ref()
-            .map(|polygons| Arc::as_ptr(polygons) as usize)
-            .hash(&mut hasher);
+        (Arc::as_ptr(&model.items) as usize).hash(&mut hasher);
     }
     hasher.finish()
 }

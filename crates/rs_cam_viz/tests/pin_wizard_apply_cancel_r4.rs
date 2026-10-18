@@ -49,14 +49,14 @@ fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
         id,
         name: name.to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::new(vec![
-            P2::new(lo, lo),
-            P2::new(hi, lo),
-            P2::new(hi, hi),
-            P2::new(lo, hi),
-        ])])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            Polygon2::new(vec![
+                P2::new(lo, lo),
+                P2::new(hi, lo),
+                P2::new(hi, hi),
+                P2::new(lo, hi),
+            ]),
+        ])),
         path: std::path::PathBuf::from(name),
         kind: None,
         enriched_mesh: None,

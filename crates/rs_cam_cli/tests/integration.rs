@@ -224,9 +224,9 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         id: 0,
         name: "rect".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![polygon])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            polygon,
+        ])),
         path: std::path::PathBuf::from("synthetic://rect.svg"),
         kind: None,
         units: None,

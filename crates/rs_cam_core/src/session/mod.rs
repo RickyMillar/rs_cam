@@ -87,8 +87,6 @@ pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
-pub use mutation::polygons_bbox;
-
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
     ProjectFile, ProjectJobSection, ProjectLoadWarning, ProjectModelSection, ProjectSetupSection,
@@ -114,9 +112,10 @@ use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use crate::ids::ModelId;
-use crate::io::dxf_input::DrillTarget;
+use crate::io::dxf_input::{DrillTarget, DrillTargetKind};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
+use crate::selection::{ItemSet, Shape, SourceRef};
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
 use crate::trace::semantic_trace::ToolpathSemanticTrace;
@@ -347,9 +346,8 @@ impl From<CollisionCheckError> for SessionError {
 /// Geometry loaded from a model file.
 pub(crate) enum LoadedGeometry {
     Mesh(TriangleMesh),
-    /// 2D polygons plus pickable drill targets and their layer names
-    /// (DXF imports; SVG passes empty target/layer lists).
-    Polygons(Vec<Polygon2>, Vec<DrillTarget>, Vec<String>),
+    /// The items of a drawing (DXF, SVG), each with its layer (P2.1).
+    Drawing(ItemSet),
     /// Mesh + BREP face groups (STEP / CAD models). The enriched form
     /// is required for face-selective operations; downgrading to a
     /// flat `Mesh` silently strips topology and breaks face pickers.
@@ -373,14 +371,10 @@ pub struct LoadedModel {
     pub id: usize,
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
-    pub polygons: Option<Arc<Vec<Polygon2>>>,
-    /// Pickable drill targets extracted from the source (DXF POINT entities
-    /// and circle/arc centres; circle-like closed shapes in an SVG, see
-    /// `svg_input::circle_like_drill_targets`). Empty for meshes.
-    pub drill_targets: Arc<Vec<DrillTarget>>,
-    /// Distinct layer names that contain drill targets (sorted). Empty for
-    /// formats without layers.
-    pub layers: Arc<Vec<String>>,
+    /// The pickable 2D items of the source (P2.1): DXF and SVG drawing
+    /// items, STEP faces. Empty for an STL mesh. The session binds them to
+    /// `SourceRef::Model(id)` (`bind_items`).
+    pub items: Arc<ItemSet>,
     /// Original file path (for save round-trip).
     pub path: std::path::PathBuf,
     /// File kind (stl, svg, dxf, step).
@@ -450,9 +444,7 @@ impl LoadedModel {
             id,
             name,
             mesh: None,
-            polygons: None,
-            drill_targets: Arc::new(Vec::new()),
-            layers: Arc::new(Vec::new()),
+            items: Arc::new(ItemSet::default()),
             path,
             kind: Some(kind),
             units: Some(units),
@@ -474,8 +466,8 @@ impl LoadedModel {
     /// sets them itself, after this call.
     ///
     /// **REPLACED**: every field the file content determines — `mesh`,
-    /// `polygons`, `enriched_mesh`, `drill_targets`, `layers`,
-    /// `winding_report`, `load_error` — plus `path` and `kind`, which name
+    /// `items`, `enriched_mesh`, `winding_report`, `load_error` — plus
+    /// `path` and `kind`, which name
     /// the file the geometry came from. A reload and a rescale re-import the
     /// path and kind they were given, so those two do not move there; a
     /// relink points the record at a different file, and they do.
@@ -493,9 +485,7 @@ impl LoadedModel {
     pub fn adopt_geometry(&mut self, fresh: Self) {
         let Self {
             mesh,
-            polygons,
-            drill_targets,
-            layers,
+            items,
             path,
             kind,
             enriched_mesh,
@@ -506,9 +496,8 @@ impl LoadedModel {
             units: _,
         } = fresh;
         self.mesh = mesh;
-        self.polygons = polygons;
-        self.drill_targets = drill_targets;
-        self.layers = layers;
+        self.items = items;
+        self.bind_items();
         self.path = path;
         self.kind = kind;
         self.enriched_mesh = enriched_mesh;
@@ -518,41 +507,90 @@ impl LoadedModel {
 
     /// Compute the bounding box of the model's geometry.
     ///
-    /// For mesh models, returns the stored mesh bbox. For 2D polygon models,
-    /// computes the bbox from exterior + hole points at Z=0. Returns `None`
-    /// if no geometry is loaded.
+    /// For mesh models, returns the stored mesh bbox. For a drawing,
+    /// computes the bbox of the drawn rings at Z=0 (`ItemSet::bbox`).
+    /// Returns `None` if no geometry is loaded.
     pub fn bbox(&self) -> Option<BoundingBox3> {
         if let Some(mesh) = &self.mesh {
             return Some(mesh.bbox);
         }
-
-        let polygons = self.polygons.as_deref()?;
-        let mut min_x = f64::INFINITY;
-        let mut min_y = f64::INFINITY;
-        let mut max_x = f64::NEG_INFINITY;
-        let mut max_y = f64::NEG_INFINITY;
-
-        for polygon in polygons {
-            for point in polygon
-                .exterior
-                .iter()
-                .chain(polygon.holes.iter().flat_map(|hole| hole.iter()))
-            {
-                min_x = min_x.min(point.x);
-                min_y = min_y.min(point.y);
-                max_x = max_x.max(point.x);
-                max_y = max_y.max(point.y);
-            }
-        }
-
-        if !min_x.is_finite() {
-            return None;
-        }
-
+        let [min_x, min_y, max_x, max_y] = self.items.bbox()?;
         Some(BoundingBox3 {
             min: crate::geo::P3::new(min_x, min_y, 0.0),
             max: crate::geo::P3::new(max_x, max_y, 0.0),
         })
+    }
+
+    /// Bind the items to this model: `SourceRef::Model(self.id)`. Each door
+    /// that sets a model id calls this (`io::model_from_geometry`,
+    /// `add_model_impl`, the session builder, `adopt_geometry`).
+    pub(crate) fn bind_items(&mut self) {
+        let source = SourceRef::Model(ModelId(self.id));
+        match self.items.bound_to(source) {
+            Ok(bound) => self.items = Arc::new(bound),
+            // A rebuild of a valid item set with a new source cannot break
+            // a shape invariant; the items stay as they are.
+            Err(error) => tracing::error!(model = %self.name, %error, "item bind failed"),
+        }
+    }
+
+    /// The polygon list that the import gave before P2.1: every drawn ring
+    /// (loop, path, circle ring) in import order, nested by
+    /// `detect_containment` as the import did. `None` when the model holds
+    /// no drawing item (a mesh, a STEP model, a model that did not load).
+    ///
+    /// P2.3 deletes this. It is one of the two bridges for generation and
+    /// drilling until the selection resolves in the prologue.
+    pub fn outlines_pre_selection(&self) -> Option<Arc<Vec<Polygon2>>> {
+        // P2.3 deletes this.
+        self.items
+            .has_drawing()
+            .then(|| self.items.outlines_pre_selection())
+    }
+
+    /// The drill target list that the import gave before P2.1, in the same
+    /// order.
+    ///
+    /// - SVG: `circle_like_drill_targets` over [`Self::outlines_pre_selection`]
+    ///   (exteriors and holes, in nesting order, on layer `circles`), as the
+    ///   import did.
+    /// - Any other kind: each `Point` and `Circle` item in import order,
+    ///   with its layer.
+    ///
+    /// P2.3 deletes this. It is the second of the two bridges.
+    pub fn drill_targets_pre_selection(&self) -> Vec<DrillTarget> {
+        // P2.3 deletes this.
+        if self.kind == Some(ModelKind::Svg) {
+            return self
+                .outlines_pre_selection()
+                .map(|outlines| crate::io::svg_input::circle_like_drill_targets(&outlines))
+                .unwrap_or_default();
+        }
+        self.items
+            .iter()
+            .filter_map(|item| {
+                let layer = item.layer().unwrap_or_default().to_owned();
+                match item.shape() {
+                    Shape::Point(p) => Some(DrillTarget {
+                        x: p.x,
+                        y: p.y,
+                        layer,
+                        kind: DrillTargetKind::Point,
+                    }),
+                    Shape::Circle {
+                        centre, diameter, ..
+                    } => Some(DrillTarget {
+                        x: centre.x,
+                        y: centre.y,
+                        layer,
+                        kind: DrillTargetKind::CircleCenter {
+                            diameter: *diameter,
+                        },
+                    }),
+                    Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => None,
+                }
+            })
+            .collect()
     }
 }
 
@@ -2234,9 +2272,7 @@ mod tests {
                 id: 7,
                 name: "Placeholder".to_owned(),
                 mesh: None,
-                polygons: None,
-                drill_targets: std::sync::Arc::new(Vec::new()),
-                layers: std::sync::Arc::new(Vec::new()),
+                items: Default::default(),
                 path: std::path::PathBuf::from("missing.stl"),
                 kind: None,
                 units: None,

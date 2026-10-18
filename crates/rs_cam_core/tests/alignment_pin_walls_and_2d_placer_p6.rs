@@ -60,8 +60,8 @@ use rs_cam_core::diagnostics::ids;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::{ModelId, ObstacleId, ToolpathId};
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
 use rs_cam_core::session::{
     AddObstacleArgs, Command, LoadedModel, Obstacle, ObstacleGeometry, ProjectSession,
     ProjectSessionBuilder, SetAlignmentPinsArgs, ToolpathConfig,
@@ -85,9 +85,7 @@ fn rectangle_model(id: usize, name: &str, x0: f64, y0: f64, x1: f64, y1: f64) ->
         id,
         name: name.to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![poly])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
         path: PathBuf::from(name),
         kind: None,
         units: None,
@@ -392,35 +390,30 @@ fn a_pin_that_differs_from_the_drill_is_a_finding() {
     );
 }
 
-/// A model of circles, each a polygon and a `CircleCenter` target, as the
-/// DXF import gives them.
+/// A model of circles, each ONE `Circle` item (ring and centre), as the
+/// DXF import gives them since P2.1.
 fn circles_model(id: usize, name: &str, circles: &[(f64, f64, f64)]) -> LoadedModel {
     let mut model = rectangle_model(id, name, 0.0, 0.0, 1.0, 1.0);
-    let polygons = circles
+    let items = circles
         .iter()
         .map(|&(cx, cy, d)| {
-            Polygon2::new(
+            let ring = Polygon2::new(
                 (0..32)
                     .map(|k| {
                         let a = f64::from(k) / 32.0 * std::f64::consts::TAU;
                         P2::new(cx + 0.5 * d * a.cos(), cy + 0.5 * d * a.sin())
                     })
                     .collect(),
-            )
+            );
+            let shape = Shape::Circle {
+                centre: P2::new(cx, cy),
+                diameter: d,
+                ring,
+            };
+            Item::new(SourceRef::ToolpathModel, Some("0".into()), shape).unwrap()
         })
         .collect();
-    model.polygons = Some(Arc::new(polygons));
-    model.drill_targets = Arc::new(
-        circles
-            .iter()
-            .map(|&(x, y, diameter)| DrillTarget {
-                x,
-                y,
-                layer: "0".to_owned(),
-                kind: DrillTargetKind::CircleCenter { diameter },
-            })
-            .collect(),
-    );
+    model.items = Arc::new(ItemSet::new(items));
     model
 }
 
@@ -459,14 +452,16 @@ fn a_drawing_of_the_pin_holes_is_not_part() {
     // A POINT beside the circles: not every entity is a circle, so the
     // model is part.
     let mut mixed = circles_model(2, "dowel_through.dxf", &holes);
-    let mut targets = (*mixed.drill_targets).clone();
-    targets.push(DrillTarget {
-        x: 30.0,
-        y: 5.0,
-        layer: "0".to_owned(),
-        kind: DrillTargetKind::Point,
-    });
-    mixed.drill_targets = Arc::new(targets);
+    let mut items: Vec<Item> = mixed.items.iter().cloned().collect();
+    items.push(
+        Item::new(
+            SourceRef::ToolpathModel,
+            Some("0".into()),
+            Shape::Point(P2::new(30.0, 5.0)),
+        )
+        .unwrap(),
+    );
+    mixed.items = Arc::new(ItemSet::new(items));
     let session = ProjectSessionBuilder::new()
         .stock(mini_stock(W, D))
         .model(mixed)

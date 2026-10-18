@@ -64,9 +64,7 @@ pub fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
         id: 0,
         name: name.to_owned(),
         mesh: Some(Arc::new(mesh)),
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Default::default(),
         path: PathBuf::from(format!("synthetic://{name}.stl")),
         kind: None,
         units: None,
@@ -83,9 +81,7 @@ pub fn polygon_model(polygons: Vec<Polygon2>, name: &str) -> LoadedModel {
         id: 0,
         name: name.to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(polygons)),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(polygons)),
         path: PathBuf::from(format!("synthetic://{name}.svg")),
         kind: None,
         units: None,
@@ -93,6 +89,34 @@ pub fn polygon_model(polygons: Vec<Polygon2>, name: &str) -> LoadedModel {
         winding_report: None,
         load_error: None,
     }
+}
+
+/// The items of a drawing: the polygons first (`ItemSet::from_polygons`),
+/// then one item per target in order. A `Point` target is a `Point` item; a
+/// `CircleCenter` target is a `Circle` item with the ring the DXF door makes
+/// for a CIRCLE, as a CIRCLE entity gives one item since P2.1.
+pub fn drawing_items(
+    polygons: Vec<Polygon2>,
+    targets: &[rs_cam_core::io::dxf_input::DrillTarget],
+) -> rs_cam_core::selection::ItemSet {
+    use rs_cam_core::io::dxf_input::DrillTargetKind;
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    let mut items: Vec<Item> = ItemSet::from_polygons(polygons).iter().cloned().collect();
+    items.extend(targets.iter().map(|t| {
+        let shape = match t.kind {
+            DrillTargetKind::Point => Shape::Point(P2::new(t.x, t.y)),
+            DrillTargetKind::CircleCenter { diameter } => {
+                Shape::circle(P2::new(t.x, t.y), diameter)
+            }
+        };
+        Item::new(
+            SourceRef::ToolpathModel,
+            Some(t.layer.as_str().into()),
+            shape,
+        )
+        .expect("a target gives a valid item")
+    }));
+    ItemSet::new(items)
 }
 
 /// An axis-aligned square of half-extent `half`, wound CCW from `(-h, -h)`.

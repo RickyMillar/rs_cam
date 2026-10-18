@@ -1519,7 +1519,7 @@ impl RsCamApp {
                     .models()
                     .iter()
                     .filter(|m| {
-                        m.polygons.as_deref().is_some_and(|polys| {
+                        m.outlines_pre_selection().is_some_and(|polys| {
                             polys
                                 .iter()
                                 .any(|poly| poly.closed && poly.exterior.len() >= 3)
@@ -1551,7 +1551,7 @@ impl RsCamApp {
                         Some("model_id"),
                     ));
                 };
-                let has_closed = model.polygons.as_deref().is_some_and(|polys| {
+                let has_closed = model.outlines_pre_selection().is_some_and(|polys| {
                     polys
                         .iter()
                         .any(|poly| poly.closed && poly.exterior.len() >= 3)
@@ -2377,7 +2377,7 @@ impl RsCamApp {
                                 "name": m.name,
                                 "kind": m.kind,
                                 "has_mesh": m.mesh.is_some(),
-                                "has_polygons": m.polygons.is_some(),
+                                "has_polygons": m.items.has_drawing(),
                             })
                         })
                         .unwrap_or(serde_json::Value::Null)

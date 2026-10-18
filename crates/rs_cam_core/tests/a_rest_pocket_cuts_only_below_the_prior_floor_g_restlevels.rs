@@ -234,17 +234,19 @@ fn run_ops_with_tool(
     };
     let model_a = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
     let mut b_model = polygon_model(vec![shifted_square(b_shift)], "b");
-    b_model.drill_targets = Arc::new(
-        targets
-            .iter()
-            .map(|&[x, y]| DrillTarget {
-                x,
-                y,
-                layer: "holes".to_owned(),
-                kind: DrillTargetKind::Point,
-            })
-            .collect(),
-    );
+    let b_targets: Vec<DrillTarget> = targets
+        .iter()
+        .map(|&[x, y]| DrillTarget {
+            x,
+            y,
+            layer: "holes".to_owned(),
+            kind: DrillTargetKind::Point,
+        })
+        .collect();
+    b_model.items = Arc::new(common::session::drawing_items(
+        vec![shifted_square(b_shift)],
+        &b_targets,
+    ));
     let model_b = builder.add_model(b_model);
     let _ = builder
         .add_toolpath(0, toolpath_config("A", a, tool_id, model_a))

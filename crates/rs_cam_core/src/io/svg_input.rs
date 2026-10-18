@@ -1,4 +1,4 @@
-//! SVG file input — extracts closed and open paths as Polygon2.
+//! SVG file input — extracts closed and open paths as selection items.
 //!
 //! Uses usvg to parse and simplify SVG into basic path segments,
 //! then flattens bezier curves to polylines within a configurable tolerance.
@@ -16,7 +16,9 @@
 
 use crate::geo::P2;
 use crate::polygon::Polygon2;
+use crate::selection::{Item, ItemError, ItemSet, Shape, SourceRef};
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -31,15 +33,18 @@ pub enum SvgError {
     /// refuses before it reads the bytes (EDG-03).
     #[error("SVG file too large ({size_mb} MB, limit {limit_mb} MB)")]
     FileTooLarge { size_mb: u64, limit_mb: u64 },
+    /// A shape that breaks an item invariant: a defect in this door.
+    #[error("SVG import made an invalid item: {0}")]
+    Item(#[from] ItemError),
 }
 
-/// Load the paths of an SVG file as polygons.
+/// Load the paths of an SVG file as selection items (P2.1).
 ///
-/// Bezier curves are flattened to line segments with the given tolerance (mm).
-/// A closed subpath is a closed polygon. An open subpath of two or more
-/// points is an open path (P1): no chord joins its ends, and the op decides
-/// if it can cut it.
-pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
+/// Bezier curves are flattened to line segments with the given tolerance
+/// (user units). `scale` moves user units to mm; the door applies it after
+/// the flattening and before it classifies circles, so the circle floor is
+/// in mm. See [`load_svg_data`] for the items.
+pub fn load_svg(path: &Path, tolerance: f64, scale: f64) -> Result<ItemSet, SvgError> {
     if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
         return Err(SvgError::FileTooLarge {
             size_mb: over.size_mb,
@@ -47,30 +52,72 @@ pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> 
         });
     }
     let data = std::fs::read(path)?;
-    load_svg_data(&data, tolerance)
+    load_svg_data(&data, tolerance, scale)
 }
 
-/// Load the closed and open paths of SVG data bytes ([`load_svg`]).
+/// Load the closed and open paths of SVG data bytes as items, in document
+/// order:
 ///
-/// Coordinates are in usvg user-space units (CSS pixels at 96 DPI).
-pub fn load_svg_data(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
+/// - a closed subpath is a `Circle` when it is circle-like
+///   ([`circle_like_ring`]), else a `Loop`;
+/// - an open subpath of two or more points is a `Path` (P1): no chord joins
+///   its ends;
+/// - the layer of an item is the `id` of its nearest ancestor `<g>` with an
+///   id. usvg keeps the `id` of a group and drops `inkscape:label`, so the
+///   id is the label this door can read. A shape outside such a group has
+///   no layer.
+///
+/// Containment does not run here (P2.1). The coordinates are user-space
+/// units (CSS pixels at 96 DPI) times `scale`.
+pub fn load_svg_data(data: &[u8], tolerance: f64, scale: f64) -> Result<ItemSet, SvgError> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_data(data, &opt)?;
-    let mut polygons = Vec::new();
-    visit_group(tree.root(), tolerance, &mut polygons);
-    // Detect containment: inner shapes become holes of outer shapes
-    let polygons = crate::polygon::detect_containment(polygons);
-    Ok(polygons)
+    let mut raw = Vec::new();
+    visit_group(tree.root(), None, tolerance, &mut raw);
+    // In user units: a closed ring is a loop, an open subpath a path.
+    let items = raw
+        .into_iter()
+        .map(|(layer, poly)| {
+            let shape = if poly.closed {
+                Shape::Loop(poly)
+            } else {
+                Shape::Path(poly)
+            };
+            Item::new(SourceRef::ToolpathModel, layer, shape)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // Scale, then find the circles in mm.
+    Ok(ItemSet::new(items)
+        .scaled(scale)?
+        .with_circles(|ring| circle_like_ring(&ring.exterior))?)
 }
 
-fn visit_group(group: &usvg::Group, tolerance: f64, out: &mut Vec<Polygon2>) {
+/// One flattened subpath with the layer of its group.
+type RawRing = (Option<Arc<str>>, Polygon2);
+
+fn visit_group(
+    group: &usvg::Group,
+    layer: Option<&Arc<str>>,
+    tolerance: f64,
+    out: &mut Vec<RawRing>,
+) {
     for node in group.children() {
         match node {
             usvg::Node::Path(path) => {
-                extract_polygons_from_path(path.data(), tolerance, out);
+                let mut polys = Vec::new();
+                extract_polygons_from_path(path.data(), tolerance, &mut polys);
+                out.extend(polys.into_iter().map(|p| (layer.cloned(), p)));
             }
-            usvg::Node::Group(group) => {
-                visit_group(group, tolerance, out);
+            usvg::Node::Group(child) => {
+                // The nearest group with an id names the layer.
+                let own: Arc<str>;
+                let child_layer = if child.id().is_empty() {
+                    layer
+                } else {
+                    own = Arc::from(child.id());
+                    Some(&own)
+                };
+                visit_group(child, child_layer, tolerance, out);
             }
             _ => {}
         }
@@ -254,13 +301,11 @@ pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
 /// `detect_containment` files a circle drawn inside an outline as that
 /// outline's hole — as pickable drill targets on [`SVG_CIRCLE_LAYER`].
 ///
-/// This is how an SVG drawing exposes drill targets at all: usvg flattens
-/// a `<circle>` to a path before this crate sees it, so the source element
-/// is gone and only the shape remains. Called by both 2D import doors
-/// (`io::load_model_file` and `session::project_file::load_model_geometry`)
-/// AFTER the unit scale is applied, so the diameters and the tolerance
-/// floor are in millimetres. Not applied to DXF, where a `CIRCLE` entity
-/// already yields its own target and this would double-count it.
+/// This is how an SVG drawing exposed drill targets before P2.1: usvg
+/// flattens a `<circle>` to a path before this crate sees it, so the source
+/// element is gone and only the shape remains. Its one caller is the bridge
+/// `LoadedModel::drill_targets_pre_selection`, which gives it the nested
+/// polygon list in mm. P2.3c deletes this with the bridge.
 pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_input::DrillTarget> {
     polygons
         .iter()
@@ -279,16 +324,6 @@ pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_in
         .collect()
 }
 
-/// The layer list a model built from `targets` carries: [`SVG_CIRCLE_LAYER`]
-/// when there is at least one target, else empty.
-pub fn circle_like_layers(targets: &[crate::io::dxf_input::DrillTarget]) -> Vec<String> {
-    if targets.is_empty() {
-        Vec::new()
-    } else {
-        vec![SVG_CIRCLE_LAYER.to_owned()]
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -298,6 +333,16 @@ pub fn circle_like_layers(targets: &[crate::io::dxf_input::DrillTarget]) -> Vec<
 )]
 mod tests {
     use super::*;
+
+    /// The polygon list of the import before P2.1 (the bridge): the drawn
+    /// rings, nested.
+    fn load_polys(data: &[u8], tolerance: f64) -> Vec<Polygon2> {
+        load_svg_data(data, tolerance, 1.0)
+            .unwrap()
+            .outlines_pre_selection()
+            .as_ref()
+            .clone()
+    }
 
     fn simple_rect_svg() -> &'static [u8] {
         br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
@@ -326,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_load_rect() {
-        let polys = load_svg_data(simple_rect_svg(), 0.1).unwrap();
+        let polys = load_polys(simple_rect_svg(), 0.1);
         assert_eq!(polys.len(), 1, "Rectangle SVG should produce 1 polygon");
         let poly = &polys[0];
         assert!(
@@ -345,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_load_triangle() {
-        let polys = load_svg_data(triangle_svg(), 0.1).unwrap();
+        let polys = load_polys(triangle_svg(), 0.1);
         assert_eq!(polys.len(), 1);
         let poly = &polys[0];
         assert!(poly.exterior.len() >= 3);
@@ -353,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_load_circle() {
-        let polys = load_svg_data(circle_svg(), 0.5).unwrap();
+        let polys = load_polys(circle_svg(), 0.5);
         assert_eq!(polys.len(), 1);
         let poly = &polys[0];
 
@@ -374,14 +419,14 @@ mod tests {
 
     #[test]
     fn test_load_multiple_paths() {
-        let polys = load_svg_data(multi_path_svg(), 0.1).unwrap();
+        let polys = load_polys(multi_path_svg(), 0.1);
         assert_eq!(polys.len(), 2, "Two rectangles should produce 2 polygons");
     }
 
     #[test]
     fn test_empty_svg() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>"#;
-        let polys = load_svg_data(svg, 0.1).unwrap();
+        let polys = load_polys(svg, 0.1);
         assert!(polys.is_empty());
     }
 
@@ -393,7 +438,7 @@ mod tests {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
             <path d="M 10 10 L 90 10 L 90 90"/>
         </svg>"#;
-        let polys = load_svg_data(svg, 0.1).unwrap();
+        let polys = load_polys(svg, 0.1);
         assert_eq!(polys.len(), 1, "the open path is kept");
         assert!(!polys[0].closed);
         assert_eq!(polys[0].exterior.len(), 3, "no closing point is added");
@@ -402,7 +447,7 @@ mod tests {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
             <path d="M 0 0 L 5 5 L 9 0 M 20 20 L 40 20 L 40 40 L 20 40 Z M 60 60 L 80 60"/>
         </svg>"#;
-        let polys = load_svg_data(svg, 0.1).unwrap();
+        let polys = load_polys(svg, 0.1);
         let open: Vec<&Polygon2> = polys.iter().filter(|p| !p.closed).collect();
         let closed: Vec<&Polygon2> = polys.iter().filter(|p| p.closed).collect();
         assert_eq!(closed.len(), 1, "the square");
@@ -432,7 +477,7 @@ mod tests {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
             <path d="M 50 80 C 50 80 10 50 10 30 C 10 10 30 10 50 30 C 70 10 90 10 90 30 C 90 50 50 80 50 80 Z"/>
         </svg>"#;
-        let polys = load_svg_data(svg, 0.5).unwrap();
+        let polys = load_polys(svg, 0.5);
         assert_eq!(
             polys.len(),
             1,
@@ -450,7 +495,7 @@ mod tests {
             <rect x="5" y="5" width="70" height="70" rx="8" ry="8"/>
             <circle cx="40" cy="40" r="12"/>
         </svg>"#;
-        let polys = load_svg_data(svg, 0.5).unwrap();
+        let polys = load_polys(svg, 0.5);
         assert_eq!(
             polys.len(),
             1,
@@ -482,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_winding_is_ccw() {
-        let polys = load_svg_data(simple_rect_svg(), 0.1).unwrap();
+        let polys = load_polys(simple_rect_svg(), 0.1);
         for poly in &polys {
             assert!(
                 poly.signed_area() > 0.0,
@@ -545,14 +590,10 @@ mod tests {
             <rect x="5" y="5" width="70" height="50"/>
             <circle cx="40" cy="30" r="10"/>
         </svg>"#;
-        let polys = load_svg_data(svg, 0.1).unwrap();
+        let polys = load_polys(svg, 0.1);
         let targets = circle_like_drill_targets(&polys);
         assert_eq!(targets.len(), 1, "one circle, one target: {targets:?}");
         assert!((targets[0].x - 40.0).abs() < 0.1 && (targets[0].y - 30.0).abs() < 0.1);
         assert_eq!(targets[0].layer, SVG_CIRCLE_LAYER);
-        assert_eq!(
-            circle_like_layers(&targets),
-            vec![SVG_CIRCLE_LAYER.to_owned()]
-        );
     }
 }

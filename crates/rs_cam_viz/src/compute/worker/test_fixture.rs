@@ -240,10 +240,12 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
     for tool in &spec.extra_tools {
         builder = builder.tool(tool.clone());
     }
+    // A drawing is a DXF: since P2.1 an SVG gives drill targets from its
+    // circle-like rings only, and the spec states its targets.
     let kind = if spec.mesh.is_some() {
         ModelKind::Stl
     } else {
-        ModelKind::Svg
+        ModelKind::Dxf
     };
     builder = builder.model(LoadedModel {
         id: 0,
@@ -251,9 +253,10 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         name: "Fixture".to_owned(),
         kind: Some(kind),
         mesh: spec.mesh.clone().map(Arc::new),
-        polygons: spec.polygons.clone().map(Arc::new),
-        drill_targets: Arc::new(spec.drill_targets.clone()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(drawing_items(
+            spec.polygons.clone().unwrap_or_default(),
+            &spec.drill_targets,
+        )),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
@@ -318,4 +321,31 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
             },
         },
     }
+}
+
+/// The items of a drawing: the polygons first (`ItemSet::from_polygons`),
+/// then one item per target in order. A `CircleCenter` target is a
+/// `Circle` item, as a DXF CIRCLE gives one item since P2.1.
+fn drawing_items(
+    polygons: Vec<rs_cam_core::polygon::Polygon2>,
+    targets: &[rs_cam_core::io::dxf_input::DrillTarget],
+) -> rs_cam_core::selection::ItemSet {
+    use rs_cam_core::io::dxf_input::DrillTargetKind;
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    let mut items: Vec<Item> = ItemSet::from_polygons(polygons).iter().cloned().collect();
+    for t in targets {
+        let centre = rs_cam_core::geo::P2::new(t.x, t.y);
+        let shape = match t.kind {
+            DrillTargetKind::Point => Shape::Point(centre),
+            DrillTargetKind::CircleCenter { diameter } => Shape::circle(centre, diameter),
+        };
+        if let Ok(item) = Item::new(
+            SourceRef::ToolpathModel,
+            Some(t.layer.as_str().into()),
+            shape,
+        ) {
+            items.push(item);
+        }
+    }
+    ItemSet::new(items)
 }

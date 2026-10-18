@@ -98,9 +98,9 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
         name: "Tool size fixture".to_owned(),
         kind: Some(ModelKind::Svg),
         mesh: None,
-        polygons: Some(Arc::new(vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0)])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            Polygon2::rectangle(0.0, 0.0, 10.0, 10.0),
+        ])),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
         winding_report: None,

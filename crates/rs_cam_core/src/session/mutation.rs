@@ -12,9 +12,6 @@
 //! `mutation/config.rs`. Each holds inherent methods on
 //! [`ProjectSession`], so no path moved and no re-export is needed.
 
-use crate::geo::{BoundingBox3, P3};
-use crate::polygon::Polygon2;
-
 // Path anchors for the children. A child names each of these as
 // `super::Name`, in code or in a doc link, so the binding must sit in
 // this module.
@@ -161,48 +158,6 @@ fn post_change_reaches_motion(
     exempt_before.mist_output = after.mist_output;
     exempt_before.native_drill_cycles = after.native_drill_cycles;
     exempt_before != *after
-}
-
-/// Compute a 3D bounding box from a slice of 2D polygons (SVG/DXF models).
-/// Z extent is zero; `update_from_bbox` preserves stock Z for 2D models.
-/// Returns `None` if all polygons are empty.
-///
-/// C22(a): `pub` because the GUI asks the same question. C22(a) deleted
-/// the GUI's own copy in `state/job.rs`, which was written the other way
-/// round (`min_x.min(pt.x)` against `if pt.x < min_x`) but gave the same
-/// answer. The copy existed only because this one was `pub(crate)`.
-pub fn polygons_bbox(polygons: &[Polygon2]) -> Option<BoundingBox3> {
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-    for poly in polygons {
-        for pt in poly
-            .exterior
-            .iter()
-            .chain(poly.holes.iter().flat_map(|h| h.iter()))
-        {
-            if pt.x < min_x {
-                min_x = pt.x;
-            }
-            if pt.y < min_y {
-                min_y = pt.y;
-            }
-            if pt.x > max_x {
-                max_x = pt.x;
-            }
-            if pt.y > max_y {
-                max_y = pt.y;
-            }
-        }
-    }
-    if !min_x.is_finite() {
-        return None;
-    }
-    Some(BoundingBox3 {
-        min: P3::new(min_x, min_y, 0.0),
-        max: P3::new(max_x, max_y, 0.0),
-    })
 }
 
 #[cfg(test)]

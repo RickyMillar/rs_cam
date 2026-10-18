@@ -133,8 +133,7 @@ units = {{ kind = "{}" }}
         .expect("the fixture project must load");
     let model = session.models().first().expect("one model");
     let polys = model
-        .polygons
-        .as_ref()
+        .outlines_pre_selection()
         .expect("a 2D model must carry polygons")
         .as_ref()
         .clone();
@@ -154,7 +153,8 @@ fn both_load_paths_return_geometry() {
         assert!(path.exists(), "fixture missing: {}", path.display());
         let direct = load_model_file(&path, 0, kind, ModelUnits::Millimeters)
             .expect("interactive import must succeed");
-        let direct_polys = direct.polygons.as_ref().expect("polygons").as_ref();
+        let direct_outlines = direct.outlines_pre_selection().expect("polygons");
+        let direct_polys = direct_outlines.as_ref();
         assert!(
             !direct_polys.is_empty(),
             "{} produced no polygons through the import door",
@@ -180,7 +180,8 @@ fn the_two_load_paths_agree_on_scale() {
         for units in [ModelUnits::Millimeters, ModelUnits::Inches] {
             let direct =
                 load_model_file(&path, 0, kind, units).expect("interactive import must succeed");
-            let direct_polys = direct.polygons.as_ref().expect("polygons").as_ref();
+            let direct_outlines = direct.outlines_pre_selection().expect("polygons");
+            let direct_polys = direct_outlines.as_ref();
             let loaded = via_project_file(&path, kind, units);
 
             let (dw, dh) = extent(direct_polys);
@@ -210,8 +211,8 @@ fn the_units_dial_actually_scales() {
     let path = dxf_fixture();
     let mm = load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters).expect("mm load");
     let inch = load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Inches).expect("inch load");
-    let (mw, _) = extent(mm.polygons.as_ref().expect("polygons"));
-    let (iw, _) = extent(inch.polygons.as_ref().expect("polygons"));
+    let (mw, _) = extent(&mm.outlines_pre_selection().expect("polygons"));
+    let (iw, _) = extent(&inch.outlines_pre_selection().expect("polygons"));
     assert!(
         (iw / mw - 25.4).abs() < 1e-6,
         "Inches must scale by 25.4, got {:.6} ({mw:.4} -> {iw:.4})",

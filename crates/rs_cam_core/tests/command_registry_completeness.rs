@@ -259,9 +259,7 @@ fn empty_model(name: &str) -> LoadedModel {
         id: 0, // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
-        polygons: None,
-        drill_targets: std::sync::Arc::new(Vec::new()),
-        layers: std::sync::Arc::new(Vec::new()),
+        items: Default::default(),
         path: std::path::PathBuf::from(name),
         kind: None,
         units: None,

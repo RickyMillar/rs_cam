@@ -75,11 +75,13 @@ fn star_model() -> LoadedModel {
     let model = load_model_file(&path, 0, ModelKind::Svg, ModelUnits::Millimeters)
         .expect("demo_star.svg imports");
     assert!(
-        model.drill_targets.is_empty(),
+        model.drill_targets_pre_selection().is_empty(),
         "fixture is vacuous: the star SVG exposes drill targets"
     );
     assert!(
-        model.polygons.as_deref().is_some_and(|p| !p.is_empty()),
+        model
+            .outlines_pre_selection()
+            .is_some_and(|p| !p.is_empty()),
         "fixture is vacuous: the star SVG has no closed polygon"
     );
     model
@@ -95,17 +97,22 @@ fn pocket_model() -> LoadedModel {
         .expect("demo_pocket.svg imports")
 }
 
-/// The same star polygon, plus ONE circle-centre target — what a DXF with an
-/// outline and one `CIRCLE` entity imports to.
+/// The same star polygon, plus ONE circle — what a DXF with an outline and
+/// one `CIRCLE` entity imports to (P2.1: the circle is one item).
 fn star_with_one_circle() -> LoadedModel {
     let mut model = star_model();
-    model.drill_targets = Arc::new(vec![DrillTarget {
+    let target = DrillTarget {
         x: CIRCLE_CENTRE[0],
         y: CIRCLE_CENTRE[1],
         layer: "holes".to_owned(),
         kind: DrillTargetKind::CircleCenter { diameter: 6.0 },
-    }]);
-    model.layers = Arc::new(vec!["holes".to_owned()]);
+    };
+    let outlines = model.outlines_pre_selection().unwrap_or_default();
+    model.items = Arc::new(common::session::drawing_items(
+        outlines.as_ref().clone(),
+        &[target],
+    ));
+    model.kind = Some(ModelKind::Dxf);
     model
 }
 
@@ -208,10 +215,10 @@ fn a_drawing_with_no_targets_refuses_instead_of_drilling_the_centroid() {
 fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
     let model = pocket_model();
     assert_eq!(
-        model.drill_targets.len(),
+        model.drill_targets_pre_selection().len(),
         1,
         "the pocket SVG exposes exactly its circle: {:?}",
-        model.drill_targets
+        model.drill_targets_pre_selection()
     );
     let mut session = session_with(model, drill_op(None));
     let cols = drilled_columns(&mut session, 0);

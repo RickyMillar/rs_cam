@@ -99,7 +99,7 @@ fn height_field(heights: &mut HeightsConfig, idx: usize) -> &mut HeightMode {
 /// `ctx.model_bottom_z`, and drew nothing at all when either was `None`.
 /// Both branches were wrong on the wanaka project, and in different ways.
 ///
-/// **A 2D model carries no Z.** `rs_cam_core::session::polygons_bbox`
+/// **A 2D model carries no Z.** `rs_cam_core::session::LoadedModel::bbox`
 /// reports an SVG or DXF bbox at
 /// `z = 0.0 ..= 0.0`, so an operation bound to a drawing got a model
 /// rectangle of ZERO height. epaint collapses such a rectangle to a

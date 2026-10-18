@@ -540,11 +540,9 @@ mod tests {
             name: "2D".to_owned(),
             kind: Some(ModelKind::Svg),
             mesh: None,
-            polygons: Some(Arc::new(vec![Polygon2::rectangle(
-                -10.0, -10.0, 10.0, 10.0,
-            )])),
-            drill_targets: std::sync::Arc::new(Vec::new()),
-            layers: std::sync::Arc::new(Vec::new()),
+            items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+                Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0),
+            ])),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
@@ -559,9 +557,7 @@ mod tests {
             name: "3D".to_owned(),
             kind: Some(ModelKind::Stl),
             mesh: Some(Arc::new(make_test_flat(20.0))),
-            polygons: None,
-            drill_targets: std::sync::Arc::new(Vec::new()),
-            layers: std::sync::Arc::new(Vec::new()),
+            items: Default::default(),
             enriched_mesh: None,
             units: Some(ModelUnits::Millimeters),
             winding_report: None,
@@ -632,13 +628,18 @@ mod tests {
     /// A drawing with one circle-centre target — what a DXF with a `CIRCLE`
     /// entity imports to.
     fn session_target_model(id: usize) -> rs_cam_core::session::LoadedModel {
+        use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
         let mut model = session_polygon_model(id);
-        model.drill_targets = Arc::new(vec![rs_cam_core::io::dxf_input::DrillTarget {
-            x: 0.0,
-            y: 0.0,
-            layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
-        }]);
+        let mut items: Vec<Item> = model.items.iter().cloned().collect();
+        items.push(
+            Item::new(
+                SourceRef::ToolpathModel,
+                Some("holes".into()),
+                Shape::circle(rs_cam_core::geo::P2::new(0.0, 0.0), 6.0),
+            )
+            .unwrap(),
+        );
+        model.items = Arc::new(ItemSet::new(items));
         model
     }
 

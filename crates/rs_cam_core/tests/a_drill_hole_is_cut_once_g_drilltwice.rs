@@ -72,9 +72,7 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::geo::P2;
 use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
-use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -104,26 +102,12 @@ fn stock() -> StockConfig {
     }
 }
 
-/// A 32-gon for one DXF circle, as `circle_to_points` would tessellate it.
-fn circle(centre: [f64; 2]) -> Polygon2 {
-    let r = HOLE_DIAMETER * 0.5;
-    let pts = (0..32)
-        .map(|k| {
-            let a = std::f64::consts::TAU * f64::from(k) / 32.0;
-            P2::new(centre[0] + r * a.cos(), centre[1] + r * a.sin())
-        })
-        .collect();
-    let mut poly = Polygon2::new(pts);
-    poly.ensure_winding();
-    poly
-}
-
 /// The DXF model: `rings` closed circles on each hole centre, and one
 /// `DrillTarget` per circle, in entity order, as `dxf_input` gives them.
 /// `rings = 2` is a counterbore drawn as two rings, or an entity the CAD
 /// export wrote twice.
 fn dxf_model(rings: usize) -> LoadedModel {
-    let targets = HOLES
+    let targets: Vec<DrillTarget> = HOLES
         .iter()
         .flat_map(|&[x, y]| {
             (0..rings).map(move |_| DrillTarget {
@@ -140,9 +124,8 @@ fn dxf_model(rings: usize) -> LoadedModel {
         id: 0,
         name: "holes".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(HOLES.iter().map(|&c| circle(c)).collect())),
-        drill_targets: Arc::new(targets),
-        layers: Arc::new(vec!["0".to_owned()]),
+        // P2.1: each CIRCLE entity is one item, ring and hole in one.
+        items: Arc::new(common::session::drawing_items(Vec::new(), &targets)),
         path: PathBuf::from("synthetic://holes.dxf"),
         kind: None,
         units: None,

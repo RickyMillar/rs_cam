@@ -51,10 +51,10 @@ use rs_cam_core::export::fingerprint::ToolpathFingerprint;
 use rs_cam_core::gcode::post::{Decimals, grbl, grblhal, linuxcnc, mach3};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::ids::ModelId;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs,
     SimulationOptions, SimulationResolution, ToolpathConfig,
@@ -173,17 +173,21 @@ pub fn outline_model() -> LoadedModel {
         )],
         "opgolden_outline",
     );
-    model.drill_targets = Arc::new(
-        DRILL_TARGETS
-            .iter()
-            .map(|&[x, y]| DrillTarget {
-                x,
-                y,
-                layer: "holes".to_owned(),
-                kind: DrillTargetKind::Point,
-            })
-            .collect(),
-    );
+    // The drill targets are POINT items on layer `holes`, after the outline.
+    let items: Vec<Item> = model
+        .items
+        .iter()
+        .cloned()
+        .chain(DRILL_TARGETS.iter().map(|&[x, y]| {
+            Item::new(
+                SourceRef::ToolpathModel,
+                Some("holes".into()),
+                Shape::Point(P2::new(x, y)),
+            )
+            .expect("a point is an item")
+        }))
+        .collect();
+    model.items = Arc::new(ItemSet::new(items));
     model
 }
 
@@ -284,23 +288,41 @@ fn mirror_xy(p: P2) -> P2 {
 /// The mirrored copy of a model for [`Frame::Flipped`]. `stock` gives the
 /// height and the Z origin of the mesh mirror.
 fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
-    if let Some(polys) = &model.polygons {
-        let mirrored: Vec<Polygon2> = polys
-            .iter()
-            .map(|poly| {
-                let mut m = Polygon2::with_holes(
-                    poly.exterior.iter().map(|p| mirror_xy(*p)).collect(),
-                    poly.holes
-                        .iter()
-                        .map(|h| h.iter().map(|p| mirror_xy(*p)).collect())
-                        .collect(),
-                );
-                m.closed = poly.closed;
-                m
-            })
-            .collect();
-        model.polygons = Some(Arc::new(mirrored));
-    }
+    let mirror_poly = |poly: &Polygon2| {
+        let mut m = Polygon2::with_holes(
+            poly.exterior.iter().map(|p| mirror_xy(*p)).collect(),
+            poly.holes
+                .iter()
+                .map(|h| h.iter().map(|p| mirror_xy(*p)).collect())
+                .collect(),
+        );
+        m.closed = poly.closed;
+        m
+    };
+    let mirrored: Vec<Item> = model
+        .items
+        .iter()
+        .map(|item| {
+            let shape = match item.shape() {
+                Shape::Loop(p) => Shape::Loop(mirror_poly(p)),
+                Shape::Path(p) => Shape::Path(mirror_poly(p)),
+                Shape::Point(p) => Shape::Point(mirror_xy(*p)),
+                Shape::Circle {
+                    centre,
+                    diameter,
+                    ring,
+                } => Shape::Circle {
+                    centre: mirror_xy(*centre),
+                    diameter: *diameter,
+                    ring: mirror_poly(ring),
+                },
+                Shape::Face(_) => panic!("the flat fixtures hold no face"),
+            };
+            Item::new(item.source(), item.layer().map(Into::into), shape)
+                .expect("a mirrored item keeps its invariants")
+        })
+        .collect();
+    model.items = Arc::new(ItemSet::new(mirrored));
     if let Some(mesh) = &model.mesh {
         // Two reflections (Y and Z): the determinant is +1, so the
         // triangle winding keeps its sense.
@@ -315,16 +337,6 @@ fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
             mesh.triangles.clone(),
         )));
     }
-    model.drill_targets = Arc::new(
-        model
-            .drill_targets
-            .iter()
-            .map(|t| DrillTarget {
-                y: -t.y,
-                ..t.clone()
-            })
-            .collect(),
-    );
     model
 }
 

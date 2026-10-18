@@ -136,9 +136,9 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
         id: 0,
         name: "demo_pocket".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![rect_with_island()])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            rect_with_island(),
+        ])),
         path: PathBuf::from("synthetic://demo_pocket.svg"),
         kind: None,
         units: None,

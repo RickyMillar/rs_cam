@@ -144,11 +144,24 @@ fn fresh(path: &Path, units: ModelUnits) -> LoadedModel {
     load_model_file(path, 0, ModelKind::Svg, units).expect("the interactive door must import")
 }
 
+/// The distinct layers of the model's drill targets, sorted: the layer
+/// list the drill picker shows.
+fn target_layers(model: &LoadedModel) -> Vec<String> {
+    let mut layers: Vec<String> = model
+        .drill_targets_pre_selection()
+        .into_iter()
+        .map(|t| t.layer)
+        .collect();
+    layers.sort();
+    layers.dedup();
+    layers
+}
+
 /// A comparable description of one target. `DrillTarget` derives neither
 /// `PartialEq` nor `Eq`, so the fields are named here rather than derived.
 fn describe(model: &LoadedModel) -> Vec<(f64, f64, String, String)> {
     model
-        .drill_targets
+        .drill_targets_pre_selection()
         .iter()
         .map(|t| {
             (
@@ -218,32 +231,32 @@ fn the_three_fixture_drawings_report_the_targets_this_file_assumes() {
     let fc = fresh(&c, ModelUnits::Millimeters);
 
     assert_eq!(
-        fa.drill_targets.len(),
+        fa.drill_targets_pre_selection().len(),
         1,
         "drawing A must carry exactly one drill target, got {:?}",
         describe(&fa)
     );
     assert_eq!(
-        fb.drill_targets.len(),
+        fb.drill_targets_pre_selection().len(),
         1,
         "drawing B must carry exactly one drill target, got {:?}",
         describe(&fb)
     );
     assert!(
-        fc.drill_targets.is_empty(),
+        fc.drill_targets_pre_selection().is_empty(),
         "drawing C has no circle, so it must carry no drill target, got {:?}",
         describe(&fc)
     );
     assert!(
-        (fa.drill_targets[0].x - fb.drill_targets[0].x).abs() > 1.0,
+        (fa.drill_targets_pre_selection()[0].x - fb.drill_targets_pre_selection()[0].x).abs() > 1.0,
         "the hole must MOVE between A and B, else the reload test is vacuous"
     );
     assert!(
-        !fa.layers.is_empty(),
+        !target_layers(&fa).is_empty(),
         "a drawing with a target must name the layer it is on"
     );
     assert!(
-        fc.layers.is_empty(),
+        target_layers(&fc).is_empty(),
         "a drawing with no target must name no layer"
     );
 
@@ -299,16 +312,16 @@ fn a_reloaded_drawing_that_lost_its_holes_carries_no_targets() {
     let stored = record(&controller, id);
 
     assert!(
-        stored.drill_targets.is_empty(),
+        stored.drill_targets_pre_selection().is_empty(),
         "the drawing no longer has a circle, so the record must carry no \
          drill target — it carries {:?}",
         describe(stored)
     );
     assert!(
-        stored.layers.is_empty(),
+        target_layers(stored).is_empty(),
         "and no layer, because the layer list is derived from the targets — \
          it carries {:?}",
-        stored.layers
+        target_layers(stored)
     );
 
     let _ = std::fs::remove_dir_all(&dir);

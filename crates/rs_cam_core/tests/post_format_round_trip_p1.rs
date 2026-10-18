@@ -49,7 +49,6 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -143,9 +142,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         id: 0,
         name: "rect".to_owned(),
         mesh: None,
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Default::default(),
         path: model_path,
         kind: Some(ModelKind::Svg),
         units: Some(ModelUnits::Millimeters),

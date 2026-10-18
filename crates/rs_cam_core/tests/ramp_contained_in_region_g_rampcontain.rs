@@ -132,9 +132,9 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         id: 0,
         name: "demo_pocket".to_owned(),
         mesh: None,
-        polygons: Some(Arc::new(vec![demo_pocket_polygon()])),
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+            demo_pocket_polygon(),
+        ])),
         path: PathBuf::from("synthetic://demo_pocket.svg"),
         kind: None,
         units: None,

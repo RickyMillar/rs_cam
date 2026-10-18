@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use crate::compute::stock_config::{ModelKind, ModelUnits};
 use crate::mesh::TriangleMesh;
+use crate::selection::ItemSet;
 use crate::session::{LoadedGeometry, LoadedModel, SessionError};
 
 /// The largest file any import door reads, in bytes.
@@ -83,28 +84,22 @@ pub(crate) fn load_geometry(
             Ok(LoadedGeometry::Mesh(mesh))
         }
         ModelKind::Svg => {
-            let mut polygons = crate::io::svg_input::load_svg(path, 0.1)
+            // P2.1: the door scales before it classifies circle-like rings,
+            // so the circle floor is in mm (G-DRILLCENTROID).
+            let items = crate::io::svg_input::load_svg(path, 0.1, scale)
                 .map_err(|e| format!("SVG load failed: {e}"))?;
-            apply_uniform_scale_2d(&mut polygons, scale);
-            // G-DRILLCENTROID: circle-like closed rings are the SVG's drill
-            // targets (usvg has already flattened every `<circle>`).
-            // Classified AFTER the unit scale so the floor is in mm.
-            let drill_targets = crate::io::svg_input::circle_like_drill_targets(&polygons);
-            let layers = crate::io::svg_input::circle_like_layers(&drill_targets);
-            Ok(LoadedGeometry::Polygons(polygons, drill_targets, layers))
+            Ok(LoadedGeometry::Drawing(items))
         }
         ModelKind::Dxf => {
-            let import = crate::io::dxf_input::load_dxf_full(path, 5.0)
+            // Two scales, in this order: `$INSUNITS` inside the door, then
+            // the declared units here.
+            let import = crate::io::dxf_input::load_dxf(path, 5.0)
                 .map_err(|e| format!("DXF load failed: {e}"))?;
-            let mut polygons = import.polygons;
-            let mut drill_targets = import.drill_targets;
-            apply_uniform_scale_2d(&mut polygons, scale);
-            apply_uniform_scale_targets(&mut drill_targets, scale);
-            Ok(LoadedGeometry::Polygons(
-                polygons,
-                drill_targets,
-                import.layers,
-            ))
+            let items = import
+                .items
+                .scaled(scale)
+                .map_err(|e| format!("DXF load failed: {e}"))?;
+            Ok(LoadedGeometry::Drawing(items))
         }
         #[cfg(feature = "step")]
         ModelKind::Step => {
@@ -183,9 +178,7 @@ pub(crate) fn model_from_geometry(
         id,
         name,
         mesh: None,
-        polygons: None,
-        drill_targets: Arc::new(Vec::new()),
-        layers: Arc::new(Vec::new()),
+        items: Arc::new(ItemSet::default()),
         path: path.to_path_buf(),
         kind,
         units,
@@ -199,17 +192,81 @@ pub(crate) fn model_from_geometry(
             model.winding_report = Some(winding.inconsistency_fraction * 100.0);
             model.mesh = Some(Arc::new(mesh));
         }
-        LoadedGeometry::Polygons(polygons, drill_targets, layers) => {
-            model.polygons = Some(Arc::new(polygons));
-            model.drill_targets = Arc::new(drill_targets);
-            model.layers = Arc::new(layers);
+        LoadedGeometry::Drawing(items) => {
+            model.items = Arc::new(items);
         }
         LoadedGeometry::Enriched(enriched) => {
+            model.items = Arc::new(brep_face_items(&enriched));
             model.mesh = Some(Arc::clone(&enriched.mesh));
             model.enriched_mesh = Some(Arc::new(enriched));
         }
     }
+    model.bind_items();
     model
+}
+
+/// The STEP source (P2.1): one `Face` item for each planar BREP face that
+/// has 2D loops (the faces within the `|normal.z| >= 0.95` gate of
+/// `enriched_mesh::compute_2d_boundary`), in face order.
+///
+/// - The rings are the face's own loops: the outer loop first, then each
+///   inner loop of 3 or more points (as `face_boundary_as_polygon`).
+/// - The normal is SIGNED. It is the area-weighted normal of the face's
+///   triangles, so an up face points to +Z and a down face to -Z. The
+///   plane normal of `SurfaceParams` is not used: the STEP door sets its
+///   sign from the sign of the plane Z, not from the face.
+/// - `plane_z` is the top of the face (`bbox.max.z`), the Z that the face
+///   pick reads today.
+///
+/// A face whose triangles have no area gives no item: it has no normal and
+/// nothing to cut.
+pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) -> ItemSet {
+    use crate::selection::{FaceItem, Item, Shape, SourceRef};
+    let mesh = &enriched.mesh;
+    let mut items = Vec::new();
+    for group in &enriched.face_groups {
+        let Some(loops) = group.boundary_loops_2d.as_ref() else {
+            continue;
+        };
+        let Some((outer, inner)) = loops.split_first() else {
+            continue;
+        };
+        if outer.len() < 3 {
+            continue;
+        }
+        let mut sum = crate::geo::V3::zeros();
+        for tri in mesh
+            .triangles
+            .get(group.triangle_range.clone())
+            .unwrap_or(&[])
+        {
+            let corner = |k: usize| {
+                tri.get(k)
+                    .and_then(|&v| mesh.vertices.get(v as usize))
+                    .copied()
+            };
+            if let (Some(a), Some(b), Some(c)) = (corner(0), corner(1), corner(2)) {
+                sum += (b - a).cross(&(c - a));
+            }
+        }
+        let norm = sum.norm();
+        if !(norm > 0.0 && norm.is_finite()) {
+            continue;
+        }
+        let holes: Vec<Vec<crate::geo::P2>> =
+            inner.iter().filter(|h| h.len() >= 3).cloned().collect();
+        let face = FaceItem {
+            rings: crate::polygon::Polygon2::with_holes(outer.clone(), holes),
+            plane_z: group.bbox.max.z,
+            normal: sum / norm,
+            brep: Some(group.id),
+        };
+        // The checks above meet every face invariant.
+        if let Ok(item) = Item::new(SourceRef::ToolpathModel, None, Shape::Face(face)) {
+            items.push(item);
+        }
+    }
+    ItemSet::new(items)
 }
 
 /// THE table of model file extensions, in lower case, with the kind each
@@ -247,42 +304,6 @@ pub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {
         .iter()
         .find(|(key, _)| *key == ext)
         .map(|(_, kind)| *kind)
-}
-
-pub(crate) fn apply_uniform_scale_2d(polygons: &mut [crate::polygon::Polygon2], scale: f64) {
-    if (scale - 1.0).abs() < 1e-9 {
-        return;
-    }
-    for poly in polygons {
-        for pt in &mut poly.exterior {
-            pt.x *= scale;
-            pt.y *= scale;
-        }
-        for hole in &mut poly.holes {
-            for pt in hole {
-                pt.x *= scale;
-                pt.y *= scale;
-            }
-        }
-        // `exterior` moved — see the mutation contract on `Polygon2`.
-        poly.invalidate_bbox();
-    }
-}
-
-pub(crate) fn apply_uniform_scale_targets(
-    targets: &mut [crate::io::dxf_input::DrillTarget],
-    scale: f64,
-) {
-    if (scale - 1.0).abs() < 1e-9 {
-        return;
-    }
-    for t in targets {
-        t.x *= scale;
-        t.y *= scale;
-        if let crate::io::dxf_input::DrillTargetKind::CircleCenter { diameter } = &mut t.kind {
-            *diameter *= scale;
-        }
-    }
 }
 
 #[cfg(test)]

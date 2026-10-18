@@ -50,10 +50,10 @@ impl ToolpathValidationContext {
                 .iter()
                 .map(|model| ValidationModel {
                     id: crate::state::job::ModelId(model.id),
-                    has_polygons: model.polygons.is_some(),
+                    has_polygons: model.items.has_drawing(),
                     has_mesh: model.mesh.is_some(),
                     has_enriched_mesh: model.enriched_mesh.is_some(),
-                    drill_target_count: model.drill_targets.len(),
+                    drill_target_count: model.drill_targets_pre_selection().len(),
                 })
                 .collect(),
         }

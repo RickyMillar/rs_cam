@@ -269,7 +269,8 @@ fn pick_drill_targets(
         .find(|tc| tc.id == toolpath_id)
         .map(|tc| tc.model_id)?;
     let model = session.models().iter().find(|m| m.id == model_id)?;
-    if model.drill_targets.is_empty() {
+    let targets = model.drill_targets_pre_selection();
+    if targets.is_empty() {
         return None;
     }
     let stock = session.stock_config();
@@ -277,7 +278,7 @@ fn pick_drill_targets(
 
     let mut best_dist = PICK_THRESHOLD_POINT;
     let mut best: Option<[f64; 2]> = None;
-    for t in model.drill_targets.iter() {
+    for t in targets.iter() {
         let world = [t.x as f32, t.y as f32, top_z];
         if let Some(screen) = ctx
             .camera

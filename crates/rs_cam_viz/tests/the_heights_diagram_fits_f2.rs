@@ -11,7 +11,7 @@
 //! Heights diagram shows the stock and nothing else. The legend still prints
 //! the word `Model`, which is the tell: `ctx.model_top_z` was `Some`, so the
 //! diagram DID have a profile and drew it. A 2D model carries no Z —
-//! `rs_cam_core::session::polygons_bbox` reports such a bbox at
+//! `rs_cam_core::session::LoadedModel::bbox` reports such a bbox at
 //! `z = 0.0 ..= 0.0` —
 //! so the model rectangle had ZERO height, and epaint collapses such a
 //! rectangle to a one-point line in the stroke colour
