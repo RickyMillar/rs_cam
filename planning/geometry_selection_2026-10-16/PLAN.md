@@ -242,12 +242,17 @@ D shape; G-OPGOLDEN re-blessed for Profile only, by name.
 
 ---
 
-## Rulings needed (operator)
+## Rulings (operator, 2026-10-19: "Do the most complete implementation or best architecture for each. I give you autonomy here.")
 
-- P0: approve `DESIGN.md`.
-- P1: Trace with an open path — cut on the line now, or refuse until P6?
-- P6: is "extend an open pocket path to the stock" wanted?
-- P7: which job types first?
+- P0: the lead approves `DESIGN.md` (autonomy). Choose the best
+  architecture, not the smallest change. Record the choices in this file.
+- P1: Trace cuts open paths on the line (most complete), in P1 if the
+  design allows, else in P6; every closed-only op refuses an open path.
+- P6: yes, "extend an open pocket path to the stock" is in scope.
+- P7: all four job types (sign, sheet parts, inlay, flatten).
+- Rulings that remain open go to the operator only when they change what
+  is machined in a way the plan does not cover; otherwise the lead decides
+  and records the reason here.
 
 ## Status
 
