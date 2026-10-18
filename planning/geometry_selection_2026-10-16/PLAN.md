@@ -296,13 +296,42 @@ The lead approves `DESIGN.md`. These rulings override it where they differ.
   bottom can cut deeper than the op depth, that changes what is machined,
   and the operator rules it. If it only limits the depth, the lead rules.
 
+## Lead rulings on P2.2 (2026-10-19)
+
+- **Signature changes accepted:** `Selection::apply(edit, op_default)`,
+  no `TogglePick` (the P2.6 command resolves, then sends `AddPick` or
+  `RemovePick`), `ResolveScope.setup`, fallible `to_setup_frame`,
+  `SelectionRefusal::for_op`, `Empty { skipped }`, `NoSuchRule`,
+  `Selection::from_rules`.
+- **Open paths keep the drawn direction (fix b).** `detect_containment`
+  stops reversing open paths. Reason: the signed area of an open path is
+  the area of its chord-closed ring, which has no meaning. The drawn
+  direction defines the P6 side (Left/Right, as Estlcam does) and the
+  start point. With this fix, the setup mirror no longer changes the
+  order, so the 14 Bottom-flip reversals close. Effect on cutting: only
+  the start and direction of an open Trace path, which P1 introduced
+  (no older project depends on it).
+- **Tie order on equal areas: accepted as known.** It changes the order
+  of equal-area loops only, never their geometry. A tolerance comparator
+  is not a strict weak order, so the lead does not take that risk. The
+  frozen list in the P2.2 sentry stays; a new entry is a regression.
+- **Notes:** a `SelectionNote` finding is recorded only for skipped
+  `Path` items (a likely drawing defect: an outline that is not closed).
+  Other skipped kinds (loops in a Drill, points in a Pocket) are expected.
+  They are counted in `SelectionStatus.skipped_by_kind` and give no
+  finding. `Empty` still names every skipped item.
+- **`UnknownLayer` refuses** (S21: a missing layer is named, never
+  ignored).
+- **Served admits no `Face`:** a STEP model under `drawing()` refuses
+  `Empty`, as today. A face selection is an explicit act.
+
 ## Status
 
 | Phase | State | Commits | Notes |
 |---|---|---|---|
 | P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
-| P2 selection core | P2.1 done; P2.2 running | 349b3a48 | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
+| P2 selection core | P2.1, P2.2 done; P2.3a running | 349b3a48, e041d244 | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | blocked on P2 | | |
 | P4 UI + sources | blocked on P2 | | |
 | P5 tabs | not started | | can follow P1 |
