@@ -27,8 +27,8 @@ module is reached through `compute::execute_operation_annotated`.
   (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.
-- `ops/trace_path.rs` is the follow-path OPERATION; `trace/` holds the
-  toolpath records. Do not confuse them.
+- `ops/trace_path.rs` is the follow-path OPERATION (`trace/` holds the records). P1: on
+  the line it cuts an open path with no chord, a 2-point line too; offset, closed loops only.
 - `inlay.rs` (R2): `Inlay` = pocket V walls only; `InlayPlug` = mirrored plug,
   own project, start depth `pocket_depth − glue_gap` (module doc derives it).
 

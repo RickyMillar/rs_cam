@@ -83,13 +83,22 @@ pub fn trace_compensated_polygons_reported(
 ///
 /// `z` is the only thing a depth-stepped caller varies, which is the whole of
 /// G2 for this family.
+///
+/// P1: an open path (`closed == false`) is cut on the line, from its first
+/// point to its last, with no chord back to the start. Only compensation
+/// `None` gets open paths: the prologue gives a `Left` or `Right` Trace the
+/// closed polygons only (`ItemUse::Regions`).
 #[must_use]
 pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) -> Toolpath {
     let mut tp = Toolpath::new();
     for poly in polygons {
-        trace_ring(&mut tp, &poly.exterior, z, params);
-        for hole in &poly.holes {
-            trace_ring(&mut tp, hole, z, params);
+        if poly.closed {
+            trace_ring(&mut tp, &poly.exterior, z, params);
+            for hole in &poly.holes {
+                trace_ring(&mut tp, hole, z, params);
+            }
+        } else {
+            trace_open_path(&mut tp, &poly.exterior, z, params);
         }
     }
     tp
@@ -99,11 +108,8 @@ pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) 
 ///
 /// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared
 /// `emit_closed_contour_with_intent` rapid→plunge→feed→close→retract
-/// envelope. Byte-identical for every ring this crate actually produces
-/// (closed polygon exterior/hole rings are always >= 3 points); a
-/// theoretical 1- or 2-point ring would previously emit a degenerate loop
-/// and now no-ops instead — accepted, since `Polygon2` rings below 3 points
-/// don't occur via the public API.
+/// envelope. A ring below 3 points is no closed shape, and the emitter
+/// skips it. An open path never comes here ([`trace_open_path`]).
 fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) {
     if ring.is_empty() {
         return;
@@ -112,6 +118,24 @@ fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) 
     let points: Vec<P3> = ring.iter().map(|p| P3::new(p.x, p.y, cut_z)).collect();
 
     tp.emit_closed_contour_with_intent(
+        &points,
+        params.safe_z,
+        params.feed_rate,
+        params.plunge_rate,
+        MoveIntent::FinishingCut,
+    );
+}
+
+/// Trace an open path at the given Z depth (P1): rapid over the first
+/// point, plunge, feed through the points to the last one, retract. No
+/// move goes back to the first point. A 2-point line is cut; a single
+/// point is no line, so it emits nothing.
+fn trace_open_path(tp: &mut Toolpath, path: &[P2], cut_z: f64, params: &TraceParams) {
+    if path.len() < 2 {
+        return;
+    }
+    let points: Vec<P3> = path.iter().map(|p| P3::new(p.x, p.y, cut_z)).collect();
+    tp.emit_path_segment_with_intent(
         &points,
         params.safe_z,
         params.feed_rate,

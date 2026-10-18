@@ -17,8 +17,8 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, LutRoute,
-    MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, ItemUse,
+    LutRoute, MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -47,7 +47,9 @@ pub enum GeometryRequirement {
     /// The stock only. No model geometry.
     Stock,
     /// A 2D drawing whose outlines the operation cuts. The generation
-    /// prologue refuses an absent or empty outline list.
+    /// prologue refuses an absent or empty outline list. The op's
+    /// `Capabilities::item_use` says which outlines it gets: a `Regions` op
+    /// gets the closed ones only, a `Curves` op every one (P1).
     Polygons,
     /// A 2D drawing whose drill targets (DXF points, circle and arc
     /// centres) the operation reads, not its outlines (W2.2). A drawing of
@@ -821,6 +823,17 @@ impl OperationConfig {
                 ),
                 ..row
             },
+            // P1: the compensation decides how Trace cuts its items. On
+            // the line it follows a closed or an open path; an offset to
+            // one side needs a closed loop (the open-offset kernel is P6).
+            OperationConfig::Trace(c) => Capabilities {
+                item_use: match c.compensation {
+                    crate::ops::trace_path::TraceCompensation::None => ItemUse::Curves,
+                    crate::ops::trace_path::TraceCompensation::Left
+                    | crate::ops::trace_path::TraceCompensation::Right => ItemUse::Regions,
+                },
+                ..row
+            },
             // No field of these configs changes a capability beyond the
             // entry probe, which `entry_probe` resolved above.
             OperationConfig::Pencil(_)
@@ -833,7 +846,6 @@ impl OperationConfig {
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
-            | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::ProjectCurve(_)

@@ -1,4 +1,4 @@
-//! SVG file input — extracts closed paths as Polygon2.
+//! SVG file input — extracts closed and open paths as Polygon2.
 //!
 //! Uses usvg to parse and simplify SVG into basic path segments,
 //! then flattens bezier curves to polylines within a configurable tolerance.
@@ -33,10 +33,12 @@ pub enum SvgError {
     FileTooLarge { size_mb: u64, limit_mb: u64 },
 }
 
-/// Load closed polygon paths from an SVG file.
+/// Load the paths of an SVG file as polygons.
 ///
 /// Bezier curves are flattened to line segments with the given tolerance (mm).
-/// Only closed subpaths are returned. Open paths are ignored.
+/// A closed subpath is a closed polygon. An open subpath of two or more
+/// points is an open path (P1): no chord joins its ends, and the op decides
+/// if it can cut it.
 pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
     if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
         return Err(SvgError::FileTooLarge {
@@ -48,7 +50,7 @@ pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> 
     load_svg_data(&data, tolerance)
 }
 
-/// Load closed polygon paths from SVG data bytes.
+/// Load the closed and open paths of SVG data bytes ([`load_svg`]).
 ///
 /// Coordinates are in usvg user-space units (CSS pixels at 96 DPI).
 pub fn load_svg_data(data: &[u8], tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
@@ -89,8 +91,9 @@ fn extract_polygons_from_path(
     for seg in path_data.segments() {
         match seg {
             PathSegment::MoveTo(pt) => {
-                // Start new subpath (discard unclosed previous)
-                current_subpath.clear();
+                // Start a new subpath. An unclosed previous one is an open
+                // path (P1).
+                emit_open_subpath(&mut current_subpath, out);
                 let p = P2::new(pt.x as f64, pt.y as f64);
                 current_subpath.push(p);
                 subpath_start = p;
@@ -141,6 +144,18 @@ fn extract_polygons_from_path(
                 last = subpath_start;
             }
         }
+    }
+    // The last subpath, when the path data ends without a close.
+    emit_open_subpath(&mut current_subpath, out);
+}
+
+/// P1: push an unclosed subpath of two or more points as an open path, then
+/// clear it. Before P1 the import dropped it in silence.
+fn emit_open_subpath(subpath: &mut Vec<P2>, out: &mut Vec<Polygon2>) {
+    if subpath.len() >= 2 {
+        out.push(Polygon2::open_path(std::mem::take(subpath)));
+    } else {
+        subpath.clear();
     }
 }
 
@@ -249,6 +264,8 @@ pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
 pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_input::DrillTarget> {
     polygons
         .iter()
+        // An open arc is not a hole, however round it is (P1).
+        .filter(|poly| poly.closed)
         .flat_map(|poly| {
             std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
         })
@@ -368,14 +385,45 @@ mod tests {
         assert!(polys.is_empty());
     }
 
+    /// P1 sentry (f): an open SVG subpath is kept as an open path, with no
+    /// chord. This holds for the last subpath of the data, for a subpath
+    /// that a later `M` ends, and for a 2-point line.
     #[test]
-    fn test_open_path_ignored() {
-        // An open path (no Z/close) should be ignored
+    fn an_open_svg_subpath_is_kept_open_p1() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
             <path d="M 10 10 L 90 10 L 90 90"/>
         </svg>"#;
         let polys = load_svg_data(svg, 0.1).unwrap();
-        assert!(polys.is_empty(), "Open path should not produce a polygon");
+        assert_eq!(polys.len(), 1, "the open path is kept");
+        assert!(!polys[0].closed);
+        assert_eq!(polys[0].exterior.len(), 3, "no closing point is added");
+
+        // An open subpath, then a closed square, then a 2-point line.
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+            <path d="M 0 0 L 5 5 L 9 0 M 20 20 L 40 20 L 40 40 L 20 40 Z M 60 60 L 80 60"/>
+        </svg>"#;
+        let polys = load_svg_data(svg, 0.1).unwrap();
+        let open: Vec<&Polygon2> = polys.iter().filter(|p| !p.closed).collect();
+        let closed: Vec<&Polygon2> = polys.iter().filter(|p| p.closed).collect();
+        assert_eq!(closed.len(), 1, "the square");
+        assert_eq!(open.len(), 2, "the open subpath and the line");
+        assert!(open.iter().any(|p| p.exterior.len() == 3));
+        assert!(open.iter().any(|p| p.exterior.len() == 2));
+        // An open path is never a drill target, round or not.
+        assert!(circle_like_drill_targets(&polys).is_empty());
+    }
+
+    /// P1: a round open arc is not a circle-like drill target.
+    #[test]
+    fn an_open_round_arc_is_no_drill_target_p1() {
+        let ring: Vec<P2> = (0..=16)
+            .map(|i| {
+                let t = std::f64::consts::PI * 1.9 * f64::from(i) / 16.0;
+                P2::new(10.0 * t.cos(), 10.0 * t.sin())
+            })
+            .collect();
+        assert!(circle_like_ring(&ring).is_some(), "the ring is round");
+        assert!(circle_like_drill_targets(&[Polygon2::open_path(ring)]).is_empty());
     }
 
     #[test]

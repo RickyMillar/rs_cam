@@ -149,6 +149,10 @@ pub struct GenerationFindings {
     /// `None` = not measured, or not deeper. Written by `run_curve`. See
     /// [`crate::compute::toolpath_stats::BuriedCurveFinding`].
     pub buried_curve: Option<crate::compute::toolpath_stats::BuriedCurveFinding>,
+    /// P1: the open paths a closed-region op left out. `None` = nothing
+    /// was left out. Written by the prologue. See
+    /// [`crate::compute::toolpath_stats::SelectionNoteFinding`].
+    pub selection_note: Option<crate::compute::toolpath_stats::SelectionNoteFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
     /// calls came back with a [`crate::polygon::OffsetFailure`].
     ///

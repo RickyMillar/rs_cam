@@ -4,8 +4,10 @@
 //! - **LwPolyline** — closed lightweight polylines (with optional bulge arcs)
 //! - **Polyline** — closed legacy polylines (with optional bulge arcs)
 //! - **Circle** — tessellated to a closed polygon
-//! - **Ellipse** — tessellated to a closed polygon (full or partial)
-//! - **Arc** — full-circle arcs become circles; partial arcs are chord-closed
+//! - **Ellipse** — a full ellipse is a closed polygon; a partial ellipse is an
+//!   open path (P1: no chord joins its ends)
+//! - **Arc** — full-circle arcs become circles; a partial arc is an open path
+//!   (P1: no chord joins its ends)
 //! - **Line** — individual 2-point segments are chain-linked by shared endpoints;
 //!   closed chains become closed polygons, open chains become open-path polygons
 //!   (useful for trace/engraving toolpaths)
@@ -239,11 +241,15 @@ fn extract_polygons_flat(
                 });
             }
             dxf::entities::EntityType::Ellipse(ell) => {
-                let pts = ellipse_to_points(ell, arc_step_rad);
-                if pts.len() >= 3 {
+                // P1: a partial ellipse is an open path. A chord from end to
+                // start would cut a line that the drawing does not hold.
+                let (pts, closed) = ellipse_to_points(ell, arc_step_rad);
+                if closed && pts.len() >= 3 {
                     let mut poly = Polygon2::new(pts);
                     poly.ensure_winding();
                     polygons.push(poly);
+                } else if !closed && pts.len() >= 2 {
+                    polygons.push(Polygon2::open_path(pts));
                 }
             }
             dxf::entities::EntityType::Arc(arc) => {
@@ -259,10 +265,16 @@ fn extract_polygons_flat(
                     });
                 }
                 let pts = arc_entity_to_points(arc, arc_step_rad);
-                if pts.len() >= 3 {
-                    let mut poly = Polygon2::new(pts);
-                    poly.ensure_winding();
-                    polygons.push(poly);
+                if arc_is_full_circle(arc) {
+                    if pts.len() >= 3 {
+                        let mut poly = Polygon2::new(pts);
+                        poly.ensure_winding();
+                        polygons.push(poly);
+                    }
+                } else if pts.len() >= 2 {
+                    // P1: a partial arc is an open path. A chord from end to
+                    // start would cut a line that the drawing does not hold.
+                    polygons.push(Polygon2::open_path(pts));
                 }
             }
             dxf::entities::EntityType::Line(line) => {
@@ -422,12 +434,13 @@ fn circle_to_points(cx: f64, cy: f64, radius: f64, arc_step: f64) -> Vec<P2> {
         .collect()
 }
 
-/// Tessellate a DXF Arc entity into polygon points.
+/// Tessellate a DXF Arc entity into points.
 ///
 /// DXF Arc angles are in degrees, measured CCW from the +X axis.
-/// The resulting polygon is closed by connecting the arc endpoints with a chord,
-/// producing a "pie-slice" or "segment" shape that can be used as a closed region.
-/// A full-circle arc (start == end or sweep ~360) is treated like a Circle entity.
+/// A partial arc gives its points from the start angle to the end angle,
+/// both included. The caller imports them as an open path (P1): no chord
+/// joins the two ends. A full-circle arc (start == end or sweep ~360) gives
+/// the points of a Circle entity, which the caller imports as a closed ring.
 fn arc_entity_to_points(arc: &dxf::entities::Arc, arc_step: f64) -> Vec<P2> {
     let cx = arc.center.x;
     let cy = arc.center.y;
@@ -464,20 +477,30 @@ fn arc_entity_to_points(arc: &dxf::entities::Arc, arc_step: f64) -> Vec<P2> {
     pts
 }
 
-fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
+/// Tessellate a DXF Ellipse entity. The flag is `true` for a full ellipse
+/// (a closed ring) and `false` for a partial one (an open path from the
+/// start parameter to the end parameter, both included, P1).
+///
+/// DXF ellipse parameters run CCW, so a partial ellipse whose end parameter
+/// is below its start parameter wraps through 0.
+fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> (Vec<P2>, bool) {
     let cx = ell.center.x;
     let cy = ell.center.y;
     let major_x = ell.major_axis.x;
     let major_y = ell.major_axis.y;
     let ratio = ell.minor_axis_ratio;
 
-    // Full ellipse: start=0, end=2*pi
+    // Full ellipse: start=0, end=2*pi (or start == end).
     let start = ell.start_parameter;
     let end = ell.end_parameter;
-    let sweep = if (end - start).abs() < 1e-10 {
+    let raw = end - start;
+    let full = raw.abs() < 1e-10 || (raw.abs() - std::f64::consts::TAU).abs() < 1e-9;
+    let sweep = if full {
         std::f64::consts::TAU
+    } else if raw < 0.0 {
+        raw + std::f64::consts::TAU
     } else {
-        end - start
+        raw
     };
 
     let n = (sweep.abs() / arc_step).ceil() as usize;
@@ -490,7 +513,10 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
     let a = major_len; // semi-major
     let b = major_len * ratio; // semi-minor
 
-    (0..n)
+    // A full ring leaves out the end point (it is the start point); an open
+    // path keeps it.
+    let last = if full { n } else { n + 1 };
+    let pts = (0..last)
         .map(|i| {
             let t = start + sweep * i as f64 / n as f64;
             // Point on axis-aligned ellipse
@@ -501,7 +527,8 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> Vec<P2> {
             let y = cy + ex * major_angle.sin() + ey * major_angle.cos();
             P2::new(x, y)
         })
-        .collect()
+        .collect();
+    (pts, full)
 }
 
 // ---------------------------------------------------------------------------
@@ -987,52 +1014,77 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_arc_semicircle() {
-        // A 180-degree arc (semicircle) from 0 to 180 degrees
-        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 0.0, 180.0);
-        let polys = extract_polygons(&drawing, 5.0);
-        assert_eq!(polys.len(), 1, "Semicircle arc should produce 1 polygon");
-
-        // The polygon is the semicircle closed by a chord (diameter).
-        // Area of a semicircular segment = pi*r^2/2
-        let expected = std::f64::consts::PI * 10.0 * 10.0 / 2.0;
-        let area = polys[0].area();
-        assert!(
-            (area - expected).abs() < expected * 0.10,
-            "Semicircle area {} should be ~{} (within 10%)",
-            area,
-            expected
-        );
+    /// Every point of `poly` lies on the circle (`cx`, `cy`, `r`).
+    fn on_circle(poly: &Polygon2, cx: f64, cy: f64, r: f64) -> bool {
+        poly.exterior
+            .iter()
+            .all(|p| ((p.x - cx).hypot(p.y - cy) - r).abs() < 1e-9)
     }
 
+    /// P1 sentry (e): a partial DXF ARC imports as an OPEN path from its
+    /// start angle to its end angle. No chord joins the two ends.
     #[test]
-    fn test_arc_quarter_circle() {
-        // A 90-degree arc
-        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 0.0, 90.0);
-        let polys = extract_polygons(&drawing, 5.0);
-        assert_eq!(polys.len(), 1, "Quarter arc should produce 1 polygon");
-        assert!(
-            polys[0].exterior.len() >= 3,
-            "Quarter arc should have at least 3 points"
-        );
+    fn a_partial_dxf_arc_imports_open_p1() {
+        for (start, end, sweep_deg) in
+            [(0.0, 180.0, 180.0), (0.0, 90.0, 90.0), (270.0, 90.0, 180.0)]
+        {
+            let drawing = make_arc_drawing(0.0, 0.0, 10.0, start, end);
+            let polys = extract_polygons(&drawing, 5.0);
+            assert_eq!(polys.len(), 1, "arc {start}..{end}: one path");
+            let path = &polys[0];
+            assert!(!path.closed, "arc {start}..{end}: a partial arc is open");
+            assert!(path.holes.is_empty());
+            assert!(path.exterior.len() >= 3, "arc {start}..{end}: tessellated");
+            assert!(on_circle(path, 0.0, 0.0, 10.0), "arc {start}..{end}");
+            let first = path.exterior[0];
+            let last = *path.exterior.last().unwrap();
+            let at =
+                |deg: f64| P2::new(10.0 * deg.to_radians().cos(), 10.0 * deg.to_radians().sin());
+            assert!((first - at(start)).norm() < 1e-9, "starts at {start} deg");
+            assert!((last - at(end)).norm() < 1e-9, "ends at {end} deg");
+            // The open length is the tessellated arc length. A closing
+            // chord would add the distance from the last point to the first.
+            let open_len: f64 = path.exterior.windows(2).map(|w| (w[1] - w[0]).norm()).sum();
+            let arc_len = 10.0 * f64::to_radians(sweep_deg);
+            assert!(
+                open_len <= arc_len + 1e-9 && open_len > 0.98 * arc_len,
+                "arc {start}..{end}: open length {open_len} vs arc {arc_len}"
+            );
+        }
     }
 
+    /// P1: a partial DXF ELLIPSE imports as an open path too.
     #[test]
-    fn test_arc_wrap_around() {
-        // Arc from 270 to 90 degrees (wraps through 0)
-        let drawing = make_arc_drawing(0.0, 0.0, 10.0, 270.0, 90.0);
+    fn a_partial_dxf_ellipse_imports_open_p1() {
+        let mut drawing = dxf::Drawing::new();
+        let mut ell = dxf::entities::Ellipse {
+            center: dxf::Point::new(0.0, 0.0, 0.0),
+            major_axis: dxf::Vector::new(20.0, 0.0, 0.0),
+            minor_axis_ratio: 0.5,
+            start_parameter: 0.0,
+            end_parameter: std::f64::consts::PI,
+            ..Default::default()
+        };
+        drawing.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::Ellipse(ell.clone()),
+        ));
         let polys = extract_polygons(&drawing, 5.0);
-        assert_eq!(polys.len(), 1, "Wrap-around arc should produce 1 polygon");
-        // This is a 180-degree arc (270 -> 360 -> 90)
-        let expected = std::f64::consts::PI * 10.0 * 10.0 / 2.0;
-        let area = polys[0].area();
-        assert!(
-            (area - expected).abs() < expected * 0.10,
-            "Wrap-around arc area {} should be ~{} (within 10%)",
-            area,
-            expected
-        );
+        assert_eq!(polys.len(), 1);
+        assert!(!polys[0].closed, "a half ellipse is open");
+        let last = *polys[0].exterior.last().unwrap();
+        assert!((last - P2::new(-20.0, 0.0)).norm() < 1e-9, "ends at t = pi");
+
+        // A full ellipse stays a closed ring.
+        ell.end_parameter = std::f64::consts::TAU;
+        let mut full = dxf::Drawing::new();
+        full.add_entity(dxf::entities::Entity::new(
+            dxf::entities::EntityType::Ellipse(ell),
+        ));
+        let polys = extract_polygons(&full, 5.0);
+        assert_eq!(polys.len(), 1);
+        assert!(polys[0].closed, "a full ellipse is closed");
+        let expected = std::f64::consts::PI * 20.0 * 10.0;
+        assert!((polys[0].area() - expected).abs() < expected * 0.05);
     }
 
     #[test]

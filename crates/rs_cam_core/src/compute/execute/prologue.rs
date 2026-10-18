@@ -16,8 +16,17 @@
 //! W6.2: after the checks, the prologue resolves the op's [`Territory`]
 //! once. [`Prepared::territory`] gives it to the adapter. K1: the territory
 //! carries the setup's obstacles for every op; K3: it pre-clips them.
+//!
+//! P1 (geometry selection): the op's [`ItemUse`] decides which polygons it
+//! gets. A `Regions` op gets the closed polygons only; the prologue records
+//! a [`SelectionNoteFinding`] for the open paths it left out, and refuses
+//! when no closed polygon is left. No op closes an open path with a chord
+//! in silence.
 
-use crate::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
+use std::borrow::Cow;
+
+use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
+use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 
@@ -32,14 +41,15 @@ pub struct MeshInput<'a> {
 }
 
 /// The geometry the prologue checked, by the row's [`GeometryRequirement`].
-#[derive(Clone, Copy)]
+/// The polygons are the ones the op's [`ItemUse`] serves: borrowed when the
+/// op gets every polygon, owned when the prologue left open paths out.
 enum CheckedGeometry<'a> {
     /// `Stock` and `DrillTargets`: no model geometry to check.
     None,
-    Polygons(&'a [Polygon2]),
+    Polygons(Cow<'a, [Polygon2]>),
     Mesh(MeshInput<'a>),
     Both {
-        polygons: &'a [Polygon2],
+        polygons: Cow<'a, [Polygon2]>,
         mesh: MeshInput<'a>,
     },
 }
@@ -57,9 +67,10 @@ pub struct Prepared<'a> {
 }
 
 impl<'a> Prepared<'a> {
-    /// The outlines. Never empty.
-    pub fn polygons(&self) -> Result<&'a [Polygon2], OperationError> {
-        match self.geometry {
+    /// The outlines the op's [`ItemUse`] serves. Never empty. A `Regions`
+    /// op gets closed polygons only (P1).
+    pub fn polygons(&self) -> Result<&[Polygon2], OperationError> {
+        match &self.geometry {
             CheckedGeometry::Polygons(polygons) | CheckedGeometry::Both { polygons, .. } => {
                 Ok(polygons)
             }
@@ -69,8 +80,8 @@ impl<'a> Prepared<'a> {
 
     /// The mesh and its spatial index.
     pub fn mesh(&self) -> Result<MeshInput<'a>, OperationError> {
-        match self.geometry {
-            CheckedGeometry::Mesh(mesh) | CheckedGeometry::Both { mesh, .. } => Ok(mesh),
+        match &self.geometry {
+            CheckedGeometry::Mesh(mesh) | CheckedGeometry::Both { mesh, .. } => Ok(*mesh),
             CheckedGeometry::None | CheckedGeometry::Polygons(_) => Err(self.mismatch("a mesh")),
         }
     }
@@ -115,12 +126,15 @@ pub(super) fn check_inputs<'a>(
 ) -> Result<Prepared<'a>, OperationError> {
     let op_type = op.op_type();
     let name = op_type.name();
+    let item_use = op.capabilities().item_use;
     let geometry = match op_type.geometry_requirement() {
         GeometryRequirement::Stock | GeometryRequirement::DrillTargets => CheckedGeometry::None,
-        GeometryRequirement::Polygons => CheckedGeometry::Polygons(require_polygons(ctx, name)?),
+        GeometryRequirement::Polygons => {
+            CheckedGeometry::Polygons(require_polygons(ctx, op_type, item_use)?)
+        }
         GeometryRequirement::Mesh => CheckedGeometry::Mesh(require_mesh(ctx, name)?),
         GeometryRequirement::Both => CheckedGeometry::Both {
-            polygons: require_polygons(ctx, name)?,
+            polygons: require_polygons(ctx, op_type, item_use)?,
             mesh: require_mesh(ctx, name)?,
         },
     };
@@ -136,13 +150,44 @@ pub(super) fn check_inputs<'a>(
 
 /// CMP-13: the refusal names the operation. An empty list refuses as an
 /// absent one.
+///
+/// P1: the op's [`ItemUse`] picks the polygons it gets (the match has no
+/// wildcard, so a new use states its answer):
+///
+/// - `Curves`: every polygon, closed and open.
+/// - `Regions`: the closed polygons only. The open paths left out go into
+///   ONE [`SelectionNoteFinding`] through `ctx.record`. With no closed
+///   polygon left, the op refuses with the same facts and the fix.
+/// - `None` and `Holes`: no op reads polygons with these uses
+///   (`every_op_states_its_capabilities_w2_4` holds the pairing), so the
+///   text is the registry mismatch.
 fn require_polygons<'a>(
     ctx: &ExecutionContext<'a>,
-    op_name: &str,
-) -> Result<&'a [Polygon2], OperationError> {
-    ctx.polygons
-        .filter(|p| !p.is_empty())
-        .ok_or_else(|| OperationError::MissingGeometry(format!("{op_name} requires 2D geometry")))
+    op_type: OperationType,
+    item_use: ItemUse,
+) -> Result<Cow<'a, [Polygon2]>, OperationError> {
+    let op_name = op_type.name();
+    let polygons = ctx.polygons.filter(|p| !p.is_empty()).ok_or_else(|| {
+        OperationError::MissingGeometry(format!("{op_name} requires 2D geometry"))
+    })?;
+    match item_use {
+        ItemUse::Curves => Ok(Cow::Borrowed(polygons)),
+        ItemUse::Regions => {
+            let Some(note) = SelectionNoteFinding::open_paths_left_out(op_type.label(), polygons)
+            else {
+                return Ok(Cow::Borrowed(polygons));
+            };
+            let closed: Vec<Polygon2> = polygons.iter().filter(|p| p.closed).cloned().collect();
+            if closed.is_empty() {
+                return Err(OperationError::MissingGeometry(note.refusal()));
+            }
+            ctx.record(&note);
+            Ok(Cow::Owned(closed))
+        }
+        ItemUse::None | ItemUse::Holes { .. } => Err(OperationError::Other(format!(
+            "registry mismatch: {op_name} reads polygons, but its item use is {item_use:?}"
+        ))),
+    }
 }
 
 /// The mesh, then its spatial index. The two texts are the ones the

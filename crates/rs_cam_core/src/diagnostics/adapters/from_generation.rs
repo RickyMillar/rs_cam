@@ -45,6 +45,7 @@ pub fn diagnostics_from_generation(
     out.extend(claims_reference(toolpath_id, stats));
     out.extend(zero_removal(toolpath_id, stats));
     out.extend(buried_curve(toolpath_id, stats));
+    out.extend(selection_note(toolpath_id, stats));
     out.extend(offset_library_failures(toolpath_id, stats));
     out.extend(boundary_clip_dropped(toolpath_id, stats));
     out.extend(waterline_ladder(toolpath_id, stats));
@@ -370,6 +371,30 @@ fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         category: Category::Geometry,
         severity: Severity::Info,
         // Measured at generation against the stock this operation reads.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: f.message(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// P1: a closed-region op left open paths of the drawing out. `Caution`:
+/// the toolpath is safe (a skip only removes cuts), but a line the drawing
+/// holds is not in the plan. Silent when nothing was left out.
+fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = stats.selection_note else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_SELECTION_NOTE),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Counted at generation over the drawing the op reads.
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,

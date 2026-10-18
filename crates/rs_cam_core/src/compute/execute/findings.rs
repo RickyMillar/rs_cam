@@ -17,7 +17,8 @@ use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use crate::compute::toolpath_stats::{
     BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding, ClippedBandFinding,
     DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding,
-    SlopeDerateDetail, TipFloatFinding, WaterlineLadderFinding, ZeroRemovalFinding,
+    SelectionNoteFinding, SlopeDerateDetail, TipFloatFinding, WaterlineLadderFinding,
+    ZeroRemovalFinding,
 };
 
 /// A report that writes itself into [`GenerationFindings`].
@@ -371,6 +372,14 @@ impl RecordFindings for ZeroRemovalFinding {
 impl RecordFindings for BuriedCurveFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
         findings.buried_curve = Some(*self);
+    }
+}
+
+/// P1: the open paths a closed-region op left out. The prologue records
+/// it once per generation; the note overwrites.
+impl RecordFindings for SelectionNoteFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.selection_note = Some(*self);
     }
 }
 

@@ -352,6 +352,7 @@ impl LayeredOp for TracePass<'_> {
 
     /// The compensated rings are the tool centre, so the tool reaches one
     /// radius from them.
+    // P1: an open path reads as closed here; the chord only widens the band (safe). P6: exact.
     fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
         ReachBand {
             rings: geometry
@@ -568,7 +569,7 @@ impl LayeredOp for FacePass<'_> {
 
     fn outlines<'p>(
         &'p self,
-        _prepared: &Prepared<'p>,
+        _prepared: &'p Prepared<'p>,
     ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError>
     where
         Polygon2: 'p,

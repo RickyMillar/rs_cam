@@ -57,6 +57,15 @@
 //! - Pin Drill `territory_xy`: `ClipAfter` -> `SetupMap` (lead ruling: the
 //!   pin holes are absolute setup-map positions through the whole stock,
 //!   so no territory clip applies; the obstacle step still does).
+//!
+//! P1 (geometry selection, 2026-10-19) added the `item_use` column (a
+//! fourth table, [`frozen_p1`]): how the op cuts its drawing items. The
+//! prologue gives a `Regions` op the closed polygons only and a `Curves`
+//! op every polygon. Trace reads its compensation: `None` is `Curves`,
+//! `Left` and `Right` are `Regions`. The column is new; no earlier answer
+//! moved. [`every_field_has_a_frozen_column`] destructures `Capabilities`
+//! with no `..`, so the next new field does not compile here until it has
+//! a column.
 
 #![allow(
     clippy::unwrap_used,
@@ -66,10 +75,12 @@
 )]
 
 use rs_cam_core::compute::catalog::{
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, LutRoute,
-    MoveCountModel, OperationConfig, OperationType, RestUse, RowCapabilities, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule,
+    GeometryRequirement, ItemUse, LutRoute, MoveCountModel, OperationConfig, OperationType,
+    RestUse, RowCapabilities, TerritoryXy,
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
+use rs_cam_core::ops::trace_path::TraceCompensation;
 
 /// One frozen row.
 struct Row {
@@ -610,4 +621,130 @@ fn only_the_pin_drill_escapes_the_boundary_clip_d2() {
         );
         assert_eq!(xy.session_clip_applies(), xy != TerritoryXy::SetupMap);
     }
+}
+
+/// P1: the `item_use` column, frozen per op kind.
+#[rustfmt::skip]
+fn frozen_p1() -> Vec<(OperationType, ItemUse)> {
+    use OperationType as O;
+    vec![
+    (O::Face, ItemUse::None),
+    (O::Pocket, ItemUse::Regions),
+    (O::Profile, ItemUse::Regions),
+    (O::Adaptive, ItemUse::Regions),
+    (O::VCarve, ItemUse::Regions),
+    (O::Inlay, ItemUse::Regions),
+    (O::InlayPlug, ItemUse::Regions),
+    (O::Zigzag, ItemUse::Regions),
+    (O::Trace, ItemUse::Curves),
+    (O::Drill, ItemUse::Holes { may_be_empty: false }),
+    (O::Chamfer, ItemUse::Regions),
+    (O::DropCutter, ItemUse::None),
+    (O::Adaptive3d, ItemUse::None),
+    (O::Waterline, ItemUse::None),
+    (O::Pencil, ItemUse::None),
+    (O::Scallop, ItemUse::None),
+    (O::UnifiedFinish, ItemUse::None),
+    (O::SteepShallow, ItemUse::None),
+    (O::RampFinish, ItemUse::None),
+    (O::SpiralFinish, ItemUse::None),
+    (O::RadialFinish, ItemUse::None),
+    (O::HorizontalFinish, ItemUse::None),
+    (O::ProjectCurve, ItemUse::Curves),
+    (O::AlignmentPinDrill, ItemUse::Holes { may_be_empty: true }),
+    ]
+}
+
+/// P1: the row of each op kind and its default config give the frozen
+/// `item_use`. The default Trace (compensation `None`) keeps its row.
+#[test]
+fn every_op_keeps_its_item_use_p1() {
+    let table = frozen_p1();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for (op, item_use) in table {
+        assert_eq!(op.capabilities().item_use, item_use, "{op:?} (kind)");
+        assert_eq!(
+            OperationConfig::new_default(op).capabilities().item_use,
+            item_use,
+            "{op:?} (config)"
+        );
+    }
+}
+
+/// P1: Trace on the line follows any path; Trace offset to one side needs
+/// a closed loop.
+#[test]
+fn trace_compensation_picks_its_item_use_p1() {
+    for (compensation, expected) in [
+        (TraceCompensation::None, ItemUse::Curves),
+        (TraceCompensation::Left, ItemUse::Regions),
+        (TraceCompensation::Right, ItemUse::Regions),
+    ] {
+        let mut cfg = OperationConfig::new_default(OperationType::Trace);
+        let OperationConfig::Trace(trace) = &mut cfg else {
+            unreachable!()
+        };
+        trace.compensation = compensation;
+        assert_eq!(cfg.capabilities().item_use, expected, "{compensation:?}");
+    }
+}
+
+/// P1: the geometry a row requires and the items it cuts agree. The
+/// prologue reads polygons only for `Polygons` and `Both`, and it serves
+/// them only to a `Regions` or a `Curves` op. A drill reads its targets,
+/// and a stock or mesh op reads no item (Pin Drill: its holes come from
+/// the pins, so it may have none).
+#[test]
+fn the_geometry_and_the_item_use_agree_p1() {
+    for &op in OperationType::ALL {
+        let use_ = op.capabilities().item_use;
+        let ok = match op.geometry_requirement() {
+            GeometryRequirement::Polygons | GeometryRequirement::Both => {
+                matches!(use_, ItemUse::Regions | ItemUse::Curves)
+            }
+            GeometryRequirement::DrillTargets => {
+                use_ == ItemUse::Holes {
+                    may_be_empty: false,
+                }
+            }
+            GeometryRequirement::Mesh => use_ == ItemUse::None,
+            GeometryRequirement::Stock => {
+                matches!(use_, ItemUse::None | ItemUse::Holes { may_be_empty: true })
+            }
+        };
+        assert!(ok, "{op:?}: {:?} with {use_:?}", op.geometry_requirement());
+    }
+}
+
+/// P1: every `Capabilities` field has a frozen column in one of the four
+/// tables, or a named test of its own. The destructure has no `..`, so a
+/// new field does not compile here until this list (and a table) states it.
+#[test]
+fn every_field_has_a_frozen_column() {
+    let Capabilities {
+        transform: _,                  // frozen(), transform and lap cap
+        air_cut_high_threshold_pct: _, // frozen()
+        honors_pinned_bottom_z: _,     // frozen()
+        entry_probe: _,                // frozen(), a_surface_probe_reads_the_ops_own_leave
+        link_ceiling: _,               // frozen()
+        feeds_hints: _,                // the_feeds_hints_read_the_ops_own_fields
+        move_count: _,                 // frozen()
+        doc_basis: _,                  // frozen()
+        air_cut_hint: _,               // frozen()
+        relink_dial: _,                // frozen()
+        axial_envelope: _,             // frozen()
+        rest_use: _,                   // frozen()
+        territory_xy: _,               // frozen()
+        plans_bands: _,                // frozen_c2()
+        ramp_descent: _,               // frozen_c2()
+        adaptive_woc: _,               // frozen_c2()
+        flat_floor_clearing: _,        // frozen_c2()
+        clearing_strategy_dial: _,     // frozen_c2()
+        planner_uniform_engagement: _, // frozen_c2()
+        top_on_stock_box: _,           // frozen_c2()
+        floor_inside_stock: _,         // frozen_c2()
+        lut_route: _,                  // frozen_d2()
+        item_use: _,                   // frozen_p1()
+    } = OperationType::Pocket.capabilities();
 }

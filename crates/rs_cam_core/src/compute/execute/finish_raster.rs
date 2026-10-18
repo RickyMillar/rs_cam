@@ -396,7 +396,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
     /// The one input: the surface the prologue checked.
     fn outlines<'p>(
         &'p self,
-        _prepared: &Prepared<'p>,
+        _prepared: &'p Prepared<'p>,
     ) -> Result<Cow<'p, [MeshInput<'a>]>, OperationError>
     where
         MeshInput<'a>: 'p,

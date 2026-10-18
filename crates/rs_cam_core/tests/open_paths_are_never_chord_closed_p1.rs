@@ -1,0 +1,315 @@
+//! P1 (geometry selection) — no op closes an open path with a chord in
+//! silence.
+//!
+//! # The claim
+//!
+//! `Polygon2.closed` carries the open flag from the import door to the
+//! prologue. Before P1 every closed-region op (Pocket, Profile, 2D
+//! Adaptive, Zigzag, Chamfer, V-Carve, Inlay, Inlay Plug) and Trace closed
+//! an open path of three or more points with a chord and cut it, and
+//! dropped a 2-point line, with no word.
+//!
+//! The lead ruling (DESIGN D2/D13) for the default selection:
+//!
+//! - (a) a closed-region op (`ItemUse::Regions`) given closed loops and
+//!   open paths cuts the closed loops only, the same toolpath as with the
+//!   closed loops alone, and records ONE `SelectionNoteFinding` that counts
+//!   the open paths, gives the first one's start and length, and names the
+//!   fix. The diagnostics carry it as `geom.selection_note` (Caution).
+//! - (b) with open paths only, it refuses, and the message names the open
+//!   paths and the fix.
+//! - (c) Trace with compensation `None` (`ItemUse::Curves`) cuts an open
+//!   path on the line, with no chord, and cuts a 2-point line.
+//! - (d) Trace `Left` (`ItemUse::Regions`) is a closed-region op: (a) and
+//!   (b) cover it.
+//!
+//! Red proof (2026-10-19): with `trace_polygons_at_z` sent through
+//! `emit_closed_contour_with_intent` for open paths again, (c) fails on
+//! the chord and (with the chord check off) on the missing 2-point line.
+//! With the prologue giving a `Regions` op every polygon again, (a) and
+//! (b) fail.
+//!
+//! ```text
+//! cargo test -p rs_cam_core -q --test open_paths_are_never_chord_closed_p1
+//! ```
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+mod common;
+
+use std::sync::atomic::AtomicBool;
+
+use common::op_fixtures::{no_dressups, rectangle, tool_for};
+use common::session::{polygon_model, single_op_session_with};
+use rs_cam_core::compute::StockConfig;
+use rs_cam_core::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
+use rs_cam_core::compute::toolpath_stats::SelectionNoteFinding;
+use rs_cam_core::diagnostics::{Severity, ids};
+use rs_cam_core::geo::P2;
+use rs_cam_core::ops::trace_path::TraceCompensation;
+use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::toolpath::{MoveType, Toolpath};
+
+/// A 100 x 60 x 10 mm board, centred on X0 Y0, its top at Z0.
+fn board() -> StockConfig {
+    StockConfig {
+        x: 100.0,
+        y: 60.0,
+        z: 10.0,
+        origin_x: -50.0,
+        origin_y: -30.0,
+        origin_z: -10.0,
+        auto_from_model: false,
+        ..StockConfig::default()
+    }
+}
+
+/// The closed loop: a 30 x 30 mm square on the left half of the board.
+fn square() -> Polygon2 {
+    rectangle(-40.0, -15.0, -10.0, 15.0)
+}
+
+/// The V: an open path of three points on the right half. Its chord, the
+/// line a chord-closing op cuts, runs along Y -10 from X 35 back to X 15.
+const V: [[f64; 2]; 3] = [[15.0, -10.0], [25.0, 10.0], [35.0, -10.0]];
+
+/// The line: a 2-point open path on the right half, along Y 20.
+const LINE: [[f64; 2]; 2] = [[10.0, 20.0], [40.0, 20.0]];
+
+fn open(points: &[[f64; 2]]) -> Polygon2 {
+    Polygon2::open_path(points.iter().map(|&[x, y]| P2::new(x, y)).collect())
+}
+
+/// Every closed-region op that reads a drawing, from the registry, and
+/// Trace offset to the left.
+fn region_ops() -> Vec<OperationConfig> {
+    let mut ops: Vec<OperationConfig> = OperationType::ALL
+        .iter()
+        .filter(|op| {
+            op.geometry_requirement() == GeometryRequirement::Polygons
+                && op.capabilities().item_use == ItemUse::Regions
+        })
+        .map(|&op| OperationConfig::new_default(op))
+        .collect();
+    assert!(
+        ops.len() >= 8,
+        "non-vacuity: the eight closed-region ops, found {}",
+        ops.len()
+    );
+    ops.push(trace(TraceCompensation::Left));
+    ops
+}
+
+fn trace(compensation: TraceCompensation) -> OperationConfig {
+    let mut op = OperationConfig::new_default(OperationType::Trace);
+    let OperationConfig::Trace(cfg) = &mut op else {
+        unreachable!("the default of Trace is a Trace config")
+    };
+    cfg.compensation = compensation;
+    op
+}
+
+fn session(
+    op: &OperationConfig,
+    polygons: Vec<Polygon2>,
+    tweak: impl FnOnce(&mut ToolpathConfig),
+) -> ProjectSession {
+    single_op_session_with(
+        board(),
+        tool_for(op.op_type()),
+        polygon_model(polygons, "p1_open_paths"),
+        "p1",
+        op.clone(),
+        tweak,
+    )
+}
+
+fn generate(session: &mut ProjectSession) -> Result<Toolpath, String> {
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .map_err(|e| e.to_string())?;
+    Ok(session
+        .get_result(0)
+        .expect("a generated op has a result")
+        .annotated()
+        .toolpath
+        .clone())
+}
+
+/// (a) + (d): with the V and the line beside the square, a closed-region
+/// op emits exactly the toolpath of the square alone, and the note counts
+/// the two open paths.
+#[test]
+fn a_region_op_cuts_only_the_closed_loops_and_names_the_open_paths_p1() {
+    for op in region_ops() {
+        let label = op.label();
+        let alone = generate(&mut session(&op, vec![square()], |_| {}))
+            .unwrap_or_else(|e| panic!("{label}: the square alone generates: {e}"));
+        assert!(
+            alone.moves.iter().any(|m| m.move_type != MoveType::Rapid),
+            "{label}: non-vacuity, the square is cut"
+        );
+        let mut mixed = session(&op, vec![square(), open(&V), open(&LINE)], |_| {});
+        let both = generate(&mut mixed)
+            .unwrap_or_else(|e| panic!("{label}: closed + open generates: {e}"));
+        assert_eq!(
+            format!("{:?}", both.moves),
+            format!("{:?}", alone.moves),
+            "{label}: the open paths change nothing it cuts"
+        );
+        let stats = &mixed.get_result(0).expect("the result").stats;
+        let note = stats
+            .selection_note
+            .unwrap_or_else(|| panic!("{label}: the open paths are named"));
+        assert_eq!(
+            note,
+            SelectionNoteFinding {
+                op: label,
+                skipped_open_paths: 2,
+                first_start_xy: V[0],
+                first_length_mm: 2.0 * 10.0_f64.hypot(20.0),
+            },
+            "{label}"
+        );
+    }
+}
+
+/// (a): the square alone records no note, and the diagnostics of the mixed
+/// drawing carry the note as Caution with the fix.
+#[test]
+fn the_note_reaches_the_diagnostics_p1() {
+    let op = OperationConfig::new_default(OperationType::Pocket);
+    let mut alone = session(&op, vec![square()], |_| {});
+    let _ = generate(&mut alone).expect("the square generates");
+    assert_eq!(
+        alone
+            .get_result(0)
+            .expect("the result")
+            .stats
+            .selection_note,
+        None,
+        "nothing left out, nothing named"
+    );
+
+    let mut mixed = session(&op, vec![square(), open(&V)], |_| {});
+    let _ = generate(&mut mixed).expect("closed + open generates");
+    let diags = mixed
+        .diagnose_toolpath_with_trace(0, None)
+        .expect("diagnose");
+    let d = diags
+        .iter()
+        .find(|d| d.id.as_str() == ids::GEOM_SELECTION_NOTE)
+        .expect("the diagnostics carry the note");
+    assert_eq!(d.severity, Severity::Caution);
+    for needle in [
+        "1 open path is not cut",
+        "Pocket cuts closed loops only",
+        "X 15.000 Y -10.000",
+        "Use Trace or Project Curve",
+        "close it in the drawing",
+    ] {
+        assert!(d.message.contains(needle), "{needle:?} in {}", d.message);
+    }
+}
+
+/// (b) + (d): with open paths only, a closed-region op refuses, and the
+/// message names the open paths and the fix.
+#[test]
+fn a_region_op_given_only_open_paths_refuses_p1() {
+    for op in region_ops() {
+        let label = op.label();
+        let err = generate(&mut session(&op, vec![open(&V), open(&LINE)], |_| {}))
+            .expect_err("no closed loop: the op refuses");
+        for needle in [
+            format!("{label} has no closed loop to cut"),
+            "2 open paths are not cut".to_owned(),
+            "Use Trace or Project Curve".to_owned(),
+            "close it in the drawing".to_owned(),
+        ] {
+            assert!(err.contains(&needle), "{label}: {needle:?} in {err}");
+        }
+    }
+}
+
+/// The fed moves of `tp` as XY segments, each from the previous target.
+fn fed_segments(tp: &Toolpath) -> Vec<(P2, P2, f64)> {
+    tp.moves
+        .windows(2)
+        .filter(|w| w[1].move_type != MoveType::Rapid)
+        .map(|w| {
+            (
+                P2::new(w[0].target.x, w[0].target.y),
+                P2::new(w[1].target.x, w[1].target.y),
+                w[1].target.z,
+            )
+        })
+        .collect()
+}
+
+/// (c): Trace on the line cuts the V with no chord and cuts the 2-point
+/// line, with every dressup off and with the default dressups of Trace
+/// (entry, links: the same dressups an open Project Curve path passes).
+#[test]
+fn trace_cuts_an_open_path_on_the_line_with_no_chord_p1() {
+    let op = trace(TraceCompensation::None);
+    for (what, dressed) in [("no dressups", false), ("default dressups", true)] {
+        let mut s = session(&op, vec![open(&V), open(&LINE)], |tc| {
+            if !dressed {
+                tc.dressups = no_dressups();
+            }
+        });
+        let tp = generate(&mut s).unwrap_or_else(|e| panic!("{what}: Trace generates: {e}"));
+        let fed = fed_segments(&tp);
+        assert!(!fed.is_empty(), "{what}: non-vacuity, Trace cuts");
+        assert_eq!(
+            s.get_result(0).expect("the result").stats.selection_note,
+            None,
+            "{what}: Trace on the line leaves nothing out"
+        );
+
+        // No fed move runs along the chord of the V (both ends on Y -10,
+        // between its two legs). A leg rises 20 mm in Y, so it never
+        // matches.
+        let chord = fed.iter().find(|(a, b, _)| {
+            a.y < -9.99 && b.y < -9.99 && (a - b).norm() > 1.0 && a.x.min(b.x) < 34.0
+        });
+        assert!(
+            chord.is_none(),
+            "{what}: a chord of the V is cut: {chord:?}"
+        );
+
+        // The V is cut leg by leg, below the stock top.
+        let cut_to = |x: f64, y: f64| {
+            fed.iter()
+                .any(|(_, b, z)| *z < 0.0 && (b - P2::new(x, y)).norm() < 1e-6)
+        };
+        assert!(cut_to(V[1][0], V[1][1]), "{what}: the V apex is cut");
+        assert!(cut_to(V[2][0], V[2][1]), "{what}: the V end is cut");
+
+        // The 2-point line is cut, from end to end. The default lead-in
+        // of Trace lands on the extension of the first segment (as it does
+        // on a closed loop), so the cut may start before X 10.
+        let line_cut = fed.iter().any(|(a, b, z)| {
+            *z < 0.0
+                && (a.y - LINE[0][1]).abs() < 1e-6
+                && (b.y - LINE[1][1]).abs() < 1e-6
+                && a.x <= LINE[0][0] + 1e-6
+                && (b.x - LINE[1][0]).abs() < 1e-6
+        });
+        assert!(line_cut, "{what}: the 2-point line is cut");
+        // No fed move comes back along the line to its start.
+        let back = fed.iter().any(|(a, b, z)| {
+            *z < 0.0
+                && (a - P2::new(LINE[1][0], LINE[1][1])).norm() < 1e-6
+                && (b - P2::new(LINE[0][0], LINE[0][1])).norm() < 1e-6
+        });
+        assert!(!back, "{what}: the line is not cut back to its start");
+    }
+}

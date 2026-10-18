@@ -304,7 +304,7 @@ pub(crate) trait LayeredOp {
     /// The prologue's geometry mismatch when the op has no polygons.
     fn outlines<'p>(
         &'p self,
-        prepared: &Prepared<'p>,
+        prepared: &'p Prepared<'p>,
     ) -> Result<Cow<'p, [Self::Input]>, OperationError>
     where
         Self::Input: 'p,

@@ -128,6 +128,12 @@ pub struct Capabilities<P = EntryProbe> {
     /// vendor table rows (D2). Read by
     /// `feeds::vendor_normalize::lut_query_for` and `feeds::explain`.
     pub lut_route: LutRoute,
+    /// How the op cuts the drawing items it gets (P1, geometry selection
+    /// DESIGN 4.2). The prologue gives a [`ItemUse::Regions`] op only the
+    /// closed polygons, and a [`ItemUse::Curves`] op every polygon.
+    /// `OperationConfig::capabilities` overrides it for Trace, whose
+    /// compensation decides it.
+    pub item_use: ItemUse,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -176,8 +182,32 @@ impl<P> Capabilities<P> {
             top_on_stock_box: self.top_on_stock_box,
             floor_inside_stock: self.floor_inside_stock,
             lut_route: self.lut_route,
+            item_use: self.item_use,
         }
     }
+}
+
+/// How an operation cuts the drawing items it gets (P1; geometry selection
+/// `DESIGN.md` 4.2). It is a config answer: Trace with compensation `Left`
+/// or `Right` cannot follow an open path, with `None` it can.
+///
+/// The prologue (`compute/execute/prologue.rs`) matches on it with no
+/// wildcard, so a new use states what it gets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemUse {
+    /// The op reads no drawing item: the mesh ops and Face (the stock).
+    None,
+    /// Closed areas, nested by containment. The op cuts inside, outside or
+    /// along a closed loop, so an open path has no area for it. The
+    /// prologue leaves the open paths out and names them in a finding;
+    /// it refuses when no closed polygon is left.
+    Regions,
+    /// Lines to follow, closed and open: the op cuts on the line. Trace
+    /// with compensation `None`, Project Curve.
+    Curves,
+    /// Hole positions. `may_be_empty`: the op may have no hole to cut (Pin
+    /// Drill, whose holes come from the alignment pins).
+    Holes { may_be_empty: bool },
 }
 
 /// How an operation uses the remaining stock (W3.4, AUDIT.md "Rest is not

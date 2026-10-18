@@ -806,7 +806,10 @@ pub fn reversed_winding(size: f64) -> Polygon2 {
 
 /// An open path flagged `closed: false`, fed where a closed region is
 /// expected. `offset_polygon` converts to a **closed** polyline regardless
-/// (`exterior_to_pline` hardcodes `true`), so the flag is silently dropped.
+/// (`exterior_to_pline` hardcodes `true`). Since P1 the prologue does not
+/// give it to a closed-region op: with nothing closed left, the op refuses
+/// (a typed `Err`, which the campaign counts as a pass). Trace on the line
+/// cuts it as an open path.
 pub fn open_contour(size: f64) -> Polygon2 {
     Polygon2::open_path(vec![
         P2::new(0.0, 0.0),
@@ -1054,7 +1057,7 @@ pub fn fixtures() -> Vec<Fixture> {
         Fixture {
             name: "invalid-open",
             class: Class::InvalidContour,
-            what: "closed: false, silently re-closed by exterior_to_pline",
+            what: "closed: false; P1: a region op refuses it, Trace on the line cuts it open",
             polys: vec![open_contour(60.0)],
             tool_d: 6.0,
             validity: Validity::Invalid("open path in a closed-region slot"),

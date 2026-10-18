@@ -307,6 +307,8 @@ impl<'a> ToolpathNarrationContext<'a> {
             claims_reference: _,
             //  - buried_curve:      surfaced as a diagnostic (W6.5, Info)
             buried_curve: _,
+            //  - selection_note:    surfaced as a diagnostic (P1, Caution)
+            selection_note: _,
             //  - stock_snapshot:    S-4 provenance, not a part measurement.
             //    It answers "were these two generations handed the same
             //    stock", which is a question about a COMPARISON, not about
