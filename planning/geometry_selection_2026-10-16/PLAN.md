@@ -254,12 +254,48 @@ D shape; G-OPGOLDEN re-blessed for Profile only, by name.
   is machined in a way the plan does not cover; otherwise the lead decides
   and records the reason here.
 
+## Lead rulings on DESIGN.md (2026-10-19)
+
+The lead approves `DESIGN.md`. These rulings override it where they differ.
+
+- **D2 and D13 (one ruling): served kinds by default, refuse on an
+  explicit act.** The line "every closed-only op refuses an open path" was
+  the lead's wording, not the operator's, so the lead rules it. The test is
+  how the item reached the op (`ResolvedItem.by`):
+  - The default rule selects every item the op can cut. `KindFilter::Drawing`
+    becomes `KindFilter::Served` (NEW): the kinds that the op's `ItemUse`
+    serves for its current config.
+  - A matched item that the op cannot serve, under the default rule, is
+    left out. A `SelectionNote` finding counts it by kind and layer
+    ("2 open paths on layer TEXT are not cut"). The note goes through
+    `ctx.record` and `SelectionStatus`. It is never log-only.
+  - An item that the user named (a pick, or a rule that names its kind)
+    and that the op cannot cut refuses with `KindNotCut`.
+  - When nothing is left to cut, the op refuses with `Empty`, and the
+    message names the skipped items and the fix.
+  - Reason: both choices stop the chord cut. A skip only removes material
+    from the plan, so it is the safe direction. A refusal on the default
+    would block every DXF that holds text strokes and outlines.
+  - Trace `Left`/`Right` is the same case: its `ItemUse` is `Regions`, so
+    open paths are skipped with a note under the default rule. The open
+    offset kernel comes in P6.
+- **P1 implements this ruling, not section 13 as written.** In P1 every
+  input comes from the default rule (no picks exist yet). So the prologue
+  gives a `Regions` op only the closed polygons (an owned list), records the
+  note for the skipped open paths, and refuses only when no closed polygon
+  is left.
+- **D1, D3–D8, D10–D12, D14:** taken as `DESIGN.md` recommends.
+- **D9 (pinned bottom reaches the motion for four ops): deferred to P3.**
+  When P3 opens, the lead reads the G-BOTTOMPIN sentry. If the pinned
+  bottom can cut deeper than the op depth, that changes what is machined,
+  and the operator rules it. If it only limits the depth, the lead rules.
+
 ## Status
 
 | Phase | State | Commits | Notes |
 |---|---|---|---|
-| P0 design | not started | | |
-| P1 open paths | not started | | |
+| P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
+| P1 open paths | research done; editor running | | research: every region op chord-closes open paths in silence |
 | P2 selection core | blocked on P0 | | |
 | P3 depth refs | blocked on P2 | | |
 | P4 UI + sources | blocked on P2 | | |
