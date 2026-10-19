@@ -43,6 +43,28 @@ impl Default for HorizontalFinishParams {
     }
 }
 
+impl HorizontalFinishParams {
+    /// F030: refuse a stepover that is not a finite positive length.
+    ///
+    /// The raster divides the region width by the stepover. A zero gives
+    /// `inf as usize`, which saturates, and the `+ 1` after it overflows; a
+    /// negative or `NaN` stepover gives no rows. The param door refuses
+    /// these values (`gt = 0.0` on `HorizontalFinishConfig::stepover`), but
+    /// a project file and the GUI write the config directly. The text names
+    /// the field and the value, in the form of `RadialPass::refuse`.
+    pub fn refuse(&self) -> Result<(), String> {
+        if self.stepover.is_finite() && self.stepover > 0.0 {
+            return Ok(());
+        }
+        Err(format!(
+            "Horizontal Finish 'stepover' = {} is outside the accepted range (finite and > 0). \
+             The raster divides by this dial, so a value outside the range emits nothing or \
+             runs without end. Set a value inside the range.",
+            self.stepover
+        ))
+    }
+}
+
 /// A flat triangle with its averaged Z height and XY bounding box.
 struct FlatTriInfo {
     avg_z: f64,
@@ -104,6 +126,12 @@ pub fn horizontal_finish_toolpath_with_cancel(
 ) -> Result<Toolpath, Cancelled> {
     check_cancel(cancel)?;
     let mut tp = Toolpath::new();
+    // F030: the kernel returns `Cancelled` only, so a refused stepover gives
+    // an empty toolpath and never reaches the division below. The adapter
+    // reports the refusal through `HorizontalFinishParams::refuse`.
+    if params.refuse().is_err() {
+        return Ok(tp);
+    }
 
     let threshold_cos = params.angle_threshold.to_radians().cos();
 
@@ -334,6 +362,39 @@ mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_flat};
     use crate::tool::BallEndmill;
+
+    /// F030: a stepover that is zero, negative or not finite is refused,
+    /// and the kernel returns an empty toolpath instead of a saturated
+    /// row count.
+    #[test]
+    fn a_non_positive_stepover_is_refused_f030() {
+        let mesh = make_test_flat(100.0);
+        let index = SpatialIndex::build_auto(&mesh);
+        let cutter = BallEndmill::new(10.0, 25.0);
+        for stepover in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let params = HorizontalFinishParams {
+                stepover,
+                ..HorizontalFinishParams::default()
+            };
+            let Err(refusal) = params.refuse() else {
+                panic!("stepover {stepover} must be refused");
+            };
+            assert!(refusal.contains("'stepover'"), "{refusal}");
+            let tp = horizontal_finish_toolpath(&mesh, &index, &cutter, &params);
+            assert!(tp.moves.is_empty(), "stepover {stepover}: no moves");
+        }
+        // The anchor: a positive stepover passes and cuts the same mesh.
+        let params = HorizontalFinishParams {
+            stepover: 5.0,
+            ..HorizontalFinishParams::default()
+        };
+        assert!(params.refuse().is_ok());
+        assert!(
+            !horizontal_finish_toolpath(&mesh, &index, &cutter, &params)
+                .moves
+                .is_empty()
+        );
+    }
 
     #[test]
     fn test_horizontal_finish_flat_mesh() {

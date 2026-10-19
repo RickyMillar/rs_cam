@@ -69,7 +69,7 @@ pub struct OperationSchema {
 /// never sees it and no `ParamDef` table can hold it. Before this row
 /// it was a fourth accepted name that the published schema did not
 /// mention at all.
-pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required("debug_enabled", "bool")];
+pub const TOOLPATH_PARAM_DEFS: &[ParamDef] = &[ParamDef::required::<bool>("debug_enabled")];
 
 /// A config field that its own driver writes, and that `set_toolpath_param`
 /// refuses (D9).
@@ -135,15 +135,48 @@ pub trait OpParams {
     const PARAMS: ParamTable;
 }
 
+/// What kind of value a parameter holds (F023).
+///
+/// The code reads this, not a prefix of the wire type string. A list type
+/// with another spelling then cannot miss the list branches. The wire text
+/// stays [`ParamType::TYPE_NAME`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamKind {
+    /// A real number (`f64`).
+    Real,
+    /// An integer count or size (`u32`, `usize`).
+    Integer,
+    /// A flag.
+    Bool,
+    /// A parameter enum (`#[derive(ParamEnum)]`).
+    Enum,
+    /// A list. `null` clears it to `[]`.
+    List,
+    /// An index that names a tool or a model. It is an integer on the wire,
+    /// but it is not a quantity, so it takes no domain.
+    Id,
+}
+
+impl ParamKind {
+    /// Whether the value is a quantity: a real number or an integer. A
+    /// published field of this kind must state its domain (F185).
+    #[must_use]
+    pub const fn is_number(self) -> bool {
+        matches!(self, Self::Real | Self::Integer)
+    }
+}
+
 /// The schema type string of a parameter's Rust type (W5).
 ///
-/// `#[derive(OpParams)]` reads [`Self::TYPE_NAME`] and [`Self::OPTIONAL`]
-/// for every published field, so a field of a type without an impl does
-/// not compile. `#[derive(ParamEnum)]` writes the impl of a parameter enum
-/// (`enum:a|b`, from the serde names).
+/// `#[derive(OpParams)]` reads [`Self::TYPE_NAME`], [`Self::OPTIONAL`] and
+/// [`Self::KIND`] for every published field, so a field of a type without
+/// an impl does not compile. `#[derive(ParamEnum)]` writes the impl of a
+/// parameter enum (`enum:a|b`, from the serde names).
 pub trait ParamType {
     /// The type string a field of this type publishes.
     const TYPE_NAME: &'static str;
+    /// The kind of value. An `Option` has the kind of its inner type.
+    const KIND: ParamKind;
     /// The type string an `Option` of this type publishes. For an enum it is
     /// the same `enum:a|b` string: the schema states the optional flag
     /// beside it.
@@ -155,58 +188,73 @@ pub trait ParamType {
 impl<T: ParamType> ParamType for Option<T> {
     const TYPE_NAME: &'static str = T::OPTION_TYPE_NAME;
     const OPTION_TYPE_NAME: &'static str = T::OPTION_TYPE_NAME;
+    const KIND: ParamKind = T::KIND;
     const OPTIONAL: bool = true;
 }
 
 impl ParamType for f64 {
     const TYPE_NAME: &'static str = "f64";
     const OPTION_TYPE_NAME: &'static str = "option<f64>";
+    const KIND: ParamKind = ParamKind::Real;
 }
 
 impl ParamType for u32 {
     const TYPE_NAME: &'static str = "u32";
     const OPTION_TYPE_NAME: &'static str = "option<u32>";
+    const KIND: ParamKind = ParamKind::Integer;
 }
 
 impl ParamType for usize {
     const TYPE_NAME: &'static str = "usize";
     const OPTION_TYPE_NAME: &'static str = "option<usize>";
+    const KIND: ParamKind = ParamKind::Integer;
 }
 
 impl ParamType for bool {
     const TYPE_NAME: &'static str = "bool";
     const OPTION_TYPE_NAME: &'static str = "option<bool>";
+    const KIND: ParamKind = ParamKind::Bool;
 }
 
-/// A list of XY points. The `vec<` prefix is the list mark that the
+/// A list of XY points. [`ParamKind::List`] is the list mark that the
 /// setter (`null` clears to `[]`) and `params_value_including_nulls` read.
+/// A list is not a number, so it takes no domain (F185): the derive does
+/// not ask a `Vec` field for one.
 impl ParamType for Vec<[f64; 2]> {
     const TYPE_NAME: &'static str = "vec<[f64;2]>";
     const OPTION_TYPE_NAME: &'static str = "option<vec<[f64;2]>>";
+    const KIND: ParamKind = ParamKind::List;
 }
 
 /// A tool id is a plain index on the wire.
 impl ParamType for crate::compute::tool_config::ToolId {
     const TYPE_NAME: &'static str = "usize";
     const OPTION_TYPE_NAME: &'static str = "option<usize>";
+    const KIND: ParamKind = ParamKind::Id;
 }
 
 /// A model id is a plain index on the wire.
 impl ParamType for crate::ids::ModelId {
     const TYPE_NAME: &'static str = "usize";
     const OPTION_TYPE_NAME: &'static str = "option<usize>";
+    const KIND: ParamKind = ParamKind::Id;
 }
 
 /// The numeric domain a settable parameter is declared to accept.
 ///
 /// # What `None` on [`ParamDef::range`] means (DR-LIVE, 2026-08-14)
 ///
-/// **Not measured, not "unbounded".** An entry carries `None` when nobody
-/// has stated that param's domain. W5 moved every GUI clamp range into the
+/// **Not "any number".** Since F185 a published number cannot carry `None`
+/// by omission: `#[derive(OpParams)]` refuses to compile a number field
+/// with no bound unless it says `frame_dependent` (an absolute Z,
+/// [`ParamDef::frame_dependent`]) or `unbounded = "<reason>"`. A field that
+/// is not a number (a flag, an enum, a list, an id) carries `None` because
+/// a domain does not apply to it. W5 moved every GUI clamp range into the
 /// schema (`#[param(range = ...)]`), so the GUI and the setter read one
-/// domain; feeds, the spindle and most optional dials still carry `None`,
-/// and an absolute-Z field never carries one ([`ParamDef::frame_dependent`]).
-/// That is the state `peck_depth` was in when
+/// domain.
+///
+/// Before F185 a number could carry `None` by omission. That is the state
+/// `peck_depth` was in when
 /// `TECH_DEBT_2_CLOSEOUT.md` §4.4 ledgered DR-LIVE: `ParamDef::required
 /// ("peck_depth", "f64")` advertised no domain at all, so MCP
 /// `set_toolpath_param` accepted `0` and `-3` on a param whose emitter
@@ -321,6 +369,8 @@ impl ParamRange {
 pub struct ParamDef {
     pub name: &'static str,
     pub type_name: &'static str,
+    /// The kind of value, from [`ParamType::KIND`] (F023).
+    pub kind: ParamKind,
     pub optional: bool,
     /// One line saying what this dial does, for BOTH readers.
     ///
@@ -343,10 +393,11 @@ pub struct ParamDef {
 }
 
 impl ParamDef {
-    pub(super) const fn required(name: &'static str, type_name: &'static str) -> Self {
+    pub(super) const fn required<T: ParamType>(name: &'static str) -> Self {
         Self {
             name,
-            type_name,
+            type_name: T::TYPE_NAME,
+            kind: T::KIND,
             optional: false,
             help: None,
             range: None,
@@ -605,3 +656,481 @@ pub struct OpRegistryEntry {
     /// names a row, and a row cannot be written without an adapter.
     pub generate: crate::compute::execute::GenerateFn,
 }
+
+/// F206: the refusals of `#[derive(OpParams)]` and `#[derive(ParamEnum)]`.
+///
+/// The derives write `crate::compute::catalog::…` paths. A doctest is its
+/// own crate, so each snippet first puts a `compute::catalog` shim at its
+/// crate root. Each `compile_fail` snippet has a sibling that compiles: the
+/// sibling proves that the shim and the other keys are correct, so only the
+/// named defect stops the refused snippet.
+///
+/// # The positive controls
+///
+/// Every key of `OpParams`, in its accepted form:
+///
+/// ```standalone_crate
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// use rs_cam_core::compute::catalog::OpParams as _;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(help = "the feed", gt = 0.0)]
+///     feed_rate: f64,
+///     #[param(range = 0.5..=100.0)]
+///     stepover: f64,
+///     #[param(range = 0.0..)]
+///     stock_to_leave: f64,
+///     #[param(min = 1.0, max = 20.0)]
+///     passes: usize,
+///     #[param(max = 90.0)]
+///     angle: f64,
+///     #[param(optional)]
+///     climb: bool,
+///     #[param(frame_dependent)]
+///     retract_z: f64,
+///     #[param(skip = "not a parameter")]
+///     scratch: String,
+///     #[param(driver_set = "its own driver writes it")]
+///     picks: String,
+/// }
+/// fn main() {
+///     let table = <Config as rs_cam_core::compute::catalog::OpParams>::PARAMS;
+///     assert_eq!(table.defs.len(), 7);
+///     assert_eq!(table.skipped.len(), 1);
+///     assert_eq!(table.driver_set.len(), 1);
+///     assert_eq!(table.fields.len(), 9);
+/// }
+/// ```
+///
+/// A parameter enum, with a rename rule, a renamed variant and a skipped
+/// variant:
+///
+/// ```standalone_crate
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::ParamEnum;
+/// use rs_cam_core::compute::catalog::ParamType;
+/// #[derive(serde::Deserialize, ParamEnum)]
+/// #[serde(rename_all = "snake_case")]
+/// enum Side {
+///     LeftHand,
+///     #[serde(rename = "right")]
+///     RightHand,
+///     #[serde(skip)]
+///     Hidden,
+/// }
+/// fn main() {
+///     assert_eq!(<Side as ParamType>::TYPE_NAME, "enum:left_hand|right");
+/// }
+/// ```
+///
+/// # `OpParams` refusals
+///
+/// An unknown key:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(gt = 0.0, unit = "mm/min")]
+///     feed_rate: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A key given twice:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(help = "one", help = "two", gt = 0.0)]
+///     feed_rate: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// `skip` and `driver_set` on one field:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(skip = "a", driver_set = "b")]
+///     picks: String,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A `skip` field with a published key (the field is not published):
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(skip = "not a parameter", help = "h")]
+///     scratch: String,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A `driver_set` field with a domain:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(driver_set = "its own driver writes it", min = 0.0)]
+///     depth: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// `range` together with `min`, with `gt` and with `max`:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = 0.5..=100.0, min = 0.5)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = 0.5..=100.0, gt = 0.0)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = 0.5.., max = 100.0)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// `min` and `gt` together (two lower bounds):
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(min = 0.0, gt = 0.0)]
+///     feed_rate: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// `frame_dependent` with a bound:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(frame_dependent, min = 0.0)]
+///     retract_z: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A `range` that is not a range expression:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = 5.0)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A half-open `range` with an end (`a..b` excludes `b`; the schema has
+/// no strict upper bound):
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = 0.5..100.0)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A `range` with no lower bound:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(range = ..=100.0)]
+///     stepover: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// # The domain rule (F185)
+///
+/// A number with `unbounded` and a reason, and a list with no domain,
+/// compile:
+///
+/// ```standalone_crate
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "a signed offset: every finite value has a meaning")]
+///     offset: f64,
+///     #[param(optional)]
+///     points: Vec<[f64; 2]>,
+/// }
+/// fn main() {
+///     let table = <Config as rs_cam_core::compute::catalog::OpParams>::PARAMS;
+///     assert_eq!(table.defs.len(), 2);
+///     assert!(table.defs.iter().all(|def| def.range.is_none()));
+/// }
+/// ```
+///
+/// A number with no domain, an `Option` of a number with no domain, and a
+/// type alias of a number with no domain:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(help = "the feed")]
+///     feed_rate: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     spindle_rpm: Option<u32>,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// type Mm = f64;
+/// #[derive(OpParams)]
+/// struct Config {
+///     stepover: Mm,
+/// }
+/// fn main() {}
+/// ```
+///
+/// An empty reason, and a blank reason:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "")]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "   ")]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// A reason that is not a string literal:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// const WHY: &str = "a signed offset";
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = WHY)]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// `unbounded` beside a bound, beside `frame_dependent`, twice, on a
+/// `skip` field, and on a field that is not a number:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "a signed offset", gt = 0.0)]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "a signed offset", frame_dependent)]
+///     retract_z: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "one", unbounded = "two")]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(skip = "not a parameter", unbounded = "a signed offset")]
+///     offset: f64,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(unbounded = "a flag")]
+///     climb: bool,
+/// }
+/// fn main() {}
+/// ```
+///
+/// # Other `OpParams` refusals
+///
+/// A published field of a type with no `ParamType` impl:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config {
+///     #[param(help = "a name")]
+///     label: String,
+/// }
+/// fn main() {}
+/// ```
+///
+/// The derive on an enum and on a tuple struct:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// enum Config {
+///     A,
+/// }
+/// fn main() {}
+/// ```
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::OpParams;
+/// #[derive(OpParams)]
+/// struct Config(#[param(gt = 0.0)] f64);
+/// fn main() {}
+/// ```
+///
+/// # `ParamEnum` refusals
+///
+/// A variant with a field:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::ParamEnum;
+/// #[derive(serde::Deserialize, ParamEnum)]
+/// #[serde(rename_all = "snake_case")]
+/// enum Side {
+///     LeftHand,
+///     RightHand(u32),
+/// }
+/// fn main() {}
+/// ```
+///
+/// A rename rule that the derive does not know:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::ParamEnum;
+/// #[derive(serde::Deserialize, ParamEnum)]
+/// #[serde(rename_all = "snake-ish")]
+/// enum Side {
+///     LeftHand,
+///     RightHand,
+/// }
+/// fn main() {}
+/// ```
+///
+/// An enum whose every variant serde skips:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::ParamEnum;
+/// #[derive(serde::Deserialize, ParamEnum)]
+/// enum Side {
+///     #[serde(skip)]
+///     LeftHand,
+/// }
+/// fn main() {}
+/// ```
+///
+/// The derive on a struct:
+///
+/// ```compile_fail
+/// # mod compute { pub mod catalog { pub use rs_cam_core::compute::catalog::*; } }
+/// use rs_cam_derive::ParamEnum;
+/// #[derive(ParamEnum)]
+/// struct Side;
+/// fn main() {}
+/// ```
+#[doc(hidden)]
+pub mod op_params_refusals {}

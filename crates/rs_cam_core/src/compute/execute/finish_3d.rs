@@ -571,6 +571,13 @@ impl HeightFieldOp for HorizontalPass {
         OperationType::HorizontalFinish
     }
 
+    /// F030: the raster divides by the stepover. A project file and the GUI
+    /// write the config past the setter's domain check, so the generator
+    /// refuses here, as `RadialPass::refuse` does.
+    fn refuse(&self) -> Result<(), OperationError> {
+        self.params.refuse().map_err(OperationError::Other)
+    }
+
     fn span_rule(&self) -> SpanRule {
         SpanRule::CutRuns("Horizontal slice")
     }

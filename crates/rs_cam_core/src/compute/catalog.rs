@@ -23,9 +23,9 @@ pub use capabilities::{
 
 pub use schema::{
     DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpParams, OpPolicy,
-    OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamRange,
-    ParamTable, ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
-    driver_set_field,
+    OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamKind,
+    ParamRange, ParamTable, ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints,
+    ToolConstraintsDef, driver_set_field,
 };
 
 use registry::{
@@ -1217,7 +1217,7 @@ impl OperationConfig {
     /// explicitly present as JSON null instead of omitted by
     /// `skip_serializing_if = "Option::is_none"`.
     ///
-    /// A list field (type `vec<…>`) that serde skips when it is empty reads
+    /// A list field ([`ParamKind::List`]) that serde skips when it is empty reads
     /// back as `[]`, not `null`. `null` is not a value of a list, so an
     /// agent that sent the read value back got a refusal.
     pub fn params_value_including_nulls(&self) -> serde_json::Value {
@@ -1228,7 +1228,7 @@ impl OperationConfig {
             .cloned()
             .unwrap_or_default();
         for def in param_defs_for_type(self.op_type()) {
-            let absent = if def.type_name.starts_with("vec<") {
+            let absent = if def.kind == ParamKind::List {
                 serde_json::Value::Array(Vec::new())
             } else {
                 serde_json::Value::Null
@@ -1267,6 +1267,11 @@ impl OperationConfig {
     /// An alias resolves to the def it names (CMP-08).
     pub fn param_type_name(&self, param: &str) -> Option<&'static str> {
         param_def_for_type(self.op_type(), param).map(|def| def.type_name)
+    }
+
+    /// Return the kind of one settable parameter, if known (F023).
+    pub fn param_kind(&self, param: &str) -> Option<ParamKind> {
+        param_def_for_type(self.op_type(), param).map(|def| def.kind)
     }
 
     /// Return the declared numeric domain for one settable parameter, if

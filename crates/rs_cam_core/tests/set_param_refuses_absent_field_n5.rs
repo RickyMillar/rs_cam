@@ -47,14 +47,11 @@
 //!
 //! ## Why assertion 5 asserts wiring and not a refusal
 //!
-//! The registry declares a `ParamRange` on six param defs only
-//! (`peck_depth` on the two drill families, `chain_distance_mm` on
-//! ProjectCurve, and — since N10, 2026-09-11 — `angular_step` and
-//! `point_spacing` on RadialFinish; their floors moved from `> 0` to the
-//! GUI floors by the operator ruling of 2026-10-15). No named param declares a range on
-//! any operation, so the population an out-of-range assertion draws from
-//! is EMPTY, and a gate handed an empty population passes and looks
-//! healthy. The helper's own refusal behaviour is covered by
+//! Since F185 (2026-10-20) every published number declares a domain, the
+//! named params included. This test still asserts wiring only: the
+//! refusal of each domain is covered by
+//! `a_zero_feed_is_refused_on_every_op_f185.rs` (the four feed fields on
+//! every op) and by
 //! `set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse`
 //! in `session::compute`'s unit tests, and by
 //! `radial_finish_ranges_n10.rs`; both drive it through the generic

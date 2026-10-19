@@ -11,7 +11,9 @@
 //! work only inside `rs_cam_core`, which is the only user.
 //!
 //! An error is a `syn::Error` that becomes a `compile_error!` at the span of
-//! the bad attribute. The macros do not panic.
+//! the bad attribute. The macros do not panic. The domain rule (below) is a
+//! const check in the generated code, because only the compiler knows the
+//! kind of a field type.
 //!
 //! # Field attributes of `OpParams`
 //!
@@ -27,16 +29,39 @@
 //!   frame (an absolute Z). Its valid values depend on the frame, so it
 //!   takes no static range; the derive refuses `range`, `min`, `gt` or
 //!   `max` beside it.
+//! - `unbounded = "<reason>"`: the field is a number with no domain that
+//!   math or physics gives. The reason is a non-empty string literal. The
+//!   derive refuses it beside `range`, `min`, `gt`, `max` or
+//!   `frame_dependent`.
 //! - `skip = <reason>`: the field is not a parameter.
 //! - `driver_set = <reason>`: the field is written by its own driver, and
 //!   the setter refuses it with the reason.
 //!
 //! A field without `skip` or `driver_set` is a published parameter. Its type
 //! must implement `ParamType`; the compiler refuses a field of another type.
+//!
+//! # The domain rule (F185)
+//!
+//! A published field whose type is a number (`ParamType::KIND` is `Real` or
+//! `Integer`: `f64`, `u32`, `usize`, or an `Option` of one) must state its
+//! domain. Give it one of these:
+//!
+//! - a bound: `range`, `min`, `gt` or `max`, from math or physics;
+//! - `frame_dependent`;
+//! - `unbounded = "<reason>"`.
+//!
+//! The derive emits a const check at the field type. The check reads
+//! `ParamType::KIND`, not the spelling of the type, so a type alias of `f64`
+//! is a number too. A field with none of the three does not compile. The
+//! check also refuses `unbounded` on a field that is not a number.
+//!
+//! A list (`Vec<[f64; 2]>`, `ParamKind::List`), a flag, an enum and an id
+//! (`ToolId`, `ModelId`: `ParamKind::Id`) are not numbers. They take no
+//! domain, and the derive does not ask for one.
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Expr, ExprLit, Fields, Lit, LitStr, Meta, Token};
@@ -71,6 +96,7 @@ struct FieldSpec {
     max: Option<Expr>,
     optional: bool,
     frame_dependent: bool,
+    unbounded: Option<LitStr>,
     skip: Option<Expr>,
     driver_set: Option<Expr>,
 }
@@ -84,6 +110,11 @@ impl FieldSpec {
             || self.max.is_some()
             || self.optional
             || self.frame_dependent
+            || self.unbounded.is_some()
+    }
+
+    fn has_domain(&self) -> bool {
+        self.range.is_some() || self.min.is_some() || self.gt.is_some() || self.max.is_some()
     }
 }
 
@@ -118,6 +149,24 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
                     spec.frame_dependent = true;
                     Ok(())
                 }
+                "unbounded" => {
+                    if spec.unbounded.is_some() {
+                        return Err(syn::Error::new(
+                            span,
+                            "`unbounded` is given twice in #[param(...)]",
+                        ));
+                    }
+                    let reason: LitStr = meta.value()?.parse()?;
+                    if reason.value().trim().is_empty() {
+                        return Err(syn::Error::new(
+                            reason.span(),
+                            "`unbounded` needs a reason: say why math or physics gives this \
+                             number no domain",
+                        ));
+                    }
+                    spec.unbounded = Some(reason);
+                    Ok(())
+                }
                 "help" => set_once(&mut spec.help, meta.value()?.parse()?, &key, span),
                 "range" => set_once(&mut spec.range, meta.value()?.parse()?, &key, span),
                 "min" => set_once(&mut spec.min, meta.value()?.parse()?, &key, span),
@@ -127,7 +176,7 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
                 "driver_set" => set_once(&mut spec.driver_set, meta.value()?.parse()?, &key, span),
                 _ => Err(meta.error(
                     "unknown #[param] key; expected help, range, min, gt, max, \
-                     optional, frame_dependent, skip or driver_set",
+                     optional, frame_dependent, unbounded, skip or driver_set",
                 )),
             }
         })?;
@@ -142,7 +191,14 @@ fn field_spec(field: &syn::Field) -> syn::Result<FieldSpec> {
         return Err(syn::Error::new(
             field.span(),
             "a `skip` or `driver_set` field is not published, so it takes no help, \
-             range or optional",
+             range, optional or unbounded",
+        ));
+    }
+    if spec.unbounded.is_some() && (spec.has_domain() || spec.frame_dependent) {
+        return Err(syn::Error::new(
+            field.span(),
+            "an `unbounded` field states that it has no domain, so it takes no `range`, \
+             `min`, `gt`, `max` or `frame_dependent`",
         ));
     }
     if spec.range.is_some() && (spec.min.is_some() || spec.gt.is_some() || spec.max.is_some()) {
@@ -236,6 +292,7 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let mut driver_set = Vec::new();
     let mut skipped = Vec::new();
     let mut names = Vec::new();
+    let mut checks = Vec::new();
     for field in &fields.named {
         let Some(ident) = &field.ident else {
             return Err(syn::Error::new(field.span(), "a field needs a name"));
@@ -257,6 +314,9 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
             continue;
         }
         let ty = &field.ty;
+        if let Some(check) = domain_check(&name, ty, &spec, &catalog) {
+            checks.push(check);
+        }
         let help = spec.help.as_ref().map_or_else(
             || quote!(::core::option::Option::None),
             |h| quote!(::core::option::Option::Some(#h)),
@@ -268,6 +328,7 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
             #catalog::ParamDef {
                 name: #name,
                 type_name: <#ty as #catalog::ParamType>::TYPE_NAME,
+                kind: <#ty as #catalog::ParamType>::KIND,
                 optional: <#ty as #catalog::ParamType>::OPTIONAL || #force_optional,
                 help: #help,
                 range: #range,
@@ -284,6 +345,47 @@ fn op_params(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 driver_set: &[#(#driver_set),*],
                 skipped: &[#(#skipped),*],
                 fields: &[#(#names),*],
+            };
+        }
+        #(#checks)*
+    })
+}
+
+/// The const check of the domain rule (F185) for one published field, or
+/// `None` when the field states a bound or `frame_dependent`.
+///
+/// The check is a `const _` item at the span of the field type. It reads
+/// `ParamType::KIND`, so the compiler, not the spelling of the type,
+/// decides what a number is. A failed check is a compile error that names
+/// the field.
+fn domain_check(
+    name: &str,
+    ty: &syn::Type,
+    spec: &FieldSpec,
+    catalog: &TokenStream2,
+) -> Option<TokenStream2> {
+    if spec.has_domain() || spec.frame_dependent {
+        return None;
+    }
+    let kind = quote_spanned!(ty.span()=> <#ty as #catalog::ParamType>::KIND);
+    Some(if spec.unbounded.is_some() {
+        let msg = format!(
+            "`{name}` is not a number, so it takes no `unbounded`: only a number has a domain"
+        );
+        quote_spanned! {ty.span()=>
+            const _: () = if !#kind.is_number() {
+                ::core::panic!(#msg)
+            };
+        }
+    } else {
+        let msg = format!(
+            "`{name}` is a published number with no domain: give it `range`, `min`, `gt` or \
+             `max` from math or physics, or `frame_dependent`, or `unbounded = \"<reason>\"` \
+             (F185)"
+        );
+        quote_spanned! {ty.span()=>
+            const _: () = if #kind.is_number() {
+                ::core::panic!(#msg)
             };
         }
     })
@@ -428,6 +530,8 @@ fn param_enum(input: &DeriveInput) -> syn::Result<TokenStream2> {
         impl #impl_generics crate::compute::catalog::ParamType for #ident #ty_generics #where_clause {
             const TYPE_NAME: &'static str = #type_name;
             const OPTION_TYPE_NAME: &'static str = #type_name;
+            const KIND: crate::compute::catalog::ParamKind =
+                crate::compute::catalog::ParamKind::Enum;
         }
     })
 }

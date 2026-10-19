@@ -317,6 +317,7 @@ impl ProjectSession {
                 }
                 // Config-specific param: serialize -> merge -> deserialize
                 let target_type = tc.operation.param_type_name(param);
+                let target_kind = tc.operation.param_kind(param);
                 let mut json = serde_json::to_value(&tc.operation).map_err(|e| {
                     SessionError::InvalidParam(format!("failed to serialize config: {e}"))
                 })?;
@@ -407,7 +408,7 @@ impl ProjectSession {
                     // as `spindle_rpm` and `reference_tool_id` clear with `null`
                     // (step-ladder Phase 4, `coarse_steps`).
                     (_, serde_json::Value::Null)
-                        if target_type.is_some_and(|ty| ty.starts_with("vec<")) =>
+                        if target_kind == Some(crate::compute::catalog::ParamKind::List) =>
                     {
                         serde_json::Value::Array(Vec::new())
                     }

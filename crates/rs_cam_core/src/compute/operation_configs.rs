@@ -218,13 +218,15 @@ pub struct FaceConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(
         help = "Extra distance beyond stock boundary to ensure full coverage.",
@@ -233,6 +235,7 @@ pub struct FaceConfig {
     pub stock_offset: f64,
     pub direction: FaceDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The regions this op faces (geometry selection P4.2, decision D5). A
     /// file with no `selection` key loads the default of this op: the
@@ -270,16 +273,19 @@ pub struct TraceConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=20.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     pub compensation: TraceCompensation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
@@ -329,6 +335,7 @@ pub struct DrillConfig {
     #[param(frame_dependent)]
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
@@ -386,6 +393,7 @@ pub struct AlignmentPinDrillConfig {
     #[param(frame_dependent)]
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The extra holes this op drills (geometry selection P2.3b, DESIGN
     /// 3.1, decision D6). A file with no `selection` key loads the
@@ -464,15 +472,18 @@ pub struct ChamferConfig {
         range = 0.0..=2.0,
     )]
     pub tip_offset: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
@@ -508,13 +519,15 @@ pub struct PocketConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     pub climb: bool,
     pub pattern: PocketPattern,
@@ -523,6 +536,7 @@ pub struct PocketConfig {
     #[param(range = 0.0..=10.0)]
     pub finishing_passes: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
@@ -567,13 +581,15 @@ pub struct ProfileConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     pub climb: bool,
     /// The minimum count of automatic tabs per loop (P5, S12). Every
@@ -621,6 +637,7 @@ pub struct ProfileConfig {
     pub finishing_passes: usize,
     pub compensation: CompensationType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
@@ -669,13 +686,15 @@ pub struct AdaptiveConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
@@ -694,6 +713,7 @@ pub struct AdaptiveConfig {
     #[param(help = HELP_MIN_CUTTING_RADIUS, range = 0.0..=50.0)]
     pub min_cutting_radius: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Residue cleanup strategy. Defaults to `ContourParallelHybrid`
     /// (helical starter pocket + concentric spiral + gradient-following
@@ -758,17 +778,20 @@ pub struct VCarveConfig {
     pub max_depth: f64,
     #[param(help = HELP_STEPOVER, range = 0.01..=10.0)]
     pub stepover: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
@@ -846,17 +869,20 @@ pub struct InlayConfig {
         range = 0.05..=50.0,
     )]
     pub stepover: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
@@ -946,17 +972,20 @@ pub struct InlayPlugConfig {
         range = 0.05..=50.0,
     )]
     pub stepover: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
@@ -1019,17 +1048,20 @@ pub struct ZigzagConfig {
     pub depth: f64,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_ANGLE, range = 0.0..=360.0)]
     pub angle: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Region-first (`ByArea`, the default) or level-first (`Global`)
     /// (ruling R4). The Layered runner reads it.
@@ -1068,13 +1100,15 @@ impl Default for ZigzagConfig {
 pub struct DropCutterConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(
         help = "Lowest Z the tool will descend to during drop-cutter.",
@@ -1086,6 +1120,7 @@ pub struct DropCutterConfig {
     #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
     pub slope_to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Target scallop (cusp) height in mm for the Suggest pipeline. When
     /// `Some(h)`, the feeds calculator derives `stepover` from the tool's
@@ -1099,7 +1134,8 @@ pub struct DropCutterConfig {
     #[param(
         help = "Target scallop (cusp) height in mm. When set, Suggest derives stepover from the \
                 tool's tip radius instead of the ae_factor formula. No effect on a flat or bull \
-                tool."
+                tool.",
+        gt = 0.0
     )]
     pub scallop_height: Option<f64>,
     /// G-LINKSTAGE: cap on the XY gap a raster-row-to-row **surface link**
@@ -1119,7 +1155,7 @@ pub struct DropCutterConfig {
     /// input stock, refused if it leaves the machining regions, and (with
     /// kinematics) kept only when it beats the retract on time.
     #[serde(default)]
-    #[param(optional)]
+    #[param(optional, min = 0.0)]
     pub hookup_mm: f64,
 }
 
@@ -1155,13 +1191,15 @@ pub struct Adaptive3dConfig {
     /// `compute::execute::adaptive3d_effective_stock_to_leave`.
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave_axial: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
@@ -1217,6 +1255,7 @@ pub struct Adaptive3dConfig {
     /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). Ignored by
     /// the ContourParallel/Adaptive/AgentSearch strategies.
     #[serde(default = "default_trochoid_cap_mult")]
+    #[param(gt = 0.0)]
     pub trochoid_cap_mult: f64,
     /// Engagement quantity for the AgentSearch 2D sub-pass. Defaults to
     /// the historical `DiskArea`; `LeadingArc` is the units-correct
@@ -1227,6 +1266,7 @@ pub struct Adaptive3dConfig {
     #[serde(default)]
     pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
     /// region must produce in its 2D adaptive sub-pass (perimeter sweep +
@@ -1236,6 +1276,7 @@ pub struct Adaptive3dConfig {
     /// cycle time on travel than on material removal. Default 5.0 mm matches
     /// the Wanaka Back Rough measurement (90/149 plunges cut ≤ 10 mm pre-fix).
     #[serde(default = "default_min_region_cut_length_mm")]
+    #[param(min = 0.0)]
     pub min_region_cut_length_mm: f64,
     /// F-038b: maximum XY distance (mm) to attempt a keep-tool-down link
     /// between cut groups instead of retract-rapid-plunge. `None` falls
@@ -1243,11 +1284,13 @@ pub struct Adaptive3dConfig {
     /// typical "stay down distance" for roughing). `Some(0.0)` disables
     /// the feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(min = 0.0)]
     pub max_stay_down_distance_mm: Option<f64>,
     /// F-038b: vertical clearance (mm) added on top of the maximum mesh
     /// heightfield sample along a stay-down link. Default 0.5 mm absorbs
     /// dexel/mesh discretisation noise.
     #[serde(default = "default_stay_down_clearance_mm")]
+    #[param(min = 0.0)]
     pub stay_down_clearance_mm: f64,
 }
 
@@ -1367,16 +1410,19 @@ pub struct WaterlineConfig {
     pub z_step: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     pub continuous: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// G-LINKSTAGE: cap on the XY gap a level-to-level **surface link** may
     /// span, in mm. **Ships at `0.0`, which is OFF** — same contract and same
@@ -1389,7 +1435,7 @@ pub struct WaterlineConfig {
     /// reorders it without rotating. Declaring the kinds in the generator is
     /// the follow-up.
     #[serde(default)]
-    #[param(optional)]
+    #[param(optional, min = 0.0)]
     pub hookup_mm: f64,
 }
 
@@ -1435,13 +1481,15 @@ pub struct PencilConfig {
     pub offset_stepover: f64,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
@@ -1460,6 +1508,7 @@ pub struct PencilConfig {
     /// nestles instead of riding up the steep wall. `#[serde(default)]` so older
     /// project files load.
     #[serde(default = "crate::finish::pencil::bisector_strength_default")]
+    #[param(min = 0.0)]
     pub bisector_strength: f64,
     /// Diameter (mm) of the bigger reference (finishing) tool this pencil pass
     /// cleans up after. The gate keeps a seam by how much deeper the pencil tool
@@ -1549,10 +1598,12 @@ pub struct PencilConfig {
         help = "Reach (mm) of the CLEARANCE-HOP link tier only; hookup_distance caps the at-depth \
                 tier. Absent = one cap for both tiers (the shipped emission, byte for byte) — \
                 absent does NOT mean the hop tier is off. 0 refuses every hop and keeps the \
-                at-depth tier, which is the control arm that separates the two tiers."
+                at-depth tier, which is the control arm that separates the two tiers.",
+        min = 0.0
     )]
     pub link_hop_distance_mm: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
 }
 
@@ -1646,23 +1697,27 @@ pub struct ScallopConfig {
     pub slope_from: f64,
     #[param(help = HELP_SLOPE_TO, range = 0.0..=90.0)]
     pub slope_to: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// A/M7 — cap (mm) on the XY gap a ring-to-ring surface link may span
     /// instead of a full `retract → rapid → replunge` round trip. `0.0`
     /// disables it. See [`crate::finish::scallop::ScallopParams::intra_pass_hookup_mm`]
     /// for what the relink does and refuses to do.
     #[serde(default = "default_scallop_intra_pass_hookup_mm")]
+    #[param(min = 0.0)]
     pub intra_pass_hookup_mm: f64,
     /// M8 (2026-09-03) — take the rings from the iso-scallop FIELD instead
     /// of the offset cascade: per-point spacing (no per-ring min-reduction
@@ -1773,7 +1828,10 @@ pub struct UnifiedFinishConfig {
     pub steep_threshold_deg: f64,
     /// Slope entering the very-steep waterline band (deg). Advanced
     /// dial — the scallop→waterline boundary.
-    #[param(help = "Slope entering the very-steep waterline band (deg). Above this: waterline.")]
+    #[param(
+        help = "Slope entering the very-steep waterline band (deg). Above this: waterline.",
+        range = 0.0..=90.0,
+    )]
     pub waterline_threshold_deg: f64,
     /// Band overlap at polygon extraction (mm) — `steep_shallow`'s
     /// `overlap_distance` analogue.
@@ -1814,15 +1872,18 @@ pub struct UnifiedFinishConfig {
         range = 0.0..=10.0,
     )]
     pub stock_to_leave: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// v3 S1 claims pipeline (`planning/unified_v3_design.md` §2.1): run
     /// the rest-depth detector inside this op's own generation (against
@@ -1951,6 +2012,7 @@ pub struct UnifiedFinishConfig {
     /// point keeps surface contact) AND, when machine kinematics are in
     /// scope, actually faster than the retract it replaces.
     #[serde(default = "default_unified_finish_intra_region_hookup_mm")]
+    #[param(min = 0.0)]
     pub intra_region_hookup_mm: f64,
     /// XY gap (mm) the crease-claims node's emitter may bridge with a
     /// stay-down surface feed instead of retracting. See
@@ -1960,6 +2022,7 @@ pub struct UnifiedFinishConfig {
     /// alongside `pencil_claims = true`. Default 5.0 (the historical
     /// `PencilParams::default()` value); `0.0` disables crease linking.
     #[serde(default = "default_unified_finish_crease_hookup_mm")]
+    #[param(min = 0.0)]
     pub crease_hookup_mm: f64,
     /// F2 (multi-tool island finishing): island **absorption floor** (mm²)
     /// for [`crate::finish::finish_planner::decompose`]'s min-area step — a
@@ -1981,7 +2044,8 @@ pub struct UnifiedFinishConfig {
                 band island smaller than this is absorbed into its surrounding band. null = derive \
                 from the tool as (2 * cusp_radius)^2 * 4 (roughly four tool-diameters^2). CUSP \
                 radius, not envelope: on a 1 mm-tip / 6 mm-shank taper the derived value is 4 mm^2, \
-                not 144 mm^2."
+                not 144 mm^2.",
+        min = 0.0
     )]
     pub min_region_area_mm2: Option<f64>,
     /// F2: island **merge radius** (mm) — the morphological close radius
@@ -2000,7 +2064,8 @@ pub struct UnifiedFinishConfig {
     #[param(
         help = "Island merge radius (mm) — the morphological close radius applied to each band mask \
                 before regions are extracted. Larger merges neighbouring islands into one region. \
-                null = derive from the tool as cusp_radius * 0.5 (cusp radius, not envelope)."
+                null = derive from the tool as cusp_radius * 0.5 (cusp radius, not envelope).",
+        min = 0.0
     )]
     pub close_radius_mm: Option<f64>,
     /// F2: band **hysteresis width** (degrees) — a cell leaves a band only
@@ -2018,7 +2083,8 @@ pub struct UnifiedFinishConfig {
     #[param(
         help = "Band hysteresis width (deg): a cell leaves a band only once its slope falls below \
                 (enter - hysteresis_deg). null = the planner's fixed 10.0. Load-bearing — at 0 the \
-                raw slope masks storm to O(100) speckled islands."
+                raw slope masks storm to O(100) speckled islands.",
+        range = 0.0..=90.0,
     )]
     pub hysteresis_deg: Option<f64>,
     /// Which sampler builds this op's classification grid (M3 wave 7b —
@@ -2266,13 +2332,15 @@ pub struct SteepShallowConfig {
     pub stepover: f64,
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
     pub z_step: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
@@ -2281,6 +2349,7 @@ pub struct SteepShallowConfig {
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// G-LINKSTAGE (W6.4.6): cap on the XY gap a link between two runs of
     /// one half may span, in mm. **Ships at `0.0`, which is OFF**: the same
@@ -2289,7 +2358,7 @@ pub struct SteepShallowConfig {
     /// On a rest pass each link reads the op's link ceiling
     /// (`LinkCeilingNeed::WithRemainingStock`).
     #[serde(default)]
-    #[param(optional)]
+    #[param(optional, min = 0.0)]
     pub hookup_mm: f64,
 }
 
@@ -2350,13 +2419,15 @@ pub struct RampFinishConfig {
     pub slope_to: f64,
     pub direction: CutDirection,
     pub order_bottom_up: bool,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_SAMPLING, range = 0.1..=5.0)]
     pub sampling: f64,
@@ -2365,6 +2436,7 @@ pub struct RampFinishConfig {
     #[param(help = HELP_TOLERANCE, range = 0.01..=1.0)]
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
 }
 
@@ -2413,17 +2485,20 @@ pub struct SpiralFinishConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
     pub stepover: f64,
     pub direction: SpiralDirection,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
 }
 
@@ -2478,17 +2553,20 @@ pub struct RadialFinishConfig {
         max = 5.0
     )]
     pub point_spacing: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
 }
 
@@ -2531,17 +2609,20 @@ pub struct HorizontalFinishConfig {
     pub angle_threshold: f64,
     #[param(help = HELP_STEPOVER, range = 0.05..=20.0)]
     pub stepover: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     #[param(help = HELP_STOCK_TO_LEAVE_AXIAL, range = 0.0..=10.0)]
     pub stock_to_leave: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
 }
 
@@ -2663,13 +2744,15 @@ pub struct ProjectCurveConfig {
         range = 0.01..=5.0,
     )]
     pub point_spacing: f64,
+    #[param(gt = 0.0)]
     pub feed_rate: f64,
+    #[param(gt = 0.0)]
     pub plunge_rate: f64,
     /// Feed (mm/min) of a helix or ramp entry through material. `None`
     /// uses the plunge feed (the behaviour before the field). A straight
     /// feed through air and a straight plunge peck keep their own feeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(help = RAMP_FEED_RATE_HELP)]
+    #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
     /// Optional separate surface model for projection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2694,6 +2777,7 @@ pub struct ProjectCurveConfig {
     )]
     pub projection: ProjectCurveProjection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// Cap (mm) on the XY gap between two projected chains that may be
     /// joined by a single clearance-height link instead of a full
@@ -2786,6 +2870,53 @@ macro_rules! depth_semantics_form {
     };
 }
 
+/// The accessors of one role clause of `impl_operation_params!` (F163).
+///
+/// `none` emits nothing: the trait default answers `None` and refuses the
+/// write. `extra` (stepover only) emits nothing either, because the
+/// config's `extra` block writes the accessors. A field name emits the
+/// accessors. The literal arms come first, so `none` is never read as a
+/// field name.
+macro_rules! op_role {
+    (ramp_feed_rate: none) => {};
+    (ramp_feed_rate: $f:ident) => {
+        fn ramp_feed_rate(&self) -> Option<f64> {
+            self.$f
+        }
+        fn set_ramp_feed_rate(&mut self, value: Option<f64>) -> bool {
+            self.$f = value;
+            true
+        }
+    };
+    (stepover: none) => {};
+    (stepover: extra) => {};
+    (stepover: $f:ident) => {
+        fn stepover(&self) -> Option<f64> {
+            Some(self.$f)
+        }
+        fn set_stepover(&mut self, value: f64) -> bool {
+            self.$f = value;
+            true
+        }
+    };
+    (depth_per_pass: none) => {};
+    (depth_per_pass: $f:ident) => {
+        fn depth_per_pass(&self) -> Option<f64> {
+            Some(self.$f)
+        }
+        fn set_depth_per_pass(&mut self, value: f64) -> bool {
+            self.$f = value;
+            true
+        }
+    };
+    (total_depth: none) => {};
+    (total_depth: $f:ident) => {
+        fn total_depth(&self) -> Option<f64> {
+            Some(self.$f)
+        }
+    };
+}
+
 /// One `impl OperationParams` per config, declared instead of written.
 ///
 /// CMP-06: the 24 hand-written blocks ran 755 lines, of which 432 were the
@@ -2795,20 +2926,26 @@ macro_rules! depth_semantics_form {
 /// emits the universal six with no declaration at all and takes only what
 /// differs.
 ///
-/// Clauses, in this order, all but the last two optional:
+/// Clauses, in this order. The first five and `depth_semantics` are
+/// required (F163): each config states each decision, and a new config
+/// that leaves one out does not compile. `none` is the explicit "this
+/// config has no such field"; the trait default then answers `None` and
+/// refuses the write.
 ///
 /// - `plunge_rate:` the field the plunge rate reads and writes. The two
 ///   drilling ops name `feed_rate` here: their motion is purely vertical,
 ///   so the plunge rate IS the feed rate.
-/// - `stepover:` the field behind `stepover` / `set_stepover`. Absent
-///   means the config has no stepover and the trait default refuses the
-///   write. Pencil names `offset_stepover` here and RampFinish names
+/// - `ramp_feed_rate:` the `Option<f64>` field behind `ramp_feed_rate` /
+///   `set_ramp_feed_rate`, or `none`.
+/// - `stepover:` the field behind `stepover` / `set_stepover`, or `none`,
+///   or `extra` when the `extra` block writes the two accessors (Pencil:
+///   its stepover is gated on the pass count). RampFinish names
 ///   `max_stepdown` on `depth_per_pass`. These feed the feeds accessors
 ///   only: the setter accepts a name only when the registry publishes it
 ///   (D2: no setter alias remains).
 /// - `depth_per_pass:` the field behind `depth_per_pass` /
-///   `set_depth_per_pass`.
-/// - `total_depth:` the field behind `total_depth`.
+///   `set_depth_per_pass`, or `none`.
+/// - `total_depth:` the field behind `total_depth`, or `none`.
 /// - `scallop_height:` an `f64` field; `scallop_height_opt:` an
 ///   `Option<f64>` field. The two differ only in where the `Option` sits.
 /// - `extra { ... }` — verbatim trait methods, for a config whose
@@ -2819,10 +2956,10 @@ macro_rules! impl_operation_params {
     (
         $config:ty {
             plunge_rate: $plunge:ident,
-            $(ramp_feed_rate: $rf:ident,)?
-            $(stepover: $so:ident,)?
-            $(depth_per_pass: $dpp:ident,)?
-            $(total_depth: $td:ident,)?
+            ramp_feed_rate: $rf:ident,
+            stepover: $so:ident,
+            depth_per_pass: $dpp:ident,
+            total_depth: $td:ident,
             $(scallop_height: $sh:ident,)?
             $(scallop_height_opt: $sho:ident,)?
             $(extra { $($extra:tt)* })?
@@ -2842,38 +2979,10 @@ macro_rules! impl_operation_params {
             fn set_plunge_rate(&mut self, value: f64) {
                 self.$plunge = value;
             }
-            $(
-                fn ramp_feed_rate(&self) -> Option<f64> {
-                    self.$rf
-                }
-                fn set_ramp_feed_rate(&mut self, value: Option<f64>) -> bool {
-                    self.$rf = value;
-                    true
-                }
-            )?
-            $(
-                fn stepover(&self) -> Option<f64> {
-                    Some(self.$so)
-                }
-                fn set_stepover(&mut self, value: f64) -> bool {
-                    self.$so = value;
-                    true
-                }
-            )?
-            $(
-                fn depth_per_pass(&self) -> Option<f64> {
-                    Some(self.$dpp)
-                }
-                fn set_depth_per_pass(&mut self, value: f64) -> bool {
-                    self.$dpp = value;
-                    true
-                }
-            )?
-            $(
-                fn total_depth(&self) -> Option<f64> {
-                    Some(self.$td)
-                }
-            )?
+            op_role!(ramp_feed_rate: $rf);
+            op_role!(stepover: $so);
+            op_role!(depth_per_pass: $dpp);
+            op_role!(total_depth: $td);
             $(
                 fn scallop_height(&self) -> Option<f64> {
                     Some(self.$sh)
@@ -2925,6 +3034,7 @@ impl_operation_params!(PocketConfig {
 impl_operation_params!(ProfileConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
     depth_per_pass: depth_per_pass,
     total_depth: depth,
     depth_semantics: Explicit(depth)
@@ -2943,6 +3053,8 @@ impl_operation_params!(VCarveConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(max_depth)
 });
 
@@ -2950,6 +3062,8 @@ impl_operation_params!(InlayConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(pocket_depth)
 });
 
@@ -2958,6 +3072,7 @@ impl_operation_params!(InlayPlugConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_per_pass: depth_per_pass,
+    total_depth: none,
     depth_semantics: ExplicitFrom(total_cut_depth)
 });
 
@@ -2973,6 +3088,7 @@ impl_operation_params!(ZigzagConfig {
 impl_operation_params!(TraceConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
     depth_per_pass: depth_per_pass,
     total_depth: depth,
     depth_semantics: Explicit(depth)
@@ -2981,17 +3097,28 @@ impl_operation_params!(TraceConfig {
 // Drilling is purely vertical: the plunge rate IS the feed rate.
 impl_operation_params!(DrillConfig {
     plunge_rate: feed_rate,
+    ramp_feed_rate: none,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(depth)
 });
 
 impl_operation_params!(AlignmentPinDrillConfig {
     plunge_rate: feed_rate,
+    ramp_feed_rate: none,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(spoilboard_penetration)
 });
 
 impl_operation_params!(ChamferConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(chamfer_width)
 });
 
@@ -2999,6 +3126,8 @@ impl_operation_params!(DropCutterConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     scallop_height_opt: scallop_height,
     depth_semantics: DerivedStockTop(min_z)
 });
@@ -3008,6 +3137,7 @@ impl_operation_params!(Adaptive3dConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_per_pass: depth_per_pass,
+    total_depth: none,
     depth_semantics: None
 });
 
@@ -3015,13 +3145,18 @@ impl_operation_params!(Adaptive3dConfig {
 impl_operation_params!(WaterlineConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
     depth_per_pass: z_step,
+    total_depth: none,
     depth_semantics: None
 });
 
 impl_operation_params!(PencilConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: extra,
+    depth_per_pass: none,
+    total_depth: none,
     extra {
         /// Pencil's stepover is the OFFSET stepover, and it only exists
         /// when the pass count asks for offsets. A single-pass pencil has
@@ -3045,6 +3180,9 @@ impl_operation_params!(PencilConfig {
 impl_operation_params!(ScallopConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     scallop_height: scallop_height,
     depth_semantics: None
 });
@@ -3052,6 +3190,9 @@ impl_operation_params!(ScallopConfig {
 impl_operation_params!(UnifiedFinishConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     scallop_height: scallop_height,
     depth_semantics: None
 });
@@ -3060,6 +3201,8 @@ impl_operation_params!(SteepShallowConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: None
 });
 
@@ -3067,7 +3210,9 @@ impl_operation_params!(SteepShallowConfig {
 impl_operation_params!(RampFinishConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
     depth_per_pass: max_stepdown,
+    total_depth: none,
     depth_semantics: None
 });
 
@@ -3075,12 +3220,17 @@ impl_operation_params!(SpiralFinishConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: None
 });
 
 impl_operation_params!(RadialFinishConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: None
 });
 
@@ -3088,12 +3238,17 @@ impl_operation_params!(HorizontalFinishConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: None
 });
 
 impl_operation_params!(ProjectCurveConfig {
     plunge_rate: plunge_rate,
     ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: none,
     depth_semantics: Explicit(depth)
 });
 
