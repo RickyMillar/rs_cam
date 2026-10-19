@@ -331,7 +331,7 @@ The lead approves `DESIGN.md`. These rulings override it where they differ.
 |---|---|---|---|
 | P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
-| P2 selection core | P2.1, P2.2 done; P2.3a running | 349b3a48, e041d244 | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
+| P2 selection core | P2.1–P2.3b done; P2.3c running | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work) | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | blocked on P2 | | |
 | P4 UI + sources | blocked on P2 | | |
 | P5 tabs | not started | | can follow P1 |
