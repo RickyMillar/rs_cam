@@ -33,13 +33,13 @@ pub const DEFAULT_STICKOUT_MM: f64 = 25.0;
 /// Envelope 3.0 mm, cusp 0.5 mm — a 6× split, so any drift between the two
 /// scales is visible.
 pub fn wanaka_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, DEFAULT_STICKOUT_MM)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, DEFAULT_STICKOUT_MM).unwrap()
 }
 
 /// A second taper angle, to show angle-dependent boundaries actually move
 /// with α rather than being fixtures of the one shipped tool.
 pub fn steep_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 15.0, 6.0, DEFAULT_STICKOUT_MM)
+    TaperedBallEndmill::new(1.0, 15.0, 6.0, DEFAULT_STICKOUT_MM).unwrap()
 }
 
 /// Ball control: `cusp_radius_mm() == envelope_radius_mm()`, so anything
@@ -66,6 +66,7 @@ pub fn tapered_cutter(
         shaft_diameter_mm,
         DEFAULT_STICKOUT_MM,
     )
+    .unwrap()
 }
 
 // ── Session-level tool records (`ToolConfig`) ───────────────────────────

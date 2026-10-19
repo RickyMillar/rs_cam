@@ -116,7 +116,7 @@ const TOL_MM: f64 = 0.05;
 /// in the measured case. `radius()` is the SHANK; the tip that nestles into
 /// the surface is `tip_contact_radius`, which is what the planner reads.
 fn tapered_ball() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0)
+    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0).unwrap()
 }
 
 fn island() -> Polygon2 {

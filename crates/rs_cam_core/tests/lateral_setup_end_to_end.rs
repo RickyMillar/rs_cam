@@ -550,7 +550,7 @@ fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
         .obstacle_set_for_toolpath(0)
         .expect("the obstacle resolves");
     assert!(!set.is_empty());
-    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
+    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
             &tool.to_assembly(&session.head_fit_for_toolpath(0)),

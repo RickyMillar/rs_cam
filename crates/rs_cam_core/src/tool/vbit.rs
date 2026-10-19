@@ -10,10 +10,20 @@
 //! Edge contact uses the hyperbola intersection approach from OpenCAMLib.
 
 use super::{
-    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
-    flat_chip_geometry_for_radius,
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter, ToolDimension,
+    ToolGeometryError, flat_chip_geometry_for_radius,
 };
 use crate::geo::P3;
+
+/// The radius of a V-bit cone at height `h` above the tip, before the clamp
+/// at the cutter radius. `tan_half_angle` is the tangent of the half-angle.
+///
+/// F075: the ONE copy of the cone width. [`VBitEndmill`] (its
+/// `width_at_height`) and `feeds::ToolGeometryHint::engaged_diameter_at_doc`
+/// (which holds only a hint, no cutter) both call it.
+pub fn vbit_cone_radius_at_height(tan_half_angle: f64, h: f64) -> f64 {
+    h * tan_half_angle
+}
 
 #[derive(Debug, Clone)]
 pub struct VBitEndmill {
@@ -32,15 +42,19 @@ pub struct VBitEndmill {
 }
 
 impl VBitEndmill {
-    pub fn new(diameter: f64, included_angle_deg: f64, cutting_length: f64) -> Self {
-        assert!(
-            included_angle_deg > 0.0 && included_angle_deg < 180.0,
-            "Included angle must be between 0 and 180 degrees, got {}",
-            included_angle_deg
-        );
+    /// Build a V-bit. Refuses a diameter or an included angle outside
+    /// its [`ToolDimension`] domain (F029: the angle used to be an
+    /// `assert!` that panicked the GUI thread).
+    pub fn new(
+        diameter: f64,
+        included_angle_deg: f64,
+        cutting_length: f64,
+    ) -> Result<Self, ToolGeometryError> {
+        ToolDimension::Diameter.check(diameter, diameter)?;
+        ToolDimension::IncludedAngle.check(included_angle_deg, diameter)?;
         let half_angle_rad = (included_angle_deg / 2.0).to_radians();
         let tan_half_angle = half_angle_rad.tan();
-        Self {
+        Ok(Self {
             diameter,
             included_angle_deg,
             cutting_length,
@@ -48,7 +62,7 @@ impl VBitEndmill {
             tip_diameter: 0.0,
             half_angle_rad,
             tan_half_angle,
-        }
+        })
     }
 
     /// Half-angle in radians.
@@ -122,14 +136,12 @@ impl MillingCutter for VBitEndmill {
     /// Engaged diameter at `axial_doc_mm`, used by the vendor-LUT
     /// chipload gate/lookup path.
     ///
-    /// This is the trait-level twin of
-    /// [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]'s
-    /// `VBit` branch (feeds/mod.rs) — same cone-width geometry,
-    /// hand-maintained separately because Suggest's call site only
-    /// carries a `ToolGeometryHint`, not a cutter instance. Kept honest
-    /// by the parity sentry
+    /// The trait-level twin of
+    /// [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]'s `VBit`
+    /// branch. Both read the cone width from [`vbit_cone_radius_at_height`]
+    /// (F075); the parity sentry
     /// `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
-    /// (planning/finishing_stack_review_2026-07.md S.3).
+    /// still holds the two clamps equal.
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
         (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
     }
@@ -144,7 +156,7 @@ impl MillingCutter for VBitEndmill {
 
     fn width_at_height(&self, h: f64) -> f64 {
         let big_r = self.radius();
-        let w = h * self.tan_half_angle;
+        let w = vbit_cone_radius_at_height(self.tan_half_angle, h);
         w.min(big_r)
     }
 
@@ -358,17 +370,18 @@ mod tests {
 
     #[test]
     fn test_vbit_construction() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         assert_eq!(tool.diameter, 10.0);
         assert_eq!(tool.included_angle_deg, 90.0);
         assert!((tool.half_angle() - std::f64::consts::FRAC_PI_4).abs() < 1e-10);
         assert_eq!(tool.radius(), 5.0);
     }
 
+    /// F029: the constructor refuses; it does not assert.
     #[test]
-    #[should_panic(expected = "Included angle")]
     fn test_vbit_invalid_angle() {
-        VBitEndmill::new(10.0, 0.0, 25.0);
+        let err = VBitEndmill::new(10.0, 0.0, 25.0).unwrap_err();
+        assert_eq!(err.dimension, crate::tool::ToolDimension::IncludedAngle);
     }
 
     #[test]
@@ -377,7 +390,7 @@ mod tests {
         // and must produce a real, positive chip metric rather than an
         // error — otherwise the cusp samples are silently dropped from the
         // chipload gate.
-        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
         let geom = tool
             .chip_geometry(
                 0.01,
@@ -393,7 +406,7 @@ mod tests {
     #[test]
     fn chip_geometry_rejects_zero_depth_tip_point() {
         // Only the geometric tip point (zero depth) has no chip area.
-        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
         assert!(matches!(
             tool.chip_geometry(
                 0.0,
@@ -409,7 +422,7 @@ mod tests {
     #[test]
     fn flat_tip_diameter_defaults_zero_and_is_settable() {
         use crate::tool::MillingCutter;
-        let mut tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let mut tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         assert_eq!(tool.flat_tip_diameter(), 0.0);
         tool.tip_diameter = 1.5;
         assert_eq!(tool.flat_tip_diameter(), 1.5);
@@ -425,7 +438,7 @@ mod tests {
     fn mrr_cross_section_is_triangular_half_of_rectangular() {
         // V-bit groove cross-section is ½ · base · height, exactly half the
         // rectangular slab the default trait method assumes.
-        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
         let doc = 2.0;
         let woc = 3.0;
         let area = tool.mrr_cross_section_mm2(doc, woc);
@@ -435,7 +448,7 @@ mod tests {
 
     #[test]
     fn chip_geometry_accepts_conical_surface() {
-        let tool = VBitEndmill::new(12.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
         let geom = tool
             .chip_geometry(
                 2.0,
@@ -453,7 +466,7 @@ mod tests {
     fn test_vbit_profile_90deg() {
         // 90° V-bit: half_angle = 45°, tan(45°) = 1
         // height(r) = r / tan(45°) = r
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         assert!((tool.height_at_radius(0.0).unwrap()).abs() < 1e-10);
         assert!((tool.height_at_radius(1.0).unwrap() - 1.0).abs() < 1e-10);
         assert!((tool.height_at_radius(5.0).unwrap() - 5.0).abs() < 1e-10);
@@ -464,7 +477,7 @@ mod tests {
     fn test_vbit_profile_60deg() {
         // 60° V-bit: half_angle = 30°, tan(30°) = 1/sqrt(3)
         // height(r) = r * sqrt(3)
-        let tool = VBitEndmill::new(10.0, 60.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 60.0, 25.0).unwrap();
         let expected = 3.0 * 3.0_f64.sqrt(); // r=3, h = 3*sqrt(3) ≈ 5.196
         let h = tool.height_at_radius(3.0).unwrap();
         assert!(
@@ -478,7 +491,7 @@ mod tests {
     #[test]
     fn test_vbit_width_at_height() {
         // 90° V-bit: width(h) = h * tan(45°) = h
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         assert!((tool.width_at_height(0.0)).abs() < 1e-10);
         assert!((tool.width_at_height(3.0) - 3.0).abs() < 1e-10);
         // Above cone height: clamped to R
@@ -487,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_vbit_parameters_90deg() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         // center_height = R / tan(45°) = 5
         assert!((tool.center_height() - 5.0).abs() < 1e-10);
         assert_eq!(tool.normal_length(), 0.0);
@@ -496,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_vbit_vertex_drop_center() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let mut cl = CLPoint::new(0.0, 0.0);
         tool.vertex_drop(&mut cl, &P3::new(0.0, 0.0, 10.0));
         // height(0) = 0, CL.z = 10
@@ -505,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_vbit_vertex_drop_edge() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let mut cl = CLPoint::new(0.0, 0.0);
         // Vertex at r=5 (edge), z=0
         tool.vertex_drop(&mut cl, &P3::new(5.0, 0.0, 0.0));
@@ -515,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_vbit_facet_drop_horizontal() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let tri = Triangle::new(
             P3::new(-50.0, -50.0, 5.0),
             P3::new(50.0, -50.0, 5.0),
@@ -530,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_vbit_facet_drop_sloped() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         // 45-degree slope
         let tri = Triangle::new(
             P3::new(-20.0, -50.0, -20.0),
@@ -546,7 +559,7 @@ mod tests {
 
     #[test]
     fn test_vbit_edge_drop_horizontal() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         // Horizontal edge along Y at x=3, z=0
         let p1 = P3::new(3.0, -10.0, 0.0);
         let p2 = P3::new(3.0, 10.0, 0.0);
@@ -565,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_vbit_edge_out_of_range() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let p1 = P3::new(10.0, -5.0, 0.0);
         let p2 = P3::new(10.0, 5.0, 0.0);
         let mut cl = CLPoint::new(0.0, 0.0);
@@ -575,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_vbit_edge_drop_sloped() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         // Sloped edge from (0,-5,0) to (0,5,10)
         let p1 = P3::new(0.0, -5.0, 0.0);
         let p2 = P3::new(0.0, 5.0, 10.0);
@@ -589,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_vbit_full_drop_cutter() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let tri = Triangle::new(
             P3::new(-50.0, -50.0, 3.0),
             P3::new(50.0, -50.0, 3.0),
@@ -606,7 +619,7 @@ mod tests {
         use crate::mesh::make_test_hemisphere;
         let hemisphere_r = 20.0;
         let mesh = make_test_hemisphere(hemisphere_r, 32);
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
 
         let mut cl = CLPoint::new(0.0, 0.0);
         for face in &mesh.faces {
@@ -627,7 +640,7 @@ mod tests {
         // When the edge is nearly parallel to the cone slope, ccu_sq can be
         // very small or slightly negative due to floating-point rounding.
         // The .max(0.0) guard should prevent NaN from sqrt.
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
 
         // Horizontal edge at exactly d=0 (on the tool axis) — slope=0 produces ccu_sq=0
         let p1 = P3::new(0.0, -5.0, 0.0);
@@ -655,8 +668,8 @@ mod tests {
     #[test]
     fn test_vbit_steeper_profile() {
         // 60° V-bit has steeper sides than 90°
-        let tool_90 = VBitEndmill::new(10.0, 90.0, 25.0);
-        let tool_60 = VBitEndmill::new(10.0, 60.0, 25.0);
+        let tool_90 = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
+        let tool_60 = VBitEndmill::new(10.0, 60.0, 25.0).unwrap();
 
         // At same radius, 60° V-bit is taller
         let h_90 = tool_90.height_at_radius(3.0).unwrap();

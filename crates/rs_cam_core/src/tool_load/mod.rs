@@ -303,7 +303,8 @@ pub fn chip_target_for_toolpath(
     if matches!(material, Material::Custom { .. }) {
         return None;
     }
-    let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+    // F029: no chip target for a tool outside its domain.
+    let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
     let spec = operation.spec();
     let lut_op_family = op_family_to_lut(spec.feeds_family);
     let lut_pass_role = match spec.feeds_pass_role {

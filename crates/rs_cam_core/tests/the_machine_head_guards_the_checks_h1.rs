@@ -105,7 +105,8 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
         cutting_length: 20.0,
         stickout: 45.0,
         ..ball_tool_config(6.0)
-    });
+    })
+    .unwrap();
     let assembly = cutter.to_assembly(&HeadFit::fixed(&MachineHead::bare_collet()));
     let view = ObstacleSet::default()
         .for_tool(&assembly, Some(&stock))

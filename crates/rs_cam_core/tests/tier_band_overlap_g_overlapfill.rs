@@ -639,7 +639,7 @@ fn rivmap100_tiered_finish_step0() {
         .find(|t| t.id.0 == tc.tool_id)
         .unwrap()
         .clone();
-    let def = build_cutter(&tool);
+    let def = build_cutter(&tool).unwrap();
     let assembly = def.to_assembly(&rs_cam_core::machine::head::HeadFit::default());
     let mesh = session
         .models()

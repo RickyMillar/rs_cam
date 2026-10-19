@@ -79,7 +79,7 @@ fn wanaka_unified_topo_dump_e3() {
     let started = std::time::Instant::now();
     let mesh = TriangleMesh::from_stl_scaled(mesh_path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
     let never_cancel = || false;
 
     let mut params = UnifiedFinishParams {

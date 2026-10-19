@@ -2500,8 +2500,8 @@ impl ProjectSession {
             }
             Command::AddToolpath(args) => self.add_toolpath(args.setup_index, *args.config),
             Command::RemoveToolpath(args) => self.remove_toolpath(args.index),
-            Command::AddTool(args) => Ok(self.add_tool(*args.tool)),
-            Command::AddToolFromLibrary(args) => Ok(self.add_tool(*args.tool)),
+            Command::AddTool(args) => self.add_tool(*args.tool),
+            Command::AddToolFromLibrary(args) => self.add_tool(*args.tool),
             Command::RemoveTool(args) => self.remove_tool(args.index),
             Command::SetStockConfig(args) => Ok(self.set_stock_config(*args.stock)),
             Command::SetStockSource(args) => self.set_stock_source(args.index, args.source),
@@ -2579,7 +2579,7 @@ impl ProjectSession {
                 Ok(self.invalidate_toolpath_inputs(args.index))
             }
             Command::UpdateStockFromBbox(args) => Ok(self.update_stock_from_bbox(&args.bbox)),
-            Command::ReplaceTools(args) => Ok(self.replace_tools(args.tools)),
+            Command::ReplaceTools(args) => self.replace_tools(args.tools),
             Command::SetFeedsProvenance(args) => {
                 self.set_feeds_provenance(args.index, *args.feeds_provenance)
             }

@@ -6,7 +6,6 @@
 //! pre-sim warning baselines stay in lock-step.
 
 use crate::compute::catalog::{OperationConfig, OperationType};
-use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{FeedsError, FeedsInput, FeedsResult, SetupContext, VendorLut};
 use crate::machine::MachineProfile;
@@ -955,13 +954,12 @@ pub fn feeds_input_for_operation<'a>(
 ) -> FeedsInput<'a> {
     let (family, role) = operation.feeds_style();
     let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation);
-    let tool_def = build_cutter(tool);
     FeedsInput {
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,
         shank_diameter: Some(tool.shank_diameter),
-        tool_geometry: tool_def.to_geometry_hint(),
+        tool_geometry: tool.geometry_hint(),
         material,
         machine,
         operation: family,
@@ -1000,6 +998,9 @@ pub fn feeds_result_for_operation(
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> Result<FeedsResult, FeedsError> {
+    // F029: the one Suggest door refuses a tool outside its domain, so no
+    // pass below meets a tool that builds no cutter.
+    tool.validate().map_err(FeedsError::ToolOutOfDomain)?;
     let input =
         feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
     crate::feeds::validate_tool_for_operation(&input)?;

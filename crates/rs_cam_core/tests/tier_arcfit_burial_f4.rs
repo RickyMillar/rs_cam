@@ -170,7 +170,7 @@ struct Burial {
 }
 
 fn burial(tp: &Toolpath, mesh: &TriangleMesh, index: &SpatialIndex) -> Burial {
-    let cutter = build_cutter(&ball_tool_config(FINE_DIAMETER));
+    let cutter = build_cutter(&ball_tool_config(FINE_DIAMETER)).unwrap();
     let probe = EntrySurfaceProbe {
         mesh,
         index,
@@ -518,7 +518,7 @@ fn arc_fit_burial_against_arcs_off_on_knolls_and_a_wall() {
             })
             .count();
         let b = burial(&tp, &m, &idx);
-        let cutter = build_cutter(&ball_tool_config(FINE_DIAMETER));
+        let cutter = build_cutter(&ball_tool_config(FINE_DIAMETER)).unwrap();
         let probe = EntrySurfaceProbe {
             mesh: &m,
             index: &idx,
@@ -581,7 +581,7 @@ fn arc_fit_burial_on_the_rivmap100_fine_tier() {
         .find(|t| t.id.0 == tc.tool_id)
         .unwrap()
         .clone();
-    let cutter = build_cutter(&tool);
+    let cutter = build_cutter(&tool).unwrap();
     let mesh = session
         .models()
         .iter()

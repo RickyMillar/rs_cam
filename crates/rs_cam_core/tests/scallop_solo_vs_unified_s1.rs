@@ -357,7 +357,7 @@ fn wanaka_scallop_solo_vs_unified_s1() {
     let started = std::time::Instant::now();
     let mesh = TriangleMesh::from_stl_scaled(mesh_path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
     let never_cancel = || false;
     let safe_z = mesh.bbox.max.z + 5.0;
     let kinematics = MachineKinematics {

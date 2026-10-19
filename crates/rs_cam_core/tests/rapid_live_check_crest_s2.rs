@@ -60,7 +60,7 @@ const FLOOR_Z: f64 = 0.0;
 /// The wanaka finish tool's shape class: Ø3 ball tip on a 10° taper to a Ø6
 /// shaft, so the envelope radius is 3 mm and the flank rises steeply.
 fn finish_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0)
+    TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0).unwrap()
 }
 
 /// A 20 × 20 board cut down to `FLOOR_Z` everywhere except a wall of full-height

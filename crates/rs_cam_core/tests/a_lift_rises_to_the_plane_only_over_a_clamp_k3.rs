@@ -121,7 +121,7 @@ fn plane_lifts(tp: &Toolpath) -> usize {
 /// The service check and the simulation both find no obstacle hit.
 fn assert_no_hit(session: &mut ProjectSession, tp: &Toolpath, label: &str) {
     let set = session.obstacle_set_for_toolpath(0).expect("the clamp");
-    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
+    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
             &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),
@@ -205,7 +205,7 @@ fn a_link_rises_to_the_plane_only_when_it_crosses_the_clamp_k3() {
 fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
     let tp = generate(&mut free);
     let set = clamped.obstacle_set_for_toolpath(0).expect("the clamp");
-    let tool = rs_cam_core::compute::cutter::build_cutter(&clamped.tools()[0]);
+    let tool = rs_cam_core::compute::cutter::build_cutter(&clamped.tools()[0]).unwrap();
     let view = set
         .for_tool(
             &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),

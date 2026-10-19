@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::tool::size_units::SizeUnits;
 use crate::tool::size_units::{self, MM_PER_INCH};
+pub use crate::tool::{ToolDimension, ToolGeometryError};
 
 /// Unique identifier for a tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -240,6 +241,65 @@ impl ToolConfig {
         tool
     }
 
+    /// F029 step 1: the one domain check of a tool record.
+    ///
+    /// Every door that creates or changes a tool calls it: the session
+    /// commands (`AddTool`, `AddToolFromLibrary`, `ReplaceTool`,
+    /// `ReplaceTools`, `SetToolParam`), the project loader, the tool-library
+    /// loader, the MCP `add_tool` builder and [`crate::compute::cutter::build_cutter`].
+    /// The bounds are [`ToolDimension::domain`], which math gives. The GUI
+    /// drag range ([`ToolDimension::ui_range`]) refuses nothing.
+    ///
+    /// It checks the shared dimensions and the geometry that the tool's
+    /// OWN type reads. Geometry that belongs to another type is not
+    /// checked: no consumer reads it (see [`Self::normalize_geometry`]).
+    pub fn validate(&self) -> Result<(), ToolGeometryError> {
+        let d = self.diameter;
+        ToolDimension::Diameter.check(d, d)?;
+        ToolDimension::CuttingLength.check(self.cutting_length, d)?;
+        ToolDimension::HelixDeg.check(self.helix_deg, d)?;
+        ToolDimension::FluteCount.check(f64::from(self.flute_count), d)?;
+        ToolDimension::ShankDiameter.check(self.shank_diameter, d)?;
+        ToolDimension::Stickout.check(self.stickout, d)?;
+        match self.tool_type {
+            ToolType::EndMill => ToolDimension::CornerRadiusMm.check(self.corner_radius_mm, d),
+            ToolType::BallNose => Ok(()),
+            ToolType::BullNose => ToolDimension::CornerRadius.check(self.corner_radius, d),
+            ToolType::VBit => ToolDimension::IncludedAngle.check(self.included_angle, d),
+            ToolType::TaperedBallNose => {
+                ToolDimension::TaperHalfAngle.check(self.taper_half_angle, d)?;
+                ToolDimension::ShaftDiameter.check(self.shaft_diameter, d)
+            }
+        }
+    }
+
+    /// The feeds geometry hint of this tool, read from the record with no
+    /// cutter built.
+    ///
+    /// A data mapping that must equal `build_cutter(self)?.to_geometry_hint()`
+    /// for every valid tool (pinned by `geometry_hint_matches_the_built_cutter`),
+    /// the same layered shortcut as [`ToolType::cutter_kind`]. The Suggest
+    /// input builder reads it, so a hint needs no fallible cutter build.
+    pub fn geometry_hint(&self) -> crate::feeds::ToolGeometryHint {
+        use crate::feeds::ToolGeometryHint;
+        match self.tool_type {
+            ToolType::EndMill => ToolGeometryHint::Flat,
+            ToolType::BallNose => ToolGeometryHint::Ball,
+            ToolType::BullNose => ToolGeometryHint::Bull {
+                corner_radius: self.corner_radius,
+            },
+            // `build_cutter` builds every V-bit pointed (tip 0).
+            ToolType::VBit => ToolGeometryHint::VBit {
+                included_angle: self.included_angle,
+                tip_diameter: 0.0,
+            },
+            ToolType::TaperedBallNose => ToolGeometryHint::TaperedBall {
+                tip_radius: self.diameter / 2.0,
+                taper_angle_deg: self.taper_half_angle,
+            },
+        }
+    }
+
     /// Diameter of the cutter's widest cutting envelope.
     ///
     /// For most tools this equals `diameter`. For `TaperedBallNose`, `diameter`
@@ -432,9 +492,9 @@ impl ToolConfig {
     /// surfaces, and they are the reason this exists: `Session::list_tools`
     /// publishes `corner_radius_mm.max(corner_radius)`, so a flat end
     /// mill was reporting a 2 mm corner radius on the MCP wire, and
-    /// `tool_library::dedupe_key` folds all three angle fields into its
-    /// key, so two identical end mills differing only in dead bull-nose
-    /// radius counted as distinct tools.
+    /// `tool_library::dedupe_key` puts every geometry field into its key,
+    /// so two identical end mills differing only in dead bull-nose radius
+    /// counted as distinct tools.
     pub fn normalize_geometry(&mut self) -> Vec<ClearedGeometry> {
         let cleared = self.cross_type_geometry();
         for c in &cleared {
@@ -447,11 +507,11 @@ impl ToolConfig {
     ///
     /// Not a heuristic — a V-bit with no included angle is not an
     /// under-specified V-bit, it is not a V-bit at all, and the cutter
-    /// constructors say so with `assert!`: `VBitEndmill::new` requires
-    /// `0 < included_angle < 180`, `TaperedBallEndmill::new` requires
-    /// `0 < taper_half_angle < 90` AND `shaft_diameter >= diameter`. A
-    /// zero in one of those is a PANIC inside `build_cutter`, not a
-    /// soft default. Callers that mutate `tool_type` in place (the
+    /// constructors refuse it: `VBitEndmill::new` and
+    /// `TaperedBallEndmill::new` check the [`ToolDimension`] domain, and
+    /// [`Self::validate`] refuses the record at every tool door (F029; until
+    /// then a zero here was a panic inside `build_cutter`). Callers that
+    /// mutate `tool_type` in place (the
     /// GUI's tool-type combo is the only one) must check this after the
     /// switch and refill from `ToolConfig::new_default(id, new_type)`.
     pub fn missing_defining_geometry(&self) -> Vec<ToolGeometryField> {
@@ -784,8 +844,8 @@ impl ToolGeometryField {
     ///
     /// Concretely: `new_default` normalises, so a tool switched from
     /// EndMill to VBit in the GUI arrives with `included_angle = 0.0`, and
-    /// `VBitEndmill::new` asserts `0 < included_angle < 180`. That is a
-    /// panic on the compute worker, reachable from a combo box. See
+    /// `VBitEndmill::new` refuses it (F029; it used to assert, a panic
+    /// reachable from a combo box). See
     /// `ui/properties/tool.rs`'s type selector, which pairs
     /// [`ToolConfig::missing_defining_geometry`] with this.
     pub fn set_on(self, tool: &mut ToolConfig, value: f64) {
@@ -1295,6 +1355,46 @@ fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
 mod tests {
     use super::*;
 
+    /// `ToolConfig::geometry_hint` is a data shortcut for the hint the
+    /// built cutter gives. The two must agree for every type.
+    #[test]
+    fn geometry_hint_matches_the_built_cutter() {
+        for &tool_type in ToolType::ALL {
+            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            if tool_type == ToolType::TaperedBallNose {
+                tool.diameter = 1.0;
+            }
+            let built = crate::compute::cutter::build_cutter(&tool).unwrap();
+            assert_eq!(
+                tool.geometry_hint(),
+                built.to_geometry_hint(),
+                "{tool_type:?}"
+            );
+        }
+    }
+
+    /// F029: `validate` checks the geometry the tool's own type reads, and
+    /// not another type's dead fields.
+    #[test]
+    fn validate_checks_the_geometry_the_type_owns() {
+        let mut vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        assert!(vbit.validate().is_ok());
+        vbit.included_angle = 0.0;
+        assert_eq!(
+            vbit.validate().map_err(|e| e.dimension),
+            Err(ToolDimension::IncludedAngle)
+        );
+        // A flat end mill carries no angle; a dead field is not checked.
+        let mut flat = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        flat.included_angle = 0.0;
+        assert!(flat.validate().is_ok());
+        flat.flute_count = 0;
+        assert_eq!(
+            flat.validate().map_err(|e| e.dimension),
+            Err(ToolDimension::FluteCount)
+        );
+    }
+
     /// Parity freeze (architectural refactor §7.2): the snake_case serde
     /// repr of every [`ToolType`] — canonical in project TOML, the MCP
     /// wire format, MCP error messages, and the viz legacy tool-type
@@ -1493,10 +1593,9 @@ product_id = ""
         assert_eq!(taper.shaft_diameter, 6.35);
     }
 
-    /// `VBitEndmill::new` asserts `0 < included_angle < 180`, so a
-    /// zeroed defining field is a panic in `build_cutter`, not a soft
-    /// default — the one case a caller that flips `tool_type` in place
-    /// has to check.
+    /// `VBitEndmill::new` refuses an included angle outside its domain, so a
+    /// zeroed defining field builds no cutter, not a soft default — the one
+    /// case a caller that flips `tool_type` in place has to check.
     #[test]
     fn missing_defining_geometry_names_the_zeroed_field() {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);

@@ -27,7 +27,7 @@ fn wanaka_lift_probe_g3() {
     }
     let mesh = TriangleMesh::from_stl_scaled(Path::new(WANAKA_MESH), 1.0).expect("mesh");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
     // Model-frame XYs of the worst buried points (v4 analysis), plus two
     // healthy mid-chamfer references.
     let probes = [

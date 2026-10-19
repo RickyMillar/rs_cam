@@ -849,7 +849,8 @@ fn would_have_been_red_the_prefix_dials_erase_every_steep_region() {
         TAPER_HALF_ANGLE_DEG,
         SHANK_DIAMETER_MM,
         25.0,
-    );
+    )
+    .unwrap();
     let cancel = || false;
     let tolerance = 0.05;
 

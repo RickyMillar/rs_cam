@@ -868,7 +868,7 @@ mod tests {
     fn test_bullnose_endmill_on_flat_mesh() {
         let mesh = make_test_flat(100.0);
         let index = SpatialIndex::build(&mesh, 20.0);
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
 
         let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
         assert!(grid.rows > 0 && grid.cols > 0);
@@ -889,7 +889,7 @@ mod tests {
     fn test_vbit_endmill_on_flat_mesh() {
         let mesh = make_test_flat(100.0);
         let index = SpatialIndex::build(&mesh, 20.0);
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
 
         let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
         assert!(grid.rows > 0 && grid.cols > 0);
@@ -908,7 +908,7 @@ mod tests {
     fn test_tapered_ball_endmill_on_flat_mesh() {
         let mesh = make_test_flat(100.0);
         let index = SpatialIndex::build(&mesh, 20.0);
-        let tool = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0);
+        let tool = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0).unwrap();
 
         let grid = batch_drop_cutter(&mesh, &index, &tool, 5.0, 0.0, -100.0);
         assert!(grid.rows > 0 && grid.cols > 0);
@@ -935,9 +935,9 @@ mod tests {
 
         let flat = FlatEndmill::new(10.0, 25.0);
         let ball = BallEndmill::new(10.0, 25.0);
-        let bull = BullNoseEndmill::new(10.0, 2.0, 25.0);
-        let vbit = VBitEndmill::new(10.0, 90.0, 25.0);
-        let tapered = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0);
+        let bull = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
+        let vbit = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
+        let tapered = TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0).unwrap();
 
         // Drop each tool at the apex (0,0)
         let tools: Vec<(&str, &dyn crate::tool::MillingCutter)> = vec![

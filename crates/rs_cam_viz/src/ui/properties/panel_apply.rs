@@ -44,6 +44,12 @@ pub(crate) fn commit_tool_draft(
     if draft == committed {
         return;
     }
+    // F029: a draft outside its domain is not committed and takes no undo
+    // step. `Command::ReplaceTool` refuses it too; the editor names why.
+    if let Err(e) = draft.validate() {
+        tracing::warn!("the tool draft was refused: {e}");
+        return;
+    }
     state
         .history
         .push(crate::state::history::UndoAction::ToolChange {

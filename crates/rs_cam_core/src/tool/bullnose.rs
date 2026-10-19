@@ -11,8 +11,8 @@
 //! Edge contact uses the offset-ellipse / Brent's method approach from OpenCAMLib.
 
 use super::{
-    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
-    flat_chip_geometry_for_radius,
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter, ToolDimension,
+    ToolGeometryError, flat_chip_geometry_for_radius,
 };
 use crate::geo::P3;
 
@@ -25,20 +25,22 @@ pub struct BullNoseEndmill {
 }
 
 impl BullNoseEndmill {
-    pub fn new(diameter: f64, corner_radius: f64, cutting_length: f64) -> Self {
-        assert!(
-            corner_radius <= diameter / 2.0,
-            "Corner radius {} cannot exceed tool radius {}",
-            corner_radius,
-            diameter / 2.0
-        );
-        assert!(corner_radius >= 0.0, "Corner radius must be non-negative");
-        Self {
+    /// Build a bull nose. Refuses a diameter or a corner radius outside
+    /// its [`ToolDimension`] domain (F029: the radius used to be an
+    /// `assert!` that panicked the GUI thread).
+    pub fn new(
+        diameter: f64,
+        corner_radius: f64,
+        cutting_length: f64,
+    ) -> Result<Self, ToolGeometryError> {
+        ToolDimension::Diameter.check(diameter, diameter)?;
+        ToolDimension::CornerRadius.check(corner_radius, diameter)?;
+        Ok(Self {
             diameter,
             corner_radius,
             cutting_length,
             helix_deg: 30.0,
-        }
+        })
     }
 
     /// Flat portion radius (distance from axis to where torus begins).
@@ -200,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_construction() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         assert_eq!(tool.diameter, 10.0);
         assert_eq!(tool.corner_radius, 2.0);
         assert_eq!(tool.radius(), 5.0);
@@ -208,15 +210,16 @@ mod tests {
         assert_eq!(tool.r2(), 2.0); // torus tube
     }
 
+    /// F029: the constructor refuses; it does not assert.
     #[test]
-    #[should_panic(expected = "Corner radius")]
     fn test_bullnose_corner_too_large() {
-        BullNoseEndmill::new(10.0, 6.0, 25.0); // r2=6 > R=5
+        let err = BullNoseEndmill::new(10.0, 6.0, 25.0).unwrap_err(); // r2=6 > R=5
+        assert_eq!(err.dimension, crate::tool::ToolDimension::CornerRadius);
     }
 
     #[test]
     fn test_bullnose_profile_flat_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Flat region: r <= R1 = 3.0
         assert!((tool.height_at_radius(0.0).unwrap()).abs() < 1e-10);
         assert!((tool.height_at_radius(1.0).unwrap()).abs() < 1e-10);
@@ -225,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_profile_torus_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let r2 = 2.0;
         let _r1 = 3.0;
 
@@ -247,20 +250,23 @@ mod tests {
         assert!(tool.height_at_radius(5.5).is_none());
     }
 
+    /// A bull nose with no corner is a flat end mill, and F029 refuses it
+    /// (`ToolDimension::CornerRadius` starts at 0.01 mm). At the smallest
+    /// corner the flat bottom covers all but the last 0.01 mm of the radius.
     #[test]
     fn test_bullnose_profile_degenerates_to_flat() {
-        // Corner radius = 0 → pure flat endmill
-        let tool = BullNoseEndmill::new(10.0, 0.0, 25.0);
+        assert!(BullNoseEndmill::new(10.0, 0.0, 25.0).is_err());
+        let tool = BullNoseEndmill::new(10.0, 0.01, 25.0).unwrap();
         assert!((tool.height_at_radius(0.0).unwrap()).abs() < 1e-10);
-        assert!((tool.height_at_radius(3.0).unwrap()).abs() < 1e-10);
-        assert!((tool.height_at_radius(5.0).unwrap()).abs() < 1e-10);
+        assert!((tool.height_at_radius(4.99).unwrap()).abs() < 1e-10);
+        assert!((tool.height_at_radius(5.0).unwrap() - 0.01).abs() < 1e-6);
         assert!(tool.height_at_radius(5.5).is_none());
     }
 
     #[test]
     fn test_bullnose_profile_degenerates_to_ball() {
         // Corner radius = R → pure ball endmill
-        let tool = BullNoseEndmill::new(10.0, 5.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 5.0, 25.0).unwrap();
         let r = 5.0;
         // r1 = 0, r2 = 5 — entire profile is toroidal (= sphere)
         let h = tool.height_at_radius(0.0).unwrap();
@@ -277,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_width_at_height() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // h=0: flat bottom → width = R1 = 3
         assert!((tool.width_at_height(0.0) - 3.0).abs() < 1e-10);
         // h >= R2=2: full radius → width = R = 5
@@ -296,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_parameters() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         assert_eq!(tool.center_height(), 2.0); // R2
         assert_eq!(tool.normal_length(), 2.0); // R2
         assert_eq!(tool.xy_normal_length(), 3.0); // R1
@@ -304,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_vertex_drop_center() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let mut cl = CLPoint::new(0.0, 0.0);
         tool.vertex_drop(&mut cl, &P3::new(0.0, 0.0, 10.0));
         // At center, height(0) = 0, so CL.z = 10
@@ -313,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_vertex_drop_flat_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let mut cl = CLPoint::new(0.0, 0.0);
         // Vertex at r=2 (in flat region), z=5
         tool.vertex_drop(&mut cl, &P3::new(2.0, 0.0, 5.0));
@@ -323,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_vertex_drop_torus_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let mut cl = CLPoint::new(0.0, 0.0);
         // Vertex at r=5 (edge of cutter), z=0
         tool.vertex_drop(&mut cl, &P3::new(5.0, 0.0, 0.0));
@@ -333,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_facet_drop_horizontal() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let tri = Triangle::new(
             P3::new(-50.0, -50.0, 5.0),
             P3::new(50.0, -50.0, 5.0),
@@ -352,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_facet_drop_sloped() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // 45-degree slope: z = x
         let tri = Triangle::new(
             P3::new(-20.0, -50.0, -20.0),
@@ -369,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_edge_drop_horizontal_in_flat_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Horizontal edge along Y at x=2, z=7 (within flat region, d=2 < r1=3)
         let p1 = P3::new(2.0, -10.0, 7.0);
         let p2 = P3::new(2.0, 10.0, 7.0);
@@ -381,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_edge_drop_horizontal_in_torus_region() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Horizontal edge along Y at x=4, z=0 (in torus region, d=4 > r1=3)
         let p1 = P3::new(4.0, -10.0, 0.0);
         let p2 = P3::new(4.0, 10.0, 0.0);
@@ -402,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_edge_drop_sloped() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Sloped edge: rises from (0,-5,0) to (0,5,10), slope = 10/10 = 1
         let p1 = P3::new(0.0, -5.0, 0.0);
         let p2 = P3::new(0.0, 5.0, 10.0);
@@ -417,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_edge_out_of_range() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Edge far away (x=10, beyond radius 5)
         let p1 = P3::new(10.0, -5.0, 0.0);
         let p2 = P3::new(10.0, 5.0, 0.0);
@@ -428,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_bullnose_full_drop_cutter() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         // Horizontal triangle at z=3
         let tri = Triangle::new(
             P3::new(-50.0, -50.0, 3.0),
@@ -447,7 +453,7 @@ mod tests {
         use crate::mesh::make_test_hemisphere;
         let hemisphere_r = 20.0;
         let mesh = make_test_hemisphere(hemisphere_r, 32);
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
 
         let mut cl = CLPoint::new(0.0, 0.0);
         for face in &mesh.faces {
@@ -472,7 +478,7 @@ mod tests {
 
         let flat = FlatEndmill::new(10.0, 25.0);
         let ball = BallEndmill::new(10.0, 25.0);
-        let bull = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let bull = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
 
         // Vertex at the tool edge at z=0
         let v = P3::new(5.0, 0.0, 0.0);

@@ -332,12 +332,15 @@ const RECORDED_ROW: &str = "amana-tapered-hardwood-scallop-3175-2f";
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(
-            TIP_DIAMETER_MM,
-            TAPER_HALF_ANGLE_DEG,
-            SHANK_DIAMETER_MM,
-            20.0,
-        )),
+        Box::new(
+            TaperedBallEndmill::new(
+                TIP_DIAMETER_MM,
+                TAPER_HALF_ANGLE_DEG,
+                SHANK_DIAMETER_MM,
+                20.0,
+            )
+            .unwrap(),
+        ),
         SHANK_DIAMETER_MM,
         40.0,
         FLUTES,
@@ -1290,7 +1293,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
         (
             "bull Ø6 r1",
             ToolGeometryHint::Bull { corner_radius: 1.0 },
-            Box::new(BullNoseEndmill::new(6.0, 1.0, 40.0)),
+            Box::new(BullNoseEndmill::new(6.0, 1.0, 40.0).unwrap()),
             6.0,
         ),
         (
@@ -1299,12 +1302,15 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 tip_radius: TIP_DIAMETER_MM * 0.5,
                 taper_angle_deg: TAPER_HALF_ANGLE_DEG,
             },
-            Box::new(TaperedBallEndmill::new(
-                TIP_DIAMETER_MM,
-                TAPER_HALF_ANGLE_DEG,
-                SHANK_DIAMETER_MM,
-                20.0,
-            )),
+            Box::new(
+                TaperedBallEndmill::new(
+                    TIP_DIAMETER_MM,
+                    TAPER_HALF_ANGLE_DEG,
+                    SHANK_DIAMETER_MM,
+                    20.0,
+                )
+                .unwrap(),
+            ),
             TIP_DIAMETER_MM,
         ),
         (
@@ -1317,7 +1323,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
                 // `VBitEndmill::new` defaults the flat to 0.0; the field is
                 // public and set after construction (its own doc says so),
                 // so cutter and hint describe the *same* truncated bit.
-                let mut v = VBitEndmill::new(6.0, 20.0, 40.0);
+                let mut v = VBitEndmill::new(6.0, 20.0, 40.0).unwrap();
                 v.tip_diameter = 1.0;
                 Box::new(v)
             },

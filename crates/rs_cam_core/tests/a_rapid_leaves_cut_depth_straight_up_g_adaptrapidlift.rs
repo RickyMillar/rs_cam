@@ -109,7 +109,7 @@ fn a_rapid_leaves_cut_depth_straight_up() {
         &low[..low.len().min(5)]
     );
 
-    let tool = build_cutter(&common::make_endmill_6mm());
+    let tool = build_cutter(&common::make_endmill_6mm()).unwrap();
     let r = tool.radius();
     let cutting = cut_pieces(&tp);
     // The exact clearance of rapid `i` (from move i - 1 to move i), mm:
@@ -390,7 +390,7 @@ fn print_rapid_strike_cells() {
         .map(|c| c.move_index)
         .collect();
     eprintln!("session strikes at moves {hits:?}");
-    let tool = build_cutter(&common::make_endmill_6mm());
+    let tool = build_cutter(&common::make_endmill_6mm()).unwrap();
     let radius = tool.radius();
     let lut = RadialProfileLUT::from_cutter(&tool, LUT_SAMPLES);
     let s = stock();

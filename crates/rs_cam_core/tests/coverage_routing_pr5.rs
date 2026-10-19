@@ -29,7 +29,7 @@ use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_re
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// Trapezoidal groove along Y at x = 0, in a 40 × 24 block whose top is

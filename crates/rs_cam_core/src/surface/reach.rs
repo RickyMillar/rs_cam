@@ -804,7 +804,7 @@ mod tests {
     use crate::tool::{BallEndmill, TaperedBallEndmill};
 
     fn taper() -> TaperedBallEndmill {
-        TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+        TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
     }
 
     /// A vertical wall must reproduce `engagement_radius_mm` EXACTLY — the

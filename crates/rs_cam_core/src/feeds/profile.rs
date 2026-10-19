@@ -137,10 +137,15 @@ impl<'a> CutterOpProfile<'a> {
     /// evaluates the predictors and the axial envelope at the
     /// *recommended* operating point when Suggest succeeds, falling
     /// back to the input operating point on refusal.
-    pub fn for_combo(input: CutterOpProfileInput<'a, '_>) -> Self {
+    ///
+    /// Refuses a tool outside its domain (F029): the profile holds a built
+    /// cutter.
+    pub fn for_combo(
+        input: CutterOpProfileInput<'a, '_>,
+    ) -> Result<Self, crate::tool::ToolGeometryError> {
         let op_type = input.operation.op_type();
         let spec = op_type.spec();
-        let tool_def = build_cutter(input.tool);
+        let tool_def = build_cutter(input.tool)?;
         let cutter_kind = tool_def.to_geometry_hint().cutter_kind();
 
         let explain = feeds_explain_for_operation(
@@ -187,7 +192,7 @@ impl<'a> CutterOpProfile<'a> {
             ),
         };
 
-        Self {
+        Ok(Self {
             tool_cfg: input.tool,
             tool_def,
             operation: input.operation,
@@ -202,7 +207,7 @@ impl<'a> CutterOpProfile<'a> {
             suggested_operation,
             constraints,
             warnings,
-        }
+        })
     }
 }
 
@@ -255,7 +260,8 @@ mod tests {
         let material = Material::default();
 
         let profile =
-            CutterOpProfile::for_combo(profile_input(&operation, &tool, &machine, &material));
+            CutterOpProfile::for_combo(profile_input(&operation, &tool, &machine, &material))
+                .unwrap();
 
         let direct = suggest_for_operation(SuggestForOperationInput {
             operation: &operation,
@@ -299,7 +305,8 @@ mod tests {
         let material = Material::default();
 
         let profile =
-            CutterOpProfile::for_combo(profile_input(&operation, &tool, &machine, &material));
+            CutterOpProfile::for_combo(profile_input(&operation, &tool, &machine, &material))
+                .unwrap();
 
         assert!(
             matches!(
@@ -326,7 +333,8 @@ mod tests {
 
         let adaptive3d = OperationConfig::new_default(OperationType::Adaptive3d);
         let profile =
-            CutterOpProfile::for_combo(profile_input(&adaptive3d, &tool, &machine, &material));
+            CutterOpProfile::for_combo(profile_input(&adaptive3d, &tool, &machine, &material))
+                .unwrap();
         assert!(
             profile.constraints.axial.is_some(),
             "adaptive3d is inside the axial-envelope routing"
@@ -334,7 +342,7 @@ mod tests {
 
         let pocket = OperationConfig::new_default(OperationType::Pocket);
         let profile =
-            CutterOpProfile::for_combo(profile_input(&pocket, &tool, &machine, &material));
+            CutterOpProfile::for_combo(profile_input(&pocket, &tool, &machine, &material)).unwrap();
         assert!(
             profile.constraints.axial.is_none(),
             "2D pocket is outside the axial-envelope routing"

@@ -1967,7 +1967,9 @@ fn modulate_annotated_against_trace(
     // machine's rated `power_at_rpm` gives the available power
     // (ruling R4 Q2, 2026-09-24: no fraction).
     let material = context.material;
-    let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+    // F029: no modulation for a tool outside its domain (`None` = the
+    // toolpath keeps its feeds). The tool doors refuse such a tool first.
+    let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
     // Use the per-toolpath max axial DOC from the cut trace
     // as the deflection / power reference; falls back to
     // diameter when unavailable (no cutting samples → no
@@ -2220,8 +2222,9 @@ fn simulate_candidate_isolated(
     let setup_ctx = &context.setup_ctx;
     let direction = crate::compute::simulate::group_stock_cut_direction(setup_ctx.face_up);
 
+    // F029: no candidate trace for a tool outside its domain.
     let (tool_def, flute_count, tool_summary) =
-        crate::compute::simulate::entry_tool_fields(tool_cfg);
+        crate::compute::simulate::entry_tool_fields(tool_cfg).ok()?;
     let entry = SimToolpathEntry {
         // H1: a candidate reads no shoe plan; the advisor reads no
         // collision either. The fixed head keeps the entry honest.

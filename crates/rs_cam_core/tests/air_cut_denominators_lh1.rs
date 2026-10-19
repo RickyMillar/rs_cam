@@ -180,7 +180,7 @@ fn narration_air_cut_line_names_its_denominators() {
         ..SimulationCutTrace::test_fixture()
     };
 
-    let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
     let context = ToolpathNarrationContext {
         toolpath_id: Some(ToolpathId(7)),
         toolpath_name: Some("Back Rough"),

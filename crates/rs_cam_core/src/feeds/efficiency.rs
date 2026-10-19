@@ -335,7 +335,9 @@ fn deflection_chipload_ceiling_mm(
     if !radial_woc_fraction.is_finite() {
         return None;
     }
-    let tool_def = crate::compute::cutter::build_cutter(tool);
+    // F029: a tool outside its domain has no deflection ceiling. The tool
+    // doors and `suggest_for_operation` refuse such a tool first.
+    let tool_def = crate::compute::cutter::build_cutter(tool).ok()?;
     let stickout = tool_def.stickout;
     let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
     if !(stickout.is_finite() && stickout > 0.0 && youngs.is_finite() && youngs > 0.0) {

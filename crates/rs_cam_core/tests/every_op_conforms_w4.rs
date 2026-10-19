@@ -1477,7 +1477,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
                 .find(|t| t.id.0 == tc.tool_id)
                 .expect("the case tool")
                 .clone();
-            let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg);
+            let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg).unwrap();
             let r = tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()).cutter_radius;
             let grown = [
                 strip[0].map(|v| v - STRIP_CLEARANCE_MM),

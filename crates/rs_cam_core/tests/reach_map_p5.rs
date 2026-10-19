@@ -547,7 +547,7 @@ fn cold_build_wall_clock_on_a_board_sized_terrain() {
     // is part of the answer. The tapered ball is the shape whose tip radius
     // and envelope radius disagree by 6x, so it is the one a cell rule can
     // get wrong.
-    let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
     let params_start = std::time::Instant::now();
     let mut taper_cell = 0.0;
     for _ in 0..100 {

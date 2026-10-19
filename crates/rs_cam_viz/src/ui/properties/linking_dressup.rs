@@ -349,7 +349,8 @@ pub(super) fn draw_linking_params(
         .allows_rapid_reorder;
     // G10 Q6 and D2: the helix radius resolves against the tool (the rule
     // 0.3 x D, or the operator value, capped at the flat bottom).
-    let cutter = tool.map(rs_cam_core::compute::cutter::build_cutter);
+    // F029: a tool outside its domain gives no rule radius.
+    let cutter = tool.and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok());
     let cfg = &mut entry.dressups;
 
     // ── Entry & Exit ──────────────────────────────────────────

@@ -98,7 +98,7 @@ struct Generated {
 /// semantic recorder attached exactly as `session::compute` attaches one.
 fn generate(tool_cfg: &ToolConfig) -> Generated {
     let (mesh, index) = hemisphere();
-    let tool_def = build_cutter(tool_cfg);
+    let tool_def = build_cutter(tool_cfg).unwrap();
     let op = unified_finish_op();
 
     let bbox = mesh.bbox;

@@ -10,7 +10,7 @@
 //! **Defect 1 — the name lied about the geometry.** Tool id 2 was named
 //! "Tapered Ball 2mm tip / 7° / 6mm shank" and carried `diameter: 1.0`.
 //! For a tapered ball `diameter` IS the ball/tip diameter — see
-//! `TaperedBallEndmill::new(ball_diameter, ..)` — so the tool was R0.5 /
+//! `TaperedBallEndmill::new(ball_diameter, ..).unwrap()` — so the tool was R0.5 /
 //! Ø1.0, **half its named size**. Every feed decision followed the
 //! number; every human decision followed the name. The operator sized a
 //! whole finishing strategy off the name and was wrong by 2×, and
@@ -178,14 +178,14 @@ fn normalizing_changes_no_cutter_geometry() {
             tool.included_angle = 60.0;
         }
 
-        let before = build_cutter(&tool);
+        let before = build_cutter(&tool).unwrap();
         let before_profile = before.profile_points(64);
         let before_envelope = tool.envelope_diameter();
 
         let cleared = tool.normalize_geometry();
         assert!(!cleared.is_empty(), "{tool_type:?}: nothing to clear");
 
-        let after = build_cutter(&tool);
+        let after = build_cutter(&tool).unwrap();
         assert_eq!(after.diameter(), before.diameter(), "{tool_type:?}");
         assert_eq!(after.radius(), before.radius(), "{tool_type:?}");
         assert_eq!(after.length(), before.length(), "{tool_type:?}");

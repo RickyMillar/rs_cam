@@ -284,8 +284,8 @@ fn the_moat_erosion_is_sized_off_the_tip_not_the_shank() {
 fn every_non_tapered_shape_keeps_the_radius_it_had() {
     let flat = FlatEndmill::new(6.0, 25.0);
     let ball = BallEndmill::new(6.0, 25.0);
-    let bull = BullNoseEndmill::new(6.0, 1.0, 25.0);
-    let vbit = VBitEndmill::new(6.0, 90.0, 25.0);
+    let bull = BullNoseEndmill::new(6.0, 1.0, 25.0).unwrap();
+    let vbit = VBitEndmill::new(6.0, 90.0, 25.0).unwrap();
     let shapes: [(&str, &dyn MillingCutter); 4] = [
         ("flat", &flat),
         ("ball", &ball),

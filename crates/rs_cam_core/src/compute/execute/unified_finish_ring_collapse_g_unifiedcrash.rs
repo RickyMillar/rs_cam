@@ -78,7 +78,7 @@ fn generate(
 ) -> Result<AnnotatedToolpath, crate::compute::OperationError> {
     let (mesh, index) = hemisphere();
     let tool_cfg = tapered_ball_tool();
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
 
     let op = OperationConfig::UnifiedFinish(UnifiedFinishConfig {
         // Coarse everywhere the defect does not live: this is a

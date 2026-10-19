@@ -254,7 +254,15 @@ impl<B: ComputeBackend> AppController<B> {
                     &result.annotated().toolpath,
                     tc.operation.op_type(),
                 );
-                let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
+                // F029: the core builder refuses a tool outside its domain,
+                // so this one builds no request either (parity).
+                let (tool_def, flute_count, tool_summary) = match entry_tool_fields(tool) {
+                    Ok(fields) => fields,
+                    Err(e) => {
+                        tracing::error!(tool = %tool.name, "simulation refused: {e}");
+                        return None;
+                    }
+                };
                 tools.push(tool.clone());
                 toolpaths.push(SimToolpathEntry {
                     head: rs_cam_core::compute::simulate::entry_head_fit(

@@ -144,7 +144,7 @@ fn the_ball_edge_drop_matches_its_profile() {
 
 #[test]
 fn the_bull_nose_edge_drop_matches_its_profile() {
-    let tool = BullNoseEndmill::new(6.0, 1.0, 25.0);
+    let tool = BullNoseEndmill::new(6.0, 1.0, 25.0).unwrap();
     let worst = worst_error("bull 6/r1", &tool, &[0.0, 1.0, 2.2, 2.6, 2.95]);
     assert!(
         worst <= TOL_MM,
@@ -155,7 +155,7 @@ fn the_bull_nose_edge_drop_matches_its_profile() {
 #[test]
 fn the_tapered_ball_edge_drop_matches_its_profile() {
     // The rivmap100 fine tier's tool: R1.0 tip, 5.7 degrees, 6 mm shank.
-    let tool = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let tool = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let worst = worst_error("taper R1/5.7/6", &tool, &[0.0, 0.3, 0.8, 0.99, 1.5, 2.5]);
     assert!(
         worst <= TOL_MM,
@@ -171,7 +171,7 @@ fn the_tapered_ball_edge_drop_matches_its_profile() {
 /// skipped the edges: 11.0508 against 11.6614.
 #[test]
 fn a_tapered_ball_on_a_sloped_boundary_triangle_still_meets_its_edges() {
-    let tool = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let tool = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let v = [
         P3::new(0.0, 0.0, 12.0),
         P3::new(100.0, 0.0, 12.0),

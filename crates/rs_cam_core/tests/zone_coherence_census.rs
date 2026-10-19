@@ -346,7 +346,7 @@ const MAX_REGIONS_PER_TIER: usize = 24;
 const OP_TOLERANCE_MM: f64 = 0.05;
 
 // `TaperedBallEndmill::new(ball_diameter, taper_half_angle_deg,
-// shaft_diameter, cutting_length)`. The second slot is a HALF-angle from the
+// shaft_diameter, cutting_length).unwrap()`. The second slot is a HALF-angle from the
 // tool axis. The fourth is cutting length, not stickout.
 
 /// Tier-0 cutter: R1.5 tapered ball.
@@ -729,8 +729,10 @@ struct Decomposition {
 /// the artifact serialisation removed and the tier loop widened from tier 1 to
 /// every tier. The chain itself is unchanged.
 fn derive(mesh: &TriangleMesh, index: &SpatialIndex) -> Result<Decomposition, &'static str> {
-    let r15 = TaperedBallEndmill::new(R15_TUPLE[0], R15_TUPLE[1], R15_TUPLE[2], R15_TUPLE[3]);
-    let r10 = TaperedBallEndmill::new(R10_TUPLE[0], R10_TUPLE[1], R10_TUPLE[2], R10_TUPLE[3]);
+    let r15 =
+        TaperedBallEndmill::new(R15_TUPLE[0], R15_TUPLE[1], R15_TUPLE[2], R15_TUPLE[3]).unwrap();
+    let r10 =
+        TaperedBallEndmill::new(R10_TUPLE[0], R10_TUPLE[1], R10_TUPLE[2], R10_TUPLE[3]).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
     let ladder = TierLadder::new(&tools).expect("ladder");
     let never_cancel = || false;

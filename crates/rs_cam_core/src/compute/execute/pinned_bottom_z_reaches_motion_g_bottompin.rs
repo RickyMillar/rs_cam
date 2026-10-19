@@ -102,7 +102,7 @@ fn stock_bbox() -> BoundingBox3 {
 fn emitted_floor_z(h: &ResolvedHeights, cutting_levels: &[f64]) -> f64 {
     let op = pocket_op();
     let tool_cfg = flat_endmill();
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
     let polygons = square_40mm();
     let cancel = AtomicBool::new(false);
 

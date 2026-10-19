@@ -147,7 +147,8 @@ pub(crate) fn axial_envelope_for_operation(
         DEFAULT_SCALLOP_TARGET_UM, cutter_axial_constraints,
     };
 
-    let tool_def = build_cutter(tool);
+    // F029: a tool outside its domain has no envelope.
+    let tool_def = build_cutter(tool).ok()?;
     let radial = operation.stepover();
     let feed = operation.feed_rate();
     let rpm = operation.spindle_rpm().unwrap_or(0) as f64;

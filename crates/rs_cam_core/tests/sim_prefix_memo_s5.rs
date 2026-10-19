@@ -469,7 +469,7 @@ fn tool_key_separates_every_shipped_shape() {
         (
             "vbit",
             ToolDefinition::new(
-                Box::new(VBitEndmill::new(6.0, 90.0, 25.0)),
+                Box::new(VBitEndmill::new(6.0, 90.0, 25.0).unwrap()),
                 6.0,
                 45.0,
                 2,
@@ -531,11 +531,9 @@ fn clone_tool(src: &ToolDefinition) -> ToolDefinition {
     use rs_cam_core::tool::MillingCutter;
     let cutter: Box<dyn MillingCutter> = match src.geometry_hint() {
         ToolGeometryHint::Ball => Box::new(BallEndmill::new(src.diameter(), src.length())),
-        ToolGeometryHint::VBit { included_angle, .. } => Box::new(VBitEndmill::new(
-            src.diameter(),
-            included_angle,
-            src.length(),
-        )),
+        ToolGeometryHint::VBit { included_angle, .. } => {
+            Box::new(VBitEndmill::new(src.diameter(), included_angle, src.length()).unwrap())
+        }
         _ => Box::new(FlatEndmill::new(src.diameter(), src.length())),
     };
     ToolDefinition::new(

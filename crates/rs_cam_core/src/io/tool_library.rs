@@ -45,6 +45,15 @@ pub enum ToolLibraryError {
     Parse(String, toml::de::Error),
     #[error("failed to serialize catalog {0:?}: {1}")]
     Serialize(String, toml::ser::Error),
+    /// F029: a tool in the catalog is outside its domain
+    /// ([`ToolConfig::validate`]). The loader refuses the catalog.
+    #[error("catalog {catalog:?}: tool {tool:?} refused: {source}")]
+    InvalidTool {
+        catalog: String,
+        tool: String,
+        #[source]
+        source: crate::tool::ToolGeometryError,
+    },
 }
 
 impl crate::io::named_toml_library::LibraryError for ToolLibraryError {
@@ -94,13 +103,32 @@ pub fn list_libraries() -> Vec<String> {
 }
 
 /// Load a catalog by name from `dir`.
+///
+/// F029: refuses the catalog when one tool is outside its domain
+/// ([`ToolLibraryError::InvalidTool`]).
 pub fn load_from(dir: &Path, name: &str) -> Result<ToolCatalog, ToolLibraryError> {
     let path = path_in(dir, name)?;
     let text = std::fs::read_to_string(&path).map_err(|source| ToolLibraryError::Io {
         name: name.to_owned(),
         source,
     })?;
-    toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))
+    let catalog: ToolCatalog =
+        toml::from_str(&text).map_err(|e| ToolLibraryError::Parse(name.to_owned(), e))?;
+    for tool in &catalog.tools {
+        check_tool(name, tool)?;
+    }
+    Ok(catalog)
+}
+
+/// F029: the check every catalog writer runs on the tool it writes, so a
+/// Save never makes a catalog that [`load_from`] refuses.
+fn check_tool(catalog: &str, tool: &ToolConfig) -> Result<(), ToolLibraryError> {
+    tool.validate()
+        .map_err(|source| ToolLibraryError::InvalidTool {
+            catalog: catalog.to_owned(),
+            tool: tool.name.clone(),
+            source,
+        })
 }
 
 /// Load a catalog by name from the resolved library dir.
@@ -129,6 +157,7 @@ pub fn save_to(dir: &Path, name: &str, catalog: &ToolCatalog) -> Result<PathBuf,
 /// absent), then save. The tool keeps its fields verbatim; its
 /// project-local `id` is irrelevant on later import.
 pub fn append_to(dir: &Path, name: &str, tool: ToolConfig) -> Result<PathBuf, ToolLibraryError> {
+    check_tool(name, &tool)?;
     let mut catalog = match load_from(dir, name) {
         Ok(c) => c,
         Err(ToolLibraryError::Io { .. }) => ToolCatalog::default(),
@@ -140,14 +169,16 @@ pub fn append_to(dir: &Path, name: &str, tool: ToolConfig) -> Result<PathBuf, To
 
 /// Add `tool` to catalog `name` in `dir`, **replacing** an existing tool
 /// with the same [`dedupe_key`] (geometry signature) instead of pushing a
-/// duplicate. Returns `(path, replaced)` where `replaced` is true if an
-/// existing entry was overwritten. TOO-004: this retires the silent-append
-/// that piled up duplicates only the Dedupe button could later clean.
+/// duplicate. Returns `(path, replaced)`: `replaced` is the catalog entry
+/// that the save overwrote, so the caller can name it (F176), or `None`
+/// for a plain insert. TOO-004: this retires the silent-append that piled
+/// up duplicates only the Dedupe button could later clean.
 pub fn add_or_replace_to(
     dir: &Path,
     name: &str,
     tool: ToolConfig,
-) -> Result<(PathBuf, bool), ToolLibraryError> {
+) -> Result<(PathBuf, Option<ToolConfig>), ToolLibraryError> {
+    check_tool(name, &tool)?;
     let mut catalog = match load_from(dir, name) {
         Ok(c) => c,
         Err(ToolLibraryError::Io { .. }) => ToolCatalog::default(),
@@ -155,21 +186,21 @@ pub fn add_or_replace_to(
     };
     let key = dedupe_key(&tool);
     let replaced = if let Some(slot) = catalog.tools.iter_mut().find(|t| dedupe_key(t) == key) {
-        *slot = tool;
-        true
+        Some(std::mem::replace(slot, tool))
     } else {
         catalog.tools.push(tool);
-        false
+        None
     };
     let path = save_to(dir, name, &catalog)?;
     Ok((path, replaced))
 }
 
 /// Add-or-replace a tool in catalog `name` in the resolved library dir.
+/// The second value is the entry that the save overwrote, if any.
 pub fn add_or_replace_tool(
     name: &str,
     tool: ToolConfig,
-) -> Result<(PathBuf, bool), ToolLibraryError> {
+) -> Result<(PathBuf, Option<ToolConfig>), ToolLibraryError> {
     let dir = library_dir().ok_or(ToolLibraryError::NoLibraryDir)?;
     add_or_replace_to(&dir, name, tool)
 }
@@ -204,6 +235,7 @@ pub(crate) fn update_tool_at_in(
     index: usize,
     tool: ToolConfig,
 ) -> Result<ToolCatalog, ToolLibraryError> {
+    check_tool(name, &tool)?;
     let mut catalog = load_from(dir, name)?;
     if let Some(slot) = catalog.tools.get_mut(index) {
         *slot = tool;
@@ -293,18 +325,51 @@ pub fn create_library(name: &str) -> Result<PathBuf, ToolLibraryError> {
 }
 
 /// Stable equality key for de-duplicating tools within a catalog.
-/// Two tools that share type, diameter, flute count, cutting length,
-/// and the relevant angle fields are treated as the same tool.
+///
+/// Policy (operator ruling, F176, 2026-10-19): the geometry and the
+/// material make a library tool distinct. Each field is IN or OUT:
+///
+/// - IN: every cutter dimension (`tool_type`, `diameter`,
+///   `cutting_length`, `helix_deg`, `corner_radius_mm`, `corner_radius`,
+///   `included_angle`, `taper_half_angle`, `shaft_diameter`), the
+///   `shank_diameter` (a fixed part of the physical tool: deflection,
+///   collision and the simulation cache read it), `flute_count`,
+///   `tool_material` and `cut_direction`.
+/// - OUT: `id` (project-local), `name`, `tool_number`, `stickout` (how
+///   the tool is mounted, not what it is), `vendor`, `product_id` and
+///   `size_units` (display only).
+///
+/// The destructure names every field with no `..`, so a new
+/// `ToolConfig` field does not compile until someone puts it IN or OUT.
+/// Lengths format at 0.001 mm and angles at 0.01 degree, so a float
+/// round trip through TOML does not split one tool into two.
 fn dedupe_key(t: &ToolConfig) -> String {
+    let ToolConfig {
+        id: _,
+        name: _,
+        tool_number: _,
+        tool_type,
+        diameter,
+        cutting_length,
+        helix_deg,
+        corner_radius_mm,
+        corner_radius,
+        included_angle,
+        taper_half_angle,
+        shaft_diameter,
+        shank_diameter,
+        stickout: _,
+        flute_count,
+        tool_material,
+        cut_direction,
+        vendor: _,
+        product_id: _,
+        size_units: _,
+    } = t;
     format!(
-        "{:?}|{:.3}|{}|{:.3}|{:.2}|{:.2}|{:.3}",
-        t.tool_type,
-        t.diameter,
-        t.flute_count,
-        t.cutting_length,
-        t.taper_half_angle,
-        t.included_angle,
-        t.corner_radius,
+        "{tool_type:?}|{diameter:.3}|{flute_count}|{cutting_length:.3}|{taper_half_angle:.2}|\
+         {included_angle:.2}|{corner_radius:.3}|{corner_radius_mm:.3}|{shaft_diameter:.3}|\
+         {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}",
     )
 }
 
@@ -491,17 +556,90 @@ mod tests {
         let dir = temp_dir("add_or_replace");
         // First save of a 6 mm geometry: a plain insert.
         let (_, replaced) = add_or_replace_to(&dir, "cat", tool("first", 6.0)).unwrap();
-        assert!(!replaced, "first save of a new geometry is not a replace");
+        assert!(
+            replaced.is_none(),
+            "first save of a new geometry is not a replace"
+        );
         // Re-saving the same geometry (different name) overwrites in place —
-        // no duplicate piles up (TOO-004).
+        // no duplicate piles up (TOO-004) — and names the entry it replaced.
         let (_, replaced) = add_or_replace_to(&dir, "cat", tool("renamed", 6.0)).unwrap();
-        assert!(replaced, "same dedupe key should replace, not append");
+        assert_eq!(
+            replaced.map(|t| t.name).as_deref(),
+            Some("first"),
+            "same dedupe key should replace, not append, and name the old entry"
+        );
         let cat = load_from(&dir, "cat").unwrap();
         assert_eq!(cat.tools.len(), 1, "no duplicate appended");
         assert_eq!(cat.tools[0].name, "renamed", "the entry was overwritten");
         // A distinct geometry still appends.
         let (_, replaced) = add_or_replace_to(&dir, "cat", tool("bigger", 8.0)).unwrap();
-        assert!(!replaced);
+        assert!(replaced.is_none());
+        assert_eq!(load_from(&dir, "cat").unwrap().tools.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F176: the fields that are OUT of the key (name, stickout, tool
+    /// number, vendor, product id, size units, id) do not make a tool
+    /// distinct.
+    #[test]
+    fn dedupe_key_ignores_name_stickout_and_catalog_metadata() {
+        let a = tool("1/4 upcut", 6.35);
+        let mut b = tool("quarter inch flat", 6.35);
+        b.stickout = a.stickout + 12.0;
+        b.tool_number = a.tool_number + 4;
+        b.vendor = "Amana".to_owned();
+        b.product_id = "46200".to_owned();
+        b.size_units = Some(crate::compute::tool_config::SizeUnits::Imperial);
+        b.id = ToolId(7);
+        assert_eq!(dedupe_key(&a), dedupe_key(&b));
+    }
+
+    /// F176: every geometry field and the material are IN the key. A
+    /// second tool that differs in one of them is a different tool, and
+    /// a Save must not replace the first one.
+    #[test]
+    fn dedupe_key_separates_geometry_and_material() {
+        use crate::compute::tool_config::{BitCutDirection, ToolMaterial};
+        type Edit = fn(&mut ToolConfig);
+        let base = tool("t", 6.0);
+        let variants: Vec<(&str, Edit)> = vec![
+            ("tool_material", |t| t.tool_material = ToolMaterial::Hss),
+            ("corner_radius_mm", |t| t.corner_radius_mm = 0.5),
+            ("corner_radius", |t| t.corner_radius = 0.5),
+            ("shaft_diameter", |t| t.shaft_diameter = 8.0),
+            ("shank_diameter", |t| t.shank_diameter = 8.0),
+            ("helix_deg", |t| t.helix_deg = 45.0),
+            ("cut_direction", |t| {
+                t.cut_direction = BitCutDirection::DownCut;
+            }),
+            ("included_angle", |t| t.included_angle = 60.0),
+            ("taper_half_angle", |t| t.taper_half_angle = 5.0),
+            ("flute_count", |t| t.flute_count = 3),
+            ("cutting_length", |t| t.cutting_length = 12.0),
+            ("diameter", |t| t.diameter = 8.0),
+            ("tool_type", |t| t.tool_type = ToolType::BallNose),
+        ];
+        for (field, edit) in &variants {
+            let mut other = base.clone();
+            edit(&mut other);
+            assert_ne!(
+                dedupe_key(&base),
+                dedupe_key(&other),
+                "{field} must make a library tool distinct"
+            );
+        }
+    }
+
+    /// F176 regression: a second tool that differs only in material is
+    /// appended; the Save does not replace the first one.
+    #[test]
+    fn add_or_replace_keeps_a_tool_of_another_material() {
+        let dir = temp_dir("add_or_replace_material");
+        add_or_replace_to(&dir, "cat", tool("carbide", 6.0)).unwrap();
+        let mut hss = tool("hss", 6.0);
+        hss.tool_material = crate::compute::tool_config::ToolMaterial::Hss;
+        let (_, replaced) = add_or_replace_to(&dir, "cat", hss).unwrap();
+        assert!(replaced.is_none());
         assert_eq!(load_from(&dir, "cat").unwrap().tools.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }

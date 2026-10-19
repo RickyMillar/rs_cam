@@ -310,7 +310,10 @@ fn build_cut_metric_set(
     else {
         return set;
     };
-    let tool = rs_cam_core::compute::cutter::build_cutter(tool_config);
+    // F029: a tool outside its domain gets no load set.
+    let Ok(tool) = rs_cam_core::compute::cutter::build_cutter(tool_config) else {
+        return set;
+    };
     let (family, pass_role) = config.operation.feeds_style();
     let result = session.get_result(index);
     let spans = result

@@ -54,7 +54,7 @@ const PLUNGE_RATE: f64 = 171.0;
 const TOL_MM: f64 = 0.02;
 
 fn tapered_ball() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0)
+    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0).unwrap()
 }
 
 /// A rapid over the ring start, a fed plunge to the ring, then the ring as

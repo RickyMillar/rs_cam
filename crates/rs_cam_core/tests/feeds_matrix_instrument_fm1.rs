@@ -534,7 +534,7 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
 fn cap_columns(machine: &MachineProfile, op: &OperationConfig, tool: &ToolConfig) -> [String; 4] {
     let (family, role) = op.feeds_style();
     let diameter = rs_cam_core::feeds::geometry::depth_cap_diameter_mm(
-        &rs_cam_core::compute::cutter::build_cutter(tool),
+        &rs_cam_core::compute::cutter::build_cutter(tool).unwrap(),
         op.depth_per_pass().unwrap_or(tool.diameter),
     );
     let cap = machine.rigidity.depth_cap_mm(family, role, diameter);

@@ -201,7 +201,7 @@ fn the_join_between_the_traces_is_clear_k1() {
 fn a_join_below_the_clamp_top_is_a_hit_k1() {
     let session = two_traces_across_the_clamp();
     let set = session.obstacle_set_for_toolpath(1).expect("the clamp");
-    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]);
+    let tool = rs_cam_core::compute::cutter::build_cutter(&session.tools()[0]).unwrap();
     let view = set
         .for_tool(
             &tool.to_assembly(&rs_cam_core::machine::head::HeadFit::default()),

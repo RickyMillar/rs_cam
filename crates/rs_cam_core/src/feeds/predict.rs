@@ -117,6 +117,10 @@ pub enum DeflectionUnmodeled {
     /// The engagement is deeper than the cantilever, so the load point
     /// sits at or below the tool tip.
     DegenerateCantilever,
+    /// A tool dimension is outside its domain
+    /// ([`crate::compute::tool_config::ToolConfig::validate`]), so no cutter
+    /// is built (F029).
+    ToolOutOfDomain,
 }
 
 impl DeflectionUnmodeled {
@@ -134,9 +138,8 @@ impl DeflectionUnmodeled {
             | Self::NoRadialEngagement
             | Self::NoChipload
             | Self::NoStickout
-            | Self::DegenerateCantilever => {
-                UnmodeledReason::NotImplemented(self.clause().to_owned())
-            }
+            | Self::DegenerateCantilever
+            | Self::ToolOutOfDomain => UnmodeledReason::NotImplemented(self.clause().to_owned()),
         }
     }
 
@@ -154,6 +157,7 @@ impl DeflectionUnmodeled {
             Self::NoChipload => "the feed, the speed or the flute count resolves to a zero chip",
             Self::NoStickout => "the tool reports no usable stickout",
             Self::DegenerateCantilever => "the cut is deeper than the tool stands out",
+            Self::ToolOutOfDomain => "a tool dimension is outside its domain",
         }
     }
 }
@@ -479,7 +483,9 @@ pub fn predict_peak_deflection_um(
     // figure out of the `Ok` branch, which must always carry a modelled
     // number. A figure of zero can only come from a load point at or
     // below the tip, which is the degenerate cantilever.
-    let tool_def = crate::compute::cutter::build_cutter(tool);
+    let tool_def = crate::compute::cutter::build_cutter(tool)
+        .ok()
+        .ok_or(DeflectionUnmodeled::ToolOutOfDomain)?;
     let predicted_um = match tip_deflection_from_engagement(
         &tool_def,
         material,

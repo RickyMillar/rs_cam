@@ -308,7 +308,7 @@ fn waterline_keeps_the_default_bar() {
 /// grids. The tolerance now classifies on a grid the TOOL fixes.
 #[test]
 fn the_cell_does_not_move_with_the_tolerance() {
-    let taper = TaperedBallEndmill::new(2.0 * WANAKA_TIP_R_MM, 3.0, 6.0, 25.0);
+    let taper = TaperedBallEndmill::new(2.0 * WANAKA_TIP_R_MM, 3.0, 6.0, 25.0).unwrap();
     let ball = BallEndmill::new(4.0, 25.0);
     let fine = BallEndmill::new(1.0, 25.0);
     for cutter in [

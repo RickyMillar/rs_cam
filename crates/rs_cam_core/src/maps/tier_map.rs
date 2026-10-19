@@ -1074,7 +1074,7 @@ mod tests {
         // after a Ø4 ball (envelope 2.0, cusp 2.0) it is FINER by the only
         // measure that matters here, even though its envelope is larger.
         let ball = BallEndmill::new(4.0, 25.0);
-        let taper = crate::tool::TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let taper = crate::tool::TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let tools: [&dyn MillingCutter; 2] = [&ball, &taper];
         let ladder = TierLadder::new(&tools).expect("ball -> taper is coarse to fine");
         assert!((ladder.max_envelope_radius_mm() - 3.0).abs() < 1e-9);

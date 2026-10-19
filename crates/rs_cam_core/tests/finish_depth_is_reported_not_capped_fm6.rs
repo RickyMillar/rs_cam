@@ -333,7 +333,7 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
         "the shipped depth {shipped} must be at or under the clamp {capped}"
     );
 
-    let cutter = build_cutter(&tool);
+    let cutter = build_cutter(&tool).unwrap();
     let suggest_d = depth_cap_diameter_mm(&cutter, capped);
     let factor = m.rigidity.doc_roughing_factor;
     assert!(
@@ -372,7 +372,7 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
 fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
     const DEPTH_MM: f64 = 6.0;
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
-    let cutter = build_cutter(&tool);
+    let cutter = build_cutter(&tool).unwrap();
     let t = trace(&[DEPTH_MM]);
     let bound = match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
         DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. } => bound,

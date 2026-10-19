@@ -1,11 +1,16 @@
 use super::tool_config::{ToolConfig, ToolType};
 use crate::tool::{
     BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
-    VBitEndmill,
+    ToolGeometryError, VBitEndmill,
 };
 
 /// Build a `ToolDefinition` (cutter geometry + holder dimensions) from a `ToolConfig`.
-pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
+///
+/// F029: refuses a tool that [`ToolConfig::validate`] refuses, so a bad
+/// record reaches no cutter constructor. A caller on the GUI thread shows
+/// the error; it does not panic.
+pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryError> {
+    tool.validate()?;
     let cutter: Box<dyn MillingCutter> = match tool.tool_type {
         ToolType::EndMill => {
             let mut cutter = FlatEndmill::new(tool.diameter, tool.cutting_length);
@@ -20,13 +25,13 @@ pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
         }
         ToolType::BullNose => {
             let mut cutter =
-                BullNoseEndmill::new(tool.diameter, tool.corner_radius, tool.cutting_length);
+                BullNoseEndmill::new(tool.diameter, tool.corner_radius, tool.cutting_length)?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
         ToolType::VBit => {
             let mut cutter =
-                VBitEndmill::new(tool.diameter, tool.included_angle, tool.cutting_length);
+                VBitEndmill::new(tool.diameter, tool.included_angle, tool.cutting_length)?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
@@ -36,16 +41,16 @@ pub fn build_cutter(tool: &ToolConfig) -> ToolDefinition {
                 tool.taper_half_angle,
                 tool.shaft_diameter,
                 tool.cutting_length,
-            );
+            )?;
             cutter.helix_deg = tool.helix_deg;
             Box::new(cutter)
         }
     };
-    ToolDefinition::new(
+    Ok(ToolDefinition::new(
         cutter,
         tool.shank_diameter,
         tool.stickout,
         tool.flute_count,
         tool.tool_material,
-    )
+    ))
 }

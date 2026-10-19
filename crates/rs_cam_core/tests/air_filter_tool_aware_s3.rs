@@ -69,7 +69,7 @@ const TOLERANCE_MM: f64 = 0.1;
 /// shaft. Envelope radius 3 mm; `height_at_radius(0.859) = 0.270`,
 /// `height_at_radius(1.859) = 3.405`.
 fn finish_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0)
+    TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0).unwrap()
 }
 
 /// Same envelope radius, no flank: `height_at_radius(r) = 0` for every r

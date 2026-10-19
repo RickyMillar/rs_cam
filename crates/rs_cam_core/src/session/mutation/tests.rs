@@ -85,6 +85,7 @@ fn add_toolpath_assigns_id_and_updates_setup() {
     let mut s = make_session();
     let tool_idx = s
         .add_tool(make_tool())
+        .unwrap()
         .created
         .expect("add_tool reports the new tool index");
     assert_eq!(tool_idx, 0);
@@ -491,11 +492,13 @@ fn add_tool_returns_index_and_assigns_id() {
     let mut s = make_session();
     let idx = s
         .add_tool(make_tool())
+        .unwrap()
         .created
         .expect("add_tool reports the new tool index");
     assert_eq!(idx, 0);
     let idx2 = s
         .add_tool(make_tool())
+        .unwrap()
         .created
         .expect("add_tool reports the new tool index");
     assert_eq!(idx2, 1);
@@ -546,7 +549,11 @@ fn add_setup_returns_index() {
 fn remove_setup_cascades_owned_toolpaths_and_refuses_the_last() {
     let mut s = make_session();
     let first_setup_id = s.list_setups()[0].id;
-    let tool = s.add_tool(make_tool()).created.expect("tool index");
+    let tool = s
+        .add_tool(make_tool())
+        .unwrap()
+        .created
+        .expect("tool index");
     let tool_id = s.tools().get(tool).expect("added tool").id.0;
     let removed_setup = s
         .apply(Command::AddSetup(AddSetupArgs {
@@ -907,6 +914,7 @@ fn replace_tools_updates_id_counter() {
     // next_tool_id should be max(5, 10) + 1 = 11
     let new_idx = s
         .add_tool(make_tool())
+        .unwrap()
         .created
         .expect("add_tool reports the new tool index");
     assert_eq!(s.tools()[new_idx].id, ToolId(11));

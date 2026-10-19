@@ -39,7 +39,8 @@ pub(crate) fn generate_pencil(
         },
         ctx.reference_tool_cfg
             .as_ref()
-            .map(crate::compute::cutter::build_cutter),
+            .map(crate::compute::cutter::build_cutter)
+            .transpose()?,
         ctx.link_kinematics.clone(),
     );
     let (tp, annotations, report) =

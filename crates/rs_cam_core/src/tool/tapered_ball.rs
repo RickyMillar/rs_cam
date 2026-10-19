@@ -15,10 +15,43 @@
 //!   cone_offset = h_contact - r_contact / tan(alpha)  (Z shift for cone continuity)
 
 use super::{
-    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter,
-    flat_chip_geometry_for_radius,
+    CLPoint, ChipGeometry, EngagementError, EngagementMode, MillingCutter, ToolDimension,
+    ToolGeometryError, flat_chip_geometry_for_radius,
 };
 use crate::geo::P3;
+
+/// The radius of a ball-cone profile at height `h` above the tip, before the
+/// clamp at the shaft. `sin_alpha`, `cos_alpha` and `tan_alpha` are of the
+/// taper half-angle; the ball meets the cone at the tangent height
+/// `tip_radius · (1 − sin α)`.
+///
+/// F075: the ONE copy of the ball-cone width. [`TaperedBallEndmill`] (its
+/// `width_at_height`) and `feeds::ToolGeometryHint::engaged_diameter_at_doc`
+/// (which holds only a hint, no cutter) both call it.
+pub fn ball_cone_radius_at_height(
+    tip_radius: f64,
+    sin_alpha: f64,
+    cos_alpha: f64,
+    tan_alpha: f64,
+    h: f64,
+) -> f64 {
+    let h_contact = tip_radius * (1.0 - sin_alpha);
+    if h <= h_contact {
+        // Ball region
+        if h <= 0.0 {
+            0.0
+        } else if h >= tip_radius {
+            tip_radius
+        } else {
+            (2.0 * tip_radius * h - h * h).max(0.0).sqrt()
+        }
+    } else {
+        // Cone region
+        let r_contact = tip_radius * cos_alpha;
+        let cone_offset = h_contact - r_contact / tan_alpha;
+        (h - cone_offset) * tan_alpha
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TaperedBallEndmill {
@@ -37,27 +70,22 @@ pub struct TaperedBallEndmill {
 }
 
 impl TaperedBallEndmill {
+    /// Build a tapered ball. Refuses a tip diameter, a half-angle or a
+    /// shaft diameter outside its [`ToolDimension`] domain (F029: these
+    /// used to be `assert!`s that panicked the GUI thread).
     pub fn new(
         ball_diameter: f64,
         taper_half_angle_deg: f64,
         shaft_diameter: f64,
         cutting_length: f64,
-    ) -> Self {
-        assert!(
-            taper_half_angle_deg > 0.0 && taper_half_angle_deg < 90.0,
-            "Taper half-angle must be between 0 and 90 degrees, got {}",
-            taper_half_angle_deg
-        );
-        assert!(
-            shaft_diameter >= ball_diameter,
-            "Shaft diameter {} must be >= ball diameter {}",
-            shaft_diameter,
-            ball_diameter
-        );
+    ) -> Result<Self, ToolGeometryError> {
+        ToolDimension::Diameter.check(ball_diameter, ball_diameter)?;
+        ToolDimension::TaperHalfAngle.check(taper_half_angle_deg, ball_diameter)?;
+        ToolDimension::ShaftDiameter.check(shaft_diameter, ball_diameter)?;
         let alpha_rad = taper_half_angle_deg.to_radians();
         let (sin_alpha, cos_alpha) = alpha_rad.sin_cos();
         let tan_alpha = alpha_rad.tan();
-        Self {
+        Ok(Self {
             ball_diameter,
             shaft_diameter,
             taper_half_angle_deg,
@@ -66,7 +94,7 @@ impl TaperedBallEndmill {
             tan_alpha,
             sin_alpha,
             cos_alpha,
-        }
+        })
     }
 
     fn ball_radius(&self) -> f64 {
@@ -165,37 +193,28 @@ impl MillingCutter for TaperedBallEndmill {
     /// Engaged diameter at `axial_doc_mm`, used by the vendor-LUT
     /// chipload gate/lookup path.
     ///
-    /// This is the trait-level twin of
+    /// The trait-level twin of
     /// [`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]'s
-    /// `TaperedBall` branch (feeds/mod.rs) — same ball/cone geometry,
-    /// hand-maintained separately because Suggest's call site only
-    /// carries a `ToolGeometryHint`, not a cutter instance. Kept honest
-    /// by the parity sentry
+    /// `TaperedBall` branch. Both read the ball-cone width from
+    /// [`ball_cone_radius_at_height`] (F075); the parity sentry
     /// `feeds::tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
-    /// (planning/finishing_stack_review_2026-07.md S.3).
+    /// still holds the two clamps equal.
     fn lookup_diameter_at(&self, axial_doc_mm: f64) -> f64 {
         (2.0 * self.engagement_radius(axial_doc_mm)).clamp(0.0, self.diameter())
     }
 
     fn width_at_height(&self, h: f64) -> f64 {
-        let r_ball = self.ball_radius();
-        let hc = self.h_contact();
-        let r_max = self.shaft_radius();
-
-        if h <= hc {
-            // Ball region
-            if h <= 0.0 {
-                0.0
-            } else if h >= r_ball {
-                r_ball
-            } else {
-                (2.0 * r_ball * h - h * h).max(0.0).sqrt()
-            }
-        } else {
-            // Cone region
-            let w = (h - self.cone_offset()) * self.tan_alpha;
-            w.min(r_max)
-        }
+        // The ball region never passes the tip radius, and the constructor
+        // holds the shaft at least the tip, so the clamp acts on the cone
+        // region only.
+        ball_cone_radius_at_height(
+            self.ball_radius(),
+            self.sin_alpha,
+            self.cos_alpha,
+            self.tan_alpha,
+            h,
+        )
+        .min(self.shaft_radius())
     }
 
     // For the composite cutter, the facet_drop uses different parameters
@@ -335,7 +354,7 @@ mod tests {
 
     fn make_tool() -> TaperedBallEndmill {
         // 6mm ball tip, 10° taper, 12mm shaft
-        TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0)
+        TaperedBallEndmill::new(6.0, 10.0, 12.0, 30.0).unwrap()
     }
 
     #[test]
@@ -347,16 +366,17 @@ mod tests {
         assert!((tool.alpha() - 10.0_f64.to_radians()).abs() < 1e-10);
     }
 
+    /// F029: the constructor refuses; it does not assert.
     #[test]
-    #[should_panic(expected = "Taper half-angle")]
     fn test_tapered_ball_invalid_angle() {
-        TaperedBallEndmill::new(6.0, 0.0, 12.0, 30.0);
+        let err = TaperedBallEndmill::new(6.0, 0.0, 12.0, 30.0).unwrap_err();
+        assert_eq!(err.dimension, crate::tool::ToolDimension::TaperHalfAngle);
     }
 
     #[test]
-    #[should_panic(expected = "Shaft diameter")]
     fn test_tapered_ball_shaft_too_small() {
-        TaperedBallEndmill::new(6.0, 10.0, 4.0, 30.0);
+        let err = TaperedBallEndmill::new(6.0, 10.0, 4.0, 30.0).unwrap_err();
+        assert_eq!(err.dimension, crate::tool::ToolDimension::ShaftDiameter);
     }
 
     #[test]

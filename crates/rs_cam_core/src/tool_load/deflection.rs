@@ -447,7 +447,7 @@ mod tests {
     fn wanaka_tapered_ball() -> ToolDefinition {
         // Wanaka tool 2: 2 mm tip / 7° taper / 6 mm shank, 35 mm stickout.
         ToolDefinition::new(
-            Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0)),
+            Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0).unwrap()),
             6.0,
             35.0,
             2,

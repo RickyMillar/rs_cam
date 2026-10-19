@@ -348,7 +348,7 @@ fn wanaka_band_mix_vs_cusp_radius() {
         // Surface rebuilt per row: the classification CELL SIZE follows the
         // cusp radius too (§14q), so the grid must track the dial or the
         // finer dials measure a grid that cannot represent their features.
-        let probe = TaperedBallEndmill::new(cusp_r * 2.0, 7.0, 6.0, 25.0);
+        let probe = TaperedBallEndmill::new(cusp_r * 2.0, 7.0, 6.0, 25.0).unwrap();
         let t0 = std::time::Instant::now();
         let surface =
             build_classification_surface_with_cancel(&mesh, &index, &probe, 0.05, &cancel)
@@ -437,7 +437,7 @@ fn wanaka_band_mix_vs_cusp_radius() {
     // pins the surface at the real Ø1 tip and varies only
     // `FinishPlannerParams`. If the rows barely move, the residual is NOT
     // "legitimate conditioning by the dials" — that was §14r's claim.
-    let probe = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let probe = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
     let surface = build_classification_surface_with_cancel(&mesh, &index, &probe, 0.05, &cancel)
         .expect("classification surface sampling");
     eprintln!("── dials varied on ONE fixed 0.5mm-cusp grid (§14t) ──");

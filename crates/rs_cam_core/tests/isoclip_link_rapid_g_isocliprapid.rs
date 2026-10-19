@@ -94,7 +94,7 @@ const ISLAND_B: (f64, f64, f64, f64) = (17.0, 4.0, 24.0, 20.0);
 const TOL_MM: f64 = 0.05;
 
 fn tapered_ball() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0)
+    TaperedBallEndmill::new(2.0, 7.1, 6.0, 20.0).unwrap()
 }
 
 fn islands() -> Vec<Polygon2> {

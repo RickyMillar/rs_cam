@@ -1073,10 +1073,10 @@ impl RsCamApp {
                                 .tools()
                                 .iter()
                                 .find(|t| t.id.0 == tc.tool_id)
-                                .map(|t| {
-                                    let cutter = rs_cam_core::compute::cutter::build_cutter(t);
-                                    tc.dressups.helix_radius_for(&cutter).emitted_mm
-                                })
+                                // F029: a tool outside its domain builds no
+                                // cutter, so the preview has no rule radius.
+                                .and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok())
+                                .map(|cutter| tc.dressups.helix_radius_for(&cutter).emitted_mm)
                                 .or(tc.dressups.helix_radius)
                                 .unwrap_or(0.0),
                             helix_pitch: tc.dressups.helix_pitch,
@@ -1197,8 +1197,11 @@ impl RsCamApp {
                     }
 
                     // Tool-profile ghost overlay (optional).
-                    if let Some(tool) = profile_tool.as_ref() {
-                        let cutter = rs_cam_core::compute::build_cutter(tool);
+                    // F029: a tool outside its domain draws no ghost; the
+                    // tool panel names the refusal.
+                    if let Some(tool) = profile_tool.as_ref()
+                        && let Ok(cutter) = rs_cam_core::compute::build_cutter(tool)
+                    {
                         let profile_verts =
                             toolpath_render::tool_profile_preview_vertices(render_tp, &cutter);
                         gpu_data.attach_tool_profile_preview(

@@ -397,7 +397,7 @@ fn run_cell_in_material(
     let pinned_doc = cell.fixed_inputs.as_ref().and_then(|f| f.doc_pinned_mm());
     let pinned_woc = cell.fixed_inputs.as_ref().and_then(|f| f.woc_pinned_mm());
 
-    let tool_def = build_cutter(&tool);
+    let tool_def = build_cutter(&tool).unwrap();
     let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation);
     let feeds_input = FeedsInput {
         tool_diameter: tool.diameter,

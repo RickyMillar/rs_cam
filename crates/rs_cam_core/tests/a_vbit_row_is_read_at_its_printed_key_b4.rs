@@ -212,7 +212,7 @@ fn mdf() -> Material {
 fn the_vbit_key_is_the_nominal_diameter_at_every_depth_b4() {
     for d in [6.35, 12.7] {
         let tool = vbit(d);
-        let cutter = build_cutter(&tool);
+        let cutter = build_cutter(&tool).unwrap();
         let hint = ToolGeometryHint::VBit {
             included_angle: 60.0,
             tip_diameter: 0.0,
@@ -294,7 +294,7 @@ fn gate_bounds(
     doc: f64,
 ) -> rs_cam_core::tool_load::verdict::ChipBounds {
     let trace = steady_trace(doc);
-    let tool_def = build_cutter(tool);
+    let tool_def = build_cutter(tool).unwrap();
     let machine = open_machine();
     let tolerance = ToleranceBands::default();
     let ctx = ToolpathLoadContext {

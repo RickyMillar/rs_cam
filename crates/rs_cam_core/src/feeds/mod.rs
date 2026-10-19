@@ -142,20 +142,17 @@ impl ToolGeometryHint {
     /// surface-speed RPM and the formula chip load still use this engaged
     /// diameter.
     ///
-    /// This is a **second, hand-maintained implementation** of the
-    /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
-    /// (see that trait method's doc comment on
-    /// `tool::vbit::VBitEndmill` / `tool::tapered_ball::TaperedBallEndmill`
-    /// for the reverse pointer). It has to be: this hint-level path is
-    /// called from `feeds::calculate` / `vendor_normalize`, which only
-    /// carry a `ToolGeometryHint` (scalar shape params), not a full
-    /// `&dyn MillingCutter` instance — there's nothing to delegate to
-    /// cheaply. The two are kept honest by the cross-shape DOC-sweep
-    /// parity sentry `tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
-    /// below. If that test ever fails, do not silently prefer one side
-    /// — the divergence means Suggest's chipload-band derating and the
-    /// post-sim gate's derating have quietly split, which can produce
-    /// false chipload trips (planning/finishing_stack_review_2026-07.md S.3).
+    /// The hint-level twin of [`crate::tool::MillingCutter::lookup_diameter_at`].
+    /// This path is called from `feeds::calculate` / `vendor_normalize`,
+    /// which carry only a `ToolGeometryHint`, not a cutter. F075: the width
+    /// math is not copied; both sides call the free functions
+    /// [`crate::tool::ball_cone_radius_at_height`] and
+    /// [`crate::tool::vbit_cone_radius_at_height`]. The clamps stay on each
+    /// side, and the parity sentry
+    /// `tests::engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes`
+    /// holds them equal. If that test fails, do not silently prefer one side:
+    /// Suggest's chipload-band derating and the post-sim gate's derating
+    /// have split (planning/finishing_stack_review_2026-07.md S.3).
     pub fn engaged_diameter_at_doc(
         self,
         axial_doc_mm: f64,
@@ -172,24 +169,22 @@ impl ToolGeometryHint {
                 let sin_alpha = alpha.sin();
                 let cos_alpha = alpha.cos();
                 let tan_alpha = alpha.tan();
+                // A hint has no constructor to refuse a degenerate shape, so
+                // it keeps this guard.
                 if tip_radius <= 0.0 || tan_alpha <= 0.0 {
                     return tool_diameter_mm;
                 }
-                let h_contact = tip_radius * (1.0 - sin_alpha);
-                let r_contact = tip_radius * cos_alpha;
-                let cone_offset = h_contact - r_contact / tan_alpha;
-                let radius = if axial_doc <= h_contact {
-                    (2.0 * tip_radius * axial_doc - axial_doc * axial_doc)
-                        .max(0.0)
-                        .sqrt()
-                } else {
-                    (axial_doc - cone_offset) * tan_alpha
-                };
+                // F075: the one ball-cone width, shared with the cutter.
+                let radius = crate::tool::ball_cone_radius_at_height(
+                    tip_radius, sin_alpha, cos_alpha, tan_alpha, axial_doc,
+                );
                 (2.0 * radius).clamp(0.0, shank_diameter_mm)
             }
             ToolGeometryHint::VBit { included_angle, .. } => {
                 let half = (included_angle * 0.5).to_radians();
-                (2.0 * axial_doc * half.tan()).clamp(0.0, tool_diameter_mm)
+                // F075: the one cone width, shared with the cutter.
+                (2.0 * crate::tool::vbit_cone_radius_at_height(half.tan(), axial_doc))
+                    .clamp(0.0, tool_diameter_mm)
             }
             ToolGeometryHint::Flat | ToolGeometryHint::Ball | ToolGeometryHint::Bull { .. } => {
                 tool_diameter_mm
@@ -1048,6 +1043,10 @@ pub enum FeedsError {
         /// diameters (`support::micro_extrapolation_refusal`).
         reason: std::borrow::Cow<'static, str>,
     },
+    /// A tool dimension is outside its domain
+    /// ([`crate::compute::tool_config::ToolConfig::validate`], F029). Suggest
+    /// writes no recipe for a tool that no cutter can be built from.
+    ToolOutOfDomain(crate::tool::ToolGeometryError),
 }
 
 impl std::fmt::Display for FeedsError {
@@ -1093,6 +1092,7 @@ impl std::fmt::Display for FeedsError {
                 tool_family.label(),
                 material.label(),
             ),
+            FeedsError::ToolOutOfDomain(e) => write!(f, "Suggest refuses this tool: {e}."),
         }
     }
 }

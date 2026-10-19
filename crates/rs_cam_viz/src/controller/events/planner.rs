@@ -298,12 +298,16 @@ impl<B: ComputeBackend> AppController<B> {
             .session
             .tools()
             .iter()
-            .map(|tool| PlannerToolRow {
-                tool_id: tool.id.0,
-                name: tool.name.clone(),
-                cusp_radius_mm: build_cutter(tool).cusp_radius_mm(),
-                selected: false,
-                strategy: rs_cam_core::session::TierStrategy::UnifiedFinish,
+            // F029: a tool outside its domain builds no cutter, so it has no
+            // cusp radius and no row. The tool doors refuse such a tool.
+            .filter_map(|tool| {
+                Some(PlannerToolRow {
+                    tool_id: tool.id.0,
+                    name: tool.name.clone(),
+                    cusp_radius_mm: build_cutter(tool).ok()?.cusp_radius_mm(),
+                    selected: false,
+                    strategy: rs_cam_core::session::TierStrategy::UnifiedFinish,
+                })
             })
             .collect();
         rows.sort_by(|a, b| {

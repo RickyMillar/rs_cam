@@ -261,6 +261,42 @@ pub enum SessionError {
     /// item, the cause and the fix, with the op label. Generation and the
     /// `selection_status` query give the same value.
     Selection(crate::selection::SelectionRefusal),
+    /// F029: a tool dimension is outside its domain
+    /// ([`ToolConfig::validate`]). Every tool door refuses with it and writes
+    /// nothing; a reader that builds a cutter from a stored tool refuses with
+    /// it too.
+    ToolOutOfDomain {
+        /// The tool's name.
+        tool: String,
+        error: crate::tool::ToolGeometryError,
+    },
+}
+
+impl SessionError {
+    /// The [`Self::ToolOutOfDomain`] refusal for `tool`, as a `map_err`
+    /// argument.
+    pub(crate) fn out_of_domain(
+        tool: &ToolConfig,
+    ) -> impl FnOnce(crate::tool::ToolGeometryError) -> Self + '_ {
+        move |error| Self::ToolOutOfDomain {
+            tool: tool.name.clone(),
+            error,
+        }
+    }
+}
+
+/// F029: check a tool at a session door. Refuses with
+/// [`SessionError::ToolOutOfDomain`].
+pub(crate) fn validate_tool(tool: &ToolConfig) -> Result<(), SessionError> {
+    tool.validate().map_err(SessionError::out_of_domain(tool))
+}
+
+/// F029: build the cutter of a stored tool, or refuse with
+/// [`SessionError::ToolOutOfDomain`].
+pub(crate) fn session_cutter(
+    tool: &ToolConfig,
+) -> Result<crate::tool::ToolDefinition, SessionError> {
+    crate::compute::cutter::build_cutter(tool).map_err(SessionError::out_of_domain(tool))
 }
 
 impl std::fmt::Display for SessionError {
@@ -326,6 +362,9 @@ impl std::fmt::Display for SessionError {
             // No prefix: the refusal is one sentence that starts with the
             // op label and ends with the fix.
             Self::Selection(refusal) => write!(f, "{refusal}"),
+            Self::ToolOutOfDomain { tool, error } => {
+                write!(f, "Tool '{tool}' refused: {error}")
+            }
         }
     }
 }
@@ -1709,7 +1748,9 @@ impl ProjectSession {
             dressups: Some(&tc.dressups),
             ..SuggestContext::default()
         };
-        Some(CutterOpProfile::for_combo(CutterOpProfileInput {
+        // F029: a tool outside its domain has no profile, as a missing tool
+        // has none. The tool doors refuse such a tool, so this is a backstop.
+        CutterOpProfile::for_combo(CutterOpProfileInput {
             operation: &tc.operation,
             tool,
             machine: self.machine(),
@@ -1717,7 +1758,8 @@ impl ProjectSession {
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post_config().spindle_strategy,
             context,
-        }))
+        })
+        .ok()
     }
 
     // ── Mutable accessors ─────────────────────────────────────────

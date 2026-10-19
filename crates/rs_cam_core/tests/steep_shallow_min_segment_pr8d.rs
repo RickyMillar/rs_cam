@@ -47,7 +47,7 @@ use rs_cam_core::tool::{MillingCutter, TaperedBallEndmill};
 use rs_cam_core::toolpath::{MIN_EMITTED_SEGMENT_MM, Toolpath, drop_sub_minimum_segments};
 
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 const HALF: f64 = 8.0;

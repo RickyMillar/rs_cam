@@ -168,21 +168,27 @@ mod tests {
             ("ball_1", Box::new(BallEndmill::new(1.0, 8.0))),
             (
                 "bullnose_6r1",
-                Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0)),
+                Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0).unwrap()),
             ),
             (
                 "bullnose_12r3",
-                Box::new(BullNoseEndmill::new(12.0, 3.0, 40.0)),
+                Box::new(BullNoseEndmill::new(12.0, 3.0, 40.0).unwrap()),
             ),
-            ("vbit_60", Box::new(VBitEndmill::new(12.7, 60.0, 20.0))),
-            ("vbit_90", Box::new(VBitEndmill::new(25.4, 90.0, 20.0))),
+            (
+                "vbit_60",
+                Box::new(VBitEndmill::new(12.7, 60.0, 20.0).unwrap()),
+            ),
+            (
+                "vbit_90",
+                Box::new(VBitEndmill::new(25.4, 90.0, 20.0).unwrap()),
+            ),
             (
                 "tapered_ball_1_7deg",
-                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()),
             ),
             (
                 "tapered_ball_0p5_3deg",
-                Box::new(TaperedBallEndmill::new(0.5, 3.0, 6.0, 30.0)),
+                Box::new(TaperedBallEndmill::new(0.5, 3.0, 6.0, 30.0).unwrap()),
             ),
         ];
         for (name, cutter) in shapes {
@@ -216,7 +222,7 @@ mod tests {
     /// overshoot below 1 µm through 80° contact.
     #[test]
     fn tapered_tip_lut_error_bounded() {
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);
         let tip_r: f64 = 0.5;
         let mut max_err_um = 0.0f64;

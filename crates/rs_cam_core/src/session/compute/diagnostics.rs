@@ -11,7 +11,6 @@ use tracing::instrument;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
-use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
 use crate::ids::ToolpathId;
 use crate::session::diagnostics_types::{
@@ -159,7 +158,10 @@ pub(super) fn plunge_stress_offenders_for_session(
         let Some(tool_cfg) = session.get_tool(ToolId(tc.tool_id)) else {
             continue;
         };
-        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        // F029: a tool outside its domain is skipped, as a missing tool is.
+        let Ok(tool_def) = crate::compute::cutter::build_cutter(tool_cfg) else {
+            continue;
+        };
         let geometry = tool_def.to_geometry_hint();
         let plunge_rate = tc.operation.plunge_rate();
         if plunge_rate <= 0.0 {
@@ -291,7 +293,7 @@ impl ProjectSession {
         let tool = self
             .find_tool_by_raw_id(tc.tool_id)
             .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
-        let tool_def = build_cutter(tool);
+        let tool_def = crate::session::session_cutter(tool)?;
 
         let request = CollisionCheckRequest {
             head,
@@ -381,7 +383,7 @@ impl ProjectSession {
         let tool = self
             .find_tool_by_raw_id(tc.tool_id)
             .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
-        let tool_def = build_cutter(tool);
+        let tool_def = crate::session::session_cutter(tool)?;
         let cut_trace = self
             .simulation
             .as_ref()
@@ -837,7 +839,8 @@ impl ProjectSession {
             .iter()
             .filter_map(|tc| {
                 let tool_cfg = self.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
-                let cutter = crate::compute::cutter::build_cutter(tool_cfg);
+                // F029: no diameter for a tool outside its domain.
+                let cutter = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
                 Some((tc.id, crate::tool::MillingCutter::diameter(&cutter)))
             })
             .collect();

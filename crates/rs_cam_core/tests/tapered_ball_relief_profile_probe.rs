@@ -4,7 +4,7 @@
 //! id 2, `diameter: 1.0`, `taper_half_angle_deg: 7.0`, Ø6 shank — i.e.
 //! **R0.5 (Ø1.0 tip), 7° per side**. Its display name says "2mm tip",
 //! which is wrong; `diameter` on a tapered ball IS the tip diameter
-//! (`TaperedBallEndmill::new(ball_diameter, ..)`). Same geometry as the
+//! (`TaperedBallEndmill::new(ball_diameter, ..).unwrap()`). Same geometry as the
 //! library's "R0.5mm x 6mm x 20mm 2F Tapered Ball" (id 7).
 //!
 //! Not a sentry — a REPORT. It asks the engine, through its own public

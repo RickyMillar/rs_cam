@@ -155,7 +155,7 @@ fn unified_tier_coverage_probe() {
                 .find(|t| t.id.0 == tc.tool_id)
                 .expect("tool")
                 .clone();
-            let cutter = build_cutter(&tool);
+            let cutter = build_cutter(&tool).unwrap();
             let index = SpatialIndex::build_auto(&mesh);
             let params = cfg.params(OpMotion {
                 feed_rate: 1000.0,

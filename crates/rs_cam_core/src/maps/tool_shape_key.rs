@@ -108,7 +108,7 @@ mod tests {
         // Both report radius() == 3.0; only the hint and the cusp separate
         // them. A key that read the envelope alone would collide here.
         let ball = BallEndmill::new(6.0, 25.0);
-        let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let taper = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         assert!((ball.envelope_radius_mm() - taper.envelope_radius_mm()).abs() < 1e-12);
         assert_ne!(ToolShapeKey::new(&ball), ToolShapeKey::new(&taper));
     }

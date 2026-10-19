@@ -584,7 +584,7 @@ mod tests {
     fn point_projection_follows_the_surface_where_the_cutter_cannot() {
         let mesh = valley_mesh();
         let index = SpatialIndex::build_auto(&mesh);
-        let vbit = crate::tool::VBitEndmill::new(6.0, 90.0, 20.0);
+        let vbit = crate::tool::VBitEndmill::new(6.0, 90.0, 20.0).unwrap();
         let depth = -0.4;
 
         // From below, standalone: the case of the RivMap back-side V lines.
@@ -676,7 +676,7 @@ mod tests {
     fn point_and_cutter_agree_on_a_flat_surface() {
         let mesh = crate::mesh::make_test_flat(100.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let vbit = crate::tool::VBitEndmill::new(6.0, 20.0, 20.0);
+        let vbit = crate::tool::VBitEndmill::new(6.0, 20.0, 20.0).unwrap();
         let curve = Polygon2::open_path(vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0)]);
         for (direction, depth) in [
             (ProjectDirection::FromAbove, 1.0),

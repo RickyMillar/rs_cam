@@ -32,7 +32,7 @@ use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 /// The tool this project finishes with: Ø1 tip, 7° half-angle, Ø6 shank.
 /// Envelope 3.0 mm, cusp 0.5 mm — the 6× split every row below turns on.
 fn wanaka_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// A block 40 × 24 mm, top at z = 0, with one straight trapezoidal groove

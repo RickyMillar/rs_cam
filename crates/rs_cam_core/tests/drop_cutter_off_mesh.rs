@@ -198,7 +198,7 @@ fn drop_cutter_over_peak_stays_at_peak_height() {
     use rs_cam_core::tool::TaperedBallEndmill;
     let mesh = pyramid_mesh(0.0, 0.0, 10.0, 5.0, 32);
     let index = SpatialIndex::build_auto(&mesh);
-    let cutter = TaperedBallEndmill::new(1.0, 15.0, 6.35, 25.0);
+    let cutter = TaperedBallEndmill::new(1.0, 15.0, 6.35, 25.0).unwrap();
     let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(0.0, 0.0, &mesh, &index, &cutter);
     assert!(cl.contacted);
     assert!(
@@ -260,7 +260,7 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
         max: P3::new(115.0, 115.0, 12.0),
     };
     let mut stock = TriDexelStock::from_bounds(&bbox, 0.5);
-    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.35, 25.0);
+    let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.35, 25.0).unwrap();
     let _ = stock.simulate_toolpath(&tp, &cutter, StockCutDirection::FromTop);
 
     let grid = &stock.z_grid;

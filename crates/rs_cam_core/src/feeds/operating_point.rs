@@ -52,7 +52,6 @@
 //! [`crate::feeds::predict::DeflectionUnmodeled`] in this same folder.
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::suggest::CalculatorOperatingPoint;
 use crate::machine::MachineProfile;
@@ -330,7 +329,7 @@ fn resolve_operating_point(
         None => 0.0,
     };
 
-    let geom = build_cutter(tool).to_geometry_hint();
+    let geom = tool.geometry_hint();
     let shank = if usable(tool.shank_diameter) {
         tool.shank_diameter
     } else {

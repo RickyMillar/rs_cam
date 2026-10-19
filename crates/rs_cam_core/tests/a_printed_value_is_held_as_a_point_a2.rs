@@ -397,7 +397,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
     const RPM: u32 = 18_000;
     const FEED: f64 = 720.0;
     let trace = steady_trace(cell, RPM, FEED);
-    let tool_def = build_cutter(&cell.tool);
+    let tool_def = build_cutter(&cell.tool).unwrap();
     let material = hardwood();
     let machine = MachineProfile::default();
     let tolerance = ToleranceBands::default();

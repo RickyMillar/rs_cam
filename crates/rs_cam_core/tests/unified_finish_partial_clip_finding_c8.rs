@@ -195,7 +195,7 @@ fn a_partly_clipped_band_is_measured_and_reported_everywhere() {
     let tp = result.toolpath();
     let mesh = two_groove_plateau();
     let index = SpatialIndex::build_auto(&mesh);
-    let cutter = build_cutter(&tool());
+    let cutter = build_cutter(&tool()).unwrap();
     let probe = EntrySurfaceProbe {
         mesh: &mesh,
         index: &index,

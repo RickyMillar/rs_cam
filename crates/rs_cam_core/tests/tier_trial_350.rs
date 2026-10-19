@@ -1204,7 +1204,7 @@ fn collect_entries(session: &ProjectSession) -> Vec<EntryParts> {
             let tool = session
                 .get_tool(ToolId(tc.tool_id))
                 .expect("every arm tool resolves");
-            let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
+            let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool).unwrap();
             out.push(EntryParts {
                 id: tc.id,
                 name: tc.name.clone(),

@@ -293,9 +293,9 @@ fn band_query_matches_unbounded_on_hemisphere_every_shape() {
 
     let flat = FlatEndmill::new(6.0, 25.0);
     let ball = BallEndmill::new(6.0, 25.0);
-    let bull = BullNoseEndmill::new(8.0, 1.5, 25.0);
-    let vbit = VBitEndmill::new(12.0, 90.0, 25.0);
-    let taper = TaperedBallEndmill::new(2.0, 5.0, 6.0, 25.0);
+    let bull = BullNoseEndmill::new(8.0, 1.5, 25.0).unwrap();
+    let vbit = VBitEndmill::new(12.0, 90.0, 25.0).unwrap();
+    let taper = TaperedBallEndmill::new(2.0, 5.0, 6.0, 25.0).unwrap();
 
     let shapes: [(&str, &dyn MillingCutter); 5] = [
         ("flat6", &flat),

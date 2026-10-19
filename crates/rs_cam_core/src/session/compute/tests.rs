@@ -2662,7 +2662,7 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
         let _ = s.add_stock_change(1, change).unwrap();
     }
 
-    let groups = s.simulation_groups(&SimulationOptions::default());
+    let groups = s.simulation_groups(&SimulationOptions::default()).unwrap();
     assert_eq!(
         groups.len(),
         2,

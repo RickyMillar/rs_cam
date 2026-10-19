@@ -78,7 +78,7 @@ fn taper_config() -> ToolConfig {
 
 /// The fine tool's shape, for `width_at_height`.
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(TIP_DIAMETER, HALF_ANGLE_DEG, SHAFT_DIAMETER, L_C)
+    TaperedBallEndmill::new(TIP_DIAMETER, HALF_ANGLE_DEG, SHAFT_DIAMETER, L_C).unwrap()
 }
 
 fn canyon(wall_height: f64) -> rs_cam_core::mesh::TriangleMesh {

@@ -240,7 +240,9 @@ fn check_drop_cutter_min_z(tc: &ToolpathConfig, stock_bottom_z: f64) -> Option<S
 }
 
 fn check_tapered_ball_plunge(tc: &ToolpathConfig, tool: &ToolConfig) -> Option<StaleDefault> {
-    let tool_def = build_cutter(tool);
+    // F029: a tool outside its domain builds no cutter, so no stale-default
+    // rule reads it. The tool doors refuse such a tool before it gets here.
+    let tool_def = build_cutter(tool).ok()?;
     let hint = tool_def.to_geometry_hint();
     if !matches!(
         hint,
@@ -278,7 +280,8 @@ fn check_wood_adaptive_stepover(
     if !is_wood_class(material) {
         return None;
     }
-    let tool_def = build_cutter(tool);
+    // F029: see `check_tapered_ball_plunge`.
+    let tool_def = build_cutter(tool).ok()?;
     if !matches!(tool_def.to_geometry_hint(), ToolGeometryHint::Flat) {
         return None;
     }

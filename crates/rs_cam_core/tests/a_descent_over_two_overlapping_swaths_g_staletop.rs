@@ -366,7 +366,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
         .get_tool(rs_cam_core::compute::ToolId(tc.tool_id))
         .expect("the tool")
         .clone();
-    let cutter = build_cutter(&tool_cfg);
+    let cutter = build_cutter(&tool_cfg).unwrap();
     let radius = cutter.radius();
     let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);
     let tol = 0.2 * (std::f64::consts::FRAC_1_SQRT_2 + 0.5 + 1.0);

@@ -123,7 +123,7 @@ const VERY_STEEP_DEG: f64 = 75.0;
 /// The project's finishing tool: Ø1 tip, 7° half angle, Ø6 shank.
 /// `envelope_radius_mm()` = 3.0, `cusp_radius_mm()` = 0.5 — a 6× split.
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// Ball control: `cusp_radius_mm() == envelope_radius_mm()`, so every

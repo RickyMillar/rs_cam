@@ -684,7 +684,7 @@ fn the_wanaka_terrain_reach_table() {
         }
     };
     // The shipped Q2 pass: Ø4 tapered ball, 3° half-angle, Ø6 shank.
-    let taper = TaperedBallEndmill::new(4.0, 3.0, 6.0, 25.0);
+    let taper = TaperedBallEndmill::new(4.0, 3.0, 6.0, 25.0).unwrap();
     let cell = rs_cam_core::maps::reach_map::ReachMapParams::for_cutter(&taper, 0.05).cell_mm;
     eprintln!(
         "wanaka terrain: {} triangles, R{:.2} tip, envelope {:.2}, \

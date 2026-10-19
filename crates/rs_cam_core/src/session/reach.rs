@@ -90,7 +90,8 @@ impl ProjectSession {
             .filter(|s| s.is_finite() && *s > 0.0)
             .and_then(|stepover_mm| {
                 let tool = self.find_tool_by_raw_id(tc.tool_id)?;
-                let tip_radius_mm = tip_sphere_radius_mm(&build_cutter(tool))?;
+                // F029: no tip radius for a tool outside its domain.
+                let tip_radius_mm = tip_sphere_radius_mm(&build_cutter(tool).ok()?)?;
                 let cusp =
                     crate::finish::scallop_math::scallop_height_flat(tip_radius_mm, stepover_mm);
                 cusp.is_finite().then_some((
@@ -161,7 +162,8 @@ impl ProjectSession {
         }
         let index = crate::maps::geom_cache::cached_auto_index(&mesh);
 
-        let cutter = Arc::new(build_cutter(tool_cfg));
+        // F029: no reach map for a tool outside its domain.
+        let cutter = Arc::new(build_cutter(tool_cfg).ok()?);
         let (tolerance_mm, tolerance_source) =
             self.reach_tolerance_with_override(toolpath_index, tolerance_override);
         let params = ReachMapParams::for_cutter(cutter.as_ref(), tolerance_mm);

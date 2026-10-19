@@ -737,7 +737,11 @@ pub fn project_load_report(
             .get_result(idx)
             .filter(|r| r.annotated().spans_valid)
             .map(|r| r.annotated().spans.as_slice());
-        let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
+        // F029: a tool outside its domain gets no verdict, as a removed
+        // tool gets none. The tool doors refuse such a tool first.
+        let Ok(tool_def) = crate::compute::cutter::build_cutter(tool_cfg) else {
+            continue;
+        };
         let spec = tc.operation.spec();
         let lut_op = match spec.feeds_family {
             OperationFamily::Adaptive => LutOperationFamily::Adaptive,

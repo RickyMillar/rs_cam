@@ -56,7 +56,7 @@ use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 
 /// The project's finishing tool: Ø1 tip, 7° half-angle, Ø6 shank.
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 const HALF: f64 = 8.0;

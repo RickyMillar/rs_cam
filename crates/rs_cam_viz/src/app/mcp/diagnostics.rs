@@ -60,7 +60,15 @@ impl RsCamApp {
             );
         };
 
-        let tool = rs_cam_core::compute::build_cutter(tool_config);
+        let tool = match rs_cam_core::compute::build_cutter(tool_config) {
+            Ok(tool) => tool,
+            Err(e) => {
+                return format!(
+                    "Error: tool '{}' is outside its domain ({e}). Narration refuses.",
+                    tool_config.name
+                );
+            }
+        };
         let cut_trace = state
             .simulation
             .results

@@ -55,7 +55,7 @@ use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 /// Ø6 shaft. Envelope 3.0 mm, cusp 0.5 mm — a 6× split, which is what makes
 /// every assertion below discriminating.
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// The five shapes, by name. Built on demand so the same shape can be held
@@ -66,9 +66,9 @@ fn shape(name: &str) -> Box<dyn MillingCutter> {
     match name {
         "flat" => Box::new(FlatEndmill::new(6.0, 25.0)),
         "ball" => Box::new(BallEndmill::new(6.0, 25.0)),
-        "bull" => Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0)),
+        "bull" => Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0).unwrap()),
         "tapered_ball" => Box::new(taper()),
-        "vbit" => Box::new(VBitEndmill::new(6.0, 90.0, 25.0)),
+        "vbit" => Box::new(VBitEndmill::new(6.0, 90.0, 25.0).unwrap()),
         other => panic!("unknown shape {other}"),
     }
 }
@@ -407,7 +407,7 @@ fn height_at_radius_inverts_width_at_height() {
     }
     // Strictly-widening shapes: the round trip is exact.
     let ball = BallEndmill::new(6.0, 25.0);
-    let vbit = VBitEndmill::new(6.0, 90.0, 25.0);
+    let vbit = VBitEndmill::new(6.0, 90.0, 25.0).unwrap();
     let tap = taper();
     for (name, cutter) in [
         ("ball", &ball as &dyn MillingCutter),

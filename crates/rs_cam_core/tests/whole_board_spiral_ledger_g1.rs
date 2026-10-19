@@ -103,7 +103,7 @@ const FRESH_STOCK_LABEL: &str = "link_ceiling: None — FRESH-STOCK FIRST-EXPERI
 fn production_cutter() -> TaperedBallEndmill {
     // tool_id 2: ball dia 2.0, taper half-angle 5.7 deg, shaft dia 6.0,
     // cutting length 20.
-    TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0)
+    TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap()
 }
 
 fn machine_kinematics() -> MachineKinematics {

@@ -230,7 +230,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         .find(|t| t.id.0 == tc.tool_id)
         .unwrap()
         .clone();
-    let cutter = build_cutter(&tool);
+    let cutter = build_cutter(&tool).unwrap();
     let mesh = session
         .models()
         .iter()

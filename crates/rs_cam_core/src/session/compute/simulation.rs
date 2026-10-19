@@ -81,7 +81,12 @@ impl ProjectSession {
     /// that has a generated toolpath, a phantom prior-stock slot, or (S2) a
     /// stock change. The core half of the "one request, two builders" rule
     /// (`compute/CLAUDE.md`); the GUI controller builds the other.
-    pub(crate) fn simulation_groups(&self, opts: &SimulationOptions) -> Vec<SimGroupEntry> {
+    ///
+    /// F029: refuses a tool outside its domain (both builders refuse it).
+    pub(crate) fn simulation_groups(
+        &self,
+        opts: &SimulationOptions,
+    ) -> Result<Vec<SimGroupEntry>, SessionError> {
         let mut groups = Vec::new();
         // H1: the shoe of every entry, from one shoe plan.
         let shoe_of = self.resolved_shoe_lookup();
@@ -136,7 +141,8 @@ impl ProjectSession {
                     let Some(tool) = self.find_tool_by_raw_id(tc.tool_id) else {
                         continue;
                     };
-                    let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
+                    let (tool_def, flute_count, tool_summary) =
+                        entry_tool_fields(tool).map_err(SessionError::out_of_domain(tool))?;
 
                     let metrics_not_applicable = entry_metrics_not_applicable(
                         result.is_drill_op(),
@@ -228,7 +234,7 @@ impl ProjectSession {
             }
         }
 
-        groups
+        Ok(groups)
     }
 
     /// Run tri-dexel stock simulation, resuming from a cached prefix.
@@ -255,7 +261,7 @@ impl ProjectSession {
         let stock_bbox = self.stock_bbox();
 
         // Build simulation groups from setups
-        let groups = self.simulation_groups(opts);
+        let groups = self.simulation_groups(opts)?;
 
         // Compute effective resolution: auto-resolution matches the GUI's
         // heuristic (5 cells across the smallest tool radius, clamped to

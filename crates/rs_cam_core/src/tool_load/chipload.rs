@@ -1077,7 +1077,7 @@ mod tests {
 
     fn vbit_tool() -> ToolDefinition {
         ToolDefinition::new(
-            Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
+            Box::new(VBitEndmill::new(6.35, 90.0, 20.0).unwrap()),
             6.35,
             30.0,
             2,

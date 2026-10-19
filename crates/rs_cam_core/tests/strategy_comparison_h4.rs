@@ -2304,7 +2304,7 @@ fn d16_1_single_column_contact_probe() {
     // ── The contact dumps ───────────────────────────────────────────
     let mesh = grooved_fixture();
     let index = SpatialIndex::build_auto(&mesh);
-    let cutter = rs_cam_core::compute::build_cutter(&session_tool());
+    let cutter = rs_cam_core::compute::build_cutter(&session_tool()).unwrap();
     eprintln!(
         "\n  cutter: envelope r {:.3} mm (query radius), cusp r {:.3} mm",
         cutter.radius(),

@@ -865,13 +865,13 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
             let cr = def
                 .corner_radius
                 .context("Bull nose tool requires 'corner_radius'")?;
-            Box::new(BullNoseEndmill::new(d, cr, cl))
+            Box::new(BullNoseEndmill::new(d, cr, cl)?)
         }
         ToolType::VBit => {
             let angle = def
                 .included_angle
                 .context("V-bit tool requires 'included_angle'")?;
-            Box::new(VBitEndmill::new(d, angle, cl))
+            Box::new(VBitEndmill::new(d, angle, cl)?)
         }
         ToolType::TaperedBallNose => {
             let taper = def
@@ -880,7 +880,7 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
             let shaft = def
                 .shaft_diameter
                 .context("Tapered ball requires 'shaft_diameter'")?;
-            Box::new(TaperedBallEndmill::new(d, taper, shaft, cl))
+            Box::new(TaperedBallEndmill::new(d, taper, shaft, cl)?)
         }
     };
     Ok(ToolDefinition::new(

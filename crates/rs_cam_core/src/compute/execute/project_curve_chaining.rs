@@ -189,7 +189,7 @@ fn generate_with_findings(
     let (mesh, index) = plate();
     let polys = curves();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
     let h = heights(safe_z);
     let stock_bbox = BoundingBox3 {
         min: P3::new(PLATE_X0, PLATE_Y0, h.bottom_z),
@@ -325,7 +325,7 @@ fn the_shipped_default_is_off_and_survives_a_config_that_predates_the_field() {
 fn chaining_off_emits_exactly_what_the_generator_emits() {
     let (mesh, index) = plate();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
     let cfg = project_curve_config(0.0);
 
     let params = crate::ops::project_curve::ProjectCurveParams {
@@ -751,7 +751,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
     // The counter itself, read off the library the adapter drives.
     let (mesh, index) = plate();
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
     let params = crate::finish::surface_link::RelinkParams {
         link_tolerance: None,
         hookup_distance: CANDIDATE_CHAIN_MM,
@@ -827,7 +827,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
         ..DressupConfig::for_op(OperationType::ProjectCurve)
     };
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
-    let tool_def = build_cutter(&tool_cfg);
+    let tool_def = build_cutter(&tool_cfg).unwrap();
     let after = apply_dressups(
         on,
         crate::compute::execute::DressupContext {

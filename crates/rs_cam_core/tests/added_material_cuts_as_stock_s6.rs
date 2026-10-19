@@ -295,7 +295,8 @@ fn own_material_with_force_data_uses_it_s6() {
             run.session
                 .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
                 .unwrap(),
-        );
+        )
+        .unwrap();
         let maple = maple();
         // The spans the report reads (`gcode::project_load_report`).
         let index = run

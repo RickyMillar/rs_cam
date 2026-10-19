@@ -76,7 +76,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),

@@ -212,7 +212,7 @@ fn ribbed_stock() -> TriDexelStock {
 #[test]
 fn raster_and_project_curve_build_the_same_ceiling_on_remaining_stock() {
     let stock = ribbed_stock();
-    let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(6.0));
+    let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(6.0)).unwrap();
     let stock_top_z = 3.0;
     // A pinned top below the stock top: the case where the two rules split.
     let heights_top_z = 1.0;
@@ -283,7 +283,8 @@ fn auto_heights_keep_the_old_ceiling_values() {
     };
     let auto_top_z = HeightsConfig::default().resolve(&ctx).top_z;
     assert_eq!(auto_top_z, STOCK_Z);
-    let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM));
+    let tool =
+        rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM)).unwrap();
     let ceiling = link_ceiling_for(
         OperationType::ProjectCurve,
         None,
@@ -302,7 +303,8 @@ fn auto_heights_keep_the_old_ceiling_values() {
 /// makes no link builds none.
 #[test]
 fn a_finishing_op_on_fresh_stock_builds_no_ceiling() {
-    let tool = rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM));
+    let tool =
+        rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM)).unwrap();
     for &op in OperationType::ALL {
         let ceiling = link_ceiling_for(op, None, &tool, STOCK_Z, PINNED_TOP_Z, None);
         match op.capabilities().link_ceiling {

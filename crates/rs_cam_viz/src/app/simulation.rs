@@ -636,9 +636,10 @@ impl RsCamApp {
                 .find_toolpath_config_by_id(toolpath_id)
                 .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id.0 == tc.tool_id))
                 .cloned()
-                .map(|tool| {
-                    let tool_def = crate::compute::worker::helpers::build_cutter(&tool);
-                    (tool, tool_def)
+                // F029: a tool outside its domain draws no ghost.
+                .and_then(|tool| {
+                    let tool_def = crate::compute::worker::helpers::build_cutter(&tool).ok()?;
+                    Some((tool, tool_def))
                 });
             // H2: the ghost draws the shoe where the check reads it: the
             // toolpath's resolved shoe from the one core shoe plan. A

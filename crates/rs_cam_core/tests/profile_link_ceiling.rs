@@ -93,7 +93,7 @@ const QY: f64 = 0.0;
 /// The shipped R1.0 tapered ball from the operator's board: ball 2.0 mm,
 /// 5.7 deg half-angle, 6 mm shank. `envelope_radius_mm() == 3.0`.
 fn tapered_ball() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 5.7, 6.0, 25.0)
+    TaperedBallEndmill::new(2.0, 5.7, 6.0, 25.0).unwrap()
 }
 
 /// A 3 mm-radius flat endmill — the same envelope radius as

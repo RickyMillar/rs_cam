@@ -44,11 +44,9 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .ok_or("Bull nose needs corner radius: bullnose:10:2")?
                 .parse()
                 .map_err(|_| "Invalid corner radius".to_owned())?;
-            Ok(Box::new(BullNoseEndmill::new(
-                diameter,
-                corner_radius,
-                cutting_length,
-            )))
+            Ok(Box::new(
+                BullNoseEndmill::new(diameter, corner_radius, cutting_length).unwrap(),
+            ))
         }
         "vbit" => {
             let angle: f64 = parts
@@ -56,7 +54,9 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .ok_or("V-bit needs included angle: vbit:10:90")?
                 .parse()
                 .map_err(|_| "Invalid included angle".to_owned())?;
-            Ok(Box::new(VBitEndmill::new(diameter, angle, cutting_length)))
+            Ok(Box::new(
+                VBitEndmill::new(diameter, angle, cutting_length).unwrap(),
+            ))
         }
         "tapered_ball" => {
             let taper_angle: f64 = parts
@@ -69,12 +69,10 @@ fn parse_tool_spec(spec: &str) -> Result<Box<dyn MillingCutter>, String> {
                 .ok_or("Tapered ball needs shaft diameter: tapered_ball:6:10:12")?
                 .parse()
                 .map_err(|_| "Invalid shaft diameter".to_owned())?;
-            Ok(Box::new(TaperedBallEndmill::new(
-                diameter,
-                taper_angle,
-                shaft_diameter,
-                cutting_length,
-            )))
+            Ok(Box::new(
+                TaperedBallEndmill::new(diameter, taper_angle, shaft_diameter, cutting_length)
+                    .unwrap(),
+            ))
         }
         _ => Err(format!("Unknown tool type '{}'", parts[0])),
     }

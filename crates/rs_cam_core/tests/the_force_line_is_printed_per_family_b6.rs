@@ -713,7 +713,7 @@ fn every_consumer_reads_one_line() {
         );
 
         // The deflection predictor bends the tool under the same force.
-        let tool_def = build_cutter(&tool);
+        let tool_def = build_cutter(&tool).unwrap();
         let e = tool_def.tool_material.youngs_modulus_n_per_mm2();
         let delta = tip_deflection_from_engagement(&tool_def, &material, ap, psi, fz)
             .expect("modelled deflection");
@@ -784,7 +784,7 @@ fn every_consumer_abstains_on_plywood() {
             "{grade:?}"
         );
         assert_eq!(
-            tip_deflection_from_engagement(&build_cutter(&tool), &plywood, ap, psi, fz),
+            tip_deflection_from_engagement(&build_cutter(&tool).unwrap(), &plywood, ap, psi, fz),
             None,
             "{grade:?}"
         );

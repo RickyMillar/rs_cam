@@ -26,7 +26,7 @@ where
         head: req.head.clone(),
         stock: req.stock,
         toolpath: &req.annotated.toolpath,
-        tool: build_cutter(&req.tool),
+        tool: build_cutter(&req.tool).map_err(|e| ComputeError::Message(e.to_string()))?,
         mesh: Some(&req.mesh),
         obstacles: std::sync::Arc::clone(&req.obstacles),
         join: req.join,

@@ -1814,9 +1814,9 @@ fn engaged_diameter_at_doc_matches_lookup_diameter_at_across_shapes() {
 
     let flat = FlatEndmill::new(6.0, 20.0);
     let ball = BallEndmill::new(6.0, 20.0);
-    let vbit = VBitEndmill::new(6.0, 90.0, 20.0);
+    let vbit = VBitEndmill::new(6.0, 90.0, 20.0).unwrap();
     // ball_diameter=6mm tip, taper_half_angle=20deg, shaft=10mm.
-    let tapered = TaperedBallEndmill::new(6.0, 20.0, 10.0, 30.0);
+    let tapered = TaperedBallEndmill::new(6.0, 20.0, 10.0, 30.0).unwrap();
 
     let cases: Vec<Case> = vec![
         Case {

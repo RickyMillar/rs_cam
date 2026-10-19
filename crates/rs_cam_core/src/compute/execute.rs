@@ -270,6 +270,14 @@ impl From<String> for OperationError {
     }
 }
 
+/// F029: a tool record outside its domain builds no cutter; the op
+/// refuses with the field and its range.
+impl From<crate::tool::ToolGeometryError> for OperationError {
+    fn from(e: crate::tool::ToolGeometryError) -> Self {
+        Self::InvalidTool(e.to_string())
+    }
+}
+
 // ── Phase-5 family adapters (T11) ────────────────────────────────────
 
 /// Bundled inputs for one operation execution — everything
@@ -623,12 +631,17 @@ pub(crate) fn execute_operation_annotated(
         && generated.produced.has_no_rest_output()
         && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
     {
+        let reference_tool = ctx
+            .reference_tool_cfg
+            .as_ref()
+            .map(crate::compute::cutter::build_cutter)
+            .transpose()?;
         attach_generic_rest_analysis(
             &mut generated,
             m,
             idx,
             ctx.tool_def,
-            ctx.reference_tool_cfg.as_ref(),
+            reference_tool.as_ref(),
             // W6.2: the territory ran the stock guard once for this op.
             prepared.territory().reference_stock(),
             ra,

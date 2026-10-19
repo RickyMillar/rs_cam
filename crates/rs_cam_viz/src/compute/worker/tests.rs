@@ -354,7 +354,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
@@ -407,7 +407,7 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
@@ -773,9 +773,13 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         // rule 0.3 x D on `pocket_spec`'s tool, capped at the flat bottom.
         Some(&serde_json::json!(
             DressupConfig::default()
-                .helix_radius_for(&rs_cam_core::compute::cutter::build_cutter(
-                    &ToolConfig::new_default(ToolId(1), ToolType::EndMill)
-                ))
+                .helix_radius_for(
+                    &rs_cam_core::compute::cutter::build_cutter(&ToolConfig::new_default(
+                        ToolId(1),
+                        ToolType::EndMill
+                    ))
+                    .unwrap()
+                )
                 .emitted_mm
         ))
     );
@@ -1627,7 +1631,7 @@ fn multi_setup_top_bottom_simulation() {
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
                         ),
-                        tool: Arc::new(build_cutter(&tool)),
+                        tool: Arc::new(build_cutter(&tool).unwrap()),
                         tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
@@ -1652,7 +1656,7 @@ fn multi_setup_top_bottom_simulation() {
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
                         ),
-                        tool: Arc::new(build_cutter(&tool)),
+                        tool: Arc::new(build_cutter(&tool).unwrap()),
                         tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
@@ -1792,7 +1796,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
                         ),
-                        tool: Arc::new(build_cutter(&tool)),
+                        tool: Arc::new(build_cutter(&tool).unwrap()),
                         tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
@@ -1817,7 +1821,7 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
                         ),
-                        tool: Arc::new(build_cutter(&tool)),
+                        tool: Arc::new(build_cutter(&tool).unwrap()),
                         tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
@@ -2059,7 +2063,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
@@ -2164,7 +2168,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
@@ -2273,7 +2277,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
@@ -2460,7 +2464,7 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
-                    tool: Arc::new(build_cutter(&tool)),
+                    tool: Arc::new(build_cutter(&tool).unwrap()),
                     tool_id: rs_cam_core::compute::tool_config::ToolId(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),

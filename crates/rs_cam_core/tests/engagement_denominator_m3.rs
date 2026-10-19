@@ -74,7 +74,7 @@ const SAMPLE_STEP: f64 = 0.25;
 /// The shipped R1.0 tapered ball: Ø2 ball tip, 5.7° taper, Ø6 shaft. Its
 /// `radius()` is the SHAFT radius, 3.0 — which is exactly why U3 was invisible.
 fn shipped_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0)
+    TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap()
 }
 
 /// A virgin block, top at `TOP_Z`.
@@ -327,18 +327,24 @@ fn the_engaged_radius_never_exceeds_the_envelope_on_any_shipped_shape() {
         ("ball_1", Box::new(BallEndmill::new(1.0, 8.0))),
         (
             "bullnose_6r1",
-            Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0)),
+            Box::new(BullNoseEndmill::new(6.0, 1.0, 25.0).unwrap()),
         ),
-        ("vbit_60", Box::new(VBitEndmill::new(12.7, 60.0, 20.0))),
-        ("vbit_20", Box::new(VBitEndmill::new(5.5, 20.0, 20.0))),
+        (
+            "vbit_60",
+            Box::new(VBitEndmill::new(12.7, 60.0, 20.0).unwrap()),
+        ),
+        (
+            "vbit_20",
+            Box::new(VBitEndmill::new(5.5, 20.0, 20.0).unwrap()),
+        ),
         ("taper_r1_5p7", Box::new(shipped_taper())),
         (
             "taper_r0p5_7p1",
-            Box::new(TaperedBallEndmill::new(1.0, 7.1, 6.0, 25.0)),
+            Box::new(TaperedBallEndmill::new(1.0, 7.1, 6.0, 25.0).unwrap()),
         ),
         (
             "taper_r1p5_2p8",
-            Box::new(TaperedBallEndmill::new(3.0, 2.8, 6.0, 25.0)),
+            Box::new(TaperedBallEndmill::new(3.0, 2.8, 6.0, 25.0).unwrap()),
         ),
     ];
     for (name, cutter) in shapes {

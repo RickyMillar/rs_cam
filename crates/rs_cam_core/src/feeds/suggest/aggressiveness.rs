@@ -210,7 +210,7 @@ pub(super) fn apply_aggressiveness(
         return Vec::new();
     }
 
-    let geom = build_cutter(tool).to_geometry_hint();
+    let geom = tool.geometry_hint();
     let shank_mm = if usable(tool.shank_diameter) {
         tool.shank_diameter
     } else {
@@ -419,7 +419,11 @@ fn depth_cap_for_raise(
         ap0
     };
     let family = operation.op_type().spec().feeds_family;
-    let cutter = build_cutter(tool);
+    // F029: no cutter, no raise. `suggest_for_operation` refuses a tool
+    // outside its domain before this pass runs.
+    let Ok(cutter) = build_cutter(tool) else {
+        return ap0;
+    };
     let cap_at = |depth: f64| -> Option<f64> {
         let diameter = crate::feeds::geometry::depth_cap_diameter_mm(&cutter, depth);
         machine

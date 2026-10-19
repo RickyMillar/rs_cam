@@ -117,8 +117,8 @@ fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
 fn oracle_machining_polygons() -> Vec<Polygon2> {
     let mesh = plane_with_bowl();
     let index = SpatialIndex::build(&mesh, 5.0);
-    let coarse = build_cutter(&ball_tool_config(4.0));
-    let fine = build_cutter(&ball_tool_config(2.0));
+    let coarse = build_cutter(&ball_tool_config(4.0)).unwrap();
+    let fine = build_cutter(&ball_tool_config(2.0)).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&coarse, &fine];
     let ladder = TierLadder::new(&tools).unwrap();
     let params = TierMapParams {

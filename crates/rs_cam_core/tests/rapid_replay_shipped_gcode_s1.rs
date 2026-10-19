@@ -209,26 +209,26 @@ fn wanaka_tools() -> Vec<ToolEntry> {
         tool_entry(
             "T20",
             "20 deg V-bit 5.5mm 2F",
-            Box::new(VBitEndmill::new(5.5, 20.0, 15.0)),
+            Box::new(VBitEndmill::new(5.5, 20.0, 15.0).unwrap()),
         ),
         // toml id 2 (`:122-143`): tapered_ball_nose, Ø2.0 ball, taper 5.7°,
         // shaft Ø6.0, cutting_length 20.0.
         tool_entry(
             "T8",
             "R1.0mm x 6mm x 20mm 2F Tapered Ball",
-            Box::new(TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0)),
+            Box::new(TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap()),
         ),
         // toml id 3 (`:145-166`): Ø3.0 ball, taper 2.8°, shaft Ø6.0, len 30.5.
         tool_entry(
             "T15",
             "R1.5mm x 6mm x 30.5mm 2F Tapered Ball",
-            Box::new(TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5)),
+            Box::new(TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap()),
         ),
         // toml id 1 (`:99-120`): Ø1.0 ball, taper 7.1°, shaft Ø6.0, len 20.0.
         tool_entry(
             "T6",
             "R0.5mm x 6mm x 20mm 2F Tapered Ball",
-            Box::new(TaperedBallEndmill::new(1.0, 7.1, 6.0, 20.0)),
+            Box::new(TaperedBallEndmill::new(1.0, 7.1, 6.0, 20.0).unwrap()),
         ),
     ]
 }

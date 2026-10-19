@@ -79,7 +79,7 @@ fn carbide_ball(diameter_mm: f64) -> ToolDefinition {
 fn carbide_tapered_ball() -> ToolDefinition {
     // Wanaka tool 2 shape: 2 mm tip / 7 deg taper / 6 mm shank.
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0)),
+        Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 30.0).unwrap()),
         6.0,
         35.0,
         2,

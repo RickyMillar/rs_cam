@@ -89,7 +89,7 @@ const DOCS: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0];
 /// (1) — the canonical profile, as a DIAMETER.
 fn canonical_diameter_at(case: (f64, f64, f64), doc: f64) -> f64 {
     let (ball_d, half_angle, shaft_d) = case;
-    let cutter = TaperedBallEndmill::new(ball_d, half_angle, shaft_d, 30.0);
+    let cutter = TaperedBallEndmill::new(ball_d, half_angle, shaft_d, 30.0).unwrap();
     2.0 * cutter.width_at_height(doc)
 }
 

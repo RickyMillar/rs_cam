@@ -504,7 +504,9 @@ pub fn vbit_width_at_depth(included_angle: f64, tip_d: f64, ap: f64) -> Option<f
         return None;
     }
     let half_angle = (included_angle * 0.5).to_radians();
-    let width = tip_d + 2.0 * ap * half_angle.tan();
+    // F075: the one cone width (`tool::vbit_cone_radius_at_height`). This fn
+    // takes no cutter, so it keeps its own guard and returns `None`.
+    let width = tip_d + 2.0 * crate::tool::vbit_cone_radius_at_height(half_angle.tan(), ap);
     Some(width.max(tip_d))
 }
 

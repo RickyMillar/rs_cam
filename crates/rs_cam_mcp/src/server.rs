@@ -2185,14 +2185,12 @@ pub struct BuiltTool {
 ///
 /// `tool_number` is not assigned here — the caller allocates it against
 /// the project's existing tools (see the `add_tool` handler).
+///
+/// F029: every number is checked by ONE rule, `ToolConfig::validate` (the
+/// `ToolDimension` table that the session doors and the GUI also read).
+/// This builder adds only rule 1, the required fields.
 pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     let tool_type = parse_tool_type(&spec.tool_type)?;
-    if !spec.diameter.is_finite() || spec.diameter <= 0.0 {
-        return Err(format!(
-            "diameter must be a positive number of mm (got {}).",
-            spec.diameter
-        ));
-    }
 
     let mut config = ToolConfig::new_default(ToolId(0), tool_type);
     config.name = spec.name.clone();
@@ -2212,11 +2210,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
                  would create a different cutter than the one you asked for."
                     .to_owned()
             })?;
-            if !angle.is_finite() || angle <= 0.0 || angle >= 180.0 {
-                return Err(format!(
-                    "included_angle must be > 0 and < 180 degrees (got {angle})."
-                ));
-            }
             config.included_angle = angle;
         }
         ToolType::TaperedBallNose => {
@@ -2225,11 +2218,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
                  5.6). No tool was added: guessing the taper would create a different cutter."
                     .to_owned()
             })?;
-            if !angle.is_finite() || angle <= 0.0 || angle >= 90.0 {
-                return Err(format!(
-                    "taper_half_angle must be > 0 and < 90 degrees (got {angle})."
-                ));
-            }
             config.taper_half_angle = angle;
         }
         ToolType::BullNose => {
@@ -2238,12 +2226,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
                  IS the difference between a bull nose, a flat end mill and a ball nose."
                     .to_owned()
             })?;
-            if !radius.is_finite() || radius <= 0.0 || radius > spec.diameter / 2.0 {
-                return Err(format!(
-                    "corner_radius must be > 0 and <= diameter/2 ({:.4} mm) (got {radius}).",
-                    spec.diameter / 2.0
-                ));
-            }
             config.corner_radius = radius;
         }
         ToolType::EndMill | ToolType::BallNose => {}
@@ -2255,13 +2237,7 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     macro_rules! apply_f64 {
         ($field:ident, $name:literal) => {
             match spec.$field {
-                Some(v) if v.is_finite() && v > 0.0 => config.$field = v,
-                Some(v) => {
-                    return Err(format!(
-                        "{} must be a positive number of mm (got {}).",
-                        $name, v
-                    ));
-                }
+                Some(v) => config.$field = v,
                 None => defaulted.push($name),
             }
         };
@@ -2273,7 +2249,6 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     apply_f64!(stickout, "stickout");
 
     match spec.flute_count {
-        Some(0) => return Err("flute_count must be at least 1.".to_owned()),
         Some(n) => config.flute_count = n,
         None => defaulted.push("flute_count"),
     }
@@ -2282,6 +2257,9 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // unit from the name.
     config.size_units = spec.size_units.map(Into::into);
 
+    config
+        .validate()
+        .map_err(|e| format!("{e}. No tool was added."))?;
     Ok(BuiltTool { config, defaulted })
 }
 

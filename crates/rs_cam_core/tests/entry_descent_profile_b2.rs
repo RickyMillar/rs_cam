@@ -119,7 +119,7 @@ const MIN_SPLIT_MM: f64 = 0.5;
 /// `profile_link_ceiling.rs` measures A1 with, so the two gates are
 /// comparable.
 fn tapered_ball() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(2.0, 5.7, 6.0, 25.0)
+    TaperedBallEndmill::new(2.0, 5.7, 6.0, 25.0).unwrap()
 }
 
 /// A Ø6 flat endmill — the SAME 3.0 mm envelope radius as [`tapered_ball`],

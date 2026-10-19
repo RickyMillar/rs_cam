@@ -2407,7 +2407,10 @@ mod tests {
         let cutters: [(&str, Box<dyn MillingCutter>); 3] = [
             ("flat6", Box::new(FlatEndmill::new(6.0, 25.0))),
             ("ball6", Box::new(BallEndmill::new(6.0, 25.0))),
-            ("vbit60", Box::new(VBitEndmill::new(6.0, 60.0, 20.0))),
+            (
+                "vbit60",
+                Box::new(VBitEndmill::new(6.0, 60.0, 20.0).unwrap()),
+            ),
         ];
         let mut out = Vec::new();
         for (name, cutter) in &cutters {
@@ -2537,10 +2540,13 @@ mod tests {
         let cutters: Vec<(&str, Box<dyn MillingCutter>)> = vec![
             ("flat6", Box::new(FlatEndmill::new(6.0, 25.0))),
             ("ball6", Box::new(BallEndmill::new(6.0, 25.0))),
-            ("vbit60", Box::new(VBitEndmill::new(6.0, 60.0, 20.0))),
+            (
+                "vbit60",
+                Box::new(VBitEndmill::new(6.0, 60.0, 20.0).unwrap()),
+            ),
             (
                 "tapered_ball1",
-                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+                Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()),
             ),
         ];
         let mut total_skipped_stamps = 0u64;

@@ -822,7 +822,7 @@ mod tests {
         //     though the CELL follows the cusp/tip scale), and
         //   * the cell is exactly what the resolution policy resolved to.
         let mesh = ring_plate(5.0);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let policy =
             crate::finish::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, policy.cell_mm());
@@ -849,7 +849,7 @@ mod tests {
         // or this test has gone vacuous).
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let cancel = never();
         let policy =
             crate::finish::finish_setup::FinishResolutionPolicy::cusp_quarter(&cutter, 0.4);
@@ -915,7 +915,7 @@ mod tests {
     fn scratch_arm_is_bit_identical_to_the_shipped_arm() {
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let cancel = never();
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, 0.5);
         let oracle = sample_classification_grid(
@@ -955,7 +955,7 @@ mod tests {
         // general statement, and it is the one to extend.
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let cancel = never();
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, 0.5);
         let ray = sample_classification_grid(
@@ -993,7 +993,7 @@ mod tests {
         // the same triangles.
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let cancel = never();
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, 0.5);
         let oracle = sample_classification_grid(
@@ -1019,7 +1019,7 @@ mod tests {
     fn every_arm_reports_cancellation() {
         let mesh = ring_plate(5.0);
         let index = SpatialIndex::build_auto(&mesh);
-        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+        let cutter = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
         let always = || true;
         let spec = ClassificationGridSpec::for_mesh(&mesh, &cutter, 0.5);
         for arm in ClassificationSampler::ALL {

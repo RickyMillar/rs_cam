@@ -31,7 +31,7 @@ use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill, ToolDefi
 
 /// The tool this project actually finishes with: Ø1 tip, Ø6 shaft.
 fn taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// 1. The two radii must disagree by exactly the shaft/tip ratio — and must

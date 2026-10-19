@@ -252,7 +252,7 @@ fn rectangle_and_a_point(polygons: &[Polygon2]) -> SelectionInputs<'static> {
 
 fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
     let cfg = ToolConfig::new_default(ToolId(0), tool_type);
-    let def = build_cutter(&cfg);
+    let def = build_cutter(&cfg).unwrap();
     (def, cfg)
 }
 
@@ -1461,7 +1461,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
     };
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let mut stock = crate::dexel_stock::TriDexelStock::from_bounds(&test_stock_bbox(), 2.0);
-    let cutter = build_cutter(&tool_cfg);
+    let cutter = build_cutter(&tool_cfg).unwrap();
     let recorder =
         crate::trace::semantic_trace::ToolpathSemanticRecorder::new("FeedOpt nominal", "Pocket");
     let semantic_root = recorder.root_context();

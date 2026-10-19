@@ -126,7 +126,7 @@ fn trace(feed_mm_min: f64) -> SimulationCutTrace {
 #[test]
 fn a_tapered_row_is_read_at_the_tip_a1() {
     let tool = tool_config();
-    let cutter = build_cutter(&tool);
+    let cutter = build_cutter(&tool).unwrap();
     let hint = cutter.geometry_hint();
     let material = hardwood();
     let machine = MachineProfile::shapeoko_vfd();

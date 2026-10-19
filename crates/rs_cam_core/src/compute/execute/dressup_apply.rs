@@ -6,8 +6,6 @@
 
 use crate::compute::catalog::OperationTransformCapabilities;
 use crate::compute::config::{DressupConfig, DressupEntryStyle};
-use crate::compute::cutter::build_cutter;
-use crate::compute::tool_config::ToolConfig;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -51,7 +49,7 @@ pub(super) fn rest_field_params(
 /// detector stage (`finish::rest_detector`, W6.4.1) resolves the reference:
 /// the actual machined stock (`rest_reference`: the territory's stock after
 /// the shared W2.1 guard, W6.2), else the configured real reference tool
-/// (`reference_tool_cfg`, resolved upstream from
+/// (`reference_tool`, built upstream from
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else the stage's bare-surface probe.
 /// Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
@@ -64,18 +62,17 @@ pub(super) fn attach_generic_rest_analysis(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     tool_def: &ToolDefinition,
-    reference_tool_cfg: Option<&ToolConfig>,
+    reference_tool: Option<&ToolDefinition>,
     rest_reference: Option<&crate::dexel_stock::TriDexelStock>,
     cfg: &crate::compute::config::RestAnalysisConfig,
     findings: &std::cell::RefCell<GenerationFindings>,
 ) {
-    let reference_tool = reference_tool_cfg.map(build_cutter);
     // W6.4.1: this pass's POLICY is its tier list — the machined stock, else
     // the configured reference tool. It offers no nominal ball; the stage
     // falls back to its own probe.
     let choice = crate::finish::rest_detector::RestReferenceChoice {
         stock: rest_reference,
-        tool: reference_tool.as_ref().map(|t| t as &dyn MillingCutter),
+        tool: reference_tool.map(|t| t as &dyn MillingCutter),
     };
     // PR-7 (H2.5): the fan this pass ROUTES against is now a real one.
     //

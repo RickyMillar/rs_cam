@@ -752,7 +752,7 @@ mod tests {
             max: P3::new(20.0, 10.0, 0.0),
         };
         let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-        let tool_def = build_cutter(&tool_cfg);
+        let tool_def = build_cutter(&tool_cfg).unwrap();
         let polys = vec![square(-10.0), square(10.0)];
         for ordering in [RegionOrdering::ByArea, RegionOrdering::Global] {
             let cancel = AtomicBool::new(false);

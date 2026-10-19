@@ -283,12 +283,16 @@ pub fn group_stock_cut_direction(face_up: FaceUp) -> StockCutDirection {
 /// **One derivation, two builders.** `tool`, `flute_count` and
 /// `tool_summary` are three views of the same `ToolConfig`; each request
 /// builder used to write all three by hand.
-pub fn entry_tool_fields(tool: &ToolConfig) -> (Arc<ToolDefinition>, u32, String) {
-    (
-        Arc::new(crate::compute::cutter::build_cutter(tool)),
+///
+/// F029: refuses a tool outside its domain; no cutter is built from it.
+pub fn entry_tool_fields(
+    tool: &ToolConfig,
+) -> Result<(Arc<ToolDefinition>, u32, String), crate::tool::ToolGeometryError> {
+    Ok((
+        Arc::new(crate::compute::cutter::build_cutter(tool)?),
         tool.flute_count,
         tool.summary(),
-    )
+    ))
 }
 
 /// Whether a toolpath's dexel engagement metrics mean nothing

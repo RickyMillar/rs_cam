@@ -492,7 +492,11 @@ fn clamp_dpp_to_rigidity(
         return warnings;
     }
     let family = operation.op_type().spec().feeds_family;
-    let cutter = crate::compute::cutter::build_cutter(tool);
+    // F029: no cutter, no clamp. `suggest_for_operation` refuses a tool
+    // outside its domain before this pass runs.
+    let Ok(cutter) = crate::compute::cutter::build_cutter(tool) else {
+        return warnings;
+    };
     let cap_at = |depth: f64| -> Option<f64> {
         let diameter = crate::feeds::geometry::depth_cap_diameter_mm(&cutter, depth);
         machine

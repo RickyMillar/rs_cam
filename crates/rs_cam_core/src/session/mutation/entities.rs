@@ -102,14 +102,18 @@ impl ProjectSession {
     /// list, the value this method returned before WP4. That index is
     /// NOT the tool's id: a project that has removed a tool separates
     /// the two.
+    ///
+    /// F029: refuses a tool outside its domain
+    /// ([`SessionError::ToolOutOfDomain`]) and adds nothing.
     #[instrument(skip(self, config))]
-    pub(crate) fn add_tool(&mut self, config: ToolConfig) -> Effects {
+    pub(crate) fn add_tool(&mut self, config: ToolConfig) -> Result<Effects, SessionError> {
+        crate::session::validate_tool(&config)?;
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
             created = Some(session.add_tool_impl(config));
         });
         effects.created = created;
-        effects
+        Ok(effects)
     }
 
     /// Append the tool and report its index. The raw half of

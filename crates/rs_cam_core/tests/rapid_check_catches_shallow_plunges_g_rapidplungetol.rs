@@ -365,7 +365,7 @@ fn the_low_bound_never_exceeds_the_high_bound() {
 #[test]
 fn a_curved_tool_reentering_its_own_passes_reads_low_at_or_under_the_cut() {
     const Z_C: f64 = 5.0;
-    let cutter = TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0);
+    let cutter = TaperedBallEndmill::new(3.0, 10.0, 6.0, 25.0).unwrap();
     let radius = cutter.radius();
     let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);
     for cs in CELLS {

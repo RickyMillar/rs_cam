@@ -118,6 +118,9 @@ fn sourced_detail(drill: &DrillClaim, size: Option<&Claim>) -> String {
 pub enum RampFallback {
     /// A drill cycle has no helix or ramp entry.
     DrillCycle,
+    /// A tool dimension is outside its domain, so no cutter is built
+    /// (F029).
+    ToolOutOfDomain,
     /// No vendor table was given.
     NoLut,
     /// No G6 drill claim covers the tool.
@@ -157,6 +160,9 @@ impl RampFallback {
                 "A drill cycle has no helix or ramp entry; the entry uses the plunge rate."
                     .to_owned()
             }
+            Self::ToolOutOfDomain => "A tool dimension is outside its domain, so no cutter is \
+                                      built; the entry uses the plunge rate."
+                .to_owned(),
             Self::NoLut => "No vendor table was given, so no G6 claim gives an axial chip, so \
                             the ramp holds its vertical rate at the plunge."
                 .to_owned(),
@@ -312,7 +318,9 @@ pub fn entry_geometry(
     dressups: Option<&DressupConfig>,
     tool: &ToolConfig,
 ) -> Result<Entry, RampFallback> {
-    let cutter = crate::compute::cutter::build_cutter(tool);
+    let cutter = crate::compute::cutter::build_cutter(tool)
+        .ok()
+        .ok_or(RampFallback::ToolOutOfDomain)?;
     if let OperationConfig::Adaptive3d(cfg) = op {
         let geometry = match cfg.entry_style {
             Adaptive3dEntryStyle::Plunge => return Err(RampFallback::EntryOff),
@@ -902,7 +910,10 @@ pub fn entry_notes(
             radius_mm,
             pitch_mm,
         } => {
-            let cutter = crate::compute::cutter::build_cutter(tool);
+            // `entry_geometry` built this cutter above, so it builds.
+            let Ok(cutter) = crate::compute::cutter::build_cutter(tool) else {
+                return EntryNotes(notes);
+            };
             let (helix, pitch_default) = match (op, dressups) {
                 (OperationConfig::Adaptive3d(cfg), _) => (
                     cfg.helix_radius_for(&cutter),

@@ -2,7 +2,7 @@ use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::theme;
-use rs_cam_core::compute::tool_config::SizeUnits;
+use rs_cam_core::compute::tool_config::{SizeUnits, ToolDimension};
 
 /// The "Size in" choices, in the order the selector shows them.
 const SIZE_UNIT_CHOICES: &[(SizeUnits, &str)] = &[
@@ -46,6 +46,12 @@ pub fn draw(
     ui.add_space(8.0);
     ui.separator();
     let mut action = ToolEditAction::None;
+    // F029: the editor commits only a draft inside its domain. The core
+    // door refuses the rest too; this line says why before the click.
+    let refusal = tool.validate().err();
+    if let Some(e) = &refusal {
+        ui.label(egui::RichText::new(format!("Cannot apply: {e}")).color(theme::ERROR));
+    }
     ui.horizontal(|ui| {
         if modified {
             ui.label(
@@ -54,7 +60,7 @@ pub fn draw(
                     .color(theme::WARNING),
             );
             if ui
-                .button("Apply")
+                .add_enabled(refusal.is_none(), egui::Button::new("Apply"))
                 .on_hover_text("Commit these edits to the project tool.")
                 .clicked()
             {
@@ -102,10 +108,18 @@ pub fn draw(
     });
     if save_clicked {
         match rs_cam_core::io::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
-            Ok((path, replaced)) => {
-                let verb = if replaced { "Updated" } else { "Saved" };
-                panels.tool_catalog_status =
-                    format!("{verb} '{}' in {}", tool.name, path.display());
+            // F176: a replace names the entry it overwrote, so a Save
+            // that hits another tool with the same geometry is visible.
+            Ok((path, Some(old))) => {
+                panels.tool_catalog_status = format!(
+                    "Replaced '{}' with '{}' in {}",
+                    old.name,
+                    tool.name,
+                    path.display()
+                );
+            }
+            Ok((path, None)) => {
+                panels.tool_catalog_status = format!("Saved '{}' in {}", tool.name, path.display());
             }
             Err(e) => {
                 tracing::error!("tool library save failed: {e}");
@@ -147,10 +161,9 @@ pub(crate) fn draw_tool_fields(
     // Switching type IN PLACE has to fix up geometry, or it builds a tool
     // the cutter constructors reject. `ToolConfig::new_default` normalises
     // (cross-type geometry zeroed), so a tool switched EndMill -> VBit
-    // arrives with `included_angle = 0.0` while `VBitEndmill::new` asserts
-    // `0 < included_angle < 180` — a panic on the COMPUTE WORKER, reached
-    // from a combo box. Tapered ball is worse: it asserts on both
-    // `taper_half_angle` and `shaft_diameter >= diameter`.
+    // arrives with `included_angle = 0.0`, which `VBitEndmill::new` refuses
+    // (F029; it used to assert, a panic reached from a combo box). Tapered
+    // ball needs both `taper_half_angle` and `shaft_diameter >= diameter`.
     //
     // So on a change: drop the geometry the OLD type owned, then refill
     // whatever the NEW type requires from that type's own defaults. Both
@@ -204,6 +217,11 @@ pub(crate) fn draw_tool_fields(
     }
 
     // Parameters grid
+    // F210: every drag range below is `ToolDimension::ui_range`, a GUI
+    // convenience. The domain that refuses a tool is
+    // `ToolDimension::domain`, which `ToolConfig::validate` reads.
+    let flute_range = ToolDimension::FluteCount.ui_range(tool.diameter);
+    let flute_range = (*flute_range.start() as i32)..=(*flute_range.end() as i32);
     ui.param_grid("tool_params", |ui| {
         // One convention: `Ø` is a diameter, `R` a radius. A tapered
         // ball's `diameter` is the TIP, so its label says "Tip Ø", and a
@@ -212,18 +230,27 @@ pub(crate) fn draw_tool_fields(
         // accepts the size in `units` (`1/4`, `1/4"`, `0.25in`, `6mm`).
         let diameter_label = tool.diameter_field_label();
         let tip_radius = tool.derived_tip_radius_text();
-        ValueRow::new(diameter_label, &mut tool.diameter, " mm", 0.1, 0.1..=100.0)
-            .length_units(units)
-            .note(tip_radius.as_deref())
-            .show(ui);
+        let diameter_range = ToolDimension::Diameter.ui_range(tool.diameter);
+        ValueRow::new(
+            diameter_label,
+            &mut tool.diameter,
+            " mm",
+            0.1,
+            diameter_range,
+        )
+        .length_units(units)
+        .note(tip_radius.as_deref())
+        .keep_existing()
+        .show(ui);
 
         ValueRow::new(
             "Cutting Length:",
             &mut tool.cutting_length,
             " mm",
             0.5,
-            0.1..=200.0,
+            ToolDimension::CuttingLength.ui_range(tool.diameter),
         )
+        .keep_existing()
         .show(ui);
 
         // Flute count (critical for feeds calculation).
@@ -232,14 +259,21 @@ pub(crate) fn draw_tool_fields(
         ui.label("Flutes:");
         let mut flutes_i = tool.flute_count as i32;
         if ui
-            .add(egui::DragValue::new(&mut flutes_i).range(1..=8))
+            .add(
+                egui::DragValue::new(&mut flutes_i)
+                    .range(flute_range)
+                    .clamp_existing_to_range(false),
+            )
             .changed()
         {
             tool.flute_count = flutes_i.max(1) as u32;
         }
         ui.end_row();
 
-        ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, 0.0..=60.0).show(ui);
+        let helix_range = ToolDimension::HelixDeg.ui_range(tool.diameter);
+        ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, helix_range)
+            .keep_existing()
+            .show(ui);
 
         if matches!(tool.tool_type, ToolType::EndMill) {
             ValueRow::new(
@@ -247,8 +281,9 @@ pub(crate) fn draw_tool_fields(
                 &mut tool.corner_radius_mm,
                 " mm",
                 0.01,
-                0.0..=tool.diameter / 2.0,
+                ToolDimension::CornerRadiusMm.ui_range(tool.diameter),
             )
+            .keep_existing()
             .show(ui);
         }
 
@@ -284,8 +319,9 @@ pub(crate) fn draw_tool_fields(
                     &mut tool.corner_radius,
                     " mm",
                     0.05,
-                    0.01..=tool.diameter / 2.0,
+                    ToolDimension::CornerRadius.ui_range(tool.diameter),
                 )
+                .keep_existing()
                 .show(ui);
             }
             ToolType::VBit => {
@@ -294,8 +330,9 @@ pub(crate) fn draw_tool_fields(
                     &mut tool.included_angle,
                     " deg",
                     1.0,
-                    1.0..=179.0,
+                    ToolDimension::IncludedAngle.ui_range(tool.diameter),
                 )
+                .keep_existing()
                 .show(ui);
             }
             ToolType::TaperedBallNose => {
@@ -304,8 +341,9 @@ pub(crate) fn draw_tool_fields(
                     &mut tool.taper_half_angle,
                     " deg",
                     0.5,
-                    0.5..=89.0,
+                    ToolDimension::TaperHalfAngle.ui_range(tool.diameter),
                 )
+                .keep_existing()
                 .show(ui);
                 // TOO-005: the tapered "shaft diameter" (taper top) used to
                 // sit here next to the holder "shank diameter", two near-
@@ -328,8 +366,9 @@ pub(crate) fn draw_tool_fields(
                 &mut tool.shaft_diameter,
                 " mm",
                 0.1,
-                tool.diameter..=100.0,
+                ToolDimension::ShaftDiameter.ui_range(tool.diameter),
             )
+            .keep_existing()
             .show(ui);
         });
     }
@@ -353,11 +392,15 @@ pub(crate) fn draw_tool_fields(
                     &mut tool.shank_diameter,
                     " mm",
                     0.1,
-                    0.0..=100.0,
+                    ToolDimension::ShankDiameter.ui_range(tool.diameter),
                 )
+                .keep_existing()
                 .show(ui);
 
-                ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, 0.0..=300.0).show(ui);
+                let stickout_range = ToolDimension::Stickout.ui_range(tool.diameter);
+                ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, stickout_range)
+                    .keep_existing()
+                    .show(ui);
             });
         });
 
@@ -404,7 +447,21 @@ pub(crate) fn draw_tool_preview(
     let bottom = rect.bottom() - 10.0;
     let draw_h = desired_size.y - 20.0; // vertical pixels available
 
-    let tool_def = crate::compute::worker::helpers::build_cutter(tool);
+    // F029: a draft outside its domain builds no cutter. The preview names
+    // the refusal instead of a panic on the GUI thread.
+    let tool_def = match crate::compute::worker::helpers::build_cutter(tool) {
+        Ok(tool_def) => tool_def,
+        Err(e) => {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("No preview: {e}"),
+                egui::FontId::proportional(11.0),
+                crate::ui::tokens::CAUTION,
+            );
+            return;
+        }
+    };
     let cutter_r = tool_def.radius() as f32;
     let cutting_len = tool_def.length() as f32;
     let shank_r = (tool_def.shank_diameter / 2.0) as f32;

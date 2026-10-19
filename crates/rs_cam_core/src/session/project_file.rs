@@ -1118,6 +1118,11 @@ pub(super) fn build_session_from_project(
         .enumerate()
         .map(|(idx, ts)| tool_from_project_section(ts, idx, warnings))
         .collect();
+    // F029: the loader refuses a tool outside its domain (no-legacy
+    // ruling), so no stored tool can panic a cutter build later.
+    for tool in &tools {
+        super::validate_tool(tool)?;
+    }
 
     // Load models
     let mut models = Vec::new();

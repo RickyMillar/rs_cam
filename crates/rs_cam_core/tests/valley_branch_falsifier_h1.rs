@@ -1491,8 +1491,8 @@ fn wanaka_valley_branch_falsifier_h1() {
     let started = std::time::Instant::now();
     let mesh = TriangleMesh::from_stl_scaled(mesh_path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let never_cancel = || false;
     let (tier_map, cusp_radii) = {
         let tools: [&dyn MillingCutter; 2] = [&r15, &r10];

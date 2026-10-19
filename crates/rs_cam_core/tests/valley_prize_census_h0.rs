@@ -2279,8 +2279,8 @@ fn wanaka_valley_prize_census_h0() {
         started.elapsed().as_secs_f64()
     );
 
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let never_cancel = || false;
     let (tier_map, cusp_radii) = {
         let tools: [&dyn MillingCutter; 2] = [&r15, &r10];

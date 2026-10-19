@@ -65,7 +65,7 @@ use rs_cam_core::tool::{BallEndmill, TaperedBallEndmill};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn wanaka_taper() -> TaperedBallEndmill {
-    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)
+    TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()
 }
 
 /// The literal `RestFieldParams::default()` stepover this pass used to route

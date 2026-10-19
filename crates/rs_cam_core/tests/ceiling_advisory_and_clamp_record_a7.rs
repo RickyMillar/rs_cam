@@ -78,7 +78,7 @@ const AXIAL_DOC: f64 = 0.35;
 /// in its own `FeedsInput`.
 fn b3_tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(3.175, 5.26, 6.0, 20.0)),
+        Box::new(TaperedBallEndmill::new(3.175, 5.26, 6.0, 20.0).unwrap()),
         6.0,
         40.0,
         FLUTES,

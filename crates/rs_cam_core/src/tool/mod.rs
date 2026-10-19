@@ -8,6 +8,7 @@
 
 mod ball;
 mod bullnose;
+pub mod domain;
 mod flat;
 pub mod size_units;
 mod tapered_ball;
@@ -15,9 +16,10 @@ mod vbit;
 
 pub use ball::BallEndmill;
 pub use bullnose::BullNoseEndmill;
+pub use domain::{ToolDimension, ToolGeometryError};
 pub use flat::FlatEndmill;
-pub use tapered_ball::TaperedBallEndmill;
-pub use vbit::VBitEndmill;
+pub use tapered_ball::{TaperedBallEndmill, ball_cone_radius_at_height};
+pub use vbit::{VBitEndmill, vbit_cone_radius_at_height};
 // Re-export ToolDefinition (defined below the trait in this file)
 
 use crate::compute::tool_config::ToolMaterial;
@@ -961,9 +963,9 @@ mod tests {
         let cutters: Vec<Box<dyn MillingCutter>> = vec![
             Box::new(FlatEndmill::new(6.0, 25.0)),
             Box::new(BallEndmill::new(6.0, 25.0)),
-            Box::new(BullNoseEndmill::new(6.0, 1.5, 25.0)),
-            Box::new(VBitEndmill::new(12.0, 90.0, 25.0)),
-            Box::new(TaperedBallEndmill::new(2.0, 5.0, 6.0, 25.0)),
+            Box::new(BullNoseEndmill::new(6.0, 1.5, 25.0).unwrap()),
+            Box::new(VBitEndmill::new(12.0, 90.0, 25.0).unwrap()),
+            Box::new(TaperedBallEndmill::new(2.0, 5.0, 6.0, 25.0).unwrap()),
         ];
         let tris = bumpy_surface();
         assert!(tris.len() > 300);
@@ -1070,7 +1072,7 @@ mod tests {
         assert!((mid - 5.0_f64.sqrt()).abs() < 1e-10);
 
         // Tapered ball: cone-widened above the ball region.
-        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0);
+        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0).unwrap();
         // At ball tip — zero engagement.
         assert!(tapered.engagement_radius(0.0).abs() < 1e-10);
         // At depth_per_pass=1.5, well into the cone.
@@ -1092,11 +1094,11 @@ mod tests {
         let ball = crate::tool::BallEndmill::new(6.0, 25.0);
         assert!((ball.lookup_diameter_at(0.2) - 6.0).abs() < 1e-10);
 
-        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0);
+        let tapered = crate::tool::TaperedBallEndmill::new(2.0, 7.0, 6.0, 25.0).unwrap();
         let tapered_lookup = tapered.lookup_diameter_at(1.5);
         assert!((tapered_lookup - 2.0 * tapered.engagement_radius(1.5)).abs() < 1e-10);
 
-        let vbit = crate::tool::VBitEndmill::new(6.0, 90.0, 10.0);
+        let vbit = crate::tool::VBitEndmill::new(6.0, 90.0, 10.0).unwrap();
         assert!((vbit.lookup_diameter_at(1.0) - 2.0).abs() < 1e-10);
     }
 
@@ -1147,7 +1149,7 @@ mod tests {
 
     #[test]
     fn test_profile_points_tapered_ball() {
-        let tool = TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0);
+        let tool = TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap();
         let pts = tool.profile_points(50);
         assert_eq!(pts.len(), 51);
         // Center height = 0
@@ -1180,7 +1182,7 @@ mod tests {
 
     #[test]
     fn test_geometry_hint_bullnose() {
-        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0);
+        let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let hint = tool.geometry_hint();
         match hint {
             crate::feeds::ToolGeometryHint::Bull { corner_radius } => {
@@ -1192,7 +1194,7 @@ mod tests {
 
     #[test]
     fn test_geometry_hint_vbit() {
-        let tool = VBitEndmill::new(10.0, 90.0, 25.0);
+        let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let hint = tool.geometry_hint();
         match hint {
             crate::feeds::ToolGeometryHint::VBit {
@@ -1208,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_geometry_hint_tapered_ball() {
-        let tool = TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0);
+        let tool = TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap();
         let hint = tool.geometry_hint();
         match hint {
             crate::feeds::ToolGeometryHint::TaperedBall {
@@ -1254,7 +1256,7 @@ mod tests {
     #[test]
     fn test_tool_definition_assembly_tapered_ball_uses_shaft_radius() {
         // This is the bug regression: collision must use shaft_radius, not ball_radius
-        let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0));
+        let cutter = Box::new(TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap());
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
         let asm = td.to_assembly(&crate::machine::head::HeadFit::default());
         // cutter_radius must be shaft_diameter/2 = 3.175, NOT ball_diameter/2 = 1.5875
@@ -1268,7 +1270,7 @@ mod tests {
 
     #[test]
     fn test_tool_definition_geometry_hint() {
-        let cutter = Box::new(BullNoseEndmill::new(10.0, 2.0, 25.0));
+        let cutter = Box::new(BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap());
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);
         match td.to_geometry_hint() {
             crate::feeds::ToolGeometryHint::Bull { corner_radius } => {
@@ -1424,7 +1426,7 @@ mod tests {
         // 1.731, and the "stiffest" bound stopped being stiffest. Keep the
         // three geometries identical apart from the cutter profile, which is
         // the only thing this test is about.
-        let tapered = Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 35.0));
+        let tapered = Box::new(TaperedBallEndmill::new(2.0, 7.0, 6.0, 35.0).unwrap());
         let td_real = ToolDefinition::new(tapered, 6.0, 45.0, 2, ToolMaterial::Carbide);
         let td_shank = ToolDefinition::new(
             Box::new(FlatEndmill::new(6.0, 35.0)),

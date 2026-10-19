@@ -117,6 +117,7 @@ pub struct ValueRow<'a> {
     changes_geometry: bool,
     note: Option<&'a str>,
     length_units: Option<SizeUnits>,
+    keep_existing: bool,
 }
 
 impl<'a> ValueRow<'a> {
@@ -139,7 +140,17 @@ impl<'a> ValueRow<'a> {
             changes_geometry: false,
             note: None,
             length_units: None,
+            keep_existing: false,
         }
+    }
+
+    /// Do not clamp a stored value that sits outside the range; clamp only
+    /// what the operator drags or types. For a range that is a drag
+    /// convenience and not a domain (the tool editor's
+    /// `ToolDimension::ui_range`): a stored 200 mm tool stays 200 mm.
+    pub fn keep_existing(mut self) -> Self {
+        self.keep_existing = true;
+        self
     }
 
     /// Render a [`ProvenanceBadge`] after the input.
@@ -198,7 +209,8 @@ impl<'a> ValueRow<'a> {
             // D-15, the two-indent defect, seen from the value side.
             let mut drag = egui::DragValue::new(self.value)
                 .speed(self.speed)
-                .range(self.range.clone());
+                .range(self.range.clone())
+                .clamp_existing_to_range(!self.keep_existing);
             drag = match self.length_units {
                 Some(units @ SizeUnits::Imperial) => drag
                     .custom_formatter(move |mm, _| size_units::entry_text(mm, units))

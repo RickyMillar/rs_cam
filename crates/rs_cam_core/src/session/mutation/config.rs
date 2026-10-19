@@ -724,12 +724,15 @@ impl ProjectSession {
     /// [`Self::set_tool_param`] and [`Self::invalidate_tool`] apply, so
     /// the three routes cannot drop different sets. The id is the
     /// project-assigned one, NOT a position in the tools list.
+    ///
+    /// F029: refuses a tool outside its domain and writes nothing.
     #[instrument(skip(self, tool))]
     pub(crate) fn replace_tool(
         &mut self,
         tool_id: usize,
         tool: ToolConfig,
     ) -> Result<Effects, SessionError> {
+        crate::session::validate_tool(&tool)?;
         self.try_with_effects(None, move |session| {
             let Some(slot) = session.tools.iter_mut().find(|t| t.id == ToolId(tool_id)) else {
                 return Err(SessionError::ToolNotFound(ToolId(tool_id)));
@@ -752,14 +755,23 @@ impl ProjectSession {
     /// Replace the full tools list.
     ///
     /// Invalidates simulation (tool geometry changes affect material removal).
+    ///
+    /// F029: refuses the whole list when one tool is outside its domain,
+    /// and writes nothing.
     #[instrument(skip(self, tools))]
-    pub(crate) fn replace_tools(&mut self, tools: Vec<ToolConfig>) -> Effects {
-        self.with_effects(None, move |session| {
+    pub(crate) fn replace_tools(
+        &mut self,
+        tools: Vec<ToolConfig>,
+    ) -> Result<Effects, SessionError> {
+        for tool in &tools {
+            crate::session::validate_tool(tool)?;
+        }
+        Ok(self.with_effects(None, move |session| {
             session.tools = tools;
             // Update the next-ID counter so newly added tools don't
             // collide.
             session.next_tool_id = session.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
             session.drop_simulation(SimulationDropCause::Operations);
-        })
+        }))
     }
 }

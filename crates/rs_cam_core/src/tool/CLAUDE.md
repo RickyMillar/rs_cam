@@ -7,21 +7,22 @@ One module per cutter family. The trait and the shared radius queries live in
 
 - `mod.rs` — the cutter trait, `cusp_radius`, `cusp_radius_mm` and
   `valley_radius_mm`, `edge_drop_by_profile`.
-- `flat.rs` (`CylCutter`), `ball.rs` (`BallCutter`), `bullnose.rs` — the
-  toroidal `BullCutter`, `tapered_ball.rs` (`BallConeCutter`), `vbit.rs`.
+- `flat.rs` (`CylCutter`), `ball.rs` (`BallCutter`), `bullnose.rs` (toroidal), `tapered_ball.rs` (`BallConeCutter`), `vbit.rs`.
 - `size_units.rs` — `SizeUnits` (mm or inch), inch fractions and the
   length entry parser. Display and entry only: every length stays in mm.
+- `domain.rs` — `ToolDimension::domain` (math bounds), `ui_range` (GUI drag only), `ToolGeometryError`.
 
 ## Invariants
 
 - The cusp radius is what the tool FORMS. The valley radius is what the tool
   FITS INTO. The two coincide on a taper and diverge on a bull nose. Pick the
   one the caller's question asks for.
-- A holder and shank envelope is part of the tool, not of the operation.
-  Collision reads the envelope.
+- A holder and shank envelope is part of the tool, not of the operation; collision reads it.
 - An edge drop is the highest point of `z - height(rho)` over the edge
   (`mod.rs::edge_drop_by_profile`); a `facet_drop` reports `found` only for
   a tangency, or `drop_cutter` skips the edges (G-TIERBURIAL).
+- F029: a cutter constructor returns `Result`, never asserts; every tool door
+  calls `ToolConfig::validate` (`domain`); `ui_range` refuses nothing (F210).
 - A person reads a tool size through `ToolConfig::size_label`
   (`compute/tool_config.rs`): `Ø` is a diameter, `R` a radius, in the
   tool's `effective_size_units`. G-code comments are the exception: their
@@ -29,9 +30,8 @@ One module per cutter family. The trait and the shared radius queries live in
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test tool_scale_semantics_pr2`
-- `cargo test -p rs_cam_core -q --test bull_nose_cusp_radius_g_bullcusp`
-- `cargo test -p rs_cam_core -q --test tapered_cusp_radius_sentry`
+- `cargo test -p rs_cam_core -q --test tool_scale_semantics_pr2 --test bull_nose_cusp_radius_g_bullcusp --test tapered_cusp_radius_sentry`
+- `... --test a_tool_outside_its_domain_is_refused_at_every_door_f029` (F029)
 - `... --test tool_geometry_hygiene --test edge_drop_matches_the_sampled_profile_g_tierburial`
 - `cargo test -p rs_cam_viz -q --test a_tool_size_reads_diameter_and_radius_g_toolsize`
 

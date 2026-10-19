@@ -130,7 +130,7 @@ fn cases() -> Vec<Case> {
                 tip_radius: 0.5,
                 taper_angle_deg: 7.0,
             },
-            cutter: Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+            cutter: Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap()),
             material: Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
@@ -154,7 +154,7 @@ fn cases() -> Vec<Case> {
                 included_angle: 60.0,
                 tip_diameter: 0.0,
             },
-            cutter: Box::new(VBitEndmill::new(6.35, 60.0, 19.05)),
+            cutter: Box::new(VBitEndmill::new(6.35, 60.0, 19.05).unwrap()),
             material: Material::SheetGood {
                 kind: SheetGoodKind::Mdf,
             },

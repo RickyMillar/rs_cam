@@ -39,8 +39,8 @@
 //! ```text
 //! TriangleMesh::from_stl_scaled(WANAKA_MESH, 1.0)
 //!   → SpatialIndex::build_auto
-//!   → TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5)   // R1.5, tier 0
-//!     TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0)   // R1.0, tier 1
+//!   → TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap()   // R1.5, tier 0
+//!     TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap()   // R1.0, tier 1
 //!   → TierLadder::new(&[r15, r10])
 //!   → compute_tier_map { cell 0.3, tol 0.05, margin 0.5, SlopeCompensated }
 //!   → extract_tier_islands { coarseness 1.0, overlap 2.0, max 24, ..default }
@@ -153,7 +153,7 @@ const CUSP_HEIGHT_MM: f64 = 0.03;
 const OP_TOLERANCE_MM: f64 = 0.05;
 
 // Argument order is `TaperedBallEndmill::new(ball_diameter,
-// taper_half_angle_deg, shaft_diameter, cutting_length)` — checked against
+// taper_half_angle_deg, shaft_diameter, cutting_length).unwrap()` — checked against
 // `tool/tapered_ball.rs`, NOT inferred from the call site. Note the second
 // slot is a HALF-angle from the tool axis, and the fourth is cutting length,
 // not stickout.
@@ -231,9 +231,11 @@ fn derive_region_1(mesh_path: &Path) -> Result<Derivation, &'static str> {
     // Built from the tuple consts rather than re-typed literals, so the
     // cutters the chain runs and the cutters the artifact records cannot drift
     // apart. Equivalent to the source instrument's
-    // `TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5)` / `(2.0, 5.7, 6.0, 20.0)`.
-    let r15 = TaperedBallEndmill::new(R15_TUPLE[0], R15_TUPLE[1], R15_TUPLE[2], R15_TUPLE[3]);
-    let r10 = TaperedBallEndmill::new(R10_TUPLE[0], R10_TUPLE[1], R10_TUPLE[2], R10_TUPLE[3]);
+    // `TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap()` / `(2.0, 5.7, 6.0, 20.0)`.
+    let r15 =
+        TaperedBallEndmill::new(R15_TUPLE[0], R15_TUPLE[1], R15_TUPLE[2], R15_TUPLE[3]).unwrap();
+    let r10 =
+        TaperedBallEndmill::new(R10_TUPLE[0], R10_TUPLE[1], R10_TUPLE[2], R10_TUPLE[3]).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
     let ladder = TierLadder::new(&tools).expect("ladder");
     let never_cancel = || false;
@@ -346,7 +348,7 @@ fn provenance_json(derived: &Derivation) -> serde_json::Value {
         "cutters": {
             "note": "TaperedBallEndmill::new(ball_diameter_mm, \
                      taper_half_angle_deg, shaft_diameter_mm, \
-                     cutting_length_mm). FROZEN — a ball-end substitution \
+                     cutting_length_mm).unwrap(). FROZEN — a ball-end substitution \
                      would derive a DIFFERENT region.",
             "tier_0_r15": R15_TUPLE,
             "tier_1_r10": R10_TUPLE,

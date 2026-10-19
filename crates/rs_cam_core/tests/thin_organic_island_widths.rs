@@ -290,9 +290,9 @@ fn wanaka_tier_and_band_region_widths() {
     let index = SpatialIndex::build_auto(&mesh);
 
     // Live ladder: tool_ids [3, 2] = R1.5 -> R1.0, geometry from the same file.
-    // `TaperedBallEndmill::new(ball_diameter, taper_half_angle, shaft, len)`.
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    // `TaperedBallEndmill::new(ball_diameter, taper_half_angle, shaft, len).unwrap()`.
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
     let ladder = TierLadder::new(&tools).expect("ladder");
 
@@ -577,8 +577,8 @@ fn wanaka_monotone_cells_kept_retracts() {
 
     let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
     let ladder = TierLadder::new(&tools).expect("ladder");
     let never_cancel = || false;
@@ -2965,8 +2965,8 @@ fn wanaka_ceiling_rebaseline_a3() {
 
     let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let tools: [&dyn MillingCutter; 2] = [&r15, &r10];
     let ladder = TierLadder::new(&tools).expect("ladder");
     let never_cancel = || false;
@@ -3951,8 +3951,8 @@ fn d1_setup() -> Option<D1Setup> {
 
     let mesh = TriangleMesh::from_stl_scaled(path, 1.0).expect("load wanaka terrain");
     let index = SpatialIndex::build_auto(&mesh);
-    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5);
-    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0);
+    let r15 = TaperedBallEndmill::new(3.0, 2.8, 6.0, 30.5).unwrap();
+    let r10 = TaperedBallEndmill::new(2.0, 5.7, 6.0, 20.0).unwrap();
     let never_cancel = || false;
     // The ladder borrows both tools, and this setup MOVES both of them into
     // `D1Setup` at the end. Scoping that borrow explicitly is cheaper than

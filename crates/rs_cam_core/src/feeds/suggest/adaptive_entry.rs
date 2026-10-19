@@ -11,7 +11,6 @@
 //! Split out of `feeds/suggest.rs` by P4.
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole, ToolGeometryHint};
 use crate::machine::MachineProfile;
@@ -269,7 +268,7 @@ pub(super) fn rescale_feed_to_final_geometry(
         return warnings;
     }
 
-    let geom = build_cutter(tool).to_geometry_hint();
+    let geom = tool.geometry_hint();
     let factor_at_calculator =
         geometry_feed_factor(geom, tool, calc.radial_width_mm, calc.axial_depth_mm);
     let factor_at_final = geometry_feed_factor(geom, tool, final_ae, final_ap);

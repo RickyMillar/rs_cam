@@ -534,9 +534,13 @@ impl ProjectSession {
         param: &str,
         value: &serde_json::Value,
     ) -> Result<(), SessionError> {
-        let tool = self.tools.get_mut(index).ok_or_else(|| {
+        // F029: edit a draft, check it, then write it back. A value outside
+        // the tool's domain refuses and leaves the stored tool as it was.
+        let stored = self.tools.get(index).ok_or_else(|| {
             SessionError::InvalidParam(format!("tool index {index} out of bounds"))
         })?;
+        let mut draft = stored.clone();
+        let tool = &mut draft;
 
         match param {
             "diameter" => {
@@ -597,6 +601,7 @@ impl ProjectSession {
                 tool.size_units = Some(units);
                 // Display only: no stored length changed, so no result is
                 // dropped.
+                self.write_checked_tool(index, draft)?;
                 return Ok(());
             }
             _ => {
@@ -607,9 +612,26 @@ impl ProjectSession {
         }
 
         // Invalidate cached results for all toolpaths that use this tool
-        let tool_raw_id = tool.id.0;
+        let tool_raw_id = draft.id.0;
+        self.write_checked_tool(index, draft)?;
         self.drop_tool_results(tool_raw_id);
 
+        Ok(())
+    }
+
+    /// F029: write `draft` to tool slot `index` when it passes
+    /// [`crate::compute::tool_config::ToolConfig::validate`]; else refuse
+    /// and write nothing.
+    fn write_checked_tool(
+        &mut self,
+        index: usize,
+        draft: crate::compute::tool_config::ToolConfig,
+    ) -> Result<(), SessionError> {
+        crate::session::validate_tool(&draft)?;
+        let slot = self.tools.get_mut(index).ok_or_else(|| {
+            SessionError::InvalidParam(format!("tool index {index} out of bounds"))
+        })?;
+        *slot = draft;
         Ok(())
     }
 

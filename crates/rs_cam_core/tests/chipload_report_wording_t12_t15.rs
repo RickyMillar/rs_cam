@@ -99,12 +99,15 @@ const TOOLPATH: ToolpathId = ToolpathId(0);
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(
-            TIP_DIAMETER_MM,
-            TAPER_HALF_ANGLE_DEG,
-            SHANK_DIAMETER_MM,
-            20.0,
-        )),
+        Box::new(
+            TaperedBallEndmill::new(
+                TIP_DIAMETER_MM,
+                TAPER_HALF_ANGLE_DEG,
+                SHANK_DIAMETER_MM,
+                20.0,
+            )
+            .unwrap(),
+        ),
         SHANK_DIAMETER_MM,
         40.0,
         FLUTES,

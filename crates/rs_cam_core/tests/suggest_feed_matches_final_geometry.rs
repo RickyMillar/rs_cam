@@ -176,7 +176,7 @@ fn final_operating_point(case: &Case) -> (f64, f64, f64) {
     let flutes = f64::from(case.tool.flute_count.max(1));
     let rpm = f64::from(op.spindle_rpm().expect("Suggest writes the calculator RPM"));
     let advance = op.feed_rate() / (rpm * flutes);
-    let geom = build_cutter(&case.tool).to_geometry_hint();
+    let geom = build_cutter(&case.tool).unwrap().to_geometry_hint();
     let factor = geometry_factor(
         geom,
         case.tool.diameter,
@@ -200,7 +200,7 @@ fn calculator_operating_point(case: &Case) -> (f64, f64, f64) {
     let r: &FeedsResult = &case.suggested.feeds_result;
     let flutes = f64::from(case.tool.flute_count.max(1));
     let advance = r.feed_rate_mm_min / (r.rpm * flutes);
-    let geom = build_cutter(&case.tool).to_geometry_hint();
+    let geom = build_cutter(&case.tool).unwrap().to_geometry_hint();
     let factor = geometry_factor(
         geom,
         case.tool.diameter,

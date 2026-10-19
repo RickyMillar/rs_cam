@@ -50,8 +50,8 @@ use rs_cam_core::tool::{
 
 /// The reference tool of the ruling: Ø10 bull nose, 2 mm corner.
 fn bull_10_r2() -> BullNoseEndmill {
-    // `BullNoseEndmill::new(diameter, corner_radius, cutting_length)`.
-    BullNoseEndmill::new(10.0, 2.0, 40.0)
+    // `BullNoseEndmill::new(diameter, corner_radius, cutting_length).unwrap()`.
+    BullNoseEndmill::new(10.0, 2.0, 40.0).unwrap()
 }
 
 #[test]
@@ -127,7 +127,18 @@ fn a_zero_corner_bull_keeps_the_envelope_radius() {
     // zero would divide by zero in `equal_cusp_stepover_mm` and collapse
     // every claim floor and region area downstream, so the arm must not
     // take it.
-    let flatish = BullNoseEndmill::new(6.0, 0.0, 25.0);
+    //
+    // F029 (2026-10-19): `BullNoseEndmill::new` refuses a zero corner
+    // (`ToolDimension::CornerRadius` starts at 0.01 mm). The fields are
+    // public, so a struct literal still reaches the cusp rule; this arm
+    // guards that path.
+    assert!(BullNoseEndmill::new(6.0, 0.0, 25.0).is_err());
+    let flatish = BullNoseEndmill {
+        diameter: 6.0,
+        corner_radius: 0.0,
+        cutting_length: 25.0,
+        helix_deg: 30.0,
+    };
     assert!(
         (flatish.cusp_radius() - flatish.radius()).abs() < 1e-9,
         "a zero-corner bull reports cusp {:.3}, expected its radius {:.3}",
@@ -161,7 +172,7 @@ fn no_other_shape_moved() {
     // `tool_scale_semantics_pr2.rs`'s own fixture: Ø1 tip, 7 deg half-angle,
     // Ø6 shaft. Envelope 3.0 mm, cusp 0.5 mm — a 6x split, so a fall-through
     // to `radius()` could not hide.
-    let tapered = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0);
+    let tapered = TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0).unwrap();
     assert!(
         (tapered.cusp_radius() - 0.5).abs() < 1e-12,
         "tapered ball cusp moved to {} — it must stay the TIP radius",

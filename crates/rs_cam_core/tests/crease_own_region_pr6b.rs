@@ -79,6 +79,7 @@ fn taper() -> TaperedBallEndmill {
         SHANK_DIAMETER_MM,
         25.0,
     )
+    .unwrap()
 }
 
 fn tapered_ball_tool() -> ToolConfig {

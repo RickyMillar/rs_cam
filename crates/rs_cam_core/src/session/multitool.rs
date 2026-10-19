@@ -78,7 +78,6 @@ use crate::compute::config::{
     ArcFitParams, BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
     HeightsConfig, StockSource,
 };
-use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::ids::ToolpathId;
@@ -394,7 +393,10 @@ impl ProjectSession {
         // rebuilt at generation time from the ids stored on the boundary,
         // because the tools may have been re-dialled in between.
         let ladder_tools = self.resolve_ladder_tools(&spec.tool_ids)?;
-        let cutters: Vec<ToolDefinition> = ladder_tools.iter().map(build_cutter).collect();
+        let cutters: Vec<ToolDefinition> = ladder_tools
+            .iter()
+            .map(crate::session::session_cutter)
+            .collect::<Result<_, _>>()?;
         let refs: Vec<&dyn MillingCutter> =
             cutters.iter().map(|c| c as &dyn MillingCutter).collect();
         TierLadder::new(&refs).map_err(|e| {
@@ -783,14 +785,14 @@ impl ProjectSession {
             };
             tools.push(tool.clone());
         }
-        tools.sort_by(|a, b| {
-            let (ra, rb) = (
-                build_cutter(a).cusp_radius_mm(),
-                build_cutter(b).cusp_radius_mm(),
-            );
-            rb.total_cmp(&ra).then_with(|| a.id.0.cmp(&b.id.0))
-        });
-        Ok(tools)
+        // F029: each tool builds its cutter once, so the sort key cannot
+        // fail inside the comparator.
+        let mut keyed: Vec<(f64, ToolConfig)> = tools
+            .into_iter()
+            .map(|t| Ok((crate::session::session_cutter(&t)?.cusp_radius_mm(), t)))
+            .collect::<Result<_, SessionError>>()?;
+        keyed.sort_by(|(ra, a), (rb, b)| rb.total_cmp(ra).then_with(|| a.id.0.cmp(&b.id.0)));
+        Ok(keyed.into_iter().map(|(_, t)| t).collect())
     }
 
     /// One past the largest `plan_id` any toolpath in the project carries.
@@ -1333,7 +1335,10 @@ fn resolve_tier_plan_with_tools(
         )));
     };
 
-    let cutters: Vec<ToolDefinition> = tools.iter().map(build_cutter).collect();
+    let cutters: Vec<ToolDefinition> = tools
+        .iter()
+        .map(crate::session::session_cutter)
+        .collect::<Result<_, _>>()?;
     let refs: Vec<&dyn MillingCutter> = cutters.iter().map(|c| c as &dyn MillingCutter).collect();
     let ladder = TierLadder::new(&refs).map_err(|e| {
         SessionError::InvalidParam(format!(
@@ -1504,7 +1509,11 @@ fn preview_flute_reach(
     let (Some(mesh), Some(index)) = (handle.mesh.as_ref(), handle.index.as_ref()) else {
         return Ok(Vec::new());
     };
-    let defs: Vec<ToolDefinition> = resolved.tools.iter().map(build_cutter).collect();
+    let defs: Vec<ToolDefinition> = resolved
+        .tools
+        .iter()
+        .map(crate::session::session_cutter)
+        .collect::<Result<_, _>>()?;
     let tools: Vec<TierTool<'_>> = defs
         .iter()
         .map(|d| TierTool {

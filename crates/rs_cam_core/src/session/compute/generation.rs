@@ -8,7 +8,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
 use crate::geo::BoundingBox3;
 use crate::session::{ProjectSession, SessionError};
@@ -225,7 +224,7 @@ impl ProjectSession {
         }
 
         // Build tool definition
-        let tool_def = build_cutter(&tool);
+        let tool_def = crate::session::session_cutter(&tool)?;
 
         // Spatial index for 3D ops. G8: memoised per mesh identity — this
         // ran once per toolpath, so an 8-op `generate_all` rebuilt the
