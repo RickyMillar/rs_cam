@@ -460,3 +460,29 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
   the size it states. Some SVG imports change size; the commit states it.
   `SVG_DEFAULT_UNITS` (P4.8) changes in the same item. The P4.0 probe rows
   become sentry arms with the corrected sizes.
+
+## Operator demo 2026-10-20 morning: item P4.D (before the push)
+
+The operator saw the GUI (b202808d + P4.9 pass 1). These go in one item
+after P4.9, before the push:
+
+1. STEP: 2D ops are greyed out when only a STEP model is open. The Add
+   toolpath menu and `validate.rs` gate on `items.has_drawing()`. Fix:
+   gate on a drawing item OR a face item (the P4.3 boundary button rule).
+   A new 2D op on a STEP model starts "pick a face" (D2: the default rule
+   takes no face).
+2. STEP: the 3D op face flow is hard to find, and a face click gives the
+   L-8 notice. L-8 is revised (operator expectation): a face click on a 3D
+   op whose boundary is not a selection switches the boundary to
+   `Selection` with that face, in one undo step, with a notice. The 3D op
+   Geometry tab shows "Pick faces" for any boundary source.
+3. DXF: the drawing is not visible after import until an op reads it (the
+   drawing upload walks the toolpaths). Fix: a model's drawing draws on
+   import, and each model gets a visibility toggle (GUI state; MCP
+   `set_ui_view` parity).
+4. Layout: the Selection section moves to the TOP of the op Geometry tab,
+   next to the model picker.
+
+Parked by the operator ("we can work on that later"): the kind filter in
+pick mode and the `+ Rule` card is hard to understand. A follow-up after
+P4.10.
