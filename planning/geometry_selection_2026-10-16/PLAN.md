@@ -333,6 +333,26 @@ selection, so the auto top from a picked face is gone). Also open:
 `production_writes_go_through_apply_wp15a` is red (the CLI builds
 `set_dressup_field`; not selection work; check whether master is red too).
 
+## Lead rulings on P4_DESIGN.md (2026-10-19)
+
+The lead approves `P4_DESIGN.md` and takes L-1 to L-12 as it recommends
+(merge `geo-select` after P4.3 and an operator look).
+
+- **O-1: (A).** A 3D op face pick goes into the boundary selection and
+  sets the auto top. Reason: it restores the behaviour before P2.6. The
+  explicit "top from a face" reference (B) belongs to P3 with D9.
+- **O-3: face a picked region inside its outline.** Only the stock item
+  grows by `stock_offset`. Reason: growing a picked region cuts material
+  outside what the user picked; inside is the safe direction.
+- **O-4: refuse.** Deleting the last hand tab of a loop is refused in
+  P4. A per-loop "no tabs" override can come later. Reason: nothing
+  cuts differently; the user is told.
+- **O-5: yes.** Open SVG subpaths join at the import tolerance. Reason:
+  one join rule for every drawing door (as DXF since P1b).
+- **O-2: probe first (P4.0).** If the probe shows that an SVG in mm
+  imports 3.78 times too large today, the lead reports it to the operator
+  as a live defect before any fix. The fix choice goes to the operator.
+
 ## Status
 
 | Phase | State | Commits | Notes |
@@ -341,7 +361,7 @@ selection, so the auto top from a picked face is gone). Also open:
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | blocked on P2 | | |
+| P4 UI + sources | design approved; P4.0 probe + P4.1 running | | P4_DESIGN.md items P4.1-P4.10 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
