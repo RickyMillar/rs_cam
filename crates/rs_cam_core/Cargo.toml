@@ -210,6 +210,10 @@ name = "geometry_cache_g8"
 required-features = ["test-support"]
 
 [[test]]
+name = "stl_flat_regions_are_face_items_p4_7"
+required-features = ["test-support"]
+
+[[test]]
 name = "grid_z_uncovered_contract_c2"
 required-features = ["test-support"]
 

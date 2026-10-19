@@ -362,6 +362,9 @@ pub enum JobRunKind {
     /// `AppController::request_multitool_preview` — the
     /// `preview_tier_map` `Job` row.
     MultitoolPreview,
+    /// `AppController::request_model_faces` — the `build_model_faces`
+    /// `Job` row (geometry selection P4.7).
+    ModelFaces,
 }
 
 impl JobRunKind {
@@ -373,6 +376,7 @@ impl JobRunKind {
     pub fn label(&self) -> &'static str {
         match self {
             Self::MultitoolPreview => "Tier-map preview",
+            Self::ModelFaces => "Computing faces",
         }
     }
 }

@@ -12,7 +12,7 @@ processing. The server lives here, not in `rs_cam_mcp`.
   `simulation.rs` (run, scrub, cut trace), `view.rs` (reach map, screenshots).
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.
-- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins), `obstacle_marks.rs` (K2) — the frame and the GPU upload. P4.4: the drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline; it uploads on a change of the report `Arc` (`state::selection_highlight::ReportDetector`), never per frame. P4.5: pick mode wins every click (shift = `PickLayer`); the hover ring is its own buffer (`upload_hover_lines`), never the drawing. P4.6: the tab editor wins the click, the right-click and a primary drag that starts on a tab (no orbit); `upload_tab_lines` runs on a `TabMarksDetector` change only.
+- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins), `obstacle_marks.rs` (K2) — the frame and the GPU upload. P4.4: the drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline; it uploads on a change of the report `Arc` (`state::selection_highlight::ReportDetector`), never per frame. P4.5: pick mode wins every click (shift = `PickLayer`); the hover ring is its own buffer (`upload_hover_lines`), never the drawing. P4.6: the tab editor wins the click, the right-click and a primary drag that starts on a tab (no orbit); `upload_tab_lines` runs on a `TabMarksDetector` change only. P4.7: in pick mode the ray also hits an STL mesh (`PickHit::MeshFace` → `face_pick_key_at`); a plain click does not.
 - `input.rs` — keyboard and mouse handling at the application level.
 
 ## Invariants

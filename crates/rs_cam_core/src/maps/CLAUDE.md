@@ -12,7 +12,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 - `reach_map.rs` — the per-tool reach map. `rest_heatmap_mesh.rs` — a map to
   a mesh. `tool_shape_key.rs` — the bit-exact cutter shape identity.
 - `memo.rs`, `geom_cache.rs`, `tier_map_cache.rs`, `reach_map_cache.rs`,
-  `finish_surface_cache.rs` — the bounded, mesh-identity memos.
+  `finish_surface_cache.rs` — the bounded, mesh-identity memos. P4.7: `cached_flat_regions` builds an STL's faces; `peek_flat_regions` never builds (frame loop).
 
 ## Invariants
 
@@ -29,7 +29,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 ## Sentries
 
 - With `--features test-support`: `reach_map_p5`, `reach_map_residual_p5_1`,
-  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`.
+  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`.
 - Without it: `tier_islands_i1`, `tier_islands_speck_weld`,
   `tier_map_flute_reach`, `the_test_doors_are_gated_fld0405`.
 

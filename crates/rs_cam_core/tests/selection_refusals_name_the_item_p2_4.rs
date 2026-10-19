@@ -20,6 +20,12 @@
 //! generation cannot give it. Its arm goes through the `EditSelection`
 //! command, which gives `SessionError::Selection` too.
 //!
+//! `FacesNotReady` (geometry selection P4.7) is the other exception.
+//! Generation builds the flat faces of an STL before it resolves, so it
+//! does not refuse; the status read only peeks and reports "computing
+//! faces" with no refusal. Its arm runs `view` over a resolution with a
+//! cold face set, and proves that generation then cuts.
+//!
 //! [`arm_of`] matches every cause with no wildcard, so a new cause does not
 //! compile here until it has an arm; [`every_cause_has_an_arm`] holds the
 //! list of arms equal to the list of causes.
@@ -94,6 +100,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::MissingSource(_) => "missing_source",
         RefusalCause::UnknownLayer(_) => "unknown_layer",
         RefusalCause::NoSuchRule { .. } => "no_such_rule",
+        RefusalCause::FacesNotReady { .. } => "faces_not_ready",
     }
 }
 
@@ -107,6 +114,7 @@ const ARMS: &[&str] = &[
     "missing_source",
     "unknown_layer",
     "no_such_rule",
+    "faces_not_ready",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -238,6 +246,9 @@ fn every_cause_has_an_arm() {
         RefusalCause::MissingSource(SourceRef::Stock),
         RefusalCause::UnknownLayer(String::new()),
         RefusalCause::NoSuchRule { index: 0, rules: 0 },
+        RefusalCause::FacesNotReady {
+            model: rs_cam_core::ids::ModelId(0),
+        },
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -582,5 +593,77 @@ fn face_not_flat_on_a_lateral_setup() {
             "face (centre X",
             "not flat and horizontal in the setup frame",
         ],
+    );
+}
+
+// ── FacesNotReady: an STL whose flat faces are not computed (P4.7) ───
+
+#[test]
+fn faces_not_ready() {
+    use rs_cam_core::compute::catalog::ItemUse;
+    use rs_cam_core::ids::ModelId;
+    use rs_cam_core::selection::{MeshFaces, ResolveScope, flat_region_items, resolve, view};
+
+    let mesh = common::meshes::stepped_top();
+    let z5 = flat_region_items(&mesh)
+        .unwrap()
+        .iter()
+        .next()
+        .unwrap()
+        .clone();
+    let mut s = single_op_session_with(
+        StockConfig {
+            x: 20.0,
+            y: 10.0,
+            z: 8.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        },
+        endmill_tool_config(TOOL_DIAMETER),
+        common::session::mesh_model(mesh, "p2_4_stl"),
+        "p2_4 pocket",
+        OperationConfig::Pocket(PocketConfig {
+            selection: Selection::from_picks(vec![pick_of(&z5)]),
+            ..PocketConfig::default()
+        }),
+        |_| {},
+    );
+
+    // The status peeks: computing faces, no refusal.
+    let tc = s.toolpath_configs()[0].clone();
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .unwrap();
+    assert_eq!(report.faces_not_ready, vec![ModelId(0)]);
+    assert_eq!(report.refusal, None);
+
+    // `view` over a cold face set refuses by the model.
+    let model = &s.models()[0];
+    let stock = s.stock_config().bbox();
+    let cold = [MeshFaces {
+        model: 0,
+        items: None,
+    }];
+    let resolved = resolve(
+        tc.operation.selection().unwrap(),
+        &ResolveScope {
+            toolpath_model: Ok(model),
+            models: s.models(),
+            stock_bbox: &stock,
+            setup: None,
+            mesh_faces: &cold,
+        },
+    );
+    let r = view(&resolved, ItemUse::Regions)
+        .unwrap_err()
+        .for_op("Pocket");
+    assert_eq!(r.cause, RefusalCause::FacesNotReady { model: ModelId(0) });
+    assert_names(&r, &["model 0", "not computed yet"]);
+
+    // Generation builds the faces and does not refuse.
+    let cancel = AtomicBool::new(false);
+    assert!(
+        s.generate_toolpath(0, &cancel).is_ok(),
+        "generation refused on a cold face set"
     );
 }

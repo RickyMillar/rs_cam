@@ -18,6 +18,7 @@
 //! | [`height_field`] / [`height_field_grid`] | `checkpoint_b_resolution_ab.rs` fixtures |
 //! | [`extrude_profile`] | `unified_finish_tapered_end_to_end_m21.rs` |
 //! | [`plate_with_hole`] / [`stacked_shelf`] / [`non_manifold_fin`] | `classification_strategy_m3.rs` |
+//! | [`stepped_top`] | `stl_flat_regions_are_face_items_p4_7.rs`, `a_two_face_pick_keeps_both_faces_p2_4.rs`, `selection_refusals_name_the_item_p2_4.rs` |
 //! | [`disconnected_hemispheres`] | `disconnected_finish_retract_structure_p0.rs`; reproduces `capability_link_moves_safety.rs`'s local `scallop_island_mesh` (centres `(±15, ±15)`, radius 5.0, divisions 10), which keeps its own copy |
 
 #![allow(dead_code)]
@@ -550,4 +551,47 @@ pub fn pitted_basin_plate() -> TriangleMesh {
             PITTED_BASIN_TOP_Z
         }
     })
+}
+
+// ── Flat regions (geometry selection P4.7) ──────────────────────────────
+
+/// The stepped mesh of the basis fork face-region test
+/// (`refs/remotes/basis/feature-web-server:crates/rs_cam_server/src/face_region.rs`,
+/// `stepped_mesh`): a 20 x 10 top at Z 5 as four quads round a 4 x 4 hole
+/// at X 8..12, Y 3..7; the 4 x 4 boss top at Z 8 over the hole; one
+/// vertical wall quad at Y 3. Each quad is `[i, i+1, i+2]` + `[i, i+2,
+/// i+3]`, counter-clockwise from above, so the flat normals point +Z.
+///
+/// The flat regions: the Z 5 face (area 200 - 16 = 184 mm², the boss as
+/// its hole) and the Z 8 boss face (16 mm²). The wall gives no face.
+pub fn stepped_top() -> TriangleMesh {
+    let mut vertices = Vec::new();
+    let mut triangles = Vec::new();
+    let mut quad = |a: P3, b: P3, c: P3, d: P3| {
+        let i = u32::try_from(vertices.len()).unwrap();
+        vertices.extend([a, b, c, d]);
+        triangles.push([i, i + 1, i + 2]);
+        triangles.push([i, i + 2, i + 3]);
+    };
+    let p = P3::new;
+    // Z 5 ring round the boss (8..12, 3..7), as four quads.
+    quad(p(0., 0., 5.), p(20., 0., 5.), p(20., 3., 5.), p(0., 3., 5.));
+    quad(
+        p(0., 7., 5.),
+        p(20., 7., 5.),
+        p(20., 10., 5.),
+        p(0., 10., 5.),
+    );
+    quad(p(0., 3., 5.), p(8., 3., 5.), p(8., 7., 5.), p(0., 7., 5.));
+    quad(
+        p(12., 3., 5.),
+        p(20., 3., 5.),
+        p(20., 7., 5.),
+        p(12., 7., 5.),
+    );
+    // The boss top.
+    quad(p(8., 3., 8.), p(12., 3., 8.), p(12., 7., 8.), p(8., 7., 8.));
+    // A wall.
+    quad(p(8., 3., 5.), p(12., 3., 5.), p(12., 3., 8.), p(8., 3., 8.));
+    TriangleMesh::from_raw(vertices, triangles)
 }

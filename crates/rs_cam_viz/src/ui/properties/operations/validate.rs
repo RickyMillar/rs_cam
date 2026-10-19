@@ -86,7 +86,8 @@ pub fn validate_toolpath_config(
     if !tc.operation.is_stock_based() {
         let model = ctx.models.iter().find(|m| m.id == model_id);
         if let Some(model) = model {
-            let has_face_polygons = model.has_enriched_mesh
+            // P4.7: an STL gives its flat regions as faces.
+            let has_face_polygons = (model.has_enriched_mesh || model.has_mesh)
                 && tc.operation.selection().is_some_and(|s| s.names_faces());
             let has_polygons = model.has_polygons || has_face_polygons;
             let has_mesh = model.has_mesh;
@@ -187,9 +188,10 @@ fn validate_geometry_selection(
     };
 
     // A STEP model gives regions from the faces its op selection names
-    // (geometry selection P2.6: a face pick is a pick of the selection).
-    let has_face_polygons =
-        model.has_enriched_mesh && entry.operation.selection().is_some_and(|s| s.names_faces());
+    // (geometry selection P2.6: a face pick is a pick of the selection); an
+    // STL gives its flat regions as faces (P4.7).
+    let has_face_polygons = (model.has_enriched_mesh || model.has_mesh)
+        && entry.operation.selection().is_some_and(|s| s.names_faces());
     let has_polygons = model.has_polygons || has_face_polygons;
     let has_mesh = model.has_mesh;
 

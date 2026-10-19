@@ -92,7 +92,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
-use super::selection_status::{ModelItem, SelectionReport};
+use super::selection_status::{BuildModelFacesHandle, ModelFacesBuilt, ModelItem, SelectionReport};
 use super::tab_layout::TabLayoutAnswer;
 use super::{
     GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
@@ -829,6 +829,18 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no planner preview command",
                  ),
              }),
+            (Job, BuildModelFaces, "build_model_faces", BuildModelFacesArgs,
+             ModelFacesBuilt,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "list_model_items with kind face and every generation build the \
+                      faces of a mesh themselves",
+                 ),
+                 cli: Reach::Skip(
+                     "CLI generation builds the faces of a mesh itself",
+                 ),
+             }),
         }
     };
 }
@@ -1096,6 +1108,14 @@ pub struct PreviewTierMapArgs {
     /// The ladder and the dials to preview. Nothing here is derived from
     /// the session; every field is an operator dial.
     pub spec: Box<MultitoolPlanSpec>,
+}
+
+/// The arguments of the `build_model_faces` job (geometry selection
+/// P4.7): the mesh model whose flat-region faces the job computes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildModelFacesArgs {
+    /// The model id (`LoadedModel::id`).
+    pub model_id: usize,
 }
 
 /// What a command changed.
@@ -2317,7 +2337,7 @@ for_each_command!(define_command_registry);
 ///
 /// **Every variant boxes its handle, by the same rule [`JobAnswer`]
 /// follows.** A handle owns a whole resolution and a whole machine,
-/// stock and setup snapshot, and the three rows' handles are of very
+/// stock and setup snapshot, and the rows' handles are of very
 /// different sizes; `clippy::large_enum_variant` is denied workspace-wide.
 /// Boxing every variant means the enum's size never depends on which row
 /// captured the most.
@@ -2328,6 +2348,8 @@ pub enum JobHandle {
     RecommendClearingStrategy(Box<RecommendClearingStrategyHandle>),
     /// What the `preview_tier_map` job captured.
     PreviewTierMap(Box<PreviewTierMapHandle>),
+    /// What the `build_model_faces` job captured.
+    BuildModelFaces(Box<BuildModelFacesHandle>),
 }
 
 impl JobHandle {
@@ -2337,6 +2359,7 @@ impl JobHandle {
             JobHandle::GenerateToolpath(_) => CommandId::GenerateToolpath,
             JobHandle::RecommendClearingStrategy(_) => CommandId::RecommendClearingStrategy,
             JobHandle::PreviewTierMap(_) => CommandId::PreviewTierMap,
+            JobHandle::BuildModelFaces(_) => CommandId::BuildModelFaces,
         }
     }
 }
@@ -2762,8 +2785,9 @@ impl ProjectSession {
     /// boundary walks a full-grid tier map. A `start` that resolved that
     /// map under a flag of its own would make Cancel a lie for the whole
     /// of it.
-    /// Two of the three rows leave the caller's session alone.
-    /// `recommend_clearing_strategy` and `preview_tier_map` are READS:
+    /// Three of the four rows leave the caller's session alone.
+    /// `recommend_clearing_strategy`, `preview_tier_map` and
+    /// `build_model_faces` are READS:
     /// they mutate nothing, so their step (i) drops no result and moves
     /// no revision, and they carry no step (iii). `&mut self` is the
     /// door's signature, not a claim that every row writes the caller's
@@ -2781,6 +2805,10 @@ impl ProjectSession {
             Job::PreviewTierMap(args) => {
                 let handle = self.capture_preview_tier_map(&args.spec)?;
                 Ok(JobHandle::PreviewTierMap(Box::new(handle)))
+            }
+            Job::BuildModelFaces(args) => {
+                let handle = self.capture_build_model_faces(args.model_id)?;
+                Ok(JobHandle::BuildModelFaces(Box::new(handle)))
             }
         }
     }

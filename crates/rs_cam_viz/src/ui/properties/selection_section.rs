@@ -247,6 +247,16 @@ fn cuts_row(report: Option<&SelectionReport>) -> DataRow {
     let Some(report) = report else {
         return DataRow::not_measured("Cuts");
     };
+    // P4.7: the flat faces of an STL are not computed yet. No count and no
+    // refusal; the job fills the cache, and Generate computes them too.
+    if !report.faces_not_ready.is_empty() {
+        return DataRow::value("Cuts", crate::ui::pick_bar::COMPUTING_FACES)
+            .hover(
+                "The flat faces of the model are not computed yet. A background job \
+                 computes them; Generate also computes them.",
+            )
+            .status(Role::Info, "Wait");
+    }
     let text = counts_text(report).unwrap_or_else(|| "nothing".to_owned());
     let findings = report.notes.len() + report.lost.len();
     let row = DataRow::value("Cuts", text.clone()).hover(text);

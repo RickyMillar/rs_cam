@@ -148,6 +148,10 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// which had already finished (the one narrow TOCTOU the lane can
     /// produce) self-heals on the very next drain instead of persisting.
     superseded_toolpaths: std::collections::HashSet<crate::state::toolpath::ToolpathId>,
+    /// P4.7 — the models whose `build_model_faces` job failed. The faces
+    /// sweep (`process_model_faces`) does not submit them again, so a
+    /// failure cannot loop.
+    pub(crate) failed_face_models: std::collections::BTreeSet<usize>,
     /// W1 — the in-flight generation plan, from whichever surface started
     /// it. Unconditional on purpose: the GUI's Generate All walks the same
     /// plan the MCP tool does, and `pending_mcp` is `None` outside `--mcp`.
@@ -240,6 +244,9 @@ pub struct PlanResolutionConfirm {
 pub(crate) enum GuiJobTarget {
     /// The multi-tool planner dialog's tier-map preview.
     MultitoolPreview,
+    /// The flat faces of an STL (geometry selection P4.7): the answer is
+    /// in the per-mesh cache; the section and the viewport read it.
+    ModelFaces { model_id: usize },
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -269,6 +276,7 @@ impl<B: ComputeBackend> AppController<B> {
             status_message: None,
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
+            failed_face_models: std::collections::BTreeSet::new(),
             plan: None,
             pending_plan_confirm: None,
             #[cfg(feature = "mcp")]

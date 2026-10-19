@@ -291,3 +291,270 @@ fn each_selection_section_edit_undoes_in_one_step_p4_3() {
         }
     }
 }
+
+// ── P4.7: an STL face click adds one pick ─────────────────────────────
+//
+// The fixture is the stepped mesh of the basis fork face-region test (the
+// core fixture `tests/common/meshes.rs::stepped_top`, built again here: a
+// 20 x 10 top at Z 5 round a 4 x 4 boss with its top at Z 8, and one
+// wall), loaded as an STL (no BREP faces), under a Pocket.
+//
+// The steps are the steps of the viewport in pick mode:
+//
+// 1. The ray pick (`pick_items`) of the screen point over the Z 5 face
+//    gives a `MeshFace` hit. On a cold cache `face_pick_key_at` refuses
+//    `FacesNotReady`.
+// 2. The faces sweep (`process_model_faces`) submits ONE
+//    `build_model_faces` job and stamps `AppState::job_run`. The test runs
+//    the work step and drains the answer, as the Job lane does; the sweep
+//    then submits nothing more.
+// 3. The click key names the Z 5 face; the `TogglePick` adds ONE pick, and
+//    the report counts one face.
+//
+// Red proof: `face_pick_key_at` with the Z band test inverted names no
+// face, so step 3 fails.
+
+mod an_stl_face_click_p4_7 {
+    use super::*;
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::mesh::TriangleMesh;
+    use rs_cam_core::selection::{ItemKind, RefusalCause};
+    use rs_cam_core::session::{JobHandle, SelectionTarget};
+
+    use crate::interaction::picking::{PickContext, PickHit, pick_items};
+    use crate::render::camera::OrbitCamera;
+    use crate::state::Workspace;
+    use crate::state::job::SetupFrame;
+    use crate::state::pick::{PickMode, held_kinds};
+
+    const VIEW_W: f32 = 800.0;
+    const VIEW_H: f32 = 600.0;
+
+    /// The stepped mesh (see the module doc).
+    fn stepped_top() -> TriangleMesh {
+        let mut vertices = Vec::new();
+        let mut triangles = Vec::new();
+        let mut quad = |a: P3, b: P3, c: P3, d: P3| {
+            let i = u32::try_from(vertices.len()).unwrap_or(0);
+            vertices.extend([a, b, c, d]);
+            triangles.push([i, i + 1, i + 2]);
+            triangles.push([i, i + 2, i + 3]);
+        };
+        let p = P3::new;
+        quad(p(0., 0., 5.), p(20., 0., 5.), p(20., 3., 5.), p(0., 3., 5.));
+        quad(
+            p(0., 7., 5.),
+            p(20., 7., 5.),
+            p(20., 10., 5.),
+            p(0., 10., 5.),
+        );
+        quad(p(0., 3., 5.), p(8., 3., 5.), p(8., 7., 5.), p(0., 7., 5.));
+        quad(
+            p(12., 3., 5.),
+            p(20., 3., 5.),
+            p(20., 7., 5.),
+            p(12., 7., 5.),
+        );
+        quad(p(8., 3., 8.), p(12., 3., 8.), p(12., 7., 8.), p(8., 7., 8.));
+        quad(p(8., 3., 5.), p(12., 3., 5.), p(12., 3., 8.), p(8., 3., 8.));
+        TriangleMesh::from_raw(vertices, triangles)
+    }
+
+    fn stl_controller() -> AppController<ScriptedBackend> {
+        let stock = StockConfig {
+            x: 20.0,
+            y: 10.0,
+            z: 8.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            origin_z: 0.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        };
+        let mut builder = ProjectSessionBuilder::new()
+            .stock(stock)
+            .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+        let model_id = builder.add_model(LoadedModel {
+            id: 0,
+            name: "stepped.stl".to_owned(),
+            mesh: Some(Arc::new(stepped_top())),
+            items: Default::default(),
+            path: std::path::PathBuf::from("synthetic://stepped.stl"),
+            kind: Some(ModelKind::Stl),
+            units: Some(ModelUnits::Millimeters),
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        });
+        let tc = ToolpathConfig {
+            shoe: Default::default(),
+            id: ToolpathId(0),
+            name: "Pocket".to_owned(),
+            enabled: true,
+            operation: OperationConfig::new_default(crate::state::toolpath::OperationType::Pocket),
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id: 1,
+            model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            stock_source: Default::default(),
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            rest_analysis: Default::default(),
+            planner_origin: None,
+        };
+        let _ = builder.add_toolpath(0, tc).expect("the pocket is addable");
+        let mut controller = AppController::with_backend(ScriptedBackend::new());
+        controller.state.session = builder.build();
+        let id = controller.state.session.toolpath_configs()[0].id;
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .insert(id, ToolpathRuntime::new(false));
+        controller.state.workspace = Workspace::Toolpaths;
+        controller.state.selection = Selection::Toolpath(id);
+        controller
+    }
+
+    /// The pick-mode hit of the screen point over the model point `p`.
+    fn hit_over(controller: &AppController<ScriptedBackend>, mode: &PickMode, p: P3) -> PickHit {
+        let state = &controller.state;
+        let stock = state.session.stock_config().clone();
+        let frame = SetupFrame::of(&state.session.list_setups()[0]);
+        let (w, d, h) = frame.effective_stock(&stock);
+        let mut camera = OrbitCamera::new();
+        camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
+        let q = frame.transform_point(p, &stock);
+        let at = camera
+            .project_to_screen(
+                [q.x as f32, q.y as f32, q.z as f32],
+                VIEW_W / VIEW_H,
+                VIEW_W,
+                VIEW_H,
+            )
+            .expect("the point is in view");
+        let tc = &state.session.toolpath_configs()[0];
+        let held = held_kinds(&state.session.models()[0]);
+        let kinds = mode
+            .filter
+            .effective_kinds(tc.operation.capabilities().item_use, &held);
+        assert!(
+            kinds.contains(&ItemKind::Face),
+            "the face chip is on for an STL"
+        );
+        let ctx = PickContext {
+            camera: &camera,
+            screen_x: at[0],
+            screen_y: at[1],
+            aspect: VIEW_W / VIEW_H,
+            vw: VIEW_W,
+            vh: VIEW_H,
+        };
+        pick_items(&ctx, &state.session, tc.id, &mode.filter, &kinds)
+            .expect("the ray hits the mesh")
+    }
+
+    #[test]
+    fn an_stl_face_click_adds_one_pick_p4_7() {
+        let mut controller = stl_controller();
+        let id = controller.state.session.toolpath_configs()[0].id;
+        let mode = PickMode::new(
+            id,
+            SelectionTarget::Op,
+            controller.state.session.toolpath_configs()[0]
+                .operation
+                .capabilities()
+                .item_use,
+        );
+        controller
+            .state
+            .gui
+            .selection_ui
+            .set_pick(Some(mode.clone()));
+
+        // 1. The ray hits the mesh; the faces are not computed yet.
+        let PickHit::MeshFace { model_id, point } =
+            hit_over(&controller, &mode, P3::new(2.0, 2.0, 5.0))
+        else {
+            panic!("pick mode on an STL gives a mesh hit");
+        };
+        assert!((point.z - 5.0).abs() < 1e-6, "the hit is on the Z 5 face");
+        let tc = controller.state.session.toolpath_configs()[0].clone();
+        let cold = controller
+            .state
+            .session
+            .face_pick_key_at(&tc, model_id.0, point)
+            .unwrap_err();
+        assert_eq!(
+            cold.cause,
+            RefusalCause::FacesNotReady {
+                model: rs_cam_core::ids::ModelId(0)
+            }
+        );
+
+        // 2. The sweep submits one faces job; the work step and the drain land it.
+        controller.process_model_faces();
+        assert_eq!(controller.compute.job_requests.len(), 1, "one faces job");
+        assert!(controller.state.job_run.is_some(), "the job is the GUI job");
+        let request = controller.compute.job_requests.remove(0);
+        let JobHandle::BuildModelFaces(handle) = &request.handle else {
+            panic!("the sweep submits the build_model_faces row");
+        };
+        let answer = rs_cam_core::session::execute_build_model_faces(handle, &request.cancel)
+            .map(|a| rs_cam_core::session::JobAnswer::BuildModelFaces(Box::new(a)))
+            .map_err(|e| crate::compute::ComputeError::Message(e.to_string()));
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Job(Box::new(crate::compute::JobResult {
+                id: request.id,
+                answer,
+            })));
+        controller.drain_compute_results();
+        assert!(
+            controller.state.job_run.is_none(),
+            "the drain clears the job"
+        );
+        controller.process_model_faces();
+        assert!(
+            controller.compute.job_requests.is_empty(),
+            "a warm cache submits no second job"
+        );
+
+        // 3. The click names the Z 5 face and adds one pick.
+        let key = controller
+            .state
+            .session
+            .face_pick_key_at(&tc, model_id.0, point)
+            .expect("the hit names a face");
+        controller.handle_internal_event(crate::ui::AppEvent::TogglePick {
+            toolpath_id: id,
+            target: SelectionTarget::Op,
+            key,
+        });
+        let tc = controller.state.session.toolpath_configs()[0].clone();
+        let picks = tc
+            .operation
+            .selection()
+            .expect("a pocket holds a selection")
+            .picks();
+        assert_eq!(picks.len(), 1, "one click adds one pick: {picks:?}");
+        assert_eq!(picks[0].kind, ItemKind::Face);
+        assert!(
+            (picks[0].measure - 184.0_f64.sqrt()).abs() < 1e-9,
+            "the Z 5 face"
+        );
+        let report = controller
+            .state
+            .session
+            .selection_status(&tc, SelectionTarget::Op)
+            .unwrap();
+        assert_eq!(report.counts.get(&ItemKind::Face), Some(&1));
+        assert_eq!(report.refusal, None);
+    }
+}

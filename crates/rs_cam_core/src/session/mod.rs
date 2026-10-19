@@ -41,8 +41,8 @@ pub use builder::ProjectSessionBuilder;
 pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
     AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
-    AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, Command, CommandId,
-    CommandKind, EditSelectionArgs, Effects, ForgetResultArgs, GenerateToolpathArgs,
+    AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command,
+    CommandId, CommandKind, EditSelectionArgs, Effects, ForgetResultArgs, GenerateToolpathArgs,
     GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
     InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
     InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, ListItemsAnswer, ListItemsArgs,
@@ -90,8 +90,8 @@ pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
 pub use selection_status::{
-    BOUNDARY_ITEM_USE, HoleItem, HoleSelection, ItemState, ModelItem, Near, SelectionReport,
-    SelectionTarget,
+    BOUNDARY_ITEM_USE, BuildModelFacesHandle, HoleItem, HoleSelection, ItemState, ModelFacesBuilt,
+    ModelItem, Near, SelectionReport, SelectionTarget, execute_build_model_faces,
 };
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
@@ -577,6 +577,64 @@ impl LoadedModel {
     /// Bind the items to this model: `SourceRef::Model(self.id)`. Each door
     /// that sets a model id calls this (`io::model_from_geometry`,
     /// `add_model_impl`, the session builder, `adopt_geometry`).
+    /// True when the faces of this model are the flat regions of its mesh
+    /// (geometry selection P4.7): a mesh with no BREP faces, an STL. A STEP
+    /// model gives its faces in `items`; a drawing has no face.
+    pub fn faces_are_flat_regions(&self) -> bool {
+        self.mesh.is_some() && self.enriched_mesh.is_none()
+    }
+
+    /// The items that hold the faces of this model, with no build
+    /// (geometry selection P4.7). A model whose faces are in `items` (STEP,
+    /// a drawing) gives `items`. A mesh with no BREP faces gives its flat
+    /// regions from `maps::geom_cache`, bound to this model, or `None`
+    /// when no build has run yet ("computing faces").
+    ///
+    /// The frame loop reads this. [`Self::face_items_built`] builds.
+    pub fn face_items(&self) -> Option<Arc<ItemSet>> {
+        match (&self.mesh, self.faces_are_flat_regions()) {
+            (Some(mesh), true) => {
+                crate::maps::geom_cache::peek_flat_regions(mesh).map(|set| self.bind_faces(&set))
+            }
+            _ => Some(Arc::clone(&self.items)),
+        }
+    }
+
+    /// True when the faces of this model can be read now with no build:
+    /// always for a model whose faces are in `items`, and for a mesh with
+    /// no BREP faces once the flat-region cache holds them (geometry
+    /// selection P4.7). It binds nothing, so the frame loop may ask it on
+    /// every frame.
+    pub fn faces_ready(&self) -> bool {
+        match (&self.mesh, self.faces_are_flat_regions()) {
+            (Some(mesh), true) => crate::maps::geom_cache::peek_flat_regions(mesh).is_some(),
+            _ => true,
+        }
+    }
+
+    /// [`Self::face_items`], with a build on a cold cache. Call it where a
+    /// build is allowed: generation, an explicit face listing, the GUI job
+    /// that fills the cache.
+    pub fn face_items_built(&self) -> Arc<ItemSet> {
+        match (&self.mesh, self.faces_are_flat_regions()) {
+            (Some(mesh), true) => {
+                self.bind_faces(&crate::maps::geom_cache::cached_flat_regions(mesh))
+            }
+            _ => Arc::clone(&self.items),
+        }
+    }
+
+    /// The cached flat-region faces bound to `SourceRef::Model(self.id)`.
+    fn bind_faces(&self, set: &ItemSet) -> Arc<ItemSet> {
+        let source = SourceRef::Model(ModelId(self.id));
+        Arc::new(set.bound_to(source).unwrap_or_else(|error| {
+            // A rebuild of a valid item set with a new source cannot break
+            // a shape invariant.
+            tracing::error!(model = %self.name, %error, "face bind failed");
+            ItemSet::default()
+        }))
+    }
+
     pub(crate) fn bind_items(&mut self) {
         let source = SourceRef::Model(ModelId(self.id));
         match self.items.bound_to(source) {

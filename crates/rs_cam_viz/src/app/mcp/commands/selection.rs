@@ -94,6 +94,9 @@ pub(crate) fn selection_report_json(
             }))
             .collect::<Vec<_>>(),
         "selected": report.selected.iter().map(key_json).collect::<Vec<_>>(),
+        // P4.7: the STL models whose flat faces are not computed yet
+        // ("computing faces"); generation computes them itself.
+        "faces_not_ready": report.faces_not_ready.iter().map(|m| m.0).collect::<Vec<_>>(),
     })
 }
 
@@ -864,6 +867,145 @@ mod tests {
             "one layer rule, two doors"
         );
         assert_eq!(stored(&gui, 3).rules().len(), 2);
+    }
+
+    /// Geometry selection P4.7: an STL face. The MCP door
+    /// (`list_model_items { kind: face }`, then `add_pick` of its key) and
+    /// the GUI door (the `build_model_faces` job, then the click rule
+    /// `face_pick_key_at` and `pick_edit`) store one pick, and the
+    /// `selection_status` reply counts the face. Before the faces exist the
+    /// reply says `faces_not_ready` and gives no refusal.
+    #[test]
+    fn an_mcp_face_pick_and_a_gui_click_give_one_pick_on_an_stl_p4_7() {
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::session::{BuildModelFacesArgs, Job, JobHandle};
+
+        fn stl_project() -> ProjectSession {
+            // The stepped mesh of the basis fork face-region test: the
+            // Z 5 face round a boss whose top is at Z 8.
+            let mut vertices = Vec::new();
+            let mut triangles = Vec::new();
+            let mut quad = |a: P3, b: P3, c: P3, d: P3| {
+                let i = u32::try_from(vertices.len()).unwrap();
+                vertices.extend([a, b, c, d]);
+                triangles.push([i, i + 1, i + 2]);
+                triangles.push([i, i + 2, i + 3]);
+            };
+            let p = P3::new;
+            quad(p(0., 0., 5.), p(20., 0., 5.), p(20., 3., 5.), p(0., 3., 5.));
+            quad(
+                p(0., 7., 5.),
+                p(20., 7., 5.),
+                p(20., 10., 5.),
+                p(0., 10., 5.),
+            );
+            quad(p(0., 3., 5.), p(8., 3., 5.), p(8., 7., 5.), p(0., 7., 5.));
+            quad(
+                p(12., 3., 5.),
+                p(20., 3., 5.),
+                p(20., 7., 5.),
+                p(12., 7., 5.),
+            );
+            quad(p(8., 3., 8.), p(12., 3., 8.), p(12., 7., 8.), p(8., 7., 8.));
+            let mesh = rs_cam_core::mesh::TriangleMesh::from_raw(vertices, triangles);
+            let model = rs_cam_core::session::LoadedModel {
+                id: 0,
+                name: "stepped.stl".to_owned(),
+                mesh: Some(std::sync::Arc::new(mesh)),
+                items: Default::default(),
+                path: std::path::PathBuf::from("synthetic://stepped.stl"),
+                kind: Some(ModelKind::Stl),
+                units: Some(ModelUnits::Millimeters),
+                enriched_mesh: None,
+                winding_report: None,
+                load_error: None,
+            };
+            let mut s = ProjectSession::new_empty();
+            let _ = apply(
+                &mut s,
+                Command::AddModel(AddModelArgs {
+                    model: Box::new(model),
+                }),
+            );
+            let tool_index = apply(
+                &mut s,
+                Command::AddTool(AddToolArgs {
+                    tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+                }),
+            )
+            .created
+            .unwrap();
+            let tool_id = s.tools()[tool_index].id.0;
+            let _ = add_op(&mut s, OperationType::Pocket, tool_id);
+            s
+        }
+
+        // MCP: the faces of the STL, then `add_pick` of the Z 5 face.
+        let mut mcp = stl_project();
+        let none: ListModelItemsParam =
+            serde_json::from_value(serde_json::json!({ "model_id": 0 })).unwrap();
+        assert_eq!(
+            list_model_items_reply(&mcp, &none)["count"],
+            0,
+            "no kind: no face"
+        );
+        let faces: ListModelItemsParam =
+            serde_json::from_value(serde_json::json!({ "model_id": 0, "kind": "face" })).unwrap();
+        let reply = list_model_items_reply(&mcp, &faces);
+        assert_eq!(reply["count"], 2, "{reply}");
+        let z5 = reply["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| (row["measure"].as_f64().unwrap() - 184.0_f64.sqrt()).abs() < 1e-9)
+            .expect("the Z 5 face is listed")
+            .clone();
+        wire_edit(&mut mcp, 0, &serde_json::json!({ "add_pick": z5["key"] }));
+
+        // GUI: before the job, the status says computing faces.
+        let mut gui = stl_project();
+        let key = rs_cam_core::selection::MatchKey {
+            source: SourceRef::ToolpathModel,
+            ..rs_cam_core::selection::flat_region_items(gui.models()[0].mesh.as_ref().unwrap())
+                .unwrap()
+                .iter()
+                .next()
+                .unwrap()
+                .key()
+                .clone()
+        };
+        edit(&mut gui, 0, SelectionEdit::AddPick(key.clone()));
+        let cold = selection_status_reply(&gui, 0, SelectionTarget::Op);
+        assert_eq!(cold["faces_not_ready"], serde_json::json!([0]), "{cold}");
+        assert_eq!(cold["refusal"], serde_json::Value::Null, "{cold}");
+        edit(&mut gui, 0, SelectionEdit::RemovePick(key));
+
+        // The job fills the cache; the click rule names the face.
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let Ok(JobHandle::BuildModelFaces(handle)) = gui.start(
+            Job::BuildModelFaces(BuildModelFacesArgs { model_id: 0 }),
+            &cancel,
+        ) else {
+            panic!("the build_model_faces row starts");
+        };
+        let built = rs_cam_core::session::execute_build_model_faces(&handle, &cancel).unwrap();
+        assert_eq!(built.faces, 2);
+        let tc = gui.get_toolpath_config(0).unwrap().clone();
+        let click = gui
+            .face_pick_key_at(&tc, 0, P3::new(2.0, 2.0, 5.0))
+            .expect("the click names the Z 5 face");
+        let edit_of_click = gui.pick_edit(&tc, SelectionTarget::Op, click).unwrap();
+        edit(&mut gui, 0, edit_of_click);
+
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one face is one pick");
+        assert_eq!(stored(&gui, 0).picks().len(), 1);
+        let warm = selection_status_reply(&mcp, 0, SelectionTarget::Op);
+        assert_eq!(count(&warm, "face"), 1, "{warm}");
+        assert_eq!(warm["faces_not_ready"], serde_json::json!([]), "{warm}");
+        assert_eq!(
+            selection_status_reply(&gui, 0, SelectionTarget::Op)["counts"],
+            warm["counts"]
+        );
     }
 
     /// Geometry selection P4.6: the MCP `tab_layout` reply and the marks

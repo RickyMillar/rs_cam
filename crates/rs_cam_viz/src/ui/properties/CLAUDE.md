@@ -9,7 +9,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
   `model_sim_panels.rs`, `machine_panel.rs`, `feeds_speeds.rs`,
   `tab_badges.rs`, `tests.rs`, `linking_dressup.rs` (`Param`, `dv`,
   `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (one fn per tab),
-  `selection_section.rs` (P4.3: the Selection section, op and boundary target; P4.4: "Show me" on a note row and a lost pick).
+  `selection_section.rs` (P4.3: the Selection section, op and boundary target; P4.4: "Show me" on a note row and a lost pick; P4.7: the Cuts row reads "Computing faces…" while `faces_not_ready`).
 - `operations/` — one editor per op family, plus `registry.rs`, `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`.
 - `setup.rs`, `obstacles.rs` (K2: list + editor), `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`, `head.rs` (H2: the Machine panel's Head section), `shoe_row.rs` (H2: the Heights tab's dust shoe row).
 

@@ -29,6 +29,10 @@
 //!   reads the target and the model id of the toolpath;
 //! - the item set of each model, by `Weak` identity (a re-import gives a
 //!   new `Arc`), and its id;
+//! - P4.7: when the selection names a face, the cached flat-region set of
+//!   each mesh model, by `Weak` identity, or its absence. When the GUI job
+//!   fills the cache, the key moves, so "computing faces" builds again
+//!   once;
 //! - the setup orientation and the stock box in both frames (the face
 //!   filter and the frame door read them).
 //!
@@ -47,12 +51,13 @@ use serde::{Deserialize, Serialize};
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType};
 use crate::compute::config::BoundarySource;
 use crate::compute::transform::{FaceUp, ZRotation};
-use crate::geo::{BoundingBox3, P2};
+use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::{
-    Hole, ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, RefusalCause, ResolveScope,
-    ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, Shape, SourceRef,
+    FLAT_REGION_Z_BAND_MM, Hole, ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey,
+    MeshFaces, RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit,
+    SelectionNote, SelectionRefusal, Shape, SourceRef,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
@@ -88,6 +93,22 @@ impl SelectionTarget {
             None => Self::Boundary,
         }
     }
+}
+
+/// May a resolution build the flat-region faces of a mesh model (geometry
+/// selection P4.7)?
+///
+/// The WP11b rule: a read on the frame loop builds nothing. The
+/// `selection_status` memo, the tab layout and the diagnostics `Peek`; a
+/// cold cache then gives "computing faces" (`faces_not_ready`). Generation
+/// `Build`s before it resolves, so a generated toolpath does not depend on
+/// whether the GUI job ran first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaceAccess {
+    /// Read the cache; do not build.
+    Peek,
+    /// Build on a cold cache.
+    Build,
 }
 
 /// The `ItemUse` that reads a boundary selection: closed regions
@@ -218,10 +239,15 @@ pub struct SelectionReport {
     /// toolpath model does not exist.
     pub item_states: Vec<ItemState>,
     /// The items of the selection that are not in `LoadedModel::items` of
-    /// the toolpath model: the items of another model and the stock items.
-    /// The key (with the source of the item) and the state. The viewport
-    /// finds the geometry by key.
+    /// the toolpath model: the items of another model, the stock items and
+    /// the flat-region faces of a mesh (P4.7). The key (with the source of
+    /// the item) and the state. The viewport finds the geometry by key.
     pub foreign: Vec<(MatchKey, ItemState)>,
+    /// The mesh models whose flat faces the selection names and that are
+    /// not computed yet (geometry selection P4.7). While it is not empty
+    /// the report holds no count and no refusal: the GUI section says
+    /// "computing faces…", and generation computes the faces itself.
+    pub faces_not_ready: Vec<ModelId>,
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -273,10 +299,11 @@ impl ProjectSession {
         tc: &ToolpathConfig,
         target: SelectionTarget,
         ctx: &SetupEvalContext,
+        faces: FaceAccess,
     ) -> Result<SelectionFrames, SessionError> {
         let empty = Selection::empty();
         let spec = tc.selection_of(target)?.unwrap_or(&empty);
-        self.resolve_spec_frames(tc, spec, ctx)
+        self.resolve_spec_frames(tc, spec, ctx, faces)
             .map_err(|e| SessionError::OperationFailed(e.to_string()))
     }
 
@@ -284,12 +311,18 @@ impl ProjectSession {
     /// of `tc`. The boundary generation (`resolve_boundary_selection_polys`)
     /// and the status report share it, so the two cannot differ. `Err` is
     /// an item that the frame door cannot move.
+    ///
+    /// P4.7: when `spec` names a face, each mesh model it reads resolves
+    /// against its flat-region faces ([`Self::mesh_faces_of`]); `faces`
+    /// says whether a cold cache builds.
     pub(crate) fn resolve_spec_frames(
         &self,
         tc: &ToolpathConfig,
         spec: &Selection,
         ctx: &SetupEvalContext,
+        faces: FaceAccess,
     ) -> Result<SelectionFrames, ItemError> {
+        let mesh_faces = self.mesh_faces_of(tc, spec, faces);
         let resolved = crate::selection::resolve(
             spec,
             &ResolveScope {
@@ -297,6 +330,7 @@ impl ProjectSession {
                 models: &self.models,
                 stock_bbox: &ctx.heights_stock_bbox,
                 setup: ctx.local_to_global.as_ref(),
+                mesh_faces: &mesh_faces,
             },
         );
         let setup = match ctx.local_to_global.as_ref() {
@@ -307,6 +341,49 @@ impl ProjectSession {
             model: resolved,
             setup,
         })
+    }
+
+    /// The mesh models that `spec` reads whose faces are their flat regions
+    /// (geometry selection P4.7), each with its face items: built when
+    /// `faces` is `Build`, else read from the cache (`None` when cold).
+    /// Empty when `spec` names no face ([`Selection::names_faces`]): the
+    /// default selection never reads, and never builds, the flat regions.
+    fn mesh_faces_of(
+        &self,
+        tc: &ToolpathConfig,
+        spec: &Selection,
+        faces: FaceAccess,
+    ) -> Vec<MeshFaces> {
+        if !spec.names_faces() {
+            return Vec::new();
+        }
+        self.face_models_of(tc, spec)
+            .into_iter()
+            .map(|model| MeshFaces {
+                model: model.id,
+                items: match faces {
+                    FaceAccess::Peek => model.face_items(),
+                    FaceAccess::Build => Some(model.face_items_built()),
+                },
+            })
+            .collect()
+    }
+
+    /// The mesh models (faces = flat regions) that a rule, a pick or an
+    /// exclude of `spec` names, each once, in model order.
+    fn face_models_of(&self, tc: &ToolpathConfig, spec: &Selection) -> Vec<&LoadedModel> {
+        let named: Vec<usize> = spec
+            .sources()
+            .filter_map(|source| match source {
+                SourceRef::ToolpathModel => Some(tc.model_id),
+                SourceRef::Model(id) => Some(id.0),
+                SourceRef::Stock => None,
+            })
+            .collect();
+        self.models
+            .iter()
+            .filter(|m| m.faces_are_flat_regions() && named.contains(&m.id))
+            .collect()
     }
 
     /// The auto top of an op with no selection slot (geometry selection
@@ -324,7 +401,7 @@ impl ProjectSession {
         }
         match &tc.boundary.source {
             BoundarySource::Selection { .. } => Ok(self
-                .resolve_selection_frames(tc, SelectionTarget::Boundary, ctx)?
+                .resolve_selection_frames(tc, SelectionTarget::Boundary, ctx, FaceAccess::Build)?
                 .setup
                 .face_top_z()),
             BoundarySource::Stock
@@ -363,7 +440,7 @@ impl ProjectSession {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
         Ok(self
-            .resolve_selection_frames(tc, SelectionTarget::Op, &ctx)?
+            .resolve_selection_frames(tc, SelectionTarget::Op, &ctx, FaceAccess::Peek)?
             .model)
     }
 
@@ -445,7 +522,7 @@ impl ProjectSession {
             // (`resolve_boundary_selection_polys`).
             SelectionTarget::Boundary => (BOUNDARY_LABEL, BOUNDARY_ITEM_USE, true),
         };
-        let frames = self.resolve_selection_frames(tc, target, ctx)?;
+        let frames = self.resolve_selection_frames(tc, target, ctx, FaceAccess::Peek)?;
         let selected: Vec<MatchKey> = frames
             .model
             .items()
@@ -508,6 +585,14 @@ impl ProjectSession {
                 );
             }
         };
+        // P4.7: faces that are not computed yet give no count and no
+        // refusal ("computing faces"); generation computes them itself.
+        if !frames.model.faces_not_ready().is_empty() {
+            resolution_states(&mut report, None);
+            report.faces_not_ready = frames.model.faces_not_ready().to_vec();
+            report.counts.clear();
+            return Ok(report);
+        }
         if !runs_view {
             resolution_states(&mut report, None);
             return Ok(report);
@@ -646,6 +731,65 @@ impl ProjectSession {
             })
     }
 
+    /// The pick key of the flat-region face of mesh model `model_id` under
+    /// the ray hit `hit`, in the MODEL frame (geometry selection P4.7: a
+    /// viewport click on an STL). The face is the `Face` item whose plane Z
+    /// is within [`FLAT_REGION_Z_BAND_MM`] of the hit Z and whose rings
+    /// hold the hit XY (an edge within the band counts). The source is as
+    /// for [`Self::face_pick_key`].
+    ///
+    /// It reads the cache and builds nothing (the frame loop calls it):
+    /// a cold cache refuses `FacesNotReady`. A hit on no flat region (a
+    /// wall, a slope) refuses `FaceNotFlat`. A model id that names no model
+    /// refuses `MissingSource`.
+    pub fn face_pick_key_at(
+        &self,
+        tc: &ToolpathConfig,
+        model_id: usize,
+        hit: P3,
+    ) -> Result<MatchKey, SelectionRefusal> {
+        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
+            SelectionRefusal::new(
+                None,
+                RefusalCause::MissingSource(SourceRef::Model(ModelId(model_id))),
+            )
+        })?;
+        // The key takes its source below, so the unbound cached set serves
+        // (no bind per hover frame).
+        let faces = match (&model.mesh, model.faces_are_flat_regions()) {
+            (Some(mesh), true) => crate::maps::geom_cache::peek_flat_regions(mesh),
+            _ => Some(Arc::clone(&model.items)),
+        }
+        .ok_or_else(|| {
+            SelectionRefusal::new(
+                None,
+                RefusalCause::FacesNotReady {
+                    model: ModelId(model_id),
+                },
+            )
+        })?;
+        let source = if model_id == tc.model_id {
+            SourceRef::ToolpathModel
+        } else {
+            SourceRef::Model(ModelId(model_id))
+        };
+        let xy = P2::new(hit.x, hit.y);
+        faces
+            .iter()
+            .find(|item| match item.shape() {
+                Shape::Face(f) => {
+                    (f.plane_z - hit.z).abs() <= FLAT_REGION_Z_BAND_MM
+                        && f.rings.contains_point_eps(&xy, FLAT_REGION_Z_BAND_MM)
+                }
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => false,
+            })
+            .map(|item| MatchKey {
+                source,
+                ..item.key().clone()
+            })
+            .ok_or_else(|| SelectionRefusal::new(None, RefusalCause::FaceNotFlat { face: None }))
+    }
+
     /// The edit that a viewport click on `key` sends to the selection
     /// `target` of `tc` (lead ruling P2.2: no toggle edit in the selection;
     /// P4.1: the target). It reads
@@ -754,6 +898,11 @@ impl ProjectSession {
     /// lines pass within `near.radius_mm` of `near.xy`, nearest first, by
     /// the pick rule of a viewport click ([`crate::selection::items_near`]).
     /// So `near` is the MCP form of a click.
+    ///
+    /// P4.7: with `kind: Face` on a mesh with no BREP faces (an STL), the
+    /// items are the flat-region faces, built on a cold cache (an explicit
+    /// ask for faces builds, as generation does). With any other kind the
+    /// read lists `LoadedModel::items`, so it lists no face of an STL.
     pub fn list_model_items_near(
         &self,
         model_id: usize,
@@ -768,8 +917,13 @@ impl ProjectSession {
                 known.join(", ")
             ))
         })?;
-        let admitted = model
-            .items
+        let source: Arc<ItemSet> = if kind == Some(ItemKind::Face) && model.faces_are_flat_regions()
+        {
+            model.face_items_built()
+        } else {
+            Arc::clone(&model.items)
+        };
+        let admitted = source
             .iter()
             .filter(|item| layer.is_none_or(|want| item.layer() == Some(want)))
             .filter(|item| kind.is_none_or(|want| item.kind() == want));
@@ -800,6 +954,77 @@ impl ProjectSession {
             })
             .collect())
     }
+}
+
+/// What the `build_model_faces` job captured (geometry selection P4.7):
+/// the mesh whose flat-region faces it computes. It owns the mesh, so
+/// [`execute_build_model_faces`] holds no session and runs off the frame
+/// loop.
+pub struct BuildModelFacesHandle {
+    model_id: usize,
+    mesh: Arc<crate::mesh::TriangleMesh>,
+}
+
+impl BuildModelFacesHandle {
+    /// The model id the job builds the faces of.
+    #[must_use]
+    pub fn model_id(&self) -> usize {
+        self.model_id
+    }
+}
+
+/// The answer of the `build_model_faces` job. The faces themselves go into
+/// the per-mesh cache (`maps::geom_cache`), which every reader peeks; the
+/// answer only names the model and the count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFacesBuilt {
+    pub model_id: usize,
+    /// The count of the flat-region faces of the mesh.
+    pub faces: usize,
+}
+
+impl ProjectSession {
+    /// Step (i) of the `build_model_faces` job: capture the mesh of model
+    /// `model_id`. A model that is not a mesh with no BREP faces refuses:
+    /// its faces are in `items` and need no build.
+    pub(crate) fn capture_build_model_faces(
+        &self,
+        model_id: usize,
+    ) -> Result<BuildModelFacesHandle, SessionError> {
+        let model = self
+            .find_model_by_raw_id(model_id)
+            .ok_or_else(|| SessionError::MissingGeometry(format!("No model has id {model_id}")))?;
+        match (&model.mesh, model.faces_are_flat_regions()) {
+            (Some(mesh), true) => Ok(BuildModelFacesHandle {
+                model_id,
+                mesh: Arc::clone(mesh),
+            }),
+            _ => Err(SessionError::InvalidParam(format!(
+                "Model {model_id} holds its faces in its items; it has no flat regions to build"
+            ))),
+        }
+    }
+}
+
+/// Step (ii) of the `build_model_faces` job (geometry selection P4.7):
+/// fill the flat-region cache of the captured mesh
+/// (`maps::geom_cache::cached_flat_regions`). It reads no session. A set
+/// cancel flag stops it before the build; the build itself is one union
+/// per plane and does not poll the flag.
+pub fn execute_build_model_faces(
+    handle: &BuildModelFacesHandle,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<ModelFacesBuilt, SessionError> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(SessionError::OperationFailed(
+            crate::compute::execute::OperationError::Cancelled.to_string(),
+        ));
+    }
+    let faces = crate::maps::geom_cache::cached_flat_regions(&handle.mesh).len();
+    Ok(ModelFacesBuilt {
+        model_id: handle.model_id,
+        faces,
+    })
 }
 
 /// Write `state` for one item: into `item_states` at `index` when the item
@@ -879,6 +1104,9 @@ struct StatusKey {
     item_use: ItemUse,
     model_id: usize,
     models: Vec<(usize, Weak<ItemSet>)>,
+    /// P4.7: the cached flat-region set of each mesh model the selection
+    /// names a face on, or `None` while it is cold.
+    flat_faces: Vec<(usize, Option<Weak<ItemSet>>)>,
     face_up: FaceUp,
     z_rotation: ZRotation,
     world_stock: [u64; 6],
@@ -898,9 +1126,24 @@ impl StatusKey {
             SelectionTarget::Op => tc.operation.capabilities().item_use,
             SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
         };
+        let spec = tc.selection_of(target).ok()?;
+        let flat_faces = match spec {
+            Some(sel) if sel.names_faces() => session
+                .face_models_of(tc, sel)
+                .into_iter()
+                .map(|m| {
+                    let peeked = m
+                        .mesh
+                        .as_ref()
+                        .and_then(crate::maps::geom_cache::peek_flat_regions);
+                    (m.id, peeked.as_ref().map(Arc::downgrade))
+                })
+                .collect(),
+            Some(_) | None => Vec::new(),
+        };
         Some(Self {
             target,
-            selection: serde_json::to_vec(&tc.selection_of(target).ok()?).ok()?,
+            selection: serde_json::to_vec(&spec).ok()?,
             op_type: tc.operation.op_type(),
             item_use,
             model_id: tc.model_id,
@@ -909,6 +1152,7 @@ impl StatusKey {
                 .iter()
                 .map(|m| (m.id, Arc::downgrade(&m.items)))
                 .collect(),
+            flat_faces,
             face_up: ctx.face_up,
             z_rotation: ctx.z_rotation,
             world_stock: box_bits(&ctx.world_stock_bbox),
@@ -935,6 +1179,19 @@ impl StatusKey {
                 .iter()
                 .zip(&now.models)
                 .all(|((id, set), (now_id, now_set))| id == now_id && set.ptr_eq(now_set))
+            && self.flat_faces.len() == now.flat_faces.len()
+            && self
+                .flat_faces
+                .iter()
+                .zip(&now.flat_faces)
+                .all(|((id, set), (now_id, now_set))| {
+                    id == now_id
+                        && match (set, now_set) {
+                            (None, None) => true,
+                            (Some(a), Some(b)) => a.ptr_eq(b),
+                            (None, Some(_)) | (Some(_), None) => false,
+                        }
+                })
     }
 }
 

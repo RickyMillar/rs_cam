@@ -106,8 +106,16 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
-        .map(|m| held_kinds(m.items.iter()))
+        .map(held_kinds)
         .unwrap_or_default();
+    // P4.7: the flat faces of an STL are not computed yet (the job fills
+    // the cache). A face click then says so; the bar says it first.
+    let faces_pending = state
+        .session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)
+        .is_some_and(|m| !m.faces_ready());
     let title = format!(
         "Pick for {} \u{25B8} {}",
         tc.name,
@@ -144,6 +152,9 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
                     });
                     let on = filter.effective_kinds(item_use, &held);
                     draw_circle_range(ui, &on, &mut filter);
+                    if faces_pending && on.contains(&ItemKind::Face) {
+                        ui.label(egui::RichText::new(COMPUTING_FACES).color(tokens::TEXT_MUTED));
+                    }
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(PICK_HELP).color(tokens::TEXT_MUTED));
                         if ui
@@ -165,6 +176,10 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
         mode.filter = filter;
     }
 }
+
+/// The line that the pick bar and the Selection section show while the
+/// flat faces of an STL are not computed (geometry selection P4.7).
+pub(crate) const COMPUTING_FACES: &str = "Computing faces\u{2026}";
 
 /// The help line of the tab editor bar (geometry selection P4.6).
 const TAB_HELP: &str =

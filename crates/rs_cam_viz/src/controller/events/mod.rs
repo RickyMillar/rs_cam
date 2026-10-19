@@ -1,5 +1,6 @@
 mod compute;
 mod model;
+mod model_faces;
 pub(crate) mod pins;
 mod planner;
 mod preferences;

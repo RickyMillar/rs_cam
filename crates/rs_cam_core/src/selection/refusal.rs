@@ -10,6 +10,7 @@ use std::fmt;
 
 use crate::compute::catalog::ItemUse;
 use crate::geometry::enriched_mesh::FaceGroupId;
+use crate::ids::ModelId;
 
 use super::item::{ItemKind, SourceRef};
 use super::key::MatchKey;
@@ -180,6 +181,12 @@ pub enum RefusalCause {
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
+    /// The selection names a face of a mesh model whose flat regions are
+    /// not computed yet (geometry selection P4.7). Generation computes them
+    /// before it resolves, so it does not give this cause; a resolution
+    /// that did not compute them (the `selection_status` read on the frame
+    /// loop) does.
+    FacesNotReady { model: ModelId },
     /// A rule names a layer that no item of its source has (S21).
     UnknownLayer(String),
     /// A selection edit names a rule index that does not exist.
@@ -241,6 +248,9 @@ impl SelectionRefusal {
                 "Correct the layer name in the rule, or add the layer to the drawing"
             }
             RefusalCause::NoSuchRule { .. } => "Name a rule that the selection holds",
+            RefusalCause::FacesNotReady { .. } => {
+                "Wait until the faces are computed; Generate computes them itself"
+            }
         }
     }
 
@@ -283,6 +293,9 @@ impl SelectionRefusal {
             }
             RefusalCause::NoSuchRule { index, rules } => {
                 format!("rule {index} does not exist (the selection holds {rules})")
+            }
+            RefusalCause::FacesNotReady { model } => {
+                format!("the flat faces of model {} are not computed yet", model.0)
             }
         }
     }

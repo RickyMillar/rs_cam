@@ -179,8 +179,17 @@ impl ProjectSession {
         // no model resolves with no `MissingSource` (P4.2).
         // P2.4: THE resolution (`resolve_selection_frames`) is the one the
         // `selection_status` query reads, so the two give the same refusal.
+        // P4.7: generation BUILDS the flat-region faces of a mesh model that
+        // the selection names a face on (`FaceAccess::Build`); the status
+        // read only peeks. So a generated toolpath does not depend on
+        // whether the GUI job filled the cache first.
         let selection = self
-            .resolve_selection_frames(tc, super::super::SelectionTarget::Op, &ctx)?
+            .resolve_selection_frames(
+                tc,
+                super::super::SelectionTarget::Op,
+                &ctx,
+                super::super::selection_status::FaceAccess::Build,
+            )?
             .setup;
         // DESIGN 7.2: the top of the picked faces, in the SETUP frame. An op
         // with no selection slot takes the faces of its boundary selection
@@ -574,7 +583,12 @@ impl ProjectSession {
         // one the boundary report of `selection_status` reads, with the same
         // `ItemUse` and op name. So the two give the same refusal.
         let resolved = self
-            .resolve_spec_frames(tc, selection, &ctx)
+            .resolve_spec_frames(
+                tc,
+                selection,
+                &ctx,
+                super::super::selection_status::FaceAccess::Build,
+            )
             .map_err(|e| refuse(e.to_string()))?
             .setup;
         let (items, _open_path_notes) = crate::selection::view(

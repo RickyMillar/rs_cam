@@ -1327,6 +1327,9 @@ impl<B: ComputeBackend> AppController<B> {
             crate::controller::GuiJobTarget::MultitoolPreview => {
                 crate::state::JobRunKind::MultitoolPreview
             }
+            crate::controller::GuiJobTarget::ModelFaces { .. } => {
+                crate::state::JobRunKind::ModelFaces
+            }
         };
         self.state.job_run = Some(crate::state::JobRun {
             kind,
@@ -1411,6 +1414,17 @@ impl<B: ComputeBackend> AppController<B> {
                     Err(error) => Err(error.to_string()),
                 };
                 self.handle_multitool_preview_result(result);
+            }
+            crate::controller::GuiJobTarget::ModelFaces { model_id } => {
+                let result = match answer {
+                    Ok(JobAnswer::BuildModelFaces(_)) => Ok(()),
+                    Ok(other) => Err(format!(
+                        "the faces job was answered by the {} row",
+                        other.id().wire_name()
+                    )),
+                    Err(error) => Err(error.to_string()),
+                };
+                self.handle_model_faces_result(*model_id, result);
             }
         }
     }

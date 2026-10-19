@@ -229,7 +229,7 @@ fn pick_on(c: &mut AppController<SilentBackend>) -> PickMode {
 }
 
 fn held(c: &AppController<SilentBackend>) -> BTreeSet<ItemKind> {
-    held_kinds(c.state().session.models()[0].items.iter())
+    held_kinds(&c.state().session.models()[0])
 }
 
 /// A camera that sees the whole displayed stock from above.

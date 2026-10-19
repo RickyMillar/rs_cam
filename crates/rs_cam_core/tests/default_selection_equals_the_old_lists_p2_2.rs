@@ -142,6 +142,7 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             models: std::slice::from_ref(model),
             stock_bbox: &stock,
             setup,
+            mesh_faces: &[],
         },
     );
     let resolved = match setup {
@@ -451,6 +452,7 @@ fn an_open_path_keeps_its_drawn_direction_in_the_view() {
             models: std::slice::from_ref(&model),
             stock_bbox: &stock,
             setup: None,
+            mesh_faces: &[],
         },
     );
     let (items, _) = view(&resolved, ItemUse::Curves).unwrap();

@@ -226,7 +226,8 @@ impl OpItems {
 ///
 /// The refusals, in this order:
 ///
-/// 1. A missing source (`MissingSource`).
+/// 1. A missing source (`MissingSource`), then a mesh model whose flat
+///    faces are not computed (`FacesNotReady`, P4.7).
 /// 2. A lost pick (`LostPick`) or an ambiguous pick (`AmbiguousPick`).
 /// 3. A rule layer that names no item (`UnknownLayer`).
 /// 4. An item the user named and the op cannot cut (`KindNotCut`), or a
@@ -245,6 +246,12 @@ pub fn view(
         return Err(SelectionRefusal::new(
             None,
             RefusalCause::MissingSource(*source),
+        ));
+    }
+    if let Some(model) = resolved.faces_not_ready().first() {
+        return Err(SelectionRefusal::new(
+            None,
+            RefusalCause::FacesNotReady { model: *model },
         ));
     }
     if let Some(lost) = resolved.lost().first() {

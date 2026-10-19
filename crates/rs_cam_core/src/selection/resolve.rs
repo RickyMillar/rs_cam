@@ -10,6 +10,7 @@
 //! face.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::compute::transform::SetupTransformInfo;
 use crate::geo::{BoundingBox3, P3, V3};
@@ -39,6 +40,25 @@ pub struct ResolveScope<'a> {
     /// ([`face_in_setup_frame`]). The items stay in the model frame until
     /// [`ResolvedSelection::to_setup_frame`].
     pub setup: Option<&'a SetupTransformInfo>,
+    /// The face items of the mesh models whose flat regions stand in for
+    /// their items (geometry selection P4.7). A model listed here resolves
+    /// against these items, not `LoadedModel::items`. The session lists a
+    /// mesh model only when the selection names a face
+    /// ([`Selection::names_faces`]); empty for every other read.
+    pub mesh_faces: &'a [MeshFaces],
+}
+
+/// The flat-region face items of one mesh model (geometry selection P4.7),
+/// as the session read them for one resolution.
+#[derive(Debug, Clone)]
+pub struct MeshFaces {
+    /// The model id (`LoadedModel::id`).
+    pub model: usize,
+    /// The face items, bound to `SourceRef::Model(model)`. `None`: the
+    /// flat regions are not computed yet. A rule or a pick on the model
+    /// then matches nothing and is not lost; the resolution reports the
+    /// model in [`ResolvedSelection::faces_not_ready`].
+    pub items: Option<Arc<ItemSet>>,
 }
 
 /// How an item came into the selection. It decides what `view` does with
@@ -87,7 +107,8 @@ pub struct ResolvedItem {
     identity: MatchKey,
     /// The index of the item in the item set of its source, in import
     /// order (geometry selection P4.4). For an item of a model it is the
-    /// index in `LoadedModel::items`; for a stock item, the index in
+    /// index in `LoadedModel::items` (in the flat-region faces of a mesh
+    /// model, P4.7); for a stock item, the index in
     /// [`super::stock_items`].
     index: usize,
 }
@@ -147,6 +168,8 @@ pub struct ResolvedSelection {
     missing_sources: Vec<SourceRef>,
     /// The rule layers that name no item of their source (S21).
     unmatched_layers: Vec<String>,
+    /// The mesh models whose flat regions are not computed yet (P4.7).
+    faces_not_ready: Vec<ModelId>,
 }
 
 impl ResolvedSelection {
@@ -183,6 +206,7 @@ impl ResolvedSelection {
             excluded: Vec::new(),
             missing_sources: Vec::new(),
             unmatched_layers: Vec::new(),
+            faces_not_ready: Vec::new(),
         }
     }
 
@@ -205,6 +229,14 @@ impl ResolvedSelection {
 
     pub fn unmatched_layers(&self) -> &[String] {
         &self.unmatched_layers
+    }
+
+    /// The mesh models whose flat regions are not computed yet, so the
+    /// face rules and the picks on them matched nothing (geometry
+    /// selection P4.7). [`super::view`] refuses `FacesNotReady`; the
+    /// `selection_status` report says "computing faces" instead.
+    pub fn faces_not_ready(&self) -> &[ModelId] {
+        &self.faces_not_ready
     }
 
     /// The highest plane Z of the faces in the selection, or `None` when
@@ -330,7 +362,9 @@ enum Slot {
     Stock,
 }
 
-/// The item set of `source`, and the slot that names it.
+/// The item set of `source`, and the slot that names it. `None` for a
+/// source that does not exist and for a mesh model whose flat regions are
+/// not computed ([`not_ready_model`] tells the two apart).
 fn locate<'a>(
     scope: &ResolveScope<'a>,
     stock: Option<&'a ItemSet>,
@@ -339,14 +373,38 @@ fn locate<'a>(
     match source {
         SourceRef::ToolpathModel => {
             let m = scope.toolpath_model.ok()?;
-            Some((Slot::Model(m.id), &m.items))
+            Some((Slot::Model(m.id), model_items(scope, m)?))
         }
         SourceRef::Model(id) => {
             let m = scope.models.iter().find(|m| m.id == id.0)?;
-            Some((Slot::Model(m.id), &m.items))
+            Some((Slot::Model(m.id), model_items(scope, m)?))
         }
         SourceRef::Stock => Some((Slot::Stock, stock?)),
     }
+}
+
+/// The items of model `m`: its flat-region faces when `scope.mesh_faces`
+/// lists it (`None` when they are not computed), else `LoadedModel::items`.
+fn model_items<'a>(scope: &ResolveScope<'a>, m: &'a LoadedModel) -> Option<&'a ItemSet> {
+    match scope.mesh_faces.iter().find(|f| f.model == m.id) {
+        Some(faces) => faces.items.as_deref(),
+        None => Some(&m.items),
+    }
+}
+
+/// The model that `source` names when it is a mesh model whose flat
+/// regions are not computed yet (P4.7), else `None`.
+fn not_ready_model(scope: &ResolveScope<'_>, source: SourceRef) -> Option<ModelId> {
+    let id = match source {
+        SourceRef::ToolpathModel => scope.toolpath_model.ok()?.id,
+        SourceRef::Model(id) => scope.models.iter().find(|m| m.id == id.0)?.id,
+        SourceRef::Stock => return None,
+    };
+    scope
+        .mesh_faces
+        .iter()
+        .any(|f| f.model == id && f.items.is_none())
+        .then_some(ModelId(id))
 }
 
 /// The source that a missing `source` names in a refusal: the toolpath
@@ -379,6 +437,9 @@ fn slot_pos<'a>(
 ///   geometry ([`MatchKey::names_same_geometry`]). One match: the item is
 ///   in. None, or two or more: the pick is lost.
 /// - A source that does not exist goes into `missing_sources`.
+/// - A mesh model whose flat regions are not computed goes into
+///   `faces_not_ready`; its rules and picks match nothing, and no pick on
+///   it is lost (P4.7).
 /// - A rule layer that names no item of its source goes into
 ///   `unmatched_layers`.
 pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
@@ -410,7 +471,14 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
         .collect();
 
     let mut missing_sources: Vec<SourceRef> = Vec::new();
+    let mut faces_not_ready: Vec<ModelId> = Vec::new();
     let mut missing = |source: SourceRef| {
+        if let Some(model) = not_ready_model(scope, source) {
+            if !faces_not_ready.contains(&model) {
+                faces_not_ready.push(model);
+            }
+            return;
+        }
         let source = missing_ref(scope, source);
         if !missing_sources.contains(&source) {
             missing_sources.push(source);
@@ -524,5 +592,6 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
         excluded,
         missing_sources,
         unmatched_layers,
+        faces_not_ready,
     }
 }

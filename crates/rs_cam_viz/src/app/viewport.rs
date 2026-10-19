@@ -52,7 +52,7 @@ impl RsCamApp {
             .models()
             .iter()
             .find(|m| m.id == tc.model_id)
-            .map(|m| crate::state::pick::held_kinds(m.items.iter()))
+            .map(crate::state::pick::held_kinds)
             .unwrap_or_default();
         let item_use = crate::state::pick::target_item_use(tc, mode.target);
         Some(ActivePick {
@@ -88,6 +88,18 @@ impl RsCamApp {
                     state
                         .session
                         .face_pick_key(tc, model_id.0, face_id)
+                        .map_err(|refusal| refusal.to_string()),
+                )
+            }
+            // P4.7: an STL face is the flat region under the hit. A cold
+            // cache refuses `FacesNotReady`; the faces sweep
+            // (`process_model_faces`) is already computing them.
+            PickHit::MeshFace { model_id, point } => {
+                let (_, tc) = state.session.find_toolpath_config_by_id(pick.toolpath_id)?;
+                Some(
+                    state
+                        .session
+                        .face_pick_key_at(tc, model_id.0, point)
                         .map_err(|refusal| refusal.to_string()),
                 )
             }

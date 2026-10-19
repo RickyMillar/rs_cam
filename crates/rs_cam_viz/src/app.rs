@@ -860,6 +860,8 @@ impl RsCamApp {
         // Beside `process_auto_regen` on both pump paths, because a selection
         // made while the surface is parked must still resolve a request.
         self.controller.process_reach_overlay();
+        // P4.7: the flat faces of an STL that the selected toolpath needs.
+        self.controller.process_model_faces();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
     }
@@ -1330,6 +1332,8 @@ impl RsCamApp {
 
         self.controller.process_auto_regen();
         self.controller.process_reach_overlay();
+        // P4.7: the flat faces of an STL that the selected toolpath needs.
+        self.controller.process_model_faces();
 
         // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
         // frame to reach it — the compute drain, `generate_all`'s fixpoint

@@ -42,6 +42,11 @@ pub enum PickHit {
         model_id: ModelId,
         face_id: FaceGroupId,
     },
+    /// Hit the mesh of a model with no BREP faces (an STL), in pick mode
+    /// only (geometry selection P4.7). `point` is the hit in the MODEL
+    /// frame; `ProjectSession::face_pick_key_at` names the flat-region face
+    /// under it.
+    MeshFace { model_id: ModelId, point: P3 },
     /// Hit a drawn item of the active toolpath: a hole marker of a drill op
     /// (geometry selection P2.6), or in pick mode any item the filter
     /// admits (P4.5, [`pick_items`]). `key` is the match key a pick of the
@@ -177,7 +182,7 @@ pub fn pick(
     // flip, a turn and a shift), so the ray parameter `t` keeps its length
     // and compares with the other hits.
     if matches!(workspace, Workspace::Toolpaths)
-        && let Some((t, hit)) = pick_model_face(session, display_frame, origin, dir)
+        && let Some((t, hit)) = pick_model_face(session, display_frame, origin, dir, false)
         && t < best_t
     {
         best_hit = Some(hit);
@@ -205,11 +210,17 @@ pub fn pick(
 /// the model frame through the inverse of that one transform, so a click
 /// hits the face where it is drawn. The transform is rigid (a flip, a turn
 /// and a shift), so `t` keeps its length and compares with other hits.
+///
+/// With `meshes` (pick mode only, geometry selection P4.7), the mesh of a
+/// model with no BREP faces (an STL) is hit too, as [`PickHit::MeshFace`]
+/// with the hit point in the model frame. A plain click does not test it,
+/// so a click on a terrain keeps its old meaning.
 fn pick_model_face(
     session: &ProjectSession,
     display_frame: Option<&SetupFrame>,
     origin: P3,
     dir: V3,
+    meshes: bool,
 ) -> Option<(f64, PickHit)> {
     let stock = session.stock_config();
     let (model_origin, model_dir) = match display_frame {
@@ -240,6 +251,20 @@ fn pick_model_face(
                     },
                 ));
             }
+        } else if meshes
+            && model.faces_are_flat_regions()
+            && let Some(mesh) = &model.mesh
+            && mesh.bbox.ray_intersect(&model_origin, &model_dir).is_some()
+            && let Some((_, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
+            && best.as_ref().is_none_or(|(b, _)| t < *b)
+        {
+            best = Some((
+                t,
+                PickHit::MeshFace {
+                    model_id: ModelId(model.id),
+                    point: model_origin + model_dir * t,
+                },
+            ));
         }
     }
     best
@@ -259,7 +284,9 @@ fn pick_model_face(
 ///   on a loop picks nothing of it and the next item under the pointer
 ///   wins.
 /// - With no such item and the face chip on: the BREP face under the ray
-///   (a STEP face; `ProjectSession::face_pick_key` names its item).
+///   (a STEP face; `ProjectSession::face_pick_key` names its item), or the
+///   mesh point under the ray (an STL, P4.7;
+///   `ProjectSession::face_pick_key_at` names its flat-region face).
 ///
 /// [`Shape::pick_lines`]: rs_cam_core::selection::Shape::pick_lines
 /// [`polyline_distance`]: rs_cam_core::selection::polyline_distance
@@ -330,7 +357,7 @@ pub fn pick_items(
         ray_origin.z as f64,
     );
     let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
-    pick_model_face(session, frame.as_ref(), origin, dir).map(|(_, hit)| hit)
+    pick_model_face(session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
 }
 
 /// The Z (display frame) at which the drawing of `tc` draws, and at which a

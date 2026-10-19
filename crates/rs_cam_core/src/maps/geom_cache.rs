@@ -1,5 +1,6 @@
 //! Once-per-(model, setup) memo for the three geometry derivations that
-//! generation used to redo per toolpath (`PERF_REVIEW.md` G8).
+//! generation used to redo per toolpath (`PERF_REVIEW.md` G8), plus the
+//! flat regions of a mesh (geometry selection P4.7).
 //!
 //! # What is memoised
 //!
@@ -8,6 +9,7 @@
 //! | [`cached_auto_index`] | [`SpatialIndex::build_auto`] | one full grid build |
 //! | [`cached_silhouette`] | [`crate::geometry::boundary::model_silhouette`] at the default cell size | one full-mesh rasterisation + marching squares |
 //! | [`cached_transform`] | [`SetupTransformInfo::apply_to_mesh`] | a ~111 MB deep copy, ~95 MB of it the re-derived `faces` array |
+//! | [`cached_flat_regions`] | [`crate::selection::flat_region_items`] (geometry selection P4.7) | one union per flat plane; built only when a selection names a face |
 //!
 //! Before this module, `ProjectSession::resolve_generation_inputs` and the
 //! GUI worker's `generate_via_core` each ran the first of these inside
@@ -77,8 +79,8 @@
 //! [`CAPACITY`] entries, one per distinct source mesh, evicted oldest-first;
 //! entries whose mesh has been dropped are swept on every insert, so a closed
 //! model's index is released at the next generation rather than held for the
-//! life of the process. Each entry holds at most one index, one silhouette and
-//! one transformed mesh, so the ceiling is a constant multiple of
+//! life of the process. Each entry holds at most one index, one silhouette,
+//! one transformed mesh and one flat-region item set, so the ceiling is a constant multiple of
 //! `CAPACITY` — it cannot grow with the number of toolpaths, generations or
 //! fixpoint rounds, which is the leak the naive version of this would have.
 //!
@@ -102,6 +104,7 @@ use crate::compute::transform::SetupTransformInfo;
 use crate::maps::memo::MeshMemo;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
+use crate::selection::ItemSet;
 
 /// Maximum number of distinct source meshes held at once.
 ///
@@ -138,13 +141,16 @@ impl TransformKey {
     }
 }
 
-/// The three memoised products of one mesh. They are built independently, so
+/// The four memoised products of one mesh. They are built independently, so
 /// an entry can hold any subset of them.
 #[derive(Default)]
 struct Entry {
     index: Option<Arc<SpatialIndex>>,
     silhouette: Option<Arc<Vec<Polygon2>>>,
     transformed: Option<(TransformKey, Arc<TriangleMesh>)>,
+    /// The flat regions of the mesh as `Face` items, bound to
+    /// `SourceRef::ToolpathModel` (geometry selection P4.7).
+    flat_regions: Option<Arc<ItemSet>>,
 }
 
 /// The table itself is [`crate::maps::memo::MeshMemo`]: `Weak` mesh identity (the
@@ -171,6 +177,8 @@ pub struct GeomCacheStats {
     pub silhouette_hits: u64,
     pub transform_builds: u64,
     pub transform_hits: u64,
+    pub flat_region_builds: u64,
+    pub flat_region_hits: u64,
 }
 
 /// This cache's own counters, one pair per memoised product. The mechanism
@@ -179,6 +187,7 @@ pub struct GeomCacheStats {
 static INDEX: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 static SILHOUETTE: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 static TRANSFORM: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
+static FLAT_REGIONS: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
 
 /// Read the counters. This is the measurement instrument for G8: the point of
 /// the change is that these `*_builds` stay at one per model across a whole
@@ -191,6 +200,7 @@ pub fn stats() -> GeomCacheStats {
     let (index_builds, index_hits) = INDEX.read();
     let (silhouette_builds, silhouette_hits) = SILHOUETTE.read();
     let (transform_builds, transform_hits) = TRANSFORM.read();
+    let (flat_region_builds, flat_region_hits) = FLAT_REGIONS.read();
     GeomCacheStats {
         index_builds,
         index_hits,
@@ -198,6 +208,8 @@ pub fn stats() -> GeomCacheStats {
         silhouette_hits,
         transform_builds,
         transform_hits,
+        flat_region_builds,
+        flat_region_hits,
     }
 }
 
@@ -209,7 +221,7 @@ pub fn stats() -> GeomCacheStats {
 /// `test-support`.
 #[cfg(feature = "test-support")]
 pub fn reset_stats() {
-    for counters in [&INDEX, &SILHOUETTE, &TRANSFORM] {
+    for counters in [&INDEX, &SILHOUETTE, &TRANSFORM, &FLAT_REGIONS] {
         counters.reset();
     }
 }
@@ -352,6 +364,56 @@ pub fn cached_silhouette(mesh: &Arc<TriangleMesh>) -> Arc<Vec<Polygon2>> {
     let stored = Arc::clone(&built);
     put(mesh, move |entry| entry.silhouette = Some(stored));
     built
+}
+
+/// The flat regions of `mesh` as `Face` items
+/// ([`crate::selection::flat_region_items`]), built at most once per mesh
+/// (geometry selection P4.7). The items are bound to
+/// `SourceRef::ToolpathModel`; the session binds them to the model.
+///
+/// This BUILDS on a miss. Call it only where a build is allowed: the
+/// generation path (on the worker thread or in the CLI), an explicit
+/// `list_model_items { kind: face }`, and the GUI job that fills the cache.
+/// A read on the frame loop calls [`peek_flat_regions`].
+///
+/// A union that breaks a face invariant (a defect, not a mesh property)
+/// gives an empty set and a warning, so a pick then reads as lost.
+#[must_use]
+pub fn cached_flat_regions(mesh: &Arc<TriangleMesh>) -> Arc<ItemSet> {
+    if let Some(hit) = get(mesh, |entry| entry.flat_regions.clone()) {
+        FLAT_REGIONS.record_hit();
+        return hit;
+    }
+    let built = Arc::new(
+        crate::selection::flat_region_items(mesh).unwrap_or_else(|error| {
+            tracing::warn!(
+                target: "rs_cam_core::maps::geom_cache",
+                %error,
+                "the flat regions of a mesh broke a face invariant"
+            );
+            ItemSet::default()
+        }),
+    );
+    FLAT_REGIONS.record_build();
+    tracing::debug!(
+        target: "rs_cam_core::maps::geom_cache",
+        kind = "flat_regions",
+        triangles = mesh.triangles.len(),
+        faces = built.len(),
+        "geom cache build"
+    );
+    let stored = Arc::clone(&built);
+    put(mesh, move |entry| entry.flat_regions = Some(stored));
+    built
+}
+
+/// The cached flat regions of `mesh`, or `None` when no build has run
+/// (geometry selection P4.7). It never builds and counts nothing, so a
+/// read on the frame loop (the `selection_status` memo, a hover, a click)
+/// costs one lock.
+#[must_use]
+pub fn peek_flat_regions(mesh: &Arc<TriangleMesh>) -> Option<Arc<ItemSet>> {
+    get(mesh, |entry| entry.flat_regions.clone())
 }
 
 /// [`SetupTransformInfo::apply_to_mesh`] over `mesh`, computed at most once

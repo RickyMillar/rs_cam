@@ -21,7 +21,7 @@ directory; it holds the file map, invariants, sentries and traps.
 | `ui/feeds/` | The feeds and speeds surfaces | `ui/feeds/CLAUDE.md` |
 | `ui/overlays/` | The viewport dock, the All viewport options catalogue and their registry | `ui/overlays/CLAUDE.md` |
 | `ui/properties/` | The inspector tabs | `ui/properties/CLAUDE.md` |
-| `interaction/`, `io/` | Picking and mouse handling (P4.5 `pick_items`, `drawing_plane_z`: one point and plane for draw and pick; P4.6 `tab_scene`, `pick_tab`, `pick_tab_loop`, `snap_to_loop`); project import, export and the setup sheet. `io/app_settings.rs` only re-exports core's `settings` loader and writer | — |
+| `interaction/`, `io/` | Picking and mouse handling (P4.5 `pick_items`, `drawing_plane_z`: one point and plane for draw and pick; P4.6 `tab_scene`, `pick_tab`, `pick_tab_loop`, `snap_to_loop`; P4.7 `PickHit::MeshFace`, pick mode only); project import, export and the setup sheet. `io/app_settings.rs` only re-exports core's `settings` loader and writer | — |
 
 ## GUI contracts
 

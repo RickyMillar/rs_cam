@@ -1463,6 +1463,9 @@ fn job_label(request: &JobRequest) -> String {
         JobHandle::PreviewTierMap(handle) => {
             format!("Tier map preview ({} tools)", handle.tool_count())
         }
+        JobHandle::BuildModelFaces(handle) => {
+            format!("Flat faces of model {}", handle.model_id())
+        }
     }
 }
 
@@ -1790,6 +1793,11 @@ fn run_job(request: &JobRequest) -> Result<rs_cam_core::session::JobAnswer, Comp
         JobHandle::PreviewTierMap(handle) => {
             rs_cam_core::session::execute_preview_tier_map(handle, &cancel)
                 .map(|answer| JobAnswer::PreviewTierMap(Box::new(answer)))
+                .map_err(|error| ComputeError::Message(error.to_string()))
+        }
+        JobHandle::BuildModelFaces(handle) => {
+            rs_cam_core::session::execute_build_model_faces(handle, &cancel)
+                .map(|answer| JobAnswer::BuildModelFaces(Box::new(answer)))
                 .map_err(|error| ComputeError::Message(error.to_string()))
         }
     }

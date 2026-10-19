@@ -202,6 +202,12 @@ The repo text or code explicitly references these algorithm families or techniqu
 - join (merge) tree of sublevel sets by union-find over sorted cells
   (Carr, Snoeyink & Axen 2003) with h-minima / dynamics simplification
   (Grimaud 1992; Soille 2003), for pocket detection on a tool-CL grid
+- flat-region faces of a mesh (geometry selection P4.7): the flat
+  triangles at one plane Z merged with one polygon union. The method and
+  the 0.01 mm height band come from the basis staff fork
+  (`refs/remotes/basis/feature-web-server`,
+  `crates/rs_cam_server/src/face_region.rs`, `region`,
+  `HEIGHT_TOLERANCE_MM`), as is the stepped test mesh
 
 Key repo references:
 
@@ -213,6 +219,7 @@ Key repo references:
 - `crates/rs_cam_core/src/dressup/arcfit.rs`
 - `crates/rs_cam_core/src/geometry/contour_extract.rs`
 - `crates/rs_cam_core/src/surface/merge_tree.rs`
+- `crates/rs_cam_core/src/selection/flat_regions.rs`
 
 ## Data sources and formulas
 

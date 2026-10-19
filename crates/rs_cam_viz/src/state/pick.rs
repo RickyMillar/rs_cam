@@ -120,9 +120,16 @@ pub fn target_item_use(tc: &ToolpathConfig, target: SelectionTarget) -> ItemUse 
     }
 }
 
-/// The kinds that the items `items` hold.
-pub fn held_kinds<'a>(items: impl IntoIterator<Item = &'a Item>) -> BTreeSet<ItemKind> {
-    items.into_iter().map(Item::kind).collect()
+/// The kinds that `model` holds: the kinds of its items, and `Face` for a
+/// mesh whose faces are its flat regions (an STL, geometry selection P4.7).
+/// The flat regions need no build to count: the click builds nothing and
+/// says "computing faces" until the job fills the cache.
+pub fn held_kinds(model: &rs_cam_core::session::LoadedModel) -> BTreeSet<ItemKind> {
+    let mut held: BTreeSet<ItemKind> = model.items.iter().map(Item::kind).collect();
+    if model.faces_are_flat_regions() {
+        held.insert(ItemKind::Face);
+    }
+    held
 }
 
 /// The `+ Rule` popover draft. `Some` on [`SelectionUi::rule_draft`] means

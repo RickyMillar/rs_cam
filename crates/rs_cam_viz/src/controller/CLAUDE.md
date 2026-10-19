@@ -19,7 +19,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 - The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer.
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new
   toolpath is a wrong picture, not a cosmetic lag.
-- A GUI `Job` (tier-map preview) sets `AppState::job_run`; only `deliver_gui_job` clears it.
+- A GUI `Job` (tier-map preview; P4.7 STL faces, `events/model_faces.rs` `process_model_faces`, one submit per cold model) sets `AppState::job_run`; only `deliver_gui_job` clears it.
 - Generate is a PLAN over the dependency edges, and core owns its order. Do
   not replace it with a single pass, and do not re-derive the walk here.
 - The plan advances by DIRECT CALL from `drain_compute_results`. A step that
@@ -33,7 +33,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`, `d11`
+- `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`, `d11`, `p4_7`
 - `cargo test -p rs_cam_viz -q --test apply_contract_a3`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`

@@ -111,6 +111,7 @@ fn resolve_in(
             models: std::slice::from_ref(m),
             stock_bbox: &bbox,
             setup,
+            mesh_faces: &[],
         },
     )
 }

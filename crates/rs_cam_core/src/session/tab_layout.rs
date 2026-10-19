@@ -81,7 +81,12 @@ impl ProjectSession {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         self.check_lateral_setup_support(setup, &tc.operation)?;
         let ctx = SetupEvalContext::build_for_setup(self, setup);
-        let frames = self.resolve_selection_frames(tc, SelectionTarget::Op, &ctx)?;
+        let frames = self.resolve_selection_frames(
+            tc,
+            SelectionTarget::Op,
+            &ctx,
+            super::selection_status::FaceAccess::Peek,
+        )?;
         let op_type = tc.operation.op_type();
         let (items, _notes) =
             crate::selection::view(&frames.setup, tc.operation.capabilities().item_use)
