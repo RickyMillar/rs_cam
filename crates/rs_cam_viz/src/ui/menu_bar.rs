@@ -1,4 +1,5 @@
-use super::{AppEvent, model_import_event};
+use super::AppEvent;
+use crate::app::file_dialog::{AfterPick, FileDialogRequest};
 use crate::state::AppState;
 use crate::state::job::SetupId;
 use crate::state::selection::Selection;
@@ -37,43 +38,35 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.menu_button("File", |ui| {
                 if ui.button("Import STL...").clicked() {
                     ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("STL Files", &["stl", "STL"])
-                        .pick_file()
-                        && let Some(event) = model_import_event(path)
-                    {
-                        events.push(event);
-                    }
+                    events.push(
+                        FileDialogRequest::pick_file()
+                            .filter("STL Files", &["stl", "STL"])
+                            .event(AfterPick::ImportModel),
+                    );
                 }
                 if ui.button("Import SVG...").clicked() {
                     ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("SVG Files", &["svg", "SVG"])
-                        .pick_file()
-                        && let Some(event) = model_import_event(path)
-                    {
-                        events.push(event);
-                    }
+                    events.push(
+                        FileDialogRequest::pick_file()
+                            .filter("SVG Files", &["svg", "SVG"])
+                            .event(AfterPick::ImportModel),
+                    );
                 }
                 if ui.button("Import DXF...").clicked() {
                     ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("DXF Files", &["dxf", "DXF"])
-                        .pick_file()
-                        && let Some(event) = model_import_event(path)
-                    {
-                        events.push(event);
-                    }
+                    events.push(
+                        FileDialogRequest::pick_file()
+                            .filter("DXF Files", &["dxf", "DXF"])
+                            .event(AfterPick::ImportModel),
+                    );
                 }
                 if ui.button("Import STEP...").clicked() {
                     ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("STEP Files", &["step", "stp", "STEP", "STP"])
-                        .pick_file()
-                        && let Some(event) = model_import_event(path)
-                    {
-                        events.push(event);
-                    }
+                    events.push(
+                        FileDialogRequest::pick_file()
+                            .filter("STEP Files", &["step", "stp", "STEP", "STP"])
+                            .event(AfterPick::ImportModel),
+                    );
                 }
                 ui.separator();
                 if ui.add(egui::Button::new("Open Job...  Ctrl+O")).clicked() {

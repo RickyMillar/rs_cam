@@ -1,6 +1,7 @@
 #![deny(clippy::indexing_slicing)]
 
 mod export;
+pub mod file_dialog;
 mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
@@ -82,6 +83,9 @@ pub struct RsCamApp {
     /// The unsaved-changes confirmation dialog, and what it is guarding.
     /// `None` means it is not shown. See [`UnsavedGuard`].
     unsaved_guard: Option<UnsavedGuard>,
+    /// F218: the one open file dialog. It runs on its own thread, so the
+    /// frame and the MCP drain do not stop while it is open.
+    file_dialogs: file_dialog::FileDialogSlot,
     /// Every upload-time overlay dial, as one comparable key. See the
     /// detector in [`RsCamApp::update`].
     last_overlay_upload_key: OverlayUploadKey,
@@ -407,6 +411,7 @@ impl RsCamApp {
             minimize_after_frames,
             last_hover_face: None,
             unsaved_guard: None,
+            file_dialogs: file_dialog::FileDialogSlot::new(cc.egui_ctx.clone()),
             last_overlay_upload_key,
             selection_report_detector: Default::default(),
             hover_detector: Default::default(),

@@ -26,7 +26,7 @@
 //! on the card's hover text, and the setup's own properties panel edits
 //! them.
 
-use super::{AppEvent, MODEL_FILE_EXTENSIONS, model_import_event};
+use super::{AppEvent, MODEL_FILE_EXTENSIONS};
 use crate::state::AppState;
 use crate::state::job::{FaceUp, ModelId, SetupId};
 use crate::state::selection::Selection;
@@ -216,20 +216,16 @@ fn model_eye(ui: &mut egui::Ui, state: &AppState, model_id: usize, events: &mut 
 
 /// Prompt for a model file using the File menu's accepted extensions and
 /// classification.
+///
+/// F218: the dialog runs off the frame. The pick goes through
+/// `AfterPick::ImportModel`, which classifies the path with
+/// `model_import_event`, the File menu import route.
 fn import_model_from_disk(events: &mut Vec<AppEvent>) {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("Model Files", MODEL_FILE_EXTENSIONS)
-        .pick_file()
-        && let Some(event) = empty_models_row_event(path)
-    {
-        events.push(event);
-    }
-}
-
-/// Classify a path selected from the empty Models row through the shared File
-/// menu import route.
-fn empty_models_row_event(path: std::path::PathBuf) -> Option<AppEvent> {
-    model_import_event(path)
+    events.push(
+        crate::app::file_dialog::FileDialogRequest::pick_file()
+            .filter("Model Files", MODEL_FILE_EXTENSIONS)
+            .event(crate::app::file_dialog::AfterPick::ImportModel),
+    );
 }
 
 /// The Tools row — the Tool Library's new home (ruling R29).
@@ -573,14 +569,16 @@ fn active_setup(state: &AppState) -> Option<&SetupData> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppEvent, empty_models_row_event, empty_tools_row_event};
+    use super::{AppEvent, empty_tools_row_event};
     use crate::ui_command::UiCommand;
     use std::path::{Path, PathBuf};
 
     #[test]
     fn empty_models_route_accepts_uppercase_extensions() {
         assert!(matches!(
-            empty_models_row_event(PathBuf::from("relief.STP")),
+            // F218: the pick of the empty Models row runs this classifier
+            // (`AfterPick::ImportModel`).
+            crate::ui::model_import_event(PathBuf::from("relief.STP")),
             Some(AppEvent::ImportStep(path)) if path.as_path() == Path::new("relief.STP")
         ));
     }

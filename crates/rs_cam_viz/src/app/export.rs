@@ -4,6 +4,7 @@ use rs_cam_core::export::gcode_validator::Severity;
 use std::path::Path;
 
 use super::RsCamApp;
+use super::file_dialog::{AfterPick, Contents, FileDialogRequest, FolderLayout};
 
 impl RsCamApp {
     /// Save the wizard's configured export to disk. Pops a file or
@@ -53,18 +54,15 @@ impl RsCamApp {
                     return;
                 }
                 let suggested = render_filename(&template, &job, None, None);
-                let mut dialog = rfd::FileDialog::new()
-                    .add_filter("G-code", &["nc", "gcode", "ngc"])
-                    .set_file_name(&suggested);
-                if let Some(d) = last_dir.as_deref() {
-                    dialog = dialog.set_directory(d);
-                }
-                let Some(path) = dialog.save_file() else {
-                    return;
-                };
-                self.write_one(&path, &gcode);
-                self.remember_dir(path.parent());
-                self.close_wizard();
+                // F218: the write, the folder memory and the close run on
+                // the pick (`AfterPick::WizardFile`).
+                let _ = self.open_file_dialog(
+                    FileDialogRequest::save_file()
+                        .filter("G-code", &["nc", "gcode", "ngc"])
+                        .file_name(&suggested)
+                        .directory(last_dir.as_deref()),
+                    AfterPick::WizardFile(Contents(gcode)),
+                );
             }
             OutputLayout::PerSetup => {
                 let Ok(setup_outputs) = self.collect_setup_outputs() else {
@@ -74,36 +72,20 @@ impl RsCamApp {
                 if !self.gate(&combined, post_format, allow_errors) {
                     return;
                 }
-                let mut dialog = rfd::FileDialog::new();
-                if let Some(d) = last_dir.as_deref() {
-                    dialog = dialog.set_directory(d);
-                }
-                let Some(dir) = dialog.pick_folder() else {
-                    return;
-                };
-                let mut written = Vec::with_capacity(setup_outputs.len());
-                for (setup_name, gcode) in &setup_outputs {
-                    let name = render_filename(&template, &job, Some(setup_name), None);
-                    let path = dir.join(&name);
-                    if let Err(e) = std::fs::write(&path, gcode) {
-                        self.controller.push_notification(
-                            format!("Failed to write {}: {e}", path.display()),
-                            crate::controller::Severity::Error,
-                        );
-                        return;
-                    }
-                    written.push(path);
-                }
-                self.remember_dir(Some(&dir));
-                self.controller.push_notification(
-                    format!(
-                        "Exported {} setup file(s) to {}",
-                        written.len(),
-                        dir.display()
-                    ),
-                    crate::controller::Severity::Info,
+                let files = setup_outputs
+                    .into_iter()
+                    .map(|(setup_name, gcode)| {
+                        let name = render_filename(&template, &job, Some(&setup_name), None);
+                        (name, Contents(gcode))
+                    })
+                    .collect();
+                let _ = self.open_file_dialog(
+                    FileDialogRequest::pick_folder().directory(last_dir.as_deref()),
+                    AfterPick::WizardFolder {
+                        layout: FolderLayout::PerSetup,
+                        files,
+                    },
                 );
-                self.close_wizard();
             }
             OutputLayout::PerToolpath => {
                 let Ok(toolpath_outputs) = self.collect_toolpath_outputs() else {
@@ -113,32 +95,20 @@ impl RsCamApp {
                 if !self.gate(&combined, post_format, allow_errors) {
                     return;
                 }
-                let mut dialog = rfd::FileDialog::new();
-                if let Some(d) = last_dir.as_deref() {
-                    dialog = dialog.set_directory(d);
-                }
-                let Some(dir) = dialog.pick_folder() else {
-                    return;
-                };
-                let mut written = 0usize;
-                for (tp_name, gcode) in &toolpath_outputs {
-                    let name = render_filename(&template, &job, None, Some(tp_name));
-                    let path = dir.join(&name);
-                    if let Err(e) = std::fs::write(&path, gcode) {
-                        self.controller.push_notification(
-                            format!("Failed to write {}: {e}", path.display()),
-                            crate::controller::Severity::Error,
-                        );
-                        return;
-                    }
-                    written += 1;
-                }
-                self.remember_dir(Some(&dir));
-                self.controller.push_notification(
-                    format!("Exported {written} toolpath file(s) to {}", dir.display()),
-                    crate::controller::Severity::Info,
+                let files = toolpath_outputs
+                    .into_iter()
+                    .map(|(tp_name, gcode)| {
+                        let name = render_filename(&template, &job, None, Some(&tp_name));
+                        (name, Contents(gcode))
+                    })
+                    .collect();
+                let _ = self.open_file_dialog(
+                    FileDialogRequest::pick_folder().directory(last_dir.as_deref()),
+                    AfterPick::WizardFolder {
+                        layout: FolderLayout::PerToolpath,
+                        files,
+                    },
                 );
-                self.close_wizard();
             }
         }
     }
@@ -253,7 +223,7 @@ impl RsCamApp {
         }
     }
 
-    fn write_one(&mut self, path: &Path, gcode: &str) {
+    pub(super) fn write_one(&mut self, path: &Path, gcode: &str) {
         if let Err(e) = std::fs::write(path, gcode) {
             tracing::error!("Failed to write G-code: {e}");
             self.controller.push_notification(
@@ -302,13 +272,13 @@ impl RsCamApp {
         true
     }
 
-    fn remember_dir(&mut self, dir: Option<&Path>) {
+    pub(super) fn remember_dir(&mut self, dir: Option<&Path>) {
         if let Some(d) = dir {
             self.controller.state_mut().gui.wizard.last_save_dir = Some(d.to_path_buf());
         }
     }
 
-    fn close_wizard(&mut self) {
+    pub(super) fn close_wizard(&mut self) {
         self.controller.state_mut().show_export_wizard = false;
     }
 }
@@ -401,25 +371,14 @@ impl RsCamApp {
                     cycle.label(),
                 );
 
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("G-code", &["nc", "gcode", "ngc"])
-                    .set_file_name("output.nc")
-                    .save_file()
-                {
-                    if let Err(e) = std::fs::write(&path, &gcode) {
-                        tracing::error!("Failed to write G-code: {}", e);
-                        self.controller.push_notification(
-                            format!("Failed to write G-code: {e}"),
-                            crate::controller::Severity::Error,
-                        );
-                    } else {
-                        tracing::info!("Exported G-code to {}", path.display());
-                        self.controller.push_notification(
-                            format!("Exported G-code to {}", path.display()),
-                            crate::controller::Severity::Info,
-                        );
-                    }
-                }
+                // F218: `write_one` writes on the pick; its two messages
+                // are the ones this site printed.
+                let _ = self.open_file_dialog(
+                    FileDialogRequest::save_file()
+                        .filter("G-code", &["nc", "gcode", "ngc"])
+                        .file_name("output.nc"),
+                    AfterPick::WriteGcode(Contents(gcode)),
+                );
             }
             Err(error) => {
                 tracing::error!("Export failed: {error}");
@@ -434,25 +393,12 @@ impl RsCamApp {
     pub(super) fn export_svg_preview(&mut self) {
         match self.controller.export_svg_preview() {
             Ok(svg) => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("SVG", &["svg"])
-                    .set_file_name("toolpath_preview.svg")
-                    .save_file()
-                {
-                    if let Err(error) = std::fs::write(&path, &svg) {
-                        tracing::error!("Failed to write SVG: {error}");
-                        self.controller.push_notification(
-                            format!("Failed to write SVG: {error}"),
-                            crate::controller::Severity::Error,
-                        );
-                    } else {
-                        tracing::info!("Exported SVG preview to {}", path.display());
-                        self.controller.push_notification(
-                            format!("Exported SVG preview to {}", path.display()),
-                            crate::controller::Severity::Info,
-                        );
-                    }
-                }
+                let _ = self.open_file_dialog(
+                    FileDialogRequest::save_file()
+                        .filter("SVG", &["svg"])
+                        .file_name("toolpath_preview.svg"),
+                    AfterPick::WriteSvgPreview(Contents(svg)),
+                );
             }
             Err(error) => {
                 tracing::warn!("{error}");
@@ -475,6 +421,7 @@ impl RsCamApp {
         let Some(guard) = self.unsaved_guard else {
             return;
         };
+        let dialog_open = self.file_dialogs.is_open();
         egui::Window::new("Unsaved Changes")
             .collapsible(false)
             .resizable(false)
@@ -482,44 +429,51 @@ impl RsCamApp {
             .show(ctx, |ui| {
                 ui.label(format!("You have unsaved changes. {}", guard.consequence()));
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button(format!("Save & {}", guard.verb())).clicked()
-                        && self.save_for_unsaved_guard()
-                    {
-                        self.unsaved_guard = None;
-                        self.proceed_past_unsaved_guard(ctx, guard);
-                    }
-                    // If the operator cancelled the file dialog,
-                    // `save_for_unsaved_guard` returns false and this
-                    // dialog stays open — nothing is discarded.
-                    if ui.button(format!("Discard & {}", guard.verb())).clicked() {
-                        // Clear the dirty flag so the next-frame
-                        // close_requested check in `update` doesn't
-                        // re-open this dialog and trap the user in a
-                        // CancelClose loop.
-                        self.controller.state_mut().gui.dirty = false;
-                        self.unsaved_guard = None;
-                        self.proceed_past_unsaved_guard(ctx, guard);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        self.unsaved_guard = None;
-                    }
+                // F218: while the save dialog of "Save & ..." is open the
+                // answers wait; the pick runs the guarded action.
+                ui.add_enabled_ui(!dialog_open, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button(format!("Save & {}", guard.verb())).clicked()
+                            && self.save_for_unsaved_guard()
+                        {
+                            self.unsaved_guard = None;
+                            self.proceed_past_unsaved_guard(ctx, guard);
+                        }
+                        // If the operator cancelled the file dialog,
+                        // `save_for_unsaved_guard` returns false and this
+                        // dialog stays open — nothing is discarded.
+                        if ui.button(format!("Discard & {}", guard.verb())).clicked() {
+                            // Clear the dirty flag so the next-frame
+                            // close_requested check in `update` doesn't
+                            // re-open this dialog and trap the user in a
+                            // CancelClose loop.
+                            self.controller.state_mut().gui.dirty = false;
+                            self.unsaved_guard = None;
+                            self.proceed_past_unsaved_guard(ctx, guard);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.unsaved_guard = None;
+                        }
+                    })
                 });
             });
     }
 
-    /// Save the open project for the unsaved-changes dialog, asking for a
-    /// path when it has never been saved. Returns whether it saved: `false`
-    /// means the operator cancelled the file dialog or the save failed, and
-    /// the guarded action must NOT proceed.
+    /// Save the open project for the unsaved-changes dialog. Returns
+    /// whether it saved: `false` means the save failed or the project has
+    /// no path yet, and the guarded action must NOT proceed now.
+    ///
+    /// F218: a project with no path opens the save dialog off the frame.
+    /// The dialog stays open; the pick saves and then runs the guarded
+    /// action (`AfterPick::SaveJobForUnsavedGuard`). A cancelled pick does nothing.
     fn save_for_unsaved_guard(&mut self) -> bool {
-        let path = self.controller.state().gui.file_path.clone().or_else(|| {
-            rfd::FileDialog::new()
-                .add_filter("TOML Job", &["toml"])
-                .set_file_name("job.toml")
-                .save_file()
-        });
-        let Some(path) = path else {
+        let Some(path) = self.controller.state().gui.file_path.clone() else {
+            let _ = self.open_file_dialog(
+                FileDialogRequest::save_file()
+                    .filter("TOML Job", &["toml"])
+                    .file_name("job.toml"),
+                AfterPick::SaveJobForUnsavedGuard,
+            );
             return false;
         };
         match self.controller.save_job_to_path(&path) {
@@ -536,7 +490,11 @@ impl RsCamApp {
 
     /// Run the action the dialog was guarding, now that the project is
     /// saved or the operator has chosen to discard it.
-    fn proceed_past_unsaved_guard(&mut self, ctx: &egui::Context, guard: super::UnsavedGuard) {
+    pub(super) fn proceed_past_unsaved_guard(
+        &mut self,
+        ctx: &egui::Context,
+        guard: super::UnsavedGuard,
+    ) {
         match guard {
             super::UnsavedGuard::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             super::UnsavedGuard::OpenJob => self.open_job_interactive(),

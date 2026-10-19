@@ -6,13 +6,18 @@ use crate::ui_command::{
 };
 
 use super::RsCamApp;
+use super::file_dialog::{AfterPick, Contents, FileDialogRequest};
 
 impl RsCamApp {
     pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
+        // F218: a file dialog that closed since the last frame posts its
+        // pick here, so this frame runs it with the other events.
+        self.post_file_dialog_pick();
         let events = self.controller.drain_events();
 
         for event in events {
             match event {
+                AppEvent::FileDialog(event) => self.handle_file_dialog_event(ctx, event),
                 AppEvent::ImportStl(path) => match self.controller.import_stl_path(&path) {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => {}
@@ -162,27 +167,12 @@ impl RsCamApp {
                                 format!("{}_combined.nc", self.controller.state().session.name())
                                     .replace(' ', "_")
                                     .to_lowercase();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("G-code", &["nc", "gcode", "ngc"])
-                                .set_file_name(&default_name)
-                                .save_file()
-                            {
-                                if let Err(error) = std::fs::write(&path, &gcode) {
-                                    self.controller.push_notification(
-                                        format!("Failed to write G-code: {error}"),
-                                        crate::controller::Severity::Error,
-                                    );
-                                } else {
-                                    tracing::info!(
-                                        "Exported combined G-code to {}",
-                                        path.display()
-                                    );
-                                    self.controller.push_notification(
-                                        format!("Exported combined G-code to {}", path.display()),
-                                        crate::controller::Severity::Info,
-                                    );
-                                }
-                            }
+                            let _ = self.open_file_dialog(
+                                FileDialogRequest::save_file()
+                                    .filter("G-code", &["nc", "gcode", "ngc"])
+                                    .file_name(&default_name),
+                                AfterPick::WriteCombinedGcode(Contents(gcode)),
+                            );
                         }
                         Err(error) => self.controller.push_error(&error),
                     }
@@ -211,32 +201,15 @@ impl RsCamApp {
                             )
                             .replace(' ', "_")
                             .to_lowercase();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("G-code", &["nc", "gcode", "ngc"])
-                                .set_file_name(&default_name)
-                                .save_file()
-                            {
-                                if let Err(error) = std::fs::write(&path, &gcode) {
-                                    self.controller.push_notification(
-                                        format!("Failed to write G-code: {error}"),
-                                        crate::controller::Severity::Error,
-                                    );
-                                } else {
-                                    tracing::info!(
-                                        "Exported setup '{}' G-code to {}",
-                                        setup_name,
-                                        path.display()
-                                    );
-                                    self.controller.push_notification(
-                                        format!(
-                                            "Exported setup '{}' G-code to {}",
-                                            setup_name,
-                                            path.display()
-                                        ),
-                                        crate::controller::Severity::Info,
-                                    );
-                                }
-                            }
+                            let _ = self.open_file_dialog(
+                                FileDialogRequest::save_file()
+                                    .filter("G-code", &["nc", "gcode", "ngc"])
+                                    .file_name(&default_name),
+                                AfterPick::WriteSetupGcode {
+                                    setup_name,
+                                    gcode: Contents(gcode),
+                                },
+                            );
                         }
                         Err(error) => self.controller.push_error(&error),
                     }
@@ -254,43 +227,25 @@ impl RsCamApp {
 
                 AppEvent::ExportSetupSheet => {
                     let html = self.controller.export_setup_sheet_html();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("HTML", &["html"])
-                        .set_file_name("setup_sheet.html")
-                        .save_file()
-                    {
-                        if let Err(error) = std::fs::write(&path, &html) {
-                            tracing::error!("Failed to write setup sheet: {error}");
-                            self.controller.push_notification(
-                                format!("Failed to write setup sheet: {error}"),
-                                crate::controller::Severity::Error,
-                            );
-                        } else {
-                            tracing::info!("Exported setup sheet to {}", path.display());
-                            self.controller.push_notification(
-                                format!("Exported setup sheet to {}", path.display()),
-                                crate::controller::Severity::Info,
-                            );
-                        }
-                    }
+                    let _ = self.open_file_dialog(
+                        FileDialogRequest::save_file()
+                            .filter("HTML", &["html"])
+                            .file_name("setup_sheet.html"),
+                        AfterPick::WriteSetupSheet(Contents(html)),
+                    );
                 }
                 AppEvent::SaveJob => {
-                    let path = self.controller.state().gui.file_path.clone().or_else(|| {
-                        rfd::FileDialog::new()
-                            .add_filter("TOML Job", &["toml"])
-                            .set_file_name("job.toml")
-                            .save_file()
-                    });
-                    if let Some(path) = path {
-                        match self.controller.save_job_to_path(&path) {
-                            Ok(()) => {
-                                tracing::info!("Saved job to {}", path.display());
-                                self.controller.push_notification(
-                                    format!("Saved job to {}", path.display()),
-                                    crate::controller::Severity::Info,
-                                );
-                            }
-                            Err(error) => self.controller.push_error(&error),
+                    // F218: a project with a path saves now; one without
+                    // asks for a path off the frame and saves on the pick.
+                    match self.controller.state().gui.file_path.clone() {
+                        Some(path) => self.save_job_to_picked(&path),
+                        None => {
+                            let _ = self.open_file_dialog(
+                                FileDialogRequest::save_file()
+                                    .filter("TOML Job", &["toml"])
+                                    .file_name("job.toml"),
+                                AfterPick::SaveJob,
+                            );
                         }
                     }
                 }
@@ -738,16 +693,22 @@ impl RsCamApp {
     /// G-OPENGUARD (F1.12): extracted from the `AppEvent::OpenJob` arm so
     /// the unsaved-changes dialog can run the SAME flow after Save or
     /// Discard. Nothing here checks `dirty` — the guard is the caller's
-    /// job, and this is deliberately the only place the picker, the load
-    /// and the camera fit live.
+    /// job. This routine and [`Self::open_job_from_picked`] are the only
+    /// place the picker, the load and the camera fit live.
+    ///
+    /// F218: the picker runs off the frame. The load and the fit run in
+    /// [`Self::open_job_from_picked`] when the pick arrives.
     pub(super) fn open_job_interactive(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("TOML Job", &["toml"])
-            .pick_file()
-        else {
-            return;
-        };
-        match self.controller.open_job_from_path(&path) {
+        let _ = self.open_file_dialog(
+            FileDialogRequest::pick_file().filter("TOML Job", &["toml"]),
+            AfterPick::OpenJob,
+        );
+    }
+
+    /// The load and the camera fit of [`Self::open_job_interactive`], after
+    /// the pick.
+    pub(super) fn open_job_from_picked(&mut self, path: &std::path::Path) {
+        match self.controller.open_job_from_path(path) {
             Ok(()) => {
                 // G-WSMENU (2026-09-10): a load replaces every model in the
                 // project, so the camera has to move with it — the import

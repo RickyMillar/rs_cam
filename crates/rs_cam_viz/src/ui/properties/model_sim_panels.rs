@@ -69,11 +69,14 @@ pub(super) fn draw_model_properties(
             "Point this model at a different file on disk. The model keeps its name, its declared units and its identity, so every operation built on it keeps working — and every one of them is marked for regeneration, because the geometry changed.",
         )
         .clicked()
-        && let Some(path) = rfd::FileDialog::new()
-            .add_filter(filter_label, extensions)
-            .pick_file()
     {
-        events.push(AppEvent::RelinkModel(id, path));
+        // F218: the dialog runs off the frame; the pick sends
+        // `AppEvent::RelinkModel(id, path)`.
+        events.push(
+            crate::app::file_dialog::FileDialogRequest::pick_file()
+                .filter(filter_label, extensions)
+                .event(crate::app::file_dialog::AfterPick::RelinkModel(id)),
+        );
     }
 
     if let Some(mesh) = &model.mesh {

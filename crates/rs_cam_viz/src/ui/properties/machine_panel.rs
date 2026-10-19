@@ -203,7 +203,7 @@ pub(super) fn draw_machine_panel(
     // `SetMachineKinematics`, which also drops the library link, and the
     // whole-profile row must not be applied for it.
     let mut kinematics_edit = PanelEdit::default();
-    draw_machine_kinematics(ui, state, &mut draft, &mut kinematics_edit);
+    draw_machine_kinematics(ui, state, &mut draft, &mut kinematics_edit, events);
     if kinematics_edit.committed && draft.kinematics != state.session.machine().kinematics {
         apply_machine_kinematics(state, draft.kinematics);
     }
@@ -330,6 +330,7 @@ pub(super) fn draw_machine_kinematics(
     state: &mut AppState,
     draft: &mut rs_cam_core::machine::MachineProfile,
     edit: &mut PanelEdit,
+    events: &mut Vec<AppEvent>,
 ) {
     crate::ui::components::SectionHeader::new("Kinematics (cycle-time model)").show(ui);
 
@@ -427,7 +428,7 @@ pub(super) fn draw_machine_kinematics(
     }
 
     ui.add_space(4.0);
-    draw_grbl_import(ui, state, draft, edit);
+    draw_grbl_import(ui, state, draft, edit, events);
 }
 
 /// "Import GRBL `$$`" — paste or load a settings dump, preview the mapped
@@ -439,6 +440,7 @@ pub(super) fn draw_grbl_import(
     state: &mut AppState,
     draft: &mut rs_cam_core::machine::MachineProfile,
     edit: &mut PanelEdit,
+    events: &mut Vec<AppEvent>,
 ) {
     // UI-09: the buffer, the status line and the PARSE are typed state.
     // `from_grbl_settings` used to run unconditionally inside this draw, so
@@ -446,18 +448,14 @@ pub(super) fn draw_grbl_import(
     // open. `GrblImportDraft::parsed` parses only when the text changed.
     ui.collapsing("Import GRBL $$", |ui| {
         ui.horizontal(|ui| {
-            if ui.button("Load from file\u{2026}").clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("GRBL settings", &["txt", "nc", "gcode", "cfg"])
-                    .pick_file()
-            {
-                match std::fs::read_to_string(&path) {
-                    Ok(content) => state.panels.grbl.buffer = content,
-                    Err(e) => {
-                        tracing::error!("read $$ file failed: {e}");
-                        state.panels.grbl.status = format!("Read failed: {e}");
-                    }
-                }
+            // F218: the dialog runs off the frame. The app reads the file
+            // after the pick (`AfterPick::LoadGrblSettings`), not this draw.
+            if ui.button("Load from file\u{2026}").clicked() {
+                events.push(
+                    crate::app::file_dialog::FileDialogRequest::pick_file()
+                        .filter("GRBL settings", &["txt", "nc", "gcode", "cfg"])
+                        .event(crate::app::file_dialog::AfterPick::LoadGrblSettings),
+                );
             }
             if ui.button("Clear").clicked() {
                 state.panels.grbl.clear();

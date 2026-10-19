@@ -633,6 +633,7 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportCombinedGcode
+            | AppEvent::FileDialog(_)
             | AppEvent::ExportSetupGcode(_)
             | AppEvent::ExportGcodeConfirmed
             | AppEvent::ExportSetupSheet

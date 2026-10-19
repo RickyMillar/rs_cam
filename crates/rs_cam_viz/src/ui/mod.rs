@@ -122,6 +122,9 @@ pub enum AppEvent {
     /// model keeps naming it, which is the whole point — the geometry moved,
     /// the operations did not.
     RelinkModel(ModelId, std::path::PathBuf),
+    /// F218: open a native file dialog off the frame, or run the pick of
+    /// one that closed. The app handles it (`app/file_dialog.rs`).
+    FileDialog(crate::app::file_dialog::FileDialogEvent),
     ExportCombinedGcode,
     ExportSetupGcode(SetupId),
     ExportSetupSheet,
