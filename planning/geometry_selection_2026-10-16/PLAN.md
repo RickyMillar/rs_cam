@@ -382,7 +382,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1-P4.5 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2 | next: P4.6 hand-tab editor; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1-P4.6 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b | next: P4.7 STL flat faces; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
@@ -417,3 +417,10 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
   for the pick bar. Operator look: the bar and its disabled-chip reasons,
   click and shift-click on `layers.dxf`, a Ø 5 shelf-pin layer pick, the
   hover ring on a Trace at the cut level.
+- P4.6 deviations accepted: `plan_profile_tabs(pieces, &ProfileTabRule)`
+  (dressup/ imports ops::profile for the cut ring); L-5 also applies to an
+  add or a delete on a loop with auto tabs (else an add drops the other
+  auto tabs); O-4 and L-5 live in core `apply_tab_edit`, a raw MCP
+  `tab_points` write skips them. Operator look: drag, add and delete on a
+  tabbed Profile, then generate and compare; the drag bar jumps from the
+  outline to the cut ring on release (expected); a Bottom 90° setup.
