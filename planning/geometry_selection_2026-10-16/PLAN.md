@@ -382,7 +382,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1-P4.4 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e | next: P4.5 pick mode; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1-P4.5 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2 | next: P4.6 hand-tab editor; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
@@ -411,3 +411,9 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
   Operator look: states colours on `layers.dxf` and the P4.4 `states.dxf`
   fixture, a lost-pick ghost and its "Show me", Drill markers with the
   states overlay on and off.
+- P4.5 deviations accepted: a shift-click with Circles Ø and other kinds
+  gives two rules (a diameter filter admits circles only); MCP `add_rule`
+  stays explicit (`replace` reaches the same selection); no overlay row
+  for the pick bar. Operator look: the bar and its disabled-chip reasons,
+  click and shift-click on `layers.dxf`, a Ø 5 shelf-pin layer pick, the
+  hover ring on a Trace at the cut level.
