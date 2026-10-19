@@ -365,3 +365,56 @@ pub fn vector_source_toolpath(state: &super::AppState) -> Option<ToolpathId> {
         vector_source_focus(selected, None)
     }
 }
+
+/// One model drawing that the viewport draws (geometry selection P4.D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawingDraw {
+    /// The drawing of the model of the vector-source toolpath
+    /// ([`vector_source_toolpath`]): it draws in the frame of that
+    /// toolpath's setup, with the P4.4 state colours.
+    Toolpath {
+        model_id: usize,
+        toolpath: ToolpathId,
+    },
+    /// A drawing that no drawn toolpath reads: it draws in the frame of
+    /// the active setup, in the neutral colour (`colors::DRAWING_NEUTRAL`).
+    Neutral { model_id: usize },
+}
+
+/// The model drawings the viewport draws, in draw order (geometry
+/// selection P4.D). Every visible model that holds a drawing item draws,
+/// with or without a toolpath, so a DXF shows on import. The model of the
+/// vector-source toolpath comes first and keeps its state colours; every
+/// other visible drawing is [`DrawingDraw::Neutral`]. A model that the
+/// operator hid (`OverlayPanelState::model_visibility`) does not draw.
+///
+/// This decides which MODEL geometry draws; the toolpath draw set stays
+/// the selected toolpath only (WP27).
+pub fn drawing_draws(state: &super::AppState) -> Vec<DrawingDraw> {
+    let visibility = &state.overlays.model_visibility;
+    let source = vector_source_toolpath(state).and_then(|id| {
+        let (_, tc) = state.session.find_toolpath_config_by_id(id)?;
+        Some((tc.model_id, id))
+    });
+    let mut draws = Vec::new();
+    if let Some((model_id, toolpath)) = source
+        && visibility.is_visible(model_id)
+        && state
+            .session
+            .models()
+            .iter()
+            .any(|m| m.id == model_id && m.items.has_drawing())
+    {
+        draws.push(DrawingDraw::Toolpath { model_id, toolpath });
+    }
+    draws.extend(
+        state
+            .session
+            .models()
+            .iter()
+            .filter(|m| m.items.has_drawing() && visibility.is_visible(m.id))
+            .filter(|m| source.is_none_or(|(model_id, _)| model_id != m.id))
+            .map(|m| DrawingDraw::Neutral { model_id: m.id }),
+    );
+    draws
+}

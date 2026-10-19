@@ -6197,6 +6197,19 @@
             "null"
           ]
         },
+        "model_visibility": {
+          "additionalProperties": false,
+          "description": "Geometry selection P4.D: show or hide models in the viewport, as\n`{\"<model id>\": true|false}` (the ids of `project_summary`). It is\nthe eye of each model row in the GUI Setup rail: a hidden model\ndraws no mesh and no drawing; generation and the simulation do not\nchange. A model drawing draws on import, with no toolpath. The reply\nreports each id under `model_visibility.applied` or\n`model_visibility.refused` (an id that names no model).",
+          "patternProperties": {
+            "^\\d+$": {
+              "type": "boolean"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "overlays": {
           "additionalProperties": {
             "type": "boolean"

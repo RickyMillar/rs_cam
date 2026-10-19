@@ -451,6 +451,7 @@ impl RsCamApp {
         modal: Option<&str>,
         overlays: Option<&std::collections::BTreeMap<String, bool>>,
         frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
+        model_visibility: Option<&std::collections::BTreeMap<usize, bool>>,
     ) -> String {
         // 1. Workspace.
         //
@@ -636,6 +637,37 @@ impl RsCamApp {
             crate::ui::overlays::registry::apply_overlays(self.controller.state_mut(), requested)
         });
 
+        // 5b. Model visibility (geometry selection P4.D): the same write as
+        //     the eye of a GUI model row (`UiCommand::SetModelVisibility`).
+        let visibility_report = model_visibility.map(|requested| {
+            let mut applied = serde_json::Map::new();
+            let mut refused = serde_json::Map::new();
+            for (&model_id, &visible) in requested {
+                let known = self
+                    .controller
+                    .state()
+                    .session
+                    .models()
+                    .iter()
+                    .any(|m| m.id == model_id);
+                if !known {
+                    refused.insert(
+                        model_id.to_string(),
+                        serde_json::json!(format!("no model has id {model_id}")),
+                    );
+                    continue;
+                }
+                self.controller.events_mut().push(crate::ui::AppEvent::Ui(
+                    UiCommand::SetModelVisibility(crate::ui_command::SetModelVisibilityArgs {
+                        model_id,
+                        visible,
+                    }),
+                ));
+                applied.insert(model_id.to_string(), serde_json::json!(visible));
+            }
+            serde_json::json!({ "applied": applied, "refused": refused })
+        });
+
         // 6. "Show me" (geometry selection P4.4): the same call the GUI
         //    button makes, after the selection above.
         let mut framed: Option<serde_json::Value> = None;
@@ -698,6 +730,7 @@ impl RsCamApp {
                 "refused": report.refused,
             })),
             "framed": framed,
+            "model_visibility": visibility_report,
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }

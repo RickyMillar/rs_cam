@@ -8,7 +8,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `tokens.rs` — every token (P4.4: `PATH_OPEN`); `theme.rs` re-exports it.
 - `components/`, `feeds/`, `overlays/`, `properties/` — see each child file.
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the
-  Setup rail and the toolpath rows, with the card's gutter connector.
+  Setup rail (P4.D: the eye of each model row) and the toolpath rows, with the card's gutter connector; P4.D `add_menu_offers` (the 2D gate is `has_selectable_item`).
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The
   inspector is the verdict line, then ONE `TabStrip`: Metrics (default, the
   charts first), Warnings (count badge), Navigate, Project (IC3). A card

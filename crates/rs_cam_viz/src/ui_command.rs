@@ -83,6 +83,16 @@ pub(crate) type SwitchWorkspaceArgs = Workspace;
 /// Which toolpath to show or hide.
 pub(crate) type ToggleToolpathVisibilityArgs = ToolpathId;
 
+/// Which model to show or hide in the viewport, and the new value
+/// (geometry selection P4.D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetModelVisibilityArgs {
+    /// The raw model id.
+    pub model_id: usize,
+    /// True to draw the model, false to hide it.
+    pub visible: bool,
+}
+
 /// Which toolpath to open in the simulation workspace.
 pub(crate) type InspectToolpathInSimulationArgs = ToolpathId;
 
@@ -190,6 +200,9 @@ pub struct SetUiViewArgs {
     /// P4.4 ("Show me"): the items of the selected toolpath to frame and
     /// flash.
     pub frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
+    /// P4.D: the models to show or hide, by raw model id (the eye of a
+    /// model row).
+    pub model_visibility: Option<std::collections::BTreeMap<usize, bool>>,
 }
 
 /// Whether the project feeds rollup is on screen.
@@ -404,6 +417,13 @@ macro_rules! for_each_ui_command {
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip("no wire tool hides one toolpath in the viewport"),
+                 cli: Reach::Skip("the batch CLI draws no viewport"),
+             }),
+            (UiCommand, SetModelVisibility, "set_model_visibility",
+             SetModelVisibilityArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("set_ui_view carries model_visibility instead"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
             (UiCommand, ToggleShowAllToolpaths, "toggle_show_all_toolpaths", NoArgs, (),

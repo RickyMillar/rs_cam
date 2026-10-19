@@ -602,6 +602,7 @@ impl super::RsCamApp {
                     modal,
                     overlays,
                     frame_items,
+                    model_visibility,
                 }) => {
                     let resp = self.mcp_set_ui_view(
                         ctx,
@@ -612,6 +613,7 @@ impl super::RsCamApp {
                         modal.as_deref(),
                         overlays.as_ref(),
                         frame_items,
+                        model_visibility.as_ref(),
                     );
                     let _ = response_tx.send(McpResponse { result: Ok(resp) });
                 }

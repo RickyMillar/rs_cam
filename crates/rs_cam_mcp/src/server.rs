@@ -462,6 +462,14 @@ pub struct SetUiViewParam {
     /// position. Needs a selected toolpath (`toolpath_index` in the same
     /// call, or a selection already made).
     pub frame_items: Option<Vec<MatchKeyParam>>,
+    /// Geometry selection P4.D: show or hide models in the viewport, as
+    /// `{"<model id>": true|false}` (the ids of `project_summary`). It is
+    /// the eye of each model row in the GUI Setup rail: a hidden model
+    /// draws no mesh and no drawing; generation and the simulation do not
+    /// change. A model drawing draws on import, with no toolpath. The reply
+    /// reports each id under `model_visibility.applied` or
+    /// `model_visibility.refused` (an id that names no model).
+    pub model_visibility: Option<std::collections::BTreeMap<usize, bool>>,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
@@ -2545,6 +2553,10 @@ pub fn build_info() -> serde_json::Value {
             // the toolpath model) and `foreign`; `set_ui_view` takes
             // `frame_items` ("Show me").
             "selection_item_states",
+            // Geometry selection P4.D (2026-10-20): `set_ui_view` takes
+            // `model_visibility` (the eye of a model row) and replies
+            // `model_visibility.applied` / `.refused`.
+            "model_visibility",
             // Geometry selection P4.8 (2026-10-20): `import_model` takes
             // `units` and `join_tolerance_mm` and replies `import_report`;
             // `inspect_model` gives `import_options` and `import_report`;

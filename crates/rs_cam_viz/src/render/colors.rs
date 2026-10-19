@@ -106,6 +106,9 @@ pub const PATH_START: [f32; 3] = token_rgb(tokens::OK);
 pub const PATH_END: [f32; 3] = token_rgb(tokens::DANGER);
 /// The boundary regions of the selected toolpath (`boundary_outline`).
 pub const BOUNDARY_OUTLINE: [f32; 3] = token_rgb(tokens::TEXT_BODY);
+/// The drawing of a model that no drawn toolpath reads (geometry selection
+/// P4.D): it draws on import, in the active setup frame, with no state.
+pub const DRAWING_NEUTRAL: [f32; 3] = token_rgb(tokens::TEXT_MUTED);
 
 /// The line colour of one selection state (the table of P4.4).
 pub fn selection_state_color(state: rs_cam_core::session::ItemState) -> [f32; 3] {

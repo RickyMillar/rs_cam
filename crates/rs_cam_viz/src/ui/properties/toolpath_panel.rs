@@ -9,7 +9,7 @@ use super::linking_dressup::{draw_dressup_params, draw_linking_params, dressup_a
 use super::operations::{draw_height_diagram, draw_heights_params, validate_toolpath};
 use super::pills::PillSuggestions;
 use super::tab_badges::{
-    RowTier, compute_tab_badges, draw_geometry_wiring, draw_toolpath_tabs,
+    RowTier, compute_tab_badges, draw_geometry_wiring, draw_start_from, draw_toolpath_tabs,
     merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_line,
     wrapped_small_label,
 };
@@ -489,6 +489,54 @@ pub(super) fn draw_toolpath_panel(
 // order and no egui id changed. Each function re-binds the `inputs` fields
 // it needs under the names its body already used.
 
+/// The label of the 3D op face-pick button (geometry selection P4.D).
+pub(super) const PICK_FACES_LABEL: &str = "Pick faces";
+
+/// The hover of [`PICK_FACES_LABEL`].
+const PICK_FACES_HOVER: &str = "Click flat faces in the viewport to bound this operation. \
+    When the boundary source is not Selection, the first face sets the source to Selection \
+    with that face. Undo restores the source.";
+
+/// The "Pick faces" row of an op that holds no selection (every 3D op):
+/// the button turns Pick on for the boundary selection, for ANY boundary
+/// source (geometry selection P4.D, ruling L-8 revised). The first face
+/// click then sets the source to `Selection` with that face
+/// (`ProjectSession::face_click_edit`). An op that no boundary moves (D3)
+/// draws no row.
+fn draw_boundary_pick_row(
+    ui: &mut egui::Ui,
+    entry: &crate::state::toolpath::ToolpathEntry,
+    selection_ui: &mut crate::state::pick::SelectionUi,
+) {
+    use rs_cam_core::session::{BOUNDARY_ITEM_USE, SelectionTarget};
+    if entry.operation.selection().is_some()
+        || !entry
+            .operation
+            .capabilities()
+            .territory_xy
+            .session_clip_applies()
+    {
+        return;
+    }
+    let on = selection_ui.pick_is_on(entry.id, SelectionTarget::Boundary);
+    let button = if on {
+        crate::ui::components::Button::primary(PICK_FACES_LABEL)
+    } else {
+        crate::ui::components::Button::new(PICK_FACES_LABEL)
+    };
+    if ui.add(button).on_hover_text(PICK_FACES_HOVER).clicked() {
+        selection_ui.set_pick(if on {
+            None
+        } else {
+            Some(crate::state::pick::PickMode::new(
+                entry.id,
+                SelectionTarget::Boundary,
+                BOUNDARY_ITEM_USE,
+            ))
+        });
+    }
+}
+
 /// The Geometry tab: what to cut. `properties::tests` renders it (D3).
 pub(super) fn draw_geometry_tab(
     ui: &mut egui::Ui,
@@ -514,11 +562,44 @@ pub(super) fn draw_geometry_tab(
 
     ui.add_space(4.0);
 
-    // DC5: the geometry WIRING opens this tab — Tool, Input model,
-    // Faces and the stock source. It used to sit behind a `Geometry`
+    // DC5: the geometry WIRING opens this tab — Tool, Input model, the
+    // Selection section (P4.D) and the stock source. It used to sit behind a `Geometry`
     // disclosure above the tab strip, which gave one name two homes
     // at one level. One name, one place (Rule A).
-    draw_geometry_wiring(ui, entry, inputs, events);
+    draw_geometry_wiring(ui, entry, inputs);
+    // ── Selection (geometry selection P4.3; P4.D: at the top) ─────
+    // P4.D: the section sits directly below the Input combo, so the model
+    // and what the op takes from it read as one block.
+    // The op selection of every op that holds one. The section sends
+    // `EditToolpathSelection` only (L-1); it reads the stored selection
+    // and does not write the draft entry.
+    if let Some(selection) = entry.operation.selection() {
+        let op_default = entry
+            .operation
+            .default_selection()
+            .unwrap_or_else(rs_cam_core::selection::Selection::empty);
+        super::selection_section::draw_selection_section(
+            ui,
+            &super::selection_section::SelectionSectionInputs {
+                toolpath_id: entry.id,
+                toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
+                target: rs_cam_core::session::SelectionTarget::Op,
+                selection,
+                op_default: &op_default,
+                report: inputs.selection_report.as_ref(),
+                item_use: entry.operation.capabilities().item_use,
+                models,
+                sources: &inputs.rule_sources,
+                note_items: &inputs.selection_note_items,
+                model_kinds: &inputs.toolpath_model_kinds,
+            },
+            selection_ui,
+            events,
+        );
+    }
+
+    draw_boundary_pick_row(ui, entry, selection_ui);
+    draw_start_from(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
 
@@ -619,34 +700,6 @@ pub(super) fn draw_geometry_tab(
             .feeds_provenance
             .set(field, preview.provenance.clone());
         entry.pill_stamped_fields.push(field);
-    }
-
-    // ── Selection (geometry selection P4.3) ─────────────────────
-    // The op selection of every op that holds one. The section sends
-    // `EditToolpathSelection` only (L-1); it reads the stored selection
-    // and does not write the draft entry.
-    if let Some(selection) = entry.operation.selection() {
-        let op_default = entry
-            .operation
-            .default_selection()
-            .unwrap_or_else(rs_cam_core::selection::Selection::empty);
-        super::selection_section::draw_selection_section(
-            ui,
-            &super::selection_section::SelectionSectionInputs {
-                toolpath_id: entry.id,
-                toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
-                target: rs_cam_core::session::SelectionTarget::Op,
-                selection,
-                op_default: &op_default,
-                report: inputs.selection_report.as_ref(),
-                item_use: entry.operation.capabilities().item_use,
-                models,
-                sources: &inputs.rule_sources,
-                note_items: &inputs.selection_note_items,
-            },
-            selection_ui,
-            events,
-        );
     }
 
     // ── Machining Boundary ─────────────────────────────────────
@@ -797,6 +850,7 @@ pub(super) fn draw_geometry_tab(
                         models,
                         sources: &inputs.rule_sources,
                         note_items: &inputs.boundary_note_items,
+                        model_kinds: &inputs.toolpath_model_kinds,
                     },
                     selection_ui,
                     events,

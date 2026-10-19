@@ -49,7 +49,7 @@ use std::sync::{Arc, Mutex, Weak};
 use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType};
-use crate::compute::config::BoundarySource;
+use crate::compute::config::{BoundaryConfig, BoundarySource};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::enriched_mesh::FaceGroupId;
@@ -150,6 +150,39 @@ pub enum ItemState {
     Excluded,
     /// No rule and no pick matches the item.
     NotSelected,
+}
+
+/// What one viewport click does to a toolpath
+/// ([`ProjectSession::click_edit`], geometry selection P4.D).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClickEdit {
+    /// An edit of the selection that the click names
+    /// ([`ProjectSession::pick_edit`]). Apply it with
+    /// `Command::EditSelection`.
+    Selection(SelectionEdit),
+    /// Ruling L-8 revised: the boundary source was not `Selection`. The
+    /// new boundary has the source `Selection` with the one pick; every
+    /// other field is as stored. Apply it with ONE
+    /// `Command::SetBoundaryConfig`, so it is one undo step.
+    BoundaryToSelection {
+        boundary: Box<BoundaryConfig>,
+        /// The kind of the picked item, for the notice.
+        kind: ItemKind,
+    },
+}
+
+impl ClickEdit {
+    /// The notice that tells the user what the click did, or `None` for a
+    /// plain selection edit: "Boundary set to Selection: 1 face."
+    pub fn notice(&self) -> Option<String> {
+        match self {
+            ClickEdit::Selection(_) => None,
+            ClickEdit::BoundaryToSelection { kind, .. } => Some(format!(
+                "Boundary set to Selection: 1 {}.",
+                crate::selection::kind_noun(*kind, 1)
+            )),
+        }
+    }
 }
 
 /// One point or circle of a toolpath model, for the drill picker.
@@ -831,6 +864,40 @@ impl ProjectSession {
         } else {
             SelectionEdit::AddPick(key)
         })
+    }
+
+    /// What a viewport click on `key` does to the selection `target` of
+    /// `tc` (geometry selection P4.D). The GUI click and the GUI pick bar
+    /// read it; MCP has no click act (its `edit_toolpath_selection` is an
+    /// explicit edit and keeps its refusal).
+    ///
+    /// Ruling L-8 revised (operator, 2026-10-20): a click on the boundary
+    /// target of a toolpath whose boundary source is not `Selection` sets
+    /// the source to `Selection` with that one pick
+    /// ([`ClickEdit::BoundaryToSelection`]). Every other field of the
+    /// boundary stays as stored, `enabled` too. Every other click is
+    /// [`Self::pick_edit`].
+    pub fn click_edit(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        key: MatchKey,
+    ) -> Result<ClickEdit, SessionError> {
+        let boundary_is_selection = matches!(tc.boundary.source, BoundarySource::Selection { .. });
+        if target == SelectionTarget::Boundary && !boundary_is_selection {
+            let kind = key.kind;
+            let mut boundary = tc.boundary.clone();
+            boundary.source = BoundarySource::Selection {
+                selection: Selection::from_picks(vec![key])
+                    .for_toolpath_model(ModelId(tc.model_id)),
+                holes: false,
+            };
+            return Ok(ClickEdit::BoundaryToSelection {
+                boundary: Box::new(boundary),
+                kind,
+            });
+        }
+        self.pick_edit(tc, target, key).map(ClickEdit::Selection)
     }
 
     /// The edit that a viewport shift-click on `key` sends to the selection

@@ -456,6 +456,17 @@ impl ItemSet {
             .any(|i| !matches!(i.shape, Shape::Face(_)))
     }
 
+    /// True when the set holds an item that a selection can name: a
+    /// drawing item or a face item. Every item kind is one of the two, so
+    /// the rule is "the set is not empty". THE one gate of the items that
+    /// a 2D op or a `Selection` boundary can read: the Add toolpath menu,
+    /// the Geometry check and the "Selection" boundary source button all
+    /// read it (geometry selection P4.3, P4.D). A STEP model with faces
+    /// only passes it; a mesh with no BREP holds no item.
+    pub fn has_selectable_item(&self) -> bool {
+        !self.items.is_empty()
+    }
+
     /// True when an item is a closed ring: a loop or a circle. A face
     /// is not a drawing ring. Each such item holds a closed ring of 3 or
     /// more points (the `Item::new` invariant).

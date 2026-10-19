@@ -18,8 +18,8 @@ use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 use crate::ui_command::{
     DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameMachineInLibraryArgs,
-    RenameToolCatalogArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs,
-    UiCommand, UpdateLibraryToolArgs,
+    RenameToolCatalogArgs, SetModelVisibilityArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs,
+    SimJumpToOpStartArgs, UiCommand, UpdateLibraryToolArgs,
 };
 
 use super::AppController;
@@ -139,6 +139,36 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.selection = Selection::Toolpath(toolpath_id);
             self.state.gui.mark_edited();
             self.pending_upload = true;
+        }
+    }
+
+    /// Ruling L-8 revised (geometry selection P4.D): a click on the
+    /// boundary of a toolpath whose boundary source is not a selection.
+    /// ONE `SetBoundaryConfig` writes the new boundary, so the inspector
+    /// undo snapshot (it holds `boundary`, D11) makes it one undo step. A
+    /// notice says what happened.
+    fn apply_boundary_switch(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        click: &rs_cam_core::session::ClickEdit,
+    ) {
+        let rs_cam_core::session::ClickEdit::BoundaryToSelection { boundary, .. } = click else {
+            return;
+        };
+        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+            return;
+        };
+        let command = Command::SetBoundaryConfig(rs_cam_core::session::SetBoundaryConfigArgs {
+            index,
+            boundary: (**boundary).clone(),
+        });
+        if self.apply_controller_command(command, "the boundary") {
+            self.state.selection = Selection::Toolpath(toolpath_id);
+            self.state.gui.mark_edited();
+            self.pending_upload = true;
+            if let Some(notice) = click.notice() {
+                self.push_notification(notice, super::Severity::Info);
+            }
         }
     }
 
@@ -469,13 +499,21 @@ impl<B: ComputeBackend> AppController<B> {
                 // THE resolution (the `selection_status` memo), then send
                 // `AddPick` or `RemovePick`. A selected item that no pick
                 // names is a rule match; `RemovePick` excludes it.
+                // P4.D (L-8 revised): a click on the boundary of a toolpath
+                // whose boundary is not a selection sets the source to
+                // `Selection` with that pick, in one command, with a notice.
                 let edit = self
                     .state
                     .session
                     .find_toolpath_config_by_id(toolpath_id)
-                    .map(|(_, tc)| self.state.session.pick_edit(tc, target, key));
+                    .map(|(_, tc)| self.state.session.click_edit(tc, target, key));
                 match edit {
-                    Some(Ok(edit)) => self.apply_selection_edit(toolpath_id, target, edit),
+                    Some(Ok(rs_cam_core::session::ClickEdit::Selection(edit))) => {
+                        self.apply_selection_edit(toolpath_id, target, edit);
+                    }
+                    Some(Ok(
+                        click @ rs_cam_core::session::ClickEdit::BoundaryToSelection { .. },
+                    )) => self.apply_boundary_switch(toolpath_id, &click),
                     Some(Err(error)) => self.push_notification(
                         format!("Could not read the selection: {error}"),
                         super::Severity::Warning,
@@ -662,6 +700,17 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::ToggleToolpathVisibility(tp_id) => {
                     if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id) {
                         rt.visible = !rt.visible;
+                        self.pending_upload = true;
+                    }
+                }
+                UiCommand::SetModelVisibility(SetModelVisibilityArgs { model_id, visible }) => {
+                    // P4.D: the eye of a model row. An upload on a change only.
+                    if self
+                        .state
+                        .overlays
+                        .model_visibility
+                        .set_visible(model_id, visible)
+                    {
                         self.pending_upload = true;
                     }
                 }

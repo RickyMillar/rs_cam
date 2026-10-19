@@ -25,8 +25,8 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, Rule, Selection, SelectionEdit,
-    SourceRef, ZRange, kind_noun,
+    FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, RefusalCause, Rule, Selection,
+    SelectionEdit, SourceRef, ZRange, kind_noun,
 };
 use rs_cam_core::session::{SelectionReport, SelectionTarget};
 
@@ -60,6 +60,28 @@ const FACINGS: &[(Facing, &str)] = &[
 const PICK_HOVER: &str = "Click items in the viewport to add them to this selection or to \
     remove them. One Pick is on at a time.";
 
+/// The fix line of a selection that has nothing to cut while the toolpath
+/// model holds faces that the reader can cut (geometry selection P4.D).
+pub(crate) const PICK_A_FACE_FIX: &str = "Fix: pick a face of the model.";
+
+/// The hover of [`PICK_A_FACE_FIX`].
+const PICK_A_FACE_HOVER: &str = "The default rule takes the items of a drawing, and this model \
+    holds faces only. Click Pick, then click a flat face in the viewport.";
+
+/// True when the selection refuses with nothing to cut (`Empty`) and a
+/// face pick is a fix: the toolpath model holds faces, and the reader cuts
+/// faces (P4.D).
+pub(crate) fn wants_a_face_pick(
+    inputs: &SelectionSectionInputs<'_>,
+    report: &SelectionReport,
+) -> bool {
+    matches!(
+        report.refusal.as_ref().map(|r| &r.cause),
+        Some(RefusalCause::Empty { .. })
+    ) && inputs.model_kinds.contains(&ItemKind::Face)
+        && ItemKind::Face.serves(inputs.item_use)
+}
+
 /// Everything the section reads. The section owns no project state.
 pub(crate) struct SelectionSectionInputs<'a> {
     pub toolpath_id: ToolpathId,
@@ -86,6 +108,9 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// its kind and layer (`selection_highlight::note_item_keys`). "Show
     /// me" frames them.
     pub note_items: &'a [Vec<MatchKey>],
+    /// The item kinds that the toolpath model holds
+    /// (`state::pick::held_kinds`): the "pick a face" fix reads it (P4.D).
+    pub model_kinds: &'a BTreeSet<ItemKind>,
 }
 
 impl SelectionSectionInputs<'_> {
@@ -154,6 +179,26 @@ pub(crate) fn draw_selection_section(
     // ── The notes and the lost picks ───────────────────────────────
     if let Some(report) = report {
         draw_findings(ui, inputs, report, events);
+        // P4.D: a new 2D op on a STEP model starts with the default rule,
+        // which takes no face (D2), so it has nothing to cut. The fix is a
+        // face pick; the line turns Pick on.
+        if wants_a_face_pick(inputs, report)
+            && line_with_action(
+                ui,
+                "",
+                PICK_A_FACE_FIX,
+                tokens::TEXT_BODY,
+                PICK_A_FACE_HOVER,
+                Some(("Pick", PICK_HOVER)),
+            )
+            && !ui_state.pick_is_on(inputs.toolpath_id, inputs.target)
+        {
+            ui_state.set_pick(Some(PickMode::new(
+                inputs.toolpath_id,
+                inputs.target,
+                inputs.item_use,
+            )));
+        }
     }
 
     // ── The actions ────────────────────────────────────────────────

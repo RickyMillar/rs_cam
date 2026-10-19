@@ -459,7 +459,8 @@ const START_FROM_HOVER: &str = concat!(
     "operations in this setup leave, and needs their simulation first."
 );
 
-/// The Geometry tab's WIRING rows: Tool, Input model, Faces, stock source.
+/// The Geometry tab's WIRING rows: Tool and Input model. The Selection
+/// section and [`draw_start_from`] follow them (geometry selection P4.D).
 ///
 /// DC5 (Pattern A). These rows used to sit behind a `Geometry` disclosure
 /// ABOVE the tab strip, while a `Geometry` TAB held the operation's geometry
@@ -470,12 +471,10 @@ pub(super) fn draw_geometry_wiring(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
-    events: &mut Vec<crate::ui::AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
     let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
-    let rest_fresh = inputs.rest_fresh;
     // Tool selector
     ui.horizontal(|ui| {
         ui.label("Tool:");
@@ -527,8 +526,20 @@ pub(super) fn draw_geometry_wiring(
 
     // Geometry selection P4.3: the face picker block went to the
     // Selection section (`selection_section.rs`), which shows the face
-    // picks with the other items of the selection.
+    // picks with the other items of the selection. P4.D: the Geometry tab
+    // draws that section directly below these rows, next to the Input
+    // combo, and then calls [`draw_start_from`].
+}
 
+/// The Geometry tab's "Start from" row and its rest comparison: the end of
+/// the wiring rows, below the Selection section (geometry selection P4.D).
+pub(super) fn draw_start_from(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    inputs: &super::ToolpathPanelInputs,
+    events: &mut Vec<crate::ui::AppEvent>,
+) {
+    let rest_fresh = inputs.rest_fresh;
     // W2 (G-STARTFROM): ONE row writes `stock_source`, for every
     // operation, pencil included. It used to be two controls that
     // disagreed: this generic checkbox, and a pencil-only "Rest

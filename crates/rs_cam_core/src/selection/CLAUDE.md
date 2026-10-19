@@ -5,11 +5,11 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 ## Files
 
 - `mod.rs` — the facade. `tests.rs` — the P2.2 lib sentries. `stock.rs` — `stock_items`. `join.rs` — P4.8 THE join of open pieces (DXF, SVG, P4.9): `join_open_pieces`, `CLOSE_TOL_MM`, `JoinCounts`. `drawing_edit.rs` — P4.9 the edit ledger: `DrawingEdit`, `apply_drawing_edits` (pure; a key matches by geometry; a new item comes from `Item::new` at its lowest piece; a failed edit is an `EditLost` outcome, never dropped), `DrawingLedger`, `open_shapes`. The ledger is in FILE units (the P4.8 join tolerance frame: after DXF `$INSUNITS`, before the declared scale); `DrawingEdit::scaled` converts, the replay runs in model mm. `item.rs` — `Item`, `Shape`,
-  `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet`; `key.rs` — `MatchKey`, `matches`, `names_same_geometry` (`KEY_MATCH_EPS_MM`).
+  `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet` (P4.D `has_selectable_item`: THE gate of the 2D ops and the Selection boundary source); `key.rs` — `MatchKey`, `matches`, `names_same_geometry` (`KEY_MATCH_EPS_MM`).
 - `rule.rs` — `Selection` (private fields, NO `Default`), `Rule`, `Filter`, `KindFilter`, `SelectionEdit`, `apply`; P4.5 `Rule::layer_rules` (a Ø range gets its own circle rule), `SelectionEdit::add_rules` (THE replace-under-default rule). `near.rs` — P4.5 THE pick rule: `Shape::pick_lines`, `polyline_distance`, `items_near`. `flat_regions.rs` — P4.7 `flat_region_items`: an STL's flat regions as faces (by facing and Z band `FLAT_REGION_Z_BAND_MM`, L-7; order Z, then lowest triangle).
 - `resolve.rs` — `resolve` (pure; reports, never refuses), `ResolvedSelection`, `MatchedBy`,
   `to_setup_frame` + `face_in_setup_frame` (THE frame door), `face_top_z`.
-- `view.rs` — `view`, `OpItems`, `Regions`/`Curves`/`Holes`, `Shape::serves`;
+- `view.rs` — `view`, `OpItems`, `Regions`/`Curves`/`Holes`, `Shape::serves` (P4.D: a face serves `Curves`; `curves_of` adds its rings after the drawn rings);
   `refusal.rs` — `SelectionRefusal`, `RefusalCause` (`fix()`), `ItemRef`, `SelectionNote`.
 
 ## Invariants

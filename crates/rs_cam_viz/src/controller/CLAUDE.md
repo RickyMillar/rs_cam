@@ -7,7 +7,7 @@ Takes a UI intent, applies it to `ProjectSession`, accepts the worker result.
 - `../controller.rs` — the type, the apply path, the plan progress accessor
   and `PlanResolutionConfirm`. `events/` — the handlers by area: compute (the
   plan driver), model, toolpath, simulation, planner, preferences, undo, pins
-  (the one pin-edit door for GUI and MCP, P5). P4.6 `EditTabs`: one `SetToolpathParam` and one undo step per act; the panel snapshot moves past the act.
+  (the one pin-edit door for GUI and MCP, P5). P4.6 `EditTabs`: one `SetToolpathParam` and one undo step per act; the panel snapshot moves past the act. P4.D: `TogglePick` asks core `click_edit`; a `BoundaryToSelection` is one `SetBoundaryConfig` (`apply_boundary_switch`) with a notice.
 - `generate_all.rs` — the plan's state: steps, outcomes, progress, sink. The
   ORDER is core's, at `session::generation_plan::plan`.
 - `io.rs` — project open, save and import at the controller level. P4.8: a DXF or SVG opens the import dialog (`open_import_dialog`, `edit_import_dialog`, `confirm_import_dialog`); `set_model_import_options` is the fourth refresh door. P4.9 `edit_drawing_ledger`: one `EditModelDrawing` and one `ModelDrawingEdits` undo step per act (undo writes `LedgerEdit::Replace`).

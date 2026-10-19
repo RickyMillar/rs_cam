@@ -1149,6 +1149,14 @@ fn add_toolpath_empty_action(
     });
 }
 
+/// The header of the 2.5D group of the add menu. A 2D op reads a drawing
+/// (SVG, DXF) or the flat faces of a STEP model (geometry selection P4.D).
+pub const MENU_2D_HEADER: &str = "2.5D (from a drawing or STEP faces)";
+
+/// Why a 2D op of the add menu is disabled: no model holds a drawing item
+/// or a face item.
+pub const MENU_2D_REQUIRES: &str = "Requires a drawing (SVG/DXF) or a STEP model with faces";
+
 /// The add menu's items, grouped 2.5D then 3D. One list for both triggers.
 fn add_menu_items(
     ui: &mut egui::Ui,
@@ -1156,40 +1164,49 @@ fn add_menu_items(
     state: &AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
-    let has_polygons = state.session.models().iter().any(|m| m.items.has_drawing());
-    ui.label(egui::RichText::new("2.5D (from SVG)").strong());
+    ui.label(egui::RichText::new(MENU_2D_HEADER).strong());
     for &op in OperationType::ALL_2D {
-        add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
+        add_op_menu_item(ui, op, setup_id, &state.session, events);
     }
     ui.separator();
     ui.label(egui::RichText::new("3D (from STL)").strong());
     for &op in OperationType::ALL_3D {
-        add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
+        add_op_menu_item(ui, op, setup_id, &state.session, events);
     }
+}
+
+/// True when the add menu offers `op` for the models of `session`.
+///
+/// A 2D op reads a drawing item or a face item (a STEP face): the rule of
+/// the "Selection" boundary source, `ItemSet::has_selectable_item`
+/// (geometry selection P4.D). A 3D op reads a mesh. Face and Pin Drill run
+/// with no model (the stock outline, the stock pins): `is_stock_based`.
+pub fn add_menu_offers(session: &rs_cam_core::session::ProjectSession, op: OperationType) -> bool {
+    use crate::state::toolpath::GeometryRequirement;
+    let has_mesh = session.models().iter().any(|m| m.mesh.is_some());
+    let has_items = session
+        .models()
+        .iter()
+        .any(|m| m.items.has_selectable_item());
+    op.is_stock_based()
+        || match op.spec().geometry {
+            GeometryRequirement::Items => has_items,
+            GeometryRequirement::Mesh => has_mesh,
+            GeometryRequirement::ItemsAndMesh => has_items && has_mesh,
+        }
 }
 
 fn add_op_menu_item(
     ui: &mut egui::Ui,
     op: OperationType,
     setup_id: SetupId,
-    has_mesh: bool,
-    has_polygons: bool,
+    session: &rs_cam_core::session::ProjectSession,
     events: &mut Vec<AppEvent>,
 ) {
     use crate::state::toolpath::GeometryRequirement;
 
     let spec = op.spec();
-    // Face and Pin Drill read items, but they run with no model (the stock
-    // outline, the stock pins): `is_stock_based` says so.
-    let available = op.is_stock_based()
-        || match spec.geometry {
-            GeometryRequirement::Items => has_polygons,
-            GeometryRequirement::Mesh => has_mesh,
-            GeometryRequirement::ItemsAndMesh => has_polygons && has_mesh,
-        };
-
-    if available {
+    if add_menu_offers(session, op) {
         if ui
             .button(spec.label)
             .on_hover_text(spec.description)
@@ -1201,7 +1218,7 @@ fn add_op_menu_item(
         }
     } else {
         let reason = match spec.geometry {
-            GeometryRequirement::Items => "Requires 2D geometry (SVG/DXF)",
+            GeometryRequirement::Items => MENU_2D_REQUIRES,
             GeometryRequirement::Mesh => "Requires 3D mesh (STL/STEP)",
             GeometryRequirement::ItemsAndMesh => "Requires both 2D curves and 3D mesh",
         };

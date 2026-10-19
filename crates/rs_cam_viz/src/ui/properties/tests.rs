@@ -421,3 +421,164 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
         "a Pin Drill must draw no boundary controls; it rendered {pin:?}"
     );
 }
+
+/// Render the Geometry tab of an entry of `op` against the first toolpath
+/// of `session`, and give the painted texts in draw order.
+fn geometry_tab_texts(
+    session: &rs_cam_core::session::ProjectSession,
+    op: crate::state::toolpath::OperationType,
+) -> Vec<String> {
+    use crate::state::toolpath::ToolpathEntry;
+    let tc = &session.toolpath_configs()[0];
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Geometry),
+        false,
+    );
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        crate::state::job::ToolId(tc.tool_id),
+        crate::state::job::ModelId(tc.model_id),
+        op,
+    );
+    entry.boundary = tc.boundary.clone();
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    warmup.textures_delta.clear();
+    let mut events = Vec::new();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        super::toolpath_panel::draw_geometry_tab(
+            ui,
+            &mut entry,
+            &inputs,
+            None,
+            &mut crate::state::pick::SelectionUi::default(),
+            &mut events,
+        );
+    });
+    let mut texts = Vec::new();
+    for clipped in &out.shapes {
+        if let egui::epaint::Shape::Text(text) = &clipped.shape {
+            texts.push(text.galley.job.text.clone());
+        }
+    }
+    out.textures_delta.clear();
+    texts
+}
+
+/// A STEP-only project (`fixtures/gui_step/stepped_block.step`) with one
+/// Pocket on the default rule.
+fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
+    use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+    use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
+
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/gui_step/stepped_block.step");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        0,
+        ModelKind::Step,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("the STEP fixture loads");
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let model_id = builder.add_model(model);
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::compute::ToolpathId(0),
+                name: "Pocket".to_owned(),
+                enabled: true,
+                operation: crate::state::toolpath::OperationConfig::new_default(
+                    crate::state::toolpath::OperationType::Pocket,
+                ),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: 1,
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .unwrap();
+    builder.build()
+}
+
+/// The position of the first painted text that `pred` accepts.
+fn position_of(texts: &[String], what: &str, pred: impl Fn(&str) -> bool) -> usize {
+    texts
+        .iter()
+        .position(|t| pred(t))
+        .unwrap_or_else(|| panic!("the Geometry tab paints no {what}: {texts:?}"))
+}
+
+/// Geometry selection P4.D, fix 1: a new Pocket on a STEP-only project has
+/// nothing to cut (the default rule takes no face, D2), and the Selection
+/// section names the fix: pick a face. Red proof: `wants_a_face_pick`
+/// returning false: the line was not painted.
+#[test]
+fn a_step_pocket_names_the_face_pick_fix_p4_d() {
+    let session = step_pocket_session();
+    let texts = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    assert!(
+        texts
+            .iter()
+            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
+        "the section must name the face pick fix: {texts:?}"
+    );
+}
+
+/// Geometry selection P4.D, fix 4: the op Selection section is at the TOP
+/// of the Geometry tab, directly below the Input combo: before "Start
+/// from" and before "Machining Boundary". A 3D op shows "Pick faces" at
+/// the same place for a Stock boundary (fix 2). Red proof: the section
+/// drawn after the op editor (the P4.3 place): "Start from" came first.
+#[test]
+fn the_selection_section_is_at_the_top_p4_d() {
+    let session = step_pocket_session();
+    let texts = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    let input = position_of(&texts, "Input row", |t| t.starts_with("Input"));
+    let selection = position_of(&texts, "Selection header", |t| {
+        t.eq_ignore_ascii_case("selection")
+    });
+    let start_from = position_of(&texts, "Start from row", |t| t.starts_with("Start from"));
+    let boundary = position_of(&texts, "boundary header", |t| {
+        t.eq_ignore_ascii_case("machining boundary")
+    });
+    assert!(
+        input < selection && selection < start_from && start_from < boundary,
+        "want Input < Selection < Start from < Machining Boundary; got {input}, {selection}, \
+         {start_from}, {boundary}: {texts:?}"
+    );
+
+    let rough = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Adaptive3d);
+    let pick = position_of(&rough, "Pick faces button", |t| {
+        t == super::toolpath_panel::PICK_FACES_LABEL
+    });
+    let start_from = position_of(&rough, "Start from row", |t| t.starts_with("Start from"));
+    assert!(
+        pick < start_from,
+        "a 3D op shows Pick faces at the top, for any boundary source: {rough:?}"
+    );
+}

@@ -453,9 +453,9 @@ macro_rules! for_each_command {
              }),
             (Command, SetBoundaryConfig, "set_boundary_config", SetBoundaryConfigArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the boundary picker writes the whole config through replace_toolpath_config",
-                 ),
+                 // P4.D: a viewport face click on a boundary that is not a
+                 // selection writes the new boundary with this command.
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",

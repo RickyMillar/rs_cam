@@ -14,7 +14,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
 - `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
   lane state and the GUI-only runtime overlay state.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
-- `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection, the dock and catalogue; `selection_highlight.rs` (P4.4: which report the viewport colours, its upload detector, the note keys).
+- `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport (P4.D `drawing_draws`: every visible drawing draws, the selected op's model with states), the selection, the dock and catalogue (P4.D `ModelVisibility`, the model eye; view state, not saved); `selection_highlight.rs` (P4.4: which report the viewport colours, its upload detector, the note keys).
 - `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (P4.9 `ModelDrawingEdits`: the ledger before and after), the export
   wizard and the planner.
 - `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts (P4.9 `join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of `committed_number`, ui09); settings; pin frame (C8); the shoe plan memo and run sheet (H2);

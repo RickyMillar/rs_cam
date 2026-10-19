@@ -323,8 +323,9 @@ fn draw_circle_range(ui: &mut egui::Ui, on: &[ItemKind], filter: &mut PickFilter
 /// The tooltip of the item `key` under the pointer in pick mode, for the
 /// selection `target` of `tc`: the kind, the layer and the size of the item
 /// (`ItemRef`, the text of a refusal), and what a click does. The click
-/// result comes from `ProjectSession::pick_edit`, the function the click
-/// itself sends through, so the tooltip and the click agree.
+/// result comes from `ProjectSession::click_edit`, the function the click
+/// itself sends through, so the tooltip and the click agree (P4.D: a click
+/// on a boundary that is not a selection sets the source to Selection).
 pub fn hover_text(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -332,9 +333,11 @@ pub fn hover_text(
     key: &rs_cam_core::selection::MatchKey,
 ) -> String {
     use rs_cam_core::selection::{ItemRef, SelectionEdit};
-    let click = match session.pick_edit(tc, target, key.clone()) {
-        Ok(SelectionEdit::RemovePick(_)) => "click to remove",
-        Ok(_) => "click to add",
+    use rs_cam_core::session::ClickEdit;
+    let click = match session.click_edit(tc, target, key.clone()) {
+        Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))) => "click to remove",
+        Ok(ClickEdit::Selection(_)) => "click to add",
+        Ok(ClickEdit::BoundaryToSelection { .. }) => "click to set the boundary to Selection",
         Err(_) => "the selection does not resolve",
     };
     let shift = if key.layer.is_some() {

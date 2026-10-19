@@ -519,9 +519,10 @@ impl RsCamApp {
                 // from the Face item of the face; a face that is not flat
                 // has no item and is named. P4.1: an op with no selection
                 // slot (a 3D op) takes the pick in its boundary
-                // selection. A boundary that is not a selection refuses in
-                // `pick_edit`, and the controller names it (L-8: a notice,
-                // no edit).
+                // selection. P4.D (L-8 revised): on a boundary that is not
+                // a selection, the click sets the source to `Selection` with
+                // that face (`ProjectSession::click_edit`), one undo step,
+                // and the controller gives a notice.
                 if let Selection::Toolpath(tp_id) = self.controller.state().selection {
                     let pick = {
                         let session = &self.controller.state().session;

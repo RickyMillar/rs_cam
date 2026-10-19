@@ -406,8 +406,16 @@ fn the_upload_key_carries_the_scope_and_the_selection() {
 #[test]
 fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
     let upload = strip_comments(&source("src/app/gpu_upload.rs"));
+    // Geometry selection P4.D: the upload reads the drawing draw plan
+    // (`drawing_draws`), and the plan asks the vector-source toolpath.
+    let viewport = strip_comments(&source("src/state/viewport.rs"));
+    assert!(
+        viewport.contains("pub fn drawing_draws(")
+            && viewport.contains("vector_source_toolpath(state)"),
+        "the drawing draw plan no longer asks the vector-source toolpath"
+    );
     for needle in [
-        "vector_source_toolpath(state)",
+        "drawing_draws(",
         "find(|model| model.id == toolpath.model_id)",
         // Geometry selection P4.5: the plane of the drawing is ONE
         // function, shared by the draw and the pick (`drawing_plane_z`).

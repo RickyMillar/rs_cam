@@ -371,8 +371,9 @@ pub enum AppEvent {
     // marker or a flat face) of the selected toolpath. `key` is the match
     // key a pick of the item stores; `target` is the selection it toggles
     // in (P4.1: the boundary selection for an op with no selection slot).
-    // The controller resolves first (`ProjectSession::pick_edit`), then
-    // sends `AddPick` or `RemovePick`.
+    // The controller resolves first (`ProjectSession::click_edit`), then
+    // sends `AddPick` or `RemovePick`. P4.D: on a boundary that is not a
+    // selection, the click sets the source to Selection with the item.
     TogglePick {
         toolpath_id: ToolpathId,
         target: rs_cam_core::session::SelectionTarget,

@@ -161,7 +161,14 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
         for model in models {
             let mid = ModelId(model.id);
             let selected = state.selection == Selection::Model(mid);
-            let response = ui.selectable_label(selected, &model.name);
+            let response = ui
+                .horizontal(|ui| {
+                    // P4.D: the eye shows or hides the model in the viewport
+                    // (its mesh and its drawing). A view choice only.
+                    model_eye(ui, state, model.id, events);
+                    ui.selectable_label(selected, &model.name)
+                })
+                .inner;
             if response.clicked() {
                 events.push(AppEvent::Ui(UiCommand::Select(Selection::Model(mid))));
             }
@@ -177,6 +184,34 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
             });
         }
     });
+}
+
+/// The glyph of the eye of a visible model row.
+pub const MODEL_EYE_SHOWN: &str = "\u{1F441}";
+/// The glyph of the eye of a hidden model row.
+pub const MODEL_EYE_HIDDEN: &str = "\u{2298}";
+
+/// The eye of one model row (geometry selection P4.D): a click shows or
+/// hides the model in the viewport, through `UiCommand::SetModelVisibility`.
+fn model_eye(ui: &mut egui::Ui, state: &AppState, model_id: usize, events: &mut Vec<AppEvent>) {
+    let visible = state.overlays.model_visibility.is_visible(model_id);
+    let (glyph, hover) = if visible {
+        (
+            MODEL_EYE_SHOWN,
+            "Hide this model in the viewport: its mesh and its drawing. \
+             Generation and the simulation do not change.",
+        )
+    } else {
+        (MODEL_EYE_HIDDEN, "Show this model in the viewport again.")
+    };
+    if ui.small_button(glyph).on_hover_text(hover).clicked() {
+        events.push(AppEvent::Ui(UiCommand::SetModelVisibility(
+            crate::ui_command::SetModelVisibilityArgs {
+                model_id,
+                visible: !visible,
+            },
+        )));
+    }
 }
 
 /// Prompt for a model file using the File menu's accepted extensions and

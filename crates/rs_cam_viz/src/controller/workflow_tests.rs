@@ -756,10 +756,12 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
     assert_eq!(face_picks(&c, tp_id), vec![face_a.0], "the redo");
 }
 
-/// Ruling L-8: a face click on a 3D op whose boundary is not a selection
-/// gives a notice and no edit. The boundary source does not change.
+/// Ruling L-8 revised (geometry selection P4.D): a face click on a 3D op
+/// whose boundary is not a selection sets the source to `Selection` with
+/// that one face, gives the notice "Boundary set to Selection: 1 face.",
+/// and undoes in one step (the snapshot holds `boundary`, D11).
 #[test]
-fn w4_a_3d_op_face_click_without_a_selection_boundary_is_a_notice_p4_1() {
+fn w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d() {
     use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource};
 
     let mut c = step_controller();
@@ -774,20 +776,112 @@ fn w4_a_3d_op_face_click_without_a_selection_boundary_is_a_notice_p4_1() {
     let face_a = find_horizontal_face(enriched);
     let notes_before = c.notifications().len();
 
+    take_snapshot(&mut c, tp_id);
     click_face(&mut c, tp_id, model_id, face_a);
 
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
-    assert_eq!(tc.boundary, stock_boundary, "no edit");
+    let boundary = |c: &AppController<ScriptedBackend>| {
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        tc.boundary.clone()
+    };
+    assert!(
+        matches!(boundary(&c).source, BoundarySource::Selection { .. }),
+        "the click sets the source to Selection: {:?}",
+        boundary(&c).source
+    );
+    assert!(boundary(&c).enabled, "the boundary stays on");
+    assert_eq!(
+        boundary_face_picks(&c, tp_id),
+        vec![face_a.0],
+        "the selection holds the one face"
+    );
     let notes = c.notifications();
     assert_eq!(notes.len(), notes_before + 1, "one notice");
+    assert_eq!(
+        notes.last().unwrap().message,
+        "Boundary set to Selection: 1 face.",
+        "the notice says what the click did"
+    );
+    flush_snapshot(&mut c);
+
+    c.handle_internal_event(AppEvent::Undo);
+    assert_eq!(boundary(&c), stock_boundary, "one undo restores the source");
+    c.handle_internal_event(AppEvent::Redo);
+    assert_eq!(boundary_face_picks(&c, tp_id), vec![face_a.0], "the redo");
+
+    // The second click is a plain selection edit: it removes the pick and
+    // keeps the Selection source.
+    click_face(&mut c, tp_id, model_id, face_a);
+    assert!(boundary_face_picks(&c, tp_id).is_empty(), "the toggle off");
+    assert!(matches!(
+        boundary(&c).source,
+        BoundarySource::Selection { .. }
+    ));
+}
+
+/// Geometry selection P4.D, fix 3: a DXF draws on import, with no
+/// toolpath, as a neutral drawing; the eye of its model row hides it and
+/// shows it again, with an upload on a change only; a selected op that
+/// reads it takes it over (its state colours). Red proof: `drawing_draws`
+/// with the old rule (the vector-source toolpath's model only): the import
+/// arm drew nothing.
+#[test]
+fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
+    use crate::state::viewport::{DrawingDraw, drawing_draws};
+    use crate::ui_command::{SetModelVisibilityArgs, UiCommand};
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("the DXF fixture loads");
+    assert!(model.items.has_drawing(), "the case is a drawing");
+    let mut c = AppController::with_backend(ScriptedBackend::new());
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let model_id = builder.add_model(model);
+    c.state.session = builder.build();
+    c.state.workspace = crate::state::Workspace::Toolpaths;
+
+    assert_eq!(
+        drawing_draws(&c.state),
+        vec![DrawingDraw::Neutral { model_id }],
+        "the drawing draws on import, before any op reads it"
+    );
+
+    let eye = |c: &mut AppController<ScriptedBackend>, visible: bool| {
+        let _ = c.take_pending_upload();
+        c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
+            SetModelVisibilityArgs { model_id, visible },
+        )));
+        c.take_pending_upload()
+    };
+    assert!(eye(&mut c, false), "a hide asks for one upload");
     assert!(
-        notes
-            .last()
-            .unwrap()
-            .message
-            .contains("set the boundary source to Selection"),
-        "the notice names the fix: {}",
-        notes.last().unwrap().message
+        drawing_draws(&c.state).is_empty(),
+        "a hidden model draws nothing"
+    );
+    assert!(!eye(&mut c, false), "no change, no upload");
+    assert!(eye(&mut c, true), "a show asks for one upload");
+    assert_eq!(
+        drawing_draws(&c.state),
+        vec![DrawingDraw::Neutral { model_id }]
+    );
+
+    // A selected Pocket that reads the drawing takes it over.
+    let tp_id = add_pocket(&mut c);
+    c.state.selection = Selection::Toolpath(tp_id);
+    assert_eq!(
+        drawing_draws(&c.state),
+        vec![DrawingDraw::Toolpath {
+            model_id,
+            toolpath: tp_id
+        }],
+        "the drawing of the selected op keeps its state colours"
     );
 }
 

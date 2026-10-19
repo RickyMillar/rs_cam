@@ -329,8 +329,12 @@ impl RsCamApp {
                 _ => None,
             })
             .collect();
-        let part_model =
-            |m: &&rs_cam_core::session::LoadedModel| !obstacle_model_ids.contains(&m.id);
+        // P4.D: a model that the operator hid (the eye of its row) draws no
+        // mesh. Its id leaves the mesh keys, so the hide is a key change.
+        let model_visibility = self.controller.state().overlays.model_visibility.clone();
+        let part_model = |m: &&rs_cam_core::session::LoadedModel| {
+            !obstacle_model_ids.contains(&m.id) && model_visibility.is_visible(m.id)
+        };
         let mut plain_mesh_ids = Vec::new();
         let mut enriched_ids = Vec::new();
         for model in self
@@ -467,17 +471,30 @@ impl RsCamApp {
                 }
             };
 
+            // P4.D: every visible model drawing draws, with or without a
+            // toolpath (`drawing_draws`). The vector-source toolpath's model
+            // draws in this block, with its states; the others draw in the
+            // neutral block after it.
+            let drawing_draws = crate::state::viewport::drawing_draws(self.controller.state());
             let vector_source = {
                 let state = self.controller.state();
-                crate::state::viewport::vector_source_toolpath(state).and_then(|id| {
-                    let tc = state.session.find_toolpath_config_by_id(id)?.1;
-                    let setup = state
-                        .session
-                        .setup_of_toolpath_id(id)
-                        .and_then(|index| state.session.list_setups().get(index))
-                        .map(SetupFrame::of);
-                    Some((tc.clone(), setup))
-                })
+                drawing_draws
+                    .iter()
+                    .find_map(|draw| match draw {
+                        crate::state::viewport::DrawingDraw::Toolpath { toolpath, .. } => {
+                            Some(*toolpath)
+                        }
+                        crate::state::viewport::DrawingDraw::Neutral { .. } => None,
+                    })
+                    .and_then(|id| {
+                        let tc = state.session.find_toolpath_config_by_id(id)?.1;
+                        let setup = state
+                            .session
+                            .setup_of_toolpath_id(id)
+                            .and_then(|index| state.session.list_setups().get(index))
+                            .map(SetupFrame::of);
+                        Some((tc.clone(), setup))
+                    })
             };
 
             let ring_to_lines = |ring: &[rs_cam_core::geo::P2],
@@ -944,6 +961,38 @@ impl RsCamApp {
                         vertex_count: verts.len() as u32,
                     });
                 }
+            }
+
+            // P4.D: the drawings that no drawn toolpath reads, in the frame
+            // of the active setup and the neutral colour. So a DXF shows on
+            // import, before an op reads it.
+            let neutral_verts: Vec<LineVertex> = {
+                let state = self.controller.state();
+                drawing_draws
+                    .iter()
+                    .filter_map(|draw| match draw {
+                        crate::state::viewport::DrawingDraw::Neutral { model_id } => {
+                            state.session.models().iter().find(|m| m.id == *model_id)
+                        }
+                        crate::state::viewport::DrawingDraw::Toolpath { .. } => None,
+                    })
+                    .flat_map(|model| {
+                        neutral_drawing_vertices(model, active_setup_ref.as_ref(), &stock)
+                    })
+                    .collect()
+            };
+            if !neutral_verts.is_empty() {
+                let buffer = render_state.device.create_buffer_init(
+                    &egui_wgpu::wgpu::util::BufferInitDescriptor {
+                        label: Some("neutral_drawing_lines"),
+                        contents: bytemuck::cast_slice(&neutral_verts),
+                        usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
+                    },
+                );
+                resources.polygon_data.push(PolygonGpuData {
+                    vertex_buffer: buffer,
+                    vertex_count: neutral_verts.len() as u32,
+                });
             }
         }
 
@@ -1965,6 +2014,71 @@ pub(crate) fn tab_vertices(
     verts
 }
 
+/// The lines of the drawing of `model` when no drawn toolpath reads it
+/// (geometry selection P4.D): every loop, open path and circle ring, and a
+/// ring mark at each point, in `frame` (the active setup) on the displayed
+/// stock top plane (`drawing_display_z`), in `colors::DRAWING_NEUTRAL`. A
+/// face draws nothing here: the mesh shows it.
+pub(crate) fn neutral_drawing_vertices(
+    model: &rs_cam_core::session::LoadedModel,
+    frame: Option<&SetupFrame>,
+    stock: &rs_cam_core::compute::StockConfig,
+) -> Vec<crate::render::LineVertex> {
+    use crate::interaction::picking::{POINT_MARK_RADIUS_MM, drawing_display_z, item_display_xy};
+    use crate::render::{LineVertex, colors};
+    let color = colors::DRAWING_NEUTRAL;
+    let z = drawing_display_z(frame, stock) as f32;
+    let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
+        let q = item_display_xy(frame, stock, *p);
+        [q.x as f32, q.y as f32, z]
+    };
+    let mut verts = Vec::new();
+    for item in model.items.iter() {
+        match item.shape() {
+            rs_cam_core::selection::Shape::Point(p) => {
+                let c = at(p);
+                super::push_circle_vertices(
+                    &mut verts,
+                    c[0],
+                    c[1],
+                    c[2],
+                    POINT_MARK_RADIUS_MM as f32,
+                    color,
+                    16,
+                );
+            }
+            shape => {
+                let Some(ring) = shape.drawing_ring() else {
+                    continue;
+                };
+                let pts = &ring.exterior;
+                if pts.len() < 2 {
+                    continue;
+                }
+                let ends = if ring.closed {
+                    pts.len()
+                } else {
+                    pts.len() - 1
+                };
+                for i in 0..ends {
+                    let (Some(a), Some(b)) = (pts.get(i), pts.get((i + 1) % pts.len())) else {
+                        continue;
+                    };
+                    verts.push(LineVertex {
+                        position: at(a),
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: at(b),
+                        color,
+                    });
+                }
+            }
+        }
+    }
+    verts
+}
+
 pub(crate) fn hover_vertices(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -2041,6 +2155,36 @@ pub(crate) fn hover_vertices(
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::translate_annotated;
+
+    /// Geometry selection P4.D, fix 3: the neutral drawing of a DXF with no
+    /// toolpath gives lines, all in `DRAWING_NEUTRAL`, on the displayed
+    /// stock top plane. Red proof: the item loop skipped (no lines).
+    #[test]
+    fn a_drawing_with_no_toolpath_gives_neutral_lines_p4_d() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
+        let model = rs_cam_core::io::load_model_file(
+            &path,
+            0,
+            rs_cam_core::compute::stock_config::ModelKind::Dxf,
+            rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
+            Default::default(),
+        )
+        .unwrap();
+        let stock = rs_cam_core::compute::StockConfig::default();
+        let verts = super::neutral_drawing_vertices(&model, None, &stock);
+        assert!(
+            verts.len() >= 2 * model.items.ring_count(),
+            "every drawn ring gives lines: {} vertices for {} rings",
+            verts.len(),
+            model.items.ring_count()
+        );
+        let z = crate::interaction::picking::drawing_display_z(None, &stock) as f32;
+        for v in &verts {
+            assert_eq!(v.color, crate::render::colors::DRAWING_NEUTRAL);
+            assert!((v.position[2] - z).abs() < 1e-4, "{:?}", v.position);
+        }
+    }
     use rs_cam_core::geo::P3;
     use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
     use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;

@@ -44,8 +44,13 @@ impl ItemKind {
         match (self, use_) {
             (ItemKind::Loop | ItemKind::Circle | ItemKind::Face, ItemUse::Regions) => true,
             (ItemKind::Path | ItemKind::Point, ItemUse::Regions) => false,
-            (ItemKind::Loop | ItemKind::Circle | ItemKind::Path, ItemUse::Curves) => true,
-            (ItemKind::Point | ItemKind::Face, ItemUse::Curves) => false,
+            // P4.D: a face's rings are closed lines, so a Trace or a
+            // Project Curve can follow the outline of a picked face.
+            (
+                ItemKind::Loop | ItemKind::Circle | ItemKind::Path | ItemKind::Face,
+                ItemUse::Curves,
+            ) => true,
+            (ItemKind::Point, ItemUse::Curves) => false,
             (ItemKind::Point | ItemKind::Circle, ItemUse::Holes { .. }) => true,
             (ItemKind::Loop | ItemKind::Path | ItemKind::Face, ItemUse::Holes { .. }) => false,
             (
@@ -505,9 +510,15 @@ fn nest_closed_rings_at(items: &[&Item]) -> NestedRings {
 }
 
 /// The lines of the served shapes: loops, circle rings and paths, nested by
-/// containment (a path stays top level).
+/// containment (a path stays top level), then each face with its own inner
+/// loops (geometry selection P4.D), as [`regions_of`] adds them.
 fn curves_of(served: &[&Item]) -> Vec<Polygon2> {
-    nest_drawing_rings(served.iter().copied())
+    let mut polygons = nest_drawing_rings(served.iter().copied());
+    polygons.extend(served.iter().filter_map(|i| match i.shape() {
+        Shape::Face(face) => Some(face.rings.clone()),
+        Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
+    }));
+    polygons
 }
 
 /// Every drawn ring of `items` (loops, circle rings and paths), in this

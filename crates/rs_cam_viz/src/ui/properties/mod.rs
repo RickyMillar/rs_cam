@@ -357,6 +357,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// (`selection_highlight::note_item_keys`).
     pub selection_note_items: Vec<Vec<rs_cam_core::selection::MatchKey>>,
     pub boundary_note_items: Vec<Vec<rs_cam_core::selection::MatchKey>>,
+    /// The item kinds that the model of the toolpath holds
+    /// (`state::pick::held_kinds`). The Selection section reads it for the
+    /// "pick a face" fix line (geometry selection P4.D).
+    pub toolpath_model_kinds: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
     /// The item sources a `+ Rule` draft can name, through the
     /// `ListItems` query. Empty while no draft of this toolpath is open:
     /// the list is read only for the open popover.
@@ -594,8 +598,12 @@ pub(crate) fn toolpath_panel_inputs(
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
         .collect();
     // P4.3: the "Selection" boundary source needs an item to pick: a
-    // drawing item or a face item. Every item kind is one of the two.
-    let boundary_selection_enabled = session.models().iter().any(|m| !m.items.is_empty());
+    // drawing item or a face item (`ItemSet::has_selectable_item`, the one
+    // rule that the 2D op gate also reads).
+    let boundary_selection_enabled = session
+        .models()
+        .iter()
+        .any(|m| m.items.has_selectable_item());
     let boundary_default = session.boundary_selection_default();
     // P4.3: the two selection reads of the section, through the query row.
     let (selection_report, boundary_report, rule_sources) =
@@ -637,6 +645,11 @@ pub(crate) fn toolpath_panel_inputs(
     };
     let selection_note_items = note_items(&selection_report);
     let boundary_note_items = note_items(&boundary_report);
+    let toolpath_model_kinds = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(_, tc)| session.models().iter().find(|m| m.id == tc.model_id))
+        .map(crate::state::pick::held_kinds)
+        .unwrap_or_default();
     // Snapshot tool configs for feeds calculation
     let tool_configs: Vec<_> = session.tools().iter().map(|t| (t.id, t.clone())).collect();
     // Candidate source toolpaths for a `DerivedRestRegions` boundary
@@ -809,6 +822,7 @@ pub(crate) fn toolpath_panel_inputs(
         boundary_report,
         selection_note_items,
         boundary_note_items,
+        toolpath_model_kinds,
         rule_sources,
         tool_configs,
         boundary_source_candidates,

@@ -6,8 +6,41 @@
 //! their backs (audit §5, rule 2). What lives here is the shape of the two
 //! surfaces plus the per-workspace default bookkeeping.
 
+use std::collections::BTreeSet;
+
 use super::Workspace;
 use super::toolpath::ToolpathId;
+
+/// Which models the viewport draws (geometry selection P4.D): the eye of
+/// each model row in the Setup rail, and MCP `set_ui_view`
+/// `model_visibility`. A model is visible until the operator hides it.
+///
+/// It is the operator's view choice for this window, as
+/// [`OverlayPanelState::legend_collapsed`] is: no project file and no setup
+/// sheet reads it. A hidden model draws no mesh and no drawing; the
+/// project, generation and the simulation do not change.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelVisibility {
+    /// The raw ids of the hidden models.
+    hidden: BTreeSet<usize>,
+}
+
+impl ModelVisibility {
+    /// True when the viewport draws the model `model_id`.
+    pub fn is_visible(&self, model_id: usize) -> bool {
+        !self.hidden.contains(&model_id)
+    }
+
+    /// Show or hide the model `model_id`. Returns true when the value
+    /// changed, so the caller asks for an upload on a change only.
+    pub fn set_visible(&mut self, model_id: usize, visible: bool) -> bool {
+        if visible {
+            self.hidden.remove(&model_id)
+        } else {
+            self.hidden.insert(model_id)
+        }
+    }
+}
 
 /// One section of the viewport dock (viewport redesign, MOCKUPS §1).
 ///
@@ -113,6 +146,8 @@ pub struct OverlayPanelState {
     /// It is the operator's view choice for this window: no project file,
     /// setup sheet or MCP reply reads it.
     pub legend_collapsed: bool,
+    /// The models the viewport draws (geometry selection P4.D).
+    pub model_visibility: ModelVisibility,
 }
 
 impl OverlayPanelState {
@@ -127,6 +162,7 @@ impl OverlayPanelState {
             rest_confirm: None,
             pending_show: None,
             legend_collapsed: false,
+            model_visibility: ModelVisibility::default(),
         }
     }
 

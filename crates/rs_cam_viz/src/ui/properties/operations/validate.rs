@@ -50,7 +50,9 @@ impl ToolpathValidationContext {
                 .iter()
                 .map(|model| ValidationModel {
                     id: crate::state::job::ModelId(model.id),
-                    has_polygons: model.items.has_drawing(),
+                    // P4.D: a drawing item or a face item (a STEP face),
+                    // the rule of the Add toolpath menu.
+                    has_polygons: model.items.has_selectable_item(),
                     has_mesh: model.mesh.is_some(),
                     has_enriched_mesh: model.enriched_mesh.is_some(),
                 })
@@ -112,7 +114,7 @@ pub fn validate_toolpath_config(
                     errs.push("Selected model has no 3D mesh".into());
                 }
             } else if !has_polygons {
-                errs.push("Selected model has no 2D geometry".into());
+                errs.push("Selected model has no 2D geometry or face".into());
             }
         } else {
             errs.push("Selected model is missing".into());
@@ -216,7 +218,7 @@ fn validate_geometry_selection(
             errs.push("Selected model has no 3D mesh".into());
         }
     } else if !has_polygons {
-        errs.push("Selected model has no 2D geometry".into());
+        errs.push("Selected model has no 2D geometry or face".into());
     }
 }
 

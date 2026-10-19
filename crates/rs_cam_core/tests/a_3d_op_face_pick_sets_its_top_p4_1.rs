@@ -21,8 +21,9 @@
 //!    `stock top - BOTTOM_FACE_Z`, not the model Z and not the setup-frame
 //!    stock top.
 //! 4. A pinned top stays: the face does not move it.
-//! 5. A boundary whose source is not a selection refuses the edit, names
-//!    the fix, and keeps its source.
+//! 5. A boundary whose source is not a selection refuses the explicit
+//!    edit (`EditSelection`, MCP `edit_toolpath_selection`), names the fix,
+//!    and keeps its source.
 //! 6. The boundary report (`selection_status` with the boundary target)
 //!    holds the face, the op report holds nothing, and the memo keeps the
 //!    two apart.
@@ -37,8 +38,15 @@
 //! so the face top, the stock top and the model-frame top are different
 //! numbers in both frames.
 //!
+//! 7. P4.D (ruling L-8 revised): a viewport click (`click_edit`) on such a
+//!    boundary sets the source to `Selection` with that one face. The new
+//!    boundary keeps every other field; applied with ONE
+//!    `SetBoundaryConfig`, it sets the top and confines the cut as claim 1.
+//!    A second click is a plain selection edit.
+//!
 //! Red proof: the auto top read only the op selection (the P2.6 state):
-//! claims 1 and 3 fail.
+//! claims 1 and 3 fail. Claim 7: `click_edit` that always calls
+//! `pick_edit` (the old L-8): the click refused.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test a_3d_op_face_pick_sets_its_top_p4_1
@@ -74,8 +82,9 @@ use rs_cam_core::io::brep_face_items;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::selection::{ItemKind, Selection, SelectionEdit};
 use rs_cam_core::session::{
-    Command, EditSelectionArgs, GenerateToolpathArgs, Job, JobHandle, LoadedModel, ProjectSession,
-    ProjectSessionBuilder, SelectionTarget, SessionError, SetSetupFaceArgs,
+    ClickEdit, Command, EditSelectionArgs, GenerateToolpathArgs, Job, JobHandle, LoadedModel,
+    ProjectSession, ProjectSessionBuilder, SelectionTarget, SessionError, SetBoundaryConfigArgs,
+    SetSetupFaceArgs,
 };
 use rs_cam_core::toolpath::MoveType;
 
@@ -452,4 +461,66 @@ fn the_boundary_report_holds_the_face_and_the_memo_keeps_the_targets_apart_p4_1(
         .pick_edit(&tc, SelectionTarget::Boundary, key.clone())
         .unwrap();
     assert_eq!(edit, SelectionEdit::RemovePick(key));
+}
+
+#[test]
+fn a_click_on_a_boundary_that_is_not_a_selection_switches_it_p4_d() {
+    let stock_boundary = boundary(BoundarySource::Stock);
+    let mut s = session(stock_boundary.clone(), HeightMode::Auto, FaceUp::Top);
+    let tc = s.toolpath_configs()[0].clone();
+    let key = s.face_pick_key(&tc, tc.model_id, FaceGroupId(0)).unwrap();
+
+    let click = s
+        .click_edit(&tc, SelectionTarget::Boundary, key.clone())
+        .expect("a click on a Stock boundary is not refused (L-8 revised)");
+    let ClickEdit::BoundaryToSelection {
+        boundary: new_boundary,
+        kind,
+    } = &click
+    else {
+        panic!("a click on a Stock boundary must switch it: {click:?}");
+    };
+    assert_eq!(*kind, ItemKind::Face);
+    assert_eq!(
+        click.notice().as_deref(),
+        Some("Boundary set to Selection: 1 face."),
+        "the notice says what the click did"
+    );
+    let mut want = stock_boundary;
+    want.source = BoundarySource::Selection {
+        selection: Selection::from_picks(vec![key.clone()]),
+        holes: false,
+    };
+    assert_eq!(
+        **new_boundary, want,
+        "the source becomes Selection with the one face; every other field stays"
+    );
+
+    let _ = s
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index: 0,
+            boundary: (**new_boundary).clone(),
+        }))
+        .unwrap();
+    let top = op_top_z(&mut s);
+    assert!(
+        (top - TOP_FACE_Z).abs() < EPS,
+        "after the switch the auto top is {top}, want the face Z {TOP_FACE_Z}"
+    );
+    let face = face_square();
+    let samples = cutting_samples(&mut s);
+    assert!(samples.len() > 20, "{} samples", samples.len());
+    assert!(
+        samples.iter().all(|p| face.contains_point_eps(p, EPS)),
+        "after the switch every cutting sample lies inside the picked face"
+    );
+
+    // The boundary is a selection now: a second click on the face is a
+    // plain selection edit that removes the pick.
+    let tc = s.toolpath_configs()[0].clone();
+    assert_eq!(
+        s.click_edit(&tc, SelectionTarget::Boundary, key.clone())
+            .unwrap(),
+        ClickEdit::Selection(SelectionEdit::RemovePick(key))
+    );
 }

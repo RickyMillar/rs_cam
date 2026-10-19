@@ -58,7 +58,7 @@ fn use_phrase(use_: ItemUse) -> &'static str {
     match use_ {
         ItemUse::None => "reads no drawing item",
         ItemUse::Regions => "cuts closed areas only (closed loops, circles, faces)",
-        ItemUse::Curves => "follows lines only (closed loops, circles, open paths)",
+        ItemUse::Curves => "follows lines only (closed loops, circles, open paths, face outlines)",
         ItemUse::Holes { .. } => "drills points and circles only",
     }
 }
