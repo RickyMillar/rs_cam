@@ -17,9 +17,10 @@
 //! translation by its min corner serves both cases — and is a no-op for
 //! non-identity setups, which is why those were accidentally correct.
 //!
-//! `selected_holes` are a DIFFERENT frame — raw model/DXF coordinates —
-//! and are reconciled separately by the setup transform, not by this
-//! stock-origin translation. That was G-DRILLPICK-FRAME, fixed in
+//! The extra holes of the op's selection are a DIFFERENT frame — model
+//! coordinates — and take the setup transform (the selection frame door,
+//! `ResolvedSelection::to_setup_frame`, since geometry selection P2.3c),
+//! not this stock-origin translation. That was G-DRILLPICK-FRAME, fixed in
 //! `61cb27a4`; `pin_holes_in_emission_frame` is now the single place both
 //! frames meet, and neither hole list ever takes the other's correction.
 
@@ -78,8 +79,6 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         feed_rate: 300.0,
         retract_z: 2.0,
         spindle_rpm: None,
-        selected_holes: None,
-        selected_layers: Vec::new(),
         selection: rs_cam_core::selection::Selection::empty(),
     };
 
@@ -160,10 +159,11 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 /// be a no-op there. This arm is what stops the fix from "correcting" the
 /// case that was already right.
 ///
-/// The second half of the tangle — `selected_holes` being raw model/DXF
-/// coordinates, so a pick at world (30,40) belonged at setup-local
-/// (50,185) on a flip — was G-DRILLPICK-FRAME, fixed in `61cb27a4` by
-/// transforming picks at generation while leaving storage in world frame.
+/// The second half of the tangle — a pick in raw model/DXF coordinates,
+/// so a pick at world (30,40) belonged at setup-local (50,185) on a
+/// flip — was G-DRILLPICK-FRAME, fixed in `61cb27a4` by transforming picks
+/// at generation while leaving storage in world frame. Since P2.3c a pick
+/// is a selection key, and the selection frame door moves the item.
 /// Its own sentry is `drill_pick_emission_frame_g_drillpick.rs`.
 #[test]
 fn a_flipped_setup_pin_translation_is_a_no_op() {

@@ -364,8 +364,11 @@ pub(crate) struct ToolpathPanelInputs {
     /// the report holds no row for it (disabled, or no tool).
     pub load_verdict_index: Option<usize>,
     pub tab_override: Option<ToolpathTab>,
-    pub drill_layers: Vec<String>,
-    pub drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget>,
+    /// The holes of a drill op as generation resolves them
+    /// (`ProjectSession::hole_selection`, geometry selection P2.3c):
+    /// the items to pick, which of them the selection holds, and the
+    /// refusal. `None` for every other op.
+    pub holes: Option<rs_cam_core::session::HoleSelection>,
     /// What the panel prints beside the reach-map checkbox (P5).
     pub reach: ReachPanelSummary,
     /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
@@ -557,16 +560,11 @@ pub(crate) fn toolpath_panel_inputs(
     // footprint (`rest_grid_footprint_area`), measured on the same
     // grid the regions came from. See `MEASUREMENT_DOMAINS.md` X-4.
 
-    // Snapshot the toolpath model's drill targets + layers (DXF point /
-    // circle-centre picking) for the drill-op panels. The layers are the
-    // distinct layers of the targets, sorted, as the import listed them
-    // before P2.1.
-    let drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget> = model_for_panel
-        .map(rs_cam_core::session::LoadedModel::drill_targets_pre_selection)
-        .unwrap_or_default();
-    let mut drill_layers: Vec<String> = drill_targets.iter().map(|t| t.layer.clone()).collect();
-    drill_layers.sort();
-    drill_layers.dedup();
+    // Snapshot the holes of a drill op (point / circle picking) for the
+    // drill-op panels: the resolution generation reads (P2.3c).
+    let holes = session
+        .find_toolpath_config_by_id(id)
+        .and_then(|(_, tc)| session.hole_selection(tc));
 
     // Snapshot height context before mutable borrow. Use the shared
     // helper so model_top/bottom_z are in the setup-local frame.
@@ -667,8 +665,7 @@ pub(crate) fn toolpath_panel_inputs(
         load_report,
         load_verdict_index,
         tab_override,
-        drill_layers,
-        drill_targets,
+        holes,
         reach: reach_summary,
         freshness: freshness_for_tp,
         feed_stage,

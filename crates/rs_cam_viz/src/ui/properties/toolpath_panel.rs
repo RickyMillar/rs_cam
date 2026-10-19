@@ -488,8 +488,7 @@ pub(super) fn draw_geometry_tab(
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
     let height_ctx = inputs.height_ctx.as_ref();
-    let drill_layers = inputs.drill_layers.as_slice();
-    let drill_targets = inputs.drill_targets.as_slice();
+    let holes = inputs.holes.as_ref();
 
     ui.add_space(4.0);
 
@@ -579,8 +578,7 @@ pub(super) fn draw_geometry_tab(
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
         models,
-        drill_layers,
-        drill_targets,
+        holes,
         pills: feeds_for_pills,
         depth_caution,
         through_cut,

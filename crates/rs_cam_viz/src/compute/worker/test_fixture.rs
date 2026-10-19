@@ -120,8 +120,9 @@ pub(super) struct RequestSpec {
     /// the resolver to find them.
     pub extra_tools: Vec<ToolConfig>,
     pub polygons: Option<Vec<Polygon2>>,
-    /// The model's drill targets — the `Drill` family's hole source.
-    pub drill_targets: Vec<rs_cam_core::io::dxf_input::DrillTarget>,
+    /// The model's points and circles — the `Drill` family's hole source
+    /// (geometry selection P2.3c).
+    pub hole_items: Vec<rs_cam_core::selection::Item>,
     pub mesh: Option<TriangleMesh>,
     pub stock: StockConfig,
     pub dressups: DressupConfig,
@@ -149,7 +150,7 @@ impl RequestSpec {
             tool,
             extra_tools: Vec::new(),
             polygons: Some(vec![Polygon2::rectangle(-20.0, -20.0, 20.0, 20.0)]),
-            drill_targets: Vec::new(),
+            hole_items: Vec::new(),
             mesh: None,
             stock: board(25.0, 15.0),
             dressups: no_dressups(),
@@ -255,7 +256,7 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         mesh: spec.mesh.clone().map(Arc::new),
         items: Arc::new(drawing_items(
             spec.polygons.clone().unwrap_or_default(),
-            &spec.drill_targets,
+            &spec.hole_items,
         )),
         enriched_mesh: None,
         units: Some(ModelUnits::Millimeters),
@@ -324,28 +325,13 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
 }
 
 /// The items of a drawing: the polygons first (`ItemSet::from_polygons`),
-/// then one item per target in order. A `CircleCenter` target is a
-/// `Circle` item, as a DXF CIRCLE gives one item since P2.1.
+/// then the hole items in order.
 fn drawing_items(
     polygons: Vec<rs_cam_core::polygon::Polygon2>,
-    targets: &[rs_cam_core::io::dxf_input::DrillTarget],
+    holes: &[rs_cam_core::selection::Item],
 ) -> rs_cam_core::selection::ItemSet {
-    use rs_cam_core::io::dxf_input::DrillTargetKind;
-    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    use rs_cam_core::selection::{Item, ItemSet};
     let mut items: Vec<Item> = ItemSet::from_polygons(polygons).iter().cloned().collect();
-    for t in targets {
-        let centre = rs_cam_core::geo::P2::new(t.x, t.y);
-        let shape = match t.kind {
-            DrillTargetKind::Point => Shape::Point(centre),
-            DrillTargetKind::CircleCenter { diameter } => Shape::circle(centre, diameter),
-        };
-        if let Ok(item) = Item::new(
-            SourceRef::ToolpathModel,
-            Some(t.layer.as_str().into()),
-            shape,
-        ) {
-            items.push(item);
-        }
-    }
+    items.extend(holes.iter().cloned());
     ItemSet::new(items)
 }

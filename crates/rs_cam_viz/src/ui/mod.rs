@@ -346,10 +346,11 @@ pub enum AppEvent {
         face_id: FaceGroupId,
     },
 
-    // Drill target selection (DXF point / circle centre picked in viewport)
+    // Drill hole selection (a point or circle picked in the viewport). The
+    // key is the match key of the item (geometry selection P2.3c).
     ToggleDrillTarget {
         toolpath_id: ToolpathId,
-        xy: [f64; 2],
+        key: rs_cam_core::selection::MatchKey,
     },
 
     // Edit

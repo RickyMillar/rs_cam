@@ -349,9 +349,8 @@ impl RsCamApp {
             // When a drill op is selected, draw its model's drill targets
             // (DXF points / circle centres) as pickable markers — bright when
             // selected, dim otherwise — so the user can see and click them.
-            let active_drill: Option<(usize, Vec<[f64; 2]>)> = {
+            let active_drill: Option<(usize, rs_cam_core::session::HoleSelection)> = {
                 use crate::state::selection::Selection;
-                use rs_cam_core::compute::catalog::OperationConfig;
                 let st = self.controller.state();
                 if st.workspace == Workspace::Toolpaths
                     && let Selection::Toolpath(id) = st.selection
@@ -360,14 +359,11 @@ impl RsCamApp {
                         .toolpath_configs()
                         .iter()
                         .find(|tc| tc.id == id)
-                        .and_then(|tc| match &tc.operation {
-                            OperationConfig::Drill(c) => {
-                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
-                            }
-                            OperationConfig::AlignmentPinDrill(c) => {
-                                Some((tc.model_id, c.selected_holes.clone().unwrap_or_default()))
-                            }
-                            _ => None,
+                        .and_then(|tc| {
+                            // Geometry selection P2.3c: the items the
+                            // generator resolves, each marked selected
+                            // or not (`ProjectSession::hole_selection`).
+                            Some((tc.model_id, st.session.hole_selection(tc)?))
                         })
                 } else {
                     None
@@ -536,37 +532,29 @@ impl RsCamApp {
                     );
                 }
 
-                // Drill target markers for the active drill op's model.
-                if let Some((mid, selected)) = active_drill.as_ref()
+                // Drill hole markers for the active drill op's model.
+                if let Some((mid, holes)) = active_drill.as_ref()
                     && model.id == *mid
                 {
-                    use rs_cam_core::compute::execute::drill_pick_matches;
-                    use rs_cam_core::io::dxf_input::DrillTargetKind;
-                    for t in model.drill_targets_pre_selection().iter() {
+                    for item in &holes.items {
                         let (tx, ty) = if let Some(setup) = setup_ref {
-                            let tp = setup
-                                .transform_point(rs_cam_core::geo::P3::new(t.x, t.y, 0.0), &stock);
+                            let tp = setup.transform_point(
+                                rs_cam_core::geo::P3::new(item.xy.x, item.xy.y, 0.0),
+                                &stock,
+                            );
                             (tp.x, tp.y)
                         } else {
-                            (t.x, t.y)
+                            (item.xy.x, item.xy.y)
                         };
-                        // G-DRILLPICKSTALE: the generator's own predicate,
-                        // not a fourth hand-written copy of the tolerance.
-                        // Note what this loop is over — TARGETS. A pick
-                        // that names no target is drawn nowhere, so a stale
-                        // pick is not on screen and a click cannot remove
-                        // it. That is why the refusal says "press Clear".
-                        let is_sel = selected.iter().any(|&h| drill_pick_matches(h, t));
-                        let marker_color = if is_sel {
+                        // G-DRILLPICKSTALE: the loop is over the ITEMS of
+                        // the model. A pick that names no item is drawn
+                        // nowhere; the panel prints its refusal instead.
+                        let marker_color = if item.selected {
                             [0.2_f32, 0.95, 0.4] // bright green = selected
                         } else {
                             [0.95_f32, 0.55, 0.15] // orange = available
                         };
-                        let radius = match t.kind {
-                            DrillTargetKind::CircleCenter { diameter } => (diameter / 2.0) as f32,
-                            DrillTargetKind::Point => 1.5,
-                        }
-                        .max(1.0);
+                        let radius = item.diameter.map_or(1.5, |d| (d / 2.0) as f32).max(1.0);
                         super::push_circle_vertices(
                             &mut verts,
                             tx as f32,

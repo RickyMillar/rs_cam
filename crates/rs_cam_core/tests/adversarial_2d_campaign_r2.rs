@@ -45,7 +45,7 @@ mod common;
 use std::time::Duration;
 
 use common::adversarial2d::{self as adv, CancelRecord, Fixture, Outcome, RunRecord, Validity};
-use common::session::{polygon_model, toolpath_config};
+use common::session::{polygon_model, polygon_model_with_points, toolpath_config};
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -268,14 +268,15 @@ fn fixture_centroids(polys: &[Polygon2]) -> Vec<[f64; 2]> {
 }
 
 fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> ProjectSession {
-    let op = match op {
-        OperationConfig::Drill(cfg) if cfg.selected_holes.is_none() => {
-            OperationConfig::Drill(DrillConfig {
-                selected_holes: Some(fixture_centroids(&fixture.polys)),
-                ..cfg
-            })
-        }
-        other => other,
+    // A Drill drills the points of its drawing (P2.3c): the drill cells
+    // get one point per fixture centroid.
+    let model = match op {
+        OperationConfig::Drill(_) => polygon_model_with_points(
+            fixture.polys.clone(),
+            &fixture_centroids(&fixture.polys),
+            fixture.name,
+        ),
+        _ => polygon_model(fixture.polys.clone(), fixture.name),
     };
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_for(&fixture.polys));
@@ -285,7 +286,7 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
     };
     let tool_idx = builder.add_tool(tool);
     let tool_id = builder.tools()[tool_idx].id.0;
-    let model_id = builder.add_model(polygon_model(fixture.polys.clone(), fixture.name));
+    let model_id = builder.add_model(model);
     let mut session = builder.build();
     let cfg = toolpath_config(fixture.name, op, tool_id, model_id);
     let _ = session

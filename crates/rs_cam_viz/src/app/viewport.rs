@@ -79,8 +79,9 @@ impl RsCamApp {
     /// A cheap key describing the active drill op's target selection, used to
     /// trigger a GPU re-upload of the viewport markers when it changes from
     /// any source. `None` when no drill op is selected.
-    pub(super) fn current_drill_marker_key(&self) -> Option<(usize, Vec<[f64; 2]>)> {
-        use rs_cam_core::compute::catalog::OperationConfig;
+    pub(super) fn current_drill_marker_key(
+        &self,
+    ) -> Option<(usize, rs_cam_core::selection::Selection)> {
         let id = self.active_drill_toolpath()?;
         let state = self.controller.state();
         let tc = state
@@ -88,12 +89,7 @@ impl RsCamApp {
             .toolpath_configs()
             .iter()
             .find(|tc| tc.id == id)?;
-        let selected = match &tc.operation {
-            OperationConfig::Drill(c) => c.selected_holes.clone(),
-            OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
-            _ => None,
-        };
-        Some((id.0, selected.unwrap_or_default()))
+        Some((id.0, tc.operation.selection()?.clone()))
     }
 
     fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {
@@ -204,11 +200,11 @@ impl RsCamApp {
             (_, PickHit::Toolpath { id, .. }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
-            (Workspace::Toolpaths, PickHit::DrillTarget { toolpath_id, xy }) => {
-                // Toggle this target in the drill op's selection (undo-tracked).
+            (Workspace::Toolpaths, PickHit::DrillTarget { toolpath_id, key }) => {
+                // Toggle this item in the drill op's selection (undo-tracked).
                 self.controller
                     .events_mut()
-                    .push(crate::ui::AppEvent::ToggleDrillTarget { toolpath_id, xy });
+                    .push(crate::ui::AppEvent::ToggleDrillTarget { toolpath_id, key });
             }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
                 // Route face toggle through controller event for undo support.

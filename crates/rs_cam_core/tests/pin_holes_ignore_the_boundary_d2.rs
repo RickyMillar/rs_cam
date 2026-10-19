@@ -13,7 +13,7 @@
 //!
 //! A boundary that shrinks the stock by 30 mm leaves both pins outside it.
 //!
-//! 1. Control: a Drill with picks at the two pin positions and at the
+//! 1. Control: a Drill on points at the two pin positions and at the
 //!    stock centre, with the same boundary, drills only the centre. So the
 //!    boundary clip is on and it removes a hole at a pin position.
 //! 2. The Pin Drill with the same boundary drills both pins.
@@ -27,7 +27,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::{polygon_model, toolpath_config};
+use common::session::{polygon_model_with_points, toolpath_config};
 
 use std::sync::atomic::AtomicBool;
 
@@ -78,8 +78,8 @@ fn plate_polygon() -> Polygon2 {
     ])
 }
 
-/// Toolpath 0: a Drill on picks at both pins and the centre. Toolpath 1:
-/// the Pin Drill. Both carry the shrunk boundary.
+/// Toolpath 0: a Drill on the points at both pins and the centre (the
+/// drawing selection). Toolpath 1: the Pin Drill (no extra hole). Both carry the shrunk boundary.
 fn session() -> ProjectSession {
     let stock = StockConfig {
         x: 100.0,
@@ -95,11 +95,14 @@ fn session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock);
     let tool_idx = builder.add_tool(make_endmill_6mm());
     let tool_id = builder.tools()[tool_idx].id.0;
-    let model_id = builder.add_model(polygon_model(vec![plate_polygon()], "plate"));
+    let model_id = builder.add_model(polygon_model_with_points(
+        vec![plate_polygon()],
+        &[[LEFT.x, LEFT.y], [RIGHT.x, RIGHT.y], CENTRE],
+        "plate",
+    ));
     let mut session = builder.build();
     let picks = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Simple,
-        selected_holes: Some(vec![[LEFT.x, LEFT.y], [RIGHT.x, RIGHT.y], CENTRE]),
         ..DrillConfig::default()
     });
     let pins = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {

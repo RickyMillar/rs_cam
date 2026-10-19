@@ -1994,7 +1994,7 @@ impl RsCamApp {
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
-            | CommandId::SetDrillSelectedHoles
+            | CommandId::EditSelection
             | CommandId::AddObstacle
             | CommandId::RemoveObstacle
             | CommandId::AddStockChange
@@ -2903,7 +2903,7 @@ impl RsCamApp {
             | CommandId::RemoveModel
             | CommandId::SetFaceSelection
             | CommandId::SetPinPartModels
-            | CommandId::SetDrillSelectedHoles
+            | CommandId::EditSelection
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation

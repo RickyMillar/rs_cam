@@ -144,31 +144,49 @@ fn fresh(path: &Path, units: ModelUnits) -> LoadedModel {
     load_model_file(path, 0, ModelKind::Svg, units).expect("the interactive door must import")
 }
 
-/// The distinct layers of the model's drill targets, sorted: the layer
-/// list the drill picker shows.
+/// One drill hole of a model: a point or a circle item (geometry selection
+/// P2.3c), as `(x, y, layer, diameter)`.
+type HoleRow = (f64, f64, String, Option<f64>);
+
+/// The points and circles of the model, in import order: the holes a drill
+/// op picks from (`ProjectSession::hole_selection` lists the same items).
+fn holes(model: &LoadedModel) -> Vec<HoleRow> {
+    use rs_cam_core::selection::Shape;
+    model
+        .items
+        .iter()
+        .filter_map(|item| {
+            let layer = item.layer().unwrap_or_default().to_owned();
+            match item.shape() {
+                Shape::Point(p) => Some((p.x, p.y, layer, None)),
+                Shape::Circle {
+                    centre, diameter, ..
+                } => Some((centre.x, centre.y, layer, Some(*diameter))),
+                Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => None,
+            }
+        })
+        .collect()
+}
+
+/// The distinct layers of the model's holes, sorted: the layer list the
+/// drill picker shows (`HoleSelection::layers`).
 fn target_layers(model: &LoadedModel) -> Vec<String> {
-    let mut layers: Vec<String> = model
-        .drill_targets_pre_selection()
-        .into_iter()
-        .map(|t| t.layer)
-        .collect();
+    let mut layers: Vec<String> = holes(model).into_iter().map(|h| h.2).collect();
     layers.sort();
     layers.dedup();
     layers
 }
 
-/// A comparable description of one target. `DrillTarget` derives neither
-/// `PartialEq` nor `Eq`, so the fields are named here rather than derived.
+/// A comparable description of each hole, rounded to the micron.
 fn describe(model: &LoadedModel) -> Vec<(f64, f64, String, String)> {
-    model
-        .drill_targets_pre_selection()
-        .iter()
-        .map(|t| {
+    holes(model)
+        .into_iter()
+        .map(|(x, y, layer, diameter)| {
             (
-                (t.x * 1e6).round() / 1e6,
-                (t.y * 1e6).round() / 1e6,
-                t.layer.clone(),
-                format!("{:?}", t.kind),
+                (x * 1e6).round() / 1e6,
+                (y * 1e6).round() / 1e6,
+                layer,
+                format!("{diameter:?}"),
             )
         })
         .collect()
@@ -231,24 +249,24 @@ fn the_three_fixture_drawings_report_the_targets_this_file_assumes() {
     let fc = fresh(&c, ModelUnits::Millimeters);
 
     assert_eq!(
-        fa.drill_targets_pre_selection().len(),
+        holes(&fa).len(),
         1,
         "drawing A must carry exactly one drill target, got {:?}",
         describe(&fa)
     );
     assert_eq!(
-        fb.drill_targets_pre_selection().len(),
+        holes(&fb).len(),
         1,
         "drawing B must carry exactly one drill target, got {:?}",
         describe(&fb)
     );
     assert!(
-        fc.drill_targets_pre_selection().is_empty(),
+        holes(&fc).is_empty(),
         "drawing C has no circle, so it must carry no drill target, got {:?}",
         describe(&fc)
     );
     assert!(
-        (fa.drill_targets_pre_selection()[0].x - fb.drill_targets_pre_selection()[0].x).abs() > 1.0,
+        (holes(&fa)[0].0 - holes(&fb)[0].0).abs() > 1.0,
         "the hole must MOVE between A and B, else the reload test is vacuous"
     );
     assert!(
@@ -312,7 +330,7 @@ fn a_reloaded_drawing_that_lost_its_holes_carries_no_targets() {
     let stored = record(&controller, id);
 
     assert!(
-        stored.drill_targets_pre_selection().is_empty(),
+        holes(stored).is_empty(),
         "the drawing no longer has a circle, so the record must carry no \
          drill target — it carries {:?}",
         describe(stored)

@@ -60,11 +60,6 @@ pub struct ResolvedGenInputs {
     /// prologue runs `selection::view` over it
     /// (`ExecutionContext::selection`).
     selection: crate::selection::ResolvedSelection,
-    /// G-DRILLCENTROID: the target model's drill targets (DXF points and
-    /// circle/arc centres), the `Drill` family's hole source when nothing
-    /// is picked. Shared with the model, never transformed here — like
-    /// `selected_holes`, the generator maps them into the emission frame.
-    drill_targets: Arc<Vec<crate::io::dxf_input::DrillTarget>>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
     /// K1: the setup's obstacles, in the emission frame. Every op reads
     /// them; the boundary does not gate them.
@@ -106,13 +101,13 @@ pub struct ResolvedGenInputs {
     /// `ModelOutline` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
     pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
-    /// G-DRILLPICK-FRAME: the setup's local<->global transform, hoisted off
-    /// the `SetupEvalContext` alongside `emission_stock_bbox` above because
+    /// The setup's local<->global transform, hoisted off the
+    /// `SetupEvalContext` alongside `emission_stock_bbox` above because
     /// `generate_toolpath` needs it and the context is scoped to this
-    /// resolver. `None` == identity setup == no-op. Drill picks are the one
-    /// input class the geometry pipeline cannot pre-transform: meshes and
-    /// polygons are transformed on the way in, but `selected_holes` arrive
-    /// as raw model coordinates on the operation config.
+    /// resolver. `None` == identity setup == no-op. The generator reads it
+    /// for the Z flip only (`ExecutionContext::z_flipped`, W6.5): the drill
+    /// holes are selection items and take the frame door with the rest of
+    /// the selection (geometry selection P2.3c).
     setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
     /// N12 item 2: the XY outline of the picked BREP faces, in the
     /// emission frame. Only a [`BoundarySource::FaceSelection`] boundary
@@ -1197,14 +1192,13 @@ impl JobPhases<'_, '_> {
         // (F-016) see the workpiece's actual hardness.
         let drill_op = crate::compute::execute::build_drill_op_for_config(
             &self.inputs.operation,
-            &self.inputs.drill_targets,
+            &self.inputs.selection,
             &self.inputs.alignment_pins,
             &self.inputs.tool_def,
             &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
             self.gen_initial_stock,
             self.context.material.clone(),
-            self.inputs.setup_transform.as_ref(),
         );
         let annotated_arc = Arc::new(annotated);
         let op_data = match drill_op {
@@ -1270,7 +1264,6 @@ pub fn execute_generation(
         mesh: inputs.mesh.as_deref(),
         index: inputs.spatial_index(),
         selection: crate::compute::execute::SelectionInputs::resolved(&inputs.selection),
-        drill_targets: &inputs.drill_targets,
         alignment_pins: &inputs.alignment_pins,
         setup_transform: inputs.setup_transform.as_ref(),
         reference_tool_cfg: inputs.reference_tool_cfg.clone(),

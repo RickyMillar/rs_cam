@@ -1589,25 +1589,23 @@ impl ProjectSession {
     /// pin-drill operation exists, and the holes of every other enabled
     /// operation that drills holes, in the stock-local frame.
     ///
-    /// - A `Drill` operation drills its picks, or every target of its
-    ///   model when it has no picks (the rule of `drill_targets_refusal`).
-    ///   A pick takes the diameter of the target it names.
-    /// - A `Pocket` operation clears each drawn circle of its model (each
-    ///   `CircleCenter` target).
+    /// - A `Drill` operation drills the holes of its selection
+    ///   ([`Self::hole_selection`], the resolution generation reads). A
+    ///   selection that refuses drills nothing, so it is not judged.
+    /// - A `Pocket` operation clears each circle of its selection.
     ///
-    /// A drawing target is in the world frame. On a `Top` or `Bottom`
-    /// setup a drawing maps to the same physical place on the part
+    /// The holes are in the MODEL frame. On a `Top` or `Bottom` setup a
+    /// drawing maps to the same physical place on the part
     /// (`SetupTransformInfo::drawing_to_local`), so the stock-local
-    /// position is the target minus the stock origin. A lateral setup
-    /// reads the drawing in its own work plane, which is not the pin
-    /// plane, so its operations are not judged.
+    /// position is the hole minus the stock origin. A lateral setup reads
+    /// the drawing in its own work plane, which is not the pin plane, so
+    /// its operations are not judged.
     ///
     /// The first value is the pin diameter of each enabled pin-drill
     /// operation (R1).
     pub(crate) fn dowel_hole_ops(&self) -> (Vec<f64>, Vec<crate::compute::alignment_pins::HoleOp>) {
         use crate::compute::alignment_pins::{DrilledHole, HoleOp, HoleOpKind};
         use crate::compute::catalog::OperationConfig;
-        use crate::io::dxf_input::DrillTargetKind;
 
         let (ox, oy) = (self.stock.origin_x, self.stock.origin_y);
         let mut pin_drill_sizes = Vec::new();
@@ -1628,49 +1626,42 @@ impl ProjectSession {
             if lateral {
                 continue;
             }
-            let targets = self
-                .models
-                .iter()
-                .find(|m| m.id == tc.model_id)
-                .map(crate::session::LoadedModel::drill_targets_pre_selection)
-                .unwrap_or_default();
-            let diameter_of = |kind: &DrillTargetKind| match kind {
-                DrillTargetKind::CircleCenter { diameter } => Some(*diameter),
-                DrillTargetKind::Point => None,
-            };
-            let hole = |x: f64, y: f64, diameter: Option<f64>| DrilledHole {
-                x: x - ox,
-                y: y - oy,
+            let hole = |xy: crate::geo::P2, diameter: Option<f64>| DrilledHole {
+                x: xy.x - ox,
+                y: xy.y - oy,
                 diameter,
             };
             let (kind, holes): (HoleOpKind, Vec<DrilledHole>) = match &tc.operation {
-                OperationConfig::Drill(cfg) => {
-                    if crate::compute::execute::drill_targets_refusal(cfg, targets.len()).is_some()
-                    {
+                OperationConfig::Drill(_) => {
+                    let Some(selection) = self.hole_selection(tc) else {
+                        continue;
+                    };
+                    if selection.refusal.is_some() {
                         continue;
                     }
-                    let holes = match &cfg.selected_holes {
-                        Some(picks) => picks
-                            .iter()
-                            .map(|&pick| {
-                                let diameter = targets
-                                    .iter()
-                                    .find(|t| crate::compute::execute::drill_pick_matches(pick, t))
-                                    .and_then(|t| diameter_of(&t.kind));
-                                hole(pick[0], pick[1], diameter)
-                            })
-                            .collect(),
-                        None => targets
-                            .iter()
-                            .map(|t| hole(t.x, t.y, diameter_of(&t.kind)))
-                            .collect(),
-                    };
+                    let holes = selection
+                        .holes
+                        .iter()
+                        .map(|h| hole(h.xy, h.diameter))
+                        .collect();
                     (HoleOpKind::Drill, holes)
                 }
                 OperationConfig::Pocket(_) => {
-                    let holes: Vec<DrilledHole> = targets
+                    let Ok(resolved) = self.resolve_toolpath_selection(tc) else {
+                        continue;
+                    };
+                    let holes: Vec<DrilledHole> = resolved
+                        .items()
                         .iter()
-                        .filter_map(|t| diameter_of(&t.kind).map(|d| hole(t.x, t.y, Some(d))))
+                        .filter_map(|r| match r.item().shape() {
+                            crate::selection::Shape::Circle {
+                                centre, diameter, ..
+                            } => Some(hole(*centre, Some(*diameter))),
+                            crate::selection::Shape::Loop(_)
+                            | crate::selection::Shape::Path(_)
+                            | crate::selection::Shape::Point(_)
+                            | crate::selection::Shape::Face(_) => None,
+                        })
                         .collect();
                     if holes.is_empty() {
                         continue;

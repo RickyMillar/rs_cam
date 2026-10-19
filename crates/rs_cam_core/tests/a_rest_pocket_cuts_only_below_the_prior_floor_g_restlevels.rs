@@ -84,6 +84,7 @@ mod common;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::session::TestHole;
 use common::session::{generate, polygon_model, square_polygon, toolpath_config};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
@@ -98,7 +99,6 @@ use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::geo::P2;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::ops::drill_op::DrillHole;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::polygon::Polygon2;
@@ -234,13 +234,13 @@ fn run_ops_with_tool(
     };
     let model_a = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
     let mut b_model = polygon_model(vec![shifted_square(b_shift)], "b");
-    let b_targets: Vec<DrillTarget> = targets
+    let b_targets: Vec<TestHole> = targets
         .iter()
-        .map(|&[x, y]| DrillTarget {
+        .map(|&[x, y]| TestHole {
             x,
             y,
             layer: "holes".to_owned(),
-            kind: DrillTargetKind::Point,
+            diameter: None,
         })
         .collect();
     b_model.items = Arc::new(common::session::drawing_items(

@@ -2,8 +2,8 @@
 //!
 //! ## The live case
 //!
-//! A `Drill` op on a DXF with 92 CIRCLE entities (one `DrillTarget` per
-//! circle) emitted the whole peck cycle two times at each hole, before it
+//! A `Drill` op on a DXF with 92 CIRCLE entities (one circle item per
+//! entity) emitted the whole peck cycle two times at each hole, before it
 //! moved to the next hole:
 //!
 //! ```text
@@ -24,7 +24,7 @@
 //!
 //! ## What this test measures
 //!
-//! The same op over three `DrillTarget`s, through `generate_toolpath`, with
+//! The same op over three circle items, through `generate_toolpath`, with
 //! those dressups. For each hole XY:
 //!
 //! 1. exactly ONE fed descent reaches the hole bottom (Z -12);
@@ -41,11 +41,12 @@
 //! cycle: off red is the generator, off green and live red is a dressup.
 //!
 //! A fourth arm gives each hole TWO circles on one centre. The DXF door
-//! gives one target per circle, so the model then has two targets per hole.
+//! gives one item per circle, so the model then has two circles per hole.
 //! The live counts (368 `LinkBridge` spans, two per cycle, and 4 pecks
 //! under one "Hole N" span) are what 184 cycles in adjacent pairs give.
-//! Before the fix `drill_holes_for_config` drilled every target, and this
-//! arm cut each hole two times.
+//! Before the fix the drill adapter drilled every target, and this arm
+//! cut each hole two times. Since P2.3c the adapter reads the holes of the
+//! selection and `unique_holes` drops the repeat.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test a_drill_hole_is_cut_once_g_drilltwice
@@ -60,7 +61,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::toolpath_config;
+use common::session::{TestHole, toolpath_config};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -72,7 +73,6 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::StockConfig;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -102,21 +102,19 @@ fn stock() -> StockConfig {
     }
 }
 
-/// The DXF model: `rings` closed circles on each hole centre, and one
-/// `DrillTarget` per circle, in entity order, as `dxf_input` gives them.
+/// The DXF model: `rings` circle items on each hole centre, in entity
+/// order, as `dxf_input` gives them.
 /// `rings = 2` is a counterbore drawn as two rings, or an entity the CAD
 /// export wrote twice.
 fn dxf_model(rings: usize) -> LoadedModel {
-    let targets: Vec<DrillTarget> = HOLES
+    let targets: Vec<TestHole> = HOLES
         .iter()
         .flat_map(|&[x, y]| {
-            (0..rings).map(move |_| DrillTarget {
+            (0..rings).map(move |_| TestHole {
                 x,
                 y,
                 layer: "0".to_owned(),
-                kind: DrillTargetKind::CircleCenter {
-                    diameter: HOLE_DIAMETER,
-                },
+                diameter: Some(HOLE_DIAMETER),
             })
         })
         .collect();

@@ -653,72 +653,98 @@ mod tests {
         )
     }
 
-    /// G-DRILLCENTROID (UX-R03-004): a Drill op on a drawing with closed
-    /// shapes but no circles or points is blocked with the generator's own
-    /// sentence. Pre-fix the validator was silent and Generate drilled the
-    /// polygon centroid.
-    #[test]
-    fn validate_drill_blocks_when_model_exposes_no_targets() {
+    /// The session of the drill validation tests: tool 1, `model`, and a
+    /// Drill toolpath (id 3, the id of [`drill_entry`]) with `selection`.
+    fn drill_session(
+        model: rs_cam_core::session::LoadedModel,
+        selection: rs_cam_core::selection::Selection,
+    ) -> (
+        rs_cam_core::session::ProjectSession,
+        rs_cam_core::session::ToolpathConfig,
+    ) {
+        let mut tc = make_session_toolpath_config(
+            "Drill",
+            1,
+            model.id,
+            OperationConfig::Drill(crate::state::toolpath::DrillConfig {
+                selection,
+                ..Default::default()
+            }),
+        );
+        tc.id = ToolpathId(3);
         let session = ProjectSessionBuilder::new()
             .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
-            .model(session_polygon_model(2))
+            .model(model)
+            .toolpath(tc.clone())
             .build();
+        (session, tc)
+    }
 
-        let errs = validate_toolpath(
-            &drill_entry(2),
-            &ToolpathValidationContext::from_session(&session),
+    /// G-DRILLCENTROID (UX-R03-004), geometry selection P2.3c: a Drill op
+    /// on a drawing with closed shapes but no circles or points is blocked
+    /// with the generator's own sentence (`Empty`). Pre-fix the validator
+    /// was silent and Generate drilled the polygon centroid.
+    #[test]
+    fn validate_drill_blocks_when_model_holds_no_hole() {
+        let (session, tc) = drill_session(
+            session_polygon_model(2),
+            rs_cam_core::selection::Selection::drawing(),
         );
+        let ctx = ToolpathValidationContext::from_session(&session);
+        let errs = validate_toolpath(&drill_entry(2), &ctx);
         assert!(
             errs.iter()
-                .any(|e| e == rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
-            "expected {:?}, got {errs:?}",
-            rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG
+                .any(|e| e.starts_with("Drill:") && e.contains("nothing is left to cut")),
+            "expected the generator's Empty refusal, got {errs:?}"
         );
 
         // The session-config door prints the same sentence.
-        let tc =
-            make_session_toolpath_config("Drill", 1, 2, OperationConfig::Drill(Default::default()));
-        let errs =
-            validate_toolpath_config(&tc, &ToolpathValidationContext::from_session(&session));
-        assert!(
-            errs.iter()
-                .any(|e| e == rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
-            "config door: got {errs:?}"
+        let config_errs = validate_toolpath_config(&tc, &ctx);
+        assert_eq!(
+            config_errs, errs,
+            "both doors print the generator's sentence"
         );
     }
 
     #[test]
-    fn validate_drill_passes_when_model_exposes_a_target() {
-        let session = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
-            .model(session_target_model(2))
-            .build();
-
+    fn validate_drill_passes_when_model_holds_a_circle() {
+        let (session, _) = drill_session(
+            session_target_model(2),
+            rs_cam_core::selection::Selection::drawing(),
+        );
         let errs = validate_toolpath(
             &drill_entry(2),
             &ToolpathValidationContext::from_session(&session),
         );
         assert!(
-            !errs.iter().any(|e| e.contains("drill targets")),
-            "a target-bearing model must not be blocked: {errs:?}"
+            !errs.iter().any(|e| e.starts_with("Drill:")),
+            "a model with a circle must not be blocked: {errs:?}"
         );
     }
 
+    /// G-DRILLPICKSTALE on the selection: a pick that names no item of the
+    /// drawing blocks Generate with the `LostPick` sentence.
     #[test]
-    fn validate_drill_passes_on_an_explicit_pick_without_model_targets() {
-        let session = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
-            .model(session_polygon_model(2))
-            .build();
-
-        let mut entry = drill_entry(2);
-        if let OperationConfig::Drill(cfg) = &mut entry.operation {
-            cfg.selected_holes = Some(vec![[1.0, 2.0]]);
-        }
-        let errs = validate_toolpath(&entry, &ToolpathValidationContext::from_session(&session));
+    fn validate_drill_blocks_a_lost_pick() {
+        use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SourceRef};
+        let lost = MatchKey {
+            source: SourceRef::ToolpathModel,
+            kind: ItemKind::Circle,
+            layer: Some("holes".to_owned()),
+            anchor: [50.0, 50.0],
+            measure: 6.0,
+            brep: None,
+        };
+        let (session, _) =
+            drill_session(session_target_model(2), Selection::from_picks(vec![lost]));
+        let errs = validate_toolpath(
+            &drill_entry(2),
+            &ToolpathValidationContext::from_session(&session),
+        );
         assert!(
-            !errs.iter().any(|e| e.contains("drill targets")),
-            "a pick is a hole source: {errs:?}"
+            errs.iter()
+                .any(|e| e.contains("no item of the drawing matches this pick")),
+            "a lost pick blocks Generate: {errs:?}"
         );
     }
 }

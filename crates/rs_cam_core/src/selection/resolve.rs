@@ -132,9 +132,15 @@ impl ResolvedSelection {
     /// `ExecutionContext` with no session). The session resolves the
     /// selection of the op, face picks included (P2.3b).
     pub(crate) fn from_polygons(polygons: Vec<Polygon2>) -> Self {
-        let items = ItemSet::from_polygons(polygons)
-            .iter()
-            .cloned()
+        Self::from_items(ItemSet::from_polygons(polygons).iter().cloned())
+    }
+
+    /// The default rule over hand-built items (points and circles too),
+    /// each matched by the default rule, with nothing lost or missing. The
+    /// caller: `SelectionInputs::from_items` (tests with no session).
+    pub(crate) fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
+        let items = items
+            .into_iter()
             .map(|item| ResolvedItem {
                 identity: item.key().clone(),
                 item,

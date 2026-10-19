@@ -243,9 +243,10 @@ impl ProjectSession {
     }
 
     /// Build a [`PreconditionContext`] for a single toolpath. Captures
-    /// the target model's geometry kind (so the drill / project-curve
-    /// preconditions can verify a curve / mesh source is in scope) and
-    /// the live stock pin diameters.
+    /// the target model's geometry kind (so the project-curve
+    /// preconditions can verify a curve / mesh source is in scope), the
+    /// holes and the refusal of a drill op's selection, and the live stock
+    /// pin diameters.
     ///
     /// Pure helper — no I/O, no mutation. Safe to call repeatedly per
     /// diagnose round. GUI consumers snapshot this context before borrowing
@@ -263,8 +264,10 @@ impl ProjectSession {
                 .map(|m| TargetModelGeometry {
                     has_polygons: m.items.ring_count() > 0,
                     has_mesh: m.mesh.is_some(),
-                    drill_target_count: m.drill_targets_pre_selection().len(),
                 });
+        // Geometry selection P2.3c: a drill op's holes and refusal come from
+        // the resolution generation reads (`hole_selection`).
+        let holes = self.hole_selection(tc).unwrap_or_default();
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
 
@@ -279,6 +282,8 @@ impl ProjectSession {
                 .iter()
                 .map(|p| p.diameter)
                 .collect(),
+            selection_holes: holes.holes.len(),
+            selection_refusal: holes.refusal,
         }
     }
 

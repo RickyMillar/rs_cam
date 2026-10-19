@@ -320,6 +320,21 @@ fn flat_stock() -> StockConfig {
     }
 }
 
+/// The four drill holes of the census Drill row (P2.3c: points of the
+/// drawing, the default drill selection).
+const DRILL_HOLES: [[f64; 2]; 4] = [[20.0, 20.0], [40.0, 20.0], [60.0, 20.0], [40.0, 40.0]];
+
+/// The rectangle, then one point per drill hole. A region op skips the
+/// points; the Drill drills them.
+fn rect_items(poly: Polygon2) -> rs_cam_core::selection::ItemSet {
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    let mut items: Vec<Item> = ItemSet::from_polygons(vec![poly]).iter().cloned().collect();
+    items.extend(DRILL_HOLES.iter().map(|&[x, y]| {
+        Item::new(SourceRef::ToolpathModel, None, Shape::Point(P2::new(x, y))).unwrap()
+    }));
+    ItemSet::new(items)
+}
+
 fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -331,7 +346,7 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         id: 0,
         name: "w6_census_rect".to_owned(),
         mesh: None,
-        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
+        items: Arc::new(rect_items(poly)),
         path: PathBuf::from("synthetic://w6_census_rect.svg"),
         kind: None,
         units: None,
@@ -672,12 +687,6 @@ fn flat_cases() -> Vec<FlatCase> {
             || {
                 OperationConfig::Drill(DrillConfig {
                     depth: 8.0,
-                    selected_holes: Some(vec![
-                        [20.0, 20.0],
-                        [40.0, 20.0],
-                        [60.0, 20.0],
-                        [40.0, 40.0],
-                    ]),
                     ..DrillConfig::default()
                 })
             },

@@ -323,7 +323,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let drill_texts = rendered(|ui| {
-        super::operations::draw_drill_params(ui, &mut drill, &[], &[], None, None);
+        super::operations::draw_drill_params(ui, &mut drill, None, None, None);
     });
 
     let mut pin = AlignmentPinDrillConfig {
@@ -331,7 +331,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let pin_texts = rendered(|ui| {
-        super::operations::draw_alignment_pin_drill_params(ui, &mut pin, &[], &[], None);
+        super::operations::draw_alignment_pin_drill_params(ui, &mut pin, None, None);
     });
 
     for label in ["Peck (G83)", "Peck Depth:", "Feed Rate:", "Retract (R):"] {

@@ -11,9 +11,17 @@ use crate::geo::P2;
 use super::item::{ItemKind, Shape, SourceRef};
 
 /// The distance (mm) at which two key anchors, or two key measures, are
-/// equal. It is the drill pick rule of today, `DRILL_PICK_MATCH_EPS_MM`
-/// (`compute/execute/drilling.rs`); P2.3c moves that constant here.
-pub const KEY_MATCH_EPS_MM: f64 = crate::compute::execute::DRILL_PICK_MATCH_EPS_MM;
+/// equal.
+///
+/// This is NOT a new tolerance. It is the drill pick rule
+/// `DRILL_PICK_MATCH_EPS_MM` (`compute/execute/drilling.rs`, until P2.3c
+/// moved it here). The GUI picker compared picks to each other at this
+/// value in two places (the panel's `TARGET_EPS` and the viewport toggle's
+/// `EPS`), because a pick IS a copy of the item's own numbers, so the two
+/// agree bit for bit. A re-import of an unchanged file gives the same
+/// numbers again. The drill adapter also drops a repeated hole at this
+/// distance (`unique_holes`, G-DRILLTWICE).
+pub const KEY_MATCH_EPS_MM: f64 = 1e-6;
 
 /// The identity of an item across a re-import of an unchanged file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

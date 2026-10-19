@@ -50,9 +50,10 @@ use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{FeedsProvenance, ValueProvenance};
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit, SourceRef};
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, Effects, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    RestoreToolpathSnapshotArgs, SetDrillSelectedHolesArgs, ToolpathConfig,
+    AdoptResultArgs, Command, EditSelectionArgs, Effects, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, RestoreToolpathSnapshotArgs, ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
@@ -336,9 +337,16 @@ fn a_drill_pick_drops_the_chain_n6() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
 
     let effects = s
-        .apply(Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
+        .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
-            selected_holes: Some(vec![[1.0, 2.0]]),
+            edit: SelectionEdit::AddPick(MatchKey {
+                source: SourceRef::ToolpathModel,
+                kind: ItemKind::Point,
+                layer: None,
+                anchor: [1.0, 2.0],
+                measure: 0.0,
+                brep: None,
+            }),
         }))
         .expect("index 0 is a Drill operation");
 

@@ -1,65 +1,37 @@
-//! **G-DRILLPICKSTALE** (F4.8) — a picked drill hole is a frozen
-//! coordinate, so a pick that no longer names a target still drills.
+//! **G-DRILLPICKSTALE** (F4.8) — a picked drill hole that no longer
+//! names an item of the drawing refuses; it never drills.
 //!
-//! # The mechanism
+//! # The mechanism, before P2.3c
 //!
 //! `DrillConfig::selected_holes` and `AlignmentPinDrillConfig::selected_holes`
-//! store a pick as a raw XY COORDINATE, not as a reference into the model's
-//! drill targets. The GUI picker copies `DrillTarget::{x, y}` straight in
-//! (`crates/rs_cam_viz/src/ui/properties/operations/drill.rs:73`, and the
-//! viewport toggle at `crates/rs_cam_viz/src/controller/events/mod.rs:208-229`).
-//! `drill_holes_for_config` (`crates/rs_cam_core/src/compute/execute.rs:1007`)
-//! then returns those coordinates and never looks at the targets:
+//! stored a pick as a raw XY COORDINATE. The GUI picker copied a target's
+//! `(x, y)` straight in. F4.4 (G-RELOADTARGETS) made every refresh door
+//! replace the model's targets, so the record followed the file and the
+//! picks did not: the operator picked a hole, moved it in CAD, reloaded,
+//! and the machine drilled the PREVIOUS position. F4.8 made the generator
+//! re-resolve each pick against the current targets and refuse a stale
+//! one, but it exempted a model with NO targets, because an empty target
+//! list also meant "the caller resolved no model".
 //!
-//! ```ignore
-//! if let Some(selected) = &cfg.selected_holes {
-//!     return Ok(selected.iter().map(...).collect());
-//! }
-//! ```
+//! # What this file pins (geometry selection P2.3c)
 //!
-//! F4.4 (G-RELOADTARGETS) made every refresh door replace
-//! `LoadedModel::drill_targets`, so the record now follows the file. The
-//! picks do not. The operator picks three holes, moves them in CAD,
-//! reloads, regenerates — and the machine drills the PREVIOUS positions.
-//! F4.4's fix cannot reach this: the generator never reads the field F4.4
-//! repaired.
+//! A pick is a `MatchKey` in the op's `Selection`. `selection::resolve`
+//! matches it against the items of the CURRENT model; a pick that matches
+//! no item is a `LostPick`, and the prologue refuses with
+//! `RefusalCause::LostPick`, naming the pick. When every pick matches, the
+//! op drills them. A refusal is the safe outcome; a silent wrong cut is
+//! the worst one.
 //!
-//! # What this file pins
+//! # The exemption is gone
 //!
-//! A pick is re-resolved against the model's CURRENT targets. When every
-//! pick still names a target the op drills them. When a pick names none of
-//! them the generator REFUSES. A refusal is the safe outcome; a silent
-//! wrong cut is the worst one.
+//! The resolver knows whether the model resolved (`ResolveScope`), so a
+//! pick on a model that holds no point and no circle is lost like any
+//! other: `a_pick_on_a_model_with_no_holes_refuses` (the F4.8 residual
+//! closes). A caller that resolves no model gives an empty selection, and
+//! a Drill there refuses `Empty`.
 //!
-//! # The scope boundary this file also pins
-//!
-//! The check runs only when the model exposes at least one target. When
-//! the target list is EMPTY there is nothing to re-resolve against, and an
-//! empty list means two different things at this seam:
-//!
-//! - the model exposes no targets, or
-//! - the CALLER resolved no model at all —
-//!   `execute_operation_annotated` passes `&[]` on purpose
-//!   (`crates/rs_cam_core/src/compute/execute.rs:3313`: "a `Drill` op on
-//!   this path drills only what it carries in `selected_holes`"), and every
-//!   drill fixture in this suite builds its model with
-//!   `drill_targets: Arc::new(Vec::new())`.
-//!
-//! `a_pick_on_a_model_that_exposes_no_targets_still_generates` is the
-//! preservation control for that caller class. The residual it names — the
-//! operator DELETES every hole from the drawing, so the list goes empty and
-//! the stale picks stand — is recorded in
-//! `planning/ui_fix_2026-09-09/reports/F4.8.md`. It needs a
-//! "was a model resolved" signal this seam does not carry.
-//!
-//! # Why the refusal cannot be the OLD one
-//!
-//! `drill_targets_refusal` already refuses two shapes: no pick and no
-//! targets, and an EMPTY pick. Every arm below asserts that predicate
-//! returns `None` first, so a refusal observed here is the new check and
-//! not one of those two.
-//!
-//! Source: `planning/ui_fix_2026-09-09/reports/F4.4.md` §7 row F4.8.
+//! Source: `planning/ui_fix_2026-09-09/reports/F4.4.md` §7 row F4.8;
+//! `planning/geometry_selection_2026-10-16/DESIGN.md` 5.3.
 
 #![allow(
     clippy::unwrap_used,
@@ -70,7 +42,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::toolpath_config;
+use common::session::{TestHole, toolpath_config};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -83,8 +55,8 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::geo::P2;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SourceRef};
 use rs_cam_core::session::{
     AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
     ToolpathComputeResult,
@@ -97,17 +69,19 @@ const HOLE_A: [f64; 2] = [20.0, 30.0];
 /// four tool diameters away, so no tolerance can confuse the two.
 const HOLE_B: [f64; 2] = [60.0, 30.0];
 
-/// The phrase the new refusal carries. Asserting the phrase rather than a
-/// bare `is_err()` keeps an unrelated generation failure from passing this
-/// file vacuously; the `drill_targets_refusal` check in each arm excludes
-/// the two refusals that already existed.
-const STALE_PHRASE: &str = "no longer";
+/// The diameter of the drawn hole (mm).
+const HOLE_DIAMETER: f64 = 6.0;
+
+/// The phrase of the `LostPick` refusal (`RefusalCause::LostPick`).
+/// Asserting the phrase rather than a bare `is_err()` keeps an unrelated
+/// generation failure, or the `Empty` refusal, from passing this file
+/// vacuously.
+const LOST_PHRASE: &str = "no item of the drawing matches this pick";
 
 // ── fixtures ────────────────────────────────────────────────────────────
 
-/// A plate covering the stock footprint. Every op here picks its holes, so
-/// the polygon is never a hole source (G-DRILLCENTROID); it exists so the
-/// model is a real 2D model.
+/// A plate covering the stock footprint. A loop is never a hole source
+/// (G-DRILLCENTROID); it exists so the model is a real 2D model.
 fn plate_polygon() -> Polygon2 {
     Polygon2::new(vec![
         P2::new(0.0, 0.0),
@@ -117,19 +91,19 @@ fn plate_polygon() -> Polygon2 {
     ])
 }
 
-fn target_at(xy: [f64; 2]) -> DrillTarget {
-    DrillTarget {
+fn target_at(xy: [f64; 2]) -> TestHole {
+    TestHole {
         x: xy[0],
         y: xy[1],
         layer: "holes".to_owned(),
-        kind: DrillTargetKind::CircleCenter { diameter: 6.0 },
+        diameter: Some(HOLE_DIAMETER),
     }
 }
 
-/// The drawing, with its one hole at `hole`. `targets` empty models a
-/// drawing that exposes none.
+/// The drawing, with its one circle at `hole`. `None` models a drawing
+/// that holds no circle.
 fn plate_model(hole: Option<[f64; 2]>) -> LoadedModel {
-    let targets: Vec<DrillTarget> = hole.into_iter().map(target_at).collect();
+    let targets: Vec<TestHole> = hole.into_iter().map(target_at).collect();
     LoadedModel {
         id: 0,
         name: "plate".to_owned(),
@@ -160,22 +134,40 @@ fn stock() -> StockConfig {
     }
 }
 
-fn drill_op(picks: &[[f64; 2]]) -> OperationConfig {
+/// The key a viewport pick of the circle at `xy` stores: the toolpath
+/// model, the kind, the layer, the centre and the diameter.
+fn pick_at(xy: [f64; 2]) -> MatchKey {
+    MatchKey {
+        source: SourceRef::ToolpathModel,
+        kind: ItemKind::Circle,
+        layer: Some("holes".to_owned()),
+        anchor: xy,
+        measure: HOLE_DIAMETER,
+        brep: None,
+    }
+}
+
+/// A selection of these picks and no rule.
+fn picks(at: &[[f64; 2]]) -> Selection {
+    Selection::from_picks(at.iter().copied().map(pick_at).collect())
+}
+
+fn drill_op(at: &[[f64; 2]]) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         depth: 5.0,
         cycle: DrillCycleType::Simple,
-        selected_holes: Some(picks.to_vec()),
+        selection: picks(at),
         ..DrillConfig::default()
     })
 }
 
 /// A pin drill whose ONLY holes are picks — the setup has no alignment
 /// pins, so the emitted columns are exactly the picks.
-fn pin_drill_op(picks: &[[f64; 2]]) -> OperationConfig {
+fn pin_drill_op(at: &[[f64; 2]]) -> OperationConfig {
     OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
         diameter: 6.0,
         cycle: DrillCycleType::Simple,
-        selected_holes: Some(picks.to_vec()),
+        selection: picks(at),
         ..AlignmentPinDrillConfig::default()
     })
 }
@@ -255,85 +247,84 @@ fn generate(session: &mut ProjectSession) -> Result<Vec<(i64, i64)>, String> {
 
 // ── non-vacuity ─────────────────────────────────────────────────────────
 
-/// Without this every arm below could be comparing empty lists, or could
-/// be tripping one of the TWO refusals that already existed.
-#[test]
-fn the_fixture_models_move_the_target_this_file_assumes() {
-    let a = plate_model(Some(HOLE_A)).drill_targets_pre_selection();
-    let b = plate_model(Some(HOLE_B)).drill_targets_pre_selection();
-    let none = plate_model(None).drill_targets_pre_selection();
+/// The circle centres of a model, in import order.
+fn circle_centres(model: &LoadedModel) -> Vec<[f64; 2]> {
+    model
+        .items
+        .iter()
+        .filter(|i| i.kind() == ItemKind::Circle)
+        .map(|i| i.key().anchor)
+        .collect()
+}
 
-    assert_eq!(a.len(), 1, "drawing A must expose exactly one drill target");
-    assert_eq!(b.len(), 1, "drawing B must expose exactly one drill target");
+/// Without this every arm below could be comparing empty lists.
+#[test]
+fn the_fixture_models_move_the_hole_this_file_assumes() {
+    let a = circle_centres(&plate_model(Some(HOLE_A)));
+    let b = circle_centres(&plate_model(Some(HOLE_B)));
+    let none = circle_centres(&plate_model(None));
+
+    assert_eq!(a, vec![HOLE_A], "drawing A must hold exactly one circle");
+    assert_eq!(b, vec![HOLE_B], "drawing B must hold exactly one circle");
+    assert!(none.is_empty(), "the no-hole drawing must hold no circle");
     assert!(
-        none.is_empty(),
-        "the no-hole drawing must expose no drill target"
-    );
-    assert!(
-        (a[0].x - b[0].x).abs() > 1.0,
+        (a[0][0] - b[0][0]).abs() > 1.0,
         "the hole must MOVE between A and B, else every arm below is vacuous"
     );
-
-    // The OLD predicate exonerates a non-empty pick whatever the target
-    // count, so any refusal observed below is the new check.
-    let OperationConfig::Drill(cfg) = drill_op(&[HOLE_A]) else {
-        panic!("drill_op must build a Drill config");
-    };
-    for count in [0_usize, 1, 2] {
-        assert!(
-            rs_cam_core::compute::execute::drill_targets_refusal(&cfg, count).is_none(),
-            "`drill_targets_refusal` must NOT refuse a non-empty pick at \
-             target count {count} — if it does, this file cannot tell the \
-             new refusal from the old ones"
-        );
-    }
+    // The pick key is the key the import gives the circle (bar the source,
+    // which the session binds to the model id).
+    let key = plate_model(Some(HOLE_A))
+        .items
+        .iter()
+        .find(|i| i.kind() == ItemKind::Circle)
+        .map(|i| i.key().clone())
+        .unwrap();
+    assert!(
+        pick_at(HOLE_A).names_same_geometry(&key),
+        "the pick must name the drawn circle: {key:?}"
+    );
 }
 
 // ── the defect ──────────────────────────────────────────────────────────
 
+/// Assert that `result` is the `LostPick` refusal, and that it names the
+/// pick at `xy`.
+fn assert_lost(result: Result<Vec<(i64, i64)>, String>, xy: [f64; 2], case: &str) {
+    match result {
+        Ok(cols) => panic!(
+            "{case}: the pick at {xy:?} names no item of the current drawing, \
+             so generation must REFUSE. It generated and drilled {cols:?}."
+        ),
+        Err(msg) => {
+            assert!(
+                msg.contains(LOST_PHRASE),
+                "{case}: the refusal must say the pick names no item — got {msg:?}"
+            );
+            let at = format!("X {:.3} Y {:.3}", xy[0], xy[1]);
+            assert!(
+                msg.contains(&at),
+                "{case}: the refusal must name the pick ({at}) — got {msg:?}"
+            );
+        }
+    }
+}
+
 /// **The operator's case.** The hole was picked at `HOLE_A`. The operator
-/// moved it in CAD and reloaded, so the record's target is now `HOLE_B`.
-/// The pick is a frozen coordinate, so the machine drills `HOLE_A` — a
-/// position that is in no version of the drawing any more.
+/// moved it in CAD and reloaded, so the drawing's circle is now at
+/// `HOLE_B`. The pick matches no item, so the op refuses and names it.
 #[test]
 fn a_pick_whose_target_moved_refuses_instead_of_drilling_the_old_position() {
     let mut session = session_with(plate_model(Some(HOLE_A)), drill_op(&[HOLE_A]));
     refresh_model(&mut session, plate_model(Some(HOLE_B)));
-
-    match generate(&mut session) {
-        Ok(cols) => panic!(
-            "the picked hole moved from {HOLE_A:?} to {HOLE_B:?}, so the \
-             pick names no target on the current drawing and generation \
-             must REFUSE. It generated and drilled {cols:?}. \
-             `drill_holes_for_config` returns `cfg.selected_holes` verbatim \
-             and never reads `drill_targets`, so the machine cuts the \
-             previous version's hole."
-        ),
-        Err(msg) => assert!(
-            msg.contains(STALE_PHRASE),
-            "the refusal must say the pick no longer names a target — got {msg:?}"
-        ),
-    }
+    assert_lost(generate(&mut session), HOLE_A, "Drill, moved hole");
 }
 
-/// The same defect on the pin drill. `AlignmentPinDrillConfig::
-/// selected_holes` is the same frozen coordinate, resolved by
-/// `pin_holes_in_emission_frame`.
+/// The same on the pin drill: its extra holes are the same selection.
 #[test]
 fn a_pin_drill_pick_whose_target_moved_refuses() {
     let mut session = session_with(plate_model(Some(HOLE_A)), pin_drill_op(&[HOLE_A]));
     refresh_model(&mut session, plate_model(Some(HOLE_B)));
-
-    match generate(&mut session) {
-        Ok(cols) => panic!(
-            "the pin drill's picked hole moved from {HOLE_A:?} to \
-             {HOLE_B:?}, so generation must REFUSE. It drilled {cols:?}."
-        ),
-        Err(msg) => assert!(
-            msg.contains(STALE_PHRASE),
-            "the refusal must say the pick no longer names a target — got {msg:?}"
-        ),
-    }
+    assert_lost(generate(&mut session), HOLE_A, "Pin Drill, moved hole");
 }
 
 /// One stale pick among several still refuses. A partial emission would be
@@ -342,59 +333,35 @@ fn a_pin_drill_pick_whose_target_moved_refuses() {
 #[test]
 fn one_stale_pick_among_several_refuses_rather_than_drilling_the_rest() {
     // The drawing keeps HOLE_A and never had HOLE_B.
-    let model = plate_model(Some(HOLE_A));
-    let mut session = session_with(model, drill_op(&[HOLE_A, HOLE_B]));
-    match generate(&mut session) {
-        Ok(cols) => panic!(
-            "{HOLE_B:?} names no target on this drawing, so generation must \
-             REFUSE rather than drill the picks that still resolve. It \
-             drilled {cols:?}."
-        ),
-        Err(msg) => assert!(
-            msg.contains(STALE_PHRASE),
-            "the refusal must say the pick no longer names a target — got {msg:?}"
-        ),
-    }
+    let mut session = session_with(plate_model(Some(HOLE_A)), drill_op(&[HOLE_A, HOLE_B]));
+    assert_lost(generate(&mut session), HOLE_B, "Drill, one stale of two");
 }
 
-// ── the controls ────────────────────────────────────────────────────────
+/// **The F4.8 residual, closed.** The operator deletes every hole from the
+/// drawing. Before P2.3c an empty target list exempted the picks, so the
+/// op drilled the old positions. The resolver knows the model resolved,
+/// so the pick is lost like any other.
+#[test]
+fn a_pick_on_a_model_with_no_holes_refuses() {
+    let mut session = session_with(plate_model(Some(HOLE_A)), drill_op(&[HOLE_A]));
+    refresh_model(&mut session, plate_model(None));
+    assert_lost(generate(&mut session), HOLE_A, "Drill, every hole deleted");
+}
 
-/// **The control.** A pick that still names its target drills it, and
-/// drills only it. This passes before the fix and after it, and it is what
-/// proves the three assertions above are capable of passing.
+// ── the control ─────────────────────────────────────────────────────────
+
+/// **The control.** A pick that still names its item drills it, and
+/// drills only it. It proves that the arms above are capable of passing.
 #[test]
 fn a_pick_that_still_names_its_target_drills_it_control() {
     let mut session = session_with(plate_model(Some(HOLE_A)), drill_op(&[HOLE_A]));
-    // A reload that changed nothing — the same door, the same targets.
+    // A reload that changed nothing — the same door, the same items.
     refresh_model(&mut session, plate_model(Some(HOLE_A)));
 
     let cols = generate(&mut session).expect("a resolving pick must generate");
     assert_eq!(
         cols,
         vec![micron(HOLE_A)],
-        "the op must drill exactly the picked target"
-    );
-}
-
-/// **The scope boundary, and a preservation control.** A model that
-/// exposes NO targets carries no evidence to re-resolve a pick against,
-/// and `&[]` also reaches this seam from callers that resolved no model at
-/// all. Those picks stand, exactly as they do today.
-///
-/// This is deliberate and it is a residual: the operator who DELETES every
-/// hole from the drawing still drills the old positions. See the module
-/// doc and `reports/F4.8.md`.
-#[test]
-fn a_pick_on_a_model_that_exposes_no_targets_still_generates() {
-    let mut session = session_with(plate_model(None), drill_op(&[HOLE_A]));
-
-    let cols = generate(&mut session).expect(
-        "a pick on a model with no targets must still generate — every \
-         drill fixture in this suite depends on it",
-    );
-    assert_eq!(
-        cols,
-        vec![micron(HOLE_A)],
-        "and it must drill the pick it was given"
+        "the op must drill exactly the picked circle"
     );
 }

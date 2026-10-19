@@ -6,10 +6,11 @@
 //! only fired at generation time:
 //!
 //! - **Drill / AlignmentPinDrill** — needs at least one hole position
-//!   (for Drill an explicit pick or one of the model's drill targets —
-//!   DXF points and circle/arc centres, G-DRILLCENTROID; for
-//!   AlignmentPinDrill a pin on the live stock or a picked target — the
-//!   two sources the generator drills).
+//!   (for Drill a point or circle of its selection, G-DRILLCENTROID; for
+//!   AlignmentPinDrill a pin on the live stock or a hole of its
+//!   selection — the two sources the generator drills). The selection
+//!   verdict comes from the session (`ProjectSession::hole_selection`,
+//!   the resolution generation reads); this adapter only converts it.
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -49,16 +50,20 @@ pub struct PreconditionContext {
     /// of the op's diameter before it drills (R1), so the snapshot can be
     /// empty or stale.
     pub stock_alignment_pin_diameters: Vec<f64>,
+    /// The count of the holes that a drill op drills from its own
+    /// selection (geometry selection P2.3c). Zero for every other op.
+    pub selection_holes: usize,
+    /// The refusal that generation gives for the selection of a drill op,
+    /// with the op name (`selection::view`, through
+    /// `ProjectSession::hole_selection`). `None` when the selection gives
+    /// the op its holes, and for every other op.
+    pub selection_refusal: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TargetModelGeometry {
     pub has_polygons: bool,
     pub has_mesh: bool,
-    /// How many pickable drill targets (DXF `POINT`s and circle/arc
-    /// centres, circle-like SVG shapes) the model exposes. Zero for meshes. The `Drill`
-    /// check reads this, never `has_polygons` (G-DRILLCENTROID).
-    pub drill_target_count: usize,
 }
 
 /// Run every precondition check against a single toolpath, returning a
@@ -71,18 +76,26 @@ pub fn diagnostics_from_preconditions(
     let scope = Scope::Toolpath { id: toolpath_id };
     let mut out = Vec::new();
     match op {
-        OperationConfig::Drill(cfg) => {
-            out.extend(drill_checks(&scope, cfg, ctx));
+        OperationConfig::Drill(_) => {
+            out.extend(drill_checks(&scope, ctx));
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
-            // The generator drills the live stock pins plus the picked
-            // targets, so this check reads the same two inputs.
-            let has_picks = cfg.selected_holes.as_ref().is_some_and(|p| !p.is_empty());
+            // The generator drills the live stock pins plus the holes of
+            // the selection, so this check reads the same two inputs.
             let has_pins_of_size = ctx
                 .stock_alignment_pin_diameters
                 .iter()
                 .any(|d| crate::compute::alignment_pins::same_pin_diameter(*d, cfg.diameter));
-            if !has_pins_of_size && !has_picks {
+            let message = match &ctx.selection_refusal {
+                Some(refusal) => Some(format!("{refusal} — generation will fail.")),
+                None if !has_pins_of_size && ctx.selection_holes == 0 => Some(format!(
+                    "Alignment pin drill has no hole positions: no stock pin is \
+                     {d:.2} mm. Add alignment pins of that size to the stock.",
+                    d = cfg.diameter
+                )),
+                None => None,
+            };
+            if let Some(message) = message {
                 out.push(Diagnostic {
                     id: DiagnosticId::from(ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES),
                     scope,
@@ -91,11 +104,7 @@ pub fn diagnostics_from_preconditions(
                     confidence: Confidence::Static,
                     state: DiagnosticState::Current,
                     source: Source::StaticValidation,
-                    message: format!(
-                        "Alignment pin drill has no hole positions: no stock pin is \
-                         {d:.2} mm. Add alignment pins of that size to the stock.",
-                        d = cfg.diameter
-                    ),
+                    message,
                     evidence: None,
                     fix: None,
                     supersedes: vec![],
@@ -111,18 +120,12 @@ pub fn diagnostics_from_preconditions(
     out
 }
 
-fn drill_checks(
-    scope: &Scope,
-    cfg: &crate::compute::operation_configs::DrillConfig,
-    ctx: &PreconditionContext,
-) -> Vec<Diagnostic> {
+fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    // Drill resolves holes from an explicit pick, else from the target
-    // model's drill targets (DXF points and circle/arc centres). A polygon
-    // outline is not a hole source (G-DRILLCENTROID), so this reads the
-    // target count, and prints the generator's own refusal sentence.
-    let targets = ctx.target_model.map(|m| m.drill_target_count).unwrap_or(0);
-    if let Some(message) = crate::compute::execute::drill_targets_refusal(cfg, targets) {
+    // Drill drills the points and circles of its selection. A polygon
+    // outline is not a hole source (G-DRILLCENTROID). The session gives
+    // the generator's own refusal sentence for the selection.
+    if let Some(message) = &ctx.selection_refusal {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::PRECOND_DRILL_NO_HOLES),
             scope: scope.clone(),
@@ -216,16 +219,12 @@ mod tests {
         OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
     }
 
+    /// The ribbon prints the refusal sentence the session gives for the
+    /// selection, the same one the generator gives.
     #[test]
-    fn drill_no_holes_fires_when_model_has_no_targets() {
-        // A mesh model: no polygons, no targets.
+    fn drill_no_holes_fires_on_a_selection_refusal() {
         let ctx = PreconditionContext {
-            target_model: Some(TargetModelGeometry {
-                has_polygons: false,
-                has_mesh: true,
-                drill_target_count: 0,
-            }),
-            any_loaded_model_has_mesh: true,
+            selection_refusal: Some("Drill: nothing to cut".to_owned()),
             ..Default::default()
         };
         let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
@@ -233,80 +232,20 @@ mod tests {
         assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
         assert_eq!(diags[0].severity, Severity::Blocking);
         assert!(
-            diags[0]
-                .message
-                .contains(crate::compute::execute::NO_DRILL_TARGETS_MSG),
-            "the ribbon prints the generator's own sentence; got {:?}",
-            diags[0].message
-        );
-    }
-
-    /// G-DRILLCENTROID: a drawing whose closed shapes are not holes
-    /// (polygons, zero targets) fires — pre-fix it was silent and the
-    /// generator drilled every polygon's centroid.
-    #[test]
-    fn drill_no_holes_fires_when_model_has_polygons_but_no_targets() {
-        let ctx = PreconditionContext {
-            target_model: Some(TargetModelGeometry {
-                has_polygons: true,
-                has_mesh: false,
-                drill_target_count: 0,
-            }),
-            ..Default::default()
-        };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
-    }
-
-    #[test]
-    fn drill_silent_when_model_has_targets() {
-        let ctx = PreconditionContext {
-            target_model: Some(TargetModelGeometry {
-                has_polygons: true,
-                has_mesh: false,
-                drill_target_count: 2,
-            }),
-            ..Default::default()
-        };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
-        assert!(diags.is_empty());
-    }
-
-    #[test]
-    fn drill_silent_when_picked_even_without_model_targets() {
-        let op = OperationConfig::Drill(DrillConfig {
-            selected_holes: Some(vec![[1.0, 2.0]]),
-            ..DrillConfig::default()
-        });
-        let diags =
-            diagnostics_from_preconditions(ToolpathId(0), &op, &PreconditionContext::default());
-        assert!(diags.is_empty());
-    }
-
-    #[test]
-    fn drill_no_holes_fires_on_an_empty_pick() {
-        let op = OperationConfig::Drill(DrillConfig {
-            selected_holes: Some(Vec::new()),
-            ..DrillConfig::default()
-        });
-        let ctx = PreconditionContext {
-            target_model: Some(TargetModelGeometry {
-                has_polygons: true,
-                has_mesh: false,
-                drill_target_count: 2,
-            }),
-            ..Default::default()
-        };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &op, &ctx);
-        assert_eq!(diags.len(), 1);
-        assert!(
-            diags[0]
-                .message
-                .contains(crate::compute::execute::NO_DRILL_TARGETS_SELECTED_MSG),
+            diags[0].message.starts_with("Drill: nothing to cut"),
             "got {:?}",
             diags[0].message
         );
+    }
+
+    #[test]
+    fn drill_silent_when_the_selection_gives_holes() {
+        let ctx = PreconditionContext {
+            selection_holes: 2,
+            ..Default::default()
+        };
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
+        assert!(diags.is_empty());
     }
 
     #[test]
@@ -334,14 +273,26 @@ mod tests {
     }
 
     #[test]
-    fn alignment_pin_drill_silent_with_picks_and_no_stock_pins() {
-        let ctx = PreconditionContext::default();
-        let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
-            selected_holes: Some(vec![[5.0, 5.0]]),
-            ..AlignmentPinDrillConfig::default()
-        });
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &op, &ctx);
+    fn alignment_pin_drill_silent_with_selected_holes_and_no_stock_pins() {
+        let ctx = PreconditionContext {
+            selection_holes: 1,
+            ..Default::default()
+        };
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
         assert!(diags.is_empty(), "got {diags:?}");
+    }
+
+    /// A stale extra pick blocks a Pin Drill too, even with stock pins.
+    #[test]
+    fn alignment_pin_drill_fires_on_a_selection_refusal() {
+        let ctx = PreconditionContext {
+            stock_alignment_pin_diameters: vec![6.0],
+            selection_refusal: Some("Alignment Pin Drill: a pick is lost".to_owned()),
+            ..Default::default()
+        };
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
+        assert_eq!(diags.len(), 1, "got {diags:?}");
+        assert!(diags[0].message.contains("a pick is lost"));
     }
 
     #[test]
@@ -351,7 +302,6 @@ mod tests {
             target_model: Some(TargetModelGeometry {
                 has_polygons: false,
                 has_mesh: true,
-                drill_target_count: 0,
             }),
             any_loaded_model_has_mesh: true,
             ..Default::default()
@@ -373,7 +323,6 @@ mod tests {
             target_model: Some(TargetModelGeometry {
                 has_polygons: true,
                 has_mesh: false,
-                drill_target_count: 0,
             }),
             any_loaded_model_has_mesh: false,
             ..Default::default()
@@ -394,7 +343,6 @@ mod tests {
             target_model: Some(TargetModelGeometry {
                 has_polygons: true,
                 has_mesh: false,
-                drill_target_count: 0,
             }),
             any_loaded_model_has_mesh: true,
             ..Default::default()

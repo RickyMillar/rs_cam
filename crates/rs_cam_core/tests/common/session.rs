@@ -91,30 +91,106 @@ pub fn polygon_model(polygons: Vec<Polygon2>, name: &str) -> LoadedModel {
     }
 }
 
+/// [`polygon_model`] with one `Point` item per hole after the polygons, on
+/// layer `holes`: the hole source of a `Drill` op (and of the extras of a
+/// Pin Drill with a drawing selection) since geometry selection P2.3c.
+pub fn polygon_model_with_points(
+    polygons: Vec<Polygon2>,
+    holes: &[[f64; 2]],
+    name: &str,
+) -> LoadedModel {
+    let holes: Vec<TestHole> = holes
+        .iter()
+        .map(|&[x, y]| TestHole {
+            x,
+            y,
+            layer: "holes".to_owned(),
+            diameter: None,
+        })
+        .collect();
+    LoadedModel {
+        items: Arc::new(drawing_items(polygons, &holes)),
+        ..polygon_model(Vec::new(), name)
+    }
+}
+
+/// The drill target list that the import gave before geometry selection
+/// P2.3c, as `(x, y, layer, diameter)` (`None` for a point). It is the
+/// deleted bridge `LoadedModel::drill_targets_pre_selection`, rebuilt on
+/// the same inputs and the same production functions, so the P2.1 and
+/// P2.2 sentries keep their frozen evidence (the hole items of a drill op
+/// against the targets of the old import):
+///
+/// - SVG: `svg_input::circle_like_ring` over every ring of the nested
+///   outlines (exteriors, then the holes of each closed polygon), on the
+///   layer `circles`;
+/// - any other kind: each `Point` and `Circle` item in import order, with
+///   its layer.
+pub fn old_drill_targets(m: &LoadedModel) -> Vec<(f64, f64, String, Option<f64>)> {
+    use rs_cam_core::compute::stock_config::ModelKind;
+    use rs_cam_core::selection::Shape;
+    if m.kind == Some(ModelKind::Svg) {
+        return m
+            .outlines_pre_selection()
+            .map(|outlines| {
+                outlines
+                    .iter()
+                    .filter(|poly| poly.closed)
+                    .flat_map(|poly| {
+                        std::iter::once(poly.exterior.as_slice())
+                            .chain(poly.holes.iter().map(Vec::as_slice))
+                    })
+                    .filter_map(rs_cam_core::io::svg_input::circle_like_ring)
+                    .map(|(c, d)| (c.x, c.y, "circles".to_owned(), Some(d)))
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+    m.items
+        .iter()
+        .filter_map(|item| {
+            let layer = item.layer().unwrap_or_default().to_owned();
+            match item.shape() {
+                Shape::Point(p) => Some((p.x, p.y, layer, None)),
+                Shape::Circle {
+                    centre, diameter, ..
+                } => Some((centre.x, centre.y, layer, Some(*diameter))),
+                Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => None,
+            }
+        })
+        .collect()
+}
+
+/// One hole of a test drawing: a point (`diameter: None`) or a circle.
+#[derive(Debug, Clone)]
+pub struct TestHole {
+    pub x: f64,
+    pub y: f64,
+    pub layer: String,
+    pub diameter: Option<f64>,
+}
+
 /// The items of a drawing: the polygons first (`ItemSet::from_polygons`),
-/// then one item per target in order. A `Point` target is a `Point` item; a
-/// `CircleCenter` target is a `Circle` item with the ring the DXF door makes
-/// for a CIRCLE, as a CIRCLE entity gives one item since P2.1.
+/// then one item per hole in order. A hole with no diameter is a `Point`
+/// item; a hole with a diameter is a `Circle` item with the ring the DXF
+/// door makes for a CIRCLE, as a CIRCLE entity gives one item since P2.1.
 pub fn drawing_items(
     polygons: Vec<Polygon2>,
-    targets: &[rs_cam_core::io::dxf_input::DrillTarget],
+    holes: &[TestHole],
 ) -> rs_cam_core::selection::ItemSet {
-    use rs_cam_core::io::dxf_input::DrillTargetKind;
     use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
     let mut items: Vec<Item> = ItemSet::from_polygons(polygons).iter().cloned().collect();
-    items.extend(targets.iter().map(|t| {
-        let shape = match t.kind {
-            DrillTargetKind::Point => Shape::Point(P2::new(t.x, t.y)),
-            DrillTargetKind::CircleCenter { diameter } => {
-                Shape::circle(P2::new(t.x, t.y), diameter)
-            }
+    items.extend(holes.iter().map(|h| {
+        let shape = match h.diameter {
+            None => Shape::Point(P2::new(h.x, h.y)),
+            Some(diameter) => Shape::circle(P2::new(h.x, h.y), diameter),
         };
         Item::new(
             SourceRef::ToolpathModel,
-            Some(t.layer.as_str().into()),
+            Some(h.layer.as_str().into()),
             shape,
         )
-        .expect("a target gives a valid item")
+        .expect("a hole gives a valid item")
     }));
     ItemSet::new(items)
 }

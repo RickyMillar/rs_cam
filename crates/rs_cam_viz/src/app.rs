@@ -88,7 +88,7 @@ pub struct RsCamApp {
     /// Track the active drill op's target selection (toolpath id + picked
     /// holes) so the viewport markers re-upload when it changes from any
     /// source (viewport pick, panel buttons, selection change).
-    last_drill_marker_key: Option<(usize, Vec<[f64; 2]>)>,
+    last_drill_marker_key: Option<(usize, rs_cam_core::selection::Selection)>,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,

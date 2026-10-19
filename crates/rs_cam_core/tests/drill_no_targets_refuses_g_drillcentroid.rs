@@ -12,16 +12,17 @@
 //!
 //! ## The decision this sentry pins
 //!
-//! A hole position comes from a `DrillTarget` (a DXF `POINT` or a circle /
-//! arc centre, or a circle-like closed shape in an SVG — see
-//! `svg_input::circle_like_drill_targets`) or from an explicit pick — never
-//! from a polygon outline. With no pick, the op drills every target the
-//! model exposes. With no pick and no targets, the generator refuses with
-//! `MissingGeometry("No drill targets — …")` and no toolpath is stored.
-//! The centroid fallback is removed entirely, not merely gated: the
-//! generator reads targets only, and the import door decides what is a
-//! circle. `fixtures/demo_pocket.svg` (a rounded rect with a `<circle>`)
-//! still drills its circle, and only its circle.
+//! A hole position comes from a `Point` or a `Circle` item of the op's
+//! selection (a DXF `POINT`, a circle / arc centre, or a circle-like closed
+//! shape in an SVG, which the SVG door makes a `Circle` item) — never from
+//! a polygon outline. With the default selection, the op drills every
+//! point and circle of the model. With none, the prologue refuses with
+//! `OperationError::Selection` (`Empty`, "nothing is left to cut", P2.3c)
+//! and no toolpath is stored. The centroid fallback is removed entirely,
+//! not merely gated: only points and circles serve a `Holes` op, and the
+//! import door decides what is a circle. `fixtures/demo_pocket.svg` (a
+//! rounded rect with a `<circle>`) still drills its circle, and only its
+//! circle.
 //!
 //! ## What this measured pre-fix
 //!
@@ -30,7 +31,7 @@
 //! | star SVG, default selection | refusal, no result stored | `Ok`, 1 hole at the centroid, 4 moves |
 //! | pocket SVG (rect + circle), default selection | 1 hole at the circle centre (40, 30) | 2 holes: the circle AND the rect's centroid |
 //! | one circle target, default selection | 1 hole at the circle centre | 1 hole at the polygon centroid |
-//! | targets present, empty pick | refusal (unchanged) | refusal |
+//! | targets present, empty selection | refusal (unchanged) | refusal |
 
 #![allow(
     clippy::unwrap_used,
@@ -41,7 +42,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::toolpath_config;
+use common::session::{TestHole, toolpath_config};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,8 +52,8 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::io::load_model_file;
+use rs_cam_core::selection::{ItemKind, Selection};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};
 
 /// The one circle target the "drawing with a circle" case exposes, in
@@ -69,14 +70,17 @@ fn repo_root() -> PathBuf {
 }
 
 /// `fixtures/demo_star.svg` through the interactive import door: one closed
-/// polygon, zero drill targets — an SVG never exposes any.
+/// polygon, no point and no circle.
 fn star_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_star.svg");
     let model = load_model_file(&path, 0, ModelKind::Svg, ModelUnits::Millimeters)
         .expect("demo_star.svg imports");
     assert!(
-        model.drill_targets_pre_selection().is_empty(),
-        "fixture is vacuous: the star SVG exposes drill targets"
+        !model
+            .items
+            .iter()
+            .any(|i| matches!(i.kind(), ItemKind::Point | ItemKind::Circle)),
+        "fixture is vacuous: the star SVG holds a point or a circle"
     );
     assert!(
         model
@@ -90,7 +94,7 @@ fn star_model() -> LoadedModel {
 /// `fixtures/demo_pocket.svg`: a rounded rectangle with a `<circle>` at
 /// (40, 30) r=10 inside it. usvg flattens the circle; `detect_containment`
 /// files it as the rectangle's hole; the import door classifies the ring as
-/// circle-like and exposes ONE target.
+/// circle-like and makes ONE `Circle` item.
 fn pocket_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_pocket.svg");
     load_model_file(&path, 0, ModelKind::Svg, ModelUnits::Millimeters)
@@ -101,11 +105,11 @@ fn pocket_model() -> LoadedModel {
 /// one `CIRCLE` entity imports to (P2.1: the circle is one item).
 fn star_with_one_circle() -> LoadedModel {
     let mut model = star_model();
-    let target = DrillTarget {
+    let target = TestHole {
         x: CIRCLE_CENTRE[0],
         y: CIRCLE_CENTRE[1],
         layer: "holes".to_owned(),
-        kind: DrillTargetKind::CircleCenter { diameter: 6.0 },
+        diameter: Some(6.0),
     };
     let outlines = model.outlines_pre_selection().unwrap_or_default();
     model.items = Arc::new(common::session::drawing_items(
@@ -129,11 +133,11 @@ fn stock() -> StockConfig {
     }
 }
 
-fn drill_op(selected_holes: Option<Vec<[f64; 2]>>) -> OperationConfig {
+fn drill_op(selection: Selection) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         depth: 5.0,
         cycle: DrillCycleType::Simple,
-        selected_holes,
+        selection,
         ..DrillConfig::default()
     })
 }
@@ -181,7 +185,7 @@ fn drilled_columns(session: &mut ProjectSession, index: usize) -> Vec<(i64, i64)
 
 #[test]
 fn a_drawing_with_no_targets_refuses_instead_of_drilling_the_centroid() {
-    let mut session = session_with(star_model(), drill_op(None));
+    let mut session = session_with(star_model(), drill_op(Selection::drawing()));
     let cancel = AtomicBool::new(false);
     let err = match session.generate_toolpath(0, &cancel) {
         Ok(result) => {
@@ -200,7 +204,7 @@ fn a_drawing_with_no_targets_refuses_instead_of_drilling_the_centroid() {
         Err(e) => e.to_string(),
     };
     assert!(
-        err.contains("No drill targets"),
+        err.contains("nothing is left to cut"),
         "the refusal must name the missing input; got: {err}"
     );
     assert!(
@@ -214,13 +218,13 @@ fn a_drawing_with_no_targets_refuses_instead_of_drilling_the_centroid() {
 #[test]
 fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
     let model = pocket_model();
-    assert_eq!(
-        model.drill_targets_pre_selection().len(),
-        1,
-        "the pocket SVG exposes exactly its circle: {:?}",
-        model.drill_targets_pre_selection()
-    );
-    let mut session = session_with(model, drill_op(None));
+    let circles = model
+        .items
+        .iter()
+        .filter(|i| i.kind() == ItemKind::Circle)
+        .count();
+    assert_eq!(circles, 1, "the pocket SVG holds exactly its circle");
+    let mut session = session_with(model, drill_op(Selection::drawing()));
     let cols = drilled_columns(&mut session, 0);
     assert_eq!(cols.len(), 1, "one hole, got columns {cols:?}");
     let (x, y) = (cols[0].0 as f64 / 1000.0, cols[0].1 as f64 / 1000.0);
@@ -245,7 +249,7 @@ fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
 
 #[test]
 fn a_drawing_with_one_circle_drills_the_circle_centre_and_nothing_else() {
-    let mut session = session_with(star_with_one_circle(), drill_op(None));
+    let mut session = session_with(star_with_one_circle(), drill_op(Selection::drawing()));
     let cols = drilled_columns(&mut session, 0);
     let expected = vec![(
         (CIRCLE_CENTRE[0] * 1000.0).round() as i64,
@@ -253,19 +257,23 @@ fn a_drawing_with_one_circle_drills_the_circle_centre_and_nothing_else() {
     )];
     assert_eq!(
         cols, expected,
-        "with no pick the op drills every target the model exposes — the one \
-         circle centre — and never the outline's centroid (50, 51.1)"
+        "with the default selection the op drills every point and circle of \
+         the model — the one circle centre — and never the outline's centroid \
+         (50, 51.1)"
     );
 }
 
 #[test]
-fn an_empty_pick_still_refuses_when_targets_exist() {
-    let mut session = session_with(star_with_one_circle(), drill_op(Some(Vec::new())));
+fn an_empty_selection_still_refuses_when_circles_exist() {
+    let mut session = session_with(star_with_one_circle(), drill_op(Selection::empty()));
     let cancel = AtomicBool::new(false);
     let err = session
         .generate_toolpath(0, &cancel)
         .err()
         .map(|e| e.to_string())
         .expect("an explicit empty selection refuses rather than drilling everything");
-    assert!(err.contains("No drill targets selected"), "got: {err}");
+    assert!(
+        err.contains("the selection holds no item to cut"),
+        "got: {err}"
+    );
 }

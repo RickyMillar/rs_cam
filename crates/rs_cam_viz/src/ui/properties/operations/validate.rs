@@ -13,6 +13,10 @@ use crate::state::toolpath::{
 pub struct ToolpathValidationContext {
     tools: Vec<ValidationTool>,
     models: Vec<ValidationModel>,
+    /// The refusal that generation gives for the selection of each drill
+    /// op (`ProjectSession::hole_selection`, geometry selection P2.3c):
+    /// the Generate button prints the generator's own sentence.
+    hole_refusals: Vec<(rs_cam_core::ids::ToolpathId, String)>,
 }
 
 pub(in crate::ui::properties) struct ValidationTool {
@@ -26,10 +30,6 @@ struct ValidationModel {
     has_polygons: bool,
     has_mesh: bool,
     has_enriched_mesh: bool,
-    /// Pickable drill targets (DXF points and circle/arc centres) the model
-    /// exposes. The `Drill` arm reads this, never `has_polygons`
-    /// (G-DRILLCENTROID).
-    drill_target_count: usize,
 }
 
 impl ToolpathValidationContext {
@@ -53,7 +53,14 @@ impl ToolpathValidationContext {
                     has_polygons: model.items.has_drawing(),
                     has_mesh: model.mesh.is_some(),
                     has_enriched_mesh: model.enriched_mesh.is_some(),
-                    drill_target_count: model.drill_targets_pre_selection().len(),
+                })
+                .collect(),
+            hole_refusals: session
+                .toolpath_configs()
+                .iter()
+                .filter_map(|tc| {
+                    let refusal = session.hole_selection(tc)?.refusal?;
+                    Some((tc.id, refusal))
                 })
                 .collect(),
         }
@@ -119,7 +126,7 @@ pub fn validate_toolpath_config(
         &super::registry::OpValidateCtx {
             tool,
             ctx,
-            model_id,
+            toolpath_id: tc.id,
         },
         &mut errs,
     );
@@ -127,21 +134,18 @@ pub fn validate_toolpath_config(
     errs
 }
 
-/// G-DRILLCENTROID (UX-R03-004): the same predicate the generator refuses
-/// with, read against the target model's drill-target count, so Generate is
-/// disabled with the generator's own sentence instead of a hole appearing
-/// at a polygon centroid.
-pub(in crate::ui::properties) fn drill_targets_refusal(
+/// G-DRILLCENTROID (UX-R03-004), geometry selection P2.3c: the refusal the
+/// generator gives for the selection of drill op `toolpath_id`, so Generate
+/// is disabled with the generator's own sentence instead of a hole
+/// appearing at a polygon centroid or at a stale pick.
+pub(in crate::ui::properties) fn hole_refusal(
     ctx: &ToolpathValidationContext,
-    model_id: crate::state::job::ModelId,
-    cfg: &crate::state::toolpath::DrillConfig,
-) -> Option<&'static str> {
-    let targets = ctx
-        .models
+    toolpath_id: rs_cam_core::ids::ToolpathId,
+) -> Option<&str> {
+    ctx.hole_refusals
         .iter()
-        .find(|m| m.id == model_id)
-        .map_or(0, |m| m.drill_target_count);
-    rs_cam_core::compute::execute::drill_targets_refusal(cfg, targets)
+        .find(|(id, _)| *id == toolpath_id)
+        .map(|(_, refusal)| refusal.as_str())
 }
 
 pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
@@ -159,7 +163,7 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
         &super::registry::OpValidateCtx {
             tool,
             ctx,
-            model_id: entry.model_id,
+            toolpath_id: entry.id,
         },
         &mut errs,
     );

@@ -57,27 +57,6 @@ pub enum DxfError {
     Item(#[from] ItemError),
 }
 
-/// What kind of DXF feature a [`DrillTarget`] was derived from.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DrillTargetKind {
-    /// A bare DXF `POINT` entity.
-    Point,
-    /// The centre of a circle (or full-circle arc), with its diameter in mm.
-    CircleCenter { diameter: f64 },
-}
-
-/// A pickable drill location extracted from imported DXF geometry, with the
-/// source layer so the GUI can offer "select all in layer".
-///
-/// Coordinates are in millimetres (the `$INSUNITS` scale is already applied).
-#[derive(Debug, Clone)]
-pub struct DrillTarget {
-    pub x: f64,
-    pub y: f64,
-    pub layer: String,
-    pub kind: DrillTargetKind,
-}
-
 /// The result of importing a DXF: one item per entity, and one item per
 /// chain of open pieces (P2.1).
 #[derive(Debug, Clone, Default)]

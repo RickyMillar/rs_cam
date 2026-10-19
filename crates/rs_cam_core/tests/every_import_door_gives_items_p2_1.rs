@@ -9,10 +9,12 @@
 //!    nearest labelled group as its layer.
 //! 4. A STEP face item carries a SIGNED normal: an up face points to +Z and
 //!    a down face to -Z, whatever the plane Z.
-//! 5. The two bridges give the lists of the import before P2.1, bit for bit:
-//!    `outlines_pre_selection` the nested polygon list and
-//!    `drill_targets_pre_selection` the drill target list, in the same
-//!    order, with the same model bbox.
+//! 5. The items give the lists of the import before P2.1, bit for bit:
+//!    `outlines_pre_selection` the nested polygon list, and the points and
+//!    circles the drill target list, in the same order, with the same model
+//!    bbox. P2.3c deleted the target bridge (`drill_targets_pre_selection`);
+//!    `dump` writes the list that bridge gave, rebuilt on the same inputs
+//!    (`common::session::old_drill_targets`), so the frozen baseline holds.
 //!
 //! Claim 5 compares against `fixtures/selection_p2_1/bridges_before_p2_1.txt`.
 //! A probe on the import code of efe9d168 (before P2.1) wrote one line per
@@ -46,7 +48,6 @@ use rs_cam_core::geo::{P3, V3};
 use rs_cam_core::geometry::enriched_mesh::{
     FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
 };
-use rs_cam_core::io::dxf_input::DrillTargetKind;
 use rs_cam_core::io::{brep_face_items, infer_kind_from_path, load_model_file};
 use rs_cam_core::selection::{ItemKind, Shape};
 use rs_cam_core::session::LoadedModel;
@@ -143,14 +144,20 @@ fn a_circle_is_one_item() {
             );
         }
     }
-    // The bridge still gives one target per circle and one per POINT.
-    let targets = model.drill_targets_pre_selection();
-    let circle_targets = targets
+    // One hole item per circle and one per POINT.
+    let holes: Vec<_> = model
+        .items
         .iter()
-        .filter(|t| matches!(t.kind, DrillTargetKind::CircleCenter { .. }))
-        .count();
-    assert_eq!(circle_targets, 3);
-    assert_eq!(targets.len(), 4);
+        .filter(|i| matches!(i.kind(), ItemKind::Point | ItemKind::Circle))
+        .collect();
+    assert_eq!(
+        holes
+            .iter()
+            .filter(|i| i.kind() == ItemKind::Circle)
+            .count(),
+        3
+    );
+    assert_eq!(holes.len(), 4);
 }
 
 // ── 3. SVG open paths and group labels ──────────────────────────────────
@@ -333,21 +340,12 @@ fn dump(m: &LoadedModel) -> String {
             }
         }
     }
-    for t in m.drill_targets_pre_selection() {
-        let d = match t.kind {
-            DrillTargetKind::Point => "point".to_owned(),
-            DrillTargetKind::CircleCenter { diameter } => {
-                format!("circle {:?}", diameter.to_bits())
-            }
+    for (x, y, layer, diameter) in common::session::old_drill_targets(m) {
+        let d = match diameter {
+            None => "point".to_owned(),
+            Some(diameter) => format!("circle {:?}", diameter.to_bits()),
         };
-        writeln!(
-            out,
-            "  T {:?} {:?} {} {d}",
-            t.x.to_bits(),
-            t.y.to_bits(),
-            t.layer
-        )
-        .unwrap();
+        writeln!(out, "  T {:?} {:?} {layer} {d}", x.to_bits(), y.to_bits()).unwrap();
     }
     match m.bbox() {
         None => writeln!(out, " bbox None").unwrap(),
@@ -382,7 +380,7 @@ fn line(label: &str, m: &LoadedModel) -> String {
         .map_or_else(|| "None".to_owned(), |p| p.len().to_string());
     format!(
         "{label} | polygons {polygons} | targets {} | fnv {:016x}",
-        m.drill_targets_pre_selection().len(),
+        common::session::old_drill_targets(m).len(),
         fnv1a(dump(m).as_bytes())
     )
 }

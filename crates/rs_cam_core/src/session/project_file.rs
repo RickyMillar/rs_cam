@@ -118,6 +118,18 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       diameter. Delete the key",
     },
     RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "operation", "params"],
+        key: "selected_holes",
+        replacement: "Removed (geometry selection P2.3c): drill picks are in \
+                      operation.params.selection. Pick the holes again. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "operation", "params"],
+        key: "selected_layers",
+        replacement: "Removed (geometry selection P2.3c): use a layer rule in \
+                      operation.params.selection. Delete the key",
+    },
+    RetiredKey {
         table: &["setups", "[]", "toolpaths", "[]"],
         key: "type",
         replacement: "Removed (C2): the op kind is `kind` in the toolpath's [operation] \

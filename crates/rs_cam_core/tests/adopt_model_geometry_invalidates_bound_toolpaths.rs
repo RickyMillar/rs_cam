@@ -37,6 +37,7 @@ mod common;
 
 use std::sync::Arc;
 
+use common::session::TestHole;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
@@ -49,7 +50,6 @@ use rs_cam_core::compute::toolpath_stats::ToolpathStats;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
 use rs_cam_core::ops::drill_op::OpData;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
@@ -73,7 +73,7 @@ const SIDE_BEFORE_MM: f64 = 40.0;
 /// The side of the square the refresh brings in, in mm.
 const SIDE_AFTER_MM: f64 = 90.0;
 
-fn square_model(id: usize, name: &str, side_mm: f64, targets: &[DrillTarget]) -> LoadedModel {
+fn square_model(id: usize, name: &str, side_mm: f64, targets: &[TestHole]) -> LoadedModel {
     let square = Polygon2::new(vec![
         P2::new(0.0, 0.0),
         P2::new(side_mm, 0.0),
@@ -187,11 +187,11 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
         MODEL_A,
         "a.svg",
         SIDE_AFTER_MM,
-        &[DrillTarget {
+        &[TestHole {
             x: 1.0,
             y: 2.0,
             layer: "holes".to_owned(),
-            kind: DrillTargetKind::CircleCenter { diameter: 3.0 },
+            diameter: Some(3.0),
         }],
     );
     let _ = session
@@ -212,9 +212,13 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
         .find(|model| model.id == MODEL_A)
         .expect("the model survives");
     assert_eq!(
-        model.drill_targets_pre_selection().len(),
+        model
+            .items
+            .iter()
+            .filter(|i| i.kind() == rs_cam_core::selection::ItemKind::Circle)
+            .count(),
         1,
-        "G-RELOADTARGETS: the row must adopt the new drill targets, or a \
+        "G-RELOADTARGETS: the row must adopt the new circle items, or a \
          drill operation cuts the previous import's holes"
     );
     assert_eq!(

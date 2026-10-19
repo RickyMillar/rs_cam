@@ -30,6 +30,7 @@ mod rest_fresh;
 mod rest_stock;
 mod result_provenance;
 mod save;
+pub(crate) mod selection_status;
 mod shoe;
 pub use shoe::ShoePlanRow;
 mod stock_change_report;
@@ -39,19 +40,20 @@ pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
     AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
     AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, Command, CommandId,
-    CommandKind, Effects, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
-    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
-    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
-    JobHandle, MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query,
-    QueryAnswer, Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
-    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    CommandKind, EditSelectionArgs, Effects, ForgetResultArgs, GenerateToolpathArgs,
+    GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
+    InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
+    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, MoveStockChangeArgs,
+    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
+    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
-    SetDrillSelectedHolesArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
-    SetMachineHeadArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs,
-    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
-    SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
+    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
     SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces,
@@ -85,6 +87,7 @@ pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
+pub use selection_status::{HoleItem, HoleSelection};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -112,10 +115,9 @@ use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
 use crate::ids::ModelId;
-use crate::io::dxf_input::{DrillTarget, DrillTargetKind};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
-use crate::selection::{ItemSet, Shape, SourceRef};
+use crate::selection::{ItemSet, SourceRef};
 use crate::toolpath::Toolpath;
 use crate::trace::debug_trace::{ToolpathDebugOptions, ToolpathDebugTrace};
 use crate::trace::semantic_trace::ToolpathSemanticTrace;
@@ -539,58 +541,12 @@ impl LoadedModel {
     /// `detect_containment` as the import did. `None` when the model holds
     /// no drawing item (a mesh, a STEP model, a model that did not load).
     ///
-    /// P2.3 deletes this. It is one of the two bridges for generation and
-    /// drilling until the selection resolves in the prologue.
+    /// P2.5 and P2.7 delete this: the nested-list readers (boundary
+    /// outline, MCP) read it until then.
     pub fn outlines_pre_selection(&self) -> Option<Arc<Vec<Polygon2>>> {
-        // P2.3 deletes this.
         self.items
             .has_drawing()
             .then(|| self.items.outlines_pre_selection())
-    }
-
-    /// The drill target list that the import gave before P2.1, in the same
-    /// order.
-    ///
-    /// - SVG: `circle_like_drill_targets` over [`Self::outlines_pre_selection`]
-    ///   (exteriors and holes, in nesting order, on layer `circles`), as the
-    ///   import did.
-    /// - Any other kind: each `Point` and `Circle` item in import order,
-    ///   with its layer.
-    ///
-    /// P2.3 deletes this. It is the second of the two bridges.
-    pub fn drill_targets_pre_selection(&self) -> Vec<DrillTarget> {
-        // P2.3 deletes this.
-        if self.kind == Some(ModelKind::Svg) {
-            return self
-                .outlines_pre_selection()
-                .map(|outlines| crate::io::svg_input::circle_like_drill_targets(&outlines))
-                .unwrap_or_default();
-        }
-        self.items
-            .iter()
-            .filter_map(|item| {
-                let layer = item.layer().unwrap_or_default().to_owned();
-                match item.shape() {
-                    Shape::Point(p) => Some(DrillTarget {
-                        x: p.x,
-                        y: p.y,
-                        layer,
-                        kind: DrillTargetKind::Point,
-                    }),
-                    Shape::Circle {
-                        centre, diameter, ..
-                    } => Some(DrillTarget {
-                        x: centre.x,
-                        y: centre.y,
-                        layer,
-                        kind: DrillTargetKind::CircleCenter {
-                            diameter: *diameter,
-                        },
-                    }),
-                    Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => None,
-                }
-            })
-            .collect()
     }
 }
 

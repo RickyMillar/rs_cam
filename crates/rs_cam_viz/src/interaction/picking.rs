@@ -40,11 +40,12 @@ pub enum PickHit {
         model_id: ModelId,
         face_id: FaceGroupId,
     },
-    /// Hit a drill target (DXF point / circle centre) while a drill toolpath
-    /// is the active selection. `xy` is the target position in model space.
+    /// Hit a drill hole item (a point or a circle) while a drill toolpath is
+    /// the active selection. `key` is the match key a pick of the item
+    /// stores (geometry selection P2.3c).
     DrillTarget {
         toolpath_id: ToolpathId,
-        xy: [f64; 2],
+        key: rs_cam_core::selection::MatchKey,
     },
 }
 
@@ -255,31 +256,30 @@ pub fn pick_alignment_pins(
     best_hit
 }
 
-/// Pick the nearest drill target (DXF point / circle centre) of the model
-/// referenced by the active drill toolpath. Targets are picked at the stock
-/// top plane in raw model XY — the same frame the drill toolpath emits holes.
+/// Pick the nearest hole item (a point or a circle centre) of the model
+/// referenced by the active drill toolpath, from the items the session's
+/// `hole_selection` lists (geometry selection P2.3c). Items are picked at
+/// the stock top plane in raw model XY.
 fn pick_drill_targets(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
     toolpath_id: ToolpathId,
 ) -> Option<PickHit> {
-    let model_id = session
+    let tc = session
         .toolpath_configs()
         .iter()
-        .find(|tc| tc.id == toolpath_id)
-        .map(|tc| tc.model_id)?;
-    let model = session.models().iter().find(|m| m.id == model_id)?;
-    let targets = model.drill_targets_pre_selection();
-    if targets.is_empty() {
+        .find(|tc| tc.id == toolpath_id)?;
+    let holes = session.hole_selection(tc)?;
+    if holes.items.is_empty() {
         return None;
     }
     let stock = session.stock_config();
     let top_z = (stock.origin_z + stock.z) as f32;
 
     let mut best_dist = PICK_THRESHOLD_POINT;
-    let mut best: Option<[f64; 2]> = None;
-    for t in targets.iter() {
-        let world = [t.x as f32, t.y as f32, top_z];
+    let mut best: Option<rs_cam_core::selection::MatchKey> = None;
+    for item in holes.items {
+        let world = [item.xy.x as f32, item.xy.y as f32, top_z];
         if let Some(screen) = ctx
             .camera
             .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
@@ -289,11 +289,11 @@ fn pick_drill_targets(
             let dist = (dx * dx + dy * dy).sqrt();
             if dist < best_dist {
                 best_dist = dist;
-                best = Some([t.x, t.y]);
+                best = Some(item.key);
             }
         }
     }
-    best.map(|xy| PickHit::DrillTarget { toolpath_id, xy })
+    best.map(|key| PickHit::DrillTarget { toolpath_id, key })
 }
 
 // SAFETY: j bounded by 0..moves.len() via step_by loop

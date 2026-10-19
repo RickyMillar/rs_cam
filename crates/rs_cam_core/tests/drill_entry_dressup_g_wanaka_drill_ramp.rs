@@ -54,7 +54,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::{polygon_model, toolpath_config};
+use common::session::{polygon_model_with_points, toolpath_config};
 
 use std::sync::atomic::AtomicBool;
 
@@ -109,13 +109,14 @@ fn stock() -> StockConfig {
 /// explicitly, so this exists only to satisfy the `Drill` family's polygon
 /// requirement — its centroid is never drilled.
 fn plate_model() -> LoadedModel {
-    polygon_model(
+    polygon_model_with_points(
         vec![Polygon2::new(vec![
             P2::new(0.0, 0.0),
             P2::new(STOCK_X, 0.0),
             P2::new(STOCK_X, STOCK_Y),
             P2::new(0.0, STOCK_Y),
         ])],
+        &[HOLE],
         "plate",
     )
 }
@@ -125,7 +126,6 @@ fn hole_drill_op() -> OperationConfig {
         depth: 12.0,
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
-        selected_holes: Some(vec![HOLE]),
         ..DrillConfig::default()
     })
 }

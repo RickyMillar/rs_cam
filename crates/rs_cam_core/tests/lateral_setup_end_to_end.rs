@@ -152,9 +152,29 @@ fn drawing_model(id: usize) -> LoadedModel {
         id,
         name: "front_face_drawing".to_owned(),
         mesh: None,
-        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
-            Polygon2::rectangle(POCKET_MIN[0], POCKET_MIN[1], POCKET_MAX[0], POCKET_MAX[1]),
-        ])),
+        // The pocket outline, then the drill hole as a point (P2.3c: the
+        // default drill selection). The pocket skips the point.
+        items: Arc::new({
+            use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+            let mut items: Vec<Item> = ItemSet::from_polygons(vec![Polygon2::rectangle(
+                POCKET_MIN[0],
+                POCKET_MIN[1],
+                POCKET_MAX[0],
+                POCKET_MAX[1],
+            )])
+            .iter()
+            .cloned()
+            .collect();
+            items.push(
+                Item::new(
+                    SourceRef::ToolpathModel,
+                    None,
+                    Shape::Point(rs_cam_core::geo::P2::new(DRILL_XY[0], DRILL_XY[1])),
+                )
+                .unwrap(),
+            );
+            ItemSet::new(items)
+        }),
         path: std::path::PathBuf::from("synthetic://front_face.dxf"),
         kind: Some(ModelKind::Dxf),
         units: Some(ModelUnits::Millimeters),
@@ -225,7 +245,6 @@ fn drill_op() -> OperationConfig {
         depth: DRILL_DEPTH,
         cycle: DrillCycleType::Simple,
         feed_rate: 300.0,
-        selected_holes: Some(vec![DRILL_XY]),
         ..DrillConfig::default()
     })
 }

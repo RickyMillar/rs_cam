@@ -15,7 +15,6 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::config::ResolvedHeights;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
-use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::ToolDefinition;
 use crate::trace::debug_trace::ToolpathDebugContext;
@@ -330,12 +329,6 @@ pub struct ExecutionContext<'a> {
     /// (`execute/prologue.rs`) reads it; an adapter reads its items through
     /// `Prepared::regions`, `Prepared::curves` or `Prepared::holes`.
     pub selection: SelectionInputs<'a>,
-    /// The model's pickable drill targets — DXF `POINT` entities and
-    /// circle/arc centres — in model coordinates, like `selected_holes`.
-    /// The `Drill` family's only hole source besides an explicit pick
-    /// (G-DRILLCENTROID); every other family ignores it. Empty for meshes
-    /// and SVG, and for callers that resolve no model.
-    pub drill_targets: &'a [DrillTarget],
     /// The live stock alignment pins, stock-relative (X0Y0 at the stock
     /// min corner). The Alignment Pin Drill reads the pins of its own
     /// diameter (`alignment_pins::pin_holes_of_diameter`, R1); every other
@@ -351,15 +344,12 @@ pub struct ExecutionContext<'a> {
     /// The setup's world→local transform, or `None` for an identity setup.
     ///
     /// Everything else in this context arrives ALREADY in the emission
-    /// frame — `mesh`, `selection` and the boundary inputs are transformed by the
-    /// driver before generation, `stock_bbox` is the emission-frame bbox.
-    /// The one class of input that cannot be pre-transformed that way is
-    /// config-carried geometry: coordinates that live inside the
-    /// `OperationConfig` and never pass through the driver's geometry
-    /// pipeline. Today that is the drill families' `selected_holes` —
-    /// world-frame picks off `LoadedModel::drill_targets`, consumed
-    /// verbatim and therefore off by the whole setup transform on any
-    /// non-identity setup (G-DRILLPICK-FRAME).
+    /// frame — `mesh`, `selection` and the boundary inputs are transformed
+    /// by the driver before generation, and `stock_bbox` is the
+    /// emission-frame bbox. The drill picks took this transform until
+    /// geometry selection P2.3c; they are items of the selection now and
+    /// take the frame door (`ResolvedSelection::to_setup_frame`). The one
+    /// reader left is [`Self::z_flipped`] (W6.5).
     ///
     /// `None` MUST be a no-op: identity setups already emit in world, so an
     /// adapter that reaches for this has to leave world coordinates alone
@@ -474,7 +464,6 @@ impl<'a> ExecutionContext<'a> {
             mesh: None,
             index: None,
             selection: SelectionInputs::default(),
-            drill_targets: &[],
             alignment_pins: &[],
             tool_def,
             tool_cfg,
@@ -566,13 +555,7 @@ pub(crate) use curve_engrave::{
 };
 use dressup_apply::attach_generic_rest_analysis;
 pub use dressup_apply::{DRESSUP_PIPELINE, DressupContext, DressupStage, apply_dressups};
-#[cfg(test)]
-pub(crate) use drilling::STALE_DRILL_PICKS_PHRASE;
-pub use drilling::{
-    DRILL_PICK_MATCH_EPS_MM, NO_DRILL_TARGETS_MSG, NO_DRILL_TARGETS_SELECTED_MSG,
-    build_drill_op_for_config, drill_pick_matches, drill_targets_refusal,
-    stale_drill_picks_refusal,
-};
+pub use drilling::build_drill_op_for_config;
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{
@@ -595,8 +578,8 @@ pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};
 /// the argument now and both wrappers are gone. Every channel that used to
 /// be an argument is a named field with its own doc on the struct —
 /// `boundary_regions` (P2.3), `rest_analysis` (P2.5),
-/// `link_kinematics` (P1 W4a), `setup_transform` (G-DRILLPICK-FRAME) and
-/// `drill_targets` (G-DRILLCENTROID) among them. `None` stays a
+/// `link_kinematics` (P1 W4a) and `setup_transform` (W6.5) among them.
+/// `None` stays a
 /// byte-identical no-op for each.
 ///
 /// Generation findings are not returned. They are written into

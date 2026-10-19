@@ -136,22 +136,19 @@ fn drill_spec(id: usize) -> RequestSpec {
         Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
         Polygon2::rectangle(6.0, 6.0, 10.0, 10.0),
     ]);
-    // G-DRILLCENTROID: the holes are drill targets, not the two rectangles'
-    // centroids (which the generator no longer reads).
-    spec.drill_targets = vec![
-        rs_cam_core::io::dxf_input::DrillTarget {
-            x: -8.0,
-            y: -8.0,
-            layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
-        },
-        rs_cam_core::io::dxf_input::DrillTarget {
-            x: 8.0,
-            y: 8.0,
-            layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 4.0 },
-        },
-    ];
+    // G-DRILLCENTROID: the holes are circle items, not the two rectangles'
+    // centroids (which the generator never reads).
+    spec.hole_items = [[-8.0, -8.0], [8.0, 8.0]]
+        .iter()
+        .map(|&[x, y]| {
+            rs_cam_core::selection::Item::new(
+                rs_cam_core::selection::SourceRef::ToolpathModel,
+                Some("holes".into()),
+                rs_cam_core::selection::Shape::circle(rs_cam_core::geo::P2::new(x, y), 4.0),
+            )
+            .expect("a circle is a valid item")
+        })
+        .collect();
     spec.stock = board(20.0, 25.0);
     spec.dressups = DressupConfig::default();
     spec

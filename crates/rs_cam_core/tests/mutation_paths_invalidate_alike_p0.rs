@@ -128,10 +128,11 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit, SourceRef};
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession,
-    ProjectSessionBuilder, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
-    SetDrillSelectedHolesArgs, SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
+    AdoptModelGeometryArgs, AdoptResultArgs, Command, EditSelectionArgs, LoadedModel,
+    ProjectSession, ProjectSessionBuilder, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
@@ -595,16 +596,23 @@ fn n14_undo_and_the_setter_invalidate_alike() {
     );
 }
 
-/// CONTRACT — N6, closed by WP8. `set_drill_selected_holes` calls
+/// CONTRACT — N6, closed by WP8. A drill pick (`edit_toolpath_selection`, P2.3c) calls
 /// `invalidate_result_chain`, as its pin-hole sibling below already did.
 #[test]
 fn n6_a_drill_pick_invalidates_the_chain() {
     let mut s = fixture(OperationConfig::Drill(DrillConfig::default()));
     let before = revisions(&s);
     let _ = s
-        .apply(Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
+        .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
-            selected_holes: Some(vec![[1.0, 2.0]]),
+            edit: SelectionEdit::AddPick(MatchKey {
+                source: SourceRef::ToolpathModel,
+                kind: ItemKind::Point,
+                layer: None,
+                anchor: [1.0, 2.0],
+                measure: 0.0,
+                brep: None,
+            }),
         }))
         .expect("index 0 is a Drill operation");
     let obs = observe(&s, &before);

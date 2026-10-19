@@ -136,7 +136,16 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         id: 0,
         name: "drill_sentry_rect".to_owned(),
         mesh: None,
-        items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
+        // P2.3c: the two holes are points of the drawing, the default
+        // drill selection.
+        items: Arc::new({
+            use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+            let mut items: Vec<Item> = ItemSet::from_polygons(vec![poly]).iter().cloned().collect();
+            items.extend([HOLE_A, HOLE_B].iter().map(|&[x, y]| {
+                Item::new(SourceRef::ToolpathModel, None, Shape::Point(P2::new(x, y))).unwrap()
+            }));
+            ItemSet::new(items)
+        }),
         path: PathBuf::from("synthetic://drill_sentry_rect.svg"),
         kind: None,
         units: None,
@@ -334,7 +343,6 @@ fn peck_cycle_motion_matches_the_schedule_it_describes() {
             depth: 10.0,
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
-            selected_holes: Some(vec![HOLE_A, HOLE_B]),
             ..DrillConfig::default()
         },
     );
@@ -352,7 +360,6 @@ fn chip_break_cycle_motion_matches_the_schedule_it_describes() {
             cycle: DrillCycleType::ChipBreak,
             peck_depth: 3.0,
             retract_amount: 0.5,
-            selected_holes: Some(vec![HOLE_A, HOLE_B]),
             ..DrillConfig::default()
         },
     );
@@ -372,7 +379,6 @@ fn chip_break_with_retract_larger_than_peck_matches_the_schedule() {
             cycle: DrillCycleType::ChipBreak,
             peck_depth: 2.0,
             retract_amount: 4.0,
-            selected_holes: Some(vec![HOLE_A, HOLE_B]),
             ..DrillConfig::default()
         },
     );

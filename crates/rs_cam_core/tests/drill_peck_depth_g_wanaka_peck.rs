@@ -47,7 +47,7 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::{polygon_model, toolpath_config};
+use common::session::{polygon_model_with_points, toolpath_config};
 
 use std::sync::atomic::AtomicBool;
 
@@ -85,13 +85,14 @@ fn stock() -> StockConfig {
 }
 
 fn plate_model() -> LoadedModel {
-    polygon_model(
+    polygon_model_with_points(
         vec![Polygon2::new(vec![
             P2::new(0.0, 0.0),
             P2::new(STOCK_X, 0.0),
             P2::new(STOCK_X, STOCK_Y),
             P2::new(0.0, STOCK_Y),
         ])],
+        &[HOLE],
         "plate",
     )
 }
@@ -147,7 +148,6 @@ fn hole_op(depth: f64, peck_depth: f64) -> OperationConfig {
         depth,
         cycle: DrillCycleType::Peck,
         peck_depth,
-        selected_holes: Some(vec![HOLE]),
         ..DrillConfig::default()
     })
 }

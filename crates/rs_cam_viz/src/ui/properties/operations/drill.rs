@@ -1,6 +1,6 @@
 use super::super::pills::PillSuggestions;
-use rs_cam_core::compute::execute::stale_drill_picks_refusal;
-use rs_cam_core::io::dxf_input::{DrillTarget, DrillTargetKind};
+use rs_cam_core::selection::{Filter, Rule, Selection, SelectionEdit, SourceRef};
+use rs_cam_core::session::HoleSelection;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
@@ -9,110 +9,105 @@ use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
-/// Match tolerance for comparing a picked hole to a target position (mm).
-///
-/// The core constant, not a local copy: the generator resolves a pick
-/// against the model's targets at this same distance (G-DRILLPICKSTALE), so
-/// a hole this panel calls "already picked" is a hole the generator will
-/// resolve.
-const TARGET_EPS: f64 = rs_cam_core::compute::execute::DRILL_PICK_MATCH_EPS_MM;
+/// What the hole sources are, printed on every drill panel so the operator
+/// knows what to import (G-DRILLCENTROID, UX-R03-004).
+const HOLE_SOURCES_NOTE: &str =
+    "Holes are DXF points and circle/arc centres, and circles in SVG drawings.";
 
-fn xy_in(holes: &[[f64; 2]], xy: [f64; 2]) -> bool {
-    holes
-        .iter()
-        .any(|h| (h[0] - xy[0]).abs() < TARGET_EPS && (h[1] - xy[1]).abs() < TARGET_EPS)
+/// Apply one edit to the selection of the op. `op_default` is the default
+/// selection of the op (`OperationConfig::default_selection`). The panel
+/// sends no edit that can refuse (`RemoveRule` is the only one), so an
+/// error is a defect of this panel, logged.
+fn edit(selection: &mut Selection, edit: SelectionEdit, op_default: &Selection) {
+    if let Err(refusal) = selection.apply(edit, op_default) {
+        tracing::error!(%refusal, "drill panel: a selection edit refused");
+    }
 }
 
-/// What the target sources are, printed on every drill panel so the operator
-/// knows what to import (G-DRILLCENTROID, UX-R03-004).
-const TARGET_SOURCES_NOTE: &str =
-    "Targets are DXF points and circle/arc centres, and circles in SVG drawings.";
-
-/// Shared "drill targets" selector: a count, viewport hint, Select all / Clear,
-/// and a per-layer "select all in layer" dropdown. Mutates `selected_holes`
-/// (the resolved positions) and `selected_layers` (display/round-trip).
+/// Shared hole selector (geometry selection P2.3c): a count, the refusal
+/// of the selection, a viewport hint, Select all / Clear, and a per-layer
+/// "select the layer" dropdown. It writes `SelectionEdit`s to `selection`;
+/// `holes` is the resolution generation reads
+/// (`ProjectSession::hole_selection`), so the count and the refusal are the
+/// generator's own.
 ///
-/// `no_targets_refusal` is the sentence the generator refuses with when
-/// `targets` is empty and nothing is picked — `Some` for `Drill`, whose only
-/// hole sources these are, so the count (0 allowed) and the refusal are
-/// always visible; `None` for the pin drill, whose holes are the stock's
-/// alignment pins and for which an empty target list is unremarkable.
-fn draw_drill_target_selector(
+/// `needs_holes` is true for `Drill`, whose only hole source is the
+/// selection, so the count (0 allowed) and the refusal are always visible;
+/// false for the pin drill, whose holes are the stock's alignment pins and
+/// for which a drawing with no hole is unremarkable.
+fn draw_hole_selector(
     ui: &mut egui::Ui,
-    selected_holes: &mut Option<Vec<[f64; 2]>>,
-    selected_layers: &mut Vec<String>,
-    layers: &[String],
-    targets: &[DrillTarget],
-    no_targets_refusal: Option<&str>,
+    selection: &mut Selection,
+    op_default: &Selection,
+    holes: Option<&HoleSelection>,
+    needs_holes: bool,
 ) {
-    if targets.is_empty() {
-        let Some(refusal) = no_targets_refusal else {
+    let refusal = holes.and_then(|h| h.refusal.as_deref());
+    let items = holes.map_or(&[][..], |h| h.items.as_slice());
+    if items.is_empty() {
+        if !needs_holes && refusal.is_none() {
             return;
-        };
+        }
         ui.separator();
-        ui.label("Drill targets: 0");
-        ui.colored_label(crate::ui::tokens::DANGER, refusal);
-        ui.label(egui::RichText::new(TARGET_SOURCES_NOTE).small().weak());
+        ui.label("Drill holes: 0");
+        if let Some(refusal) = refusal {
+            ui.colored_label(crate::ui::tokens::DANGER, refusal);
+        }
+        ui.label(egui::RichText::new(HOLE_SOURCES_NOTE).small().weak());
         return;
     }
     ui.separator();
-    let total = targets.len();
-    let sel_count = selected_holes.as_ref().map_or(0, Vec::len);
-    match selected_holes.as_ref() {
-        None => ui.label(format!(
-            "Drill targets: {total} available (none selected → drilling all targets)"
-        )),
-        Some(picked) if picked.is_empty() => ui.colored_label(
-            crate::ui::tokens::DANGER,
-            format!(
-                "Drill targets: 0 of {total} selected — {}",
-                rs_cam_core::compute::execute::NO_DRILL_TARGETS_SELECTED_MSG
-            ),
-        ),
-        Some(_) => ui.label(format!("Drill targets: {sel_count} of {total} selected")),
-    };
-    // G-DRILLPICKSTALE (F4.8): the operator must be able to see a stale
-    // pick BEFORE pressing Generate, not only in the refusal. Same
-    // predicate the generator refuses with, so the panel and the generator
-    // cannot say different things.
-    let stale = selected_holes
-        .as_ref()
-        .and_then(|picked| stale_drill_picks_refusal(picked, targets));
-    if let Some(msg) = stale {
-        ui.colored_label(crate::ui::tokens::DANGER, msg);
+    let total = items.len();
+    let selected = holes.map_or(0, HoleSelection::selected_count);
+    ui.label(format!("Drill holes: {selected} of {total} selected"));
+    // G-DRILLPICKSTALE (F4.8): the operator sees a lost pick, or an empty
+    // selection, BEFORE pressing Generate, in the generator's own words.
+    if let Some(refusal) = refusal {
+        ui.colored_label(crate::ui::tokens::DANGER, refusal);
     }
     ui.label(
         egui::RichText::new("Click points/holes in the viewport to toggle.")
             .small()
             .weak(),
     );
+    let layers = holes.map(HoleSelection::layers).unwrap_or_default();
     ui.horizontal(|ui| {
         if ui.button("Select all").clicked() {
-            *selected_holes = Some(targets.iter().map(|t| [t.x, t.y]).collect());
-            *selected_layers = layers.to_vec();
+            edit(
+                selection,
+                SelectionEdit::Replace(Box::new(Selection::drawing())),
+                op_default,
+            );
         }
         if ui.button("Clear").clicked() {
-            *selected_holes = None;
-            selected_layers.clear();
+            edit(
+                selection,
+                SelectionEdit::Replace(Box::new(Selection::empty())),
+                op_default,
+            );
         }
         if !layers.is_empty() {
             egui::ComboBox::from_id_salt("drill_layer_select")
                 .truncate()
                 .selected_text("Select layer…")
                 .show_ui(ui, |ui| {
-                    for layer in layers {
+                    for layer in &layers {
                         if ui.selectable_label(false, layer).clicked() {
-                            let mut holes = selected_holes.take().unwrap_or_default();
-                            for t in targets.iter().filter(|t| &t.layer == layer) {
-                                let xy = [t.x, t.y];
-                                if !xy_in(&holes, xy) {
-                                    holes.push(xy);
-                                }
-                            }
-                            *selected_holes = Some(holes);
-                            if !selected_layers.iter().any(|l| l == layer) {
-                                selected_layers.push(layer.clone());
-                            }
+                            let rule = Rule {
+                                source: SourceRef::ToolpathModel,
+                                filter: Filter {
+                                    layers: vec![layer.clone()],
+                                    ..Filter::default()
+                                },
+                            };
+                            // Under "every hole" a layer rule adds nothing,
+                            // so the first layer pick means "this layer".
+                            let layer_edit = if selection.is_drawing() {
+                                SelectionEdit::Replace(Box::new(Selection::from_rules(vec![rule])))
+                            } else {
+                                SelectionEdit::AddRule(rule)
+                            };
+                            edit(selection, layer_edit, op_default);
                         }
                     }
                 });
@@ -120,14 +115,11 @@ fn draw_drill_target_selector(
     });
     // Brief legend so circle vs point markers read clearly; the point count
     // is named only when there are any.
-    let points = targets
-        .iter()
-        .filter(|t| matches!(t.kind, DrillTargetKind::Point))
-        .count();
+    let points = items.iter().filter(|i| i.diameter.is_none()).count();
     let legend = if points > 0 {
-        format!("{TARGET_SOURCES_NOTE} {points} of these are points.")
+        format!("{HOLE_SOURCES_NOTE} {points} of these are points.")
     } else {
-        TARGET_SOURCES_NOTE.to_owned()
+        HOLE_SOURCES_NOTE.to_owned()
     };
     ui.label(egui::RichText::new(legend).small().weak());
 }
@@ -233,8 +225,7 @@ fn draw_drill_cycle_rows(
 pub(in crate::ui::properties) fn draw_drill_params(
     ui: &mut egui::Ui,
     cfg: &mut DrillConfig,
-    drill_layers: &[String],
-    drill_targets: &[DrillTarget],
+    holes: Option<&HoleSelection>,
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
 ) {
@@ -269,25 +260,17 @@ pub(in crate::ui::properties) fn draw_drill_params(
             Some(&mut cfg.retract_amount),
         );
     });
-    draw_drill_target_selector(
-        ui,
-        &mut cfg.selected_holes,
-        &mut cfg.selected_layers,
-        drill_layers,
-        drill_targets,
-        Some(rs_cam_core::compute::execute::NO_DRILL_TARGETS_MSG),
-    );
+    draw_hole_selector(ui, &mut cfg.selection, &Selection::drawing(), holes, true);
 }
 
 pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     ui: &mut egui::Ui,
     cfg: &mut AlignmentPinDrillConfig,
-    drill_layers: &[String],
-    drill_targets: &[DrillTarget],
+    holes: Option<&HoleSelection>,
     pills: Option<&PillSuggestions>,
 ) {
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
-    let extra = cfg.selected_holes.as_ref().map_or(0, Vec::len);
+    let extra = holes.map_or(0, |h| h.holes.len());
     // The op drills the live stock pins of its diameter (W6.5); the config
     // holds no copy of them.
     ui.label(format!(
@@ -323,12 +306,5 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
             None,
         );
     });
-    draw_drill_target_selector(
-        ui,
-        &mut cfg.selected_holes,
-        &mut cfg.selected_layers,
-        drill_layers,
-        drill_targets,
-        None,
-    );
+    draw_hole_selector(ui, &mut cfg.selection, &Selection::empty(), holes, false);
 }

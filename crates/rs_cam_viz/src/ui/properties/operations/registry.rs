@@ -57,8 +57,9 @@ use crate::ui::properties::pills::PillSuggestions;
 pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     pub tools: &'a [(ToolId, String, f64)],
     pub models: &'a [(ModelId, String)],
-    pub drill_layers: &'a [String],
-    pub drill_targets: &'a [rs_cam_core::io::dxf_input::DrillTarget],
+    /// The holes of a drill op as generation resolves them (geometry
+    /// selection P2.3c); `None` for every other op.
+    pub holes: Option<&'a rs_cam_core::session::HoleSelection>,
     pub pills: Option<&'a PillSuggestions<'a>>,
     pub depth_caution: Option<&'a DepthBeyondStock>,
     pub through_cut: Option<&'a ThroughCut>,
@@ -107,7 +108,7 @@ pub(in crate::ui::properties) struct OpValidateCtx<'a> {
     /// The chosen tool, as the validation context models it.
     pub tool: &'a super::validate::ValidationTool,
     pub ctx: &'a super::validate::ToolpathValidationContext,
-    pub model_id: ModelId,
+    pub toolpath_id: rs_cam_core::ids::ToolpathId,
 }
 
 /// One operation's UI row.
@@ -249,8 +250,7 @@ editor!(ed_trace, Trace, |ui, cfg, cx| draw_trace_params(
 editor!(ed_drill, Drill, |ui, cfg, cx| draw_drill_params(
     ui,
     cfg,
-    cx.drill_layers,
-    cx.drill_targets,
+    cx.holes,
     cx.pills,
     cx.depth_caution
 ));
@@ -309,7 +309,7 @@ editor!(ed_project_curve, ProjectCurve, |ui, cfg, cx| {
     draw_project_curve_params(ui, cfg, cx.models, cx.pills);
 });
 editor!(ed_alignment_pin_drill, AlignmentPinDrill, |ui, cfg, cx| {
-    draw_alignment_pin_drill_params(ui, cfg, cx.drill_layers, cx.drill_targets, cx.pills);
+    draw_alignment_pin_drill_params(ui, cfg, cx.holes, cx.pills);
 });
 
 // ── The bespoke diagrams ────────────────────────────────────────────────
@@ -434,10 +434,10 @@ fn val_stepover_under_diameter(
 }
 
 fn val_drill(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
-    let OperationConfig::Drill(c) = op else {
+    let OperationConfig::Drill(_) = op else {
         return;
     };
-    if let Some(msg) = super::validate::drill_targets_refusal(cx.ctx, cx.model_id, c) {
+    if let Some(msg) = super::validate::hole_refusal(cx.ctx, cx.toolpath_id) {
         errs.push(msg.to_owned());
     }
 }

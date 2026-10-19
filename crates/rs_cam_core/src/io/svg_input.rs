@@ -254,10 +254,6 @@ fn flatten_cubic(p0: P2, p1: P2, p2: P2, p3: P2, tolerance: f64, out: &mut Vec<P
     flatten_cubic(mid, m123, m23, p3, tolerance, out);
 }
 
-/// Layer name every circle-like SVG target carries, so the inspector's
-/// "select all in layer" works on an SVG too.
-pub const SVG_CIRCLE_LAYER: &str = "circles";
-
 /// Minimum vertex count for a closed ring to be a circle candidate.
 const CIRCLE_LIKE_MIN_VERTICES: usize = 8;
 /// Relative radial tolerance: every vertex within 2 % of the mean radius.
@@ -297,33 +293,6 @@ pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
         .then_some((c, 2.0 * mean))
 }
 
-/// Every circle-like ring in a polygon set — exteriors AND holes, because
-/// `detect_containment` files a circle drawn inside an outline as that
-/// outline's hole — as pickable drill targets on [`SVG_CIRCLE_LAYER`].
-///
-/// This is how an SVG drawing exposed drill targets before P2.1: usvg
-/// flattens a `<circle>` to a path before this crate sees it, so the source
-/// element is gone and only the shape remains. Its one caller is the bridge
-/// `LoadedModel::drill_targets_pre_selection`, which gives it the nested
-/// polygon list in mm. P2.3c deletes this with the bridge.
-pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_input::DrillTarget> {
-    polygons
-        .iter()
-        // An open arc is not a hole, however round it is (P1).
-        .filter(|poly| poly.closed)
-        .flat_map(|poly| {
-            std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
-        })
-        .filter_map(circle_like_ring)
-        .map(|(c, diameter)| crate::io::dxf_input::DrillTarget {
-            x: c.x,
-            y: c.y,
-            layer: SVG_CIRCLE_LAYER.to_owned(),
-            kind: crate::io::dxf_input::DrillTargetKind::CircleCenter { diameter },
-        })
-        .collect()
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -333,6 +302,7 @@ pub fn circle_like_drill_targets(polygons: &[Polygon2]) -> Vec<crate::io::dxf_in
 )]
 mod tests {
     use super::*;
+    use crate::selection::ItemKind;
 
     /// The polygon list of the import before P2.1 (the bridge): the drawn
     /// rings, nested.
@@ -454,8 +424,9 @@ mod tests {
         assert_eq!(open.len(), 2, "the open subpath and the line");
         assert!(open.iter().any(|p| p.exterior.len() == 3));
         assert!(open.iter().any(|p| p.exterior.len() == 2));
-        // An open path is never a drill target, round or not.
-        assert!(circle_like_drill_targets(&polys).is_empty());
+        // An open path is never a circle item, round or not.
+        let items = load_svg_data(svg, 0.1, 1.0).unwrap();
+        assert!(!items.iter().any(|i| i.kind() == ItemKind::Circle));
     }
 
     /// P1: a round open arc is not a circle-like drill target.
@@ -468,7 +439,16 @@ mod tests {
             })
             .collect();
         assert!(circle_like_ring(&ring).is_some(), "the ring is round");
-        assert!(circle_like_drill_targets(&[Polygon2::open_path(ring)]).is_empty());
+        let path = Item::new(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::Path(Polygon2::open_path(ring)),
+        )
+        .unwrap();
+        let items = ItemSet::new(vec![path])
+            .with_circles(|r| circle_like_ring(&r.exterior))
+            .unwrap();
+        assert!(!items.iter().any(|i| i.kind() == ItemKind::Circle));
     }
 
     #[test]
@@ -585,15 +565,20 @@ mod tests {
     }
 
     #[test]
-    fn circle_inside_a_rect_is_a_target_via_the_hole_ring() {
+    fn circle_inside_a_rect_is_one_circle_item() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
             <rect x="5" y="5" width="70" height="50"/>
             <circle cx="40" cy="30" r="10"/>
         </svg>"#;
-        let polys = load_polys(svg, 0.1);
-        let targets = circle_like_drill_targets(&polys);
-        assert_eq!(targets.len(), 1, "one circle, one target: {targets:?}");
-        assert!((targets[0].x - 40.0).abs() < 0.1 && (targets[0].y - 30.0).abs() < 0.1);
-        assert_eq!(targets[0].layer, SVG_CIRCLE_LAYER);
+        let items = load_svg_data(svg, 0.1, 1.0).unwrap();
+        let centres: Vec<P2> = items
+            .iter()
+            .filter_map(|i| match i.shape() {
+                Shape::Circle { centre, .. } => Some(*centre),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(centres.len(), 1, "one circle, one item: {centres:?}");
+        assert!((centres[0].x - 40.0).abs() < 0.1 && (centres[0].y - 30.0).abs() < 0.1);
     }
 }

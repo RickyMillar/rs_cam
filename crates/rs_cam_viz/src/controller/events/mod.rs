@@ -8,7 +8,7 @@ mod toolpath;
 mod undo;
 
 use rs_cam_core::session::{
-    Command, Effects, ReplaceToolpathConfigArgs, SetDrillSelectedHolesArgs, SetFaceSelectionArgs,
+    Command, EditSelectionArgs, Effects, ReplaceToolpathConfigArgs, SetFaceSelectionArgs,
     SetPostConfigArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
 };
 
@@ -324,39 +324,27 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Drill target selection ---
-            AppEvent::ToggleDrillTarget { toolpath_id, xy } => {
-                use rs_cam_core::compute::catalog::OperationConfig;
+            AppEvent::ToggleDrillTarget { toolpath_id, key } => {
                 if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
                 {
-                    let current = match &tc.operation {
-                        OperationConfig::Drill(c) => c.selected_holes.clone(),
-                        OperationConfig::AlignmentPinDrill(c) => c.selected_holes.clone(),
-                        _ => None,
-                    };
-                    let mut holes = current.unwrap_or_default();
-                    // Toggle membership with a tolerance (no float == on
-                    // picks). The core constant, not a local copy: the
-                    // generator resolves a pick against the model's targets
-                    // at this same distance (G-DRILLPICKSTALE).
-                    const EPS: f64 = rs_cam_core::compute::execute::DRILL_PICK_MATCH_EPS_MM;
-                    if let Some(pos) = holes
-                        .iter()
-                        .position(|h| (h[0] - xy[0]).abs() < EPS && (h[1] - xy[1]).abs() < EPS)
-                    {
-                        holes.remove(pos);
-                    } else {
-                        holes.push(xy);
-                    }
-                    // Empty selection reverts to the legacy default (None) so a
-                    // viewport deselect doesn't leave a confusing "nothing" state.
-                    let new_selection = if holes.is_empty() { None } else { Some(holes) };
-                    // N6 (WP8): the setter drops the downstream stock
-                    // chain now, so the stamp follows `Effects::stale`
-                    // rather than naming this toolpath alone.
-                    let command = Command::SetDrillSelectedHoles(SetDrillSelectedHolesArgs {
-                        index: idx,
-                        selected_holes: new_selection,
+                    // Geometry selection P2.3c (lead ruling P2.2: no toggle
+                    // edit): resolve first, then send `AddPick` or
+                    // `RemovePick`. A selected item that no pick names is a
+                    // rule match; `RemovePick` excludes it from the rule.
+                    let selected = self.state.session.hole_selection(tc).is_some_and(|h| {
+                        h.items
+                            .iter()
+                            .any(|i| i.selected && i.key.names_same_geometry(&key))
                     });
+                    let edit = if selected {
+                        rs_cam_core::selection::SelectionEdit::RemovePick(key)
+                    } else {
+                        rs_cam_core::selection::SelectionEdit::AddPick(key)
+                    };
+                    // N6 (WP8): the setter drops the downstream stock
+                    // chain, so the stamp follows `Effects::stale`
+                    // rather than naming this toolpath alone.
+                    let command = Command::EditSelection(EditSelectionArgs { index: idx, edit });
                     let _ = self.apply_quietly(command);
                     self.state.selection = Selection::Toolpath(toolpath_id);
                     self.state.gui.mark_edited();

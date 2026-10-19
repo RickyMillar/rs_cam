@@ -250,44 +250,39 @@ impl ProjectSession {
         })
     }
 
-    /// Set the explicitly-selected drill holes (DXF point / circle-centre
-    /// picks) for a `Drill` or `AlignmentPinDrill` toolpath, invalidating its
-    /// cached result and the results of every operation downstream of it.
-    /// `None` reverts a `Drill` op to its legacy all-polygon-centroids
-    /// behaviour.
+    /// Apply one edit to the selection of a toolpath's op (geometry
+    /// selection P2.3c), invalidating its cached result and the results of
+    /// every operation downstream of it.
     ///
-    /// A pick changes which holes the operation cuts, so it changes the
+    /// A selection edit changes which items the op cuts, so it changes the
     /// stock a downstream `StockSource::FromRemainingStock` operation
-    /// reads. This called `drop_result` alone until WP8 (N6). It walks the
-    /// chain now.
+    /// reads (N6: the chain walk, not `drop_result` alone).
     ///
-    /// Errors if the toolpath's operation is not a drilling op.
-    #[instrument(skip(self, selected_holes))]
-    pub(crate) fn set_drill_selected_holes(
+    /// Errors if the toolpath's op holds no selection, or if the edit
+    /// refuses (`SelectionEdit::RemoveRule` of an index that names no
+    /// rule).
+    #[instrument(skip(self, edit))]
+    pub(crate) fn edit_toolpath_selection(
         &mut self,
         index: usize,
-        selected_holes: Option<Vec<[f64; 2]>>,
+        edit: crate::selection::SelectionEdit,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(Some(index), move |session| {
             let tc = session
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
-            // Read before the match: `tc` is borrowed mutably inside it.
+            // Read before the slot borrow: `tc` is borrowed mutably there.
             let enabled = tc.enabled;
-            match tc.operation {
-                OperationConfig::Drill(ref mut cfg) => {
-                    cfg.selected_holes = selected_holes;
-                }
-                OperationConfig::AlignmentPinDrill(ref mut cfg) => {
-                    cfg.selected_holes = selected_holes;
-                }
-                _ => {
-                    return Err(SessionError::InvalidParam(
-                        "Toolpath is not a drilling operation".to_owned(),
-                    ));
-                }
-            }
+            let name = tc.name.clone();
+            let op_default = tc.operation.default_selection();
+            let (Some(op_default), Some(slot)) = (op_default, tc.operation.selection_slot()) else {
+                return Err(SessionError::InvalidParam(format!(
+                    "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
+                )));
+            };
+            slot.apply(edit, &op_default)
+                .map_err(|e| SessionError::InvalidParam(e.to_string()))?;
             session.invalidate_result_chain(index, enabled);
             Ok(())
         })

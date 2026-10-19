@@ -16,51 +16,6 @@ use crate::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 
 use super::ResolvedGenInputs;
 
-/// The pick keys of the picked BREP faces of `model` (geometry selection
-/// P2.3b). Each key names the Face item whose BREP id is the picked id, on
-/// the toolpath model. A picked face with no Face item refuses and names
-/// the face: the STEP door makes a Face item for each flat horizontal face
-/// only (`io::brep_face_items`), and a pick that the op cannot cut must
-/// not drop out in silence.
-fn face_pick_keys(
-    toolpath: &str,
-    model: Option<&crate::session::LoadedModel>,
-    ids: &[crate::geometry::enriched_mesh::FaceGroupId],
-) -> Result<Vec<crate::selection::MatchKey>, SessionError> {
-    let Some(model) = model else {
-        return Err(SessionError::MissingGeometry(format!(
-            "Toolpath '{toolpath}' picks model faces, but its model does not exist. Pick a \
-             model for the toolpath, or clear the face pick."
-        )));
-    };
-    ids.iter()
-        .map(|id| {
-            model
-                .items
-                .iter()
-                .find(|item| match item.shape() {
-                    crate::selection::Shape::Face(face) => face.brep == Some(*id),
-                    crate::selection::Shape::Loop(_)
-                    | crate::selection::Shape::Path(_)
-                    | crate::selection::Shape::Point(_)
-                    | crate::selection::Shape::Circle { .. } => false,
-                })
-                .map(|item| crate::selection::MatchKey {
-                    source: crate::selection::SourceRef::ToolpathModel,
-                    ..item.key().clone()
-                })
-                .ok_or_else(|| {
-                    SessionError::MissingGeometry(format!(
-                        "Toolpath '{toolpath}' picks face {} of model '{}', but that face is not \
-                         a flat horizontal face, so it has no outline to cut. Remove the face \
-                         from the pick.",
-                        id.0, model.name
-                    ))
-                })
-        })
-        .collect()
-}
-
 impl ProjectSession {
     /// Resolve every per-generation input from session state for toolpath
     /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
@@ -127,7 +82,9 @@ impl ProjectSession {
         // refuses here: before P2.3b one such face dropped the whole pick
         // with a log line.
         let face_picks = match tc.face_selection.as_deref() {
-            Some(ids) if !ids.is_empty() => face_pick_keys(&tc.name, model, ids)?,
+            Some(ids) if !ids.is_empty() => {
+                crate::session::selection_status::face_pick_keys(&tc.name, model, ids)?
+            }
             Some(_) | None => Vec::new(),
         };
 
@@ -241,29 +198,13 @@ impl ProjectSession {
         // `view` over it. The picked faces join the selection as picks. An
         // op that holds no selection (Face, a 3D op) resolves only its
         // picked faces, for the auto top below; its prologue reads no item.
-        let mut selection_spec = tc
-            .operation
-            .selection()
-            .cloned()
-            .unwrap_or_else(crate::selection::Selection::empty);
-        let op_default = tc
-            .operation
-            .default_selection()
-            .unwrap_or_else(crate::selection::Selection::empty);
-        for key in face_picks {
-            selection_spec
-                .apply(crate::selection::SelectionEdit::AddPick(key), &op_default)
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?;
-        }
-        let resolved = crate::selection::resolve(
-            &selection_spec,
-            &crate::selection::ResolveScope {
-                toolpath_model: model,
-                models: &self.models,
-                stock_bbox: &emission_stock_bbox,
-                setup: ctx.local_to_global.as_ref(),
-            },
-        );
+        let resolved = self.resolve_op_selection(
+            tc,
+            model,
+            face_picks,
+            &emission_stock_bbox,
+            ctx.local_to_global.as_ref(),
+        )?;
         let selection = match ctx.local_to_global.as_ref() {
             Some(info) => resolved
                 .to_setup_frame(info)
@@ -530,11 +471,6 @@ impl ProjectSession {
             tool,
             mesh,
             selection,
-            drill_targets: Arc::new(
-                model
-                    .map(crate::session::LoadedModel::drill_targets_pre_selection)
-                    .unwrap_or_default(),
-            ),
             keep_out_footprints,
             obstacles,
             obstacle_view,

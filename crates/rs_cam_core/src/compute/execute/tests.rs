@@ -15,7 +15,6 @@ use crate::trace::transform_provenance::ReconcileSet;
 
 use crate::toolpath::Toolpath;
 
-use super::drilling::drill_holes_for_config;
 use super::rough_3d::adaptive3d_effective_stock_to_leave;
 use super::*;
 
@@ -127,81 +126,72 @@ use crate::mesh::{SpatialIndex, TriangleMesh, make_test_flat, make_test_hemisphe
 use crate::polygon::Polygon2;
 use crate::trace::toolpath_spans::SpanKind;
 
+/// G-DRILLCENTROID on the selection (P2.3c): a Drill drills the points
+/// and circle centres of its selection, never the centroid of a loop. With
+/// no point and no circle it refuses `Empty` in the prologue.
 #[test]
-fn drill_holes_come_from_targets_or_picks_never_centroids() {
-    use crate::compute::operation_configs::DrillConfig;
-    use crate::io::dxf_input::DrillTargetKind;
-    // Two targets, as a DXF with one POINT and one CIRCLE imports to.
-    let targets = [
-        DrillTarget {
-            x: 1.0,
-            y: 2.0,
-            layer: "pts".to_owned(),
-            kind: DrillTargetKind::Point,
-        },
-        DrillTarget {
-            x: 7.0,
-            y: 8.0,
-            layer: "holes".to_owned(),
-            kind: DrillTargetKind::CircleCenter { diameter: 4.0 },
-        },
-    ];
+fn drill_holes_come_from_points_and_circles_never_centroids() {
+    use crate::geo::P2;
+    use crate::selection::{Item, RefusalCause, Shape, SourceRef};
+    let item = |layer: &str, shape: Shape| {
+        Item::new(SourceRef::ToolpathModel, Some(layer.into()), shape).unwrap()
+    };
+    let op = OperationConfig::new_default(OperationType::Drill);
+    let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
+    let heights = test_heights();
+    let bbox = test_stock_bbox();
+    let cancel = AtomicBool::new(false);
+    let findings = std::cell::RefCell::new(GenerationFindings::default());
+    let run = |selection: SelectionInputs<'static>| {
+        let ctx = ExecutionContext {
+            selection,
+            ..ExecutionContext::new(
+                &findings,
+                &tool_def,
+                &tool_cfg,
+                &heights,
+                &[],
+                &bbox,
+                &cancel,
+            )
+        };
+        execute_operation_annotated(&ctx, &op)
+    };
 
-    // None => every target the model exposes.
-    let default = DrillConfig::default();
-    let holes = drill_holes_for_config(&default, &targets, None).unwrap();
-    assert_eq!(holes, vec![[1.0, 2.0], [7.0, 8.0]]);
-
-    // None + no targets => refusal naming the missing input, never a
-    // polygon centroid (G-DRILLCENTROID).
-    let err = drill_holes_for_config(&default, &[], None).unwrap_err();
+    // A point, a circle and a loop: two holes, at the point and the centre.
+    let generated = run(SelectionInputs::from_items([
+        item("pts", Shape::Point(P2::new(21.0, 22.0))),
+        item("holes", Shape::circle(P2::new(37.0, 38.0), 4.0)),
+        item(
+            "outline",
+            Shape::Loop(Polygon2::rectangle(10.0, 10.0, 60.0, 60.0)),
+        ),
+    ]))
+    .unwrap();
+    let plunges: Vec<[f64; 2]> = generated
+        .toolpath
+        .moves
+        .windows(2)
+        .filter(|w| w[1].target.z < w[0].target.z && w[1].target.x == w[0].target.x)
+        .map(|w| [w[1].target.x, w[1].target.y])
+        .collect();
+    assert!(plunges.contains(&[21.0, 22.0]), "{plunges:?}");
+    assert!(plunges.contains(&[37.0, 38.0]), "{plunges:?}");
     assert!(
-        matches!(&err, OperationError::MissingGeometry(m) if m == NO_DRILL_TARGETS_MSG),
-        "got {err:?}"
+        plunges
+            .iter()
+            .all(|p| *p == [21.0, 22.0] || *p == [37.0, 38.0]),
+        "no hole at the loop centroid: {plunges:?}"
     );
 
-    // Some(picks) => drill exactly the picks.
-    //
-    // This arm read `selected_holes: Some(vec![[3.0, 4.0]])` — a
-    // coordinate naming NEITHER target — and asserted the op drilled it
-    // "ignoring the targets". That is the G-DRILLPICKSTALE defect stated
-    // as a contract: a pick is a copy of a target's own `(x, y)`, so a
-    // pick that names no target is a pick whose target moved or was
-    // deleted. The pick here now names a real target, which is what the
-    // picker can produce; the stale case is the refusal below.
-    let picked = DrillConfig {
-        selected_holes: Some(vec![[7.0, 8.0]]),
-        ..DrillConfig::default()
-    };
-    let holes = drill_holes_for_config(&picked, &targets, None).unwrap();
-    assert_eq!(holes, vec![[7.0, 8.0]]);
-
-    // Some(picks) naming no target => refusal, never the frozen
-    // coordinate (G-DRILLPICKSTALE, F4.8).
-    let stale = DrillConfig {
-        selected_holes: Some(vec![[3.0, 4.0]]),
-        ..DrillConfig::default()
-    };
-    let err = drill_holes_for_config(&stale, &targets, None).unwrap_err();
-    let OperationError::MissingGeometry(msg) = &err else {
-        panic!("expected MissingGeometry, got {err:?}");
-    };
-    assert!(msg.contains(STALE_DRILL_PICKS_PHRASE), "got {msg:?}");
-
-    // The same pick with NO targets to compare against still drills:
-    // an empty list also means "the caller resolved no model", which is
-    // what `execute_operation_annotated` passes.
-    let holes = drill_holes_for_config(&stale, &[], None).unwrap();
-    assert_eq!(holes, vec![[3.0, 4.0]]);
-
-    // Some(empty) => explicit "nothing selected" error, not all targets.
-    let empty = DrillConfig {
-        selected_holes: Some(Vec::new()),
-        ..DrillConfig::default()
-    };
-    let err = drill_holes_for_config(&empty, &targets, None).unwrap_err();
+    // Only a loop: nothing to drill. The prologue refuses `Empty`.
+    let err = run(SelectionInputs::from_items([item(
+        "outline",
+        Shape::Loop(Polygon2::rectangle(10.0, 10.0, 60.0, 60.0)),
+    )]))
+    .unwrap_err();
     assert!(
-        matches!(&err, OperationError::MissingGeometry(m) if m == NO_DRILL_TARGETS_SELECTED_MSG),
+        matches!(&err, OperationError::Selection(r) if matches!(r.cause, RefusalCause::Empty { .. })),
         "got {err:?}"
     );
 }
@@ -228,15 +218,36 @@ fn adaptive3d_stock_to_leave_is_axial_only() {
 }
 
 /// Build a default tool definition and config for a given tool type.
-/// A default `Drill` op with an explicit pick. The in-file tests reach
-/// the generator without a model, so the picks are their hole source
-/// (G-DRILLCENTROID: polygon centroids no longer are).
-fn drill_op_picking(holes: &[[f64; 2]]) -> OperationConfig {
-    let mut op = OperationConfig::new_default(OperationType::Drill);
-    if let OperationConfig::Drill(cfg) = &mut op {
-        cfg.selected_holes = Some(holes.to_vec());
-    }
-    op
+/// The default rule over one point per hole: the hole source of a
+/// `Drill` op in the in-file tests, which reach the generator without a
+/// model (G-DRILLCENTROID: polygon centroids are no hole source).
+fn drill_points(holes: &[[f64; 2]]) -> SelectionInputs<'static> {
+    SelectionInputs::from_items(holes.iter().map(|&[x, y]| {
+        crate::selection::Item::new(
+            crate::selection::SourceRef::ToolpathModel,
+            None,
+            crate::selection::Shape::Point(crate::geo::P2::new(x, y)),
+        )
+        .unwrap()
+    }))
+}
+
+/// The default rule over `polygons` and one point at (30, 30): every op
+/// family has an item it cuts (a Drill drills the point; a region or curve
+/// op skips the point with no note).
+fn rectangle_and_a_point(polygons: &[Polygon2]) -> SelectionInputs<'static> {
+    let point = crate::selection::Item::new(
+        crate::selection::SourceRef::ToolpathModel,
+        None,
+        crate::selection::Shape::Point(crate::geo::P2::new(30.0, 30.0)),
+    )
+    .unwrap();
+    SelectionInputs::from_items(
+        crate::selection::ItemSet::from_polygons(polygons.to_vec())
+            .iter()
+            .cloned()
+            .chain(std::iter::once(point)),
+    )
 }
 
 fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
@@ -503,10 +514,9 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Drill",
-            // Picks are the hole source on this model-less path
-            // (G-DRILLCENTROID); the `Drill` polygon fixture is kept so
-            // the polygon slot still exercises a 2D op with geometry.
-            op: drill_op_picking(&[[25.0, 25.0], [55.0, 55.0]]),
+            // Two points are the hole source on this model-less path
+            // (G-DRILLCENTROID: a loop centroid is no hole source).
+            op: OperationConfig::new_default(OperationType::Drill),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Drill),
@@ -815,9 +825,9 @@ fn face_produces_output() {
 
 #[test]
 fn drill_produces_output() {
-    // This path resolves no model, so the hole is an explicit pick
+    // This path resolves no model, so the hole is one point item
     // (G-DRILLCENTROID: a polygon centroid is no longer a hole source).
-    let op = drill_op_picking(&[[25.0, 25.0]]);
+    let op = OperationConfig::new_default(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -825,6 +835,7 @@ fn drill_produces_output() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
+        selection: drill_points(&[[25.0, 25.0]]),
         ..ExecutionContext::new(
             &findings,
             &tool_def,
@@ -851,10 +862,6 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
     let standard_polygons = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
-    let drill_polygons = vec![
-        Polygon2::rectangle(24.0, 24.0, 26.0, 26.0),
-        Polygon2::rectangle(54.0, 54.0, 56.0, 56.0),
-    ];
     let project_curve_polygons = vec![
         Polygon2::rectangle(12.0, 12.0, 40.0, 40.0),
         Polygon2::rectangle(18.0, 18.0, 32.0, 32.0),
@@ -876,21 +883,20 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
             Some(MeshFixture::Groove) => Some((&groove_mesh, &groove_index)),
             None => None,
         };
-        let polygons = match case.polygons {
-            Some(PolygonFixture::Standard) => Some(standard_polygons.as_slice()),
-            Some(PolygonFixture::Drill) => Some(drill_polygons.as_slice()),
-            Some(PolygonFixture::ProjectCurve) => Some(project_curve_polygons.as_slice()),
-            None => None,
+        let selection = match case.polygons {
+            Some(PolygonFixture::Standard) => SelectionInputs::from_polygons(&standard_polygons),
+            Some(PolygonFixture::Drill) => drill_points(&[[25.0, 25.0], [55.0, 55.0]]),
+            Some(PolygonFixture::ProjectCurve) => {
+                SelectionInputs::from_polygons(&project_curve_polygons)
+            }
+            None => SelectionInputs::default(),
         };
 
         let findings = std::cell::RefCell::new(GenerationFindings::default());
         let ctx = ExecutionContext {
             mesh: mesh_and_index.map(|(mesh, _)| mesh),
             index: mesh_and_index.map(|(_, index)| index),
-            selection: polygons.map_or_else(
-                crate::compute::execute::SelectionInputs::default,
-                crate::compute::execute::SelectionInputs::from_polygons,
-            ),
+            selection,
             alignment_pins: &pins,
             ..ExecutionContext::new(
                 &findings,
@@ -1160,9 +1166,7 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
             let ctx = ExecutionContext {
                 mesh: Some(&mesh),
                 index: Some(&index),
-                selection: crate::compute::execute::SelectionInputs::from_polygons(
-                    polygons.as_slice(),
-                ),
+                selection: rectangle_and_a_point(&polygons),
                 ..ExecutionContext::new(
                     &findings,
                     &tool_def,
@@ -1243,9 +1247,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
             let ctx = ExecutionContext {
                 mesh: Some(&mesh),
                 index: Some(&index),
-                selection: crate::compute::execute::SelectionInputs::from_polygons(
-                    polygons.as_slice(),
-                ),
+                selection: rectangle_and_a_point(&polygons),
                 ..ExecutionContext::new(
                     &findings,
                     &tool_def,
@@ -1309,7 +1311,7 @@ fn trace_annotated_output_has_depth_and_region_spans() {
 
 #[test]
 fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
-    let op = drill_op_picking(&[[25.0, 25.0], [55.0, 55.0]]);
+    let op = OperationConfig::new_default(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1317,6 +1319,7 @@ fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
+        selection: drill_points(&[[25.0, 25.0], [55.0, 55.0]]),
         ..ExecutionContext::new(
             &findings,
             &tool_def,
@@ -1400,7 +1403,7 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
 
 #[test]
 fn drill_semantic_trace_has_hole_and_cycle_children() {
-    let op = drill_op_picking(&[[25.0, 25.0]]);
+    let op = OperationConfig::new_default(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1410,6 +1413,7 @@ fn drill_semantic_trace_has_hole_and_cycle_children() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
+        selection: drill_points(&[[25.0, 25.0]]),
         semantic_ctx: Some(&ctx),
         ..ExecutionContext::new(
             &findings,

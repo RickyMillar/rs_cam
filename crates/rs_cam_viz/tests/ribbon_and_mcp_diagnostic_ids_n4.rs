@@ -70,6 +70,10 @@ use rs_cam_viz::ui::properties::{collect_diagnostics, toolpath_panel_snapshot};
 
 const TOOL: usize = 1;
 const MODEL_2D: usize = 4;
+/// A drawing with one point: the item the drill pick names (P2.3c).
+const MODEL_HOLE: usize = 5;
+/// The point of [`MODEL_HOLE`].
+const HOLE: [f64; 2] = [1.0, 2.0];
 const STOCK_THICKNESS_MM: f64 = 18.0;
 
 /// The four height ids the projection could not raise.
@@ -97,6 +101,23 @@ fn polygon_model(id: usize) -> LoadedModel {
         winding_report: None,
         load_error: None,
     }
+}
+
+/// [`polygon_model`] with one point at [`HOLE`] after the rectangle.
+fn hole_model(id: usize) -> LoadedModel {
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    let mut model = polygon_model(id);
+    let mut items: Vec<Item> = model.items.iter().cloned().collect();
+    items.push(
+        Item::new(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::Point(rs_cam_core::geo::P2::new(HOLE[0], HOLE[1])),
+        )
+        .expect("a point is a valid item"),
+    );
+    model.items = Arc::new(ItemSet::new(items));
+    model
 }
 
 fn toolpath(
@@ -153,6 +174,7 @@ fn session() -> ProjectSession {
     ProjectSessionBuilder::new()
         .tool(tool)
         .model(polygon_model(MODEL_2D))
+        .model(hole_model(MODEL_HOLE))
         .stock(stock)
         .build()
 }
@@ -177,17 +199,26 @@ fn add_pocket(session: &mut ProjectSession, depth: f64, heights: HeightsConfig) 
     )
 }
 
-/// A drill with no hole source. The model has no drill targets, so the
-/// precondition check refuses it.
+/// A drill with no hole source. The model has no point and no circle, so
+/// the selection refuses (`Empty`) and so does the precondition check.
 fn drill_without_holes() -> OperationConfig {
     OperationConfig::Drill(Default::default())
 }
 
-/// A drill with one picked hole. The pick is a hole source.
+/// A drill with one picked hole: the point of [`MODEL_HOLE`]. The pick is a
+/// hole source.
 fn drill_with_a_pick() -> OperationConfig {
+    use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SourceRef};
     let mut op = OperationConfig::Drill(Default::default());
     if let OperationConfig::Drill(cfg) = &mut op {
-        cfg.selected_holes = Some(vec![[1.0, 2.0]]);
+        cfg.selection = Selection::from_picks(vec![MatchKey {
+            source: SourceRef::ToolpathModel,
+            kind: ItemKind::Point,
+            layer: None,
+            anchor: HOLE,
+            measure: 0.0,
+            brep: None,
+        }]);
     }
     op
 }
@@ -414,7 +445,7 @@ fn a_drill_with_a_pick_clears_the_precondition_on_both_surfaces() {
         &mut session,
         toolpath(
             "Drill",
-            MODEL_2D,
+            MODEL_HOLE,
             drill_with_a_pick(),
             HeightsConfig::default(),
         ),

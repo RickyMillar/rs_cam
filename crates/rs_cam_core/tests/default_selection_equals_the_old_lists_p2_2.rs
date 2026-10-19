@@ -6,8 +6,10 @@
 //! - for `ItemUse::Curves`: `outlines_pre_selection()`;
 //! - for `ItemUse::Regions`: the same list less its open paths (P1 leaves
 //!   them out);
-//! - for `ItemUse::Holes`: the positions of `drill_targets_pre_selection()`,
-//!   in the same order.
+//! - for `ItemUse::Holes`: the positions of the old drill target list
+//!   (`drill_targets_pre_selection()` until P2.3c deleted it; now
+//!   `common::session::old_drill_targets`, the same rule on the same
+//!   inputs), in the same order.
 //!
 //! A list that is empty (or `None`) before must refuse with `Empty` now.
 //!
@@ -121,11 +123,10 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             .unwrap_or_default(),
     );
     let old_regions: Vec<Polygon2> = old_curves.iter().filter(|p| p.closed).cloned().collect();
-    let old_holes: Vec<P2> = model
-        .drill_targets_pre_selection()
+    let old_holes: Vec<P2> = common::session::old_drill_targets(model)
         .iter()
-        .map(|t| {
-            let p = P2::new(t.x, t.y);
+        .map(|&(x, y, _, _)| {
+            let p = P2::new(x, y);
             setup.map_or(p, |info| info.drawing_to_local(p))
         })
         .collect();

@@ -149,17 +149,17 @@ fn pocket_model() -> LoadedModel {
 /// same ground.
 fn drill_model() -> LoadedModel {
     let targets = vec![
-        rs_cam_core::io::dxf_input::DrillTarget {
+        common::session::TestHole {
             x: 85.0,
             y: 20.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+            diameter: Some(6.0),
         },
-        rs_cam_core::io::dxf_input::DrillTarget {
+        common::session::TestHole {
             x: 85.0,
             y: 70.0,
             layer: "holes".to_owned(),
-            kind: rs_cam_core::io::dxf_input::DrillTargetKind::CircleCenter { diameter: 6.0 },
+            diameter: Some(6.0),
         },
     ];
     LoadedModel {

@@ -3,13 +3,13 @@
 //!
 //! ## The defect
 //!
-//! `selected_holes` are raw model/DXF coordinates: the viz picker maps
-//! `LoadedModel::drill_targets` straight through. The model's *polygons*,
-//! though, are setup-transformed before generation
-//! (`session/compute.rs`), and the toolpath emits in the setup frame —
-//! world for an identity setup, zero-rooted setup-local otherwise. Both
-//! drill families then consumed `selected_holes` verbatim, so on a
-//! non-identity setup every pick was off by the whole setup transform.
+//! The picks (`selected_holes` until geometry selection P2.3c) were raw
+//! model/DXF coordinates: the viz picker mapped the model's drill targets
+//! straight through. The model's *polygons*, though, are setup-transformed
+//! before generation (`session/compute.rs`), and the toolpath emits in the
+//! setup frame — world for an identity setup, zero-rooted setup-local
+//! otherwise. Both drill families then consumed the picks verbatim, so on
+//! a non-identity setup every pick was off by the whole setup transform.
 //!
 //! Scope is wider than the pin drill: it hits the ordinary `Drill`
 //! family, which is the common case for DXF hole drilling.
@@ -17,8 +17,10 @@
 //! ## The decision this sentry pins
 //!
 //! Picks stay **stored in world/model coordinates** and are converted at
-//! generation. No storage change, no migration, and no saved project
-//! changes meaning. The identity arms below are the other half of that
+//! generation. Since P2.3c a pick is a `MatchKey` in the op's selection:
+//! it resolves to an item of the model, and the selection frame door
+//! (`ResolvedSelection::to_setup_frame`) moves that item with the rest of
+//! the drawing. The identity arms below are the other half of that
 //! contract: world already IS the emission frame there, so the conversion
 //! must be a no-op and must not be applied twice.
 //!
@@ -42,8 +44,8 @@
 //! differently-framed hole sources in one operation: the alignment pins
 //! (`ExecutionContext::alignment_pins`; C1 deleted the `cfg.holes` copy) are
 //! STOCK-RELATIVE and take a translation by the emission-frame stock
-//! origin (G-PINDRILL-FRAME, fixed 2026-08-21), while `selected_holes` are
-//! WORLD and take the setup transform. Applying either correction to the
+//! origin (G-PINDRILL-FRAME, fixed 2026-08-21), while the picks are WORLD
+//! and take the setup transform. Applying either correction to the
 //! other's holes is the failure this pins — and so is applying the setup
 //! transform twice, which would put the flipped pick at (70, 40) rather
 //! than (50, 185).
@@ -57,7 +59,8 @@
 
 mod common;
 use common::make_endmill_6mm;
-use common::session::{polygon_model, toolpath_config};
+use common::session::{polygon_model_with_points, toolpath_config};
+use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SourceRef};
 
 use std::sync::atomic::AtomicBool;
 
@@ -108,10 +111,9 @@ fn stock() -> StockConfig {
     }
 }
 
-/// A plate over the stock footprint in WORLD coordinates. Every op here
-/// selects its targets explicitly, so no centroid is ever drilled — the
-/// model exists to satisfy the `Drill` family's polygon requirement, and
-/// to make it visible that the picks do NOT ride the polygon pipeline.
+/// A plate over the stock footprint in WORLD coordinates. A loop is never a
+/// hole source, so no centroid is ever drilled; the model also holds one
+/// point at [`PICK`], the item each op picks.
 fn plate_polygon() -> Polygon2 {
     Polygon2::new(vec![
         P2::new(ORIGIN_X, ORIGIN_Y),
@@ -121,12 +123,25 @@ fn plate_polygon() -> Polygon2 {
     ])
 }
 
+/// The selection of one pick: the key of the point at [`PICK`], in the
+/// model frame.
+fn pick() -> Selection {
+    Selection::from_picks(vec![MatchKey {
+        source: SourceRef::ToolpathModel,
+        kind: ItemKind::Point,
+        layer: Some("holes".to_owned()),
+        anchor: PICK,
+        measure: 0.0,
+        brep: None,
+    }])
+}
+
 fn hole_drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         depth: 10.0,
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
-        selected_holes: Some(vec![PICK]),
+        selection: pick(),
         ..DrillConfig::default()
     })
 }
@@ -137,7 +152,7 @@ fn pin_drill_op() -> OperationConfig {
         spoilboard_penetration: 2.0,
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
-        selected_holes: Some(vec![PICK]),
+        selection: pick(),
         ..AlignmentPinDrillConfig::default()
     })
 }
@@ -155,7 +170,11 @@ fn two_setup_session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(make_endmill_6mm());
     let tool_id = builder.tools()[tool_idx].id.0;
-    let model_id = builder.add_model(polygon_model(vec![plate_polygon()], "plate"));
+    let model_id = builder.add_model(polygon_model_with_points(
+        vec![plate_polygon()],
+        &[PICK],
+        "plate",
+    ));
     let mut session = builder.build();
 
     // ISOLATE THE VARIABLE: this sentry is about WHERE the holes are, not

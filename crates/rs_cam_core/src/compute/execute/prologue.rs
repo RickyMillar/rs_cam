@@ -85,6 +85,18 @@ impl<'a> SelectionInputs<'a> {
             resolved: Cow::Owned(ResolvedSelection::from_polygons(polygons.to_vec())),
         }
     }
+
+    /// Test only: the default rule over hand-built items
+    /// ([`ResolvedSelection::from_items`]), for an op that reads points or
+    /// circles (the drill families).
+    #[cfg(test)]
+    pub(crate) fn from_items(
+        items: impl IntoIterator<Item = crate::selection::Item>,
+    ) -> SelectionInputs<'static> {
+        SelectionInputs {
+            resolved: Cow::Owned(ResolvedSelection::from_items(items)),
+        }
+    }
 }
 
 /// The geometry the prologue checked, by the row's [`GeometryRequirement`].
@@ -137,8 +149,8 @@ impl<'a> Prepared<'a> {
             .ok_or_else(|| self.mismatch("curves"))
     }
 
-    /// The hole positions of a `Holes` op. P2.3c moves the drill adapters
-    /// onto it; until then they read `ExecutionContext::drill_targets`.
+    /// The hole positions of a `Holes` op, in the emission frame. Empty
+    /// only for an op that may be empty (Pin Drill).
     pub fn holes(&self) -> Result<&Holes, OperationError> {
         self.items()
             .and_then(OpItems::holes)
@@ -220,22 +232,14 @@ pub(super) fn check_inputs<'a>(
 /// [`OperationError::Selection`]. The open paths that the default rule
 /// left out go into ONE [`SelectionNoteFinding`] through `ctx.record`.
 ///
-/// P2.3a, the drill families: the view of a `Holes` op is taken as one
-/// that may be empty. The drill adapters still read
-/// `ExecutionContext::drill_targets` and refuse on their own count
-/// (`drill_targets_refusal`) until P2.3c moves them onto
-/// [`Prepared::holes`]; an `Empty` refusal here would come first and
-/// break that refusal and the stale-pick rule.
+/// A `Holes` op takes its own `may_be_empty` (P2.3c): a Drill with no hole
+/// refuses `Empty`; a Pin Drill with no extra hole runs on its stock pins.
 fn require_items(
     ctx: &ExecutionContext<'_>,
     op_type: OperationType,
     item_use: ItemUse,
 ) -> Result<OpItems, OperationError> {
-    let view_use = match item_use {
-        ItemUse::Holes { .. } => ItemUse::Holes { may_be_empty: true },
-        ItemUse::None | ItemUse::Regions | ItemUse::Curves => item_use,
-    };
-    let (items, notes) = view(&ctx.selection.resolved, view_use)
+    let (items, notes) = view(&ctx.selection.resolved, item_use)
         .map_err(|refusal| OperationError::Selection(refusal.for_op(op_type.label())))?;
     if !notes.is_empty() {
         ctx.record(&SelectionNoteFinding {

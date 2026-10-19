@@ -580,12 +580,13 @@ macro_rules! for_each_command {
                      "the batch CLI picks no faces",
                  ),
              }),
-            (Command, SetDrillSelectedHoles, "set_drill_selected_holes",
-             SetDrillSelectedHolesArgs, Effects,
+            (Command, EditSelection, "edit_toolpath_selection",
+             EditSelectionArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
-                     "no MCP tool picks drill holes; the wire has no such mutation",
+                     "the MCP selection tool comes with the selection wire types (geometry \
+                      selection P2.7)",
                  ),
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
@@ -1743,17 +1744,19 @@ pub struct SetFaceSelectionArgs {
     pub face_ids: Option<Vec<FaceGroupId>>,
 }
 
-/// The arguments of the `set_drill_selected_holes` command.
+/// The arguments of the `edit_toolpath_selection` command (geometry
+/// selection P2.3c).
 ///
-/// `selected_holes` is `None` when a `Drill` operation reverts to every
-/// polygon centroid the model carries. The command refuses a toolpath
-/// whose operation is not a drilling operation.
+/// The command applies one [`crate::selection::SelectionEdit`] to the
+/// selection of the op (`Selection::apply`). It refuses a toolpath whose op
+/// holds no selection. `Reset` restores the default of that op
+/// (`OperationConfig::default_selection`).
 #[derive(Debug, Clone)]
-pub struct SetDrillSelectedHolesArgs {
+pub struct EditSelectionArgs {
     /// The index of the toolpath the command writes.
     pub index: usize,
-    /// The picked hole centres, in millimetres.
-    pub selected_holes: Option<Vec<[f64; 2]>>,
+    /// The edit.
+    pub edit: crate::selection::SelectionEdit,
 }
 
 /// The arguments of the `add_obstacle` command (K1).
@@ -2492,9 +2495,7 @@ impl ProjectSession {
             Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
             Command::RemoveModel(args) => self.remove_model(args.index),
             Command::SetFaceSelection(args) => self.set_face_selection(args.index, args.face_ids),
-            Command::SetDrillSelectedHoles(args) => {
-                self.set_drill_selected_holes(args.index, args.selected_holes)
-            }
+            Command::EditSelection(args) => self.edit_toolpath_selection(args.index, args.edit),
             Command::AddObstacle(args) => self.add_obstacle(args.setup_index, *args.obstacle),
             Command::ReplaceObstacle(args) => {
                 self.replace_obstacle(args.setup_index, args.obstacle_id, *args.obstacle)

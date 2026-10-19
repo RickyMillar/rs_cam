@@ -64,11 +64,6 @@ const HELP_SCALLOP_HEIGHT: &str = "Target cusp height between passes. 0.05-0.2mm
 
 const HELP_OVERLAP_MM: &str = "Overlap between steep and shallow regions.";
 
-const DRIVER_SET_SELECTED_HOLES: &str = "the DXF/model drill picker writes the picked target list";
-
-const DRIVER_SET_SELECTED_LAYERS: &str =
-    "the layer-select route writes this beside the picked target list";
-
 const DRIVER_SET_SELECTION: &str =
     "the selection command writes the selection (rules and picks), not the parameter setter";
 
@@ -323,29 +318,11 @@ pub struct DrillConfig {
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
-    /// Explicit drill locations (XY, mm) picked from the model — DXF POINT
-    /// entities or circle/arc centres, chosen in the viewport or by layer.
-    ///
-    /// `None` (the default) drills every drill target the model exposes,
-    /// and refuses when it exposes none — a polygon outline is not a hole
-    /// source (G-DRILLCENTROID, 2026-09-10; before that `None` drilled the
-    /// centroid of every closed polygon). `Some(_)` means the user has
-    /// taken control of the selection; an empty list then means "no
-    /// targets selected" rather than "all targets".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
-    pub selected_holes: Option<Vec<[f64; 2]>>,
-    /// Layer name(s) the user bulk-selected with "select all in layer".
-    /// Display/round-trip only — the resolved positions live in
-    /// [`Self::selected_holes`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
-    pub selected_layers: Vec<String>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
-    /// The drill adapter does not read it yet: it reads
-    /// [`Self::selected_holes`] and the model targets until P2.3c.
+    /// every drawing item of the toolpath model that the op can cut. The
+    /// drill holes are the points and circle centres of the selected
+    /// items (P2.3c); an empty selection refuses (`Empty`).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -365,8 +342,6 @@ impl Default for DrillConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: None,
-            selected_holes: None,
-            selected_layers: Vec::new(),
             selection: Selection::drawing(),
         }
     }
@@ -400,22 +375,12 @@ pub struct AlignmentPinDrillConfig {
     pub retract_z: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
-    /// Extra drill locations (XY, mm) picked from the model — DXF POINT
-    /// entities or circle/arc centres. These are drilled in addition to the
-    /// stock alignment pins of [`Self::diameter`], which the op reads live
-    /// (`ExecutionContext::alignment_pins`, W6.5).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[param(driver_set = DRIVER_SET_SELECTED_HOLES)]
-    pub selected_holes: Option<Vec<[f64; 2]>>,
-    /// Layer name(s) bulk-selected with "select all in layer" (display/round-trip).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
-    pub selected_layers: Vec<String>,
     /// The extra holes this op drills (geometry selection P2.3b, DESIGN
     /// 3.1, decision D6). A file with no `selection` key loads the
-    /// default of this op: no item. The stock pins are not part of it.
-    /// The adapter does not read it yet: it reads [`Self::selected_holes`]
-    /// until P2.3c.
+    /// default of this op: no item. The stock pins are not part of it:
+    /// the op reads them live (`ExecutionContext::alignment_pins`, W6.5)
+    /// and drills the points and circle centres of this selection beside
+    /// them.
     #[serde(
         default = "Selection::empty",
         skip_serializing_if = "Selection::is_empty"
@@ -460,8 +425,6 @@ impl Default for AlignmentPinDrillConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: None,
-            selected_holes: None,
-            selected_layers: Vec::new(),
             selection: Selection::empty(),
         }
     }
@@ -3300,13 +3263,13 @@ mod tests {
         }
     }
 
-    /// Drill selection fields must round-trip, and legacy TOML/JSON that
-    /// predates them must deserialize to the legacy "all centroids" behaviour
-    /// (`selected_holes: None`, empty `selected_layers`).
+    /// The drill selection round-trips. A payload with no `selection` key
+    /// loads the Drill default (every drawing item), and the default
+    /// writes no key.
     #[test]
-    fn drill_selection_serde_round_trip_and_backcompat() {
-        // Legacy payload with neither selection key present.
-        let legacy = r#"{
+    fn drill_selection_serde_round_trip() {
+        use crate::selection::{ItemKind, MatchKey, SourceRef};
+        let no_key = r#"{
             "depth": 10.0,
             "cycle": "peck",
             "peck_depth": 3.0,
@@ -3315,24 +3278,25 @@ mod tests {
             "feed_rate": 300.0,
             "retract_z": 2.0
         }"#;
-        let cfg: DrillConfig = serde_json::from_str(legacy).unwrap();
-        assert_eq!(cfg.selected_holes, None, "legacy => all targets (None)");
-        assert!(cfg.selected_layers.is_empty());
+        let cfg: DrillConfig = serde_json::from_str(no_key).unwrap();
+        assert!(cfg.selection.is_drawing(), "no key => the Drill default");
 
-        // Round-trip with an explicit selection.
         let chosen = DrillConfig {
-            selected_holes: Some(vec![[1.0, 2.0], [3.0, 4.0]]),
-            selected_layers: vec!["holes".to_owned()],
+            selection: Selection::from_picks(vec![MatchKey {
+                source: SourceRef::ToolpathModel,
+                kind: ItemKind::Circle,
+                layer: Some("holes".to_owned()),
+                anchor: [1.0, 2.0],
+                measure: 5.0,
+                brep: None,
+            }]),
             ..DrillConfig::default()
         };
         let json = serde_json::to_string(&chosen).unwrap();
         let back: DrillConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.selected_holes, chosen.selected_holes);
-        assert_eq!(back.selected_layers, chosen.selected_layers);
+        assert_eq!(back.selection, chosen.selection);
 
-        // None must be omitted from the wire form (skip_serializing_if).
         let default_json = serde_json::to_string(&DrillConfig::default()).unwrap();
-        assert!(!default_json.contains("selected_holes"));
-        assert!(!default_json.contains("selected_layers"));
+        assert!(!default_json.contains("selection"));
     }
 }

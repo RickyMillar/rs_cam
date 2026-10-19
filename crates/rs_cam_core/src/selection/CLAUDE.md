@@ -27,14 +27,14 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 - Two items with equal keys stay two items; a pick on them is ambiguous. Read no source file here.
 - A face filter reads the SETUP frame (`ResolveScope::setup`); the frame door
   does not move a stock item. P2.3b: an op config holds `selection` (driver-set, per-op serde default);
-  the session resolves `op.selection()` + face picks; `face_top_z` is setup frame. Bridges left:
-  `outlines_pre_selection` (nested-list readers, P2.5/P2.7), `drill_targets_pre_selection` (P2.3c).
+  the session resolves `op.selection()` + face picks; `face_top_z` is setup frame. Bridge left:
+  `outlines_pre_selection` (P2.5/P2.7). P2.3c: drills read `Holes`; `KEY_MATCH_EPS_MM` is THE pick tolerance.
 - `view` gives a `SelectionNote` for a skipped open path only; `OpItems::skipped_by_kind`
   counts every kind; `Empty` names every kind. `detect_containment` keeps an open path's direction.
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --lib selection`; `--test every_import_door_gives_items_p2_1` (also `--features step`)
-- `--test default_selection_equals_the_old_lists_p2_2` (frozen difference lists); P2.3b `--test`
-  `a_layer_rule_cuts_only_its_layer_p2_3`, `an_absent_selection_key_loads_the_op_default_p2_3`,
-  `an_op_change_keeps_its_selection_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`
+- `--test default_selection_equals_the_old_lists_p2_2` (frozen lists); P2.3b `a_layer_rule_cuts_only_its_layer_p2_3`,
+  `an_absent_selection_key_loads_the_op_default_p2_3`, `an_op_change_keeps_its_selection_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`;
+  P2.3c `drill_picks_resolve_to_targets_g_drillpickstale` (a lost pick refuses), `a_retired_drill_pick_key_is_named_p2_3c`
