@@ -14,7 +14,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
 - `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
   lane state and the GUI-only runtime overlay state.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
-- `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection, the dock and catalogue.
+- `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection, the dock and catalogue; `selection_highlight.rs` (P4.4: which report the viewport colours, its upload detector, the note keys).
 - `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo, the export
   wizard and the planner.
 - `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts; settings; pin frame (C8); the shoe plan memo and run sheet (H2);

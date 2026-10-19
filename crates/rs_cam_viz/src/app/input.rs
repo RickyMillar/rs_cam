@@ -247,6 +247,12 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::ExportSvgPreview => self.export_svg_preview(),
+                AppEvent::FrameSelectionItems { toolpath_id, keys } => {
+                    let now = ctx.input(|i| i.time);
+                    let _ = self.frame_selection_items(toolpath_id, keys, now);
+                    // The flash paints on the next frame's upload.
+                    ctx.request_repaint();
+                }
 
                 AppEvent::ExportSetupSheet => {
                     let html = self.controller.export_setup_sheet_html();

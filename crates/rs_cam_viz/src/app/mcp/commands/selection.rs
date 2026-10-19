@@ -30,8 +30,35 @@ fn key_json(key: &MatchKey) -> serde_json::Value {
 /// The reply of the `selection_status` read: the core report, field by
 /// field. A key is its file JSON; a note, a lost pick and a refusal also
 /// carry the core text.
-pub(crate) fn selection_report_json(report: &SelectionReport) -> serde_json::Value {
+///
+/// P4.4: `item_states` gives one `{key, state}` per item of the toolpath
+/// model, in import order, with the key as `list_model_items` gives it
+/// (source `Model(id)`); `foreign` gives the other selected items.
+pub(crate) fn selection_report_json(
+    session: &ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+    report: &SelectionReport,
+) -> serde_json::Value {
+    let item_states: Vec<serde_json::Value> = session
+        .list_model_items(tc.model_id, None, None)
+        .map(|items| {
+            items
+                .iter()
+                .zip(&report.item_states)
+                .map(|(item, state)| {
+                    serde_json::json!({ "key": key_json(&item.key), "state": state })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let foreign: Vec<serde_json::Value> = report
+        .foreign
+        .iter()
+        .map(|(key, state)| serde_json::json!({ "key": key_json(key), "state": state }))
+        .collect();
     serde_json::json!({
+        "item_states": item_states,
+        "foreign": foreign,
         "counts": report.counts,
         "islands": report.islands,
         "skipped_by_kind": report.skipped_by_kind,
@@ -107,7 +134,7 @@ pub(crate) fn selection_status_reply(
         target,
     })) {
         Ok(QueryAnswer::SelectionStatus(report)) => {
-            let mut reply = selection_report_json(&report);
+            let mut reply = selection_report_json(session, tc, &report);
             if let Some(obj) = reply.as_object_mut() {
                 obj.insert("index".into(), serde_json::json!(index));
                 obj.insert("target".into(), serde_json::json!(target));
@@ -207,7 +234,9 @@ impl RsCamApp {
                 .map_or(serde_json::Value::Null, |tc| {
                     let status = session
                         .selection_status(tc, target)
-                        .map_or(serde_json::Value::Null, |r| selection_report_json(&r));
+                        .map_or(serde_json::Value::Null, |r| {
+                            selection_report_json(session, tc, &r)
+                        });
                     serde_json::json!({
                         "target": target,
                         "selection": tc.selection_of(target).ok().flatten(),
@@ -427,6 +456,25 @@ mod tests {
                 reply["selected"].as_array().unwrap().len(),
                 memo.selected.len()
             );
+            // P4.4: the item states. The wire gives one `{key, state}` per
+            // item of the toolpath model, in import order, with the key of
+            // `list_model_items`; the viewport colours the same memo.
+            let wire_states: Vec<rs_cam_core::session::ItemState> = reply["item_states"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| serde_json::from_value(row["state"].clone()).unwrap())
+                .collect();
+            assert_eq!(wire_states, memo.item_states, "op {index} ({name})");
+            let listed = s.list_model_items(tc.model_id, None, None).unwrap();
+            for (row, item) in reply["item_states"].as_array().unwrap().iter().zip(&listed) {
+                assert_eq!(row["key"], key_json(&item.key), "op {index}: the key order");
+            }
+            assert_eq!(
+                reply["foreign"].as_array().unwrap().len(),
+                memo.foreign.len(),
+                "op {index}"
+            );
             // P4.3: the Selection section reads the same answer through
             // the panel inputs, and prints the same counts.
             let inputs = crate::ui::properties::toolpath_panel_inputs(
@@ -476,6 +524,16 @@ mod tests {
             (2, 0),
             "the CUT rule and the added KEEP rule give two loops"
         );
+        let states = |json: &serde_json::Value, state: &str| {
+            json["item_states"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|row| row["state"] == state)
+                .count()
+        };
+        assert_eq!(states(&pocket, "cut"), 2, "{pocket}");
+        assert_eq!(states(&reply(4), "cut"), 0, "a lost pick cuts nothing");
         assert!(pocket["refusal"].is_null(), "{pocket}");
         let drill = reply(1);
         assert_eq!(count(&drill, "circle"), 1);

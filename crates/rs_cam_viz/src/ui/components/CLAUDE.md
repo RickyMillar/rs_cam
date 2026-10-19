@@ -6,7 +6,7 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 
 - `mod.rs` — the facade. `section.rs` — `UiExt`, param grids, `SummaryCard`.
 - `card.rs`, `notice.rs` — `SectionHeader`, `Card`, `EmptyState`, `Banner`,
-  `NoticeStack`, `NotMeasured`. `data_table.rs` — `DataTable`, `Details` (IC2).
+  `NoticeStack`, `NotMeasured`. `data_table.rs` — `DataTable`, `Details` (IC2); a clickable row's labels are not selectable (P4.4).
 - `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `ValueRow`, `label_cell`,
   `row_hover_tint`. `chip.rs`, `pill.rs` — `Role`, `StatusChip`, `CountPill`.
 - `choice_row.rs` — `ChoiceRow` (G-STARTFROM). `line.rs` — `OneLine`, a note.

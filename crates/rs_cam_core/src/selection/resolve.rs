@@ -9,7 +9,7 @@
 //! items: rings, points, circle centres, and the plane Z and normal of a
 //! face.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compute::transform::SetupTransformInfo;
 use crate::geo::{BoundingBox3, P3, V3};
@@ -85,11 +85,21 @@ pub struct ResolvedItem {
     /// stays when the frame door moves the item, so a refusal names the
     /// item as the drawing holds it.
     identity: MatchKey,
+    /// The index of the item in the item set of its source, in import
+    /// order (geometry selection P4.4). For an item of a model it is the
+    /// index in `LoadedModel::items`; for a stock item, the index in
+    /// [`super::stock_items`].
+    index: usize,
 }
 
 impl ResolvedItem {
     pub fn item(&self) -> &Item {
         &self.item
+    }
+
+    /// The index of the item in the item set of its source (P4.4).
+    pub fn index(&self) -> usize {
+        self.index
     }
 
     pub fn by(&self) -> MatchedBy {
@@ -110,6 +120,19 @@ pub struct LostPick {
     pub matches: usize,
 }
 
+/// An item that a rule matched and an exclude removed (geometry selection
+/// P4.4). A pick of the same item puts it back in the selection, so an
+/// item here is in no `ResolvedItem`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExcludedItem {
+    /// The source of the item (`Item::source`).
+    pub source: SourceRef,
+    /// The index of the item in the item set of its source.
+    pub index: usize,
+    /// The key of the item, in the frame of its source.
+    pub key: MatchKey,
+}
+
 /// The report of [`resolve`].
 #[derive(Debug, Clone)]
 pub struct ResolvedSelection {
@@ -119,6 +142,8 @@ pub struct ResolvedSelection {
     /// items (a duplicate entity).
     items: Vec<ResolvedItem>,
     lost: Vec<LostPick>,
+    /// The items that a rule matched and an exclude removed (P4.4).
+    excluded: Vec<ExcludedItem>,
     missing_sources: Vec<SourceRef>,
     /// The rule layers that name no item of their source (S21).
     unmatched_layers: Vec<String>,
@@ -144,15 +169,18 @@ impl ResolvedSelection {
     pub(crate) fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
         let items = items
             .into_iter()
-            .map(|item| ResolvedItem {
+            .enumerate()
+            .map(|(index, item)| ResolvedItem {
                 identity: item.key().clone(),
                 item,
                 by: MatchedBy::Default { rule: 0 },
+                index,
             })
             .collect();
         Self {
             items,
             lost: Vec::new(),
+            excluded: Vec::new(),
             missing_sources: Vec::new(),
             unmatched_layers: Vec::new(),
         }
@@ -164,6 +192,11 @@ impl ResolvedSelection {
 
     pub fn lost(&self) -> &[LostPick] {
         &self.lost
+    }
+
+    /// The items that a rule matched and an exclude removed (P4.4).
+    pub fn excluded(&self) -> &[ExcludedItem] {
+        &self.excluded
     }
 
     pub fn missing_sources(&self) -> &[SourceRef] {
@@ -218,6 +251,7 @@ impl ResolvedSelection {
                     item: r.item.with_shape(shape)?,
                     by: r.by,
                     identity: r.identity,
+                    index: r.index,
                 })
             })
             .collect::<Result<Vec<_>, ItemError>>()?;
@@ -384,6 +418,8 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
     };
     let mut unmatched_layers: Vec<String> = Vec::new();
     let mut found: BTreeMap<(usize, usize), MatchedBy> = BTreeMap::new();
+    // The rule matches that an exclude removed, by slot position and index.
+    let mut removed: BTreeSet<(usize, usize)> = BTreeSet::new();
     let add = |found: &mut BTreeMap<(usize, usize), MatchedBy>, at, by: MatchedBy| {
         found
             .entry(at)
@@ -424,7 +460,9 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
                 .iter()
                 .zip(&exclude_slots)
                 .any(|(ex, ex_slot)| *ex_slot == Some(*slot) && ex.names_same_geometry(item.key()));
-            if !excluded {
+            if excluded {
+                removed.insert((pos, idx));
+            } else {
                 add(&mut found, (pos, idx), by);
             }
         }
@@ -455,6 +493,19 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
         }
     }
 
+    // A pick puts an excluded item back: it is then in `found`.
+    let excluded = removed
+        .into_iter()
+        .filter(|at| !found.contains_key(at))
+        .filter_map(|(pos, idx)| {
+            let item = slots.get(pos)?.1.get(idx)?;
+            Some(ExcludedItem {
+                source: item.source(),
+                index: idx,
+                key: item.key().clone(),
+            })
+        })
+        .collect();
     let items = found
         .into_iter()
         .filter_map(|((pos, idx), by)| {
@@ -463,12 +514,14 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
                 item: (*item).clone(),
                 by,
                 identity: item.key().clone(),
+                index: idx,
             })
         })
         .collect();
     ResolvedSelection {
         items,
         lost,
+        excluded,
         missing_sources,
         unmatched_layers,
     }

@@ -192,6 +192,12 @@ pub const INFO: Color32 = ACCENT;
 /// gate that passed look alike at a glance.
 pub const UNKNOWN: Color32 = Color32::from_rgb(0x8D, 0x9A, 0xA8);
 
+/// An open path of a drawing (geometry selection P4.4, lead ruling L-10):
+/// the viewport line of an open path when no selection state colours it,
+/// and its legend chip. Magenta, as Carbide Create marks an open vector.
+/// It is a drawing kind, not a verdict, so it is not a semantic role.
+pub const PATH_OPEN: Color32 = Color32::from_rgb(0xD9, 0x5B, 0xC8);
+
 // ---- §2.6 / §2.7 the chip fills, which are also the surface tints --------
 
 /// Chip fill and tinted ground for [`OK`].

@@ -477,6 +477,11 @@ fn show_row(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = tokens::SPACE_1;
+    // A selectable label takes the press for a text selection, so a click
+    // on the text of a clickable row would not reach the row (P4.4).
+    if row.clickable {
+        child.style_mut().interaction.selectable_labels = false;
+    }
     paint_row(&mut child, &row, width, name_width, has_hover);
 
     let response = if row.clickable {

@@ -51,7 +51,7 @@ use crate::geo::{BoundingBox3, P2};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::{
-    Hole, ItemError, ItemKind, ItemRef, ItemSet, MatchKey, RefusalCause, ResolveScope,
+    Hole, ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, RefusalCause, ResolveScope,
     ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, Shape, SourceRef,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
@@ -104,6 +104,31 @@ pub(crate) fn boundary_not_a_selection(name: &str) -> SessionError {
     SessionError::InvalidParam(format!(
         "the boundary of '{name}' is not a selection: set the boundary source to Selection"
     ))
+}
+
+/// What the selection does to one item (geometry selection P4.4). The
+/// viewport colours each item by its state; MCP `selection_status` gives
+/// the same states.
+///
+/// The wire spelling is snake case: `"cut"`, `"island"`, `"skipped"`,
+/// `"excluded"`, `"not_selected"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemState {
+    /// A served item that the op cuts: an outer region, a curve, a hole, a
+    /// face.
+    Cut,
+    /// A served closed ring that the nesting makes a hole of a region (an
+    /// inner ring). The op cuts round it.
+    Island,
+    /// The selection holds the item and the op does not cut it: the default
+    /// rule matched a kind that the op cannot cut, or the selection refuses
+    /// (then no item is `Cut`).
+    Skipped,
+    /// A rule matched the item and an exclude removed it.
+    Excluded,
+    /// No rule and no pick matches the item.
+    NotSelected,
 }
 
 /// One point or circle of a toolpath model, for the drill picker.
@@ -187,6 +212,16 @@ pub struct SelectionReport {
     /// ([`ProjectSession::pick_edit`]); the face highlight reads its face
     /// keys. Empty when the selection refuses before it resolves.
     pub selected: Vec<MatchKey>,
+    /// One state per item of the toolpath model, index-aligned with
+    /// `LoadedModel::items` (P4.4). The memo key holds that item set by
+    /// `Weak` identity, so the alignment cannot go stale. Empty when the
+    /// toolpath model does not exist.
+    pub item_states: Vec<ItemState>,
+    /// The items of the selection that are not in `LoadedModel::items` of
+    /// the toolpath model: the items of another model and the stock items.
+    /// The key (with the source of the item) and the state. The viewport
+    /// finds the geometry by key.
+    pub foreign: Vec<(MatchKey, ItemState)>,
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -417,6 +452,24 @@ impl ProjectSession {
             selected,
             ..SelectionReport::default()
         };
+        // P4.4: the resolution states first. An item that the selection
+        // holds is `Skipped` until `view` gives it its role, so a refused
+        // selection marks no item `Cut`.
+        let own_source = SourceRef::Model(ModelId(tc.model_id));
+        report.item_states = self.toolpath_model(tc).map_or_else(
+            |_| Vec::new(),
+            |m| vec![ItemState::NotSelected; m.items.len()],
+        );
+        for excluded in frames.model.excluded() {
+            set_state(
+                &mut report,
+                own_source,
+                excluded.source,
+                excluded.index,
+                &excluded.key,
+                ItemState::Excluded,
+            );
+        }
         report.lost = frames
             .model
             .lost()
@@ -429,11 +482,32 @@ impl ProjectSession {
                 *report.counts.entry(kind).or_insert(0) += 1;
             }
         }
+        let resolution_states = |report: &mut SelectionReport, roles: Option<&[ItemRole]>| {
+            for (at, r) in frames.model.items().iter().enumerate() {
+                let state = match roles.and_then(|roles| roles.get(at)) {
+                    Some(ItemRole::Cut) => ItemState::Cut,
+                    Some(ItemRole::Island) => ItemState::Island,
+                    Some(ItemRole::Skipped) | None => ItemState::Skipped,
+                };
+                set_state(
+                    report,
+                    own_source,
+                    r.item().source(),
+                    r.index(),
+                    r.identity(),
+                    state,
+                );
+            }
+        };
         if !runs_view {
+            resolution_states(&mut report, None);
             return Ok(report);
         }
         match crate::selection::view(&frames.setup, item_use) {
             Ok((items, notes)) => {
+                // The frame door keeps the order of the items, so the
+                // roles of the setup half align with the model half.
+                resolution_states(&mut report, Some(items.roles()));
                 report.skipped_by_kind = items.skipped_by_kind().clone();
                 report.notes = notes;
                 report.islands = items
@@ -448,7 +522,10 @@ impl ProjectSession {
                         .unwrap_or_default();
                 }
             }
-            Err(refusal) => report.refusal = Some(refusal.for_op(label)),
+            Err(refusal) => {
+                resolution_states(&mut report, None);
+                report.refusal = Some(refusal.for_op(label));
+            }
         }
         Ok(report)
     }
@@ -634,6 +711,31 @@ impl ProjectSession {
             })
             .collect())
     }
+}
+
+/// Write `state` for one item: into `item_states` at `index` when the item
+/// is an item of the toolpath model (`own`), else into `foreign` by key.
+fn set_state(
+    report: &mut SelectionReport,
+    own: SourceRef,
+    source: SourceRef,
+    index: usize,
+    key: &MatchKey,
+    state: ItemState,
+) {
+    if source == own
+        && let Some(slot) = report.item_states.get_mut(index)
+    {
+        *slot = state;
+        return;
+    }
+    report.foreign.push((
+        MatchKey {
+            source,
+            ..key.clone()
+        },
+        state,
+    ));
 }
 
 /// True when the prologue of `op_type` runs `view` (its row reads items).

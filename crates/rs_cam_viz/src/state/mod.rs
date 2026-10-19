@@ -9,6 +9,7 @@ pub mod pick;
 pub mod pin_view;
 pub mod runtime;
 pub mod selection;
+pub mod selection_highlight;
 pub mod shoe_plan;
 pub mod simulation;
 pub mod stale;

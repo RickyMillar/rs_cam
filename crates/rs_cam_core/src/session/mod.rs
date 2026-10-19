@@ -88,7 +88,8 @@ pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
 pub use selection_status::{
-    BOUNDARY_ITEM_USE, HoleItem, HoleSelection, ModelItem, SelectionReport, SelectionTarget,
+    BOUNDARY_ITEM_USE, HoleItem, HoleSelection, ItemState, ModelItem, SelectionReport,
+    SelectionTarget,
 };
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 

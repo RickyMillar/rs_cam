@@ -22,11 +22,11 @@ pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, 
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};
 pub use refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal, kind_noun};
 pub use resolve::{
-    LostPick, MatchedBy, ResolveScope, ResolvedItem, ResolvedSelection, face_in_setup_frame,
-    resolve,
+    ExcludedItem, LostPick, MatchedBy, ResolveScope, ResolvedItem, ResolvedSelection,
+    face_in_setup_frame, resolve,
 };
 pub use rule::{
     DiameterRange, FaceFilter, Facing, Filter, KindFilter, Rule, Selection, SelectionEdit, ZRange,
 };
 pub use stock::stock_items;
-pub use view::{Curves, Hole, Holes, OpItems, Regions, view};
+pub use view::{Curves, Hole, Holes, ItemRole, OpItems, Regions, view};

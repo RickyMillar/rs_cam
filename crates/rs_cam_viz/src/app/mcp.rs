@@ -597,14 +597,17 @@ impl super::RsCamApp {
                     select,
                     modal,
                     overlays,
+                    frame_items,
                 }) => {
                     let resp = self.mcp_set_ui_view(
+                        ctx,
                         workspace.as_deref(),
                         toolpath_index,
                         properties_tab.as_deref(),
                         select.as_deref(),
                         modal.as_deref(),
                         overlays.as_ref(),
+                        frame_items,
                     );
                     let _ = response_tx.send(McpResponse { result: Ok(resp) });
                 }

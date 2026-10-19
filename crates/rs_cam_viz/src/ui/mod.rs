@@ -358,6 +358,14 @@ pub enum AppEvent {
         edit: rs_cam_core::selection::SelectionEdit,
     },
 
+    // Geometry selection P4.4 ("Show me"): frame the items `keys` of the
+    // toolpath in the viewport and flash them. The application handles it
+    // (it owns the camera); it edits nothing.
+    FrameSelectionItems {
+        toolpath_id: ToolpathId,
+        keys: Vec<rs_cam_core::selection::MatchKey>,
+    },
+
     // Edit
     //
     // WP6 deleted five post-write notification events — `StockChanged`,

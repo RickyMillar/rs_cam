@@ -5,7 +5,7 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
 
 ## Files
 
-- `registry.rs` — every overlay, `dock_section`, exclusivity, the legends.
+- `registry.rs` — every overlay, `dock_section`, exclusivity, the legends. P4.4: `selection_states`, `open_path_ends`, `boundary_outline` (drawn).
 - `live.rs` — computing, stale and failed per analysis, from live fields.
 - `panel.rs` — the catalogue, the shared row renderer, `RowState` (seven
   arms), Compute versus Compute & show, the Compute rest confirm.

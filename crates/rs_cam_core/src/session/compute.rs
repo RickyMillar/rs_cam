@@ -112,6 +112,14 @@ pub struct ResolvedGenInputs {
 }
 
 impl ResolvedGenInputs {
+    /// The resolved selection that the prologue of this generation receives,
+    /// in the emission frame (geometry selection P4.4). A sentry reads it to
+    /// prove that the `selection_status` item states name the items that
+    /// generation cuts.
+    pub fn selection(&self) -> &crate::selection::ResolvedSelection {
+        &self.selection
+    }
+
     /// G-BOUNDARYPHANTOM: the containment polygons the post-generation
     /// boundary clip will clip to, from the same processed source the clip
     /// processes (`apply_boundary_clip_multi` for a region set,

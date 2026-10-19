@@ -401,6 +401,13 @@ pub struct SetUiViewParam {
     /// model, the simulated stock or the move lines. Pair with
     /// `screenshot_gui` to photograph what was enabled.
     pub overlays: Option<std::collections::BTreeMap<String, bool>>,
+    /// Geometry selection P4.4 ("Show me"): match keys of items of the
+    /// selected toolpath (copy them from `selection_status` or
+    /// `list_model_items`). The camera frames them and the viewport flashes
+    /// them. A key that names no item (a lost pick) frames its stored
+    /// position. Needs a selected toolpath (`toolpath_index` in the same
+    /// call, or a selection already made).
+    pub frame_items: Option<Vec<MatchKeyParam>>,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
@@ -2349,6 +2356,11 @@ pub fn build_info() -> serde_json::Value {
             // navigation). Probe to confirm agent-driven UI inspection.
             "gui_screenshot",
             "set_ui_view",
+            // Geometry selection P4.4 (2026-10-20): the `selection_status`
+            // reply carries `item_states` (one `{key, state}` per item of
+            // the toolpath model) and `foreign`; `set_ui_view` takes
+            // `frame_items` ("Show me").
+            "selection_item_states",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding
@@ -2528,6 +2540,7 @@ mod tests {
             "tool_size_units",
             "gui_screenshot",
             "set_ui_view",
+            "selection_item_states",
             "multitool_finishing_planner",
             "preview_tier_map",
             "reach_map",

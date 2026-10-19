@@ -26,7 +26,7 @@
 //! [`Regions`], [`Curves`] and [`Holes`] have private fields: only `view`
 //! builds them, so a `Regions` holds closed polygons only.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compute::catalog::ItemUse;
 use crate::geo::P2;
@@ -131,6 +131,20 @@ impl Holes {
     }
 }
 
+/// What [`view`] does with one item of the resolved selection (geometry
+/// selection P4.4). The `selection_status` report reads it as the state of
+/// the item, so the viewport and the kernel cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemRole {
+    /// The op cuts the item: an outer region, a curve, a hole, a face.
+    Cut,
+    /// A closed ring that the nesting made a hole of a region. The op cuts
+    /// round it (a `Regions` op only).
+    Island,
+    /// The default rule matched the item and the op cannot cut its kind.
+    Skipped,
+}
+
 #[derive(Debug, Clone)]
 enum View {
     None,
@@ -144,9 +158,20 @@ enum View {
 pub struct OpItems {
     view: View,
     skipped_by_kind: BTreeMap<ItemKind, usize>,
+    /// One role per item of the resolved selection, index-aligned with
+    /// `ResolvedSelection::items`.
+    roles: Vec<ItemRole>,
 }
 
 impl OpItems {
+    /// The role of each item of the resolved selection, index-aligned with
+    /// `ResolvedSelection::items` (P4.4). An island is a ring that the
+    /// nesting of [`Regions`] consumed as a hole, by its input index, so the
+    /// answer is the nesting the kernel cuts.
+    pub fn roles(&self) -> &[ItemRole] {
+        &self.roles
+    }
+
     /// The count of the items, by kind, that the default rule matched and
     /// that the op left out. Every kind counts here; only an open path
     /// also gives a [`SelectionNote`]. The `SelectionStatus` query (P2.4)
@@ -235,7 +260,10 @@ pub fn view(
     let mut notes: Vec<SelectionNote> = Vec::new();
     let mut skipped_by_kind: BTreeMap<ItemKind, usize> = BTreeMap::new();
     let mut served: Vec<&Item> = Vec::new();
-    for r in resolved.items() {
+    // For each served item: its index in `resolved.items()`.
+    let mut served_at: Vec<usize> = Vec::new();
+    let mut roles: Vec<ItemRole> = vec![ItemRole::Skipped; resolved.items().len()];
+    for (at, r) in resolved.items().iter().enumerate() {
         let shape = r.item().shape();
         if shape.serves(item_use) {
             // A face that the setup turns on its side (a lateral setup)
@@ -249,6 +277,7 @@ pub fn view(
                 ));
             }
             served.push(r.item());
+            served_at.push(at);
             continue;
         }
         if r.by().is_explicit() {
@@ -284,9 +313,18 @@ pub fn view(
     let view = match item_use {
         ItemUse::None => View::None,
         ItemUse::Regions => {
-            let (polygons, stock) = regions_of(&served);
+            let (polygons, stock, islands) = regions_of(&served);
             if polygons.is_empty() {
                 return Err(empty(notes));
+            }
+            for (pos, at) in served_at.iter().enumerate() {
+                if let Some(role) = roles.get_mut(*at) {
+                    *role = if islands.contains(&pos) {
+                        ItemRole::Island
+                    } else {
+                        ItemRole::Cut
+                    };
+                }
             }
             View::Regions(Regions {
                 curves: Curves { polygons },
@@ -298,6 +336,7 @@ pub fn view(
             if polygons.is_empty() {
                 return Err(empty(notes));
             }
+            mark_cut(&mut roles, &served_at);
             View::Curves(Curves { polygons })
         }
         ItemUse::Holes { may_be_empty } => {
@@ -325,6 +364,7 @@ pub fn view(
             if holes.is_empty() && !may_be_empty {
                 return Err(empty(notes));
             }
+            mark_cut(&mut roles, &served_at);
             View::Holes(Holes { holes })
         }
     };
@@ -333,21 +373,41 @@ pub fn view(
         OpItems {
             view,
             skipped_by_kind,
+            roles,
         },
         notes,
     ))
+}
+
+/// Mark every served item `Cut` (an op that does not nest: `Curves`,
+/// `Holes`).
+fn mark_cut(roles: &mut [ItemRole], served_at: &[usize]) {
+    for at in served_at {
+        if let Some(role) = roles.get_mut(*at) {
+            *role = ItemRole::Cut;
+        }
+    }
 }
 
 /// The closed areas of the served shapes: the loops and circle rings
 /// nested by containment, then each face with its own inner loops. The
 /// flags mark each area whose exterior is the stock ring (P4.2). The stock
 /// ring nests as any drawing ring does, so a drawing loop inside the stock
-/// is a hole of the stock region (a Pocket clears round it).
-fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>) {
-    let (mut polygons, mut stock): (Vec<Polygon2>, Vec<bool>) =
-        nest_closed_rings_tagged(served.iter().copied())
-            .into_iter()
-            .unzip();
+/// is a hole of the stock region (a Pocket clears round it). The set holds
+/// the positions in `served` of the rings that became holes (P4.4).
+fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>, BTreeSet<usize>) {
+    let nested = nest_closed_rings_at(served);
+    let islands = nested.holes;
+    let (mut polygons, mut stock): (Vec<Polygon2>, Vec<bool>) = nested
+        .regions
+        .into_iter()
+        .map(|(polygon, at)| {
+            let from_stock = served
+                .get(at)
+                .is_some_and(|i| i.source() == SourceRef::Stock);
+            (polygon, from_stock)
+        })
+        .unzip();
     for face in served.iter().filter_map(|i| match i.shape() {
         Shape::Face(face) => Some(face.rings.clone()),
         Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
@@ -355,7 +415,7 @@ fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>) {
         polygons.push(face);
         stock.push(false);
     }
-    (polygons, stock)
+    (polygons, stock, islands)
 }
 
 /// The loops and circle rings of `items`, in this order, nested by
@@ -364,36 +424,53 @@ fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>) {
 /// change and obstacle outlines, P2.5) both call it. A path, a point and a
 /// face give no ring here.
 pub(crate) fn nest_closed_rings<'a>(items: impl IntoIterator<Item = &'a Item>) -> Vec<Polygon2> {
-    nest_closed_rings_tagged(items)
+    let items: Vec<&Item> = items.into_iter().collect();
+    nest_closed_rings_at(&items)
+        .regions
         .into_iter()
         .map(|(polygon, _)| polygon)
         .collect()
 }
 
-/// [`nest_closed_rings`], with a flag for each polygon whose exterior is
-/// the ring of a [`SourceRef::Stock`] item. The flag follows the ring
-/// through the nesting by its input index, not by its coordinates.
-fn nest_closed_rings_tagged<'a>(
-    items: impl IntoIterator<Item = &'a Item>,
-) -> Vec<(Polygon2, bool)> {
-    let (rings, from_stock): (Vec<Polygon2>, Vec<bool>) = items
-        .into_iter()
-        .filter_map(|i| {
+/// The one nesting of closed drawing rings, by input position.
+struct NestedRings {
+    /// Each region, with the position in the input of the item whose ring
+    /// is its exterior. The position follows the ring through the nesting
+    /// by its input index, not by its coordinates (P4.2).
+    regions: Vec<(Polygon2, usize)>,
+    /// The positions in the input of the items whose ring became a hole of
+    /// a region: the rings that are not the exterior of a region (P4.4).
+    holes: BTreeSet<usize>,
+}
+
+/// [`nest_closed_rings`] by input position: the loops and circle rings of
+/// `items`, nested by `detect_containment_tagged`.
+fn nest_closed_rings_at(items: &[&Item]) -> NestedRings {
+    let (rings, ring_at): (Vec<Polygon2>, Vec<usize>) = items
+        .iter()
+        .enumerate()
+        .filter_map(|(at, i)| {
             let ring = match i.shape() {
                 Shape::Loop(p) => p.clone(),
                 Shape::Circle { ring, .. } => ring.clone(),
                 Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => return None,
             };
-            Some((ring, i.source() == SourceRef::Stock))
+            Some((ring, at))
         })
         .unzip();
-    detect_containment_tagged(rings)
+    let nested = detect_containment_tagged(rings);
+    let exteriors: BTreeSet<usize> = nested.iter().map(|(_, index)| *index).collect();
+    let holes = ring_at
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !exteriors.contains(index))
+        .map(|(_, at)| *at)
+        .collect();
+    let regions = nested
         .into_iter()
-        .map(|(polygon, index)| {
-            let stock = from_stock.get(index).copied().unwrap_or(false);
-            (polygon, stock)
-        })
-        .collect()
+        .filter_map(|(polygon, index)| Some((polygon, *ring_at.get(index)?)))
+        .collect();
+    NestedRings { regions, holes }
 }
 
 /// The lines of the served shapes: loops, circle rings and paths, nested by

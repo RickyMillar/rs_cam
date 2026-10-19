@@ -352,6 +352,11 @@ pub(crate) struct ToolpathPanelInputs {
     /// The `selection_status` answer for the boundary selection. `None`
     /// when the boundary source is not a selection.
     pub boundary_report: Option<SelectionRead>,
+    /// P4.4: the keys that "Show me" frames for each note of
+    /// `selection_report` and of `boundary_report`
+    /// (`selection_highlight::note_item_keys`).
+    pub selection_note_items: Vec<Vec<rs_cam_core::selection::MatchKey>>,
+    pub boundary_note_items: Vec<Vec<rs_cam_core::selection::MatchKey>>,
     /// The item sources a `+ Rule` draft can name, through the
     /// `ListItems` query. Empty while no draft of this toolpath is open:
     /// the list is read only for the open popover.
@@ -620,6 +625,17 @@ pub(crate) fn toolpath_panel_inputs(
             }
             None => (None, None, Vec::new()),
         };
+    let note_items = |read: &Option<SelectionRead>| -> Vec<Vec<rs_cam_core::selection::MatchKey>> {
+        let model = session
+            .find_toolpath_config_by_id(id)
+            .and_then(|(_, tc)| session.models().iter().find(|m| m.id == tc.model_id));
+        match read {
+            Some(Ok(report)) => crate::state::selection_highlight::note_item_keys(model, report),
+            Some(Err(_)) | None => Vec::new(),
+        }
+    };
+    let selection_note_items = note_items(&selection_report);
+    let boundary_note_items = note_items(&boundary_report);
     // Snapshot tool configs for feeds calculation
     let tool_configs: Vec<_> = session.tools().iter().map(|t| (t.id, t.clone())).collect();
     // Candidate source toolpaths for a `DerivedRestRegions` boundary
@@ -790,6 +806,8 @@ pub(crate) fn toolpath_panel_inputs(
         boundary_default,
         selection_report,
         boundary_report,
+        selection_note_items,
+        boundary_note_items,
         rule_sources,
         tool_configs,
         boundary_source_candidates,

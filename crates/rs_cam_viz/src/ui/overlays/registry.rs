@@ -100,6 +100,10 @@ pub enum OverlayMechanism {
 /// stale for its whole life.
 const UPLOAD_DETECTOR: &str = "the composite `overlay_upload_key` detector in app.rs";
 
+/// The reason of a drawing overlay while the drawing itself is off: the
+/// three P4.4 rows draw into the polygon buffer, which only `curves` shows.
+const CURVES_OFF: &str = "the drawing is off \u{2014} switch Scene \u{25B8} Curves on";
+
 /// A button the panel offers beside a disabled row, to make it drawable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayAction {
@@ -734,6 +738,63 @@ pub const ROWS: &[OverlayRow] = &[
         hover: "Imported 2D polygons.",
     },
     OverlayRow {
+        id: "selection_states",
+        group: OverlayGroup::Geometry,
+        label: "Selection states",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
+        flag: Some("viewport.show_selection_states"),
+        radio: false,
+        get: |s| s.viewport.show_selection_states,
+        set: |s, on| s.viewport.show_selection_states = on,
+        precondition: |s| {
+            if !s.viewport.show_polygons {
+                return Precondition::no(CURVES_OFF);
+            }
+            match crate::state::selection_highlight::highlight_refusal(s) {
+                Some(reason) => Precondition::no(reason),
+                None => Precondition::Ready,
+            }
+        },
+        default_for: toolpaths_only_default,
+        hover: "The drawing of the selected toolpath, coloured by what its \
+                selection does to each item: green is cut, blue is an island \
+                (cut round), amber is skipped (the operation cannot cut its \
+                kind), dark grey is removed by hand, grey is not selected. A \
+                red ring or cross marks a pick that names no item.",
+    },
+    OverlayRow {
+        id: "open_path_ends",
+        group: OverlayGroup::Geometry,
+        label: "Open path ends",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
+        flag: Some("viewport.show_open_path_ends"),
+        radio: false,
+        get: |s| s.viewport.show_open_path_ends,
+        set: |s, on| s.viewport.show_open_path_ends = on,
+        precondition: |s| {
+            if !s.viewport.show_polygons {
+                return Precondition::no(CURVES_OFF);
+            }
+            let has_path = crate::state::selection_highlight::highlight_toolpath(s)
+                .and_then(|tc| s.session.models().iter().find(|m| m.id == tc.model_id))
+                .is_some_and(|m| {
+                    m.items
+                        .iter()
+                        .any(|i| i.kind() == rs_cam_core::selection::ItemKind::Path)
+                });
+            if has_path {
+                Precondition::Ready
+            } else {
+                Precondition::no("the drawing of the selected toolpath has no open path")
+            }
+        },
+        default_for: always_on_default,
+        hover: "A green triangle at the start of each open path, pointing \
+                along it, and a red square at its end.",
+    },
+    OverlayRow {
         id: "orientation_gizmo",
         group: OverlayGroup::Geometry,
         label: "Orientation gizmo",
@@ -1073,16 +1134,37 @@ pub const ROWS: &[OverlayRow] = &[
         group: OverlayGroup::Regions,
         label: "Boundary outline",
         surface: OverlaySurface::None,
-        mechanism: OverlayMechanism::DrawTime,
-        flag: None,
+        mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
+        flag: Some("viewport.show_boundary_outline"),
         radio: false,
-        get: |_s| false,
-        set: |_s, _on| {},
-        precondition: |_s| Precondition::no("not drawn yet (no renderer)"),
+        get: |s| s.viewport.show_boundary_outline,
+        set: |s, on| s.viewport.show_boundary_outline = on,
+        // P4.4: the renderer draws the regions of a `Selection` boundary
+        // (its `Cut` and `Island` rings). Another source has no rings
+        // before generation, and the row says so.
+        precondition: |s| {
+            if !s.viewport.show_polygons {
+                return Precondition::no(CURVES_OFF);
+            }
+            let Some(tc) = crate::state::selection_highlight::highlight_toolpath(s) else {
+                return Precondition::no("select a toolpath");
+            };
+            if !tc.boundary.enabled {
+                return Precondition::no("the machining boundary of this toolpath is off");
+            }
+            if crate::state::selection_highlight::boundary_report(s).is_some() {
+                Precondition::Ready
+            } else {
+                Precondition::no(
+                    "the boundary source is not Selection \u{2014} only a selection \
+                     boundary draws here",
+                )
+            }
+        },
         default_for: no_default,
-        hover: "The clip polygon in use. Authored under \
-                Geometry \u{25B8} Machining Boundary; the render work is ledgered, \
-                not built.",
+        hover: "The machining boundary of the selected toolpath, when its \
+                source is Selection: the regions inside which the tool may go. \
+                Authored under Geometry \u{25B8} Machining Boundary.",
     },
     // ── Analysis ──────────────────────────────────────────────────────────
     OverlayRow {

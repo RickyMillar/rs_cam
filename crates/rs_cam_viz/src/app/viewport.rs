@@ -76,22 +76,6 @@ impl RsCamApp {
         .then_some(id)
     }
 
-    /// A cheap key describing the active drill op's target selection, used to
-    /// trigger a GPU re-upload of the viewport markers when it changes from
-    /// any source. `None` when no drill op is selected.
-    pub(super) fn current_drill_marker_key(
-        &self,
-    ) -> Option<(usize, rs_cam_core::selection::Selection)> {
-        let id = self.active_drill_toolpath()?;
-        let state = self.controller.state();
-        let tc = state
-            .session
-            .toolpath_configs()
-            .iter()
-            .find(|tc| tc.id == id)?;
-        Some((id.0, tc.operation.selection()?.clone()))
-    }
-
     fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {
         if self.controller.state().workspace != Workspace::Simulation
             || !self.controller.state().simulation.debug.enabled

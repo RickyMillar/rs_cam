@@ -25,7 +25,7 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    DiameterRange, FaceFilter, Facing, Filter, ItemKind, KindFilter, Rule, Selection,
+    DiameterRange, FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, Rule, Selection,
     SelectionEdit, SourceRef, ZRange, kind_noun,
 };
 use rs_cam_core::session::{SelectionReport, SelectionTarget};
@@ -82,6 +82,10 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// The sources of a `+ Rule` draft (the `ListItems` query). Empty while
     /// no draft of this toolpath is open.
     pub sources: &'a [RuleSource],
+    /// P4.4: for each note of the report, the keys of the skipped items of
+    /// its kind and layer (`selection_highlight::note_item_keys`). "Show
+    /// me" frames them.
+    pub note_items: &'a [Vec<MatchKey>],
 }
 
 impl SelectionSectionInputs<'_> {
@@ -299,6 +303,11 @@ fn rule_text(rule: &Rule, models: &[(crate::state::job::ModelId, String)]) -> St
     text
 }
 
+/// The text of the "Show me" button of a lost pick (P4.4).
+pub(crate) const SHOW_ME: &str = "Show me";
+/// The hover end of a note row that answers a click (P4.4).
+const SHOW_ME_NOTE_HOVER: &str = "Click to show these items in the viewport.";
+
 /// One line with a truncated label in `color` and, at the right edge, one
 /// quiet button. Returns true when the button was clicked.
 fn line_with_action(
@@ -309,13 +318,27 @@ fn line_with_action(
     hover: &str,
     action: Option<(&str, &str)>,
 ) -> bool {
-    let mut clicked = false;
+    let actions: Vec<(&str, &str)> = action.into_iter().collect();
+    line_with_actions(ui, name, text, color, hover, &actions).is_some()
+}
+
+/// [`line_with_action`] with several quiet buttons, in order. Returns the
+/// index of the clicked button.
+fn line_with_actions(
+    ui: &mut egui::Ui,
+    name: &str,
+    text: &str,
+    color: egui::Color32,
+    hover: &str,
+    actions: &[(&str, &str)],
+) -> Option<usize> {
+    let mut clicked = None;
     ui.horizontal(|ui| {
-        let action_width = if action.is_some() {
-            tokens::SPACE_7
-        } else {
-            0.0
-        };
+        // Each button is at least as wide as its label and padding.
+        let action_width: f32 = actions
+            .iter()
+            .map(|(label, _)| action_width(ui, label))
+            .sum();
         let line_width = (ui.available_width() - action_width).max(0.0);
         ui.allocate_ui_with_layout(
             egui::vec2(line_width, tokens::ROW_DENSE),
@@ -335,14 +358,38 @@ fn line_with_action(
                 .on_hover_text(hover);
             },
         );
-        if let Some((label, action_hover)) = action {
-            clicked = ui
-                .add(Button::quiet(label))
-                .on_hover_text(action_hover)
-                .clicked();
+        for (index, (label, action_hover)) in actions.iter().enumerate() {
+            if ui
+                .add(Button::quiet(*label))
+                .on_hover_text(*action_hover)
+                .clicked()
+            {
+                clicked = Some(index);
+            }
         }
     });
     clicked
+}
+
+/// The width a quiet button of `label` takes in a line, with its spacing:
+/// at least `SPACE_7`, as before P4.4.
+fn action_width(ui: &egui::Ui, label: &str) -> f32 {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let text = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, tokens::TEXT_BODY)
+        .size()
+        .x;
+    let padding = ui.spacing().button_padding.x;
+    (text + 2.0 * padding).max(tokens::SPACE_7) + ui.spacing().item_spacing.x
+}
+
+/// P4.4: ask the viewport to frame and flash `keys`.
+fn show_me(inputs: &SelectionSectionInputs<'_>, events: &mut Vec<AppEvent>, keys: Vec<MatchKey>) {
+    events.push(AppEvent::FrameSelectionItems {
+        toolpath_id: inputs.toolpath_id,
+        keys,
+    });
 }
 
 /// One row per rule, with a remove button. The default selection says so.
@@ -416,8 +463,10 @@ fn draw_findings(
     report: &SelectionReport,
     events: &mut Vec<AppEvent>,
 ) {
+    // P4.4: a note row with items answers a click: "Show me" frames the
+    // skipped items of its kind and layer (IC2: the note stays one row).
     let mut notes = DataTable::new(inputs.salt("selection_notes"));
-    for note in &report.notes {
+    for (index, note) in report.notes.iter().enumerate() {
         let layer = note
             .layer
             .as_deref()
@@ -428,23 +477,44 @@ fn draw_findings(
             note.count,
             kind_noun(note.kind, note.count)
         );
-        notes = notes.row(DataRow::note(Role::Caution, face).hover(note.to_string()));
+        let row = DataRow::note(Role::Caution, face);
+        let has_items = inputs.note_items.get(index).is_some_and(|k| !k.is_empty());
+        notes = notes.row(if has_items {
+            row.hover(format!("{note} {SHOW_ME_NOTE_HOVER}"))
+                .clickable()
+        } else {
+            row.hover(note.to_string())
+        });
     }
-    notes.show(ui);
+    if let Some(index) = notes.show(ui).clicked
+        && let Some(keys) = inputs.note_items.get(index)
+    {
+        show_me(inputs, events, keys.clone());
+    }
     for lost in &report.lost {
         let face = format!("Lost pick: {}", kind_noun(lost.key.kind, 1));
         let hover = format!(
             "A pick matches no item, or more than one, after a re-import: {lost}. \
              Remove it, or import the drawing again."
         );
-        if line_with_action(
+        let clicked = line_with_actions(
             ui,
             "",
             &face,
             tokens::DANGER,
             &hover,
-            Some(("Remove", "Remove this pick from the selection.")),
-        ) {
+            &[
+                (
+                    SHOW_ME,
+                    "Frame the stored position of this pick in the viewport.",
+                ),
+                ("Remove", "Remove this pick from the selection."),
+            ],
+        );
+        if clicked == Some(0) {
+            show_me(inputs, events, vec![lost.key.clone()]);
+        }
+        if clicked == Some(1) {
             let picks = inputs
                 .selection
                 .picks()

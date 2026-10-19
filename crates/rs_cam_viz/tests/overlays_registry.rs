@@ -190,11 +190,7 @@ fn a_flagless_row_can_never_be_switched_on() {
         .collect();
     assert_eq!(
         flagless,
-        vec![
-            "planner_islands",
-            "derived_rest_regions",
-            "boundary_outline"
-        ],
+        vec!["planner_islands", "derived_rest_regions"],
         "the flagless set changed — a new one needs a renderer or a reason"
     );
     for id in flagless {

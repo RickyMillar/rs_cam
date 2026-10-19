@@ -88,7 +88,9 @@ pub struct RsCamApp {
     /// Track the active drill op's target selection (toolpath id + picked
     /// holes) so the viewport markers re-upload when it changes from any
     /// source (viewport pick, panel buttons, selection change).
-    last_drill_marker_key: Option<(usize, rs_cam_core::selection::Selection)>,
+    /// P4.4: the upload trigger of the selection highlight and the drill
+    /// markers (the report `Arc` of the drawn toolpath).
+    selection_report_detector: crate::state::selection_highlight::ReportDetector,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
@@ -396,7 +398,7 @@ impl RsCamApp {
             last_hover_face: None,
             unsaved_guard: None,
             last_overlay_upload_key,
-            last_drill_marker_key: None,
+            selection_report_detector: Default::default(),
             #[cfg(feature = "mcp")]
             mcp_receiver,
             #[cfg(feature = "mcp")]
@@ -421,6 +423,34 @@ impl RsCamApp {
             [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
             [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
         );
+    }
+
+    /// "Show me" (geometry selection P4.4): fit the camera to the items
+    /// `keys` of the toolpath `id` in the display frame
+    /// (`picking::selection_frame_bounds`) and flash them in the hover
+    /// colour for `tokens::MOTION_SLOW`. `now` is the egui time. Returns
+    /// the framed box, or `None` (and changes nothing) when no key gives a
+    /// point. The GUI button and MCP `set_ui_view {frame_items}` both call
+    /// it.
+    pub(crate) fn frame_selection_items(
+        &mut self,
+        id: crate::state::toolpath::ToolpathId,
+        keys: Vec<rs_cam_core::selection::MatchKey>,
+        now: f64,
+    ) -> Option<rs_cam_core::geo::BoundingBox3> {
+        let bbox = crate::interaction::picking::selection_frame_bounds(
+            &self.controller.state().session,
+            id,
+            &keys,
+        )?;
+        self.fit_camera_to_bbox(&bbox);
+        self.controller.state_mut().viewport.selection_flash =
+            Some(crate::state::viewport::SelectionFlash {
+                toolpath: id,
+                keys,
+                until: now + f64::from(crate::ui::tokens::MOTION_SLOW),
+            });
+        Some(bbox)
     }
 
     fn fit_camera_to_first_model(&mut self) {
@@ -949,13 +979,31 @@ impl RsCamApp {
             self.last_overlay_upload_key = current_overlay_key;
             self.controller.set_pending_upload();
         }
-        // Re-upload drill target markers when the active drill op's selection
-        // changes (panel buttons, layer select, viewport pick, or selecting a
-        // different drill toolpath).
-        let current_drill_key = self.current_drill_marker_key();
-        if current_drill_key != self.last_drill_marker_key {
-            self.last_drill_marker_key = current_drill_key;
+        // P4.4: re-upload the drawing, its selection states and the drill
+        // markers when the selection report of the drawn toolpath changes
+        // (an edit, a re-import, a setup or stock change, another
+        // toolpath). The memo gives a new `Arc` per build, so the compare
+        // is a pointer compare and a frame with no change uploads nothing.
+        // The drill markers read `hole_selection`, a projection of the
+        // same memo, so this one detector covers them too.
+        if self
+            .selection_report_detector
+            .changed_in(self.controller.state())
+        {
             self.controller.set_pending_upload();
+        }
+        // P4.4: the "Show me" flash ends at its time; the key above then
+        // uploads once more without the flash colour.
+        let now = ctx.input(|i| i.time);
+        if let Some(flash) = &self.controller.state().viewport.selection_flash {
+            if now >= flash.until {
+                self.controller.state_mut().viewport.selection_flash = None;
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                    (flash.until - now).max(0.0),
+                ));
+            }
         }
 
         // WP6: a properties panel applies its edit through one command
@@ -1427,6 +1475,13 @@ pub(crate) struct OverlayUploadKey {
     /// Source vectors fall back to Simulation's current boundary when no
     /// operation is selected, so scrubbing must invalidate their upload.
     vector_source_toolpath: Option<crate::state::toolpath::ToolpathId>,
+    /// P4.4: the three selection overlays of the drawing.
+    selection_states: bool,
+    open_path_ends: bool,
+    boundary_outline: bool,
+    /// P4.4: "Show me" flashes its items; the start and the end of the
+    /// flash each upload once.
+    selection_flash: bool,
 }
 
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
@@ -1460,5 +1515,9 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
             _ => None,
         },
         vector_source_toolpath: crate::state::viewport::vector_source_toolpath(state),
+        selection_states: state.viewport.show_selection_states,
+        open_path_ends: state.viewport.show_open_path_ends,
+        boundary_outline: state.viewport.show_boundary_outline,
+        selection_flash: state.viewport.selection_flash.is_some(),
     }
 }

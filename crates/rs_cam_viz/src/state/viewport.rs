@@ -85,6 +85,18 @@ pub struct ViewportState {
     /// the pins do not key.
     pub show_pin_ghost: bool,
     pub show_polygons: bool,
+    /// Geometry selection P4.4: colour each drawing item of the selected
+    /// toolpath by its selection state (cut, island, skipped, excluded,
+    /// not selected), and draw its lost picks. Off draws the drawing in
+    /// one colour. Consumed at GPU-upload time.
+    pub show_selection_states: bool,
+    /// Geometry selection P4.4: a triangle at the start and a square at
+    /// the end of each open path. Consumed at GPU-upload time.
+    pub show_open_path_ends: bool,
+    /// Geometry selection P4.4: the boundary regions of the selected
+    /// toolpath, when its boundary source is a selection. Consumed at
+    /// GPU-upload time.
+    pub show_boundary_outline: bool,
     /// The camera-axis triad painted in the viewport corner by egui.
     pub show_orientation_gizmo: bool,
     pub show_cutting: bool,
@@ -189,6 +201,21 @@ pub struct ViewportState {
     /// SpanKind visibility filter for the 3D renderer. When a kind is hidden,
     /// cut segments with that innermost span kind are dropped at upload time.
     pub span_kind_filter: SpanKindFilter,
+    /// Geometry selection P4.4 ("Show me"): the items that the viewport
+    /// flashes in the hover colour, until a time. A request, not an
+    /// overlay flag: the frame loop clears it when the time passes.
+    pub selection_flash: Option<SelectionFlash>,
+}
+
+/// The items that "Show me" flashes (geometry selection P4.4).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectionFlash {
+    /// The toolpath whose items flash.
+    pub toolpath: ToolpathId,
+    /// The keys of the items, as the selection report gives them.
+    pub keys: Vec<rs_cam_core::selection::MatchKey>,
+    /// The egui time (s) at which the flash ends.
+    pub until: f64,
 }
 
 /// How toolpath cutting moves are colored.
@@ -232,6 +259,9 @@ impl ViewportState {
             show_flip_axis: true,
             show_pin_ghost: true,
             show_polygons: true,
+            show_selection_states: true,
+            show_open_path_ends: true,
+            show_boundary_outline: false,
             show_orientation_gizmo: true,
             show_cutting: true,
             show_rapids: true,
@@ -249,6 +279,7 @@ impl ViewportState {
             toolpath_color_mode: ToolpathColorMode::Normal,
             toolpath_move_visibility: HashMap::new(),
             span_kind_filter: SpanKindFilter::default(),
+            selection_flash: None,
         }
     }
 }

@@ -431,6 +431,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::ExportGcodeConfirmed
             | AppEvent::ExportSetupSheet
             | AppEvent::ExportSvgPreview
+            | AppEvent::FrameSelectionItems { .. }
             | AppEvent::SaveJob
             | AppEvent::OpenJob
             | AppEvent::WizardSetStep(_)

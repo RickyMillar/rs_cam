@@ -4765,6 +4765,118 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "frame_items": {
+          "description": "Geometry selection P4.4 (\"Show me\"): match keys of items of the\nselected toolpath (copy them from `selection_status` or\n`list_model_items`). The camera frames them and the viewport flashes\nthem. A key that names no item (a lost pick) frames its stored\nposition. Needs a selected toolpath (`toolpath_index` in the same\ncall, or a selection already made).",
+          "items": {
+            "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+            "properties": {
+              "anchor": {
+                "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "brep": {
+                "default": null,
+                "description": "Face only: the BREP face id.",
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "description": "The kind of an item.",
+                "oneOf": [
+                  {
+                    "const": "loop",
+                    "description": "A closed loop.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "path",
+                    "description": "An open path.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "point",
+                    "description": "A point.",
+                    "type": "string"
+                  },
+                  {
+                    "const": "circle",
+                    "description": "A circle (one item; centre and diameter).",
+                    "type": "string"
+                  },
+                  {
+                    "const": "face",
+                    "description": "A flat face of a STEP model.",
+                    "type": "string"
+                  }
+                ]
+              },
+              "layer": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "measure": {
+                "description": "Loop and face: the square root of the area (mm). Path: the length.\nCircle: the diameter. Point: 0.",
+                "format": "double",
+                "type": "number"
+              },
+              "source": {
+                "description": "Where an item comes from: `\"toolpath_model\"`, `{\"model\": <id>}` (an\n`inspect_model` id) or `\"stock\"`.",
+                "oneOf": [
+                  {
+                    "const": "toolpath_model",
+                    "description": "The model of the toolpath.",
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "A project model by its `inspect_model` id.",
+                    "properties": {
+                      "model": {
+                        "format": "uint",
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "model"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "const": "stock",
+                    "description": "The stock outline of the setup.",
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "kind",
+              "anchor",
+              "measure"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "modal": {
           "description": "Modal to open: \"feeds_modal\", \"export_wizard\", \"tool_library\",\n\"pin_wizard\", or \"none\" to close all modals (the\nload-warning modal and the pin wizard too).",
           "type": [

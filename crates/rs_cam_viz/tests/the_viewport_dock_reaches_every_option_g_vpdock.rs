@@ -100,8 +100,10 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     );
     // 15 since the wrong-orientation pin ghost (P7, 2026-10-12) joined
     // Scene beside the pins and the flip axis; 14 since K2 (2026-10-16)
-    // merged the Fixtures and Keep-out rows into one Obstacles row.
-    assert_eq!(count(DockSection::Scene), 14, "Scene holds 14 rows");
+    // merged the Fixtures and Keep-out rows into one Obstacles row; 16
+    // since geometry selection P4.4 (2026-10-20) added the Selection
+    // states and Open path ends rows.
+    assert_eq!(count(DockSection::Scene), 16, "Scene holds 16 rows");
     assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
     // 12 since the By Area regions row (2026-09-24) joined Inspect.
     assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");
@@ -109,6 +111,8 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         ("orientation_gizmo", DockSection::View),
         ("simulated_stock", DockSection::Scene),
         ("boundary_outline", DockSection::Scene),
+        ("selection_states", DockSection::Scene),
+        ("open_path_ends", DockSection::Scene),
         ("move_colour_engagement", DockSection::Paths),
         ("all_toolpaths", DockSection::Paths),
         ("reach_map", DockSection::Inspect),

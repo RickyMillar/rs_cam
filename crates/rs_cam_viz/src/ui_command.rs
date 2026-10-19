@@ -173,7 +173,7 @@ pub struct ScreenshotGuiArgs {
 /// The fields are applied in declaration order. `overlays` is applied
 /// after `workspace`, because a workspace carries overlay defaults that
 /// would otherwise land on top of these writes (P6).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SetUiViewArgs {
     /// The workspace to show.
     pub workspace: Option<String>,
@@ -187,6 +187,9 @@ pub struct SetUiViewArgs {
     pub modal: Option<String>,
     /// The viewport overlays to switch, by registry id.
     pub overlays: Option<std::collections::BTreeMap<String, bool>>,
+    /// P4.4 ("Show me"): the items of the selected toolpath to frame and
+    /// flash.
+    pub frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
 }
 
 /// Whether the project feeds rollup is on screen.

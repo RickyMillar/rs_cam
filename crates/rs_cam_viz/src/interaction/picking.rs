@@ -288,13 +288,126 @@ pub const HOLE_MARK_LIFT_MM: f64 = 0.05;
 /// setup a click on a marker picked another hole or none.
 #[must_use]
 pub fn hole_display_point(frame: Option<&SetupFrame>, stock: &StockConfig, xy: P2) -> P3 {
+    let p = item_display_xy(frame, stock, xy);
+    P3::new(p.x, p.y, drawing_display_z(frame, stock))
+}
+
+/// Where the drawing point `p` (model frame) is drawn and picked, in XY:
+/// the setup transform of the drawing lines. `frame` is the setup of the
+/// toolpath; `None` gives the raw model point (geometry selection P4.4:
+/// the one point function of the draw, the pick and the "Show me" frame).
+#[must_use]
+pub fn item_display_xy(frame: Option<&SetupFrame>, stock: &StockConfig, p: P2) -> P2 {
     match frame {
         Some(frame) => {
-            let p = frame.transform_point(P3::new(xy.x, xy.y, 0.0), stock);
-            P3::new(p.x, p.y, frame.effective_stock(stock).2 + HOLE_MARK_LIFT_MM)
+            let q = frame.transform_point(P3::new(p.x, p.y, 0.0), stock);
+            P2::new(q.x, q.y)
         }
-        None => P3::new(xy.x, xy.y, stock.origin_z + stock.z + HOLE_MARK_LIFT_MM),
+        None => p,
     }
+}
+
+/// The displayed stock top plus [`HOLE_MARK_LIFT_MM`]: the plane the
+/// drawing lines and the item marks draw on (no projection).
+#[must_use]
+pub fn drawing_display_z(frame: Option<&SetupFrame>, stock: &StockConfig) -> f64 {
+    match frame {
+        Some(frame) => frame.effective_stock(stock).2 + HOLE_MARK_LIFT_MM,
+        None => stock.origin_z + stock.z + HOLE_MARK_LIFT_MM,
+    }
+}
+
+/// The radius (mm) of the mark of a point item, of a drill marker of a
+/// point, and the half size of an open path end mark and of a lost point
+/// or path cross. It was the literal of the drill marker radius in
+/// `app/gpu_upload.rs` until P4.4.
+pub const POINT_MARK_RADIUS_MM: f64 = 1.5;
+
+/// The smallest radius (mm) of a drill marker of a circle (was the literal
+/// floor in `app/gpu_upload.rs` until P4.4).
+pub const HOLE_MARK_MIN_RADIUS_MM: f64 = 1.0;
+
+/// The box that "Show me" frames for the items `keys` of the toolpath
+/// `id`, in the display frame (geometry selection P4.4). An item is found
+/// in its source by key; a key that names no item (a lost pick) frames
+/// its stored anchor, grown by half its measure (a loop, a face, a circle)
+/// or by [`POINT_MARK_RADIUS_MM`] (a point, a path). `None` when no key
+/// gives a point.
+#[must_use]
+pub fn selection_frame_bounds(
+    session: &ProjectSession,
+    id: ToolpathId,
+    keys: &[rs_cam_core::selection::MatchKey],
+) -> Option<BoundingBox3> {
+    use rs_cam_core::selection::{ItemKind, Shape, SourceRef};
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, id);
+    let z = drawing_display_z(frame.as_ref(), stock);
+    let mut points: Vec<P2> = Vec::new();
+    for key in keys {
+        let model_id = match key.source {
+            SourceRef::ToolpathModel => Some(tc.model_id),
+            SourceRef::Model(m) => Some(m.0),
+            SourceRef::Stock => None,
+        };
+        let Some(model_id) = model_id else {
+            let (w, d) = match frame.as_ref() {
+                Some(frame) => {
+                    let (w, d, _) = frame.effective_stock(stock);
+                    (w, d)
+                }
+                None => (stock.x, stock.y),
+            };
+            let (x0, y0) = match frame {
+                Some(_) => (0.0, 0.0),
+                None => (stock.origin_x, stock.origin_y),
+            };
+            points.push(P2::new(x0, y0));
+            points.push(P2::new(x0 + w, y0 + d));
+            continue;
+        };
+        let item = session
+            .models()
+            .iter()
+            .find(|m| m.id == model_id)
+            .and_then(|m| m.items.iter().find(|i| key.names_same_geometry(i.key())));
+        let raw: Vec<P2> = match item.map(|i| i.shape()) {
+            Some(Shape::Loop(p) | Shape::Path(p)) => p.exterior.clone(),
+            Some(Shape::Circle { ring, .. }) => ring.exterior.clone(),
+            Some(Shape::Face(face)) => face.rings.exterior.clone(),
+            Some(Shape::Point(p)) => {
+                let r = POINT_MARK_RADIUS_MM;
+                vec![P2::new(p.x - r, p.y - r), P2::new(p.x + r, p.y + r)]
+            }
+            None => {
+                let half = match key.kind {
+                    ItemKind::Loop | ItemKind::Face | ItemKind::Circle => {
+                        (key.measure / 2.0).max(POINT_MARK_RADIUS_MM)
+                    }
+                    ItemKind::Point | ItemKind::Path => POINT_MARK_RADIUS_MM,
+                };
+                let [x, y] = key.anchor;
+                vec![P2::new(x - half, y - half), P2::new(x + half, y + half)]
+            }
+        };
+        points.extend(
+            raw.into_iter()
+                .map(|p| item_display_xy(frame.as_ref(), stock, p)),
+        );
+    }
+    let first = points.first()?;
+    let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x, first.y);
+    for p in &points {
+        x0 = x0.min(p.x);
+        y0 = y0.min(p.y);
+        x1 = x1.max(p.x);
+        y1 = y1.max(p.y);
+    }
+    Some(BoundingBox3 {
+        min: P3::new(x0, y0, z),
+        max: P3::new(x1, y1, z),
+    })
 }
 
 /// The setup frame of the toolpath `id`, or `None` when no setup owns it.

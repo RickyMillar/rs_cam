@@ -359,7 +359,6 @@ impl RsCamApp {
             use crate::render::{LineVertex, PolygonGpuData};
             use egui_wgpu::wgpu::util::DeviceExt;
             resources.polygon_data.clear();
-            let color = crate::render::colors::POLYGON_OUTLINE;
 
             // When a drill op is selected, draw its model's drill targets
             // (DXF points / circle centres) as pickable markers — bright when
@@ -403,18 +402,15 @@ impl RsCamApp {
                                  setup_opt: Option<&SetupFrame>,
                                  point_z: &dyn Fn(f64, f64) -> Option<f32>,
                                  segment_spacing: Option<f64>,
+                                 color: [f32; 3],
                                  verts: &mut Vec<LineVertex>| {
                 if ring.len() < 2 {
                     return;
                 }
+                // P4.4: the one point function of the draw and the pick.
                 let transform_pt = |p: &rs_cam_core::geo::P2| -> (f64, f64) {
-                    if let Some(setup) = setup_opt {
-                        let tp =
-                            setup.transform_point(rs_cam_core::geo::P3::new(p.x, p.y, 0.0), &stock);
-                        (tp.x, tp.y)
-                    } else {
-                        (p.x, p.y)
-                    }
+                    let q = crate::interaction::picking::item_display_xy(setup_opt, &stock, *p);
+                    (q.x, q.y)
                 };
                 let mut draw_segment = |a: (f64, f64), b: (f64, f64)| {
                     let distance = (b.0 - a.0).hypot(b.1 - a.1);
@@ -535,20 +531,299 @@ impl RsCamApp {
                 // Each drawn ring of the drawing (P2.1): a loop, a path or a
                 // circle. An island is its own loop, so the lines are the
                 // lines of the nested list.
-                let mut verts = Vec::new();
-                for ring in model.items.iter().filter_map(|i| i.shape().drawing_ring()) {
-                    ring_to_lines(
-                        &ring.exterior,
-                        ring.closed,
-                        setup_ref,
-                        &point_z,
-                        segment_spacing,
-                        &mut verts,
+                //
+                // P4.4: each item takes the colour of its state in the
+                // selection report of this toolpath (the memo generation
+                // reads), index-aligned with `model.items`. The loop
+                // enumerates EVERY item and skips a shape with no ring
+                // inside, so the index stays the item index.
+                use crate::render::colors;
+                use rs_cam_core::selection::{ItemKind, MatchKey, Shape, SourceRef};
+                let highlight: Option<std::sync::Arc<rs_cam_core::session::SelectionReport>> =
+                    if state.viewport.show_selection_states {
+                        crate::state::selection_highlight::highlight_report(state)
+                            .filter(|(id, _, _)| *id == toolpath.id)
+                            .map(|(_, _, report)| report)
+                    } else {
+                        None
+                    };
+                let flash: &[MatchKey] = state
+                    .viewport
+                    .selection_flash
+                    .as_ref()
+                    .filter(|f| f.toolpath == toolpath.id)
+                    .map_or(&[], |f| f.keys.as_slice());
+                let flashed = |key: &MatchKey| flash.iter().any(|k| k.names_same_geometry(key));
+                let mark = crate::interaction::picking::POINT_MARK_RADIUS_MM;
+                let line =
+                    |a: (f64, f64), b: (f64, f64), color: [f32; 3], verts: &mut Vec<LineVertex>| {
+                        if let (Some(z0), Some(z1)) = (point_z(a.0, a.1), point_z(b.0, b.1)) {
+                            verts.push(LineVertex {
+                                position: [a.0 as f32, a.1 as f32, z0],
+                                color,
+                            });
+                            verts.push(LineVertex {
+                                position: [b.0 as f32, b.1 as f32, z1],
+                                color,
+                            });
+                        }
+                    };
+                let display = |p: rs_cam_core::geo::P2| -> (f64, f64) {
+                    let q = crate::interaction::picking::item_display_xy(setup_ref, &stock, p);
+                    (q.x, q.y)
+                };
+                // A cross of half size `mark` at a display point.
+                let cross = |c: (f64, f64), color: [f32; 3], verts: &mut Vec<LineVertex>| {
+                    line(
+                        (c.0 - mark, c.1 - mark),
+                        (c.0 + mark, c.1 + mark),
+                        color,
+                        verts,
                     );
+                    line(
+                        (c.0 - mark, c.1 + mark),
+                        (c.0 + mark, c.1 - mark),
+                        color,
+                        verts,
+                    );
+                };
+                let ring_mark =
+                    |c: (f64, f64), radius: f64, color: [f32; 3], verts: &mut Vec<LineVertex>| {
+                        if let Some(z) = point_z(c.0, c.1) {
+                            super::push_circle_vertices(
+                                verts,
+                                c.0 as f32,
+                                c.1 as f32,
+                                z,
+                                radius.max(mark) as f32,
+                                color,
+                                24,
+                            );
+                        }
+                    };
+                // The start and end marks of an open path (P4.4): a
+                // triangle at the start that points along the path, a
+                // square at the end. The line pipeline cannot fill, so
+                // both are outlines.
+                let path_ends = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
+                    let (Some(first), Some(second), Some(last)) =
+                        (ring.first(), ring.get(1), ring.last())
+                    else {
+                        return;
+                    };
+                    let a = display(*first);
+                    let b = display(*second);
+                    let len = (b.0 - a.0).hypot(b.1 - a.1);
+                    if len > f64::EPSILON {
+                        let d = ((b.0 - a.0) / len, (b.1 - a.1) / len);
+                        let n = (-d.1, d.0);
+                        let tip = (a.0 + d.0 * 2.0 * mark, a.1 + d.1 * 2.0 * mark);
+                        let l = (a.0 + n.0 * mark, a.1 + n.1 * mark);
+                        let r = (a.0 - n.0 * mark, a.1 - n.1 * mark);
+                        line(l, tip, colors::PATH_START, verts);
+                        line(tip, r, colors::PATH_START, verts);
+                        line(r, l, colors::PATH_START, verts);
+                    }
+                    let e = display(*last);
+                    let corners = [
+                        (e.0 - mark, e.1 - mark),
+                        (e.0 + mark, e.1 - mark),
+                        (e.0 + mark, e.1 + mark),
+                        (e.0 - mark, e.1 + mark),
+                    ];
+                    for (i, c) in corners.iter().enumerate() {
+                        let next = corners.get((i + 1) % corners.len()).copied().unwrap_or(*c);
+                        line(*c, next, colors::PATH_END, verts);
+                    }
+                };
+
+                let mut verts = Vec::new();
+                // The flashed items draw last, over the rest.
+                let mut flash_verts = Vec::new();
+                for (index, item) in model.items.iter().enumerate() {
+                    let item_state = highlight
+                        .as_ref()
+                        .and_then(|report| report.item_states.get(index).copied());
+                    let is_flashed = flashed(item.key());
+                    let color = if is_flashed {
+                        colors::SELECTION_HOVER
+                    } else if let Some(item_state) = item_state {
+                        colors::selection_state_color(item_state)
+                    } else if item.kind() == ItemKind::Path {
+                        colors::OPEN_PATH
+                    } else {
+                        colors::POLYGON_OUTLINE
+                    };
+                    let out = if is_flashed {
+                        &mut flash_verts
+                    } else {
+                        &mut verts
+                    };
+                    match item.shape() {
+                        Shape::Loop(ring) | Shape::Path(ring) | Shape::Circle { ring, .. } => {
+                            ring_to_lines(
+                                &ring.exterior,
+                                ring.closed,
+                                setup_ref,
+                                &point_z,
+                                segment_spacing,
+                                color,
+                                out,
+                            );
+                            if item.kind() == ItemKind::Path && state.viewport.show_open_path_ends {
+                                path_ends(&ring.exterior, out);
+                            }
+                        }
+                        // A point has no line. With a state it gets a ring
+                        // mark (the drill markers below then do not draw).
+                        Shape::Point(p) if item_state.is_some() => {
+                            ring_mark(display(*p), mark, color, out);
+                        }
+                        Shape::Point(_) | Shape::Face(_) => {}
+                    }
+                    if item_state == Some(rs_cam_core::session::ItemState::Excluded) {
+                        let [x, y] = item.key().anchor;
+                        cross(
+                            display(rs_cam_core::geo::P2::new(x, y)),
+                            colors::SELECTION_EXCLUDED,
+                            out,
+                        );
+                    }
                 }
 
-                // Drill hole markers for the active drill op's model.
-                if let Some((mid, holes)) = active_drill.as_ref()
+                // The rings of an item of another source (L-9): a stock
+                // item draws as the stock outline at the drawing plane, an
+                // item of another model as its ring, both in this
+                // toolpath's frame (the frame door moves them so).
+                let stock_outline = |color: [f32; 3], verts: &mut Vec<LineVertex>| {
+                    let (x0, y0, w, d) = match setup_ref {
+                        Some(setup) => {
+                            let (w, d, _) = setup.effective_stock(&stock);
+                            (0.0, 0.0, w, d)
+                        }
+                        None => (stock.origin_x, stock.origin_y, stock.x, stock.y),
+                    };
+                    let c = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + d), (x0, y0 + d)];
+                    for (i, a) in c.iter().enumerate() {
+                        let b = c.get((i + 1) % c.len()).copied().unwrap_or(*a);
+                        line(*a, b, color, verts);
+                    }
+                };
+                let foreign_ring = |key: &MatchKey| -> Option<rs_cam_core::polygon::Polygon2> {
+                    let SourceRef::Model(other) = key.source else {
+                        return None;
+                    };
+                    state
+                        .session
+                        .models()
+                        .iter()
+                        .find(|m| m.id == other.0)?
+                        .items
+                        .iter()
+                        .find(|i| key.names_same_geometry(i.key()))?
+                        .shape()
+                        .drawing_ring()
+                        .cloned()
+                };
+                if let Some(report) = highlight.as_ref() {
+                    for (key, item_state) in &report.foreign {
+                        let color = if flashed(key) {
+                            colors::SELECTION_HOVER
+                        } else {
+                            colors::selection_state_color(*item_state)
+                        };
+                        if key.source == SourceRef::Stock {
+                            stock_outline(color, &mut verts);
+                        } else if let Some(ring) = foreign_ring(key) {
+                            ring_to_lines(
+                                &ring.exterior,
+                                ring.closed,
+                                setup_ref,
+                                &point_z,
+                                segment_spacing,
+                                color,
+                                &mut verts,
+                            );
+                        }
+                    }
+                    // A lost pick has no item: a ghost at its stored key
+                    // position, a ring of diameter `measure` for a loop, a
+                    // face or a circle, a cross for a point or a path.
+                    for lost in &report.lost {
+                        let [x, y] = lost.key.anchor;
+                        let at = display(rs_cam_core::geo::P2::new(x, y));
+                        let color = if flashed(&lost.key) {
+                            colors::SELECTION_HOVER
+                        } else {
+                            colors::SELECTION_LOST
+                        };
+                        match lost.key.kind {
+                            ItemKind::Loop | ItemKind::Face | ItemKind::Circle => {
+                                ring_mark(at, lost.key.measure / 2.0, color, &mut verts);
+                            }
+                            ItemKind::Point | ItemKind::Path => cross(at, color, &mut verts),
+                        }
+                    }
+                }
+
+                // P4.4: the boundary regions of the toolpath, when its
+                // boundary source is a selection (`boundary_outline`).
+                if state.viewport.show_boundary_outline
+                    && let Some(boundary) =
+                        crate::state::selection_highlight::boundary_report(state)
+                {
+                    let in_boundary = |s: &rs_cam_core::session::ItemState| {
+                        matches!(
+                            s,
+                            rs_cam_core::session::ItemState::Cut
+                                | rs_cam_core::session::ItemState::Island
+                        )
+                    };
+                    for (item, item_state) in model.items.iter().zip(&boundary.item_states) {
+                        if !in_boundary(item_state) {
+                            continue;
+                        }
+                        let ring = match item.shape() {
+                            Shape::Loop(ring) | Shape::Circle { ring, .. } => ring.exterior.clone(),
+                            Shape::Face(face) => face.rings.exterior.clone(),
+                            Shape::Path(_) | Shape::Point(_) => continue,
+                        };
+                        ring_to_lines(
+                            &ring,
+                            true,
+                            setup_ref,
+                            &point_z,
+                            segment_spacing,
+                            colors::BOUNDARY_OUTLINE,
+                            &mut verts,
+                        );
+                    }
+                    for (key, item_state) in &boundary.foreign {
+                        if !in_boundary(item_state) {
+                            continue;
+                        }
+                        if key.source == SourceRef::Stock {
+                            stock_outline(colors::BOUNDARY_OUTLINE, &mut verts);
+                        } else if let Some(ring) = foreign_ring(key) {
+                            ring_to_lines(
+                                &ring.exterior,
+                                true,
+                                setup_ref,
+                                &point_z,
+                                segment_spacing,
+                                colors::BOUNDARY_OUTLINE,
+                                &mut verts,
+                            );
+                        }
+                    }
+                }
+                verts.append(&mut flash_verts);
+
+                // Drill hole markers for the active drill op's model. With
+                // the selection states on, the item states colour the holes
+                // (one colour source at a time, P4.4).
+                if highlight.is_none()
+                    && let Some((mid, holes)) = active_drill.as_ref()
                     && model.id == *mid
                 {
                     for item in &holes.items {
@@ -560,11 +835,17 @@ impl RsCamApp {
                         // the model. A pick that names no item is drawn
                         // nowhere; the panel prints its refusal instead.
                         let marker_color = if item.selected {
-                            [0.2_f32, 0.95, 0.4] // bright green = selected
+                            crate::render::colors::HOLE_SELECTED
                         } else {
-                            [0.95_f32, 0.55, 0.15] // orange = available
+                            crate::render::colors::HOLE_FREE
                         };
-                        let radius = item.diameter.map_or(1.5, |d| (d / 2.0) as f32).max(1.0);
+                        let radius = item
+                            .diameter
+                            .map_or(crate::interaction::picking::POINT_MARK_RADIUS_MM, |d| {
+                                d / 2.0
+                            })
+                            .max(crate::interaction::picking::HOLE_MARK_MIN_RADIUS_MM)
+                            as f32;
                         super::push_circle_vertices(
                             &mut verts,
                             at.x as f32,
@@ -723,7 +1004,7 @@ impl RsCamApp {
                 use rs_cam_core::session::{Corner, XYDatum};
 
                 let (eff_w, eff_d, eff_h) = setup.effective_stock(&stock);
-                let color = [0.9_f32, 0.2, 0.9]; // magenta
+                let color = crate::render::colors::DATUM_MARK;
 
                 // The datum is persisted project state (W9 / P-2), read
                 // straight off the setup instead of a GUI-side overlay.
@@ -1509,7 +1790,7 @@ fn solid_sim_colors(
     if mesh.colors.len() / 3 >= num_verts {
         rs_cam_core::export::material_colour::material_colors(mesh, palette)
     } else {
-        vec![[0.65, 0.45, 0.25]; num_verts]
+        vec![crate::render::colors::SIM_STOCK_WOOD; num_verts]
     }
 }
 

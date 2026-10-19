@@ -5,7 +5,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 ## Files
 
 - `mod.rs`, `workspace_bar.rs`, `menu_bar.rs`, `status_bar.rs` — the chrome.
-- `tokens.rs` — every token; `theme.rs` re-exports it.
+- `tokens.rs` — every token (P4.4: `PATH_OPEN`); `theme.rs` re-exports it.
 - `components/`, `feeds/`, `overlays/`, `properties/` — see each child file.
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the
   Setup rail and the toolpath rows, with the card's gutter connector.

@@ -182,6 +182,9 @@ pub enum Categories {
     AreaRegions,
     /// S5: the materials of the simulated stock, one colour each.
     StockMaterials,
+    /// P4.4: the selection states of the drawing of the selected toolpath,
+    /// the open path ends and the boundary outline.
+    Selection,
 }
 
 impl Categories {
@@ -195,6 +198,7 @@ impl Categories {
             Self::Collisions => "Collisions",
             Self::AreaRegions => "By Area regions",
             Self::StockMaterials => "Stock materials",
+            Self::Selection => "Selection",
         }
     }
 }
@@ -375,6 +379,12 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
     }
     if stock_draws_materials(state) && !state.session.stock_material_legend().is_empty() {
         out.push(RailLine::Categories(Categories::StockMaterials));
+    }
+    if ready_on(state, "selection_states")
+        || ready_on(state, "open_path_ends")
+        || ready_on(state, "boundary_outline")
+    {
+        out.push(RailLine::Categories(Categories::Selection));
     }
     out.extend(status.into_iter().map(RailLine::Status));
     out
@@ -839,7 +849,10 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
         Categories::ToolpathPalette | Categories::Moves => {
             format!("{} \u{00B7} {}", kind.name(), moves_target(state))
         }
-        Categories::EntryMarkers | Categories::HeightPlanes | Categories::AreaRegions => {
+        Categories::EntryMarkers
+        | Categories::HeightPlanes
+        | Categories::AreaRegions
+        | Categories::Selection => {
             format!("{} \u{00B7} {}", kind.name(), selected_tag(state))
         }
         Categories::Collisions => {
@@ -1401,6 +1414,35 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
             .into_iter()
             .map(|swatch| (swatch.label, Some(swatch.colour)))
             .collect(),
+        Categories::Selection => {
+            let mut entries = Vec::new();
+            if ready_on(state, "selection_states") {
+                entries.extend([
+                    ("cut".to_owned(), Some(colors::SELECTION_CUT)),
+                    (
+                        "island (cut round)".to_owned(),
+                        Some(colors::SELECTION_ISLAND),
+                    ),
+                    ("skipped".to_owned(), Some(colors::SELECTION_SKIPPED)),
+                    (
+                        "removed by hand".to_owned(),
+                        Some(colors::SELECTION_EXCLUDED),
+                    ),
+                    ("not selected".to_owned(), Some(colors::SELECTION_IDLE)),
+                    ("lost pick".to_owned(), Some(colors::SELECTION_LOST)),
+                ]);
+            } else {
+                entries.push(("open path".to_owned(), Some(colors::OPEN_PATH)));
+            }
+            if ready_on(state, "open_path_ends") {
+                entries.push(("path start".to_owned(), Some(colors::PATH_START)));
+                entries.push(("path end".to_owned(), Some(colors::PATH_END)));
+            }
+            if ready_on(state, "boundary_outline") {
+                entries.push(("boundary".to_owned(), Some(colors::BOUNDARY_OUTLINE)));
+            }
+            entries
+        }
         Categories::Collisions => vec![
             (
                 "isolated".to_owned(),
@@ -1461,6 +1503,10 @@ fn categories_caveats(state: &AppState, kind: Categories, caveats: &mut Caveats)
             );
         }
         Categories::Collisions => caveats.push("holder and shank strike points", tokens::TEXT_FAINT),
+        Categories::Selection => caveats.push(
+            "what the selection of this toolpath does to each item \u{00B7} the same states as selection_status",
+            tokens::TEXT_FAINT,
+        ),
         Categories::StockMaterials => caveats.push(
             "the material at the surface \u{00B7} a surface is darker lower down",
             tokens::TEXT_FAINT,

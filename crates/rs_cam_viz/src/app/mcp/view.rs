@@ -438,14 +438,19 @@ impl RsCamApp {
     /// switches and modal opens behave identically to user clicks (they
     /// land later this same frame via `handle_events`). Returns a JSON
     /// echo of the resulting view state.
+    #[allow(clippy::too_many_arguments)]
+    // SAFETY: one parameter per optional field of the `set_ui_view` wire
+    // type, applied in order; a struct would only rename the destructure.
     pub(super) fn mcp_set_ui_view(
         &mut self,
+        ctx: &egui::Context,
         workspace: Option<&str>,
         toolpath_index: Option<usize>,
         properties_tab: Option<&str>,
         select: Option<&str>,
         modal: Option<&str>,
         overlays: Option<&std::collections::BTreeMap<String, bool>>,
+        frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
     ) -> String {
         // 1. Workspace.
         //
@@ -631,6 +636,28 @@ impl RsCamApp {
             crate::ui::overlays::registry::apply_overlays(self.controller.state_mut(), requested)
         });
 
+        // 6. "Show me" (geometry selection P4.4): the same call the GUI
+        //    button makes, after the selection above.
+        let mut framed: Option<serde_json::Value> = None;
+        if let Some(keys) = frame_items {
+            let Selection::Toolpath(tp_id) = self.controller.state().selection else {
+                return json_str(serde_json::json!({
+                    "error": "frame_items needs a toolpath \u{2014} pass toolpath_index in this \
+                              call or select a toolpath first"
+                }));
+            };
+            let now = ctx.input(|i| i.time);
+            let Some(bbox) = self.frame_selection_items(tp_id, keys, now) else {
+                return json_str(serde_json::json!({
+                    "error": "frame_items names no item and no position to frame"
+                }));
+            };
+            framed = Some(serde_json::json!({
+                "min": [bbox.min.x, bbox.min.y, bbox.min.z],
+                "max": [bbox.max.x, bbox.max.y, bbox.max.z],
+            }));
+        }
+
         // Echo the resulting view. Modal mutations route through the event
         // queue and land later this same frame, so echo the requested
         // targets plus the already-applied selection.
@@ -670,6 +697,7 @@ impl RsCamApp {
                 "applied": report.applied,
                 "refused": report.refused,
             })),
+            "framed": framed,
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }

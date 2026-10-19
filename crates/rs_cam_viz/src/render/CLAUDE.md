@@ -11,7 +11,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from
   `mesh_render.rs` — the four content pipelines.
 - `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference
   geometry.
-- `colors.rs` — every colour constant, including `COLLISION_POINT`.
+- `colors.rs` — every colour constant, including `COLLISION_POINT`. P4.4: a selection state colour is its UI token / 255 (`token_rgb`).
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe the tool
   ghost and the tool preview draw; a soft part draws lighter.
 - `upload_cache.rs` — the content-addressed keys for the GPU upload pass.
@@ -31,6 +31,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from
 - `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke`
 - `cargo test -p rs_cam_viz -q --test reach_overlay_p5`
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27`
+- `cargo test -p rs_cam_viz -q --test the_selection_colours_live_in_colors_p4_4`
 
 ## Do not
 

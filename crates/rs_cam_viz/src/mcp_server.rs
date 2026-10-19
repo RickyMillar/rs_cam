@@ -686,7 +686,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "selection_status",
-        description = "Geometry selection: what a selection of the toolpath at `index` resolves to, with no generation. `target` is `\"op\"` (default: the selection of the op) or `\"boundary\"` (the selection of a `Selection` machining boundary; a 3D op holds its face picks there). The answer generation gives: `counts` (items cut, by kind), `islands`, `skipped_by_kind` (items the default rule matched that the op cannot cut), `notes` (the skipped open paths), `lost` (picks that name no item or more than one), `refusal` (the refusal text, or null), `holes` (a drill op: the holes it drills, in the model frame) and `selected` (the key of every selected item). The GUI reads the same report."
+        description = "Geometry selection: what a selection of the toolpath at `index` resolves to, with no generation. `target` is `\"op\"` (default: the selection of the op) or `\"boundary\"` (the selection of a `Selection` machining boundary; a 3D op holds its face picks there). The answer generation gives: `counts` (items cut, by kind), `islands`, `skipped_by_kind` (items the default rule matched that the op cannot cut), `notes` (the skipped open paths), `lost` (picks that name no item or more than one), `refusal` (the refusal text, or null), `holes` (a drill op: the holes it drills, in the model frame), `selected` (the key of every selected item), `item_states` (one `{key, state}` per item of the toolpath model, in import order; `state` is `cut`, `island`, `skipped`, `excluded` or `not_selected`) and `foreign` (`{key, state}` for each selected item of another model or of the stock). The GUI reads the same report and colours the viewport by these states."
     )]
     async fn selection_status(
         &self,
@@ -1791,7 +1791,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_ui_view",
-        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, obstacles, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped). Preconditions: feeds_modal needs a toolpath — pass toolpath_index in the same call or have one selected. Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
+        description = "Navigate the GUI to a specific view so screenshot_gui can capture any UI surface. All params optional, applied in order: `workspace` switches the top-level workspace ('setup', 'toolpaths', 'simulation', 'readiness'); `toolpath_index` (0-based) selects that toolpath so its properties panel shows in the Toolpaths workspace; `properties_tab` activates a toolpath inspector tab ('geometry', 'feeds', 'linking', 'heights', 'dressup' — requires a selected toolpath to be visible); `select` chooses a non-toolpath properties panel ('machine' for machine setup + kinematics + GRBL $$ import, or 'stock') and switches to the Setup workspace; `modal` opens a modal ('feeds_modal', 'export_wizard', 'tool_library', 'pin_wizard') or 'none' closes all modals (the load-warning modal and the pin wizard too); `overlays` switches viewport overlays as {\"<id>\": true|false} using the ids of the GUI's All viewport options catalogue (grid, model, stock_box, stock_solid, origin_axes, datum, obstacles, alignment_pins, flip_axis, curves, orientation_gizmo, cutting_moves, rapids, entry_markers, height_planes, tool_profile_ghost, span_entry/lead_out/link_bridge/dressup, rest_heatmap, tier_map, reach_map, simulated_stock, collisions, tool_deflection, generator_steps, active_step_highlight, stock_colour_solid/deviation/by_height, move_colour_palette/engagement/advance_per_tooth, selection_states, open_path_ends, boundary_outline) — applied after the workspace, echoed under overlays.applied, and REFUSED with the panel's own reason string under overlays.refused when the overlay cannot draw (nothing is silently dropped); `frame_items` (a list of match keys from `selection_status` or `list_model_items`) frames those items of the selected toolpath in the viewport and flashes them, as the GUI \"Show me\" does (a lost pick frames its stored position). Preconditions: feeds_modal needs a toolpath — pass toolpath_index in the same call or have one selected. Returns a JSON echo of the resulting view state. Changes render on the next frame, so call screenshot_gui after this returns."
     )]
     async fn set_ui_view(
         &self,
@@ -1802,6 +1802,7 @@ impl EmbeddedCamServer {
             select,
             modal,
             overlays,
+            frame_items,
         }): Parameters<SetUiViewParam>,
     ) -> String {
         Self::format_result(
@@ -1812,6 +1813,7 @@ impl EmbeddedCamServer {
                 select,
                 modal,
                 overlays,
+                frame_items: frame_items.map(|keys| keys.into_iter().map(Into::into).collect()),
             })))
             .await,
         )
