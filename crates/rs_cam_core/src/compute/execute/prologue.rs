@@ -86,6 +86,19 @@ impl<'a> SelectionInputs<'a> {
         }
     }
 
+    /// Test only: the stock rule over `stock_bbox` (the Face default,
+    /// geometry selection P4.2): one stock loop, as the session resolves
+    /// `Selection::stock()`.
+    #[cfg(test)]
+    pub(crate) fn stock(stock_bbox: &crate::geo::BoundingBox3) -> SelectionInputs<'static> {
+        let items: Vec<crate::selection::Item> = crate::selection::stock_items(stock_bbox)
+            .map(|set| set.iter().cloned().collect())
+            .unwrap_or_default();
+        SelectionInputs {
+            resolved: Cow::Owned(ResolvedSelection::from_items(items)),
+        }
+    }
+
     /// Test only: the default rule over hand-built items
     /// ([`ResolvedSelection::from_items`]), for an op that reads points or
     /// circles (the drill families).
@@ -101,14 +114,9 @@ impl<'a> SelectionInputs<'a> {
 
 /// The geometry the prologue checked, by the row's [`GeometryRequirement`].
 enum CheckedGeometry<'a> {
-    /// `Stock`: no model geometry to check.
-    None,
     Items(OpItems),
     Mesh(MeshInput<'a>),
-    ItemsAndMesh {
-        items: OpItems,
-        mesh: MeshInput<'a>,
-    },
+    ItemsAndMesh { items: OpItems, mesh: MeshInput<'a> },
 }
 
 /// What an adapter receives from the prologue: the inputs its row requires,
@@ -130,7 +138,7 @@ impl<'a> Prepared<'a> {
             CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => {
                 Some(items)
             }
-            CheckedGeometry::None | CheckedGeometry::Mesh(_) => None,
+            CheckedGeometry::Mesh(_) => None,
         }
     }
 
@@ -161,7 +169,7 @@ impl<'a> Prepared<'a> {
     pub fn mesh(&self) -> Result<MeshInput<'a>, OperationError> {
         match &self.geometry {
             CheckedGeometry::Mesh(mesh) | CheckedGeometry::ItemsAndMesh { mesh, .. } => Ok(*mesh),
-            CheckedGeometry::None | CheckedGeometry::Items(_) => Err(self.mismatch("a mesh")),
+            CheckedGeometry::Items(_) => Err(self.mismatch("a mesh")),
         }
     }
 
@@ -207,7 +215,6 @@ pub(super) fn check_inputs<'a>(
     let name = op_type.name();
     let item_use = op.capabilities().item_use;
     let geometry = match op_type.geometry_requirement() {
-        GeometryRequirement::Stock => CheckedGeometry::None,
         GeometryRequirement::Items => {
             CheckedGeometry::Items(require_items(ctx, op_type, item_use)?)
         }

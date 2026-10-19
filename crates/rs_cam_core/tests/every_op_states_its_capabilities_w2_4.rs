@@ -630,7 +630,7 @@ fn only_the_pin_drill_escapes_the_boundary_clip_d2() {
 fn frozen_p1() -> Vec<(OperationType, ItemUse)> {
     use OperationType as O;
     vec![
-    (O::Face, ItemUse::None),
+    (O::Face, ItemUse::Regions),
     (O::Pocket, ItemUse::Regions),
     (O::Profile, ItemUse::Regions),
     (O::Adaptive, ItemUse::Regions),
@@ -695,13 +695,15 @@ fn trace_compensation_picks_its_item_use_p1() {
 /// P1, P2.3a (DESIGN 4.2): the geometry a row requires and the items it
 /// cuts agree. A row reads items (`Items`, `ItemsAndMesh`) if and only if
 /// its item use is not `None`. The prologue runs the selection view only
-/// for those rows. A stock or mesh op reads no item. Only Project Curve
-/// reads items and a mesh, and it follows lines.
+/// for those rows. A mesh op reads no item. Only Project Curve reads items
+/// and a mesh, and it follows lines.
 ///
 /// P2.3a moved Drill (was `DrillTargets`) and Pin Drill (was `Stock`) to
 /// `Items`. Pin Drill may have no item (`Holes { may_be_empty: true }`):
 /// its holes come from the stock pins, so it runs with no model
-/// (`OperationType::is_stock_based`).
+/// (`OperationType::is_stock_based`). P4.2 moved Face to `Items` with
+/// `Regions`: its default selection is the stock outline, so it also runs
+/// with no model.
 #[test]
 fn the_geometry_and_the_item_use_agree_p1() {
     for &op in OperationType::ALL {
@@ -709,7 +711,7 @@ fn the_geometry_and_the_item_use_agree_p1() {
         let ok = match op.geometry_requirement() {
             GeometryRequirement::Items => use_ != ItemUse::None,
             GeometryRequirement::ItemsAndMesh => use_ == ItemUse::Curves,
-            GeometryRequirement::Mesh | GeometryRequirement::Stock => use_ == ItemUse::None,
+            GeometryRequirement::Mesh => use_ == ItemUse::None,
         };
         assert!(ok, "{op:?}: {:?} with {use_:?}", op.geometry_requirement());
     }
@@ -717,14 +719,15 @@ fn the_geometry_and_the_item_use_agree_p1() {
 
 /// P2.3a: the frozen geometry column. Every row that read `Polygons` or
 /// `DrillTargets` reads `Items`, Project Curve (was `Both`) reads
-/// `ItemsAndMesh`, and Pin Drill moved from `Stock` to `Items`. Face stays
-/// `Stock` until P2.3b gives it the stock rule (DESIGN D5). The last
-/// column is `is_stock_based`: the ops that run with no model.
+/// `ItemsAndMesh`, and Pin Drill moved from `Stock` to `Items`. P4.2 moved
+/// Face to `Items` with the stock rule as its default (DESIGN D5), and
+/// removed the `Stock` requirement. The last column is `is_stock_based`:
+/// the ops that run with no model.
 #[test]
 fn every_row_states_its_geometry_p2_3a() {
-    use GeometryRequirement::{Items, ItemsAndMesh, Mesh, Stock};
+    use GeometryRequirement::{Items, ItemsAndMesh, Mesh};
     let frozen: &[(&str, GeometryRequirement, bool)] = &[
-        ("face", Stock, true),
+        ("face", Items, true),
         ("pocket", Items, false),
         ("profile", Items, false),
         ("adaptive", Items, false),

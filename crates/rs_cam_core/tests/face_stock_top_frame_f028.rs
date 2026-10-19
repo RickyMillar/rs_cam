@@ -119,6 +119,7 @@ fn build_as004_face_session() -> ProjectSession {
         stock_offset: 5.0,
         direction: FaceDirection::Zigzag,
         spindle_rpm: Some(18_000),
+        selection: rs_cam_core::selection::Selection::stock(),
     };
 
     let tc = ToolpathConfig {

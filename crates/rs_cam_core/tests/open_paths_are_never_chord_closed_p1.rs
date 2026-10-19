@@ -101,13 +101,15 @@ fn open(points: &[[f64; 2]]) -> Polygon2 {
 }
 
 /// Every closed-region op that reads a drawing, from the registry, and
-/// Trace offset to the left.
+/// Trace offset to the left. Face reads the stock outline by default
+/// (P4.2, `is_stock_based`), not the drawing, so it is not in the list.
 fn region_ops() -> Vec<OperationConfig> {
     let mut ops: Vec<OperationConfig> = OperationType::ALL
         .iter()
         .filter(|op| {
             op.geometry_requirement() == GeometryRequirement::Items
                 && op.capabilities().item_use == ItemUse::Regions
+                && !op.is_stock_based()
         })
         .map(|&op| OperationConfig::new_default(op))
         .collect();

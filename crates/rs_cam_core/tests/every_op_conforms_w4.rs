@@ -1629,7 +1629,8 @@ fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
             ));
         }
     }
-    assert!(slots >= 12, "only {slots} ops hold a selection");
+    // P4.2: Face holds a selection (the stock default), so 13 ops do.
+    assert!(slots >= 13, "only {slots} ops hold a selection");
     assert!(defects.is_empty(), "{}", defects.join("\n"));
 }
 

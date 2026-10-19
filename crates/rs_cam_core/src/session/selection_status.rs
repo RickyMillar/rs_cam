@@ -81,7 +81,7 @@ pub enum SelectionTarget {
 impl SelectionTarget {
     /// The selection that a viewport face click on `tc` edits: the op
     /// selection when the op holds one, else the boundary selection (an op
-    /// with no selection slot: Face and every 3D op).
+    /// with no selection slot: every 3D op).
     pub fn for_face_pick(tc: &ToolpathConfig) -> Self {
         match tc.operation.selection() {
             Some(_) => Self::Op,
@@ -568,6 +568,12 @@ impl ProjectSession {
     ///
     /// `key` names its source as a stored pick does. The source
     /// [`SourceRef::ToolpathModel`] reads as the model of `tc`.
+    ///
+    /// Lead ruling L-6 (P4.2): when the op selection is still the stock
+    /// default ([`Selection::stock`], the Face default), a click on an item
+    /// that is not the stock gives `Replace` with that one pick. So one
+    /// click gives one region, as the first layer pick of the drill does.
+    /// An explicit `AddPick` (MCP) stays additive.
     pub fn pick_edit(
         &self,
         tc: &ToolpathConfig,
@@ -583,8 +589,14 @@ impl ProjectSession {
             .selected
             .iter()
             .any(|k| k.source == source && k.names_same_geometry(&key));
-        Ok(if selected {
-            SelectionEdit::RemovePick(key)
+        if selected {
+            return Ok(SelectionEdit::RemovePick(key));
+        }
+        let under_stock_default = target == SelectionTarget::Op
+            && source != SourceRef::Stock
+            && tc.selection_of(target)?.is_some_and(Selection::is_stock);
+        Ok(if under_stock_default {
+            SelectionEdit::Replace(Box::new(Selection::from_picks(vec![key])))
         } else {
             SelectionEdit::AddPick(key)
         })
@@ -627,7 +639,7 @@ impl ProjectSession {
 fn reads_items(op_type: OperationType) -> bool {
     match op_type.geometry_requirement() {
         GeometryRequirement::Items | GeometryRequirement::ItemsAndMesh => true,
-        GeometryRequirement::Stock | GeometryRequirement::Mesh => false,
+        GeometryRequirement::Mesh => false,
     }
 }
 

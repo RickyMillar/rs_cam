@@ -18,7 +18,10 @@
 //!
 //! Containment (`detect_containment`) runs here, over the selected loops,
 //! circle rings and (for `Curves`) paths, in selection order. A face keeps
-//! its own inner loops and does not nest with another item.
+//! its own inner loops and does not nest with another item. The stock
+//! outline (an item of `SourceRef::Stock`) nests as a drawing ring does;
+//! `Regions` marks the region whose exterior it is (geometry selection
+//! P4.2).
 //!
 //! [`Regions`], [`Curves`] and [`Holes`] have private fields: only `view`
 //! builds them, so a `Regions` holds closed polygons only.
@@ -28,9 +31,9 @@ use std::collections::BTreeMap;
 use crate::compute::catalog::ItemUse;
 use crate::geo::P2;
 use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
-use crate::polygon::{Polygon2, detect_containment};
+use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
-use super::item::{Item, ItemKind, Shape};
+use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal};
 use super::resolve::ResolvedSelection;
 
@@ -76,16 +79,27 @@ impl Curves {
     }
 }
 
-/// Closed areas: every polygon is closed. The drawing loops and circles are
-/// nested by containment; each face follows with its own inner loops.
+/// Closed areas: every polygon is closed. The loops, circles and the stock
+/// outline are nested by containment; each face follows with its own inner
+/// loops.
 #[derive(Debug, Clone)]
 pub struct Regions {
     curves: Curves,
+    /// For each polygon: true when its exterior is the stock ring.
+    stock: Vec<bool>,
 }
 
 impl Regions {
     pub fn as_slice(&self) -> &[Polygon2] {
         self.curves.as_slice()
+    }
+
+    /// True when the exterior of the polygon at `index` of
+    /// [`Self::as_slice`] is the ring of a [`SourceRef::Stock`] item. Its
+    /// holes are the drawing rings inside the stock. Face grows only this
+    /// region by its stock offset (geometry selection P4.2, ruling O-3).
+    pub fn is_stock(&self, index: usize) -> bool {
+        self.stock.get(index).copied().unwrap_or(false)
     }
 
     /// The same polygons as lines to follow: a closed region is also a
@@ -270,12 +284,13 @@ pub fn view(
     let view = match item_use {
         ItemUse::None => View::None,
         ItemUse::Regions => {
-            let polygons = regions_of(&served);
+            let (polygons, stock) = regions_of(&served);
             if polygons.is_empty() {
                 return Err(empty(notes));
             }
             View::Regions(Regions {
                 curves: Curves { polygons },
+                stock,
             })
         }
         ItemUse::Curves => {
@@ -323,15 +338,24 @@ pub fn view(
     ))
 }
 
-/// The closed areas of the served shapes: the loops and circle rings nested
-/// by containment, then each face with its own inner loops.
-fn regions_of(served: &[&Item]) -> Vec<Polygon2> {
-    let mut polygons = nest_closed_rings(served.iter().copied());
-    polygons.extend(served.iter().filter_map(|i| match i.shape() {
+/// The closed areas of the served shapes: the loops and circle rings
+/// nested by containment, then each face with its own inner loops. The
+/// flags mark each area whose exterior is the stock ring (P4.2). The stock
+/// ring nests as any drawing ring does, so a drawing loop inside the stock
+/// is a hole of the stock region (a Pocket clears round it).
+fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>) {
+    let (mut polygons, mut stock): (Vec<Polygon2>, Vec<bool>) =
+        nest_closed_rings_tagged(served.iter().copied())
+            .into_iter()
+            .unzip();
+    for face in served.iter().filter_map(|i| match i.shape() {
         Shape::Face(face) => Some(face.rings.clone()),
         Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
-    }));
-    polygons
+    }) {
+        polygons.push(face);
+        stock.push(false);
+    }
+    (polygons, stock)
 }
 
 /// The loops and circle rings of `items`, in this order, nested by
@@ -340,15 +364,36 @@ fn regions_of(served: &[&Item]) -> Vec<Polygon2> {
 /// change and obstacle outlines, P2.5) both call it. A path, a point and a
 /// face give no ring here.
 pub(crate) fn nest_closed_rings<'a>(items: impl IntoIterator<Item = &'a Item>) -> Vec<Polygon2> {
-    let rings: Vec<Polygon2> = items
+    nest_closed_rings_tagged(items)
         .into_iter()
-        .filter_map(|i| match i.shape() {
-            Shape::Loop(p) => Some(p.clone()),
-            Shape::Circle { ring, .. } => Some(ring.clone()),
-            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
+        .map(|(polygon, _)| polygon)
+        .collect()
+}
+
+/// [`nest_closed_rings`], with a flag for each polygon whose exterior is
+/// the ring of a [`SourceRef::Stock`] item. The flag follows the ring
+/// through the nesting by its input index, not by its coordinates.
+fn nest_closed_rings_tagged<'a>(
+    items: impl IntoIterator<Item = &'a Item>,
+) -> Vec<(Polygon2, bool)> {
+    let (rings, from_stock): (Vec<Polygon2>, Vec<bool>) = items
+        .into_iter()
+        .filter_map(|i| {
+            let ring = match i.shape() {
+                Shape::Loop(p) => p.clone(),
+                Shape::Circle { ring, .. } => ring.clone(),
+                Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => return None,
+            };
+            Some((ring, i.source() == SourceRef::Stock))
         })
-        .collect();
-    detect_containment(rings)
+        .unzip();
+    detect_containment_tagged(rings)
+        .into_iter()
+        .map(|(polygon, index)| {
+            let stock = from_stock.get(index).copied().unwrap_or(false);
+            (polygon, stock)
+        })
+        .collect()
 }
 
 /// The lines of the served shapes: loops, circle rings and paths, nested by

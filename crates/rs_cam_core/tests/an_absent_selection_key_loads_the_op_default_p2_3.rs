@@ -10,6 +10,8 @@
 //!   `Selection::drawing()`;
 //! - a Pin Drill with no key loads `Selection::empty()`, never the drawing
 //!   default (that would drill every circle of the drawing in silence);
+//! - a Face with no key loads `Selection::stock()` (P4.2, decision D5): it
+//!   faces the stock outline, never the drawing;
 //! - a saved default selection writes no `selection` key, so a project that
 //!   uses only defaults saves as before P2.3b;
 //! - a selection that is not the default (a layer rule) saves its key and
@@ -33,7 +35,9 @@ use std::path::PathBuf;
 use common::session::toolpath_config;
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, PocketConfig};
+use rs_cam_core::compute::operation_configs::{
+    AlignmentPinDrillConfig, DrillConfig, FaceConfig, PocketConfig,
+};
 use rs_cam_core::selection::{Filter, Rule, Selection, SourceRef};
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
 
@@ -55,13 +59,14 @@ fn layer_rule() -> Selection {
     }])
 }
 
-/// Four toolpaths: a default Pocket, a default Drill, a default Pin Drill
-/// and a Pocket with a layer rule.
+/// Five toolpaths: a default Pocket, a default Drill, a default Pin Drill,
+/// a default Face and a Pocket with a layer rule.
 fn ops() -> Vec<OperationConfig> {
     vec![
         OperationConfig::Pocket(PocketConfig::default()),
         OperationConfig::Drill(DrillConfig::default()),
         OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
+        OperationConfig::Face(FaceConfig::default()),
         OperationConfig::Pocket(PocketConfig {
             selection: layer_rule(),
             ..PocketConfig::default()
@@ -90,7 +95,7 @@ fn selection_lines(text: &str) -> Vec<&str> {
 fn an_absent_selection_key_loads_the_op_default() {
     let dir = temp_dir();
 
-    // The three defaults write no key, so they load from a file with no
+    // The four defaults write no key, so they load from a file with no
     // `selection` key.
     let defaults = dir.join("p2_3_defaults.toml");
     let mut ops = ops();
@@ -107,6 +112,7 @@ fn an_absent_selection_key_loads_the_op_default() {
         Selection::drawing(),
         Selection::drawing(),
         Selection::empty(),
+        Selection::stock(),
     ];
     assert_eq!(loaded.toolpath_configs().len(), want.len());
     for (cfg, want) in loaded.toolpath_configs().iter().zip(want.iter()) {
@@ -118,8 +124,11 @@ fn an_absent_selection_key_loads_the_op_default() {
             cfg.operation.label()
         );
     }
-    // The Pin Drill default is not the drawing default (decision D6).
+    // The Pin Drill default is not the drawing default (decision D6), and
+    // the Face default is neither (decision D5).
     assert_ne!(Selection::empty(), Selection::drawing());
+    assert_ne!(Selection::stock(), Selection::drawing());
+    assert_ne!(Selection::stock(), Selection::empty());
 
     // A selection that is not the default saves its key and loads back.
     let rule = dir.join("p2_3_rule.toml");

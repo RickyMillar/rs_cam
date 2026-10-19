@@ -1565,7 +1565,6 @@ impl OffsetRingSet {
 /// as holes of their containing polygon.
 ///
 /// Given polygons from an SVG or DXF where separate shapes may represent
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// an outer boundary with interior islands, this function:
 /// 1. Sorts polygons by area (largest first)
 /// 2. For each smaller polygon, checks if it's fully inside a larger one
@@ -1574,7 +1573,24 @@ impl OffsetRingSet {
 /// An open path stays top level and keeps its drawn direction.
 ///
 /// Returns the nested polygons (outer boundaries with holes attached).
-pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
+pub fn detect_containment(polygons: Vec<Polygon2>) -> Vec<Polygon2> {
+    detect_containment_tagged(polygons)
+        .into_iter()
+        .map(|(polygon, _)| polygon)
+        .collect()
+}
+
+/// [`detect_containment`], with the input index of the ring that is the
+/// exterior of each result polygon. The selection view reads the index to
+/// know which region has the stock ring as its exterior (geometry
+/// selection P4.2), with no compare of coordinates.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub(crate) fn detect_containment_tagged(polygons: Vec<Polygon2>) -> Vec<(Polygon2, usize)> {
+    let mut polygons: Vec<(Polygon2, usize)> = polygons
+        .into_iter()
+        .enumerate()
+        .map(|(index, polygon)| (polygon, index))
+        .collect();
     if polygons.len() <= 1 {
         return polygons;
     }
@@ -1584,12 +1600,12 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     // of its chord-closed ring, which has no meaning, and the drawn
     // direction sets its start point and its side (lead ruling "fix b",
     // geometry selection P2.2).
-    for poly in polygons.iter_mut().filter(|p| p.closed) {
+    for (poly, _) in polygons.iter_mut().filter(|(p, _)| p.closed) {
         poly.ensure_winding();
     }
 
     // Sort by area descending (largest = outer boundaries)
-    polygons.sort_by(|a, b| {
+    polygons.sort_by(|(a, _), (b, _)| {
         b.area()
             .partial_cmp(&a.area())
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -1620,11 +1636,12 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
         // has a smaller index — scanning j in 0..i suffices.
         let mut depths = vec![0usize; n];
         for i in 0..n {
-            if !polygons[i].closed {
+            if !polygons[i].0.closed {
                 continue;
             }
             for j in 0..i {
-                if polygons[j].closed && polygon_contains_polygon(&polygons[j], &polygons[i]) {
+                if polygons[j].0.closed && polygon_contains_polygon(&polygons[j].0, &polygons[i].0)
+                {
                     depths[i] += 1;
                 }
             }
@@ -1634,13 +1651,13 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
         // even-depth container — the largest index (smallest area) among
         // containers that are themselves top-level.
         for i in 0..n {
-            if !polygons[i].closed || depths[i].is_multiple_of(2) {
+            if !polygons[i].0.closed || depths[i].is_multiple_of(2) {
                 continue;
             }
             let innermost = (0..i).rfind(|&j| {
-                polygons[j].closed
+                polygons[j].0.closed
                     && depths[j].is_multiple_of(2)
-                    && polygon_contains_polygon(&polygons[j], &polygons[i])
+                    && polygon_contains_polygon(&polygons[j].0, &polygons[i].0)
             });
             if let Some(j) = innermost {
                 holes_for[j].push(i);
@@ -1655,20 +1672,20 @@ pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     #[allow(clippy::indexing_slicing)]
     let result = {
         let mut result = Vec::new();
-        for (i, poly) in polygons.iter().enumerate() {
+        for (i, (poly, tag)) in polygons.iter().enumerate() {
             if consumed[i] {
                 continue;
             }
             let mut outer = poly.clone();
             for &hole_idx in &holes_for[i] {
-                let mut hole_pts = polygons[hole_idx].exterior.clone();
+                let mut hole_pts = polygons[hole_idx].0.exterior.clone();
                 // Holes must be CW (reverse if CCW)
                 if shoelace_area(&hole_pts) > 0.0 {
                     hole_pts.reverse();
                 }
                 outer.holes.push(hole_pts);
             }
-            result.push(outer);
+            result.push((outer, *tag));
         }
         result
     };

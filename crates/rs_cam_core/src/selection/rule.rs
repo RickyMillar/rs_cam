@@ -317,6 +317,14 @@ impl Selection {
             .chain(self.excludes.iter().map(|k| k.source))
     }
 
+    /// True when no rule, pick or exclude names a model: every source is
+    /// [`SourceRef::Stock`], or the selection is empty. Such a selection
+    /// resolves with no model (geometry selection P4.2: a Face op on an STL
+    /// or with no model still generates).
+    pub fn reads_no_model(&self) -> bool {
+        self.sources().all(|s| s == SourceRef::Stock)
+    }
+
     /// These picks and no rule.
     pub fn from_picks(picks: Vec<MatchKey>) -> Self {
         Self {

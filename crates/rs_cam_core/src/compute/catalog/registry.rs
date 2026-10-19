@@ -41,7 +41,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         label: "Face",
         description: "Level the stock top surface",
         family: OperationFamily::TwoPointFiveD,
-        geometry: GeometryRequirement::Stock,
+        geometry: GeometryRequirement::Items,
         default_auto_regen: true,
         ui_family: UiOperationFamily::Pocket,
         ui_process_role: UiProcessRole::Roughing,
@@ -76,7 +76,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         top_on_stock_box: false,
         floor_inside_stock: true,
         lut_route: LutRoute::AsStated,
-        item_use: ItemUse::None,
+        item_use: ItemUse::Regions,
     },
     generate: crate::compute::execute::generate_face,
 };

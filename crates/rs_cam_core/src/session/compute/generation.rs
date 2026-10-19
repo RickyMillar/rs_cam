@@ -174,7 +174,9 @@ impl ProjectSession {
         // `view` over it. A face pick is a pick of the op selection (P2.6),
         // so it reaches the op through `resolve` and `view` as any other
         // item, and gives the auto top below. An op that holds no selection
-        // (Face, a 3D op) resolves to no item; its prologue reads no item.
+        // (a 3D op) resolves to no item; its prologue reads no item. The
+        // Face default reads only the stock, so a Face op on an STL or with
+        // no model resolves with no `MissingSource` (P4.2).
         // P2.4: THE resolution (`resolve_selection_frames`) is the one the
         // `selection_status` query reads, so the two give the same refusal.
         let selection = self

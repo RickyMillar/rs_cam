@@ -391,6 +391,51 @@ fn the_stock_selection_is_the_stock_rectangle_and_does_not_move() {
     assert_eq!(b, [0.0, 0.0, 100.0, 80.0]);
 }
 
+/// P4.2 (lead review): the stock ring nests with the drawing rings. A
+/// drawing loop inside the stock is a hole of the stock region (a Pocket
+/// clears round it), and `is_stock` marks the region whose exterior is the
+/// stock ring. A face never nests, so stock plus a face gives two regions.
+#[test]
+fn the_stock_ring_nests_with_the_drawing_and_is_marked_p4_2() {
+    let m = model(vec![
+        item("A", Shape::Loop(square(10.0, 10.0, 20.0))),
+        face(5.0, 1.0, 7),
+    ]);
+    let drawing_rule = Rule {
+        source: SourceRef::ToolpathModel,
+        filter: Filter::default(),
+    };
+    let stock_rule = Selection::stock().rules()[0].clone();
+    let sel = Selection::from_rules(vec![stock_rule.clone(), drawing_rule]);
+    let (items, _) = view(&resolve_on(&sel, &m), ItemUse::Regions).unwrap();
+    let regions = items.regions().unwrap();
+    assert_eq!(regions.as_slice().len(), 1, "one region: the stock");
+    assert_eq!(regions.as_slice()[0].holes.len(), 1, "the loop is a hole");
+    assert_eq!(regions.as_slice()[0].bbox(), [0.0, 0.0, 100.0, 80.0]);
+    assert!(regions.is_stock(0));
+
+    // Stock and a face pick: the face is its own region, not stock.
+    let face_key = m
+        .items
+        .iter()
+        .find(|i| i.kind() == ItemKind::Face)
+        .unwrap()
+        .key()
+        .clone();
+    let sel = Selection::from_parts(
+        vec![stock_rule],
+        vec![MatchKey {
+            source: SourceRef::ToolpathModel,
+            ..face_key
+        }],
+        Vec::new(),
+    );
+    let (items, _) = view(&resolve_on(&sel, &m), ItemUse::Regions).unwrap();
+    let regions = items.regions().unwrap();
+    assert_eq!(regions.as_slice().len(), 2);
+    assert!(regions.is_stock(0) && !regions.is_stock(1));
+}
+
 // ── Containment ─────────────────────────────────────────────────────────
 
 #[test]

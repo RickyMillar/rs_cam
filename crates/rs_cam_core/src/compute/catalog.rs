@@ -44,8 +44,6 @@ pub enum OperationFamily {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryRequirement {
-    /// The stock only. No model geometry.
-    Stock,
     /// The selected items of a drawing (geometry selection P2.3a; was
     /// `Polygons` and `DrillTargets`). The prologue runs `selection::view`
     /// with the op's `Capabilities::item_use`: a `Regions` op gets closed
@@ -484,18 +482,24 @@ impl OperationType {
         self.spec().geometry
     }
 
-    /// True when the op can run with no model: a `Stock` row (Face), or
-    /// an `Items` row whose item use may be empty (Pin Drill: the stock
-    /// pins are its holes, and a model only adds extra holes). The
-    /// session, the GUI and the model-reference check read this to decide
-    /// whether an op needs a model.
+    /// True when the op can run with no model: an `Items` row whose
+    /// default selection reads no model and gives the op something to cut
+    /// (geometry selection P4.2). Face: the default is the stock outline
+    /// (decision D5). Pin Drill: the default is empty and its item use may
+    /// be empty (the stock pins are its holes, and a model only adds extra
+    /// holes). The session, the GUI and the model-reference check read
+    /// this to decide whether an op needs a model.
     pub fn is_stock_based(self) -> bool {
         match self.geometry_requirement() {
-            GeometryRequirement::Stock => true,
-            GeometryRequirement::Items => matches!(
-                self.capabilities().item_use,
-                ItemUse::Holes { may_be_empty: true }
-            ),
+            GeometryRequirement::Items => {
+                let may_be_empty = matches!(
+                    self.capabilities().item_use,
+                    ItemUse::Holes { may_be_empty: true }
+                );
+                OperationConfig::new_default(self)
+                    .default_selection()
+                    .is_some_and(|s| s.reads_no_model() && (may_be_empty || !s.is_empty()))
+            }
             GeometryRequirement::Mesh | GeometryRequirement::ItemsAndMesh => false,
         }
     }
@@ -998,8 +1002,8 @@ impl OperationConfig {
             OperationConfig::Chamfer(c) => Some(&c.selection),
             OperationConfig::ProjectCurve(c) => Some(&c.selection),
             OperationConfig::AlignmentPinDrill(c) => Some(&c.selection),
-            OperationConfig::Face(_)
-            | OperationConfig::DropCutter(_)
+            OperationConfig::Face(c) => Some(&c.selection),
+            OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
             | OperationConfig::Waterline(_)
             | OperationConfig::Pencil(_)
@@ -1030,8 +1034,8 @@ impl OperationConfig {
             OperationConfig::Chamfer(c) => Some(&mut c.selection),
             OperationConfig::ProjectCurve(c) => Some(&mut c.selection),
             OperationConfig::AlignmentPinDrill(c) => Some(&mut c.selection),
-            OperationConfig::Face(_)
-            | OperationConfig::DropCutter(_)
+            OperationConfig::Face(c) => Some(&mut c.selection),
+            OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
             | OperationConfig::Waterline(_)
             | OperationConfig::Pencil(_)
@@ -1066,8 +1070,9 @@ impl OperationConfig {
             // Decision D6: the stock pins are the holes of a Pin Drill. A
             // drawing default would drill every circle of the drawing.
             OperationConfig::AlignmentPinDrill(_) => Some(Selection::empty()),
-            OperationConfig::Face(_)
-            | OperationConfig::DropCutter(_)
+            // Decision D5: Face faces the stock outline of the setup.
+            OperationConfig::Face(_) => Some(Selection::stock()),
+            OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
             | OperationConfig::Waterline(_)
             | OperationConfig::Pencil(_)

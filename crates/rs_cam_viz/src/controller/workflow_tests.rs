@@ -199,7 +199,7 @@ fn face_picks(c: &AppController<ScriptedBackend>, tp_id: ToolpathId) -> Vec<u16>
     let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
     tc.operation
         .selection()
-        .expect("a pocket holds a selection")
+        .expect("the op holds a selection")
         .face_picks()
         .filter_map(|k| k.brep)
         .collect()
@@ -217,13 +217,19 @@ fn find_vertical_face(enriched: &EnrichedMesh) -> FaceGroupId {
 
 /// Add a pocket toolpath to the first setup and return its ID.
 fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
+    add_op(controller, OperationType::Pocket)
+}
+
+/// Add a default toolpath of `op_type` to the first setup and return its
+/// ID.
+fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationType) -> ToolpathId {
     use rs_cam_core::compute::catalog::OperationConfig;
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
         id: ToolpathId(0),
-        name: "Pocket".to_owned(),
+        name: op_type.label().to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(OperationType::Pocket),
+        operation: OperationConfig::new_default(op_type),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -686,6 +692,62 @@ fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
     // boundary report).
     click_face(&mut c, tp_id, model_id, face_a);
     assert!(boundary_face_picks(&c, tp_id).is_empty(), "the toggle off");
+}
+
+/// Geometry selection P4.2 (ruling L-6): a face click on a Face op that
+/// still holds the stock default replaces the stock rule with that one
+/// pick, so one click gives one region. One undo restores the stock
+/// default; the redo gives the pick back.
+#[test]
+fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
+    use rs_cam_core::selection::Selection as OpSelection;
+
+    let mut c = step_controller();
+    let tp_id = add_op(&mut c, OperationType::Face);
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let face_a = find_horizontal_face(enriched);
+    let op_selection = |c: &AppController<ScriptedBackend>| {
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        tc.operation
+            .selection()
+            .cloned()
+            .expect("the Face op holds a selection (P4.2)")
+    };
+    assert!(
+        op_selection(&c).is_stock(),
+        "the Face default is the stock rule"
+    );
+    let key = {
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        assert_eq!(
+            rs_cam_core::session::SelectionTarget::for_face_pick(tc),
+            rs_cam_core::session::SelectionTarget::Op,
+            "a face click on a Face op edits its op selection"
+        );
+        c.state
+            .session
+            .face_pick_key(tc, model_id.0, face_a)
+            .expect("a flat face has a Face item")
+    };
+
+    take_snapshot(&mut c, tp_id);
+    click_face(&mut c, tp_id, model_id, face_a);
+    assert_eq!(
+        op_selection(&c),
+        OpSelection::from_picks(vec![key]),
+        "one click gives one pick and no stock rule"
+    );
+    assert_eq!(face_picks(&c, tp_id), vec![face_a.0]);
+    flush_snapshot(&mut c);
+
+    c.handle_internal_event(AppEvent::Undo);
+    assert!(
+        op_selection(&c).is_stock(),
+        "one undo restores the stock default"
+    );
+    c.handle_internal_event(AppEvent::Redo);
+    assert_eq!(face_picks(&c, tp_id), vec![face_a.0], "the redo");
 }
 
 /// Ruling L-8: a face click on a 3D op whose boundary is not a selection

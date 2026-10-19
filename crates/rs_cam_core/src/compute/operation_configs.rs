@@ -234,6 +234,17 @@ pub struct FaceConfig {
     pub direction: FaceDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// The regions this op faces (geometry selection P4.2, decision D5). A
+    /// file with no `selection` key loads the default of this op: the
+    /// stock outline of the setup. Only the stock region grows by
+    /// `stock_offset`; the op faces any other region inside its outline
+    /// (ruling O-3).
+    #[serde(
+        default = "Selection::stock",
+        skip_serializing_if = "Selection::is_stock"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for FaceConfig {
@@ -248,6 +259,7 @@ impl Default for FaceConfig {
             stock_offset: 5.0,
             direction: FaceDirection::Zigzag,
             spindle_rpm: None,
+            selection: Selection::stock(),
         }
     }
 }

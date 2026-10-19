@@ -306,6 +306,8 @@ enum MeshFixture {
 
 #[derive(Clone, Copy)]
 enum PolygonFixture {
+    /// The stock rule (the Face default, P4.2).
+    Stock,
     Standard,
     Drill,
     ProjectCurve,
@@ -427,7 +429,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
             op: OperationConfig::new_default(OperationType::Face),
             tool_type: ToolType::EndMill,
             mesh: None,
-            polygons: None,
+            polygons: Some(PolygonFixture::Stock),
             expected_kinds: depth_expected.clone(),
             forbidden_kinds: Vec::new(),
             expected_label_fragments: vec!["Depth pass", "Run"],
@@ -803,6 +805,7 @@ fn face_produces_output() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
+        selection: SelectionInputs::stock(&bbox),
         ..ExecutionContext::new(
             &findings,
             &tool_def,
@@ -884,6 +887,7 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
             None => None,
         };
         let selection = match case.polygons {
+            Some(PolygonFixture::Stock) => SelectionInputs::stock(&bbox),
             Some(PolygonFixture::Standard) => SelectionInputs::from_polygons(&standard_polygons),
             Some(PolygonFixture::Drill) => drill_points(&[[25.0, 25.0], [55.0, 55.0]]),
             Some(PolygonFixture::ProjectCurve) => {

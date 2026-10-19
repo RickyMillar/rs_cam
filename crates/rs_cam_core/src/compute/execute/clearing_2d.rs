@@ -708,46 +708,107 @@ impl LayeredOp for ProfilePass<'_> {
     }
 }
 
-/// Face family adapter (W3.3): [`FacePass`] on the Layered runner. The one
-/// outline is the facing rectangle of the stock, and the ladder is the one
-/// Face ladder (`ops::face::face_levels`), so the depth-run spans now snap
-/// to real levels (D7). The runner polls the cancel per level (pinned by
+/// Face family adapter (W3.3): [`FacePass`] on the Layered runner. The
+/// outlines are the regions of the op selection (geometry selection P4.2),
+/// and the ladder is the one Face ladder (`ops::face::face_levels`), so the
+/// depth-run spans snap to real levels (D7). The runner polls the cancel
+/// per level (pinned by
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+///
+/// The default selection is the stock outline (decision D5). The stock
+/// region becomes the facing rectangle: the stock XY bounds grown by
+/// `stock_offset`, as before P4.2. Any other region is faced inside its
+/// outline: the tool stays inside it, as in a pocket (ruling O-3).
 ///
 /// F-028: the ladder anchors at `heights.top_z`, which under Auto follows
 /// `ctx.stock_top_z`. An identity setup lands at the world stock top and a
 /// non-identity setup at the local stock top, both in the frame the
-/// toolpath is stamped into.
+/// toolpath is stamped into. A picked face moves an Auto top to the face
+/// (the 2.5D rule of the session).
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Face, "generate_face");
-    let rect = crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset);
-    let lattice =
-        crate::ops::face::FaceLattice::of_rect(&rect, ctx.tool_def.radius(), cfg.stepover);
+    let regions = prepared.regions()?;
+    let tool_radius = ctx.tool_def.radius();
+    let outlines: Vec<Polygon2> = regions
+        .as_slice()
+        .iter()
+        .enumerate()
+        .map(|(index, region)| {
+            if regions.is_stock(index) {
+                // The stock region is the facing rectangle, as before
+                // P4.2. It ignores the holes of the region (drawing rings
+                // inside the stock): Face levels the whole stock top.
+                crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset)
+            } else {
+                region.clone()
+            }
+        })
+        .collect();
+    let lattices = outlines
+        .iter()
+        .map(|outline| crate::ops::face::FaceLattice::of_rect(outline, tool_radius, cfg.stepover))
+        .collect();
     let pass = FacePass {
         cfg,
         rest_use: op.capabilities().rest_use,
-        rect,
-        lattice,
+        outlines,
+        lattices,
         feeds: LayerFeeds::new(ctx, op),
     };
     run_layered(&pass, ctx, prepared)
 }
 
-/// The Face op: the scan rows of the facing rectangle (or of its rest
+/// The Face op: the scan rows of each facing outline (or of its rest
 /// pieces), cut at each level of the Face ladder.
 struct FacePass<'a> {
     cfg: &'a crate::compute::operation_configs::FaceConfig,
     rest_use: RestUse,
-    /// The facing rectangle: the stock XY bounds grown by `stock_offset`.
-    rect: Polygon2,
-    /// The rows of the whole rectangle. A rest piece cuts only on them
-    /// (B8), so a rest row never reaches past a fresh row.
-    lattice: Option<crate::ops::face::FaceLattice>,
+    /// The facing outlines: the stock rectangle grown by `stock_offset`,
+    /// and each other region of the selection as it is.
+    outlines: Vec<Polygon2>,
+    /// The rows of each whole outline, by index. A rest piece or an
+    /// obstacle piece cuts only on the rows of its outline (B8), so a rest
+    /// row never reaches past a fresh row.
+    lattices: Vec<Option<crate::ops::face::FaceLattice>>,
     feeds: LayerFeeds,
+}
+
+impl FacePass<'_> {
+    /// The lattice of the whole outline that `outline` comes from. The
+    /// runner can give a piece of an outline (the obstacle clip), so with
+    /// more than one outline the piece takes the smallest outline whose
+    /// box holds the box of the piece. With one outline, every piece takes
+    /// its lattice (the facing rectangle before P4.2).
+    fn lattice_for(
+        &self,
+        outline: &Polygon2,
+        tool_radius: f64,
+    ) -> Option<crate::ops::face::FaceLattice> {
+        if let [only] = self.lattices.as_slice() {
+            return *only;
+        }
+        const BOX_EPS_MM: f64 = 1e-9;
+        let [x0, y0, x1, y1] = outline.bbox();
+        self.outlines
+            .iter()
+            .zip(&self.lattices)
+            .filter(|(whole, _)| {
+                let [wx0, wy0, wx1, wy1] = whole.bbox();
+                wx0 <= x0 + BOX_EPS_MM
+                    && wy0 <= y0 + BOX_EPS_MM
+                    && wx1 >= x1 - BOX_EPS_MM
+                    && wy1 >= y1 - BOX_EPS_MM
+            })
+            .min_by(|(a, _), (b, _)| a.area().total_cmp(&b.area()))
+            .map_or_else(
+                || crate::ops::face::FaceLattice::of_rect(outline, tool_radius, self.cfg.stepover),
+                |(_, lattice)| *lattice,
+            )
+    }
 }
 
 impl LayeredOp for FacePass<'_> {
@@ -759,7 +820,9 @@ impl LayeredOp for FacePass<'_> {
         self.cfg.depth_per_pass
     }
 
-    /// One outline, so the order changes nothing.
+    /// Region-first: each outline goes to full depth before the next. With
+    /// the stock default there is one outline, so the order changes
+    /// nothing.
     fn region_ordering(&self) -> RegionOrdering {
         RegionOrdering::ByArea
     }
@@ -781,7 +844,7 @@ impl LayeredOp for FacePass<'_> {
     where
         Polygon2: 'p,
     {
-        Ok(std::borrow::Cow::Borrowed(std::slice::from_ref(&self.rect)))
+        Ok(std::borrow::Cow::Borrowed(self.outlines.as_slice()))
     }
 
     /// The Face ladder of the config, from `heights.top_z`. Face does not
@@ -801,7 +864,7 @@ impl LayeredOp for FacePass<'_> {
             layer.tool_radius,
             self.cfg.stepover,
             self.cfg.direction,
-            self.lattice,
+            self.lattice_for(layer.outline, layer.tool_radius),
         );
         Ok((lines, OffsetFailures(failures)))
     }

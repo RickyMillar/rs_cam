@@ -1180,11 +1180,10 @@ fn add_op_menu_item(
     use crate::state::toolpath::GeometryRequirement;
 
     let spec = op.spec();
-    // Pin Drill reads items, but it runs with no model (its holes are the
-    // stock pins): `is_stock_based` says so.
+    // Face and Pin Drill read items, but they run with no model (the stock
+    // outline, the stock pins): `is_stock_based` says so.
     let available = op.is_stock_based()
         || match spec.geometry {
-            GeometryRequirement::Stock => true,
             GeometryRequirement::Items => has_polygons,
             GeometryRequirement::Mesh => has_mesh,
             GeometryRequirement::ItemsAndMesh => has_polygons && has_mesh,
@@ -1205,7 +1204,6 @@ fn add_op_menu_item(
             GeometryRequirement::Items => "Requires 2D geometry (SVG/DXF)",
             GeometryRequirement::Mesh => "Requires 3D mesh (STL/STEP)",
             GeometryRequirement::ItemsAndMesh => "Requires both 2D curves and 3D mesh",
-            GeometryRequirement::Stock => "",
         };
         ui.add_enabled(false, egui::Button::new(spec.label))
             .on_disabled_hover_text(format!("{}\n{}", spec.description, reason));

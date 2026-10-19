@@ -513,7 +513,8 @@ pub(super) fn draw_geometry_wiring(
 
     // Face selection (STEP models only). Geometry selection P2.6: a face
     // pick is a pick of the op selection, so an op that holds no selection
-    // (Face, a 3D op) shows no face picker.
+    // (a 3D op) shows no face picker. P4.2: the Face op holds one, so it
+    // shows the picker.
     if model_has_enriched && let Some(selection) = entry.operation.selection() {
         ui.add_space(8.0);
         ui.label(

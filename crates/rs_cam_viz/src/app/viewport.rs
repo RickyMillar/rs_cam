@@ -216,7 +216,7 @@ impl RsCamApp {
                 // A face pick is a `MatchKey` pick (P2.6). The key comes
                 // from the Face item of the face; a face that is not flat
                 // has no item and is named. P4.1: an op with no selection
-                // slot (Face, a 3D op) takes the pick in its boundary
+                // slot (a 3D op) takes the pick in its boundary
                 // selection. A boundary that is not a selection refuses in
                 // `pick_edit`, and the controller names it (L-8: a notice,
                 // no edit).
