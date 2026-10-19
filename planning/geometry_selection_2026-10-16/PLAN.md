@@ -353,6 +353,27 @@ The lead approves `P4_DESIGN.md` and takes L-1 to L-12 as it recommends
   imports 3.78 times too large today, the lead reports it to the operator
   as a live defect before any fix. The fix choice goes to the operator.
 
+## P4.0 SVG probe facts (2026-10-19), for the operator
+
+Every door (GUI, MCP, CLI, project file) reads SVG through one function,
+`io::load_geometry` -> `load_svg(path, 0.1, 1.0)`, so the doors agree.
+
+| Input | Size (mm) |
+|---|---|
+| `width="100mm" viewBox="0 0 100 50"`, 100 x 50 rect | 100 x 50 |
+| `width="100"` (no units), no viewBox | 100 x 50 |
+| `width="100mm"`, no viewBox | 100 x 50 |
+| as row 1, rect in `<g transform="translate(10,5) scale(2)">` | 100 x 50 at (0,0): the transform is LOST |
+| `width="100mm"`, viewBox in px (`0 0 377.95 188.98`) | 377.95 x 188.98 (3.78 x too large) |
+
+- Cause: the door reads `path.data()` and never applies `abs_transform()`.
+  So it takes raw viewBox units as mm and ignores `width`/`height` and
+  every group transform. A modern Inkscape file (mm viewBox, no group
+  transforms) imports at 1:1.
+- The comment at `io/svg_input.rs:7-15` ("coordinates are px") is wrong.
+- Open for the operator: the fix (apply the full transform and honour the
+  declared physical size is the lead recommendation). Nothing is changed.
+
 ## Status
 
 | Phase | State | Commits | Notes |
@@ -361,7 +382,7 @@ The lead approves `P4_DESIGN.md` and takes L-1 to L-12 as it recommends
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | design approved; P4.0 probe + P4.1 running | | P4_DESIGN.md items P4.1-P4.10 |
+| P4 UI + sources | P4.0 probe, P4.1 done; paused for the tech-debt audit | 1ca93935 | next: P4.2 Face op onto items, P4.3 Selection section; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
