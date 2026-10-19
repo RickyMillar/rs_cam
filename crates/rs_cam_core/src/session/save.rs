@@ -207,6 +207,7 @@ impl ProjectSession {
                 kind: m.kind,
                 units: m.units,
                 import: m.import_options,
+                drawing_edits: m.drawing.edits().to_vec(),
             })
             .collect();
 

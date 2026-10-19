@@ -233,6 +233,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let operation = OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,

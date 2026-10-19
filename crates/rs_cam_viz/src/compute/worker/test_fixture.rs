@@ -263,6 +263,7 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     // The source toolpath first, so the operation under test is the one

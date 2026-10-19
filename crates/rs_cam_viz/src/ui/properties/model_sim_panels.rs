@@ -184,13 +184,17 @@ pub(super) fn draw_model_properties(
         ui.add_space(8.0);
         crate::ui::components::SectionHeader::new("Import").show(ui);
         let current = model.units.unwrap_or(ModelUnits::Millimeters);
-        if let Some(units) =
-            crate::ui::import_modal::units_row(ui, egui::Id::new(("model_units_row", id)), current)
-        {
+        if let Some(units) = crate::ui::import_modal::units_row(
+            ui,
+            &mut state.panels.number_drafts,
+            egui::Id::new(("model_units_row", id)),
+            current,
+        ) {
             events.push(AppEvent::RescaleModel(id, units));
         }
         if let Some(options) = crate::ui::import_modal::join_row(
             ui,
+            &mut state.panels.number_drafts,
             egui::Id::new(("model_join_tolerance", id)),
             model.import_options,
         ) {
@@ -199,6 +203,11 @@ pub(super) fn draw_model_properties(
         DataTable::new(("model_import_report", id))
             .row(crate::ui::import_modal::report_row(report))
             .show(ui);
+    }
+
+    // P4.9: the open shapes of a drawing and the edit ledger.
+    if model.items.has_drawing() || !model.drawing.edits().is_empty() {
+        draw_open_shapes(ui, id, model, &mut state.panels, events);
     }
 
     // Expert-grade internals — mesh counts, BREP topology, polygon listing —
@@ -293,6 +302,222 @@ pub(super) fn draw_model_properties(
             table.show(ui);
         });
     }
+}
+
+/// The most open paths the "Open shapes" section lists one by one. A
+/// drawing of text strokes can have hundreds; "Join all within" acts on
+/// every one of them.
+const OPEN_SHAPE_ROWS: usize = 12;
+
+/// The "Open shapes" section of a drawing (geometry selection P4.9): each
+/// open path with "Show me" and its two close acts, "Join all within", and
+/// the ledger in one closed `Details` with a Remove per edit. Every act is
+/// one `EditModelDrawing` event. The rows read core's `open_shapes`, the
+/// list MCP `inspect_model` gives.
+fn draw_open_shapes(
+    ui: &mut egui::Ui,
+    id: crate::state::job::ModelId,
+    model: &rs_cam_core::session::LoadedModel,
+    panels: &mut crate::state::panels::PanelDrafts,
+    events: &mut Vec<AppEvent>,
+) {
+    use crate::ui::components::{Button, Details};
+    use crate::ui::tokens;
+    use rs_cam_core::selection::DrawingEdit;
+    use rs_cam_core::session::LedgerEdit;
+
+    let open = rs_cam_core::selection::open_shapes(&model.items);
+    // The ledger stores file units; the panel shows model mm.
+    let edits = model.drawing.edits_in_model_mm(model.drawing_scale());
+    if open.is_empty() && edits.is_empty() {
+        return;
+    }
+    let send = |events: &mut Vec<AppEvent>, edit: LedgerEdit| {
+        events.push(AppEvent::EditModelDrawing { model_id: id, edit });
+    };
+    ui.add_space(8.0);
+    crate::ui::components::SectionHeader::new("Open shapes")
+        .trailing(format!("{} open", open.len()))
+        .hover(
+            "The open paths of the drawing. An import never closes a gap by itself. \
+             Close a path or join paths here; the project keeps each act and does it \
+             again after a reload.",
+        )
+        .show(ui);
+    for shape in open.iter().take(OPEN_SHAPE_ROWS) {
+        let layer = shape
+            .layer
+            .as_deref()
+            .map_or_else(|| "Path".to_owned(), |l| format!("Path on layer {l}"));
+        let face = format!(
+            "{layer}, {:.2} mm, gap {:.2} mm",
+            shape.length_mm, shape.gap_mm
+        );
+        let hover = format!(
+            "An open path that starts at ({:.3}, {:.3}). The gap is the distance from its end \
+             to its start.",
+            shape.key.anchor[0], shape.key.anchor[1]
+        );
+        if super::selection_section::line_with_actions(
+            ui,
+            "",
+            &face,
+            tokens::CAUTION,
+            &hover,
+            &[(
+                super::selection_section::SHOW_ME,
+                "Frame this path in the viewport.",
+            )],
+        ) == Some(0)
+        {
+            events.push(AppEvent::FrameModelItems {
+                model_id: id,
+                keys: vec![shape.key.clone()],
+            });
+        }
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    Button::quiet(format!("Close with line ({:.2} mm)", shape.gap_mm))
+                        .enabled(shape.can_close_with_line),
+                )
+                .on_hover_text("Add a straight line from the end of the path to its start.")
+                .clicked()
+            {
+                send(
+                    events,
+                    LedgerEdit::Add(DrawingEdit::CloseWithLine {
+                        path: shape.key.clone(),
+                    }),
+                );
+            }
+            if ui
+                .add(Button::quiet("Move ends together").enabled(shape.can_move_ends_together))
+                .on_hover_text(
+                    "Move the end point of the path onto its start point. No line is added.",
+                )
+                .clicked()
+            {
+                send(
+                    events,
+                    LedgerEdit::Add(DrawingEdit::MoveEndsTogether {
+                        path: shape.key.clone(),
+                    }),
+                );
+            }
+        });
+    }
+    if open.len() > OPEN_SHAPE_ROWS {
+        ui.add(
+            crate::ui::components::OneLine::new(format!(
+                "{} more open paths",
+                open.len() - OPEN_SHAPE_ROWS
+            ))
+            .color(tokens::TEXT_BODY),
+        );
+    }
+    if !open.is_empty() {
+        let committed = panels
+            .join_all_mm
+            .unwrap_or(crate::state::panels::DEFAULT_JOIN_ALL_MM);
+        if let Some(value) = crate::ui::import_modal::committed_number(
+            ui,
+            &mut panels.number_drafts,
+            egui::Id::new(("model_join_all", id)),
+            crate::ui::import_modal::NumberField {
+                label: "Join tolerance",
+                suffix: " mm",
+                speed: 0.01,
+                range: 0.0001..=100.0,
+                hover: "Open path ends closer than this join, on one layer. A path whose \
+                        ends meet closes. The value is in mm of the model.",
+            },
+            committed,
+        ) {
+            panels.join_all_mm = Some(value);
+        }
+        let tolerance_mm = panels
+            .join_all_mm
+            .unwrap_or(crate::state::panels::DEFAULT_JOIN_ALL_MM);
+        if ui
+            .add(Button::quiet(format!(
+                "Join all within {tolerance_mm:.2} mm"
+            )))
+            .on_hover_text(
+                "Join the open paths of each layer whose ends meet within the tolerance.",
+            )
+            .clicked()
+        {
+            send(
+                events,
+                LedgerEdit::Add(DrawingEdit::JoinWithin {
+                    layer: None,
+                    tolerance_mm,
+                }),
+            );
+        }
+    }
+    if edits.is_empty() {
+        return;
+    }
+    // A lost edit shows as a lost pick does: one DANGER line with Remove,
+    // outside the closed details (it is never skipped in silence).
+    let outcomes = model.drawing.outcomes();
+    let lost_of = |index: usize| {
+        outcomes
+            .iter()
+            .find(|o| o.edit == index)
+            .and_then(|o| o.result.as_ref().err())
+    };
+    for (index, edit) in edits.iter().enumerate() {
+        let Some(why) = lost_of(index) else {
+            continue;
+        };
+        if super::selection_section::line_with_actions(
+            ui,
+            "",
+            &format!("Edit {} does not apply: {}", index + 1, why.label()),
+            tokens::DANGER,
+            &format!(
+                "{}. The edit is kept; after a re-import its path is gone or changed. \
+                 Remove it, or import the drawing again.",
+                edit.label()
+            ),
+            &[("Remove", "Remove this edit from the drawing.")],
+        ) == Some(0)
+        {
+            send(events, LedgerEdit::Remove(index));
+        }
+    }
+    let lost = model.drawing.lost_count();
+    let summary = if lost > 0 {
+        format!("{} edits stored ({lost} lost)", edits.len())
+    } else {
+        format!("{} edits stored", edits.len())
+    };
+    Details::new(("model_drawing_ledger", id))
+        .count(edits.len())
+        .show(ui, |ui| {
+            ui.add(crate::ui::components::OneLine::new(summary).color(tokens::TEXT_BODY));
+            for (index, edit) in edits.iter().enumerate() {
+                let color = if lost_of(index).is_some() {
+                    tokens::DANGER
+                } else {
+                    tokens::TEXT_BODY
+                };
+                if super::selection_section::line_with_actions(
+                    ui,
+                    "",
+                    &format!("{}. {}", index + 1, edit.label()),
+                    color,
+                    "One stored act. Remove it to undo its effect; the edits after it run again.",
+                    &[("Remove", "Remove this edit from the drawing.")],
+                ) == Some(0)
+                {
+                    send(events, LedgerEdit::Remove(index));
+                }
+            }
+        });
 }
 
 pub(super) fn draw_simulation_panel(

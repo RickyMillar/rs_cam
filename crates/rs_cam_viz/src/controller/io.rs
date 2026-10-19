@@ -304,6 +304,67 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
+    /// One change of the edit ledger of a drawing (geometry selection
+    /// P4.9): the model panel, the viewport popover and the undo arms call
+    /// it. One `EditModelDrawing` command; the GUI stamps `Effects.stale`
+    /// and clears the simulation as the refresh doors do.
+    ///
+    /// `record_undo` pushes one `ModelDrawingEdits` step with the ledger
+    /// before and after (an undo and a redo pass `false`). A refusal (a
+    /// cross-layer join, a lost key) changes nothing and pushes nothing.
+    pub fn edit_drawing_ledger(
+        &mut self,
+        model_id: ModelId,
+        edit: rs_cam_core::session::LedgerEdit,
+    ) -> Result<(), VizError> {
+        self.apply_model_drawing_edit(model_id, edit, true)
+    }
+
+    pub(crate) fn apply_model_drawing_edit(
+        &mut self,
+        model_id: ModelId,
+        edit: rs_cam_core::session::LedgerEdit,
+        record_undo: bool,
+    ) -> Result<(), VizError> {
+        let ledger = |state: &crate::state::AppState| {
+            state
+                .session
+                .models()
+                .iter()
+                .find(|m| m.id == model_id.0)
+                .map(|m| m.drawing.edits().to_vec())
+        };
+        let before = ledger(&self.state).unwrap_or_default();
+        let effects = self
+            .state
+            .session
+            .apply(Command::EditModelDrawing(
+                rs_cam_core::session::EditModelDrawingArgs {
+                    model_id: model_id.0,
+                    edit,
+                },
+            ))
+            .map_err(|error| VizError::Other(error.to_string()))?;
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        if effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
+        let after = ledger(&self.state).unwrap_or_default();
+        if record_undo && before != after {
+            self.state
+                .history
+                .push(crate::state::history::UndoAction::ModelDrawingEdits {
+                    model_id,
+                    before,
+                    after,
+                });
+        }
+        self.state.panels.drawing_popover = None;
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
+        Ok(())
+    }
+
     pub fn reload_model(&mut self, model_id: ModelId) -> Result<(), VizError> {
         let Some(model) = self
             .state

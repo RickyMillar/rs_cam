@@ -96,6 +96,7 @@ fn empty_model(name: &str) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

@@ -161,6 +161,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let tp_config = ToolpathConfig {
         shoe: Default::default(),

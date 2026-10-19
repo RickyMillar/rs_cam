@@ -579,6 +579,102 @@ pub fn selection_frame_bounds(
     })
 }
 
+/// The display frame of a selected model (geometry selection P4.9): the
+/// frame `state::pin_view::active_display_setup` gives a model selection.
+fn model_display_frame(session: &ProjectSession, model_id: ModelId) -> Option<SetupFrame> {
+    crate::state::pin_view::active_display_setup(
+        session,
+        &crate::state::selection::Selection::Model(model_id),
+    )
+    .map(|(frame, _)| frame)
+}
+
+/// "Show me" of an open shape (geometry selection P4.9): the box of the
+/// items `keys` of the model `model_id`, where the viewport draws a
+/// selected model. `None` when no key names an item of the model.
+#[must_use]
+pub fn model_items_bounds(
+    session: &ProjectSession,
+    model_id: ModelId,
+    keys: &[rs_cam_core::selection::MatchKey],
+) -> Option<BoundingBox3> {
+    let model = session.models().iter().find(|m| m.id == model_id.0)?;
+    let stock = session.stock_config();
+    let frame = model_display_frame(session, model_id);
+    let z = drawing_display_z(frame.as_ref(), stock);
+    let points: Vec<P2> = keys
+        .iter()
+        .filter_map(|key| {
+            model
+                .items
+                .iter()
+                .find(|i| key.names_same_geometry(i.key()))
+        })
+        .flat_map(|item| item.shape().pick_lines())
+        .flat_map(|(pts, _)| pts.iter().copied())
+        .map(|p| item_display_xy(frame.as_ref(), stock, p))
+        .collect();
+    let first = points.first()?;
+    let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x, first.y);
+    for p in &points {
+        x0 = x0.min(p.x);
+        y0 = y0.min(p.y);
+        x1 = x1.max(p.x);
+        y1 = y1.max(p.y);
+    }
+    Some(BoundingBox3 {
+        min: P3::new(x0, y0, z),
+        max: P3::new(x1, y1, z),
+    })
+}
+
+/// The open path of the model `model_id` under the pointer (geometry
+/// selection P4.9, the viewport popover): the nearest one within
+/// [`PICK_THRESHOLD_TOOLPATH`] px, tested where the viewport draws a
+/// selected model. `None` when no open path is near.
+#[must_use]
+pub fn pick_open_path(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    model_id: ModelId,
+) -> Option<rs_cam_core::selection::MatchKey> {
+    let model = session.models().iter().find(|m| m.id == model_id.0)?;
+    let stock = session.stock_config();
+    let frame = model_display_frame(session, model_id);
+    let z = drawing_display_z(frame.as_ref(), stock);
+    let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
+    let mut best: Option<(f64, &rs_cam_core::selection::MatchKey)> = None;
+    for item in model.items.iter().filter(|i| i.kind() == ItemKind::Path) {
+        let distance = item
+            .shape()
+            .pick_lines()
+            .into_iter()
+            .map(|(pts, closed)| {
+                let projected: Vec<[f64; 2]> = pts
+                    .iter()
+                    .filter_map(|p| {
+                        let q = item_display_xy(frame.as_ref(), stock, *p);
+                        ctx.camera
+                            .project_to_screen(
+                                [q.x as f32, q.y as f32, z as f32],
+                                ctx.aspect,
+                                ctx.vw,
+                                ctx.vh,
+                            )
+                            .map(|s| [f64::from(s[0]), f64::from(s[1])])
+                    })
+                    .collect();
+                rs_cam_core::selection::polyline_distance(pointer, projected, closed)
+            })
+            .fold(f64::INFINITY, f64::min);
+        if distance <= f64::from(PICK_THRESHOLD_TOOLPATH) && best.is_none_or(|(b, _)| distance < b)
+        {
+            best = Some((distance, item.key()));
+        }
+    }
+    best.map(|(_, key)| key.clone())
+}
+
 /// The setup frame of the toolpath `id`, or `None` when no setup owns it.
 #[must_use]
 pub fn toolpath_setup_frame(session: &ProjectSession, id: ToolpathId) -> Option<SetupFrame> {

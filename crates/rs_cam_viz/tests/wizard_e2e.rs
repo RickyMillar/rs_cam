@@ -130,6 +130,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     // One toolpath with a couple of feed moves so the emitter has

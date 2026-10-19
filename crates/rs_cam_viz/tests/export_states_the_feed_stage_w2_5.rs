@@ -137,6 +137,7 @@ fn pocket_session() -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let pocket = PocketConfig {
         ramp_feed_rate: None,

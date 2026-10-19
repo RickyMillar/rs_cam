@@ -15,7 +15,7 @@ Every door that reads a file. The entry point is `io::load_model_file`.
 
 ## Invariants
 
-- An import states its units and its `ImportOptions`. A reload, rescale and relink pass both.
+- An import states its units and its `ImportOptions`. A reload, rescale and relink pass both. P4.9: the project door replays the edit ledger after the door, on the bound items (`LoadedModel::with_drawing_edits`); the ledger is in the file units of the join tolerance.
   The SVG door reads raw user units as mm and drops group transforms (P4.0; O-2 open).
 - A model path is stored as written and resolved on load. A rebind goes
   through the session command, not through a path edit here.
@@ -30,7 +30,7 @@ Every door that reads a file. The entry point is `io::load_model_file`.
 
 - `cargo test -p rs_cam_core -q --test step_import --test every_import_door_gives_items_p2_1`
 - `cargo test -p rs_cam_core -q --test every_import_door_refuses_an_oversized_file_edg03`
-- `cargo test -p rs_cam_core -q --test step_project_load --test model_units_survive_reload_g_unitsreload --test import_reports_joins_and_open_shapes_p4_8`
+- `cargo test -p rs_cam_core -q --test step_project_load --test model_units_survive_reload_g_unitsreload --test import_reports_joins_and_open_shapes_p4_8 --test drawing_edits_replay_on_reimport_p4_9`
 - `cargo test -p rs_cam_core -q --test drill_picks_resolve_to_targets_g_drillpickstale`
 - `cargo test -p rs_cam_core -q --test model_path_round_trip_g_modelrelink`
 

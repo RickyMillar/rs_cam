@@ -11,7 +11,7 @@ use rs_cam_core::io::ImportOptions;
 use rs_cam_core::io::svg_input::SvgDeclaredSize;
 
 use crate::state::AppState;
-use crate::state::panels::ImportDialog;
+use crate::state::panels::{ImportDialog, NumberDrafts};
 use crate::ui::AppEvent;
 use crate::ui::components::{DataRow, DataTable, Role};
 
@@ -47,16 +47,17 @@ pub struct NumberField<'a> {
 }
 
 /// A number field that reports a value only when the operator commits it:
-/// at the end of a drag, or when the text field loses focus. The draft
-/// lives in egui memory under `id`, so a value is not read again on each
-/// keystroke (a read of a large file takes time).
+/// at the end of a drag, or when the text field loses focus. The value in
+/// flight lives in `drafts` (on `AppState`, ui09) under `id`, so a value is
+/// not read again on each keystroke (a read of a large file takes time).
 pub fn committed_number(
     ui: &mut egui::Ui,
+    drafts: &mut NumberDrafts,
     id: egui::Id,
     field: NumberField<'_>,
     committed: f64,
 ) -> Option<f64> {
-    let mut draft: f64 = ui.data(|d| d.get_temp(id)).unwrap_or(committed);
+    let mut draft: f64 = drafts.get(&id).copied().unwrap_or(committed);
     let outcome = crate::ui::components::ValueRow::new(
         field.label,
         &mut draft,
@@ -70,16 +71,21 @@ pub fn committed_number(
     let done = response.drag_stopped() || response.lost_focus();
     let active = response.dragged() || response.has_focus();
     if active {
-        ui.data_mut(|d| d.insert_temp(id, draft));
+        drafts.insert(id, draft);
     } else {
-        ui.data_mut(|d| d.remove::<f64>(id));
+        drafts.remove(&id);
     }
     (done && (draft - committed).abs() > f64::EPSILON).then_some(draft)
 }
 
 /// The scale row: a units preset or a custom factor. Returns the units the
 /// operator chose this frame.
-pub fn units_row(ui: &mut egui::Ui, id: egui::Id, current: ModelUnits) -> Option<ModelUnits> {
+pub fn units_row(
+    ui: &mut egui::Ui,
+    drafts: &mut NumberDrafts,
+    id: egui::Id,
+    current: ModelUnits,
+) -> Option<ModelUnits> {
     let mut chosen = None;
     ui.horizontal(|ui| {
         crate::ui::components::value_row::label_cell(ui, "Scale");
@@ -97,6 +103,7 @@ pub fn units_row(ui: &mut egui::Ui, id: egui::Id, current: ModelUnits) -> Option
     });
     if let Some(scale) = committed_number(
         ui,
+        drafts,
         id.with("custom"),
         NumberField {
             label: "Custom scale",
@@ -114,9 +121,15 @@ pub fn units_row(ui: &mut egui::Ui, id: egui::Id, current: ModelUnits) -> Option
 
 /// The join tolerance row. Returns the new options when the operator
 /// commits a value.
-pub fn join_row(ui: &mut egui::Ui, id: egui::Id, current: ImportOptions) -> Option<ImportOptions> {
+pub fn join_row(
+    ui: &mut egui::Ui,
+    drafts: &mut NumberDrafts,
+    id: egui::Id,
+    current: ImportOptions,
+) -> Option<ImportOptions> {
     committed_number(
         ui,
+        drafts,
         id,
         NumberField {
             label: "Join gaps up to",
@@ -160,20 +173,27 @@ pub fn report_row(report: &rs_cam_core::io::ImportReport) -> DataRow {
 }
 
 /// Draw the import dialog when it is open.
-pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
-    let Some(dialog) = state.panels.import_dialog.as_ref() else {
+pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    let panels = &mut state.panels;
+    let Some(dialog) = panels.import_dialog.as_ref() else {
         return;
     };
+    let drafts = &mut panels.number_drafts;
     let response = egui::Modal::new(egui::Id::new("import_drawing_dialog")).show(ctx, |ui| {
         ui.set_max_width(460.0);
-        draw_body(ui, dialog, events);
+        draw_body(ui, dialog, drafts, events);
     });
     if response.should_close() {
         events.push(AppEvent::ImportDialogCancel);
     }
 }
 
-fn draw_body(ui: &mut egui::Ui, dialog: &ImportDialog, events: &mut Vec<AppEvent>) {
+fn draw_body(
+    ui: &mut egui::Ui,
+    dialog: &ImportDialog,
+    drafts: &mut NumberDrafts,
+    events: &mut Vec<AppEvent>,
+) {
     let name = dialog
         .path
         .file_name()
@@ -204,7 +224,7 @@ fn draw_body(ui: &mut egui::Ui, dialog: &ImportDialog, events: &mut Vec<AppEvent
     let mut units = dialog.units;
     let mut options = dialog.options;
     let mut edited = false;
-    if let Some(chosen) = units_row(ui, id.with("units"), dialog.units) {
+    if let Some(chosen) = units_row(ui, drafts, id.with("units"), dialog.units) {
         units = chosen;
         edited = true;
     }
@@ -223,7 +243,7 @@ fn draw_body(ui: &mut egui::Ui, dialog: &ImportDialog, events: &mut Vec<AppEvent
     }
     table.show(ui);
 
-    if let Some(chosen) = join_row(ui, id.with("join"), dialog.options) {
+    if let Some(chosen) = join_row(ui, drafts, id.with("join"), dialog.options) {
         options = chosen;
         edited = true;
     }

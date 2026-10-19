@@ -151,6 +151,7 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     builder
         .add_toolpath(0, toolpath(0))

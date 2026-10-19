@@ -293,6 +293,7 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);

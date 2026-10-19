@@ -393,6 +393,7 @@ mod an_stl_face_click_p4_7 {
             load_error: None,
             import_options: Default::default(),
             import_report: None,
+            drawing: Default::default(),
         });
         let tc = ToolpathConfig {
             shoe: Default::default(),

@@ -325,6 +325,12 @@ impl RsCamApp {
         if self.handle_pick_mode_click(click_pos, shift) {
             return;
         }
+        // P4.9: a click closes an open popover; a click on an open path of
+        // the selected model opens one.
+        self.controller.state_mut().panels.drawing_popover = None;
+        if self.handle_drawing_popover_click(click_pos) {
+            return;
+        }
 
         if self.handle_simulation_semantic_pick(click_pos) {
             return;
@@ -1066,6 +1072,117 @@ impl RsCamApp {
                 self.draw_semantic_item_overlay(ui, rect, label, bbox);
             }
         }
+        self.draw_drawing_popover(ui);
+    }
+
+    /// The popover of an open path (geometry selection P4.9): the two close
+    /// acts of the model panel at the click. Each button sends the same
+    /// `EditModelDrawing` event as the panel. The popover closes on an act,
+    /// on Escape, and on the next viewport click.
+    fn draw_drawing_popover(&mut self, ui: &egui::Ui) {
+        use rs_cam_core::selection::DrawingEdit;
+        use rs_cam_core::session::LedgerEdit;
+        let Some(popover) = self.controller.state().panels.drawing_popover.clone() else {
+            return;
+        };
+        let shape = self
+            .controller
+            .state()
+            .session
+            .models()
+            .iter()
+            .find(|m| m.id == popover.model_id.0)
+            .and_then(|m| {
+                rs_cam_core::selection::open_shapes(&m.items)
+                    .into_iter()
+                    .find(|s| s.key.names_same_geometry(&popover.key))
+            });
+        let selected = self.controller.state().selection == Selection::Model(popover.model_id);
+        let Some(shape) = shape.filter(|_| selected) else {
+            self.controller.state_mut().panels.drawing_popover = None;
+            return;
+        };
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.controller.state_mut().panels.drawing_popover = None;
+            return;
+        }
+        let mut edit = None;
+        egui::Area::new(egui::Id::new("drawing_popover"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(egui::pos2(popover.at[0], popover.at[1]))
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    let layer = shape
+                        .layer
+                        .as_deref()
+                        .map_or_else(|| "Open path".to_owned(), |l| format!("Open path on layer {l}"));
+                    ui.label(format!("{layer}, gap {:.2} mm", shape.gap_mm));
+                    if ui
+                        .add(
+                            crate::ui::components::Button::quiet(format!(
+                                "Close with line ({:.2} mm)",
+                                shape.gap_mm
+                            ))
+                            .enabled(shape.can_close_with_line),
+                        )
+                        .on_hover_text("Add a straight line from the end of the path to its start.")
+                        .clicked()
+                    {
+                        edit = Some(DrawingEdit::CloseWithLine {
+                            path: shape.key.clone(),
+                        });
+                    }
+                    if ui
+                        .add(
+                            crate::ui::components::Button::quiet("Move ends together")
+                                .enabled(shape.can_move_ends_together),
+                        )
+                        .on_hover_text(
+                            "Move the end point of the path onto its start point. No line is added.",
+                        )
+                        .clicked()
+                    {
+                        edit = Some(DrawingEdit::MoveEndsTogether {
+                            path: shape.key.clone(),
+                        });
+                    }
+                });
+            });
+        if let Some(edit) = edit {
+            self.controller.state_mut().panels.drawing_popover = None;
+            self.controller
+                .events_mut()
+                .push(AppEvent::EditModelDrawing {
+                    model_id: popover.model_id,
+                    edit: LedgerEdit::Add(edit),
+                });
+        }
+    }
+
+    /// A click on an open path of the selected model opens its popover
+    /// (geometry selection P4.9). Returns true when the click opened it.
+    fn handle_drawing_popover_click(&mut self, click_pos: egui::Pos2) -> bool {
+        let Selection::Model(model_id) = self.controller.state().selection else {
+            return false;
+        };
+        let key = {
+            let ctx = self.pick_context(click_pos);
+            crate::interaction::picking::pick_open_path(
+                &ctx,
+                &self.controller.state().session,
+                model_id,
+            )
+        };
+        let Some(key) = key else {
+            return false;
+        };
+        self.controller.state_mut().panels.drawing_popover =
+            Some(crate::state::panels::DrawingPopover {
+                model_id,
+                key,
+                at: [click_pos.x, click_pos.y],
+            });
+        true
     }
 
     /// Draw a small XYZ orientation gizmo in the top-right corner of the viewport.

@@ -85,6 +85,7 @@ fn mesh_seed() -> AppController<SilentBackend> {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     controller.state.session = builder.build();
     controller

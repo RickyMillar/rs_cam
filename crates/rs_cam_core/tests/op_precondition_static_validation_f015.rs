@@ -63,6 +63,7 @@ fn polygon_model(id: usize) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 
@@ -102,6 +103,7 @@ fn mesh_model(id: usize) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

@@ -401,6 +401,7 @@ fn fixture_session_2d() -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let ops: Vec<(&str, OperationConfig)> = vec![
@@ -567,6 +568,7 @@ fn fixture_session_3d() -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {

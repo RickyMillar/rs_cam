@@ -77,6 +77,15 @@ pub enum UndoAction {
         old: ShoeSetting,
         new: ShoeSetting,
     },
+    /// One change of the edit ledger of a drawing (geometry selection
+    /// P4.9): the whole ledger before and after. The undo writes `before`
+    /// through `EditModelDrawing` (`LedgerEdit::Replace`), so the model
+    /// replays it and its readers go stale.
+    ModelDrawingEdits {
+        model_id: super::job::ModelId,
+        before: Vec<rs_cam_core::selection::DrawingEdit>,
+        after: Vec<rs_cam_core::selection::DrawingEdit>,
+    },
 }
 
 /// Snapshot of toolpath state captured before a parameter edit drag.

@@ -73,6 +73,7 @@ pub fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 
@@ -92,6 +93,7 @@ pub fn polygon_model(polygons: Vec<Polygon2>, name: &str) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

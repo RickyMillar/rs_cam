@@ -98,6 +98,20 @@ pub enum AppEvent {
     ImportDialogCancel,
     /// Set the import options of a drawing model (P4.8, the model panel).
     SetModelImportOptions(ModelId, rs_cam_core::io::ImportOptions),
+    /// One change of the edit ledger of a drawing (P4.9): a join or a
+    /// close from the model panel or the viewport popover, a ledger row
+    /// Remove. One `EditModelDrawing` command and one undo step.
+    EditModelDrawing {
+        model_id: ModelId,
+        edit: rs_cam_core::session::LedgerEdit,
+    },
+    /// "Show me" of an open shape of a model (P4.9): frame these items of
+    /// the model in the viewport. The application handles it (it owns the
+    /// camera); it edits nothing.
+    FrameModelItems {
+        model_id: ModelId,
+        keys: Vec<rs_cam_core::selection::MatchKey>,
+    },
     RescaleModel(ModelId, crate::state::job::ModelUnits),
     RemoveModel(ModelId),
     ReloadModel(ModelId),

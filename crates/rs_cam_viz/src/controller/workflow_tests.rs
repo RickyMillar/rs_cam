@@ -117,6 +117,7 @@ fn step_model() -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 
@@ -134,6 +135,7 @@ fn stl_model() -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

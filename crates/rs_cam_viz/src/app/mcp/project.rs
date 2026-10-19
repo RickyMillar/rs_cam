@@ -351,6 +351,11 @@ impl RsCamApp {
             for key in ["import_options", "import_report"] {
                 map.insert(key.into(), import.get(key).cloned().unwrap_or_default());
             }
+            // P4.9: the open paths and the edit ledger with its outcomes.
+            let ledger = super::commands::drawing_ledger_json(model);
+            for key in ["open_shapes", "drawing_edits", "lost_edits"] {
+                map.insert(key.into(), ledger.get(key).cloned().unwrap_or_default());
+            }
 
             // Mesh-level stats (STL and STEP)
             if let Some(ref mesh) = model.mesh {

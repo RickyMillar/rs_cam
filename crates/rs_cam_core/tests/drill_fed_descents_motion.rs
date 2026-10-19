@@ -154,6 +154,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let op = OperationConfig::Drill(cfg.clone());

@@ -242,6 +242,9 @@ impl RsCamApp {
                     }
                 }
                 AppEvent::ExportSvgPreview => self.export_svg_preview(),
+                AppEvent::FrameModelItems { model_id, keys } => {
+                    let _ = self.frame_model_items(model_id, &keys);
+                }
                 AppEvent::FrameSelectionItems { toolpath_id, keys } => {
                     let now = ctx.input(|i| i.time);
                     let _ = self.frame_selection_items(toolpath_id, keys, now);

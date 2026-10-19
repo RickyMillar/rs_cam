@@ -183,6 +183,7 @@ fn polygon_model(
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

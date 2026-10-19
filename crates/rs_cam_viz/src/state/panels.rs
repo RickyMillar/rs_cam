@@ -184,6 +184,36 @@ pub struct PanelDrafts {
     /// The import dialog of a drawing (P4.8), when it is open. Cancel adds
     /// nothing; Import adds the model of the preview.
     pub import_dialog: Option<ImportDialog>,
+    /// The tolerance of the model panel's "Join all within" (P4.9), mm.
+    /// `None` until the operator sets it: the panel shows
+    /// [`DEFAULT_JOIN_ALL_MM`].
+    pub join_all_mm: Option<f64>,
+    /// The viewport popover of an open path (P4.9), while it is open.
+    pub drawing_popover: Option<DrawingPopover>,
+    /// The value in flight of each committed number field
+    /// (`ui::import_modal::committed_number`: the import dialog, the model
+    /// panel's scale, join tolerance and "Join all within"), by widget id,
+    /// while the field is dragged or has focus (ui09).
+    pub number_drafts: NumberDrafts,
+}
+
+/// The values in flight of the committed number fields, by widget id.
+pub type NumberDrafts = std::collections::HashMap<egui::Id, f64>;
+
+/// The first value of the model panel's "Join all within" field, mm: the
+/// value of the P4.9 panel sketch (`P4_DESIGN.md`, "P4.9").
+pub const DEFAULT_JOIN_ALL_MM: f64 = 0.5;
+
+/// The viewport popover of an open path of a drawing (geometry selection
+/// P4.9): a click on an open path of the selected model opens it at the
+/// click, with the two close acts of the model panel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawingPopover {
+    pub model_id: super::job::ModelId,
+    /// The key of the open path.
+    pub key: rs_cam_core::selection::MatchKey,
+    /// The screen point of the click.
+    pub at: [f32; 2],
 }
 
 /// The import dialog of a drawing, SVG or DXF (geometry selection P4.8).

@@ -601,6 +601,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let mut dressups = DressupConfig::for_op(OperationType::Pocket);
     dressups.entry_style = match style {

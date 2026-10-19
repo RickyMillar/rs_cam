@@ -335,7 +335,7 @@ fn line_with_action(
 
 /// [`line_with_action`] with several quiet buttons, in order. Returns the
 /// index of the clicked button.
-fn line_with_actions(
+pub(super) fn line_with_actions(
     ui: &mut egui::Ui,
     name: &str,
     text: &str,

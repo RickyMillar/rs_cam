@@ -186,6 +186,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let op_type = op.op_type();

@@ -63,10 +63,12 @@ use crate::ui_command::UiCommand;
 
 use super::RestAnalysisDials;
 
+mod drawing;
 mod import;
 mod obstacles;
 mod selection;
 mod stock_changes;
+pub(crate) use drawing::drawing_ledger_json;
 pub(crate) use import::model_import_json;
 pub(crate) use obstacles::obstacle_json;
 pub(crate) use selection::item_counts_json;
@@ -283,6 +285,19 @@ impl RsCamApp {
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::SetToolpathModel(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::EditToolpathSelection(p) => self.select_toolpath_for_mcp(p.index),
+            // P4.9: the model panel shows the ledger the edit writes.
+            CoreRequest::EditModelDrawing(p)
+                if self
+                    .controller
+                    .state()
+                    .session
+                    .models()
+                    .iter()
+                    .any(|m| m.id == p.model_id) =>
+            {
+                self.controller.state_mut().selection =
+                    Selection::Model(crate::state::job::ModelId(p.model_id));
+            }
             _ => {}
         }
     }
@@ -368,6 +383,7 @@ impl RsCamApp {
             CoreRequest::EditObstacle(p) => self.plan_edit_obstacle(&p, before),
             CoreRequest::RemoveObstacle(p) => self.plan_remove_obstacle(&p, before),
             CoreRequest::EditToolpathSelection(p) => self.plan_edit_selection(p, before),
+            CoreRequest::EditModelDrawing(p) => drawing::plan_edit_model_drawing(p, before),
             CoreRequest::RemoveAlignmentPin(p) => {
                 before.index = Some(p.index);
                 CorePlan::Apply(
@@ -1778,6 +1794,10 @@ impl RsCamApp {
                     "MCP: Read model {model_id} again with new import options"
                 ))
             }
+            CoreRequest::EditModelDrawing(p) => {
+                let model_id = p.model_id;
+                Some(format!("MCP: Edited the open paths of model {model_id}"))
+            }
             CoreRequest::SaveProject(_) => Some("MCP: Saved project".to_owned()),
             CoreRequest::SetToolpathParam(p) => {
                 let param = &p.param;
@@ -1936,6 +1956,7 @@ impl RsCamApp {
             },
             CommandId::AddModel
             | CommandId::AdoptModelGeometry
+            | CommandId::EditModelDrawing
             | CommandId::AddSetup
             | CommandId::RemoveSetup
             | CommandId::SetAlignmentPins
@@ -2895,6 +2916,30 @@ impl RsCamApp {
             // runs through the controller. It is not a wire MUTATION, which
             // is what this arm answers about. No MCP arm applies
             // `SetToolpathDebugOptions` (U4, 2026-10-01).
+            CommandId::EditModelDrawing => {
+                let stale = self.core_stale(&effects);
+                if effects.simulation_cleared {
+                    self.controller.invalidate_simulation();
+                }
+                self.controller.state_mut().gui.mark_edited();
+                self.controller.set_pending_upload();
+                let model_id = before.index();
+                let summary = self
+                    .controller
+                    .state()
+                    .session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == model_id)
+                    .map(drawing_ledger_json)
+                    .unwrap_or_default();
+                CoreReply::quiet(self.mcp_mutation_result(
+                    format!("Model {model_id} replayed its drawing edits"),
+                    summary,
+                    stale,
+                    &before.diagnostics,
+                ))
+            }
             CommandId::AdoptModelGeometry => {
                 let stale = self.core_stale(&effects);
                 if effects.simulation_cleared {

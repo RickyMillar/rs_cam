@@ -8,6 +8,7 @@
 //! moves the items into the setup frame, and [`view`] gives the items an
 //! op cuts or a [`SelectionRefusal`] (P2.2).
 
+pub mod drawing_edit;
 pub mod flat_regions;
 pub mod item;
 pub mod join;
@@ -22,6 +23,10 @@ pub mod view;
 #[cfg(test)]
 mod tests;
 
+pub use drawing_edit::{
+    DrawingEdit, DrawingLedger, EditEffect, EditLost, EditOutcome, OpenShape, apply_drawing_edits,
+    open_shapes,
+};
 pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
 pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};

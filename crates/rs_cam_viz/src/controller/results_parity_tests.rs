@@ -94,6 +94,7 @@ fn parity_controller() -> AppController<InertBackend> {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let tp_config = ToolpathConfig {
         shoe: Default::default(),

@@ -769,6 +769,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let model_id = session
         .apply(Command::AddModel(AddModelArgs {

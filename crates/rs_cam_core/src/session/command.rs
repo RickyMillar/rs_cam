@@ -208,6 +208,14 @@ macro_rules! for_each_command {
                      "the batch CLI imports each model once and never refreshes it",
                  ),
              }),
+            (Command, EditModelDrawing, "edit_model_drawing", EditModelDrawingArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the project file carries the edit ledger; the batch CLI replays it on load",
+                 ),
+             }),
             (Command, AddSetup, "add_setup", AddSetupArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -1297,6 +1305,35 @@ pub struct AdoptModelGeometryArgs {
     pub geometry: Box<super::LoadedModel>,
     /// The unit declaration to write, or `None` to keep the current one.
     pub units: Option<crate::compute::stock_config::ModelUnits>,
+}
+
+/// One change of the edit ledger of a drawing (geometry selection P4.9).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LedgerEdit {
+    /// Add an edit at the end of the ledger, in MODEL mm (keys from
+    /// `open_shapes` or `list_model_items`). The row converts it to the
+    /// file units of the ledger, and refuses an edit that does not apply
+    /// to the items now (a lost key, a cross-layer join).
+    Add(crate::selection::DrawingEdit),
+    /// Remove the edit at this index. The edits after it replay again.
+    Remove(usize),
+    /// Replace the whole ledger: the undo and the redo of the GUI. The
+    /// edits are in FILE units, as the ledger stores them (the
+    /// project-file JSON). An edit that does not apply is kept and
+    /// reported, as at a load.
+    Replace(Vec<crate::selection::DrawingEdit>),
+}
+
+/// The arguments of the `edit_model_drawing` command (P4.9): one change of
+/// the edit ledger of one model. The row replays the ledger on the items
+/// of the import door and drops the results that read the model, as
+/// `AdoptModelGeometry` does.
+#[derive(Debug, Clone)]
+pub struct EditModelDrawingArgs {
+    /// The id of the model.
+    pub model_id: usize,
+    /// The change.
+    pub edit: LedgerEdit,
 }
 
 /// The arguments of the `add_setup` command.
@@ -2497,6 +2534,7 @@ impl ProjectSession {
             Command::AdoptModelGeometry(args) => {
                 self.adopt_model_geometry(args.model_id, *args.geometry, args.units)
             }
+            Command::EditModelDrawing(args) => self.edit_model_drawing(args.model_id, args.edit),
             Command::AddSetup(args) => {
                 let AddSetupArgs { name, face_up } = args;
                 // One default name for every surface. The GUI used to

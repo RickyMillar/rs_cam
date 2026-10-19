@@ -2,6 +2,9 @@
 
 use super::*;
 
+use rs_cam_core::selection::{DrawingEdit, open_shapes};
+use rs_cam_core::session::LedgerEdit;
+
 /// THE rule, over every arm. A per-arm table lives in the report; this is
 /// the executable half of it.
 ///
@@ -109,6 +112,19 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                     new: tc.shoe,
                 }
             }),
+        ),
+        // P4.9: the undo writes an empty ledger through
+        // `EditModelDrawing`. The sample model holds no drawing, so the row
+        // refuses; the arm still marks the project edited.
+        (
+            "ModelDrawingEdits",
+            Box::new(
+                |c: &AppController<ScriptedBackend>| UndoAction::ModelDrawingEdits {
+                    model_id: crate::state::job::ModelId(c.state.session.models()[0].id),
+                    before: Vec::new(),
+                    after: Vec::new(),
+                },
+            ),
         ),
     ];
 
@@ -1474,4 +1490,133 @@ fn an_obstacle_add_edit_remove_each_undo_and_redo_k2() {
     assert!(stale(&controller));
     controller.handle_internal_event(AppEvent::Redo);
     assert_eq!(stored(&controller), None);
+}
+
+// ── Geometry selection P4.9 — the drawing edit ledger ───────────────────
+//
+// Geometry selection P4.9: each act on the open paths of a drawing is one
+// `EditModelDrawing` command and one undo step.
+//
+// - A join, a close and a ledger Remove each push one
+// `UndoAction::ModelDrawingEdits` step.
+// - An undo gives the ledger and the items before the act; a redo gives
+// the ledger and the items after it.
+// - A refused act (a join across layers) pushes no step and names the
+// reason.
+
+/// An SVG on two layers: on CUT two open paths 0.3 apart and an open U;
+/// on B one open path.
+fn drawing_svg() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("rs_cam_p4_9_undo_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("drawing.svg");
+    std::fs::write(
+        &path,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm" viewBox="0 0 100 50">
+            <g id="CUT">
+              <path d="M 0 0 L 10 0"/>
+              <path d="M 10.3 0 L 20 0"/>
+              <path d="M 30 0 L 40 0 L 40 10 L 30 10"/>
+            </g>
+            <g id="B"><path d="M 20 0.2 L 20 5"/></g>
+        </svg>"#,
+    )
+    .unwrap();
+    path
+}
+
+fn model(c: &AppController<ScriptedBackend>) -> LoadedModel {
+    c.state().session.models()[0].clone()
+}
+
+fn keys(m: &LoadedModel) -> Vec<String> {
+    m.items.iter().map(|i| format!("{:?}", i.key())).collect()
+}
+
+#[test]
+fn each_drawing_act_is_one_undo_step_p4_9() {
+    let mut c = AppController::with_backend(ScriptedBackend::new());
+    c.open_import_dialog(&drawing_svg(), ModelKind::Svg);
+    c.confirm_import_dialog().unwrap();
+    let id = crate::state::job::ModelId(model(&c).id);
+    let door = keys(&model(&c));
+    let undo_len = |c: &AppController<_>| c.state().history.undo_len();
+    let start = undo_len(&c);
+
+    // Act 1: join all within 0.5 mm.
+    c.handle_internal_event(AppEvent::EditModelDrawing {
+        model_id: id,
+        edit: LedgerEdit::Add(DrawingEdit::JoinWithin {
+            layer: None,
+            tolerance_mm: 0.5,
+        }),
+    });
+    assert_eq!(undo_len(&c), start + 1, "the join is one step");
+    let joined = keys(&model(&c));
+    assert_ne!(joined, door, "non-vacuity: the join changes the items");
+
+    // Act 2: close the longest open path (the U) with a line.
+    let u = open_shapes(&model(&c).items)
+        .into_iter()
+        .max_by(|a, b| a.length_mm.total_cmp(&b.length_mm))
+        .unwrap();
+    assert!(u.can_close_with_line);
+    c.handle_internal_event(AppEvent::EditModelDrawing {
+        model_id: id,
+        edit: LedgerEdit::Add(DrawingEdit::CloseWithLine { path: u.key }),
+    });
+    assert_eq!(undo_len(&c), start + 2, "the close is one step");
+    let closed = keys(&model(&c));
+    assert_eq!(model(&c).drawing.edits().len(), 2);
+
+    // A refused act: a join of the CUT path and the B path.
+    let open = open_shapes(&model(&c).items);
+    let cut = open
+        .iter()
+        .find(|s| s.layer.as_deref() == Some("CUT"))
+        .unwrap();
+    let b = open
+        .iter()
+        .find(|s| s.layer.as_deref() == Some("B"))
+        .unwrap();
+    c.handle_internal_event(AppEvent::EditModelDrawing {
+        model_id: id,
+        edit: LedgerEdit::Add(DrawingEdit::JoinTwo {
+            a: cut.key.clone(),
+            b: b.key.clone(),
+        }),
+    });
+    assert_eq!(undo_len(&c), start + 2, "a refusal pushes no step");
+    assert!(
+        c.notifications()
+            .iter()
+            .any(|n| n.message.contains("cannot cross layers")),
+        "the refusal names its reason"
+    );
+    assert_eq!(keys(&model(&c)), closed);
+
+    // Undo twice: the ledger and the items go back one act at a time.
+    c.handle_internal_event(AppEvent::Undo);
+    assert_eq!(model(&c).drawing.edits().len(), 1);
+    assert_eq!(keys(&model(&c)), joined);
+    c.handle_internal_event(AppEvent::Undo);
+    assert!(model(&c).drawing.edits().is_empty());
+    assert_eq!(keys(&model(&c)), door);
+    // Redo twice.
+    c.handle_internal_event(AppEvent::Redo);
+    c.handle_internal_event(AppEvent::Redo);
+    assert_eq!(model(&c).drawing.edits().len(), 2);
+    assert_eq!(keys(&model(&c)), closed);
+
+    // A Remove is one step too, and its undo puts the edit back.
+    let before = undo_len(&c);
+    c.handle_internal_event(AppEvent::EditModelDrawing {
+        model_id: id,
+        edit: LedgerEdit::Remove(0),
+    });
+    assert_eq!(undo_len(&c), before + 1);
+    assert_eq!(model(&c).drawing.edits().len(), 1);
+    c.handle_internal_event(AppEvent::Undo);
+    assert_eq!(model(&c).drawing.edits().len(), 2);
+    assert_eq!(keys(&model(&c)), closed);
 }

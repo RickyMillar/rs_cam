@@ -328,6 +328,11 @@ impl<B: ComputeBackend> AppController<B> {
                     self.push_error(&error);
                 }
             }
+            AppEvent::EditModelDrawing { model_id, edit } => {
+                if let Err(error) = self.edit_drawing_ledger(model_id, edit) {
+                    self.push_error(&error);
+                }
+            }
             // ImportStep is handled at the app level (camera fitting + status)
             AppEvent::ImportStep(_) => {}
             AppEvent::RescaleModel(model_id, units) => {
@@ -595,6 +600,7 @@ impl<B: ComputeBackend> AppController<B> {
             | AppEvent::ExportSetupSheet
             | AppEvent::ExportSvgPreview
             | AppEvent::FrameSelectionItems { .. }
+            | AppEvent::FrameModelItems { .. }
             | AppEvent::SaveJob
             | AppEvent::OpenJob
             | AppEvent::WizardSetStep(_)

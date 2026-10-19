@@ -198,6 +198,7 @@ fn state_with(
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)

@@ -634,7 +634,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "inspect_model",
-        description = "Inspect all loaded models: mesh stats, bbox, BREP face summary, polygon summary. Returns a JSON array."
+        description = "Inspect all loaded models: mesh stats, bbox, BREP face summary, polygon summary; for a drawing the import options and report, `open_shapes` (each open path with its key, length and end gap) and `drawing_edits` (the edit ledger of `edit_model_drawing`, each edit with its outcome; a lost edit names its path). Returns a JSON array."
     )]
     async fn inspect_model(&self) -> String {
         self.cheap_read(McpRequestKind::InspectModel, McpReadKind::InspectModel)
@@ -1028,6 +1028,20 @@ impl EmbeddedCamServer {
                 param,
             )))
             .await,
+        )
+    }
+
+    #[tool(
+        name = "edit_model_drawing",
+        description = "Join and close the open paths of a drawing model (DXF or SVG), as the GUI model panel does. The model keeps each act in its edit ledger (saved in the project file) and does it again after every reload, rescale and relink. `edit` is exactly one of: `{\"add\": <edit>}`, `{\"remove\": <index>}` or `{\"replace\": [<edit>, ...]}`. An <edit> is `{\"join_within\": {\"tolerance_mm\": 0.5}}` (optional `\"layer\"`; a join never crosses a layer), `{\"close_with_line\": {\"path\": <key>}}`, `{\"move_ends_together\": {\"path\": <key>}}` or `{\"join_two\": {\"a\": <key>, \"b\": <key>}}`, with path keys from `inspect_model` `open_shapes`. An `add` edit is in model mm, as `open_shapes` gives it; the ledger stores it in the file units of the join tolerance (before the declared units), so a rescale keeps it. A `replace` list is in those file units: the `edit` values that `inspect_model` `drawing_edits` gives. An `add` that does not apply now (a lost key, a join across layers) is refused. The edit stales the toolpaths that read the model. Returns `open_shapes` and `drawing_edits` (each edit with its outcome; a lost edit names its path)."
+    )]
+    async fn edit_model_drawing(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::EditModelDrawingParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::EditModelDrawing(param)))
+                .await,
         )
     }
 

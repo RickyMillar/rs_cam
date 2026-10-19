@@ -812,6 +812,7 @@ fn make_session_with_pocket_model() -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let _ = s.add_model(model);
     s
@@ -1238,6 +1239,7 @@ fn the_collision_sweep_builds_one_index_per_model() {
             load_error: None,
             import_options: Default::default(),
             import_report: None,
+            drawing: Default::default(),
         }
     }
 

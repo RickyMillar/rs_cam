@@ -61,6 +61,7 @@ fn fresh_state() -> AppState {
             load_error: None,
             import_options: Default::default(),
             import_report: None,
+            drawing: Default::default(),
         })
         .build();
     state.workspace = Workspace::Toolpaths;

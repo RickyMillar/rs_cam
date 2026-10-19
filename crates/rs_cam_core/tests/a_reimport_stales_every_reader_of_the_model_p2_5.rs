@@ -85,6 +85,7 @@ fn square_model(id: usize, name: &str, side_mm: f64) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

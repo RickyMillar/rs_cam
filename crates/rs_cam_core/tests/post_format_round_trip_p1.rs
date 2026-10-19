@@ -151,6 +151,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let model_id = session
         .apply(Command::AddModel(AddModelArgs {

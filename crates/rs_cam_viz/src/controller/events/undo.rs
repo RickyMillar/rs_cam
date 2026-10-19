@@ -64,6 +64,11 @@ impl<B: ComputeBackend> AppController<B> {
                 UndoAction::ToolpathShoeChange { tp_id, old, .. } => {
                     self.apply_toolpath_shoe_snapshot(tp_id, old);
                 }
+                UndoAction::ModelDrawingEdits {
+                    model_id, before, ..
+                } => {
+                    self.apply_model_drawing_snapshot(model_id, before);
+                }
             }
             // F2.5 (G-UNDOFRESH) — EVERY arm, at the one place all of them
             // pass through.
@@ -136,6 +141,11 @@ impl<B: ComputeBackend> AppController<B> {
                 UndoAction::ToolpathShoeChange { tp_id, new, .. } => {
                     self.apply_toolpath_shoe_snapshot(tp_id, new);
                 }
+                UndoAction::ModelDrawingEdits {
+                    model_id, after, ..
+                } => {
+                    self.apply_model_drawing_snapshot(model_id, after);
+                }
             }
             // Redo carries the identical defect and takes the identical fix.
             // It is the same edit, applied in the other direction.
@@ -152,6 +162,21 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let _ = self.apply_quietly(command);
         self.state.panels.head_editor = None;
+    }
+
+    /// P4.9: install a drawing edit ledger (an undo or a redo) through the
+    /// `EditModelDrawing` row, the door the model panel writes through. A
+    /// model that is gone takes no write.
+    fn apply_model_drawing_snapshot(
+        &mut self,
+        model_id: crate::state::job::ModelId,
+        edits: Vec<rs_cam_core::selection::DrawingEdit>,
+    ) {
+        let _ = self.apply_model_drawing_edit(
+            model_id,
+            rs_cam_core::session::LedgerEdit::Replace(edits),
+            false,
+        );
     }
 
     /// H2: install a toolpath shoe setting (an undo or a redo) through the

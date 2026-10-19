@@ -11,7 +11,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
   `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (one fn per tab),
   `selection_section.rs` (P4.3: the Selection section, op and boundary target; P4.4: "Show me" on a note row and a lost pick; P4.7: the Cuts row reads "Computing faces…" while `faces_not_ready`).
 - `operations/` — one editor per op family, plus `registry.rs`, `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`.
-- `model_sim_panels.rs` P4.8: a drawing gets an "Import" section (scale, join tolerance, report; the rows of `ui/import_modal.rs`). `setup.rs`, `obstacles.rs` (K2: list + editor), `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`, `head.rs` (H2: the Machine panel's Head section), `shoe_row.rs` (H2: the Heights tab's dust shoe row).
+- `model_sim_panels.rs` P4.8: a drawing gets an "Import" section (scale, join tolerance, report; the rows of `ui/import_modal.rs`); P4.9 "Open shapes" (core `open_shapes`, Show me, the two close acts, Join all within, a lost edit as a DANGER row, the ledger in one `Details`). `setup.rs`, `obstacles.rs` (K2: list + editor), `stock_changes.rs` (S4), `stock.rs`, `pins/` (P7: one block, the wizard parts), `tool.rs`, `post.rs`, `pills.rs`, `head.rs` (H2: the Machine panel's Head section), `shoe_row.rs` (H2: the Heights tab's dust shoe row).
 
 ## Invariants
 

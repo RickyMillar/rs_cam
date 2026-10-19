@@ -169,6 +169,7 @@ fn one_pocket_session() -> (
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let _ = builder
         .add_toolpath(

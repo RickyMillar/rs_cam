@@ -177,6 +177,7 @@ fn build_controller() -> AppController<SilentBackend> {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let _ = builder
         .add_toolpath(

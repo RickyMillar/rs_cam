@@ -15,9 +15,9 @@ project. The entry point is `state::AppState` in `mod.rs`.
   lane state and the GUI-only runtime overlay state.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection, the dock and catalogue; `selection_highlight.rs` (P4.4: which report the viewport colours, its upload detector, the note keys).
-- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo, the export
+- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (P4.9 `ModelDrawingEdits`: the ledger before and after), the export
   wizard and the planner.
-- `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts; settings; pin frame (C8); the shoe plan memo and run sheet (H2);
+- `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts (P4.9 `join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of `committed_number`, ui09); settings; pin frame (C8); the shoe plan memo and run sheet (H2);
   `pick.rs` — P4.3 `SelectionUi` on `GuiState`: the pick mode (one at a time, L-3) and the `+ Rule` draft; P4.5 `PickFilter` (`effective_kinds`: on, served, held); P4.7 `held_kinds(model)` holds `Face` for an STL. `selection_highlight::HoverDetector` uploads the hover on a change only. P4.6: `ViewportMode { Pick, Tabs }` (L-3 by type); `tab_edit.rs` (the `tab_layout` read per toolpath revision, `TabMarksDetector`; sentry `the_tab_editor_writes_one_step_per_act_p4_6`).
 
 ## Invariants

@@ -637,6 +637,16 @@ pub struct ProjectModelSection {
     /// write no key.
     #[serde(default, skip_serializing_if = "crate::io::ImportOptions::is_default")]
     pub import: crate::io::ImportOptions,
+    /// P4.9: `[[models.drawing_edits]]`, the edit ledger of a drawing (the
+    /// join and close acts, in order). Every key anchor, key measure and
+    /// tolerance is in FILE units: the frame of `import.join_tolerance_mm`,
+    /// the units of the file as the door reads it (a DXF after
+    /// `$INSUNITS`), before the declared `units`. A rescale changes no
+    /// stored edit. Additive under `format_version = 3`:
+    /// a file with no key loads an empty ledger, and an empty ledger writes
+    /// no key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drawing_edits: Vec<crate::selection::DrawingEdit>,
 }
 
 /// Setup section in the project file.
@@ -1168,15 +1178,18 @@ pub(super) fn build_session_from_project(
                 }
                 // C13: one builder, so the project door keeps the
                 // `winding_report` the import door has always reported.
-                models.push(crate::io::model_from_geometry(
-                    geometry,
-                    model_id,
-                    model_section.name.clone(),
-                    &model_path,
-                    model_kind,
-                    model_units,
-                    model_section.import,
-                ));
+                models.push(
+                    crate::io::model_from_geometry(
+                        geometry,
+                        model_id,
+                        model_section.name.clone(),
+                        &model_path,
+                        model_kind,
+                        model_units,
+                        model_section.import,
+                    )
+                    .with_drawing_edits(model_section.drawing_edits.clone()),
+                );
             }
             Err(e) => {
                 tracing::warn!(
@@ -1202,6 +1215,11 @@ pub(super) fn build_session_from_project(
                     load_error: Some(e.to_string()),
                     import_options: model_section.import,
                     import_report: None,
+                    // P4.9: the ledger round-trips; no item exists to
+                    // replay it on.
+                    drawing: crate::selection::DrawingLedger::unreplayed(
+                        model_section.drawing_edits.clone(),
+                    ),
                 });
             }
         }

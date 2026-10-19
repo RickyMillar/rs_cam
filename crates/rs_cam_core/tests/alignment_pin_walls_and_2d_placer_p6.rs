@@ -94,6 +94,7 @@ fn rectangle_model(id: usize, name: &str, x0: f64, y0: f64, x1: f64, y1: f64) ->
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

@@ -1203,6 +1203,102 @@ impl From<SelectionEditParam> for rs_cam_core::selection::SelectionEdit {
     }
 }
 
+/// One act on the open paths of a drawing (geometry selection P4.9). The
+/// JSON is the project-file JSON of one `[[models.drawing_edits]]` row.
+/// Exactly one key:
+/// `{"join_within": {"tolerance_mm": 0.5}}` (optional `"layer"`),
+/// `{"close_with_line": {"path": <key>}}`,
+/// `{"move_ends_together": {"path": <key>}}` or
+/// `{"join_two": {"a": <key>, "b": <key>}}`. A key is a path key from
+/// `inspect_model` `open_shapes` or `list_model_items`.
+#[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum DrawingEditParam {
+    /// Chain the open paths whose ends meet within `tolerance_mm` (mm of
+    /// the model). `layer` absent: every layer; a chain never crosses a
+    /// layer.
+    JoinWithin {
+        #[serde(default)]
+        layer: Option<String>,
+        tolerance_mm: f64,
+    },
+    /// Close one open path with a straight line from its end to its start.
+    CloseWithLine { path: MatchKeyParam },
+    /// Close one open path: its end point moves onto its start point.
+    MoveEndsTogether { path: MatchKeyParam },
+    /// Join two open paths of one layer with a line between their nearest
+    /// ends.
+    JoinTwo { a: MatchKeyParam, b: MatchKeyParam },
+}
+
+impl From<DrawingEditParam> for rs_cam_core::selection::DrawingEdit {
+    fn from(p: DrawingEditParam) -> Self {
+        match p {
+            DrawingEditParam::JoinWithin {
+                layer,
+                tolerance_mm,
+            } => Self::JoinWithin {
+                layer,
+                tolerance_mm,
+            },
+            DrawingEditParam::CloseWithLine { path } => Self::CloseWithLine { path: path.into() },
+            DrawingEditParam::MoveEndsTogether { path } => {
+                Self::MoveEndsTogether { path: path.into() }
+            }
+            DrawingEditParam::JoinTwo { a, b } => Self::JoinTwo {
+                a: a.into(),
+                b: b.into(),
+            },
+        }
+    }
+}
+
+/// One change of the edit ledger of a drawing (P4.9). Exactly one key:
+/// `{"add": <edit>}` (in model mm; refused when the edit does not apply
+/// now), `{"remove": <index>}` or `{"replace": [<edit>, ...]}` (the whole
+/// ledger in file units, as the project file and the GUI undo hold it).
+#[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum LedgerEditParam {
+    /// Add an edit at the end of the ledger.
+    Add(DrawingEditParam),
+    /// Remove the edit at this index.
+    Remove(usize),
+    /// Replace the whole ledger.
+    Replace(Vec<DrawingEditParam>),
+}
+
+impl Default for LedgerEditParam {
+    fn default() -> Self {
+        Self::Replace(Vec::new())
+    }
+}
+
+impl From<LedgerEditParam> for rs_cam_core::session::LedgerEdit {
+    fn from(p: LedgerEditParam) -> Self {
+        match p {
+            LedgerEditParam::Add(edit) => Self::Add(edit.into()),
+            LedgerEditParam::Remove(index) => Self::Remove(index),
+            LedgerEditParam::Replace(edits) => {
+                Self::Replace(edits.into_iter().map(Into::into).collect())
+            }
+        }
+    }
+}
+
+/// `edit_model_drawing` (P4.9): one change of the edit ledger of a
+/// drawing model. The model replays the ledger, and the toolpaths that read
+/// it go stale.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct EditModelDrawingParam {
+    /// The model id (`inspect_model`).
+    pub model_id: usize,
+    /// The change.
+    pub edit: LedgerEditParam,
+}
+
 /// Which selection of a toolpath (P4.1): `"op"` (what the op cuts) or
 /// `"boundary"` (the selection of a `Selection` machining boundary: where
 /// the tool may go). A 3D op holds no op selection; its face picks go in
@@ -2454,6 +2550,10 @@ pub fn build_info() -> serde_json::Value {
             // `inspect_model` gives `import_options` and `import_report`;
             // `set_model_import_options` reads a drawing again.
             "import_options",
+            // Geometry selection P4.9 (2026-10-20): `edit_model_drawing`
+            // joins and closes open paths of a drawing (the edit ledger);
+            // `inspect_model` gives `open_shapes` and `drawing_edits`.
+            "drawing_edits",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding
@@ -2640,6 +2740,7 @@ mod tests {
             "set_ui_view",
             "selection_item_states",
             "import_options",
+            "drawing_edits",
             "multitool_finishing_planner",
             "preview_tier_map",
             "reach_map",
@@ -2785,6 +2886,57 @@ mod tests {
         // An unknown key refuses on the wire as in the file.
         assert!(
             serde_json::from_value::<SelectionParam>(serde_json::json!({"pickz": []})).is_err()
+        );
+    }
+
+    /// Geometry selection P4.9: the wire JSON of a drawing edit IS the
+    /// file JSON. Each core edit serializes, parses as the wire type and
+    /// converts back to the same core value.
+    #[test]
+    fn drawing_edit_wire_is_the_file_json_p4_9() {
+        use rs_cam_core::ids::ModelId;
+        use rs_cam_core::selection::{DrawingEdit, ItemKind, MatchKey, SourceRef};
+        let key = |source, x| MatchKey {
+            source,
+            kind: ItemKind::Path,
+            layer: Some("TEXT".into()),
+            anchor: [x, -3.25],
+            measure: 86.2,
+            brep: None,
+        };
+        let edits = [
+            DrawingEdit::JoinWithin {
+                layer: None,
+                tolerance_mm: 0.5,
+            },
+            DrawingEdit::JoinWithin {
+                layer: Some("TEXT".into()),
+                tolerance_mm: 0.25,
+            },
+            DrawingEdit::CloseWithLine {
+                path: key(SourceRef::ToolpathModel, 1.0),
+            },
+            DrawingEdit::MoveEndsTogether {
+                path: key(SourceRef::Model(ModelId(3)), 2.0),
+            },
+            DrawingEdit::JoinTwo {
+                a: key(SourceRef::ToolpathModel, 3.0),
+                b: key(SourceRef::ToolpathModel, 4.0),
+            },
+        ];
+        for edit in &edits {
+            let json = serde_json::to_value(edit).unwrap();
+            let wire: DrawingEditParam = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("the wire does not parse the file JSON {json}: {e}"));
+            assert_eq!(&DrawingEdit::from(wire), edit, "{json}");
+        }
+        let wire: LedgerEditParam = serde_json::from_value(serde_json::json!({
+            "replace": serde_json::to_value(&edits).unwrap()
+        }))
+        .unwrap();
+        assert_eq!(
+            rs_cam_core::session::LedgerEdit::from(wire),
+            rs_cam_core::session::LedgerEdit::Replace(edits.to_vec())
         );
     }
 

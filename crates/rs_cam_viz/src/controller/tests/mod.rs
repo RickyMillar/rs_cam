@@ -219,6 +219,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let tp_config = ToolpathConfig {

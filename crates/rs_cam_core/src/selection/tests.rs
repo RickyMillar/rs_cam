@@ -70,6 +70,7 @@ fn model(items: Vec<Item>) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     m.bind_items();
     m

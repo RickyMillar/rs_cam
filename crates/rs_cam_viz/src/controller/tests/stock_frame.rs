@@ -224,6 +224,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
                 load_error: None,
                 import_options: Default::default(),
                 import_report: None,
+                drawing: Default::default(),
             }),
         }))
         .expect("the session takes the model")

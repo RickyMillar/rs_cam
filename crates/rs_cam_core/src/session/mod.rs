@@ -42,24 +42,25 @@ pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
     AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
     AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command,
-    CommandId, CommandKind, EditSelectionArgs, Effects, ForgetResultArgs, GenerateToolpathArgs,
-    GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
-    InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
-    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, ListItemsAnswer, ListItemsArgs,
-    MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
-    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
-    ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
-    ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
-    SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
-    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
-    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
-    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces, TabLayoutArgs,
-    ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, ForgetResultArgs,
+    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
+    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
+    ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
+    PreviewTierMapArgs, Query, QueryAnswer, Reach, RecommendClearingStrategyArgs,
+    RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs, RemoveSetupArgs,
+    RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs,
+    ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
+    ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SelectionStatusArgs,
+    SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
+    SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs, SetMachineKinematicsArgs,
+    SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
+    SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
+    SetSetupRotationArgs, SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs,
+    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathShoeArgs,
+    SetToolpathToolArgs, Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
@@ -449,6 +450,12 @@ pub struct LoadedModel {
     /// layer. `None` for a mesh, a STEP model or a failed load. Not saved:
     /// each load computes it.
     pub import_report: Option<crate::io::ImportReport>,
+    /// The edit ledger of a drawing (P4.9): the join and close acts of the
+    /// user, the items of the import door they replay on, and the outcome
+    /// of each edit. The project file stores the edits. KEPT on a refresh
+    /// (like `units`): `adopt_geometry` replays them on the fresh items.
+    /// `Default` is the empty ledger, which changes nothing.
+    pub drawing: crate::selection::DrawingLedger,
 }
 
 impl LoadedModel {
@@ -477,6 +484,7 @@ impl LoadedModel {
             kind,
             units,
             import: crate::io::ImportOptions::default(),
+            drawing_edits: Vec::new(),
         };
         let resolved_kind = kind.or_else(|| crate::io::infer_kind_from_path(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
@@ -519,6 +527,7 @@ impl LoadedModel {
             load_error: Some(load_error),
             import_options,
             import_report: None,
+            drawing: crate::selection::DrawingLedger::default(),
         }
     }
 
@@ -532,6 +541,11 @@ impl LoadedModel {
     /// on disk — and `io::load_model_file` reports `Millimeters` for a STEP
     /// file whatever the record declares, so a door that CHANGES the units
     /// sets them itself, after this call.
+    ///
+    /// **KEPT** too (P4.9): the edits of `drawing`. The record replays
+    /// them on the fresh door items at the record's `units`, and the door
+    /// items and the outcomes are REPLACED. A door that changes the units
+    /// sets them BEFORE this call, so the replay reads the new scale.
     ///
     /// **REPLACED**: every field the file content determines — `mesh`,
     /// `items`, `enriched_mesh`, `winding_report`, `load_error`,
@@ -564,13 +578,18 @@ impl LoadedModel {
             load_error,
             import_report,
             import_options,
+            drawing: fresh_drawing,
             id: _,
             name: _,
             units: _,
         } = fresh;
         self.mesh = mesh;
-        self.items = items;
+        // P4.9: the door items of the fresh import. The record KEEPS its
+        // ledger and replays it on them, so a re-import keeps the edits.
+        self.items = fresh_drawing.door_items(&items);
         self.bind_items();
+        let edits = self.drawing.edits().to_vec();
+        self.replay_drawing_edits(Arc::clone(&self.items), edits);
         self.path = path;
         self.kind = kind;
         self.enriched_mesh = enriched_mesh;
@@ -655,6 +674,45 @@ impl LoadedModel {
             tracing::error!(model = %self.name, %error, "face bind failed");
             ItemSet::default()
         }))
+    }
+
+    /// Replay `edits` on `door`, the bound items of the import door
+    /// (P4.9), and store them as the ledger. The model's items become the
+    /// edited items; an empty list gives `door` back, the same `Arc`. A new
+    /// item takes the source of its first piece, so the edited set stays
+    /// bound. The door is [`Self::door_items`] for a ledger edit, and the
+    /// fresh items for a re-import.
+    pub(crate) fn replay_drawing_edits(
+        &mut self,
+        door: Arc<ItemSet>,
+        edits: Vec<crate::selection::DrawingEdit>,
+    ) {
+        let scale = self.drawing_scale();
+        self.items = self.drawing.replay(door, edits, scale);
+    }
+
+    /// The factor from the file units of the edit ledger to model mm
+    /// (P4.9): the declared scale. The ledger stores file units, the frame
+    /// of the P4.8 join tolerance, so a rescale changes no stored edit.
+    pub fn drawing_scale(&self) -> f64 {
+        self.units.map_or(1.0, |units| units.scale_factor())
+    }
+
+    /// The model with `edits` as its edit ledger, replayed on its items
+    /// (P4.9). The project door calls it right after
+    /// `io::model_from_geometry`, so every reader (op, boundary, status,
+    /// viewport) sees one item set. An empty list changes nothing.
+    #[must_use]
+    pub(crate) fn with_drawing_edits(mut self, edits: Vec<crate::selection::DrawingEdit>) -> Self {
+        let door = Arc::clone(&self.items);
+        self.replay_drawing_edits(door, edits);
+        self
+    }
+
+    /// The items of the import door, before the ledger edits (P4.9). With
+    /// an empty ledger these are `items`.
+    pub fn door_items(&self) -> Arc<ItemSet> {
+        self.drawing.door_items(&self.items)
     }
 
     pub(crate) fn bind_items(&mut self) {
@@ -2394,6 +2452,7 @@ mod tests {
                 load_error: None,
                 import_options: Default::default(),
                 import_report: None,
+                drawing: Default::default(),
             })
             .build();
 

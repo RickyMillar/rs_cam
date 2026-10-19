@@ -305,6 +305,7 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     })
 }
 
@@ -353,6 +354,7 @@ fn add_hemisphere(builder: &mut ProjectSessionBuilder) -> usize {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     })
 }
 
@@ -416,6 +418,7 @@ fn plate_session(op: OperationConfig) -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let heights = HeightsConfig {
         top_z: HeightMode::Manual(PLATE_STOCK_Z_MM),
@@ -460,6 +463,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
 
     let op = OperationConfig::ProjectCurve(ProjectCurveConfig {

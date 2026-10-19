@@ -467,6 +467,24 @@ impl RsCamApp {
         Some(bbox)
     }
 
+    /// "Show me" of an open shape (geometry selection P4.9): fit the camera
+    /// to the items `keys` of the model `model_id`, in the model frame (the
+    /// frame the model panel shows). Returns the framed box, or `None` (and
+    /// changes nothing) when no key names an item of the model.
+    pub(crate) fn frame_model_items(
+        &mut self,
+        model_id: crate::state::job::ModelId,
+        keys: &[rs_cam_core::selection::MatchKey],
+    ) -> Option<rs_cam_core::geo::BoundingBox3> {
+        let bbox = crate::interaction::picking::model_items_bounds(
+            &self.controller.state().session,
+            model_id,
+            keys,
+        )?;
+        self.fit_camera_to_bbox(&bbox);
+        Some(bbox)
+    }
+
     fn fit_camera_to_first_model(&mut self) {
         if let Some(bbox) = self
             .controller
@@ -1134,7 +1152,7 @@ impl RsCamApp {
 
         // P4.8: the import dialog of a drawing.
         {
-            let (state, events) = self.controller.state_ref_and_events_mut();
+            let (state, events) = self.controller.state_and_events_mut();
             crate::ui::import_modal::draw(ctx, state, events);
         }
 

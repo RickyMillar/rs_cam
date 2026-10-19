@@ -818,6 +818,7 @@ mod obstacle_panel_k2 {
                     load_error: None,
                     import_options: Default::default(),
                     import_report: None,
+                    drawing: Default::default(),
                 }),
             }))
             .expect("the session takes the model")

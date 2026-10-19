@@ -164,6 +164,7 @@ fn build_controller(submits: Arc<AtomicUsize>) -> AppController<CountingBackend>
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let _ = builder.add_toolpath(0, pocket()).expect("add the pocket");
     controller.state.session = builder.build();

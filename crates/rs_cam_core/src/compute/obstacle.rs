@@ -1544,6 +1544,7 @@ mod tests {
             load_error: None,
             import_options: Default::default(),
             import_report: None,
+            drawing: Default::default(),
         };
         let obstacle = Obstacle {
             id: ObstacleId(0),

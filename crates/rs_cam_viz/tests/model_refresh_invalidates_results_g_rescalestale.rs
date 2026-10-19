@@ -379,6 +379,7 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let model_id = builder.add_model(record);
     let _ = builder

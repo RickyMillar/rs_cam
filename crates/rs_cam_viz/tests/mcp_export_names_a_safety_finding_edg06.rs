@@ -144,6 +144,7 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let _ = builder
         .add_toolpath(0, toolpath_config(0, OP_NAME))

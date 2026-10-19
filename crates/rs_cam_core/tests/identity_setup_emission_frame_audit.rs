@@ -97,6 +97,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     };
     let model_id = builder.add_model(model);
 

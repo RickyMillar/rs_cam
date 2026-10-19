@@ -219,6 +219,7 @@ pub(crate) fn model_from_geometry(
         load_error: None,
         import_options,
         import_report: None,
+        drawing: Default::default(),
     };
     match geometry {
         LoadedGeometry::Mesh(mesh) => {

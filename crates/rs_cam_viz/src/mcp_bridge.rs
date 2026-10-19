@@ -852,6 +852,10 @@ declare_core_requests! {
         /// geometry, as the GUI model panel does.
         SetModelImportOptions(rs_cam_mcp::server::SetModelImportOptionsParam)
             => AdoptModelGeometry, None;
+        /// Row `EditModelDrawing` (P4.9): one change of the edit ledger of
+        /// a drawing, as the GUI model panel makes it.
+        EditModelDrawing(rs_cam_mcp::server::EditModelDrawingParam)
+            => EditModelDrawing, Some(Workspace::Setup);
         AddSetup(rs_cam_mcp::server::AddSetupParam)
             => AddSetup, None;
         SetSetupFace(rs_cam_mcp::server::SetSetupFaceParam)

@@ -131,6 +131,7 @@ fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     }
 }
 

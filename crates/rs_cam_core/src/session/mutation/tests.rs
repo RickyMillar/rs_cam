@@ -1148,6 +1148,7 @@ fn chain_fixture() -> ProjectSession {
         load_error: None,
         import_options: Default::default(),
         import_report: None,
+        drawing: Default::default(),
     });
     let tool = s.tools()[0].id.0;
     let model = s.models()[0].id;

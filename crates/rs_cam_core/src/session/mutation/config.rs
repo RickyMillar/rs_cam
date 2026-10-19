@@ -472,14 +472,97 @@ impl ProjectSession {
                     known.join(", ")
                 )));
             };
-            model.adopt_geometry(geometry);
+            // P4.9: the units first. The ledger replay inside the adopt
+            // converts the stored file-unit edits at the record's scale.
             if let Some(units) = units {
                 model.units = Some(units);
             }
+            model.adopt_geometry(geometry);
             // The id did NOT change, so no signature comparison can see
             // this. `generation_inputs_signature` carries `model_id`, and
             // the id is what a refresh keeps. Dropping by id is therefore
             // the only instrument that answers.
+            session.drop_results_for_model(model_id);
+            Ok(())
+        })
+    }
+
+    /// Change the edit ledger of one drawing, replay it on the items of
+    /// the import door, and drop the results that read the model.
+    ///
+    /// The door of the `EditModelDrawing` row (geometry selection P4.9).
+    /// An `Add` edit is in model mm (keys from `open_shapes` or
+    /// `list_model_items`); the door converts it once to the file units of
+    /// the ledger. A `Replace` list is the stored ledger, in file units
+    /// (the project-file JSON). The keys of a new edit take the ledger form
+    /// ([`DrawingEdit::in_ledger_form`](crate::selection::DrawingEdit::in_ledger_form)),
+    /// so the GUI and MCP store one edit for one act. The row refuses:
+    ///
+    /// - an id that names no model, and a model with no drawing item;
+    /// - an `Add` whose edit does not apply to the items now (the reason
+    ///   is the outcome text, so a cross-layer join refuses, D14);
+    /// - a `Remove` of an index past the end.
+    ///
+    /// Each change stales the toolpaths that read the model, also when the
+    /// items do not change: an edit is a geometry act.
+    #[instrument(skip(self))]
+    pub(crate) fn edit_model_drawing(
+        &mut self,
+        model_id: usize,
+        edit: crate::session::LedgerEdit,
+    ) -> Result<Effects, SessionError> {
+        use crate::session::LedgerEdit;
+        self.try_with_effects(None, move |session| {
+            let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
+                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
+                return Err(SessionError::MissingGeometry(format!(
+                    "Model id {model_id} not found; project model ids: [{}]",
+                    known.join(", ")
+                )));
+            };
+            let door = model.door_items();
+            if !door.has_drawing() {
+                return Err(SessionError::InvalidParam(format!(
+                    "Model {model_id} holds no drawing item; only a drawing (DXF, SVG) has open paths to edit"
+                )));
+            }
+            let mut edits = model.drawing.edits().to_vec();
+            let scale = model.drawing_scale();
+            let added = match edit {
+                // The new edit is in model mm; the ledger stores file units.
+                LedgerEdit::Add(new) => {
+                    edits.push(new.in_ledger_form().scaled(1.0 / scale));
+                    true
+                }
+                LedgerEdit::Remove(index) => {
+                    if index >= edits.len() {
+                        return Err(SessionError::InvalidParam(format!(
+                            "Model {model_id} has {} drawing edits; no edit has index {index}",
+                            edits.len()
+                        )));
+                    }
+                    edits.remove(index);
+                    false
+                }
+                LedgerEdit::Replace(all) => {
+                    edits = all
+                        .into_iter()
+                        .map(crate::selection::DrawingEdit::in_ledger_form)
+                        .collect();
+                    false
+                }
+            };
+            if added {
+                let in_mm: Vec<_> = edits.iter().cloned().map(|e| e.scaled(scale)).collect();
+                let (_, outcomes) = crate::selection::apply_drawing_edits(&door, &in_mm);
+                if let Some(Err(lost)) = outcomes.last().map(|o| &o.result) {
+                    return Err(SessionError::InvalidParam(format!(
+                        "The drawing edit does not apply: {}",
+                        lost.label()
+                    )));
+                }
+            }
+            model.replay_drawing_edits(door, edits);
             session.drop_results_for_model(model_id);
             Ok(())
         })
