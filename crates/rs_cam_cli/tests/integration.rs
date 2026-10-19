@@ -231,6 +231,8 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let operation = OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,

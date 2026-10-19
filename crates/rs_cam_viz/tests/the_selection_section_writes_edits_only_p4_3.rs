@@ -107,8 +107,14 @@ fn layer_rule(layer: &str) -> Rule {
 fn state() -> AppState {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
-    let model = rs_cam_core::io::load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters)
-        .expect("the drawing loads");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("the drawing loads");
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()

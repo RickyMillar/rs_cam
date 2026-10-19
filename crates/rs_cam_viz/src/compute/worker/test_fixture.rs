@@ -261,6 +261,8 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     // The source toolpath first, so the operation under test is the one

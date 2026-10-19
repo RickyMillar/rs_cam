@@ -198,12 +198,12 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
-            (Command, AdoptModelGeometry, "adopt_model_geometry", AdoptModelGeometryArgs, Effects,
+            (Command, AdoptModelGeometry, "set_model_import_options", AdoptModelGeometryArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool refreshes a model in place; the wire imports a new one",
-                 ),
+                 // P4.8: the MCP tool reads the file again, then applies
+                 // this row; the wire name is the tool name.
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI imports each model once and never refreshes it",
                  ),
@@ -1267,9 +1267,11 @@ pub struct AddModelArgs {
     pub model: Box<super::LoadedModel>,
 }
 
-/// The arguments of the `adopt_model_geometry` command.
+/// The arguments of the `AdoptModelGeometry` command (wire name
+/// `set_model_import_options`, P4.8).
 ///
-/// The GUI holds three model-refresh doors — rescale, reload and relink.
+/// The GUI holds four model-refresh doors — rescale, reload, relink and
+/// the import options (P4.8).
 /// Each re-imports the file and hands the result here. The IMPORT belongs
 /// to the surface that owns the file dialogue; core adopts the geometry
 /// that import produced and drops the results that read it.

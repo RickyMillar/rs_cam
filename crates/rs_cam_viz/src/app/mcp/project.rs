@@ -346,6 +346,11 @@ impl RsCamApp {
                 serde_json::json!(model.path.display().to_string()),
             );
             map.insert("load_error".into(), serde_json::json!(model.load_error));
+            // P4.8: the import options and the join report of a drawing.
+            let import = super::commands::model_import_json(model);
+            for key in ["import_options", "import_report"] {
+                map.insert(key.into(), import.get(key).cloned().unwrap_or_default());
+            }
 
             // Mesh-level stats (STL and STEP)
             if let Some(ref mesh) = model.mesh {

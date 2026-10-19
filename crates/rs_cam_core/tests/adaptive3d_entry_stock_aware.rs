@@ -599,6 +599,8 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let mut dressups = DressupConfig::for_op(OperationType::Pocket);
     dressups.entry_style = match style {

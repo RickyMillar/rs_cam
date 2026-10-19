@@ -1132,6 +1132,12 @@ impl RsCamApp {
             crate::ui::setup_deletion_modal::draw(ctx, state, events);
         }
 
+        // P4.8: the import dialog of a drawing.
+        {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::import_modal::draw(ctx, state, events);
+        }
+
         // The generation plan's one question (R1). Its state lives on the
         // controller, not on `AppState`: the plan is the controller's, and
         // the answer starts it.

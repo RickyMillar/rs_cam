@@ -307,13 +307,24 @@ impl<B: ComputeBackend> AppController<B> {
                     self.push_error(&error);
                 }
             }
+            // P4.8: a drawing opens the import dialog; Import adds it.
             AppEvent::ImportSvg(path) => {
-                if let Err(error) = self.import_svg_path(&path) {
+                self.open_import_dialog(&path, crate::state::job::ModelKind::Svg);
+            }
+            AppEvent::ImportDxf(path) => {
+                self.open_import_dialog(&path, crate::state::job::ModelKind::Dxf);
+            }
+            AppEvent::ImportDialogEdit(units, options) => {
+                self.edit_import_dialog(units, options);
+            }
+            AppEvent::ImportDialogConfirm => {
+                if let Err(error) = self.confirm_import_dialog() {
                     self.push_error(&error);
                 }
             }
-            AppEvent::ImportDxf(path) => {
-                if let Err(error) = self.import_dxf_path(&path) {
+            AppEvent::ImportDialogCancel => self.cancel_import_dialog(),
+            AppEvent::SetModelImportOptions(model_id, options) => {
+                if let Err(error) = self.set_model_import_options(model_id, options) {
                     self.push_error(&error);
                 }
             }

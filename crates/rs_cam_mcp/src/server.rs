@@ -110,6 +110,60 @@ pub struct MoveToolpathToSetupParam {
 pub struct ImportModelParam {
     /// File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp
     pub path: String,
+    /// The declared units of the file: the scale to mm. The JSON is the
+    /// project-file `units` value. Omit for the default: an SVG takes the
+    /// SVG default (1:1, one user unit is 1 mm), every other file mm.
+    pub units: Option<ModelUnitsParam>,
+    /// Two open piece ends of a DXF or an SVG closer than this (mm, in the
+    /// file before the declared units) join into one shape. Omit for the
+    /// default, 0.01 mm. The reply's `import_report` states the join.
+    pub join_tolerance_mm: Option<f64>,
+}
+
+/// The declared units of a model file (geometry selection P4.8). The same
+/// serde shape as core `ModelUnits`, so the wire JSON is the project-file
+/// JSON: `{"kind": "millimeters"}`, `{"kind": "inches"}`,
+/// `{"kind": "centimeters"}`, `{"kind": "meters"}` or
+/// `{"kind": "custom", "scale": 0.2646}`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "kind", content = "scale", rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ModelUnitsParam {
+    /// 1:1.
+    Millimeters,
+    /// x25.4.
+    Inches,
+    /// x1000.
+    Meters,
+    /// x10.
+    Centimeters,
+    /// One unit of the file times this factor is 1 mm.
+    Custom(f64),
+}
+
+impl From<ModelUnitsParam> for rs_cam_core::compute::stock_config::ModelUnits {
+    fn from(p: ModelUnitsParam) -> Self {
+        match p {
+            ModelUnitsParam::Millimeters => Self::Millimeters,
+            ModelUnitsParam::Inches => Self::Inches,
+            ModelUnitsParam::Meters => Self::Meters,
+            ModelUnitsParam::Centimeters => Self::Centimeters,
+            ModelUnitsParam::Custom(scale) => Self::Custom(scale),
+        }
+    }
+}
+
+/// Set the import options of a drawing model (geometry selection P4.8):
+/// the model reads its file again with them. A changed join can change the
+/// items, so picks of the old pieces flag as lost.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetModelImportOptionsParam {
+    /// The model id (`inspect_model`).
+    pub model_id: usize,
+    /// The new declared units. Omit to keep the model's units.
+    pub units: Option<ModelUnitsParam>,
+    /// The new join tolerance in mm. Omit to keep the model's tolerance.
+    pub join_tolerance_mm: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2395,6 +2449,11 @@ pub fn build_info() -> serde_json::Value {
             // the toolpath model) and `foreign`; `set_ui_view` takes
             // `frame_items` ("Show me").
             "selection_item_states",
+            // Geometry selection P4.8 (2026-10-20): `import_model` takes
+            // `units` and `join_tolerance_mm` and replies `import_report`;
+            // `inspect_model` gives `import_options` and `import_report`;
+            // `set_model_import_options` reads a drawing again.
+            "import_options",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding
@@ -2580,6 +2639,7 @@ mod tests {
             "gui_screenshot",
             "set_ui_view",
             "selection_item_states",
+            "import_options",
             "multitool_finishing_planner",
             "preview_tier_map",
             "reach_map",
@@ -2601,6 +2661,26 @@ mod tests {
                 features.contains(&flag),
                 "build_info dropped published feature flag `{flag}` — agents probe these"
             );
+        }
+    }
+
+    /// Geometry selection P4.8: the wire JSON of the units IS the file
+    /// JSON. Each core value serializes, parses as the wire type and
+    /// converts back to the same core value.
+    #[test]
+    fn model_units_wire_is_the_file_json_p4_8() {
+        use rs_cam_core::compute::stock_config::ModelUnits;
+        for units in [
+            ModelUnits::Millimeters,
+            ModelUnits::Inches,
+            ModelUnits::Meters,
+            ModelUnits::Centimeters,
+            ModelUnits::Custom(0.2646),
+        ] {
+            let json = serde_json::to_value(units).unwrap();
+            let wire: ModelUnitsParam = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("{json} does not parse as the wire: {e}"));
+            assert_eq!(ModelUnits::from(wire), units, "{json}");
         }
     }
 

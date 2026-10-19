@@ -61,7 +61,8 @@ const SELECTION_FIXTURES: &str = "crates/rs_cam_core/tests/fixtures/selection_p2
 fn load(rel: &str, units: ModelUnits) -> LoadedModel {
     let path = repo().join(rel);
     let kind = infer_kind_from_path(&path).expect("a model extension");
-    load_model_file(&path, 0, kind, units).unwrap_or_else(|e| panic!("{rel} loads: {e}"))
+    load_model_file(&path, 0, kind, units, Default::default())
+        .unwrap_or_else(|e| panic!("{rel} loads: {e}"))
 }
 
 fn count(model: &LoadedModel, kind: ItemKind) -> usize {
@@ -76,8 +77,8 @@ fn every_dxf_loop_and_path_carries_its_layer() {
         &format!("{SELECTION_FIXTURES}/mix.dxf"),
         ModelUnits::Millimeters,
     );
-    // 17 entities: 3 closed outlines and 1 full ellipse, 3 circles, 1 point,
-    // and 9 open pieces that chain to 1 loop (the LINES square) and 5 paths.
+    // 17 entities: 2 closed outlines and 1 full ellipse, 3 circles, 1 point,
+    // and 10 open pieces that chain to 1 loop (the LINES square) and 5 paths.
     assert_eq!(count(&model, ItemKind::Loop), 4, "{:#?}", model.items);
     assert_eq!(count(&model, ItemKind::Path), 5);
     assert_eq!(count(&model, ItemKind::Circle), 3);

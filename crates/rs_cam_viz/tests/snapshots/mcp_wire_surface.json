@@ -2270,9 +2270,100 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "join_tolerance_mm": {
+          "description": "Two open piece ends of a DXF or an SVG closer than this (mm, in the\nfile before the declared units) join into one shape. Omit for the\ndefault, 0.01 mm. The reply's `import_report` states the join.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "path": {
           "description": "File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp",
           "type": "string"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "description": "The declared units of a model file (geometry selection P4.8). The same\nserde shape as core `ModelUnits`, so the wire JSON is the project-file\nJSON: `{\"kind\": \"millimeters\"}`, `{\"kind\": \"inches\"}`,\n`{\"kind\": \"centimeters\"}`, `{\"kind\": \"meters\"}` or\n`{\"kind\": \"custom\", \"scale\": 0.2646}`.",
+              "oneOf": [
+                {
+                  "description": "1:1.",
+                  "properties": {
+                    "kind": {
+                      "const": "millimeters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x25.4.",
+                  "properties": {
+                    "kind": {
+                      "const": "inches",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x1000.",
+                  "properties": {
+                    "kind": {
+                      "const": "meters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x10.",
+                  "properties": {
+                    "kind": {
+                      "const": "centimeters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "One unit of the file times this factor is 1 mm.",
+                  "properties": {
+                    "kind": {
+                      "const": "custom",
+                      "type": "string"
+                    },
+                    "scale": {
+                      "format": "double",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "scale"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The declared units of the file: the scale to mm. The JSON is the\nproject-file `units` value. Omit for the default: an SVG takes the\nSVG default (1:1, one user unit is 1 mm), every other file mm."
         }
       },
       "required": [
@@ -4254,6 +4345,117 @@
       "type": "object"
     },
     "name": "set_machine_kinematics"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Set the import options of a drawing model (geometry selection P4.8):\nthe model reads its file again with them. A changed join can change the\nitems, so picks of the old pieces flag as lost.",
+      "properties": {
+        "join_tolerance_mm": {
+          "description": "The new join tolerance in mm. Omit to keep the model's tolerance.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "model_id": {
+          "description": "The model id (`inspect_model`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "description": "The declared units of a model file (geometry selection P4.8). The same\nserde shape as core `ModelUnits`, so the wire JSON is the project-file\nJSON: `{\"kind\": \"millimeters\"}`, `{\"kind\": \"inches\"}`,\n`{\"kind\": \"centimeters\"}`, `{\"kind\": \"meters\"}` or\n`{\"kind\": \"custom\", \"scale\": 0.2646}`.",
+              "oneOf": [
+                {
+                  "description": "1:1.",
+                  "properties": {
+                    "kind": {
+                      "const": "millimeters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x25.4.",
+                  "properties": {
+                    "kind": {
+                      "const": "inches",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x1000.",
+                  "properties": {
+                    "kind": {
+                      "const": "meters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "x10.",
+                  "properties": {
+                    "kind": {
+                      "const": "centimeters",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "One unit of the file times this factor is 1 mm.",
+                  "properties": {
+                    "kind": {
+                      "const": "custom",
+                      "type": "string"
+                    },
+                    "scale": {
+                      "format": "double",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "scale"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The new declared units. Omit to keep the model's units."
+        }
+      },
+      "required": [
+        "model_id"
+      ],
+      "title": "SetModelImportOptionsParam",
+      "type": "object"
+    },
+    "name": "set_model_import_options"
   },
   {
     "inputSchema": {

@@ -10,6 +10,7 @@
 
 pub mod flat_regions;
 pub mod item;
+pub mod join;
 pub mod key;
 pub mod near;
 pub mod refusal;

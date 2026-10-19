@@ -152,6 +152,8 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let op = OperationConfig::Drill(cfg.clone());

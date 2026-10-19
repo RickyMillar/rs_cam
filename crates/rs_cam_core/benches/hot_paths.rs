@@ -767,6 +767,8 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = session
         .apply(Command::AddModel(AddModelArgs {

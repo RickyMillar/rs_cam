@@ -8,7 +8,7 @@ processing. The server lives here, not in `rs_cam_mcp`.
 - `../app.rs` — `RsCamApp` and the frame update loop.
 - `mcp.rs` + `mcp/` — the MCP pump (`handle_mcp_request`, export, notifications);
   `commands.rs` (core route; S4 rows in `commands/stock_changes.rs`; P2.7 selection rows and the
-  `selection_status` parity test in `commands/selection.rs`), `project.rs`, `generation.rs` (add, generate, feeds), `diagnostics.rs`,
+  `selection_status` parity test in `commands/selection.rs`; P4.8 `import_model` options, `set_model_import_options`, `model_import_json` and their GUI parity tests in `commands/import.rs`), `project.rs`, `generation.rs` (add, generate, feeds), `diagnostics.rs`,
   `simulation.rs` (run, scrub, cut trace), `view.rs` (reach map, screenshots).
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.

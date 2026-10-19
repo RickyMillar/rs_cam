@@ -77,6 +77,8 @@ fn polygon_model(id: usize) -> LoadedModel {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 
@@ -92,6 +94,8 @@ fn mesh_model(id: usize) -> LoadedModel {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 

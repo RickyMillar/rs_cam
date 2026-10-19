@@ -291,6 +291,8 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);

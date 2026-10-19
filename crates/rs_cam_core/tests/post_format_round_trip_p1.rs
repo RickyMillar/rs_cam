@@ -149,6 +149,8 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = session
         .apply(Command::AddModel(AddModelArgs {

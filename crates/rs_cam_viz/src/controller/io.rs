@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use rs_cam_core::geo::BoundingBox3;
+use rs_cam_core::io::ImportOptions;
 use rs_cam_core::session::{
     AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectLoadWarning, ProjectSession,
     SetPostConfigArgs, SetStockConfigArgs,
@@ -87,7 +88,14 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub fn import_stl_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let model = import::import_stl(path, 0, 1.0)?; // ID reassigned by session
+        // The id is reassigned by the session.
+        let model = import::import_model(
+            path,
+            0,
+            ModelKind::Stl,
+            ModelUnits::Millimeters,
+            ImportOptions::default(),
+        )?;
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
         let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
@@ -108,8 +116,13 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_svg_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let model = import::import_svg(path, 0, 1.0)?;
+    /// Import a drawing (SVG or DXF) at the units and options of the import
+    /// dialog (P4.8). The dialog has already read the file once for its
+    /// preview; this door adds the model that preview showed.
+    pub fn import_drawing(
+        &mut self,
+        model: rs_cam_core::session::LoadedModel,
+    ) -> Result<Option<BoundingBox3>, VizError> {
         let bbox = model.bbox();
         let command = Command::AddModel(AddModelArgs {
             model: Box::new(model),
@@ -123,23 +136,59 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
-    pub fn import_dxf_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let model = import::import_dxf(path, 0, 1.0)?;
-        let bbox = model.bbox();
-        let command = Command::AddModel(AddModelArgs {
-            model: Box::new(model),
+    /// Open the import dialog for a drawing (P4.8). The dialog reads the
+    /// file once at the default units and options; nothing is added yet.
+    pub fn open_import_dialog(&mut self, path: &Path, kind: ModelKind) {
+        let declared = (kind == ModelKind::Svg).then(|| {
+            rs_cam_core::io::svg_input::svg_declared_size_of_file(path).map_err(|e| e.to_string())
         });
-        let assigned_id = self.apply_created(command);
-        if let Some(assigned_id) = assigned_id {
-            self.state.selection = Selection::Model(ModelId(assigned_id));
-        }
-        self.state.gui.mark_edited();
-        self.pending_upload = true;
-        Ok(bbox)
+        let units = rs_cam_core::io::default_import_units(path, kind);
+        let options = ImportOptions::default();
+        let preview = import_preview(path, kind, units, options);
+        self.state.panels.import_dialog = Some(crate::state::panels::ImportDialog {
+            path: path.to_path_buf(),
+            kind,
+            units,
+            options,
+            declared,
+            preview,
+        });
+    }
+
+    /// Read the file of the open import dialog again at new units and
+    /// options. The dialog sends this on a committed change only.
+    pub fn edit_import_dialog(&mut self, units: ModelUnits, options: ImportOptions) {
+        let Some(dialog) = self.state.panels.import_dialog.as_mut() else {
+            return;
+        };
+        dialog.units = units;
+        dialog.options = options;
+        dialog.preview = import_preview(&dialog.path, dialog.kind, units, options);
+    }
+
+    /// Close the import dialog and add nothing.
+    pub fn cancel_import_dialog(&mut self) {
+        self.state.panels.import_dialog = None;
+    }
+
+    /// Close the import dialog and add the model of its preview. A preview
+    /// that the door refused adds nothing and returns the refusal.
+    pub fn confirm_import_dialog(&mut self) -> Result<Option<BoundingBox3>, VizError> {
+        let Some(dialog) = self.state.panels.import_dialog.take() else {
+            return Ok(None);
+        };
+        let model = dialog.preview.map_err(VizError::Other)?;
+        self.import_drawing(model)
     }
 
     pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
-        let model = import::import_step(path, 0, 1.0)?;
+        let model = import::import_model(
+            path,
+            0,
+            ModelKind::Step,
+            ModelUnits::Millimeters,
+            ImportOptions::default(),
+        )?;
         let bbox = model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
         let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
@@ -179,7 +228,9 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let path = model.path.clone();
         let kind = model.kind.unwrap_or(ModelKind::Stl);
-        let new_model = import::import_model(&path, model_id.0, kind, new_units)?;
+        // P4.8: a rescale keeps the record's import options.
+        let options = model.import_options;
+        let new_model = import::import_model(&path, model_id.0, kind, new_units, options)?;
         let bbox = new_model.bbox();
         let auto_stock = self.state.session.stock_config().auto_from_model;
 
@@ -220,6 +271,39 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(bbox)
     }
 
+    /// Set the import options of a drawing model (P4.8): read its file
+    /// again at its units with the new options, through the refresh row.
+    ///
+    /// The join can change the items, so picks of the old pieces flag as
+    /// lost (S18); the row drops the results that read the model. A mesh
+    /// or a STEP model has no join: the door does nothing for it.
+    pub fn set_model_import_options(
+        &mut self,
+        model_id: ModelId,
+        options: ImportOptions,
+    ) -> Result<(), VizError> {
+        let Some(model) = self
+            .state
+            .session
+            .models()
+            .iter()
+            .find(|m| m.id == model_id.0)
+        else {
+            return Err(VizError::Other(format!("Model {model_id:?} not found")));
+        };
+        let kind = model.kind.unwrap_or(ModelKind::Stl);
+        if !matches!(kind, ModelKind::Svg | ModelKind::Dxf) || model.import_options == options {
+            return Ok(());
+        }
+        let path = model.path.clone();
+        let units = model.units.unwrap_or(ModelUnits::Millimeters);
+        let fresh = import::import_model(&path, model_id.0, kind, units, options)?;
+        self.adopt_model_geometry(model_id, fresh, None)?;
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
+        Ok(())
+    }
+
     pub fn reload_model(&mut self, model_id: ModelId) -> Result<(), VizError> {
         let Some(model) = self
             .state
@@ -234,8 +318,10 @@ impl<B: ComputeBackend> AppController<B> {
         let path = model.path.clone();
         let kind = model.kind.unwrap_or(ModelKind::Stl);
         let units = model.units.unwrap_or(ModelUnits::Millimeters);
+        // P4.8: a reload reads the file with the record's import options.
+        let options = model.import_options;
 
-        let reloaded = import::import_model(&path, model_id.0, kind, units)?;
+        let reloaded = import::import_model(&path, model_id.0, kind, units, options)?;
 
         // G-RELOADTARGETS (F4.4). This door used to assign five fields
         // by hand and never `drill_targets` or `layers`, so the previous
@@ -288,6 +374,8 @@ impl<B: ComputeBackend> AppController<B> {
         };
 
         let units = model.units.unwrap_or(ModelUnits::Millimeters);
+        // P4.8: a relink keeps the record's import options.
+        let options = model.import_options;
         let previous_kind = model.kind;
         let name = model.name.clone();
 
@@ -316,7 +404,7 @@ impl<B: ComputeBackend> AppController<B> {
         // The interactive door, as Import and Reload use — the door the
         // `model_units_survive_reload_g_unitsreload` sentry pins against the
         // project door.
-        let relinked = import::import_model(new_path, model_id.0, kind, units)?;
+        let relinked = import::import_model(new_path, model_id.0, kind, units, options)?;
 
         // Moved, not cloned: `relinked` is this function's own import and
         // is dropped here. The field split this door wrote by hand is now
@@ -486,6 +574,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui = gui;
         self.state.selection = Selection::None;
         self.state.panels.pending_setup_removal = None;
+        self.state.panels.import_dialog = None;
         self.state.simulation = SimulationState::new();
         // `[simulation]` of the settings file: the playback speed and the
         // stock view a new project starts with.
@@ -554,4 +643,15 @@ impl<B: ComputeBackend> AppController<B> {
                 .and_then(|r| r.cut_trace.as_ref()),
         )
     }
+}
+
+/// The import dialog's read of the file: the model, or the door's refusal
+/// as a sentence.
+fn import_preview(
+    path: &Path,
+    kind: ModelKind,
+    units: ModelUnits,
+    options: ImportOptions,
+) -> Result<rs_cam_core::session::LoadedModel, String> {
+    import::import_model(path, 0, kind, units, options).map_err(|e| e.to_string())
 }

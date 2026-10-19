@@ -141,6 +141,8 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let tc = ToolpathConfig {

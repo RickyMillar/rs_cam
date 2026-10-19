@@ -1146,6 +1146,8 @@ fn chain_fixture() -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let tool = s.tools()[0].id.0;
     let model = s.models()[0].id;

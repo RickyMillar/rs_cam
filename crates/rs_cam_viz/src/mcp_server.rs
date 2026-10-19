@@ -1003,7 +1003,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "import_model",
-        description = "Import a model file into the current project. Supported formats: .stl (3D mesh), .dxf (2D vectors), .svg (2D vectors), .step/.stp (BREP CAD). Auto-detects format from file extension. Returns model ID and geometry summary."
+        description = "Import a model file into the current project. Supported formats: .stl (3D mesh), .dxf (2D vectors), .svg (2D vectors), .step/.stp (BREP CAD). Auto-detects format from file extension. Optional `units` (the scale; the project-file JSON, e.g. {\"kind\": \"inches\"}) and `join_tolerance_mm` (DXF and SVG: open piece ends closer than this join; default 0.01). Returns model ID, geometry summary, and for a drawing `import_report` (the join per layer)."
     )]
     async fn import_model(
         &self,
@@ -1012,6 +1012,22 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::ImportModel(param)))
                 .await,
+        )
+    }
+
+    #[tool(
+        name = "set_model_import_options",
+        description = "Set the import options of a drawing model (DXF or SVG): `units` (the scale) and `join_tolerance_mm`. The model reads its file again with them, as the GUI model panel does. A changed join can change the items: picks of the old pieces flag as lost, and the toolpaths that read the model go stale. Returns the new `import_options`, `import_report` and bbox."
+    )]
+    async fn set_model_import_options(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::SetModelImportOptionsParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetModelImportOptions(
+                param,
+            )))
+            .await,
         )
     }
 

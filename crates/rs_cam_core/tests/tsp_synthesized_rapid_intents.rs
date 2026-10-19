@@ -184,6 +184,8 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let op_type = op.op_type();

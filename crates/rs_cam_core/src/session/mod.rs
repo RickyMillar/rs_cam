@@ -399,8 +399,9 @@ impl From<CollisionCheckError> for SessionError {
 /// Geometry loaded from a model file.
 pub(crate) enum LoadedGeometry {
     Mesh(TriangleMesh),
-    /// The items of a drawing (DXF, SVG), each with its layer (P2.1).
-    Drawing(ItemSet),
+    /// The items of a drawing (DXF, SVG), each with its layer (P2.1), and
+    /// the join report of the import (P4.8).
+    Drawing(ItemSet, crate::io::ImportReport),
     /// Mesh + BREP face groups (STEP / CAD models). The enriched form
     /// is required for face-selective operations; downgrading to a
     /// flat `Mesh` silently strips topology and breaks face pickers.
@@ -440,6 +441,14 @@ pub struct LoadedModel {
     pub winding_report: Option<f64>,
     /// Load/import failure preserved so broken references can round-trip.
     pub load_error: Option<String>,
+    /// The import options of the model (P4.8): the join tolerance. The
+    /// project file stores them, and every re-import (reload, rescale,
+    /// relink) reads the file with them. KEPT on a refresh, like `units`.
+    pub import_options: crate::io::ImportOptions,
+    /// What the join of open pieces did at the last import (P4.8), per
+    /// layer. `None` for a mesh, a STEP model or a failed load. Not saved:
+    /// each load computes it.
+    pub import_report: Option<crate::io::ImportReport>,
 }
 
 impl LoadedModel {
@@ -450,7 +459,8 @@ impl LoadedModel {
     /// here rather than re-rolling the format dispatch.
     ///
     /// `kind`/`units` of `None` infer from the file extension / assume
-    /// millimeters, matching the project loader's defaults. Relative
+    /// millimeters, matching the project loader's defaults. The import
+    /// options are the defaults (P4.8): the batch CLI sets none. Relative
     /// paths resolve against `base_dir`.
     pub fn from_file(
         id: usize,
@@ -466,6 +476,7 @@ impl LoadedModel {
             name: name.to_owned(),
             kind,
             units,
+            import: crate::io::ImportOptions::default(),
         };
         let resolved_kind = kind.or_else(|| crate::io::infer_kind_from_path(path));
         let geometry = project_file::load_model_geometry(&section, base_dir)?;
@@ -478,19 +489,21 @@ impl LoadedModel {
             path,
             resolved_kind,
             units,
+            section.import,
         ))
     }
 
     /// Construct a placeholder model for a file that failed to load.
     ///
-    /// The path, name, kind, and units are preserved so the broken reference
-    /// can round-trip through save/load.
+    /// The path, name, kind, units and import options are preserved so the
+    /// broken reference can round-trip through save/load.
     pub fn placeholder(
         id: usize,
         path: std::path::PathBuf,
         name: String,
         kind: ModelKind,
         units: ModelUnits,
+        import_options: crate::io::ImportOptions,
         load_error: String,
     ) -> Self {
         Self {
@@ -504,6 +517,8 @@ impl LoadedModel {
             enriched_mesh: None,
             winding_report: None,
             load_error: Some(load_error),
+            import_options,
+            import_report: None,
         }
     }
 
@@ -519,8 +534,11 @@ impl LoadedModel {
     /// sets them itself, after this call.
     ///
     /// **REPLACED**: every field the file content determines — `mesh`,
-    /// `items`, `enriched_mesh`, `winding_report`, `load_error` — plus
-    /// `path` and `kind`, which name
+    /// `items`, `enriched_mesh`, `winding_report`, `load_error`,
+    /// `import_report` — plus `import_options` (P4.8), so the record always
+    /// states the options that made its geometry: a refresh door imports
+    /// with the record's options, and a change of options is a re-import
+    /// with the new ones. Also `path` and `kind`, which name
     /// the file the geometry came from. A reload and a rescale re-import the
     /// path and kind they were given, so those two do not move there; a
     /// relink points the record at a different file, and they do.
@@ -544,6 +562,8 @@ impl LoadedModel {
             enriched_mesh,
             winding_report,
             load_error,
+            import_report,
+            import_options,
             id: _,
             name: _,
             units: _,
@@ -556,6 +576,8 @@ impl LoadedModel {
         self.enriched_mesh = enriched_mesh;
         self.winding_report = winding_report;
         self.load_error = load_error;
+        self.import_report = import_report;
+        self.import_options = import_options;
     }
 
     /// Compute the bounding box of the model's geometry.
@@ -2370,6 +2392,8 @@ mod tests {
                 enriched_mesh: None,
                 winding_report: None,
                 load_error: None,
+                import_options: Default::default(),
+                import_report: None,
             })
             .build();
 

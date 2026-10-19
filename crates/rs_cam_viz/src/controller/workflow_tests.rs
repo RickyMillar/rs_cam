@@ -115,6 +115,8 @@ fn step_model() -> LoadedModel {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 
@@ -130,6 +132,8 @@ fn stl_model() -> LoadedModel {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 

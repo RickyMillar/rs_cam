@@ -1542,6 +1542,8 @@ mod tests {
             enriched_mesh: None,
             winding_report: None,
             load_error: None,
+            import_options: Default::default(),
+            import_report: None,
         };
         let obstacle = Obstacle {
             id: ObstacleId(0),

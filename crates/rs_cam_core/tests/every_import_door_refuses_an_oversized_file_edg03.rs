@@ -69,7 +69,12 @@ fn the_fixture_really_is_over_the_limit() {
 #[test]
 fn dxf_import_refuses_an_oversized_file() {
     let fixture = OversizeFixture::new("dxf");
-    let error = load_dxf(fixture.path(), 5.0).expect_err("DXF must refuse");
+    let error = load_dxf(
+        fixture.path(),
+        5.0,
+        rs_cam_core::selection::join::CLOSE_TOL_MM,
+    )
+    .expect_err("DXF must refuse");
     let DxfError::FileTooLarge { size_mb, limit_mb } = error else {
         panic!("DXF refused with {error:?}, not FileTooLarge");
     };
@@ -83,7 +88,13 @@ fn dxf_import_refuses_an_oversized_file() {
 #[test]
 fn svg_import_refuses_an_oversized_file() {
     let fixture = OversizeFixture::new("svg");
-    let error = load_svg(fixture.path(), 0.1, 1.0).expect_err("SVG must refuse");
+    let error = load_svg(
+        fixture.path(),
+        0.1,
+        1.0,
+        rs_cam_core::selection::join::CLOSE_TOL_MM,
+    )
+    .expect_err("SVG must refuse");
     let SvgError::FileTooLarge { size_mb, limit_mb } = error else {
         panic!("SVG refused with {error:?}, not FileTooLarge");
     };
@@ -100,12 +111,17 @@ fn the_three_doors_state_the_same_refusal() {
     // DXF and SVG match it.
     let dxf = OversizeFixture::new("dxf");
     let svg = OversizeFixture::new("svg");
-    let dxf_text = load_dxf(dxf.path(), 5.0)
+    let dxf_text = load_dxf(dxf.path(), 5.0, rs_cam_core::selection::join::CLOSE_TOL_MM)
         .expect_err("DXF must refuse")
         .to_string();
-    let svg_text = load_svg(svg.path(), 0.1, 1.0)
-        .expect_err("SVG must refuse")
-        .to_string();
+    let svg_text = load_svg(
+        svg.path(),
+        0.1,
+        1.0,
+        rs_cam_core::selection::join::CLOSE_TOL_MM,
+    )
+    .expect_err("SVG must refuse")
+    .to_string();
     for text in [&dxf_text, &svg_text] {
         assert!(
             text.contains("too large") && text.contains("limit"),

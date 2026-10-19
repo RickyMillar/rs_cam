@@ -63,9 +63,11 @@ use crate::ui_command::UiCommand;
 
 use super::RestAnalysisDials;
 
+mod import;
 mod obstacles;
 mod selection;
 mod stock_changes;
+pub(crate) use import::model_import_json;
 pub(crate) use obstacles::obstacle_json;
 pub(crate) use selection::item_counts_json;
 pub(crate) use stock_changes::stock_change_json;
@@ -377,32 +379,9 @@ impl RsCamApp {
                 self.plan_set_alignment_pins(&request, before)
             }
             CoreRequest::ImportModel(p) => {
-                let file_path = Path::new(&p.path);
-                let ext = file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                // C10: one extension table, in `rs_cam_core::io`. This arm
-                // used to carry its own copy.
-                let Some(kind) = rs_cam_core::io::infer_kind_from_path(file_path) else {
-                    return CorePlan::Answered(json_str(serde_json::json!({
-                        "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
-                    })));
-                };
-                let imported = crate::io::import::import_model(
-                    file_path,
-                    0,
-                    kind,
-                    rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
-                );
-                let model = match imported {
-                    Ok(model) => model,
-                    Err(e) => {
-                        return CorePlan::Answered(json_str(
-                            serde_json::json!({"error": format!("{e}")}),
-                        ));
-                    }
+                let (model, ext) = match import::import_request_model(&p) {
+                    Ok(imported) => imported,
+                    Err(reply) => return CorePlan::Answered(reply),
                 };
                 // The extension is the reply's `kind` when the import
                 // reports none, as it always was.
@@ -413,6 +392,15 @@ impl RsCamApp {
                     }),
                     Box::new(before),
                 )
+            }
+            CoreRequest::SetModelImportOptions(p) => {
+                match import::model_import_options_args(&self.controller.state().session, &p) {
+                    Ok(args) => {
+                        before.index = Some(args.model_id);
+                        CorePlan::Apply(Command::AdoptModelGeometry(args), Box::new(before))
+                    }
+                    Err(reply) => CorePlan::Answered(reply),
+                }
             }
             CoreRequest::AddSetup(p) => CorePlan::Apply(
                 Command::AddSetup(AddSetupArgs {
@@ -1784,6 +1772,12 @@ impl RsCamApp {
                     .unwrap_or(&p.path);
                 Some(format!("MCP: Importing '{name}'"))
             }
+            CoreRequest::SetModelImportOptions(p) => {
+                let model_id = p.model_id;
+                Some(format!(
+                    "MCP: Read model {model_id} again with new import options"
+                ))
+            }
             CoreRequest::SaveProject(_) => Some("MCP: Saved project".to_owned()),
             CoreRequest::SetToolpathParam(p) => {
                 let param = &p.param;
@@ -2149,6 +2143,22 @@ impl RsCamApp {
                     "name": name,
                     "kind": kind.to_lowercase(),
                 });
+                // P4.8: the units, the import options and the join report.
+                let import = self
+                    .controller
+                    .state()
+                    .session
+                    .models()
+                    .last()
+                    .map(model_import_json)
+                    .unwrap_or_default();
+                if let (Some(map), Some(import)) = (resp.as_object_mut(), import.as_object()) {
+                    for key in ["units", "import_options", "import_report"] {
+                        if let Some(value) = import.get(key) {
+                            map.insert(key.into(), value.clone());
+                        }
+                    }
+                }
                 if let Some(bbox) = bbox {
                     // SAFETY: resp is a known JSON object just built here
                     #[allow(clippy::indexing_slicing)]
@@ -2885,9 +2895,32 @@ impl RsCamApp {
             // runs through the controller. It is not a wire MUTATION, which
             // is what this arm answers about. No MCP arm applies
             // `SetToolpathDebugOptions` (U4, 2026-10-01).
+            CommandId::AdoptModelGeometry => {
+                let stale = self.core_stale(&effects);
+                if effects.simulation_cleared {
+                    self.controller.invalidate_simulation();
+                }
+                self.controller.state_mut().gui.mark_edited();
+                self.controller.set_pending_upload();
+                let model_id = before.index();
+                let summary = self
+                    .controller
+                    .state()
+                    .session
+                    .models()
+                    .iter()
+                    .find(|m| m.id == model_id)
+                    .map(model_import_json)
+                    .unwrap_or_default();
+                CoreReply::quiet(self.mcp_mutation_result(
+                    format!("Model {model_id} read again with its import options"),
+                    summary,
+                    stale,
+                    &before.diagnostics,
+                ))
+            }
             CommandId::AdoptResult
             | CommandId::AdoptRestFreshComparison
-            | CommandId::AdoptModelGeometry
             | CommandId::SetSetupName
             | CommandId::SetSetupDatum
             | CommandId::SetSetupModels

@@ -149,6 +149,8 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     builder
         .add_toolpath(0, toolpath(0))

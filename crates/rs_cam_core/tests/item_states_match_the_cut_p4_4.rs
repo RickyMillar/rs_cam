@@ -78,8 +78,14 @@ use rs_cam_core::session::{
 fn load() -> LoadedModel {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/selection_p4_4/states.dxf");
-    rs_cam_core::io::load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters)
-        .expect("the drawing loads")
+    rs_cam_core::io::load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("the drawing loads")
 }
 
 fn stock() -> StockConfig {

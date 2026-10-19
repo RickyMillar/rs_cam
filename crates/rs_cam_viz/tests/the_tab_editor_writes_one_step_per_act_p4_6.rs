@@ -159,6 +159,8 @@ fn controller(
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let mut tc = toolpath(tab_points);
     tc.model_id = model_id;

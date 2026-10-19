@@ -319,7 +319,7 @@ fn baseline_files() -> Vec<(String, LoadedModel)> {
         if kind == ModelKind::Step && !cfg!(feature = "step") {
             continue;
         }
-        let model = load_model_file(&path, 0, kind, units).unwrap();
+        let model = load_model_file(&path, 0, kind, units, Default::default()).unwrap();
         out.push((label.to_owned(), model));
     }
     out

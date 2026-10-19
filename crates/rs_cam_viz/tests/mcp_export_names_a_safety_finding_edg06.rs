@@ -142,6 +142,8 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let _ = builder
         .add_toolpath(0, toolpath_config(0, OP_NAME))

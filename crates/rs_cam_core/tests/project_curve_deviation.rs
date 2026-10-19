@@ -293,7 +293,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
 /// The drawn rings of a DXF, nested as the import nested them before P2.1.
 fn nested_rings(path: &std::path::Path) -> Vec<rs_cam_core::polygon::Polygon2> {
     rs_cam_core::polygon::detect_containment(
-        load_dxf(path, 5.0)
+        load_dxf(path, 5.0, rs_cam_core::selection::join::CLOSE_TOL_MM)
             .expect("rivers_aligned.dxf loads")
             .items
             .iter()

@@ -314,6 +314,8 @@ fn state_for_recipe(
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
 
     let mut builder = ProjectSessionBuilder::new()

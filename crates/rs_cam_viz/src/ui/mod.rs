@@ -5,6 +5,7 @@ pub mod components;
 pub mod export_wizard;
 pub mod feeds;
 pub mod generation_resolution_modal;
+pub mod import_modal;
 pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;
@@ -81,9 +82,22 @@ pub(crate) fn model_import_event(path: PathBuf) -> Option<AppEvent> {
 pub enum AppEvent {
     // File
     ImportStl(PathBuf),
+    /// Open the import dialog of an SVG (P4.8).
     ImportSvg(PathBuf),
+    /// Open the import dialog of a DXF (P4.8).
     ImportDxf(PathBuf),
     ImportStep(PathBuf),
+    /// The import dialog: read the file again at these units and options.
+    ImportDialogEdit(
+        crate::state::job::ModelUnits,
+        rs_cam_core::io::ImportOptions,
+    ),
+    /// The import dialog: add the model of the preview.
+    ImportDialogConfirm,
+    /// The import dialog: close it and add nothing.
+    ImportDialogCancel,
+    /// Set the import options of a drawing model (P4.8, the model panel).
+    SetModelImportOptions(ModelId, rs_cam_core::io::ImportOptions),
     RescaleModel(ModelId, crate::state::job::ModelUnits),
     RemoveModel(ModelId),
     ReloadModel(ModelId),

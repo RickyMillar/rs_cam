@@ -810,6 +810,8 @@ fn make_session_with_pocket_model() -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let _ = s.add_model(model);
     s
@@ -1234,6 +1236,8 @@ fn the_collision_sweep_builds_one_index_per_model() {
             enriched_mesh: None,
             winding_report: None,
             load_error: None,
+            import_options: Default::default(),
+            import_report: None,
         }
     }
 

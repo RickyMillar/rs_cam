@@ -181,6 +181,31 @@ pub struct PanelDrafts {
     /// The pin wizard (R4), when it is open. It holds its own draft pins,
     /// so Cancel changes nothing.
     pub pin_wizard: Option<crate::ui::pin_wizard::PinWizardState>,
+    /// The import dialog of a drawing (P4.8), when it is open. Cancel adds
+    /// nothing; Import adds the model of the preview.
+    pub import_dialog: Option<ImportDialog>,
+}
+
+/// The import dialog of a drawing, SVG or DXF (geometry selection P4.8).
+///
+/// The dialog reads the file through the one import door
+/// (`rs_cam_core::io::load_model_file`) at its units and options, on open
+/// and on each committed change. Import adds the model of that read, so
+/// the dialog shows exactly what Import adds.
+#[derive(Debug, Clone)]
+pub struct ImportDialog {
+    pub path: std::path::PathBuf,
+    /// `Svg` or `Dxf`.
+    pub kind: rs_cam_core::compute::stock_config::ModelKind,
+    /// The declared units (the scale). The default is core's
+    /// `svg_default_units` for an SVG, mm for a DXF.
+    pub units: rs_cam_core::compute::stock_config::ModelUnits,
+    pub options: rs_cam_core::io::ImportOptions,
+    /// The size the SVG file declares, or why it could not be read. `None`
+    /// for a DXF.
+    pub declared: Option<Result<rs_cam_core::io::svg_input::SvgDeclaredSize, String>>,
+    /// The import at `units` and `options`, or the refusal of the door.
+    pub preview: Result<rs_cam_core::session::LoadedModel, String>,
 }
 
 #[cfg(test)]

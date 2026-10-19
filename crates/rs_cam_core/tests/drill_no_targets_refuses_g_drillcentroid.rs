@@ -73,8 +73,14 @@ fn repo_root() -> PathBuf {
 /// polygon, no point and no circle.
 fn star_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_star.svg");
-    let model = load_model_file(&path, 0, ModelKind::Svg, ModelUnits::Millimeters)
-        .expect("demo_star.svg imports");
+    let model = load_model_file(
+        &path,
+        0,
+        ModelKind::Svg,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("demo_star.svg imports");
     assert!(
         !model
             .items
@@ -97,8 +103,14 @@ fn star_model() -> LoadedModel {
 /// circle-like and makes ONE `Circle` item.
 fn pocket_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_pocket.svg");
-    load_model_file(&path, 0, ModelKind::Svg, ModelUnits::Millimeters)
-        .expect("demo_pocket.svg imports")
+    load_model_file(
+        &path,
+        0,
+        ModelKind::Svg,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("demo_pocket.svg imports")
 }
 
 /// The same star polygon, plus ONE circle — what a DXF with an outline and

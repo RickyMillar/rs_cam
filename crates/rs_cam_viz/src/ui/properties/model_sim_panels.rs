@@ -175,6 +175,32 @@ pub(super) fn draw_model_properties(
         }
     }
 
+    // P4.8: a drawing (SVG, DXF) shows its scale, its join tolerance and
+    // the join report of its import: the rows of the import dialog. A
+    // drawing has no mesh, so the Units / Scale section above does not
+    // draw for it.
+    if let Some(report) = &model.import_report {
+        use crate::ui::components::DataTable;
+        ui.add_space(8.0);
+        crate::ui::components::SectionHeader::new("Import").show(ui);
+        let current = model.units.unwrap_or(ModelUnits::Millimeters);
+        if let Some(units) =
+            crate::ui::import_modal::units_row(ui, egui::Id::new(("model_units_row", id)), current)
+        {
+            events.push(AppEvent::RescaleModel(id, units));
+        }
+        if let Some(options) = crate::ui::import_modal::join_row(
+            ui,
+            egui::Id::new(("model_join_tolerance", id)),
+            model.import_options,
+        ) {
+            events.push(AppEvent::SetModelImportOptions(id, options));
+        }
+        DataTable::new(("model_import_report", id))
+            .row(crate::ui::import_modal::report_row(report))
+            .show(ui);
+    }
+
     // Expert-grade internals — mesh counts, BREP topology, polygon listing —
     // grouped under one default-closed disclosure (density pass 2026-06-11).
     // Dimensions, warnings, and units/scale stay top-level above.

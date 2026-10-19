@@ -525,6 +525,8 @@ fn step_part() -> LoadedModel {
         enriched_mesh: Some(Arc::new(enriched)),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 

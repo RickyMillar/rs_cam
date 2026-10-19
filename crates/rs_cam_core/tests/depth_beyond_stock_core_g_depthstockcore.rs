@@ -298,6 +298,8 @@ fn pocket_session(depth: f64) -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let tc = ToolpathConfig {
         shoe: Default::default(),

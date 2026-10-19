@@ -80,12 +80,22 @@ fn both_doors_apply_a_step_models_declared_units() {
     // NON-VACUITY: the interactive door must actually move the geometry when
     // the units change. Without this the agreement assertion below could
     // pass because neither door scales anything.
-    let as_mm =
-        rs_cam_core::io::load_model_file(&step_path, 1, ModelKind::Step, ModelUnits::Millimeters)
-            .expect("interactive load, mm");
-    let as_inches =
-        rs_cam_core::io::load_model_file(&step_path, 1, ModelKind::Step, ModelUnits::Inches)
-            .expect("interactive load, inches");
+    let as_mm = rs_cam_core::io::load_model_file(
+        &step_path,
+        1,
+        ModelKind::Step,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("interactive load, mm");
+    let as_inches = rs_cam_core::io::load_model_file(
+        &step_path,
+        1,
+        ModelKind::Step,
+        ModelUnits::Inches,
+        Default::default(),
+    )
+    .expect("interactive load, inches");
     let mm_bbox = as_mm.bbox().expect("mm bbox");
     let inch_bbox = as_inches.bbox().expect("inch bbox");
     let mm_x = mm_bbox.max.x - mm_bbox.min.x;

@@ -52,8 +52,10 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::io::load_model_file;
+use rs_cam_core::io::{ImportOptions, load_model_file};
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::ItemKind;
+use rs_cam_core::session::LoadedModel;
 
 fn repo_root() -> PathBuf {
     // CARGO_MANIFEST_DIR is crates/rs_cam_core.
@@ -94,6 +96,24 @@ fn extent(polygons: &[Polygon2]) -> (f64, f64) {
 /// Load the fixture through the PROJECT-FILE door, at the given units, by
 /// building a minimal project that references it.
 fn via_project_file(path: &Path, kind: ModelKind, units: ModelUnits) -> Vec<Polygon2> {
+    via_project_file_model(path, kind, units, None)
+        .outlines_pre_selection()
+        .expect("a 2D model must carry polygons")
+        .as_ref()
+        .clone()
+}
+
+/// The model the PROJECT-FILE door loads, with an optional
+/// `[models.import]` join tolerance (P4.8).
+fn via_project_file_model(
+    path: &Path,
+    kind: ModelKind,
+    units: ModelUnits,
+    join_tolerance_mm: Option<f64>,
+) -> LoadedModel {
+    let import = join_tolerance_mm
+        .map(|t| format!("\n[models.import]\njoin_tolerance_mm = {t}\n"))
+        .unwrap_or_default();
     let toml = format!(
         r#"
 format_version = 3
@@ -105,7 +125,7 @@ path = "{}"
 name = "fixture"
 kind = "{}"
 units = {{ kind = "{}" }}
-"#,
+{import}"#,
         path.display(),
         match kind {
             ModelKind::Dxf => "dxf",
@@ -121,9 +141,10 @@ units = {{ kind = "{}" }}
         },
     );
     let dir = std::env::temp_dir().join(format!(
-        "rs_cam_units_reload_{}_{:?}",
+        "rs_cam_units_reload_{}_{:?}_{:?}",
         std::process::id(),
-        units
+        units,
+        join_tolerance_mm
     ));
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let project_path = dir.join("project.toml");
@@ -131,14 +152,9 @@ units = {{ kind = "{}" }}
 
     let session = rs_cam_core::session::ProjectSession::load(&project_path)
         .expect("the fixture project must load");
-    let model = session.models().first().expect("one model");
-    let polys = model
-        .outlines_pre_selection()
-        .expect("a 2D model must carry polygons")
-        .as_ref()
-        .clone();
+    let model = session.models().first().expect("one model").clone();
     let _ = std::fs::remove_dir_all(&dir);
-    polys
+    model
 }
 
 /// Non-vacuity: both doors must actually return geometry, or the equivalence
@@ -151,7 +167,7 @@ fn both_load_paths_return_geometry() {
     ];
     for (path, kind) in cases {
         assert!(path.exists(), "fixture missing: {}", path.display());
-        let direct = load_model_file(&path, 0, kind, ModelUnits::Millimeters)
+        let direct = load_model_file(&path, 0, kind, ModelUnits::Millimeters, Default::default())
             .expect("interactive import must succeed");
         let direct_outlines = direct.outlines_pre_selection().expect("polygons");
         let direct_polys = direct_outlines.as_ref();
@@ -178,8 +194,8 @@ fn the_two_load_paths_agree_on_scale() {
     ];
     for (path, kind) in cases {
         for units in [ModelUnits::Millimeters, ModelUnits::Inches] {
-            let direct =
-                load_model_file(&path, 0, kind, units).expect("interactive import must succeed");
+            let direct = load_model_file(&path, 0, kind, units, Default::default())
+                .expect("interactive import must succeed");
             let direct_outlines = direct.outlines_pre_selection().expect("polygons");
             let direct_polys = direct_outlines.as_ref();
             let loaded = via_project_file(&path, kind, units);
@@ -209,8 +225,22 @@ fn the_two_load_paths_agree_on_scale() {
 #[test]
 fn the_units_dial_actually_scales() {
     let path = dxf_fixture();
-    let mm = load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters).expect("mm load");
-    let inch = load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Inches).expect("inch load");
+    let mm = load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("mm load");
+    let inch = load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Inches,
+        Default::default(),
+    )
+    .expect("inch load");
     let (mw, _) = extent(&mm.outlines_pre_selection().expect("polygons"));
     let (iw, _) = extent(&inch.outlines_pre_selection().expect("polygons"));
     assert!(
@@ -218,4 +248,51 @@ fn the_units_dial_actually_scales() {
         "Inches must scale by 25.4, got {:.6} ({mw:.4} -> {iw:.4})",
         iw / mw
     );
+}
+
+/// P4.8: the join tolerance is an import option, so it must reach both
+/// doors as the units do. The same file at the same units and tolerance
+/// gives the same items through the import door and the project door, at
+/// mm and at inches. Non-vacuity: the wide tolerance joins pieces that the
+/// default leaves apart.
+#[test]
+fn the_two_load_paths_agree_on_the_join_tolerance() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/selection_p2_1/mix.dxf");
+    let paths = |m: &LoadedModel| {
+        m.items
+            .iter()
+            .filter(|i| i.kind() == ItemKind::Path)
+            .count()
+    };
+    let wide = ImportOptions {
+        join_tolerance_mm: 50.0,
+    };
+    for units in [ModelUnits::Millimeters, ModelUnits::Inches] {
+        let default = load_model_file(&path, 0, ModelKind::Dxf, units, ImportOptions::default())
+            .expect("default load");
+        let direct = load_model_file(&path, 0, ModelKind::Dxf, units, wide).expect("wide load");
+        assert!(
+            paths(&direct) < paths(&default),
+            "the wide tolerance must join pieces ({} vs {})",
+            paths(&direct),
+            paths(&default)
+        );
+        let loaded = via_project_file_model(&path, ModelKind::Dxf, units, Some(50.0));
+        assert_eq!(
+            loaded.import_options, wide,
+            "the project door reads the option"
+        );
+        let keys = |m: &LoadedModel| {
+            m.items
+                .iter()
+                .map(|i| format!("{:?}", i.key()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            keys(&loaded),
+            keys(&direct),
+            "{units:?}: the two doors disagree on the join"
+        );
+        assert_eq!(loaded.import_report, direct.import_report);
+    }
 }

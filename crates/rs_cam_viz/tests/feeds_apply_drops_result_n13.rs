@@ -175,6 +175,8 @@ fn build_controller() -> AppController<SilentBackend> {
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let _ = builder
         .add_toolpath(

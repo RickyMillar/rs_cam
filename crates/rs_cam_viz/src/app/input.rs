@@ -18,12 +18,7 @@ impl RsCamApp {
                     Ok(None) => {}
                     Err(error) => self.controller.push_error(&error),
                 },
-                AppEvent::ImportSvg(path) => match self.controller.import_svg_path(&path) {
-                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
-                    Ok(None) => self.fit_camera_to_first_model(),
-                    Err(error) => self.controller.push_error(&error),
-                },
-                AppEvent::ImportDxf(path) => match self.controller.import_dxf_path(&path) {
+                AppEvent::ImportDialogConfirm => match self.controller.confirm_import_dialog() {
                     Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
                     Ok(None) => self.fit_camera_to_first_model(),
                     Err(error) => self.controller.push_error(&error),

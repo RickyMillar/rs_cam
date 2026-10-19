@@ -135,6 +135,8 @@ fn pocket_session() -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let pocket = PocketConfig {
         ramp_feed_rate: None,

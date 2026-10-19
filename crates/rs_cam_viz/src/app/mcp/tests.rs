@@ -839,7 +839,7 @@ fn force_line_json_refuses_plywood() {
 /// A backend that accepts every submission and returns nothing. The U4
 /// test reads what the MCP entry writes into the session, not what a lane
 /// does with a job.
-struct U4SilentBackend;
+pub(crate) struct U4SilentBackend;
 
 impl crate::compute::ComputeBackend for U4SilentBackend {
     fn submit_toolpath(

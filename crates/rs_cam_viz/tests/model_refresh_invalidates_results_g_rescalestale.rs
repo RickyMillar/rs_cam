@@ -167,11 +167,19 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     controller.state.session = ProjectSessionBuilder::new()
         .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
         .build();
+    controller.open_import_dialog(
+        &under_test,
+        rs_cam_core::compute::stock_config::ModelKind::Svg,
+    );
     controller
-        .import_svg_path(&under_test)
+        .confirm_import_dialog()
         .expect("the fixture must import");
+    controller.open_import_dialog(
+        &bystander,
+        rs_cam_core::compute::stock_config::ModelKind::Svg,
+    );
     controller
-        .import_svg_path(&bystander)
+        .confirm_import_dialog()
         .expect("the bystander must import");
 
     let id_under_test = model_id_of(&controller, &under_test);
@@ -369,6 +377,8 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = builder.add_model(record);
     let _ = builder
@@ -398,4 +408,88 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         !is_stale(&controller, 0),
         "and nothing must be marked stale"
     );
+}
+
+// ── P4.8: the import options are a fourth refresh door ──────────────────
+
+fn join(join_tolerance_mm: f64) -> rs_cam_core::io::ImportOptions {
+    rs_cam_core::io::ImportOptions { join_tolerance_mm }
+}
+
+/// A new join tolerance reads the file again through the same refresh row
+/// (`AdoptModelGeometry`), so it drops the results that read the model and
+/// stamps them stale. The bystander keeps its result.
+#[test]
+fn new_import_options_drop_the_dependent_results_p4_8() {
+    let dir = scratch("import_options");
+    let (mut controller, id, _path) = seeded(&dir);
+
+    controller
+        .set_model_import_options(id, join(0.5))
+        .expect("the options apply");
+
+    let model = &controller.state.session.models()[0];
+    assert_eq!(model.id, id.0);
+    assert_eq!(
+        model.import_options,
+        join(0.5),
+        "the record takes the options"
+    );
+    assert!(
+        controller.state.session.get_result(0).is_none(),
+        "the join can change the items, so the dependent result goes"
+    );
+    assert!(is_stale(&controller, 0), "and reads stale");
+    assert!(
+        controller.state.session.get_result(1).is_some(),
+        "the bystander reads another model"
+    );
+    assert!(!is_stale(&controller, 1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The same options again change nothing and drop nothing.
+#[test]
+fn unchanged_import_options_drop_nothing_p4_8() {
+    let dir = scratch("import_options_same");
+    let (mut controller, id, _path) = seeded(&dir);
+    controller
+        .set_model_import_options(id, rs_cam_core::io::ImportOptions::default())
+        .expect("a no-op applies");
+    assert!(controller.state.session.get_result(0).is_some());
+    assert!(!is_stale(&controller, 0));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The other three refresh doors keep the record's options: a reload, a
+/// rescale and a relink read the file with them, so none resets the
+/// tolerance to the default.
+#[test]
+fn every_refresh_door_keeps_the_import_options_p4_8() {
+    let dir = scratch("import_options_kept");
+    let (mut controller, id, path) = seeded(&dir);
+    controller
+        .set_model_import_options(id, join(0.5))
+        .expect("the options apply");
+    let options_of = |c: &AppController<SilentBackend>| {
+        c.state
+            .session
+            .models()
+            .iter()
+            .find(|m| m.id == id.0)
+            .expect("the model")
+            .import_options
+    };
+
+    controller.reload_model(id).expect("reload");
+    assert_eq!(options_of(&controller), join(0.5), "reload");
+    controller
+        .rescale_model(id, ModelUnits::Inches)
+        .expect("rescale");
+    assert_eq!(options_of(&controller), join(0.5), "rescale");
+    let moved = dir.join("moved.svg");
+    std::fs::copy(&path, &moved).expect("copy the drawing");
+    controller.relink_model(id, &moved).expect("relink");
+    assert_eq!(options_of(&controller), join(0.5), "relink");
+    let _ = std::fs::remove_dir_all(&dir);
 }

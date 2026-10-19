@@ -130,6 +130,8 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let tc = ToolpathConfig {

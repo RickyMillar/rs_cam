@@ -387,6 +387,8 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = builder.add_model(model);
 

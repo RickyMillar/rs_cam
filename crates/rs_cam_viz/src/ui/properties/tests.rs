@@ -167,6 +167,8 @@ fn one_pocket_session() -> (
         units: Some(ModelUnits::Millimeters),
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
     let _ = builder
         .add_toolpath(

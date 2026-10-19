@@ -399,6 +399,8 @@ fn fixture_session_2d() -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let ops: Vec<(&str, OperationConfig)> = vec![
@@ -563,6 +565,8 @@ fn fixture_session_3d() -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     });
 
     let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {

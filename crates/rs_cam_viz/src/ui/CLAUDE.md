@@ -15,7 +15,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   flips to a median line on a min-max band; `< >` opens it large.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
   `shoe_list.rs` — the H2 run sheet; Readiness and the export wizard draw it.
-- `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.
+- `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`; `import_modal.rs` — P4.8 the drawing import dialog (declared size, scale, result, join, report; a number reads the file again only on commit: `committed_number`).
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`,
   `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs. `pick_bar.rs` — P4.5 filter bar (top centre, no width, L-4; a disabled chip names the core reason); P4.6: the tab editor bar in the same place; P4.7: `COMPUTING_FACES` while an STL's faces are cold.
 

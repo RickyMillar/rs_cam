@@ -3,19 +3,43 @@
 //! Uses usvg to parse and simplify SVG into basic path segments,
 //! then flattens bezier curves to polylines within a configurable tolerance.
 //!
-//! ### Unit handling
-//! usvg normalizes all SVG length units (mm, in, cm, px, pt, etc.) into
-//! user-space coordinates (pixels at 96 DPI) during parsing. The resulting
-//! coordinates are in **px** (CSS pixels, 1px = 1/96 inch). If the SVG
-//! specifies explicit `width`/`height` with physical units (e.g. `width="100mm"`),
-//! usvg applies the viewBox transform so coordinates are still in px.
+//! ### Unit handling (what the code does today)
+//! The door reads the path data of each node (`path.data()`) and does NOT
+//! apply `abs_transform()`. So the coordinates are the raw user units of
+//! the file: the units of the viewBox, or of the root when the file has no
+//! viewBox. The door takes one user unit as 1 mm, times `scale`. It ignores
+//! the declared `width` and `height`, and every group transform.
 //!
-//! **Implication for CAM**: callers should treat SVG coordinates as px and
-//! apply a DPI-based scale factor when physical dimensions matter.
-//! At 96 DPI: 1 px = 0.2646 mm (25.4 / 96).
+//! The P4.0 probe (2026-10-19, `planning/geometry_selection_2026-10-16/PLAN.md`,
+//! "P4.0 SVG probe facts") measured a 100 x 50 rect at scale 1.0:
+//!
+//! | Input | Size (mm) |
+//! |---|---|
+//! | `width="100mm" viewBox="0 0 100 50"` | 100 x 50 |
+//! | `width="100"` (no units), no viewBox | 100 x 50 |
+//! | `width="100mm"`, no viewBox | 100 x 50 |
+//! | as row 1, in `<g transform="translate(10,5) scale(2)">` | 100 x 50 at (0, 0): the transform is LOST |
+//! | `width="100mm"`, viewBox in px (`0 0 377.95 188.98`) | 377.95 x 188.98 (3.78 x too large) |
+//!
+//! So a modern Inkscape file (a mm viewBox, no group transform) imports at
+//! 1:1. The default scale is [`SVG_DEFAULT_UNITS`]: the operator has not
+//! ruled on O-2 (the SVG scale and the lost transforms). [`svg_declared_size`]
+//! reads the declared size, so the import dialog can show it beside the
+//! size of the import.
+//!
+//! ### The join of open subpaths (P4.8, ruling O-5)
+//! The open subpaths of one layer join end to end where two ends meet
+//! within the join tolerance, with the DXF rule
+//! ([`crate::selection::join`]). The join runs in user units, before
+//! `scale`, as the DXF join runs before the declared units. A chain that
+//! comes back to its start is a loop. Before P4.8 the door did not join, so
+//! an open subpath whose ends met stayed an open path.
 
+use crate::compute::stock_config::ModelUnits;
 use crate::geo::P2;
+use crate::io::{DrawingImport, ImportReport};
 use crate::polygon::Polygon2;
+use crate::selection::join::{OpenPiece, join_open_pieces};
 use crate::selection::{Item, ItemError, ItemSet, Shape, SourceRef};
 use std::path::Path;
 use std::sync::Arc;
@@ -36,15 +60,136 @@ pub enum SvgError {
     /// A shape that breaks an item invariant: a defect in this door.
     #[error("SVG import made an invalid item: {0}")]
     Item(#[from] ItemError),
+    /// The root element could not be read for its declared size.
+    #[error("Failed to read the SVG size: {0}")]
+    Size(String),
+}
+
+/// THE default units of an SVG import (P4.8). Every interactive door (the
+/// GUI import dialog, MCP `import_model` with no `units`) reads it through
+/// [`svg_default_units`]. Today it is 1:1: one user unit is 1 mm (see the
+/// module doc). Operator ruling O-2 changes this one value.
+pub const SVG_DEFAULT_UNITS: ModelUnits = ModelUnits::Millimeters;
+
+/// The default units for an SVG with this declared size. Today it is
+/// [`SVG_DEFAULT_UNITS`] for every file. The function takes the declared
+/// size so that an O-2 ruling that reads it changes this function only.
+pub fn svg_default_units(_declared: &SvgDeclaredSize) -> ModelUnits {
+    SVG_DEFAULT_UNITS
+}
+
+/// One declared length of the root `<svg>`: the text as written, and its
+/// value in mm when the unit is a physical one (mm, cm, in, pt, pc).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DeclaredLength {
+    /// The attribute text, for example `100mm`.
+    pub text: String,
+    /// The length in mm. `None` for no unit, `px`, `%` or an unknown unit:
+    /// those name no physical size.
+    pub mm: Option<f64>,
+}
+
+/// The size an SVG file declares on its root element: `width`, `height`
+/// and `viewBox`, as written. The door does not read them (module doc);
+/// the import dialog shows them beside the size of the import.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct SvgDeclaredSize {
+    pub width: Option<DeclaredLength>,
+    pub height: Option<DeclaredLength>,
+    /// `[min_x, min_y, width, height]` in user units.
+    pub view_box: Option<[f64; 4]>,
+}
+
+impl SvgDeclaredSize {
+    /// The declared size as one line, for example
+    /// `width="100mm" height="50mm" viewBox="0 0 100 50"`.
+    pub fn summary_line(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(w) = &self.width {
+            parts.push(format!("width=\"{}\"", w.text));
+        }
+        if let Some(h) = &self.height {
+            parts.push(format!("height=\"{}\"", h.text));
+        }
+        if let Some([x, y, w, h]) = self.view_box {
+            parts.push(format!("viewBox=\"{x} {y} {w} {h}\""));
+        }
+        if parts.is_empty() {
+            "no declared size".to_owned()
+        } else {
+            parts.join(" ")
+        }
+    }
+}
+
+/// Parse one SVG length attribute.
+fn declared_length(text: &str) -> DeclaredLength {
+    let trimmed = text.trim();
+    let split = trimmed
+        .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
+        .unwrap_or(trimmed.len());
+    let (number, unit) = trimmed.split_at(split);
+    let per_mm = match unit.trim() {
+        "mm" => Some(1.0),
+        "cm" => Some(10.0),
+        "in" => Some(25.4),
+        "pt" => Some(25.4 / 72.0),
+        "pc" => Some(25.4 / 6.0),
+        _ => None,
+    };
+    DeclaredLength {
+        text: trimmed.to_owned(),
+        mm: per_mm.and_then(|f| number.parse::<f64>().ok().map(|n| n * f)),
+    }
+}
+
+/// Read the declared size of SVG data (P4.8). It reads the root element
+/// only; it does not parse the drawing.
+pub fn svg_declared_size(data: &[u8]) -> Result<SvgDeclaredSize, SvgError> {
+    let text = std::str::from_utf8(data).map_err(|e| SvgError::Size(e.to_string()))?;
+    let doc = usvg::roxmltree::Document::parse(text).map_err(|e| SvgError::Size(e.to_string()))?;
+    let root = doc.root_element();
+    let view_box = root.attribute("viewBox").and_then(|v| {
+        let n: Vec<f64> = v
+            .split(|c: char| c.is_whitespace() || c == ',')
+            .filter(|t| !t.is_empty())
+            .filter_map(|t| t.parse().ok())
+            .collect();
+        match n.as_slice() {
+            [x, y, w, h] => Some([*x, *y, *w, *h]),
+            _ => None,
+        }
+    });
+    Ok(SvgDeclaredSize {
+        width: root.attribute("width").map(declared_length),
+        height: root.attribute("height").map(declared_length),
+        view_box,
+    })
+}
+
+/// [`svg_declared_size`] of a file, with the import size guard.
+pub fn svg_declared_size_of_file(path: &Path) -> Result<SvgDeclaredSize, SvgError> {
+    if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
+        return Err(SvgError::FileTooLarge {
+            size_mb: over.size_mb,
+            limit_mb: over.limit_mb,
+        });
+    }
+    svg_declared_size(&std::fs::read(path)?)
 }
 
 /// Load the paths of an SVG file as selection items (P2.1).
 ///
 /// Bezier curves are flattened to line segments with the given tolerance
 /// (user units). `scale` moves user units to mm; the door applies it after
-/// the flattening and before it classifies circles, so the circle floor is
-/// in mm. See [`load_svg_data`] for the items.
-pub fn load_svg(path: &Path, tolerance: f64, scale: f64) -> Result<ItemSet, SvgError> {
+/// the flattening and the join, and before it classifies circles, so the
+/// circle floor is in mm. See [`load_svg_data`] for the items.
+pub fn load_svg(
+    path: &Path,
+    tolerance: f64,
+    scale: f64,
+    join_tolerance_mm: f64,
+) -> Result<DrawingImport, SvgError> {
     if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
         return Err(SvgError::FileTooLarge {
             size_mb: over.size_mb,
@@ -52,7 +197,7 @@ pub fn load_svg(path: &Path, tolerance: f64, scale: f64) -> Result<ItemSet, SvgE
         });
     }
     let data = std::fs::read(path)?;
-    load_svg_data(&data, tolerance, scale)
+    load_svg_data(&data, tolerance, scale, join_tolerance_mm)
 }
 
 /// Load the closed and open paths of SVG data bytes as items, in document
@@ -60,24 +205,54 @@ pub fn load_svg(path: &Path, tolerance: f64, scale: f64) -> Result<ItemSet, SvgE
 ///
 /// - a closed subpath is a `Circle` when it is circle-like
 ///   ([`circle_like_ring`]), else a `Loop`;
-/// - an open subpath of two or more points is a `Path` (P1): no chord joins
-///   its ends;
+/// - the open subpaths of two or more points join end to end within
+///   `join_tolerance_mm` (user units, P4.8). A chain that comes back to its
+///   start is a `Loop` (or a `Circle`), else a `Path` (P1): no chord joins
+///   two ends that do not meet. A chain takes the place of its first
+///   subpath;
 /// - the layer of an item is the `id` of its nearest ancestor `<g>` with an
 ///   id. usvg keeps the `id` of a group and drops `inkscape:label`, so the
 ///   id is the label this door can read. A shape outside such a group has
 ///   no layer.
 ///
-/// Containment does not run here (P2.1). The coordinates are user-space
-/// units (CSS pixels at 96 DPI) times `scale`.
-pub fn load_svg_data(data: &[u8], tolerance: f64, scale: f64) -> Result<ItemSet, SvgError> {
+/// Containment does not run here (P2.1). The coordinates are the raw user
+/// units of the file times `scale` (see the module doc).
+pub fn load_svg_data(
+    data: &[u8],
+    tolerance: f64,
+    scale: f64,
+    join_tolerance_mm: f64,
+) -> Result<DrawingImport, SvgError> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_data(data, &opt)?;
     let mut raw = Vec::new();
     visit_group(tree.root(), None, tolerance, &mut raw);
-    // In user units: a closed ring is a loop, an open subpath a path.
-    let items = raw
+    // In user units: a closed ring is a loop; the open subpaths go to the
+    // join, each at its document index.
+    let mut shapes: Vec<(usize, Option<Arc<str>>, Polygon2)> = Vec::new();
+    let mut pieces: Vec<OpenPiece> = Vec::new();
+    for (index, (layer, poly)) in raw.into_iter().enumerate() {
+        if poly.closed {
+            shapes.push((index, layer, poly));
+        } else {
+            pieces.push(OpenPiece {
+                index,
+                layer,
+                pts: poly.exterior,
+            });
+        }
+    }
+    let (joined, layers) = join_open_pieces(&pieces, join_tolerance_mm);
+    shapes.extend(
+        joined
+            .into_iter()
+            .map(|shape| (shape.index, shape.layer, shape.polygon)),
+    );
+    // Document order. The sort is stable and the indices are distinct.
+    shapes.sort_by_key(|(index, _, _)| *index);
+    let items = shapes
         .into_iter()
-        .map(|(layer, poly)| {
+        .map(|(_, layer, poly)| {
             let shape = if poly.closed {
                 Shape::Loop(poly)
             } else {
@@ -87,9 +262,16 @@ pub fn load_svg_data(data: &[u8], tolerance: f64, scale: f64) -> Result<ItemSet,
         })
         .collect::<Result<Vec<_>, _>>()?;
     // Scale, then find the circles in mm.
-    Ok(ItemSet::new(items)
+    let items = ItemSet::new(items)
         .scaled(scale)?
-        .with_circles(|ring| circle_like_ring(&ring.exterior))?)
+        .with_circles(|ring| circle_like_ring(&ring.exterior))?;
+    Ok(DrawingImport {
+        items,
+        report: ImportReport {
+            join_tolerance_mm,
+            layers,
+        },
+    })
 }
 
 /// One flattened subpath with the layer of its group.
@@ -303,12 +485,14 @@ pub fn circle_like_ring(ring: &[P2]) -> Option<(P2, f64)> {
 mod tests {
     use super::*;
     use crate::selection::ItemKind;
+    use crate::selection::join::CLOSE_TOL_MM;
 
     /// The polygon list of the import before P2.1 (the bridge): the drawn
     /// rings, nested.
     fn load_polys(data: &[u8], tolerance: f64) -> Vec<Polygon2> {
-        load_svg_data(data, tolerance, 1.0)
+        load_svg_data(data, tolerance, 1.0, CLOSE_TOL_MM)
             .unwrap()
+            .items
             .outlines_pre_selection()
             .as_ref()
             .clone()
@@ -425,7 +609,7 @@ mod tests {
         assert!(open.iter().any(|p| p.exterior.len() == 3));
         assert!(open.iter().any(|p| p.exterior.len() == 2));
         // An open path is never a circle item, round or not.
-        let items = load_svg_data(svg, 0.1, 1.0).unwrap();
+        let items = load_svg_data(svg, 0.1, 1.0, CLOSE_TOL_MM).unwrap().items;
         assert!(!items.iter().any(|i| i.kind() == ItemKind::Circle));
     }
 
@@ -570,7 +754,7 @@ mod tests {
             <rect x="5" y="5" width="70" height="50"/>
             <circle cx="40" cy="30" r="10"/>
         </svg>"#;
-        let items = load_svg_data(svg, 0.1, 1.0).unwrap();
+        let items = load_svg_data(svg, 0.1, 1.0, CLOSE_TOL_MM).unwrap().items;
         let centres: Vec<P2> = items
             .iter()
             .filter_map(|i| match i.shape() {

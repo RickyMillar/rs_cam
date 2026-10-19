@@ -118,6 +118,8 @@ fn plate_model(hole: Option<[f64; 2]>) -> LoadedModel {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 

@@ -141,6 +141,8 @@ fn pocket_model() -> LoadedModel {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 
@@ -176,6 +178,8 @@ fn drill_model() -> LoadedModel {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     }
 }
 

@@ -206,6 +206,7 @@ impl ProjectSession {
                 name: m.name.clone(),
                 kind: m.kind,
                 units: m.units,
+                import: m.import_options,
             })
             .collect();
 

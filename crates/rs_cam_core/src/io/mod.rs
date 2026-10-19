@@ -9,6 +9,7 @@
 //! importers and the two on-disk TOML libraries.
 
 pub mod dxf_input;
+mod import_options;
 pub mod machine_library;
 mod named_toml_library;
 #[cfg(feature = "step")]
@@ -23,6 +24,8 @@ use crate::compute::stock_config::{ModelKind, ModelUnits};
 use crate::mesh::TriangleMesh;
 use crate::selection::ItemSet;
 use crate::session::{LoadedGeometry, LoadedModel, SessionError};
+
+pub use import_options::{DrawingImport, ImportOptions, ImportReport};
 
 /// The largest file any import door reads, in bytes.
 ///
@@ -70,13 +73,16 @@ pub(crate) fn file_size_over_limit(
 /// and `session::project_file::load_model_geometry` for the project door.
 ///
 /// `scale` comes from the declared [`ModelUnits`] and reaches EVERY kind.
-/// The error is the reason, as a sentence; each door names the model and
-/// picks its own [`SessionError`] variant.
+/// `options` (P4.8) reach the drawing doors: the join tolerance. The error
+/// is the reason, as a sentence; each door names the model and picks its
+/// own [`SessionError`] variant.
 pub(crate) fn load_geometry(
     path: &Path,
     kind: ModelKind,
     scale: f64,
+    options: &ImportOptions,
 ) -> Result<LoadedGeometry, String> {
+    options.validate()?;
     match kind {
         ModelKind::Stl => {
             let mesh = TriangleMesh::from_stl_scaled(path, scale)
@@ -85,22 +91,28 @@ pub(crate) fn load_geometry(
         }
         ModelKind::Svg => {
             // P2.1: the door scales before it classifies circle-like rings,
-            // so the circle floor is in mm (G-DRILLCENTROID).
-            let items = crate::io::svg_input::load_svg(path, 0.1, scale)
-                .map_err(|e| format!("SVG load failed: {e}"))?;
-            Ok(LoadedGeometry::Drawing(items))
+            // so the circle floor is in mm (G-DRILLCENTROID). P4.8: the
+            // join runs in user units, before the scale.
+            let import =
+                crate::io::svg_input::load_svg(path, 0.1, scale, options.join_tolerance_mm)
+                    .map_err(|e| format!("SVG load failed: {e}"))?;
+            Ok(LoadedGeometry::Drawing(import.items, import.report))
         }
         ModelKind::Dxf => {
             // Two scales, in this order: `$INSUNITS` inside the door, then
-            // the declared units here.
-            let import =
-                crate::io::dxf_input::load_dxf(path, crate::selection::item::CIRCLE_ARC_STEP_DEG)
-                    .map_err(|e| format!("DXF load failed: {e}"))?;
+            // the declared units here. The join runs inside the door, in
+            // mm of the `$INSUNITS` frame, before the declared units.
+            let import = crate::io::dxf_input::load_dxf(
+                path,
+                crate::selection::item::CIRCLE_ARC_STEP_DEG,
+                options.join_tolerance_mm,
+            )
+            .map_err(|e| format!("DXF load failed: {e}"))?;
             let items = import
                 .items
                 .scaled(scale)
                 .map_err(|e| format!("DXF load failed: {e}"))?;
-            Ok(LoadedGeometry::Drawing(items))
+            Ok(LoadedGeometry::Drawing(items, import.report))
         }
         #[cfg(feature = "step")]
         ModelKind::Step => {
@@ -125,10 +137,26 @@ pub(crate) fn load_geometry(
     }
 }
 
+/// The default declared units of a new import (P4.8). An SVG takes
+/// [`svg_input::svg_default_units`] of the size it declares, every other
+/// kind mm. The GUI import dialog and MCP `import_model` both read it, so
+/// the operator ruling O-2 (the SVG scale) changes one place.
+pub fn default_import_units(path: &Path, kind: ModelKind) -> ModelUnits {
+    match kind {
+        ModelKind::Svg => svg_input::svg_declared_size_of_file(path)
+            .map(|declared| svg_input::svg_default_units(&declared))
+            .unwrap_or(svg_input::SVG_DEFAULT_UNITS),
+        _ => ModelUnits::Millimeters,
+    }
+}
+
 /// Load a model file into a [`LoadedModel`] with the given id.
 ///
 /// The interactive import door. It reads the geometry through
 /// [`load_geometry`] and names the model after the file.
+///
+/// `options` (P4.8) are the import options; the model keeps them, so a
+/// save writes them and a reload reads the file with them again.
 ///
 /// The `units` parameter controls the scale factor applied to the
 /// imported geometry, and is persisted on the returned model. It is the
@@ -141,12 +169,13 @@ pub fn load_model_file(
     id: usize,
     kind: ModelKind,
     units: ModelUnits,
+    options: ImportOptions,
 ) -> Result<LoadedModel, SessionError> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| format!("unknown.{kind:?}").to_lowercase());
-    let geometry = load_geometry(path, kind, units.scale_factor()).map_err(|detail| {
+    let geometry = load_geometry(path, kind, units.scale_factor(), &options).map_err(|detail| {
         SessionError::ModelLoad {
             name: name.clone(),
             detail,
@@ -159,6 +188,7 @@ pub fn load_model_file(
         path,
         Some(kind),
         Some(units),
+        options,
     ))
 }
 
@@ -174,6 +204,7 @@ pub(crate) fn model_from_geometry(
     path: &Path,
     kind: Option<ModelKind>,
     units: Option<ModelUnits>,
+    import_options: ImportOptions,
 ) -> LoadedModel {
     let mut model = LoadedModel {
         id,
@@ -186,6 +217,8 @@ pub(crate) fn model_from_geometry(
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options,
+        import_report: None,
     };
     match geometry {
         LoadedGeometry::Mesh(mesh) => {
@@ -193,8 +226,9 @@ pub(crate) fn model_from_geometry(
             model.winding_report = Some(winding.inconsistency_fraction * 100.0);
             model.mesh = Some(Arc::new(mesh));
         }
-        LoadedGeometry::Drawing(items) => {
+        LoadedGeometry::Drawing(items, report) => {
             model.items = Arc::new(items);
+            model.import_report = Some(report);
         }
         LoadedGeometry::Enriched(enriched) => {
             model.items = Arc::new(brep_face_items(&enriched));

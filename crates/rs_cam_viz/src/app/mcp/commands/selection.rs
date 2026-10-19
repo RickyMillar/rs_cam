@@ -401,9 +401,14 @@ mod tests {
     fn project() -> ProjectSession {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
-        let model =
-            rs_cam_core::io::load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters)
-                .expect("the drawing loads");
+        let model = rs_cam_core::io::load_model_file(
+            &path,
+            0,
+            ModelKind::Dxf,
+            ModelUnits::Millimeters,
+            Default::default(),
+        )
+        .expect("the drawing loads");
         let mut s = ProjectSession::new_empty();
         let _ = apply(
             &mut s,
@@ -919,6 +924,8 @@ mod tests {
                 enriched_mesh: None,
                 winding_report: None,
                 load_error: None,
+                import_options: Default::default(),
+                import_report: None,
             };
             let mut s = ProjectSession::new_empty();
             let _ = apply(

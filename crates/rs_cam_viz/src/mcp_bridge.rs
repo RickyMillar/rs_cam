@@ -846,6 +846,12 @@ declare_core_requests! {
         /// the file, and core adopts the geometry that import produced.
         ImportModel(rs_cam_mcp::server::ImportModelParam)
             => AddModel, None;
+        /// Row `AdoptModelGeometry`. The wire name is
+        /// `set_model_import_options` (P4.8): the surface reads the file
+        /// again with the new units and options, and core adopts the
+        /// geometry, as the GUI model panel does.
+        SetModelImportOptions(rs_cam_mcp::server::SetModelImportOptionsParam)
+            => AdoptModelGeometry, None;
         AddSetup(rs_cam_mcp::server::AddSetupParam)
             => AddSetup, None;
         SetSetupFace(rs_cam_mcp::server::SetSetupFaceParam)

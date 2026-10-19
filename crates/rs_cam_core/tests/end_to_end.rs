@@ -302,8 +302,16 @@ fn svg_import_pocket_gcode() {
   <rect x="5" y="5" width="30" height="20" fill="none" stroke="black" stroke-width="1" />
 </svg>"#;
 
-    let polygons =
-        nested_rings(&load_svg_data(svg_data, 0.1, 1.0).expect("SVG should parse successfully"));
+    let polygons = nested_rings(
+        &load_svg_data(
+            svg_data,
+            0.1,
+            1.0,
+            rs_cam_core::selection::join::CLOSE_TOL_MM,
+        )
+        .expect("SVG should parse successfully")
+        .items,
+    );
     assert!(
         !polygons.is_empty(),
         "SVG should produce at least one polygon"
@@ -365,8 +373,14 @@ fn svg_fixture_file_import_pocket_gcode() {
     }
 
     let polygons = nested_rings(
-        &rs_cam_core::io::svg_input::load_svg(&svg_path, 0.1, 1.0)
-            .expect("demo_pocket.svg should parse"),
+        &rs_cam_core::io::svg_input::load_svg(
+            &svg_path,
+            0.1,
+            1.0,
+            rs_cam_core::selection::join::CLOSE_TOL_MM,
+        )
+        .expect("demo_pocket.svg should parse")
+        .items,
     );
     assert!(
         !polygons.is_empty(),

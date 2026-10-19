@@ -93,6 +93,8 @@ fn build_drill_session(material: Material) -> ProjectSession {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = builder.add_model(model);
 

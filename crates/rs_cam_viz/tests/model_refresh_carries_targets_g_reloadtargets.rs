@@ -141,7 +141,8 @@ fn write(path: &Path, body: &str) {
 
 /// What a fresh import of `path` at `units` reports.
 fn fresh(path: &Path, units: ModelUnits) -> LoadedModel {
-    load_model_file(path, 0, ModelKind::Svg, units).expect("the interactive door must import")
+    load_model_file(path, 0, ModelKind::Svg, units, Default::default())
+        .expect("the interactive door must import")
 }
 
 /// One drill hole of a model: a point or a circle item (geometry selection
@@ -203,8 +204,9 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, PathBuf, ModelId) {
     let path = dir.join("part.svg");
     write(&path, &drawing_with_hole(30.0, 40.0));
     let mut controller = AppController::with_backend(SilentBackend);
+    controller.open_import_dialog(&path, rs_cam_core::compute::stock_config::ModelKind::Svg);
     controller
-        .import_svg_path(&path)
+        .confirm_import_dialog()
         .expect("the fixture must import");
     let id = controller
         .state

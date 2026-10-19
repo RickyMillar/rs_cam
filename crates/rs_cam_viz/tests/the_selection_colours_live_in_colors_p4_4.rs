@@ -211,8 +211,14 @@ fn toolpath(op: OperationType) -> ToolpathConfig {
 fn a_report_change_uploads_once_p4_4() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
-    let model = rs_cam_core::io::load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters)
-        .unwrap();
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        0,
+        ModelKind::Dxf,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .unwrap();
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()

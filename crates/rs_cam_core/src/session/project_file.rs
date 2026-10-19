@@ -631,6 +631,12 @@ pub struct ProjectModelSection {
     pub kind: Option<ModelKind>,
     #[serde(default)]
     pub units: Option<ModelUnits>,
+    /// P4.8: `[models.import]`, the import options (the join tolerance).
+    /// Additive under `format_version = 3`: a file with no key loads the
+    /// defaults, which give the import before P4.8, and default options
+    /// write no key.
+    #[serde(default, skip_serializing_if = "crate::io::ImportOptions::is_default")]
+    pub import: crate::io::ImportOptions,
 }
 
 /// Setup section in the project file.
@@ -947,9 +953,11 @@ pub(crate) fn load_model_geometry(
         .map(|u| u.scale_factor())
         .unwrap_or(1.0);
 
-    crate::io::load_geometry(&full_path, kind, scale).map_err(|detail| SessionError::ModelLoad {
-        name: model.name.clone(),
-        detail,
+    crate::io::load_geometry(&full_path, kind, scale, &model.import).map_err(|detail| {
+        SessionError::ModelLoad {
+            name: model.name.clone(),
+            detail,
+        }
     })
 }
 
@@ -1146,7 +1154,7 @@ pub(super) fn build_session_from_project(
                         tris = mesh.triangles.len(),
                         "Loaded mesh model"
                     ),
-                    LoadedGeometry::Drawing(items) => tracing::info!(
+                    LoadedGeometry::Drawing(items, _) => tracing::info!(
                         name = %model_section.name,
                         items = items.len(),
                         "Loaded 2D model"
@@ -1167,6 +1175,7 @@ pub(super) fn build_session_from_project(
                     &model_path,
                     model_kind,
                     model_units,
+                    model_section.import,
                 ));
             }
             Err(e) => {
@@ -1191,6 +1200,8 @@ pub(super) fn build_session_from_project(
                     enriched_mesh: None,
                     winding_report: None,
                     load_error: Some(e.to_string()),
+                    import_options: model_section.import,
+                    import_report: None,
                 });
             }
         }

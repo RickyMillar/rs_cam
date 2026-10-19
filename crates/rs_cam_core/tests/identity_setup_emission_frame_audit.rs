@@ -95,6 +95,8 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     let model_id = builder.add_model(model);
 

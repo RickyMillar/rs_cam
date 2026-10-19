@@ -68,6 +68,8 @@ fn model(items: Vec<Item>) -> LoadedModel {
         enriched_mesh: None,
         winding_report: None,
         load_error: None,
+        import_options: Default::default(),
+        import_report: None,
     };
     m.bind_items();
     m
