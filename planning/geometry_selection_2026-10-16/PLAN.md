@@ -569,3 +569,11 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
     hand edit (depth -> floor); `nz_south.toml` still refuses at load
     because of `[boundary.source.model_outline]` (retired in P2.5); its
     generator `derive.py` is stale and a rerun reverts the rewrite.
+- P3.3 (272238d8) accepted. Committed from the index: session/mod.rs
+  held a tech-debt W6b hunk, which stays in the tree. Deviations
+  accepted: Top refuses depth <= 0, other references take a signed depth
+  (`Floor::domain` is the one rule; W6b calls `door_refusal`); the heights
+  block is on `get_toolpath_params` and the floor reply, not on the 500 ms
+  summary replies. Open: `set_toolpath_param depth` on the four ops still
+  says "unknown parameter" (its text is in a W6b file); `item_states.floor_z`
+  is P3.5.
