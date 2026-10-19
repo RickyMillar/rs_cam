@@ -59,11 +59,13 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::inlay::{
     InlayPlugParams, InlayPocketParams, floor_inset, inlay_plug_toolpath_with_cancel,
     inlay_pocket_toolpath_with_cancel, mirror_design, plug_start_depth,
 };
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::Selection;
 use rs_cam_core::session::{
     Command, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs, SimulationOptions,
     SimulationResolution,
@@ -517,8 +519,8 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
     floor.boundary_inherit = false;
     floor.boundary = BoundaryConfig {
         enabled: true,
-        source: BoundarySource::ModelOutline {
-            model_id,
+        source: BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(model_id)),
             holes: false,
         },
         containment: BoundaryContainment::Inside,

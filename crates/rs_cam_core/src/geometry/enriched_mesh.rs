@@ -290,49 +290,6 @@ impl EnrichedMesh {
 
         Some(Polygon2::with_holes(exterior, holes))
     }
-
-    /// Project multiple coplanar face boundary loops into a union `Polygon2`.
-    ///
-    /// All faces must be approximately-horizontal planes. Returns `None` if
-    /// any face is non-planar or not horizontal, or if faces are empty.
-    pub fn faces_boundary_as_polygon(&self, ids: &[FaceGroupId]) -> Option<Polygon2> {
-        if ids.is_empty() {
-            return None;
-        }
-        if ids.len() == 1 {
-            // SAFETY: len() == 1 checked
-            #[allow(clippy::indexing_slicing)]
-            return self.face_boundary_as_polygon(ids[0]);
-        }
-
-        // Collect all individual polygons
-        let mut polygons: Vec<Polygon2> = Vec::with_capacity(ids.len());
-        for &id in ids {
-            polygons.push(self.face_boundary_as_polygon(id)?);
-        }
-
-        // Boolean union of multiple face polygons using the geo crate.
-        use geo::BooleanOps;
-
-        // SAFETY: polygons is non-empty (ids.len() > 1, each pushed a polygon)
-        #[allow(clippy::indexing_slicing)]
-        let mut result_geo = polygons[0].to_geo_polygon();
-        #[allow(clippy::indexing_slicing)]
-        for poly in &polygons[1..] {
-            let other = poly.to_geo_polygon();
-            let union = result_geo.union(&other);
-            // BooleanOps returns a MultiPolygon; take the largest polygon
-            if let Some(largest) = union.iter().max_by(|a, b| {
-                geo::Area::unsigned_area(*a)
-                    .partial_cmp(&geo::Area::unsigned_area(*b))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                result_geo = largest.clone();
-            }
-        }
-
-        Some(Polygon2::from_geo_polygon(&result_geo))
-    }
 }
 
 /// The most face groups an [`EnrichedMesh`] can carry, because
@@ -686,30 +643,6 @@ mod tests {
         // Bottom face (horizontal, normal -Z) should produce a polygon
         let poly = em.face_boundary_as_polygon(FaceGroupId(0));
         assert!(poly.is_some(), "Bottom face should produce polygon");
-    }
-
-    #[test]
-    fn test_faces_boundary_empty_returns_none() {
-        let em = make_test_box();
-        assert!(em.faces_boundary_as_polygon(&[]).is_none());
-    }
-
-    #[test]
-    fn test_faces_boundary_single_face() {
-        let em = make_test_box();
-        let poly = em.faces_boundary_as_polygon(&[FaceGroupId(1)]);
-        assert!(poly.is_some());
-    }
-
-    #[test]
-    fn test_faces_boundary_mixed_returns_none() {
-        let em = make_test_box();
-        // Top (horizontal) + Front (vertical) → None because front is not horizontal
-        let poly = em.faces_boundary_as_polygon(&[FaceGroupId(1), FaceGroupId(2)]);
-        assert!(
-            poly.is_none(),
-            "Mixed horizontal/vertical should return None"
-        );
     }
 
     #[test]

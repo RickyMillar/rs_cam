@@ -321,6 +321,13 @@ pub struct ItemSet {
     /// rebound set carries the memo of its source set (see
     /// [`ItemSet::scaled`]).
     outlines: OnceLock<Arc<Vec<Polygon2>>>,
+    /// The memo of [`ItemSet::closed_regions`]. A stock change keys its
+    /// source by the identity of this `Arc` (the S5 prefix memo), so the
+    /// list is built once per set.
+    closed: OnceLock<Arc<Vec<Polygon2>>>,
+    /// The memo of [`ItemSet::drawing_curves`]: the pin panel reads the
+    /// pin walls on every frame.
+    curves: OnceLock<Arc<Vec<Polygon2>>>,
 }
 
 impl ItemSet {
@@ -329,6 +336,8 @@ impl ItemSet {
         Self {
             items,
             outlines: OnceLock::new(),
+            closed: OnceLock::new(),
+            curves: OnceLock::new(),
         }
     }
 
@@ -416,6 +425,30 @@ impl ItemSet {
         })
     }
 
+    /// The closed drawing regions: every loop and circle ring, in import
+    /// order, nested by containment (`selection::view`'s one nesting). A
+    /// path, a point and a face give no region. An outline stock change
+    /// and an outline obstacle read it (P2.5); the `Arc` is the memo, so
+    /// two reads give one allocation.
+    pub fn closed_regions(&self) -> Arc<Vec<Polygon2>> {
+        Arc::clone(
+            self.closed
+                .get_or_init(|| Arc::new(super::view::nest_closed_rings(self.items.iter()))),
+        )
+    }
+
+    /// Every drawn ring (loops, circle rings and open paths), in import
+    /// order, nested by containment; a path stays top level. The same
+    /// nesting as `view` with `ItemUse::Curves` over every drawing item.
+    /// The pin walls and the model summaries read it (P2.5): a pin keeps
+    /// its wall to an open path too. The `Arc` is the memo.
+    pub fn drawing_curves(&self) -> Arc<Vec<Polygon2>> {
+        Arc::clone(
+            self.curves
+                .get_or_init(|| Arc::new(super::view::nest_drawing_rings(self.items.iter()))),
+        )
+    }
+
     /// The count of the drawn rings: loops, open paths and circle rings
     /// (`Shape::drawing_ring`). A point and a face have no ring.
     pub fn ring_count(&self) -> usize {
@@ -496,6 +529,8 @@ impl ItemSet {
         Ok(Self {
             items,
             outlines: self.outlines.clone(),
+            closed: self.closed.clone(),
+            curves: self.curves.clone(),
         })
     }
 
@@ -536,6 +571,8 @@ impl ItemSet {
         Self {
             items,
             outlines: memo,
+            closed: OnceLock::new(),
+            curves: OnceLock::new(),
         }
     }
 

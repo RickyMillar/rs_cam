@@ -501,7 +501,8 @@ impl ObstacleSet {
                         let polygons = models
                             .iter()
                             .find(|m| m.id == model_id.0)
-                            .and_then(|m| m.outlines_pre_selection())
+                            .filter(|m| m.items.has_drawing())
+                            .map(|m| m.items.closed_regions())
                             .ok_or_else(|| {
                                 refuse(format!("model id {} holds no 2D outline", model_id.0))
                             })?;

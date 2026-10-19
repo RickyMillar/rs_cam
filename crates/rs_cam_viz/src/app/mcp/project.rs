@@ -402,9 +402,13 @@ impl RsCamApp {
             }
 
             // Polygon summary (SVG/DXF-specific)
-            // The nested polygon list that generation reads (the P2.1
-            // bridge); P2.7 adds the item listing.
-            if let Some(ref polys) = model.outlines_pre_selection() {
+            // The drawn rings of the model, nested (`ItemSet::drawing_curves`);
+            // P2.7 adds the item listing.
+            let curves = model
+                .items
+                .has_drawing()
+                .then(|| model.items.drawing_curves());
+            if let Some(ref polys) = curves {
                 let count = polys.len();
                 let total_area: f64 = polys.iter().map(|p| p.area()).sum();
                 let total_perimeter: f64 = polys.iter().map(|p| p.perimeter()).sum();

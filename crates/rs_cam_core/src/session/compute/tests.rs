@@ -2677,7 +2677,7 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
         .map(|c| c.change.id.0)
         .collect();
     assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
-    let model_polys = s.models()[0].outlines_pre_selection().unwrap();
+    let model_polys = s.models()[0].items.closed_regions();
     for resolved in &groups[1].stock_changes {
         assert_eq!(resolved.setup_id, s.list_setups()[1].id);
         match resolved.sources.as_slice() {

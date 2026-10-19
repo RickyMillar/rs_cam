@@ -331,7 +331,7 @@ pub fn toolpath_panel_snapshot(
 pub(crate) struct ToolpathPanelInputs {
     pub tools: Vec<(crate::state::job::ToolId, String, f64)>,
     pub models: Vec<(crate::state::job::ModelId, String)>,
-    /// The models a `ModelOutline` boundary can name: every model with
+    /// The models a selection boundary can name: every model with
     /// at least one closed 2D polygon. Any model qualifies, not only the
     /// toolpath's own.
     pub outline_models: Vec<(crate::state::job::ModelId, String)>,
@@ -690,8 +690,9 @@ pub(crate) fn build_entry_from_session_and_gui(
 /// the caller can prove the controller assigned the source on add; the
 /// panel cannot today (no provenance is stored), so it passes `false`.
 ///
-/// `models` is the project model list. A `ModelOutline` source names its
-/// model from it, or says that the id names no model.
+/// `models` is the project model list. A selection source that holds the
+/// closed shapes of one model names that model from it, or says that the id
+/// names no model.
 pub fn boundary_summary_line(
     boundary: &crate::state::toolpath::BoundaryConfig,
     auto: bool,
@@ -700,14 +701,20 @@ pub fn boundary_summary_line(
     let source = match &boundary.source {
         BoundarySource::Stock => "stock rectangle".to_owned(),
         BoundarySource::ModelSilhouette => "model silhouette".to_owned(),
-        BoundarySource::ModelOutline { model_id, holes } => {
+        BoundarySource::Selection { selection, holes } => {
             let what = if *holes { "outline holes" } else { "outline" };
-            match models.iter().find(|(id, _)| id.0 == *model_id) {
-                Some((_, name)) => format!("{what} of model '{name}'"),
-                None => format!("{what} of model id {model_id} (not in this project)"),
+            match selection.closed_shapes_model() {
+                Some(model_id) => match models.iter().find(|(id, _)| *id == model_id) {
+                    Some((_, name)) => format!("{what} of model '{name}'"),
+                    None => format!("{what} of model id {} (not in this project)", model_id.0),
+                },
+                None => format!(
+                    "{what} of a selection ({} rules, {} picks)",
+                    selection.rules().len(),
+                    selection.picks().len()
+                ),
             }
         }
-        BoundarySource::FaceSelection => "face selection".to_owned(),
         BoundarySource::DerivedRestRegions { source_toolpath_id } => {
             format!("rest regions of toolpath {}", source_toolpath_id.0)
         }

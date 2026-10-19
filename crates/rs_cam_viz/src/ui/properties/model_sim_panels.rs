@@ -225,9 +225,13 @@ pub(super) fn draw_model_properties(
                 ))
                 .row(DataRow::value("Surface types", parts.join(", ")));
         }
-        // The nested polygon list that generation reads (the P2.1 bridge),
+        // The drawn rings of the model, nested (`ItemSet::drawing_curves`),
         // the same list MCP `inspect_model` reports.
-        if let Some(polys) = &model.outlines_pre_selection() {
+        let curves = model
+            .items
+            .has_drawing()
+            .then(|| model.items.drawing_curves());
+        if let Some(polys) = &curves {
             table = table.row(DataRow::value("Polygons", polys.len().to_string()));
             for (i, p) in polys.iter().enumerate().take(5) {
                 table = table.row(DataRow::value(

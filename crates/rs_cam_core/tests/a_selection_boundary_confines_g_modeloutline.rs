@@ -1,5 +1,11 @@
-//! G-MODELOUTLINE — a `ModelOutline` boundary confines a toolpath to the
-//! closed shapes of ANOTHER model, and it refuses when it cannot.
+//! G-MODELOUTLINE — a selection boundary confines a toolpath to the
+//! closed regions of ANOTHER model, and it refuses when it cannot.
+//!
+//! Geometry selection P2.5 replaced `BoundarySource::ModelOutline` and
+//! `FaceSelection` with `BoundarySource::Selection`. The old outline of a
+//! model is `Selection::closed_shapes_of(model)` (its loops and circles).
+//! The selection resolves through the door of an op selection (`resolve`,
+//! the setup frame, `view` with `ItemUse::Regions`).
 //!
 //! # The need
 //!
@@ -15,8 +21,10 @@
 //!   DXF import builds it. The exterior is a 40.6 mm square and the hole a
 //!   16.6 mm square, both centred. The odd sizes keep raster rows off the
 //!   edges.
+//! - Model F: a STEP-like model with one flat up face, a 16.6 mm square at
+//!   the centre (the size of the ring's hole).
 //! - A drop-cutter raster on model A, with the boundary on model B's
-//!   outline, containment `Center`.
+//!   closed shapes, containment `Center`.
 //!
 //! # What is asserted
 //!
@@ -25,8 +33,9 @@
 //!    a straight segment between two ring points can cross the hole.
 //! 2. Non-vacuity: the same op with the boundary off cuts in the hole and
 //!    outside the ring, so assertion 1 can fail.
-//! 3. A model id that names no model refuses, and the message names the id.
-//! 4. A model with no closed polygon refuses, and the message names the
+//! 3. A model id that names no model refuses, and the message names the id
+//!    and lists the project models.
+//! 4. A model with no closed region refuses, and the message names the
 //!    model. Two arms: a mesh (no 2D geometry) and a drawing with only an
 //!    open path.
 //! 5. The holes option (`holes: true`) on the same ring: every cutting
@@ -35,6 +44,8 @@
 //!    area inside the band and stays off the band.
 //! 6. The holes option on a model with closed shapes but no hole refuses,
 //!    and the message names the model.
+//! 7. A face pick (the old `FaceSelection` boundary): every cutting move
+//!    lies inside the picked face.
 
 #![allow(
     clippy::unwrap_used,
@@ -45,6 +56,7 @@
 
 mod common;
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::meshes::height_field;
@@ -53,9 +65,17 @@ use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::compute::operation_configs::DropCutterConfig;
-use rs_cam_core::geo::P2;
+use rs_cam_core::geo::{P2, P3, V3};
+use rs_cam_core::geometry::enriched_mesh::{
+    FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+};
+use rs_cam_core::ids::ModelId;
+use rs_cam_core::io::brep_face_items;
 use rs_cam_core::polygon::{Polygon2, detect_containment};
-use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder};
+use rs_cam_core::selection::{ItemKind, Selection};
+use rs_cam_core::session::{
+    Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetBoundaryConfigArgs,
+};
 use rs_cam_core::toolpath::MoveType;
 
 const PLATE_HALF: f64 = 30.0;
@@ -84,15 +104,63 @@ struct Fixture {
     ring_id: usize,
     open_id: usize,
     solid_id: usize,
+    face_id: usize,
 }
 
-/// The ids of the four fixture models, in the order the fixture adds them.
+/// The ids of the drawing and mesh models, in the order the fixture adds
+/// them. The face model id is on [`Fixture`].
 #[derive(Clone, Copy)]
 struct Ids {
     mesh: usize,
     ring: usize,
     open: usize,
     solid: usize,
+}
+
+/// A STEP-like model with one flat up face: a square of half-width
+/// [`RING_HOLE_HALF`] at the centre, at z = 1.
+fn face_model() -> LoadedModel {
+    let h = RING_HOLE_HALF;
+    let v = vec![
+        P3::new(-h, -h, 1.0),
+        P3::new(h, -h, 1.0),
+        P3::new(h, h, 1.0),
+        P3::new(-h, h, 1.0),
+    ];
+    let face = FaceTessellation {
+        boundary_loops: vec![v.clone()],
+        vertices: v,
+        triangles: vec![[0, 1, 2], [0, 2, 3]],
+        surface_type: SurfaceType::Plane,
+        surface_params: SurfaceParams::Plane {
+            normal: V3::new(0.0, 0.0, 1.0),
+            d: 1.0,
+        },
+    };
+    let enriched = build_enriched_mesh(vec![face], Vec::new(), Vec::new()).unwrap();
+    LoadedModel {
+        mesh: Some(Arc::clone(&enriched.mesh)),
+        items: Arc::new(brep_face_items(&enriched)),
+        enriched_mesh: Some(Arc::new(enriched)),
+        ..mesh_model(height_field(1.0, 1.0, |_, _| 1.0), "face_part")
+    }
+}
+
+/// The face pick of the one face of model `face_id` in `session`.
+fn face_pick(session: &ProjectSession, face_id: usize) -> Selection {
+    let model = session
+        .models()
+        .iter()
+        .find(|m| m.id == face_id)
+        .expect("the face model");
+    let key = model
+        .items
+        .iter()
+        .find(|item| item.kind() == ItemKind::Face)
+        .expect("the face model holds a Face item")
+        .key()
+        .clone();
+    Selection::from_picks(vec![key])
 }
 
 /// One session: the plate mesh, the ring drawing, a drawing with only an
@@ -118,6 +186,7 @@ fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
         vec![square_polygon(RING_OUTER_HALF)],
         "solid_board",
     ));
+    let face_id = builder.add_model(face_model());
 
     let op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 1.0,
@@ -147,6 +216,7 @@ fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
         ring_id,
         open_id,
         solid_id,
+        face_id,
     }
 }
 
@@ -191,8 +261,8 @@ fn generate(session: &mut ProjectSession) -> Result<(), String> {
 #[test]
 fn every_cutting_move_lies_inside_the_ring_g_modeloutline() {
     let mut fx = fixture(|ids| {
-        Some(BoundarySource::ModelOutline {
-            model_id: ids.ring,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(ids.ring)),
             holes: false,
         })
     });
@@ -241,8 +311,8 @@ fn without_the_boundary_the_op_cuts_the_hole_and_the_margin_g_modeloutline() {
 #[test]
 fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
     let mut fx = fixture(|_| {
-        Some(BoundarySource::ModelOutline {
-            model_id: 999,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(999)),
             holes: false,
         })
     });
@@ -257,7 +327,7 @@ fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
     );
     // The ids the operator can pick are listed.
     assert!(
-        err.contains(&fx.ring_id.to_string()) && err.contains("machinable_edge_band"),
+        err.contains(&format!("{} ('machinable_edge_band')", fx.ring_id)),
         "the refusal must list the project models: {err}"
     );
 }
@@ -266,8 +336,8 @@ fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
 fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
     // A mesh has no 2D geometry at all.
     let mut fx = fixture(|ids| {
-        Some(BoundarySource::ModelOutline {
-            model_id: ids.mesh,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(ids.mesh)),
             holes: false,
         })
     });
@@ -280,8 +350,8 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
 
     // A drawing with only an open path has no closed polygon.
     let mut fx = fixture(|ids| {
-        Some(BoundarySource::ModelOutline {
-            model_id: ids.open,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(ids.open)),
             holes: false,
         })
     });
@@ -298,8 +368,8 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
 #[test]
 fn the_holes_option_cuts_only_inside_the_hole_g_modeloutline() {
     let mut fx = fixture(|ids| {
-        Some(BoundarySource::ModelOutline {
-            model_id: ids.ring,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(ids.ring)),
             holes: true,
         })
     });
@@ -353,8 +423,8 @@ fn the_holes_option_cuts_only_inside_the_hole_g_modeloutline() {
 #[test]
 fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline() {
     let mut fx = fixture(|ids| {
-        Some(BoundarySource::ModelOutline {
-            model_id: ids.solid,
+        Some(BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(ids.solid)),
             holes: true,
         })
     });
@@ -370,5 +440,48 @@ fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline(
     assert!(
         fx.session.get_result(0).is_none(),
         "a refused generation must cache no result"
+    );
+}
+
+/// The old `FaceSelection` boundary: a pick of one flat face. Every
+/// cutting sample lies inside the face.
+#[test]
+fn a_face_pick_boundary_cuts_only_inside_the_face_g_modeloutline() {
+    let mut fx = fixture(|_| None);
+    let selection = face_pick(&fx.session, fx.face_id);
+    let _ = fx
+        .session
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index: 0,
+            boundary: BoundaryConfig {
+                enabled: true,
+                source: BoundarySource::Selection {
+                    selection,
+                    holes: false,
+                },
+                containment: BoundaryContainment::Center,
+                offset: 0.0,
+            },
+        }))
+        .expect("set the face boundary");
+    generate(&mut fx.session).expect("a face-pick boundary must generate");
+
+    let face = square_polygon(RING_HOLE_HALF);
+    let samples = cutting_samples(&fx.session);
+    assert!(
+        samples.len() > 20,
+        "a confined op that emits almost no cutting motion proves nothing: {} samples",
+        samples.len()
+    );
+    let outside: Vec<&P2> = samples
+        .iter()
+        .filter(|p| !face.contains_point_eps(p, EPS_MM))
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "{} of {} cutting samples lie outside the picked face. First: {:?}",
+        outside.len(),
+        samples.len(),
+        outside.first()
     );
 }

@@ -130,6 +130,15 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       operation.params.selection. Delete the key",
     },
     RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]", "boundary", "source"],
+        key: "model_outline",
+        replacement: "Removed (geometry selection P2.5): use [boundary.source.selection] with \
+                      a selection whose rule reads the model, for example \
+                      selection = { rules = [{ source = { model = 3 }, filter = { kinds = \
+                      { only = [\"loop\", \"circle\"] } } }] }, and holes in place of \
+                      model_outline.holes. Delete the key",
+    },
+    RetiredKey {
         table: &["setups", "[]", "toolpaths", "[]"],
         key: "type",
         replacement: "Removed (C2): the op kind is `kind` in the toolpath's [operation] \
@@ -149,45 +158,89 @@ const RETIRED_KEYS: &[RetiredKey] = &[
     },
 ];
 
-/// Push the path of every `key` under the tables that `steps` names onto
-/// `found`.
-fn find_retired(value: &toml::Value, steps: &[&str], key: &str, at: &str, found: &mut Vec<String>) {
-    let join = |name: &str| {
+/// One retired value of a project-file key: the table that holds the
+/// key, the key, the string value that left the format, and what replaced
+/// it (decision D8, geometry selection P2.5).
+///
+/// A unit enum variant serializes as a VALUE (`source = "face_selection"`),
+/// so a [`RetiredKey`] row cannot find it, and serde would refuse it with
+/// "unknown variant" and name no fix.
+struct RetiredValue {
+    table: &'static [&'static str],
+    key: &'static str,
+    value: &'static str,
+    replacement: &'static str,
+}
+
+/// Every retired string value. The loader refuses a file that holds one,
+/// with the same refusal as a retired key ([`check_retired_keys`]). Add a
+/// row when a unit variant leaves the file format.
+const RETIRED_VALUES: &[RetiredValue] = &[RetiredValue {
+    table: &["setups", "[]", "toolpaths", "[]", "boundary"],
+    key: "source",
+    value: "face_selection",
+    replacement: "Removed (geometry selection P2.5): a face boundary is a \
+                  [boundary.source.selection] with the face picks. Pick the faces again",
+}];
+
+/// Push the path of every table under `steps` for which `hit` holds onto
+/// `found`, with `name` (the key) appended.
+fn find_retired(
+    value: &toml::Value,
+    steps: &[&str],
+    name: &str,
+    hit: &dyn Fn(&toml::Table) -> bool,
+    at: &str,
+    found: &mut Vec<String>,
+) {
+    let join = |step: &str| {
         if at.is_empty() {
-            name.to_owned()
+            step.to_owned()
         } else {
-            format!("{at}.{name}")
+            format!("{at}.{step}")
         }
     };
     match steps.split_first() {
         None => {
-            if value.as_table().is_some_and(|t| t.contains_key(key)) {
-                found.push(join(key));
+            if value.as_table().is_some_and(hit) {
+                found.push(join(name));
             }
         }
         Some((&"[]", rest)) => {
             for (i, entry) in value.as_array().into_iter().flatten().enumerate() {
-                find_retired(entry, rest, key, &format!("{at}[{i}]"), found);
+                find_retired(entry, rest, name, hit, &format!("{at}[{i}]"), found);
             }
         }
         Some((step, rest)) => {
             if let Some(next) = value.as_table().and_then(|t| t.get(*step)) {
-                find_retired(next, rest, key, &join(step), found);
+                find_retired(next, rest, name, hit, &join(step), found);
             }
         }
     }
 }
 
-/// Refuse a project file that holds a key from [`RETIRED_KEYS`]. C2: the
-/// refusal names EVERY retired key in the file, so one edit pass clears
-/// them all.
+/// Refuse a project file that holds a key from [`RETIRED_KEYS`] or a
+/// value from [`RETIRED_VALUES`]. C2: the refusal names EVERY retired key
+/// and value in the file, so one edit pass clears them all.
 fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
     let mut found = Vec::new();
     for retired in RETIRED_KEYS {
         let mut paths = Vec::new();
-        find_retired(raw, retired.table, retired.key, "", &mut paths);
+        let hit = |t: &toml::Table| t.contains_key(retired.key);
+        find_retired(raw, retired.table, retired.key, &hit, "", &mut paths);
         found.extend(paths.into_iter().map(|path| super::RetiredKeyFound {
             path,
+            replacement: retired.replacement,
+        }));
+    }
+    for retired in RETIRED_VALUES {
+        let mut paths = Vec::new();
+        let hit = |t: &toml::Table| {
+            t.get(retired.key).and_then(toml::Value::as_str) == Some(retired.value)
+        };
+        find_retired(raw, retired.table, retired.key, &hit, "", &mut paths);
+        found.extend(paths.into_iter().map(|path| super::RetiredKeyFound {
+            path: format!("{path} = \"{}\"", retired.value),
             replacement: retired.replacement,
         }));
     }

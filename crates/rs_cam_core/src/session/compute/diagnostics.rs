@@ -1036,7 +1036,7 @@ impl ProjectSession {
                 let tool_name = self
                     .find_tool_by_raw_id(tc.tool_id)
                     .map(|t| t.name.clone())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| SessionError::ToolNotFound(ToolId(tc.tool_id)).to_string());
 
                 per_toolpath.push(ToolpathDiagnostic {
                     toolpath_id: tc.id,

@@ -195,9 +195,9 @@ impl ResolvedSelection {
     /// THE frame door: the items of a model move into the work plane of
     /// the setup. Rings, points and circle centres take
     /// [`SetupTransformInfo::apply_to_drawing_polygons`] and
-    /// [`SetupTransformInfo::drawing_to_local`], the doors that
-    /// `transform_drawing_polygons_to_setup` and the drill picks take today;
-    /// the plane Z and the normal of a face take [`face_in_setup_frame`].
+    /// [`SetupTransformInfo::drawing_to_local`] (every op selection and
+    /// every boundary selection takes this door, P2.5); the plane Z and the
+    /// normal of a face take [`face_in_setup_frame`].
     ///
     /// An identity setup (`needs_transform` false) changes nothing: the
     /// world IS the emission frame. A stock item does not move: the stock

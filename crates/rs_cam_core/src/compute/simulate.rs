@@ -220,8 +220,8 @@ pub fn group_stock_changes(
                             .map(StockChangeSource::Mesh)
                     } else {
                         model
-                            .and_then(|m| m.outlines_pre_selection())
-                            .map(StockChangeSource::Outlines)
+                            .filter(|m| m.items.has_drawing())
+                            .map(|m| StockChangeSource::Outlines(m.items.closed_regions()))
                     };
                     source.unwrap_or(StockChangeSource::Missing(model_id))
                 })

@@ -326,15 +326,7 @@ pub fn view(
 /// The closed areas of the served shapes: the loops and circle rings nested
 /// by containment, then each face with its own inner loops.
 fn regions_of(served: &[&Item]) -> Vec<Polygon2> {
-    let rings: Vec<Polygon2> = served
-        .iter()
-        .filter_map(|i| match i.shape() {
-            Shape::Loop(p) => Some(p.clone()),
-            Shape::Circle { ring, .. } => Some(ring.clone()),
-            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
-        })
-        .collect();
-    let mut polygons = detect_containment(rings);
+    let mut polygons = nest_closed_rings(served.iter().copied());
     polygons.extend(served.iter().filter_map(|i| match i.shape() {
         Shape::Face(face) => Some(face.rings.clone()),
         Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
@@ -342,11 +334,36 @@ fn regions_of(served: &[&Item]) -> Vec<Polygon2> {
     polygons
 }
 
+/// The loops and circle rings of `items`, in this order, nested by
+/// containment. The one nesting of closed drawing rings: [`view`] with
+/// `ItemUse::Regions` and [`super::ItemSet::closed_regions`] (the stock
+/// change and obstacle outlines, P2.5) both call it. A path, a point and a
+/// face give no ring here.
+pub(crate) fn nest_closed_rings<'a>(items: impl IntoIterator<Item = &'a Item>) -> Vec<Polygon2> {
+    let rings: Vec<Polygon2> = items
+        .into_iter()
+        .filter_map(|i| match i.shape() {
+            Shape::Loop(p) => Some(p.clone()),
+            Shape::Circle { ring, .. } => Some(ring.clone()),
+            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
+        })
+        .collect();
+    detect_containment(rings)
+}
+
 /// The lines of the served shapes: loops, circle rings and paths, nested by
 /// containment (a path stays top level).
 fn curves_of(served: &[&Item]) -> Vec<Polygon2> {
-    let rings: Vec<Polygon2> = served
-        .iter()
+    nest_drawing_rings(served.iter().copied())
+}
+
+/// Every drawn ring of `items` (loops, circle rings and paths), in this
+/// order, nested by containment; a path stays top level. The one nesting
+/// of drawn lines: [`view`] with `ItemUse::Curves` and
+/// [`super::ItemSet::drawing_curves`] (the pin walls, P2.5) both call it.
+pub(crate) fn nest_drawing_rings<'a>(items: impl IntoIterator<Item = &'a Item>) -> Vec<Polygon2> {
+    let rings: Vec<Polygon2> = items
+        .into_iter()
         .filter_map(|i| i.shape().drawing_ring().cloned())
         .collect();
     detect_containment(rings)

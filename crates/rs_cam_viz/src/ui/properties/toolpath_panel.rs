@@ -657,16 +657,6 @@ pub(super) fn draw_geometry_tab(
                         {
                             entry.boundary.source = BoundarySource::ModelSilhouette;
                         }
-                        if ui
-                            .selectable_label(
-                                matches!(entry.boundary.source, BoundarySource::FaceSelection),
-                                "Face Selection",
-                            )
-                            .on_hover_text("Boundary derived from selected STEP faces")
-                            .clicked()
-                        {
-                            entry.boundary.source = BoundarySource::FaceSelection;
-                        }
                         let has_outline_models = !outline_models.is_empty();
                         if ui
                             .add_enabled(
@@ -674,7 +664,7 @@ pub(super) fn draw_geometry_tab(
                                 egui::Button::selectable(
                                     matches!(
                                         entry.boundary.source,
-                                        BoundarySource::ModelOutline { .. }
+                                        BoundarySource::Selection { .. }
                                     ),
                                     "Model Outline",
                                 ),
@@ -690,13 +680,16 @@ pub(super) fn draw_geometry_tab(
                             })
                             .clicked()
                         {
-                            // Keep the current pick when the source is already
-                            // an outline; else take the first candidate.
-                            if !matches!(entry.boundary.source, BoundarySource::ModelOutline { .. })
+                            // Keep the current selection when the source is
+                            // already a selection; else take the closed shapes
+                            // of the first candidate.
+                            if !matches!(entry.boundary.source, BoundarySource::Selection { .. })
                                 && let Some((first_id, _)) = outline_models.first()
                             {
-                                entry.boundary.source = BoundarySource::ModelOutline {
-                                    model_id: first_id.0,
+                                entry.boundary.source = BoundarySource::Selection {
+                                    selection: rs_cam_core::selection::Selection::closed_shapes_of(
+                                        *first_id,
+                                    ),
                                     holes: false,
                                 };
                             }
@@ -735,26 +728,40 @@ pub(super) fn draw_geometry_tab(
                     });
             });
 
-            // Outline model picker — only shown when `Source` above is
-            // `ModelOutline`. It lists the models with a closed 2D shape.
-            // A stored id that names no such model shows as "not found";
-            // generation then refuses and names the id.
-            if let BoundarySource::ModelOutline { model_id, holes } = &mut entry.boundary.source {
+            // Outline model picker — only shown when `Source` above is a
+            // `Selection`. It lists the models with a closed 2D shape. A
+            // stored id that names no such model shows as "not found";
+            // generation then refuses and names the id. A selection that is
+            // not the closed shapes of one model (written by MCP or by hand
+            // in the file) shows as a custom selection; picking a model
+            // replaces it.
+            if let BoundarySource::Selection { selection, holes } = &mut entry.boundary.source {
                 ui.horizontal(|ui| {
                     ui.label("Outline model:");
-                    let current_label = outline_models
-                        .iter()
-                        .find(|(candidate_id, _)| candidate_id.0 == *model_id)
-                        .map(|(_, name)| name.clone())
-                        .unwrap_or_else(|| format!("(model id {model_id} not found)"));
+                    let current = selection.closed_shapes_model();
+                    let current_label = match current {
+                        Some(model_id) => outline_models
+                            .iter()
+                            .find(|(candidate_id, _)| *candidate_id == model_id)
+                            .map(|(_, name)| name.clone())
+                            .unwrap_or_else(|| format!("(model id {} not found)", model_id.0)),
+                        None => format!(
+                            "(custom selection: {} rules, {} picks)",
+                            selection.rules().len(),
+                            selection.picks().len()
+                        ),
+                    };
                     egui::ComboBox::from_id_salt("boundary_outline_model")
                         .truncate()
                         .selected_text(current_label)
                         .show_ui(ui, |ui| {
                             for (candidate_id, name) in outline_models {
-                                let selected = *model_id == candidate_id.0;
+                                let selected = current == Some(*candidate_id);
                                 if ui.selectable_label(selected, name.as_str()).clicked() {
-                                    *model_id = candidate_id.0;
+                                    *selection =
+                                        rs_cam_core::selection::Selection::closed_shapes_of(
+                                            *candidate_id,
+                                        );
                                 }
                             }
                         })

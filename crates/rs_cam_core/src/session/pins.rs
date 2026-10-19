@@ -126,7 +126,13 @@ impl ProjectSession {
             .iter()
             .filter(|m| part_models.contains(&ModelId(m.id)))
         {
-            match model.outlines_pre_selection().as_deref() {
+            // P2.5: the drawn rings, nested, open paths too (the old
+            // nested list of the import, from the items).
+            let curves = model
+                .items
+                .has_drawing()
+                .then(|| model.items.drawing_curves());
+            match curves.as_deref() {
                 Some(polygons) if !polygons.is_empty() => {
                     out.extend(polygons.iter().map(|polygon| {
                         PinObstacle::from_polygon(PinObstacleKind::Part, &model.name, polygon)

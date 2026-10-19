@@ -98,7 +98,7 @@ pub struct ResolvedGenInputs {
     /// alongside `pre_boundary`'s union attempt and shared with the
     /// mesh-finish family's pre-clip via `TerritoryInputs::regions`
     /// — never re-derived just for this field. `PlannedTierRegions` and
-    /// `ModelOutline` fill it the same way. `None` for every other
+    /// `Selection` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
     pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
     /// The setup's local<->global transform, hoisted off the
@@ -109,18 +109,6 @@ pub struct ResolvedGenInputs {
     /// holes are selection items and take the frame door with the rest of
     /// the selection (geometry selection P2.3c).
     setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
-    /// N12 item 2: the XY outline of the picked BREP faces, in the
-    /// emission frame. Only a [`BoundarySource::FaceSelection`] boundary
-    /// reads it (`resolve_containment_polygon`); P2.5 moves that boundary
-    /// onto the selection. An op cuts the picked faces through its
-    /// selection (geometry selection P2.3b), not through this outline.
-    ///
-    /// `None` means the toolpath picks no face, or the model exposes no
-    /// enriched mesh, or the picked faces are not horizontal planes — never
-    /// "the outline was empty".
-    ///
-    /// [`BoundarySource::FaceSelection`]: crate::compute::config::BoundarySource::FaceSelection
-    face_boundary: Option<crate::polygon::Polygon2>,
 }
 
 impl ResolvedGenInputs {
@@ -256,7 +244,7 @@ pub struct GenContext {
     material: crate::material::Material,
     /// The RAW region set the POST-generation boundary clip walks, for
     /// the three sources that resolve to a set of disjoint regions
-    /// (`PlannedTierRegions`, `DerivedRestRegions`, `ModelOutline`).
+    /// (`PlannedTierRegions`, `DerivedRestRegions`, `Selection`).
     ///
     /// `None` means the boundary is disabled or names another source,
     /// and the single-polygon clip answers instead. It never means "the
@@ -927,7 +915,7 @@ impl JobPhases<'_, '_> {
                 self.inputs.boundary_config.source,
                 crate::compute::config::BoundarySource::PlannedTierRegions { .. }
                     | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
-                    | crate::compute::config::BoundarySource::ModelOutline { .. }
+                    | crate::compute::config::BoundarySource::Selection { .. }
             );
             annotated = if resolves_to_a_region_set {
                 // The submit step resolved this set, for exactly
@@ -966,7 +954,6 @@ impl JobPhases<'_, '_> {
                     &self.inputs.boundary_config,
                     &self.inputs.emission_stock_bbox,
                     self.inputs.mesh.as_ref(),
-                    self.inputs.face_boundary.as_ref(),
                     &self.inputs.keep_out_footprints,
                     self.inputs.tool_def.diameter(),
                     self.inputs.heights.retract_z,
@@ -2396,14 +2383,14 @@ impl ProjectSession {
             {
                 self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
             }
-            // ModelOutline: the same fail-fast rule. A missing model or an
-            // outline with no closed polygon refuses before geometry work,
-            // and the message names the model.
+            // Selection: the same fail-fast rule. A selection that names
+            // a missing model or resolves to no closed region refuses
+            // before geometry work, and the message names the models.
             if tc.boundary.enabled
-                && let crate::compute::config::BoundarySource::ModelOutline { model_id, holes } =
+                && let crate::compute::config::BoundarySource::Selection { selection, holes } =
                     &tc.boundary.source
             {
-                self.resolve_model_outline_polys(index, *model_id, *holes)?;
+                self.resolve_boundary_selection_polys(index, selection, *holes)?;
             }
         }
 
@@ -2507,14 +2494,13 @@ impl ProjectSession {
                         // rather than `#[allow(clippy::unwrap_used)]`.
                         Some(self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?)
                     }
-                    crate::compute::config::BoundarySource::ModelOutline { model_id, holes } => {
+                    crate::compute::config::BoundarySource::Selection { selection, holes } => {
                         // The same resolution as the pre-boundary, so the
                         // two clips bound the same set.
-                        Some(self.resolve_model_outline_polys(index, *model_id, *holes)?)
+                        Some(self.resolve_boundary_selection_polys(index, selection, *holes)?)
                     }
                     crate::compute::config::BoundarySource::Stock
-                    | crate::compute::config::BoundarySource::ModelSilhouette
-                    | crate::compute::config::BoundarySource::FaceSelection => None,
+                    | crate::compute::config::BoundarySource::ModelSilhouette => None,
                 }
             } else {
                 None

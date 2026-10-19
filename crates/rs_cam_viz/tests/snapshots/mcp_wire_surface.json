@@ -2475,20 +2475,18 @@
           "description": "Enable or disable boundary",
           "type": "boolean"
         },
+        "holes": {
+          "description": "Used only when `source` is \"selection\". When true, the toolpath\ncuts inside the HOLES of the regions and stays off the regions, for\nexample the area inside an edge band. Generation refuses when the\nregions have no hole. When absent, the value is false. Replaces\n`outline_holes` (P2.5).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "index": {
           "description": "Toolpath index (0-based)",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
-        },
-        "model_id": {
-          "description": "Required when `source` is \"model_outline\": the project model id\n(from `inspect_model`) whose closed 2D shapes bound the\ntoolpath. It can name a model other than the toolpath's own. Holes\nin the shapes stay uncut.",
-          "format": "uint",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
         },
         "offset": {
           "description": "Additional offset in mm (positive = expand, negative = shrink)",
@@ -2498,15 +2496,11 @@
             "null"
           ]
         },
-        "outline_holes": {
-          "description": "Used only when `source` is \"model_outline\". When true, the toolpath\ncuts inside the HOLES of the shapes and stays off the shapes, for\nexample the area inside an edge band. Generation refuses when the\nshapes have no hole. When absent, the value is false.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+        "selection": {
+          "description": "Required when `source` is \"selection\": the selection whose closed\nregions bound the toolpath, as the project file holds it. The closed\nshapes of model 3:\n`{\"rules\": [{\"source\": {\"model\": 3}, \"filter\": {\"kinds\": {\"only\": [\"loop\", \"circle\"]}}}]}`.\nA rule may read any project model (`{\"model\": id}`, the id from\n`inspect_model`) or the model of the toolpath (`\"toolpath_model\"`).\nHoles in the shapes stay uncut. Replaces `model_id` (P2.5)."
         },
         "source": {
-          "description": "Boundary source: \"stock\", \"model_silhouette\", \"model_outline\" or\n\"derived_rest_regions\"",
+          "description": "Boundary source: \"stock\", \"model_silhouette\", \"selection\" or\n\"derived_rest_regions\"",
           "type": [
             "string",
             "null"

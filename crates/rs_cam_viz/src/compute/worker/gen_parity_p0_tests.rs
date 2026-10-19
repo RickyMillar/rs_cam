@@ -37,8 +37,8 @@
 //! The other six stay unpinned, and the next phase must reach them with
 //! other fixtures:
 //!
-//! * **Items 1 and 2 — `face_selection` and a `BoundarySource::FaceSelection`
-//!   boundary.** Both need a STEP model with picked BREP faces. This crate
+//! * **Items 1 and 2 — `face_selection` and a face-pick selection boundary
+//!   (`BoundarySource::Selection`, P2.5).** Both need a STEP model with picked BREP faces. This crate
 //!   has no in-memory STEP fixture, so no test here can build one.
 //! * **Item 4 — the dressup stock-top frame** (core `emission_stock_bbox.max.z`
 //!   against viz `req.heights.top_z`). It needs a PINNED Top Z. With the

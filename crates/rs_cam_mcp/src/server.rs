@@ -827,7 +827,7 @@ pub struct SetBoundaryConfigParam {
     pub index: usize,
     /// Enable or disable boundary
     pub enabled: bool,
-    /// Boundary source: "stock", "model_silhouette", "model_outline" or
+    /// Boundary source: "stock", "model_silhouette", "selection" or
     /// "derived_rest_regions"
     pub source: Option<String>,
     /// Containment mode: "center", "inside", or "outside"
@@ -838,16 +838,20 @@ pub struct SetBoundaryConfigParam {
     /// (from `get_toolpath_params`'s `id` field, not an index) of the
     /// toolpath whose pencil rest-depth result supplies the boundary.
     pub source_toolpath_id: Option<usize>,
-    /// Required when `source` is "model_outline": the project model id
-    /// (from `inspect_model`) whose closed 2D shapes bound the
-    /// toolpath. It can name a model other than the toolpath's own. Holes
-    /// in the shapes stay uncut.
-    pub model_id: Option<usize>,
-    /// Used only when `source` is "model_outline". When true, the toolpath
-    /// cuts inside the HOLES of the shapes and stays off the shapes, for
+    /// Required when `source` is "selection": the selection whose closed
+    /// regions bound the toolpath, as the project file holds it. The closed
+    /// shapes of model 3:
+    /// `{"rules": [{"source": {"model": 3}, "filter": {"kinds": {"only": ["loop", "circle"]}}}]}`.
+    /// A rule may read any project model (`{"model": id}`, the id from
+    /// `inspect_model`) or the model of the toolpath (`"toolpath_model"`).
+    /// Holes in the shapes stay uncut. Replaces `model_id` (P2.5).
+    pub selection: Option<serde_json::Value>,
+    /// Used only when `source` is "selection". When true, the toolpath
+    /// cuts inside the HOLES of the regions and stays off the regions, for
     /// example the area inside an edge band. Generation refuses when the
-    /// shapes have no hole. When absent, the value is false.
-    pub outline_holes: Option<bool>,
+    /// regions have no hole. When absent, the value is false. Replaces
+    /// `outline_holes` (P2.5).
+    pub holes: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

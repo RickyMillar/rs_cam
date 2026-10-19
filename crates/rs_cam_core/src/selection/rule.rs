@@ -12,6 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ids::ModelId;
+
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::key::MatchKey;
 use super::refusal::{RefusalCause, SelectionRefusal};
@@ -243,6 +245,41 @@ impl Selection {
             picks: Vec::new(),
             excludes: Vec::new(),
         }
+    }
+
+    /// The closed shapes (loops and circles) of `model`, on every layer:
+    /// one rule that names its kinds. The boundary selection that replaced
+    /// `BoundarySource::ModelOutline` (geometry selection P2.5).
+    pub fn closed_shapes_of(model: ModelId) -> Self {
+        Self::from_rules(vec![Rule {
+            source: SourceRef::Model(model),
+            filter: Filter {
+                kinds: KindFilter::Only(vec![ItemKind::Loop, ItemKind::Circle]),
+                ..Filter::default()
+            },
+        }])
+    }
+
+    /// The model of a [`Selection::closed_shapes_of`] selection, or `None`
+    /// for every other selection.
+    pub fn closed_shapes_model(&self) -> Option<ModelId> {
+        match self.rules.as_slice() {
+            [rule] => match rule.source {
+                SourceRef::Model(id) if *self == Self::closed_shapes_of(id) => Some(id),
+                SourceRef::Model(_) | SourceRef::ToolpathModel | SourceRef::Stock => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Every source that a rule, a pick or an exclude names, in that
+    /// order, with repeats.
+    pub fn sources(&self) -> impl Iterator<Item = SourceRef> + '_ {
+        self.rules
+            .iter()
+            .map(|r| r.source)
+            .chain(self.picks.iter().map(|k| k.source))
+            .chain(self.excludes.iter().map(|k| k.source))
     }
 
     /// These picks and no rule.

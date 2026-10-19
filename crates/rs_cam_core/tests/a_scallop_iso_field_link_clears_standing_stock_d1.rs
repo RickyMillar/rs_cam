@@ -64,6 +64,8 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::geo::P3;
+use rs_cam_core::ids::ModelId;
+use rs_cam_core::selection::Selection;
 use rs_cam_core::session::{
     AddModelArgs, AddToolpathArgs, Command, ProjectSession, SetBoundaryConfigArgs,
 };
@@ -116,8 +118,8 @@ fn add_region_boundary(session: &mut ProjectSession, index: usize) {
             index,
             boundary: BoundaryConfig {
                 enabled: true,
-                source: BoundarySource::ModelOutline {
-                    model_id,
+                source: BoundarySource::Selection {
+                    selection: Selection::closed_shapes_of(ModelId(model_id)),
                     holes: false,
                 },
                 containment: BoundaryContainment::Center,

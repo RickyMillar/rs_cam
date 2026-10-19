@@ -1511,54 +1511,61 @@ impl RsCamApp {
         let boundary_source = match p.source.as_deref() {
             Some("stock") | None => BoundarySource::Stock,
             Some("model_silhouette") => BoundarySource::ModelSilhouette,
-            Some("model_outline") => {
-                // The valid ids are the models with a closed 2D shape —
-                // the same list the GUI picker offers.
+            Some("selection") => {
                 let session = &self.controller.state().session;
-                let valid: Vec<String> = session
+                let known: Vec<String> = session
                     .models()
                     .iter()
-                    .filter(|m| m.items.has_closed_ring())
                     .map(|m| format!("{} ('{}')", m.id, m.name))
                     .collect();
-                let valid_list = if valid.is_empty() {
-                    "none: no model in this project has a closed 2D shape".to_owned()
-                } else {
-                    valid.join(", ")
-                };
-                let Some(model_id) = p.model_id else {
+                let Some(raw) = p.selection.clone() else {
                     return CorePlan::Answered(mutation_error_json(
                         &format!(
-                            "Error: 'model_outline' requires model_id — the id of the \
-                             model whose closed 2D shapes bound the toolpath (see \
-                             inspect_model's 'id' field). Valid model ids: [{valid_list}]."
+                            "Error: 'selection' requires selection — the rules and picks \
+                             whose closed regions bound the toolpath, for example \
+                             {{\"rules\": [{{\"source\": {{\"model\": 3}}, \"filter\": \
+                             {{\"kinds\": {{\"only\": [\"loop\", \"circle\"]}}}}}}]}}. \
+                             Project models: [{}].",
+                            known.join(", ")
                         ),
-                        Some("model_id"),
+                        Some("selection"),
                     ));
                 };
-                let Some(model) = session.models().iter().find(|m| m.id == model_id) else {
-                    return CorePlan::Answered(mutation_error_json(
-                        &format!(
-                            "Error: model_id {model_id} does not match any model in this \
-                             project. Valid model ids: [{valid_list}]."
-                        ),
-                        Some("model_id"),
-                    ));
+                let selection: rs_cam_core::selection::Selection = match serde_json::from_value(raw)
+                {
+                    Ok(selection) => selection,
+                    Err(e) => {
+                        return CorePlan::Answered(mutation_error_json(
+                            &format!("Error: the selection does not parse: {e}."),
+                            Some("selection"),
+                        ));
+                    }
                 };
-                let has_closed = model.items.has_closed_ring();
-                if !has_closed {
+                // A rule or a pick that names a missing model refuses here,
+                // as generation would.
+                let missing = selection.sources().find_map(|source| match source {
+                    rs_cam_core::selection::SourceRef::Model(id)
+                        if !session.models().iter().any(|m| m.id == id.0) =>
+                    {
+                        Some(id.0)
+                    }
+                    rs_cam_core::selection::SourceRef::Model(_)
+                    | rs_cam_core::selection::SourceRef::ToolpathModel
+                    | rs_cam_core::selection::SourceRef::Stock => None,
+                });
+                if let Some(model_id) = missing {
                     return CorePlan::Answered(mutation_error_json(
                         &format!(
-                            "Error: model {model_id} ('{}') has no closed 2D shape, so its \
-                             outline cannot bound a toolpath. Valid model ids: [{valid_list}].",
-                            model.name
+                            "Error: the selection reads model id {model_id}, which does not \
+                             match any model in this project. Project models: [{}].",
+                            known.join(", ")
                         ),
-                        Some("model_id"),
+                        Some("selection"),
                     ));
                 }
-                BoundarySource::ModelOutline {
-                    model_id,
-                    holes: p.outline_holes.unwrap_or(false),
+                BoundarySource::Selection {
+                    selection,
+                    holes: p.holes.unwrap_or(false),
                 }
             }
             Some("derived_rest_regions") => {
@@ -1596,7 +1603,7 @@ impl RsCamApp {
                 return CorePlan::Answered(mutation_error_json(
                     &format!(
                         "Error: Unknown boundary source '{other}'. Use 'stock', \
-                         'model_silhouette', 'model_outline', or 'derived_rest_regions'."
+                         'model_silhouette', 'selection', or 'derived_rest_regions'."
                     ),
                     Some("source"),
                 ));

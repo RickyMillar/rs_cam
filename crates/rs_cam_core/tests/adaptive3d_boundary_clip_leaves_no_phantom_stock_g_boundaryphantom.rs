@@ -4,7 +4,7 @@
 //! ## The strike
 //!
 //! rivmap350 (the operator's project, not in the repo), "3D Rough 8":
-//! Ø6.35 flat, ContourParallel, plunge entry, a `ModelOutline` boundary with
+//! Ø6.35 flat, ContourParallel, plunge entry, a `Selection` boundary (the closed shapes of a model) with
 //! `holes = true` (the area inside an edge band), containment `Inside`.
 //! Eight rapids ran straight down from the retract height into uncut stock
 //! (4 to 11 mm), real at the 0.2, 0.25 and 0.125 mm cells. Many sat on one
@@ -36,7 +36,7 @@
 //! A 60 x 60 mm height field of ridges and valleys (z 1 to 11) in a
 //! 64 x 64 x 25 stock. An edge-band drawing: the model square and an inner
 //! square, nested as one ring as the DXF import nests it. Boundary
-//! `ModelOutline { holes: true }`, containment `Inside`. Ø6.35 flat,
+//! `Selection { holes: true }`, containment `Inside`. Ø6.35 flat,
 //! ContourParallel, Global, plunge, stepover 3, leave 0.5. Two arms: inner
 //! half-width 17.3 with Depth/Pass 6, and 16.1 with Depth/Pass 4.
 //!
@@ -77,7 +77,9 @@ use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, Boundary
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::polygon::detect_containment;
+use rs_cam_core::selection::Selection;
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
 use rs_cam_core::toolpath::MoveType;
 
@@ -141,8 +143,8 @@ fn session(arm: Arm) -> ProjectSession {
     let mut cfg = toolpath_config("3D Rough", op, tool_id, mesh_id);
     cfg.boundary = BoundaryConfig {
         enabled: true,
-        source: BoundarySource::ModelOutline {
-            model_id: band_id,
+        source: BoundarySource::Selection {
+            selection: Selection::closed_shapes_of(ModelId(band_id)),
             holes: true,
         },
         containment: BoundaryContainment::Inside,

@@ -24,8 +24,8 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 - Two items with equal keys stay two items; a pick on them is ambiguous. Read no source file here.
 - A face filter reads the SETUP frame (`ResolveScope::setup`); the frame door
   does not move a stock item. P2.3b: an op config holds `selection` (driver-set, per-op serde default);
-  the session resolves `op.selection()` + face picks; `face_top_z` is setup frame. Bridge left:
-  `outlines_pre_selection` (P2.5/P2.7). P2.3c: drills read `Holes`; `KEY_MATCH_EPS_MM` is THE pick tolerance.
+  the session resolves `op.selection()` + face picks; `face_top_z` is setup frame. P2.5: `outlines_pre_selection` is a test reference only; `ItemSet::{closed_regions,
+  drawing_curves}` share `view`'s nesting; a boundary is `BoundarySource::Selection`. P2.3c: drills read `Holes`; `KEY_MATCH_EPS_MM` is THE pick tolerance.
 - P2.4: `ResolveScope.toolpath_model` is `Result<_, ModelId>` (a missing model is `MissingSource(Model(id))`); `view` refuses a face
   under `HORIZONTAL_FACE_MIN_NORMAL_Z` in the setup frame (`FaceNotFlat`; call it after the frame door).
 - `view` gives a `SelectionNote` for a skipped open path only; `OpItems::skipped_by_kind`
@@ -37,4 +37,4 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 - `--test default_selection_equals_the_old_lists_p2_2` (frozen lists); P2.3b `a_layer_rule_cuts_only_its_layer_p2_3`,
   `an_absent_selection_key_loads_the_op_default_p2_3`, `an_op_change_keeps_its_selection_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`;
   P2.3c `drill_picks_resolve_to_targets_g_drillpickstale` (a lost pick refuses), `a_retired_drill_pick_key_is_named_p2_3c`;
-  P2.4 `selection_refusals_name_the_item_p2_4` (one arm per cause; status = generation), `a_two_face_pick_keeps_both_faces_p2_4`
+  P2.4 `selection_refusals_name_the_item_p2_4` (one arm per cause; status = generation), `a_two_face_pick_keeps_both_faces_p2_4`; P2.5 `a_selection_boundary_confines_g_modeloutline`

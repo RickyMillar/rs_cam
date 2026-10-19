@@ -548,8 +548,12 @@ impl LoadedModel {
     /// `detect_containment` as the import did. `None` when the model holds
     /// no drawing item (a mesh, a STEP model, a model that did not load).
     ///
-    /// P2.5 and P2.7 delete this: the nested-list readers (boundary
-    /// outline, MCP) read it until then.
+    /// REFERENCE ONLY (P2.5): no production code reads it. The boundary
+    /// reads its selection, the stock changes and obstacles read
+    /// `ItemSet::closed_regions`, the pin walls and the model summaries
+    /// read `ItemSet::drawing_curves`. The sentries keep it as the frozen
+    /// list of the import before P2.1 (a hand-built list stays as given,
+    /// and a scaled set nests before the scale).
     pub fn outlines_pre_selection(&self) -> Option<Arc<Vec<Polygon2>>> {
         self.items
             .has_drawing()
@@ -847,6 +851,41 @@ pub struct ToolpathConfig {
 }
 
 impl ToolpathConfig {
+    /// Every model id this toolpath reads (geometry selection P2.5, DESIGN
+    /// 9.2): its own model, every `SourceRef::Model` of its op selection
+    /// (rules, picks and excludes: an exclude that stops matching changes
+    /// the cut), the Project Curve surface model, and every
+    /// `SourceRef::Model` of an ENABLED `BoundarySource::Selection`
+    /// boundary. A disabled boundary reads nothing, as before.
+    ///
+    /// `SourceRef::ToolpathModel` is the own model, which is always in the
+    /// set. `SourceRef::Stock` reads no model. A re-import of any model in
+    /// the set stales the toolpath (`drop_results_for_model`).
+    pub fn models_read(&self) -> std::collections::BTreeSet<usize> {
+        use crate::selection::SourceRef;
+        let mut out = std::collections::BTreeSet::new();
+        out.insert(self.model_id);
+        let named = |source: SourceRef| match source {
+            SourceRef::Model(id) => Some(id.0),
+            SourceRef::ToolpathModel | SourceRef::Stock => None,
+        };
+        if let Some(selection) = self.operation.selection() {
+            out.extend(selection.sources().filter_map(named));
+        }
+        if let crate::compute::OperationConfig::ProjectCurve(cfg) = &self.operation
+            && let Some(surface) = cfg.surface_model_id
+        {
+            out.insert(surface.0);
+        }
+        if self.boundary.enabled
+            && let crate::compute::config::BoundarySource::Selection { selection, .. } =
+                &self.boundary.source
+        {
+            out.extend(selection.sources().filter_map(named));
+        }
+        out
+    }
+
     /// A signature of the fields that decide this toolpath's generated
     /// geometry.
     ///
@@ -1469,7 +1508,7 @@ impl ProjectSession {
                 let tool_name = self
                     .find_tool_by_raw_id(tc.tool_id)
                     .map(|t| t.name.clone())
-                    .unwrap_or_else(|| "Unknown tool".to_owned());
+                    .unwrap_or_else(|| SessionError::ToolNotFound(ToolId(tc.tool_id)).to_string());
                 ToolpathSummary {
                     index: idx,
                     id: tc.id,
@@ -1794,11 +1833,11 @@ impl ProjectSession {
 
     // ── Internal helpers ───────────────────────────────────────────
 
+    /// The tool with the EXACT id `raw_id`. There is no fallback to
+    /// another tool (geometry selection P2.5): a wrong tool is a wrong cut,
+    /// so a toolpath that names a missing tool refuses by its id.
     pub(crate) fn find_tool_by_raw_id(&self, raw_id: usize) -> Option<&ToolConfig> {
-        self.tools
-            .iter()
-            .find(|t| t.id.0 == raw_id)
-            .or_else(|| self.tools.first())
+        self.tools.iter().find(|t| t.id.0 == raw_id)
     }
 
     /// The model with the EXACT id `raw_id`. There is no fallback to
@@ -1874,22 +1913,6 @@ impl ProjectSession {
     // itself as part of the memo key, so the wrapper that hid it had no
     // remaining use. `setup_transform_info(..).apply_to_mesh(..)` is the
     // uncached spelling if one is ever needed again.
-
-    /// Transform a model's **drawing** polygons into the setup's work plane.
-    ///
-    /// See
-    /// [`SetupTransformInfo::apply_to_drawing_polygons`](crate::compute::transform::SetupTransformInfo::apply_to_drawing_polygons)
-    /// — this is the door for SVG/DXF/STEP-face geometry that describes the
-    /// part.
-    pub(crate) fn transform_drawing_polygons_to_setup(
-        &self,
-        polygons: &[Polygon2],
-        face_up: FaceUp,
-        z_rotation: ZRotation,
-    ) -> Vec<Polygon2> {
-        self.setup_transform_info(face_up, z_rotation)
-            .apply_to_drawing_polygons(polygons)
-    }
 
     /// The lateral-setup precondition, in ONE place — the single
     /// source of both refusal messages, called by every generation door

@@ -30,7 +30,7 @@
 //!   (`Prepared::territory`). A prior op cuts part of the stock, the session
 //!   simulates it, and the op then generates with `FromRemainingStock`.
 //! - `regions` (W6.3.0): each height-field op whose territory is a region
-//!   set, with a `ModelOutline` boundary rectangle that cuts through the
+//!   set, with a selection boundary rectangle that cuts through the
 //!   cap ([`REGION_RECT`]). It pins the region keep of each kernel and the
 //!   ring boundaries of Scallop.
 //! - W6.3.0 non-default arms of the height-field ops: an active slope band
@@ -91,7 +91,9 @@ use rs_cam_core::compute::operation_configs::{
 };
 use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::finish::unified_finish::ClaimsReference;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::profile::ProfileSide;
+use rs_cam_core::selection::Selection;
 use rs_cam_core::session::{
     AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs, SetToolpathModelArgs,
 };
@@ -118,7 +120,9 @@ struct Case {
     arm: &'static str,
     tweak: Tweak,
     source: Source,
-    /// True: a `ModelOutline` boundary of [`REGION_RECT`] (W6.3.0).
+    /// True: a selection boundary of [`REGION_RECT`] (W6.3.0; P2.5 moved
+    /// the `ModelOutline` boundary onto `BoundarySource::Selection` with no
+    /// change of output).
     regions: bool,
     /// The setup of the op (W6.5.0: the flipped Project Curve arm).
     frame: Frame,
@@ -713,8 +717,8 @@ fn cases() -> Vec<Case> {
 }
 
 /// Put the `regions` boundary on toolpath `index`: a polygon model of
-/// [`REGION_RECT`] and a `ModelOutline` boundary on it, `Center`
-/// containment. A `ModelOutline` boundary fills the region set of the op
+/// [`REGION_RECT`] and a selection boundary on its closed shapes, `Center`
+/// containment. A selection boundary fills the region set of the op
 /// (`pre_boundary_regions`).
 fn add_region_boundary(session: &mut ProjectSession, index: usize) {
     let [x0, y0, x1, y1] = REGION_RECT;
@@ -734,8 +738,8 @@ fn add_region_boundary(session: &mut ProjectSession, index: usize) {
             index,
             boundary: BoundaryConfig {
                 enabled: true,
-                source: BoundarySource::ModelOutline {
-                    model_id,
+                source: BoundarySource::Selection {
+                    selection: Selection::closed_shapes_of(ModelId(model_id)),
                     holes: false,
                 },
                 containment: BoundaryContainment::Center,

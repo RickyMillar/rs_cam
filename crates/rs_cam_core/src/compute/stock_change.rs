@@ -308,9 +308,8 @@ pub struct ModelGeometryFacts<'a> {
 
 /// Is `polygon` a closed outline that an outline geometry can use?
 ///
-/// The rule the "Model Outline" boundary applies
-/// (`ProjectSession::resolve_model_outline_polys`): a closed polygon with
-/// three or more exterior points.
+/// A closed polygon with three or more exterior points. Every region of
+/// `ItemSet::closed_regions` passes; the kernels keep the test as a guard.
 #[must_use]
 pub fn is_closed_outline(polygon: &Polygon2) -> bool {
     polygon.closed && polygon.exterior.len() >= 3
@@ -415,9 +414,10 @@ fn check_outline_models<'a>(
 pub enum StockChangeSource {
     /// The model mesh (a `Model` geometry).
     Mesh(Arc<TriangleMesh>),
-    /// The model's 2D polygons (an outline geometry). Open paths are in
-    /// the list; the S3 kernel takes the closed ones only
-    /// ([`is_closed_outline`]).
+    /// The model's closed drawing regions (an outline geometry):
+    /// `ItemSet::closed_regions`, nested, with no open path (P2.5). The
+    /// `Arc` is the item set's memo, so the S5 key holds while the model
+    /// does not change.
     Outlines(Arc<Vec<Polygon2>>),
     /// The model is absent or holds no geometry of the kind the change
     /// needs. The validation refuses this case when the change is written;

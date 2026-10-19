@@ -9,13 +9,12 @@ use std::sync::atomic::AtomicBool;
 
 use tracing::instrument;
 
-use crate::compute::cutter::build_cutter;
 use crate::compute::sim_prefix::SimMemo;
 use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, entry_metrics_not_applicable,
     entry_tool_fields, group_stock_cut_direction, run_simulation_memoized,
 };
-use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::compute::tool_config::ToolConfig;
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -129,22 +128,15 @@ impl ProjectSession {
                         continue;
                     }
 
-                    // A missing tool is a phantom default HERE and a
-                    // dropped entry in the GUI builder. That difference is
-                    // older than CMP-19 and outside it; only the derivation
-                    // of the three tool fields is shared.
-                    let (tool_def, flute_count, tool_summary) =
-                        match self.find_tool_by_raw_id(tc.tool_id) {
-                            Some(tool) => entry_tool_fields(tool),
-                            None => (
-                                Arc::new(build_cutter(&ToolConfig::new_default(
-                                    ToolId(0),
-                                    ToolType::EndMill,
-                                ))),
-                                2,
-                                "Unknown".to_owned(),
-                            ),
-                        };
+                    // A missing tool drops the entry, as in the GUI
+                    // builder. A default tool would carve the wrong shape
+                    // (P2.5). Generation refuses a missing tool by its id,
+                    // and `remove_tool` refuses a tool in use, so no
+                    // production result reaches this arm.
+                    let Some(tool) = self.find_tool_by_raw_id(tc.tool_id) else {
+                        continue;
+                    };
+                    let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
 
                     let metrics_not_applicable = entry_metrics_not_applicable(
                         result.is_drill_op(),

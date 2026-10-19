@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::ids::ModelId;
+use rs_cam_core::selection::Selection;
 use rs_cam_core::session::ProjectToolpathSection;
 use rs_cam_viz::ui::properties::boundary_summary_line;
 
@@ -105,9 +106,25 @@ fn summary_line_names_the_stored_source() {
         boundary_summary_line(&with(BoundarySource::ModelSilhouette), true, &[]),
         "Boundary: model silhouette (auto)"
     );
+    // A selection that is not the closed shapes of one model (P2.5) is
+    // counted, not named.
+    let mut picks = Selection::closed_shapes_of(ModelId(3));
+    picks
+        .apply(
+            rs_cam_core::selection::SelectionEdit::RemoveRule(0),
+            &Selection::empty(),
+        )
+        .expect("the rule exists");
     assert_eq!(
-        boundary_summary_line(&with(BoundarySource::FaceSelection), false, &[]),
-        "Boundary: face selection"
+        boundary_summary_line(
+            &with(BoundarySource::Selection {
+                selection: picks,
+                holes: false,
+            }),
+            false,
+            &[]
+        ),
+        "Boundary: outline of a selection (0 rules, 0 picks)"
     );
     assert_eq!(
         boundary_summary_line(
@@ -123,8 +140,8 @@ fn summary_line_names_the_stored_source() {
     let models = [(ModelId(3), "machinable_edge_band".to_owned())];
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline {
-                model_id: 3,
+            &with(BoundarySource::Selection {
+                selection: Selection::closed_shapes_of(ModelId(3)),
                 holes: false,
             }),
             false,
@@ -134,8 +151,8 @@ fn summary_line_names_the_stored_source() {
     );
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline {
-                model_id: 9,
+            &with(BoundarySource::Selection {
+                selection: Selection::closed_shapes_of(ModelId(9)),
                 holes: false,
             }),
             false,
@@ -146,8 +163,8 @@ fn summary_line_names_the_stored_source() {
     // The holes option says "outline holes" in both forms.
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline {
-                model_id: 3,
+            &with(BoundarySource::Selection {
+                selection: Selection::closed_shapes_of(ModelId(3)),
                 holes: true,
             }),
             false,
@@ -157,8 +174,8 @@ fn summary_line_names_the_stored_source() {
     );
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline {
-                model_id: 9,
+            &with(BoundarySource::Selection {
+                selection: Selection::closed_shapes_of(ModelId(9)),
                 holes: true,
             }),
             false,

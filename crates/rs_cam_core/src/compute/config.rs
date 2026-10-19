@@ -419,34 +419,37 @@ pub enum BoundarySource {
     Stock,
     /// 2D silhouette of the 3D model projected along the tool axis (Z-down).
     ModelSilhouette,
-    /// The 2D outline of ANOTHER model (DXF/SVG): the union of that
-    /// model's closed polygons, holes kept. A ring model gives a ring
-    /// boundary, so the toolpath does not cut in the hole.
+    /// The closed regions of a selection (geometry selection P2.5): the
+    /// loops, circles and picked faces that the selection names, nested by
+    /// containment, then joined into one union, holes kept. It replaces
+    /// `ModelOutline` (`Selection::closed_shapes_of(model)`) and
+    /// `FaceSelection` (a selection of face picks).
     ///
-    /// `model_id` is the project model id (`LoadedModel::id`), the same
-    /// number `ToolpathConfig::model_id` stores. It need not be the
-    /// toolpath's own model: a 3D rough on a terrain STL can take its
-    /// boundary from a DXF. Generation refuses when the model is missing
-    /// or has no closed polygon; it never falls back to the stock.
+    /// A rule or a pick on `SourceRef::ToolpathModel` reads the model of
+    /// the toolpath that owns this boundary. `SourceRef::Model(id)` reads
+    /// any project model: a 3D rough on a terrain STL can take its
+    /// boundary from a DXF.
+    ///
+    /// The selection resolves through the one door of an op selection
+    /// (`resolve`, the setup frame, `view` with `ItemUse::Regions`).
+    /// Generation refuses when the selection resolves to no closed region,
+    /// names a model that does not exist, or holds a lost pick. It never
+    /// falls back to the stock.
     ///
     /// Like [`Self::DerivedRestRegions`] this resolves to a SET of
-    /// polygons, one per disjoint outline, through the same
-    /// `RegionSet` path.
+    /// polygons, one per disjoint region, through the same `RegionSet`
+    /// path.
     ///
     /// `holes` selects the opposite regions. When it is true, the regions
-    /// are the HOLES of the union: one region per hole ring. A shape of the
-    /// model inside a hole (an island) is cut out of that region. An
-    /// edge-band model then gives the area inside the band, and the
-    /// toolpath stays off the band. Generation refuses when the
-    /// union has no hole. An old project file has no `holes` key and reads
-    /// it as false.
-    ModelOutline {
-        model_id: usize,
+    /// are the HOLES of the union: one region per hole ring. A shape inside
+    /// a hole (an island) is cut out of that region. An edge-band model
+    /// then gives the area inside the band, and the toolpath stays off the
+    /// band. Generation refuses when the union has no hole.
+    Selection {
+        selection: crate::selection::Selection,
         #[serde(default)]
         holes: bool,
     },
-    /// Selected STEP/CAD faces projected to XY.
-    FaceSelection,
     /// Rest regions derived from another toolpath's rest-depth analysis
     /// (`AnnotatedToolpath::rest_regions`, populated by the pencil
     /// RestDepth detector). `source_toolpath_id` is the *stable id*
@@ -507,8 +510,7 @@ impl BoundarySource {
         match self {
             BoundarySource::Stock => "Stock",
             BoundarySource::ModelSilhouette => "Model Silhouette",
-            BoundarySource::ModelOutline { .. } => "Model Outline",
-            BoundarySource::FaceSelection => "Face Selection",
+            BoundarySource::Selection { .. } => "Selection",
             BoundarySource::DerivedRestRegions { .. } => "Rest Regions",
             BoundarySource::PlannedTierRegions { .. } => "Planned Tier Regions",
         }
