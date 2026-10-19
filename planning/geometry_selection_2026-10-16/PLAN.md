@@ -382,8 +382,25 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1, P4.2 done | 1ca93935, 229eb719 | next: P4.3 Selection section; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1, P4.2, P4.3 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4 | next: P4.4 per-item states; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
 | P8 recognition | blocked on P4 | | |
+
+## Lead review notes on P4.2 and P4.3 (2026-10-20)
+
+- P4.2: the first draft took the stock ring out of the nesting, so a
+  Pocket on the stock with a drawing loop cut the loop. The lead sent it
+  back: the stock ring nests as before, and `Regions::is_stock` marks the
+  region whose exterior is the stock ring. Sentry arm
+  `a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2`.
+- P4.3 deviations accepted: Pick sits in the action row; `+ Rule` is an
+  inline card; no "Show me" (P4.4 brings the highlight); notes and lost
+  picks are one-line rows (IC1); Pick routes face clicks only (hole clicks
+  wait for P4.5); the ic1 row cap is 29 (after-state plus 3).
+- Operator look for the merge gate (release GUI built from c223d7c4's
+  tree): a Pocket on `layers.dxf` (counts, open-path note, `+ Rule`, ✕,
+  Reset); a Drill (Reset, Clear after a hole click, the refusal); a
+  STEP-only 3D op (the "Selection" boundary button, face picks, Pick on the
+  boundary); the `+ Rule` card at the 280-point inspector width.
