@@ -7,10 +7,9 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   `Item`, `Shape`, `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet` (`has_selectable_item`: the 2D gate).
 - `rule.rs` — `Selection` (private fields, NO `Default`), `Rule` (`layer_rules`), `Filter`, `KindFilter`,
   `SelectionEdit` (`add_rules`: THE replace-under-default rule); `near.rs` — THE pick rule (`polyline_distance`).
-- `join.rs` — THE join (`CLOSE_TOL_MM`); `drawing_edit.rs` — the ledger; `flat_regions.rs` — STL flat regions
-  as faces (`FLAT_REGION_Z_BAND_MM`, L-7; Z order, then lowest triangle).
-- `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door).
-- `view.rs` — `view`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`.
+- `join.rs` — THE join (`CLOSE_TOL_MM`); `drawing_edit.rs` — the ledger; `flat_regions.rs` — STL flat regions as faces
+  (`FLAT_REGION_Z_BAND_MM`, L-7; Z order, then lowest triangle).
+- `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door); `view.rs` — `view`, `view_boundary`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`.
 
 ## Invariants
 - `Item::new` is the only item constructor; it checks the shape and computes the key. A circle is ONE item.
@@ -23,10 +22,11 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
 - `KindFilter::Served` admits no `Face`. A default item that the op cannot cut is left out (a `SelectionNote`
   for an open path only); a named item refuses `KindNotCut` (D2/D13); `Empty` names every kind. A face serves `Curves`
   (`curves_of`); drills read `Holes`; `outlines_pre_selection` is a test reference only.
-- A face reads the SETUP frame (`face_in_setup_frame`); the frame door does not move a stock item. `view`
-  runs after it and refuses a face under `HORIZONTAL_FACE_MIN_NORMAL_Z` (`FaceNotFlat`).
-- `ResolveScope.mesh_faces` gives STL faces; a cold set gives `faces_not_ready` (no lost pick, no build),
-  and `view` refuses `FacesNotReady`. A missing model is `MissingSource(Model(id))`.
+- A face reads the SETUP frame (`face_in_setup_frame`); the frame door does not move a stock item. `view` runs after
+  it: a face under `HORIZONTAL_FACE_MIN_NORMAL_Z` refuses `FaceNotFlat`. P3.4: `Facing::admits` is THE facing rule;
+  `face_top_z` reads UP faces only; `view` refuses a down `Regions` face (`FaceFacesDown`), `view_boundary` keeps it.
+- `ResolveScope.mesh_faces` gives STL faces; a cold set gives `faces_not_ready` (no lost pick, no build), and `view`
+  refuses `FacesNotReady`. A missing model is `MissingSource(Model(id))`. `FacesByFacing` counts the report faces.
 - The ledger is in FILE units (the join tolerance frame, `io/CLAUDE.md`); `DrawingEdit::scaled` converts, and
   the replay runs in model mm. A failed edit is an `EditLost` outcome, never dropped.
 
@@ -36,5 +36,5 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   `an_absent_selection_key_loads_the_op_default_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`, `a_retired_drill_pick_key_is_named_p2_3c`,
   `drill_picks_resolve_to_targets_g_drillpickstale`, `selection_refusals_name_the_item_p2_4` (status = generation, except `NoSuchRule`, `FacesNotReady`),
   `a_two_face_pick_keeps_both_faces_p2_4`, `a_selection_boundary_confines_g_modeloutline`, `selection_round_trips_p2_6`, `one_item_is_one_pick_p2_7`,
-  `a_retired_selection_key_is_named_p2_6`, `a_3d_op_face_pick_sets_its_top_p4_1`, `a_face_op_reads_its_selection_p4_2`, `item_states_match_the_cut_p4_4`,
+  `a_retired_selection_key_is_named_p2_6`, `a_down_face_gives_no_top_and_no_floor_p3_4`, `a_3d_op_face_pick_sets_its_top_p4_1`, `a_face_op_reads_its_selection_p4_2`, `item_states_match_the_cut_p4_4`,
   `import_reports_joins_and_open_shapes_p4_8`, `drawing_edits_replay_on_reimport_p4_9`, `stl_flat_regions_are_face_items_p4_7` (`--features test-support`)

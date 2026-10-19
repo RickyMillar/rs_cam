@@ -543,7 +543,8 @@ impl ProjectSession {
     /// selection P2.5): [`crate::selection::resolve`] against the models
     /// (a rule on `SourceRef::ToolpathModel` reads the model of this
     /// toolpath), THE frame door into the setup frame, then
-    /// [`crate::selection::view`] with `ItemUse::Regions`. A Bottom setup
+    /// [`crate::selection::view_boundary`] (`ItemUse::Regions`; a down face
+    /// gives its outline, P3.4). A Bottom setup
     /// mirrors Y here exactly as it mirrors the toolpath's drawing. The
     /// regions are then joined into one union, holes kept.
     ///
@@ -591,28 +592,25 @@ impl ProjectSession {
             )
             .map_err(|e| refuse(e.to_string()))?
             .setup;
-        let (items, _open_path_notes) = crate::selection::view(
-            &resolved,
-            crate::session::selection_status::BOUNDARY_ITEM_USE,
-        )
-        .map_err(|refusal| {
-            let missing = matches!(
-                refusal.cause,
-                crate::selection::RefusalCause::MissingSource(_)
-            );
-            let mut reason = refusal
-                .for_op(crate::session::selection_status::BOUNDARY_LABEL)
-                .to_string();
-            if missing {
-                let known: Vec<String> = self
-                    .models
-                    .iter()
-                    .map(|m| format!("{} ('{}')", m.id, m.name))
-                    .collect();
-                reason.push_str(&format!(" Project models: [{}].", known.join(", ")));
-            }
-            refuse(reason)
-        })?;
+        let (items, _open_path_notes) =
+            crate::selection::view_boundary(&resolved).map_err(|refusal| {
+                let missing = matches!(
+                    refusal.cause,
+                    crate::selection::RefusalCause::MissingSource(_)
+                );
+                let mut reason = refusal
+                    .for_op(crate::session::selection_status::BOUNDARY_LABEL)
+                    .to_string();
+                if missing {
+                    let known: Vec<String> = self
+                        .models
+                        .iter()
+                        .map(|m| format!("{} ('{}')", m.id, m.name))
+                        .collect();
+                    reason.push_str(&format!(" Project models: [{}].", known.join(", ")));
+                }
+                refuse(reason)
+            })?;
         let regions = items.regions().map_or(&[][..], |r| r.as_slice());
 
         let union = crate::polygon::Polygon2::union_all(regions);

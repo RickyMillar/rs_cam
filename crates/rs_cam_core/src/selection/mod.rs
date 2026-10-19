@@ -39,7 +39,8 @@ pub use resolve::{
     face_in_setup_frame, resolve,
 };
 pub use rule::{
-    DiameterRange, FaceFilter, Facing, Filter, KindFilter, Rule, Selection, SelectionEdit, ZRange,
+    DiameterRange, FaceFilter, FacesByFacing, Facing, Filter, KindFilter, Rule, Selection,
+    SelectionEdit, ZRange,
 };
 pub use stock::stock_items;
-pub use view::{Curves, Hole, Holes, ItemRole, OpItems, Regions, view};
+pub use view::{Curves, Hole, Holes, ItemRole, OpItems, Regions, view, view_boundary};

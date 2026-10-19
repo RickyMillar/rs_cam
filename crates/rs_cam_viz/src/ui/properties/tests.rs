@@ -641,3 +641,25 @@ fn the_selection_section_is_at_the_top_p4_d() {
         "a 3D op shows Pick faces at the top, for any boundary source: {rough:?}"
     );
 }
+
+/// P3.4: the Cuts row names the down faces of the selection (setup frame),
+/// and prints no down count when every face points up.
+#[test]
+fn the_counts_line_names_the_down_faces_p3_4() {
+    use rs_cam_core::selection::{FacesByFacing, ItemKind};
+    use rs_cam_core::session::SelectionReport;
+
+    let report = |up: usize, down: usize| SelectionReport {
+        counts: [(ItemKind::Face, up + down)].into_iter().collect(),
+        faces_by_facing: FacesByFacing { up, down },
+        ..SelectionReport::default()
+    };
+    assert_eq!(
+        super::selection_counts_text(&report(1, 1)).as_deref(),
+        Some("2 faces (1 down)")
+    );
+    assert_eq!(
+        super::selection_counts_text(&report(3, 0)).as_deref(),
+        Some("3 faces")
+    );
+}

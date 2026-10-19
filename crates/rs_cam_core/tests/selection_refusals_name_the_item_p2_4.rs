@@ -30,7 +30,8 @@
 //! compile here until it has an arm; [`every_cause_has_an_arm`] holds the
 //! list of arms equal to the list of causes.
 //!
-//! One arm runs on a `FaceUp::Bottom` setup, so the frame door is proven
+//! Two arms run on a `FaceUp::Bottom` setup (`kind_not_cut_on_a_flipped_setup`,
+//! `face_faces_down`), so the frame door is proven
 //! not to change the verdict of the status.
 //!
 //! ```text
@@ -97,6 +98,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::AmbiguousPick { .. } => "ambiguous_pick",
         RefusalCause::KindNotCut { .. } => "kind_not_cut",
         RefusalCause::FaceNotFlat { .. } => "face_not_flat",
+        RefusalCause::FaceFacesDown => "face_faces_down",
         RefusalCause::MissingSource(_) => "missing_source",
         RefusalCause::UnknownLayer(_) => "unknown_layer",
         RefusalCause::NoSuchRule { .. } => "no_such_rule",
@@ -111,6 +113,7 @@ const ARMS: &[&str] = &[
     "ambiguous_pick",
     "kind_not_cut",
     "face_not_flat",
+    "face_faces_down",
     "missing_source",
     "unknown_layer",
     "no_such_rule",
@@ -243,6 +246,7 @@ fn every_cause_has_an_arm() {
             item_use: rs_cam_core::compute::catalog::ItemUse::Regions,
         },
         RefusalCause::FaceNotFlat { face: None },
+        RefusalCause::FaceFacesDown,
         RefusalCause::MissingSource(SourceRef::Stock),
         RefusalCause::UnknownLayer(String::new()),
         RefusalCause::NoSuchRule { index: 0, rules: 0 },
@@ -596,6 +600,26 @@ fn face_not_flat_on_a_lateral_setup() {
             "face (centre X",
             "not flat and horizontal in the setup frame",
         ],
+    );
+}
+
+/// P3.4 (L-9): the up face of the part points down on a Bottom setup. In
+/// the closed areas of a Pocket it refuses by name, after the frame door,
+/// and the fix names the setup and the face above it.
+#[test]
+fn face_faces_down() {
+    let mut s = face_pick_session(0);
+    let _ = s
+        .apply(Command::SetSetupFace(SetSetupFaceArgs {
+            setup_index: 0,
+            face_up: FaceUp::Bottom,
+        }))
+        .unwrap();
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::FaceFacesDown);
+    assert_names(
+        &r,
+        &["face (centre X", "this face faces down in this setup"],
     );
 }
 

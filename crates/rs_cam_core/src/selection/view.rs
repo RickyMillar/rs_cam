@@ -36,6 +36,7 @@ use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal};
 use super::resolve::ResolvedSelection;
+use super::rule::Facing;
 
 impl ItemKind {
     /// True when an op of `use_` cuts an item of this kind. The match has
@@ -237,15 +238,54 @@ impl OpItems {
 /// 3. A rule layer that names no item (`UnknownLayer`).
 /// 4. An item the user named and the op cannot cut (`KindNotCut`), or a
 ///    face that is not flat and horizontal in the frame of the selection
-///    (`FaceNotFlat`; call `view` after the frame door).
+///    (`FaceNotFlat`; call `view` after the frame door), or a face in the
+///    closed areas of the op that points down in the setup frame
+///    (`FaceFacesDown`, P3.4).
 /// 5. Nothing left to cut (`Empty`), unless the op may be empty. `Empty`
 ///    names the skipped items of every kind.
 ///
 /// The text has no op name: the caller adds it with
 /// [`SelectionRefusal::for_op`].
+///
+/// This is the view of an OP selection. A machining boundary reads
+/// [`view_boundary`].
 pub fn view(
     resolved: &ResolvedSelection,
     item_use: ItemUse,
+) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
+    view_with(resolved, item_use, DownFaces::Refuse)
+}
+
+/// The view of a machining boundary selection: [`view`] with
+/// `crate::session::selection_status::BOUNDARY_ITEM_USE`, except that a
+/// face that points down in the setup frame gives its outline (geometry
+/// selection P3.4, DESIGN 6 rule 4). A boundary reads the outline only, not
+/// a Z, so the facing does not matter. The boundary generation and the
+/// boundary report both read it, so the two give one answer.
+pub fn view_boundary(
+    resolved: &ResolvedSelection,
+) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
+    view_with(
+        resolved,
+        crate::session::selection_status::BOUNDARY_ITEM_USE,
+        DownFaces::Keep,
+    )
+}
+
+/// What [`view_with`] does with a face of a `Regions` reader that points
+/// down in the setup frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DownFaces {
+    /// An op selection: the face refuses `FaceFacesDown`.
+    Refuse,
+    /// A boundary selection: the face gives its outline.
+    Keep,
+}
+
+fn view_with(
+    resolved: &ResolvedSelection,
+    item_use: ItemUse,
+    down_faces: DownFaces,
 ) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
     if let Some(source) = resolved.missing_sources().first() {
         return Err(SelectionRefusal::new(
@@ -298,6 +338,18 @@ pub fn view(
                 return Err(SelectionRefusal::new(
                     Some(ItemRef::new(r.identity().clone())),
                     RefusalCause::FaceNotFlat { face: None },
+                ));
+            }
+            // P3.4 (L-9): a down face has its material above its plane. It
+            // gives no closed area to an op; a boundary keeps its outline.
+            if let Shape::Face(face) = shape
+                && matches!(item_use, ItemUse::Regions)
+                && down_faces == DownFaces::Refuse
+                && Facing::Down.admits(face.normal.z)
+            {
+                return Err(SelectionRefusal::new(
+                    Some(ItemRef::new(r.identity().clone())),
+                    RefusalCause::FaceFacesDown,
                 ));
             }
             served.push(r.item());

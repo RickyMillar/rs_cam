@@ -178,6 +178,12 @@ pub enum RefusalCause {
     /// item), or a Face item that the setup turns on its side (the item
     /// names it).
     FaceNotFlat { face: Option<FaceGroupId> },
+    /// A face in the closed areas of an op that points down in the setup
+    /// frame (geometry selection P3.4, lead ruling L-9). Its material is
+    /// above its plane, so the tool cannot stand on it and its plane is not
+    /// a floor. The same face points up in a flipped setup and cuts there.
+    /// A machining boundary keeps a down face (`view_boundary`).
+    FaceFacesDown,
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -240,6 +246,9 @@ impl SelectionRefusal {
             RefusalCause::FaceNotFlat { .. } => {
                 "Pick a flat horizontal face, or remove the face from the selection"
             }
+            RefusalCause::FaceFacesDown => {
+                "Pick it in a setup that faces it, or pick the face above it"
+            }
             RefusalCause::MissingSource(_) => {
                 "Set an existing model on the toolpath, import the model again, \
                  or remove the rule or the pick that names it"
@@ -280,6 +289,7 @@ impl SelectionRefusal {
             RefusalCause::FaceNotFlat { face: None } => {
                 "the face is not flat and horizontal in the setup frame".to_owned()
             }
+            RefusalCause::FaceFacesDown => "this face faces down in this setup".to_owned(),
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),

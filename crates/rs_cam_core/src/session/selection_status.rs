@@ -55,8 +55,8 @@ use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::{
-    FLAT_REGION_Z_BAND_MM, Hole, ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey,
-    MeshFaces, RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit,
+    FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, ItemError, ItemKind, ItemRef, ItemRole, ItemSet,
+    MatchKey, MeshFaces, RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit,
     SelectionNote, SelectionRefusal, Shape, SourceRef,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
@@ -238,6 +238,11 @@ pub struct SelectionReport {
     /// The items of the selection that the op cuts, by kind ("14 loops,
     /// 2 circles").
     pub counts: BTreeMap<ItemKind, usize>,
+    /// The faces of the selection that the reader uses, by facing in the
+    /// SETUP frame (geometry selection P3.4): up and down. `counts` holds
+    /// the total of the faces; an op refuses a down face
+    /// (`FaceFacesDown`), and a boundary keeps it.
+    pub faces_by_facing: FacesByFacing,
     /// The islands of the closed areas that the op cuts (the inner rings
     /// after containment). 0 for an op that cuts no closed area, and when
     /// the selection refuses.
@@ -596,9 +601,15 @@ impl ProjectSession {
             .map(|lost| ItemRef::new(lost.key.clone()))
             .collect();
         for r in frames.setup.items() {
-            let kind = r.item().shape().kind();
+            let shape = r.item().shape();
+            let kind = shape.kind();
             if kind.serves(item_use) {
                 *report.counts.entry(kind).or_insert(0) += 1;
+                // P3.4: the facing in the setup frame (after the frame
+                // door), by the one facing rule.
+                if let Shape::Face(face) = shape {
+                    report.faces_by_facing.count(face.normal.z);
+                }
             }
         }
         let resolution_states = |report: &mut SelectionReport, roles: Option<&[ItemRole]>| {
@@ -624,13 +635,20 @@ impl ProjectSession {
             resolution_states(&mut report, None);
             report.faces_not_ready = frames.model.faces_not_ready().to_vec();
             report.counts.clear();
+            report.faces_by_facing = FacesByFacing::default();
             return Ok(report);
         }
         if !runs_view {
             resolution_states(&mut report, None);
             return Ok(report);
         }
-        match crate::selection::view(&frames.setup, item_use) {
+        // P3.4: a boundary keeps a down face (its outline); an op refuses
+        // it. Each reads the view that its generation reads.
+        let viewed = match target {
+            SelectionTarget::Op => crate::selection::view(&frames.setup, item_use),
+            SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
+        };
+        match viewed {
             Ok((items, notes)) => {
                 // The frame door keeps the order of the items, so the
                 // roles of the setup half align with the model half.

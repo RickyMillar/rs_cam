@@ -62,6 +62,9 @@ pub(crate) fn selection_report_json(
         "item_states": item_states,
         "foreign": foreign,
         "counts": report.counts,
+        // P3.4: the faces by facing in the setup frame. A down face
+        // refuses in an op and gives its outline to a boundary.
+        "faces_by_facing": report.faces_by_facing,
         "islands": report.islands,
         "skipped_by_kind": report.skipped_by_kind,
         "notes": report
@@ -566,6 +569,7 @@ mod tests {
                 serde_json::from_value(reply["counts"].clone()).unwrap();
             let from_wire = SelectionReport {
                 counts: wire_counts,
+                faces_by_facing: serde_json::from_value(reply["faces_by_facing"].clone()).unwrap(),
                 islands: usize::try_from(reply["islands"].as_u64().unwrap()).unwrap(),
                 ..SelectionReport::default()
             };

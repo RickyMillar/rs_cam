@@ -21,7 +21,7 @@ use crate::ids::ModelId;
 
 use super::item::{FaceItem, Item, ItemError, ItemSet, Shape, SourceRef};
 use super::key::MatchKey;
-use super::rule::Selection;
+use super::rule::{Facing, Selection};
 use super::stock::stock_items;
 
 /// What a selection resolves against.
@@ -239,19 +239,26 @@ impl ResolvedSelection {
         &self.faces_not_ready
     }
 
-    /// The highest plane Z of the faces in the selection, or `None` when
-    /// the selection holds no face (DESIGN 7.2). The session reads it as
-    /// the auto top of an op with picked faces.
+    /// The highest plane Z of the UP faces in the selection, or `None`
+    /// when the selection holds no up face (DESIGN 7.2). The session reads
+    /// it as the auto top of an op with picked faces.
     ///
-    /// Call it after [`Self::to_setup_frame`]: the plane Z is then in the
-    /// SETUP frame, so a face pick on a flipped setup gives the top of the
-    /// face as that setup sees it.
+    /// Call it after [`Self::to_setup_frame`]: the plane Z and the normal
+    /// are then in the SETUP frame, so a face pick on a flipped setup gives
+    /// the top of the face as that setup sees it.
+    ///
+    /// A down face gives no top (geometry selection P3.4): its material is
+    /// above its plane, so its plane is not the top of the material.
     pub fn face_top_z(&self) -> Option<f64> {
         self.items
             .iter()
             .filter_map(|r| match r.item.shape() {
-                Shape::Face(face) => Some(face.plane_z),
-                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
+                Shape::Face(face) if Facing::Up.admits(face.normal.z) => Some(face.plane_z),
+                Shape::Face(_)
+                | Shape::Loop(_)
+                | Shape::Path(_)
+                | Shape::Point(_)
+                | Shape::Circle { .. } => None,
             })
             .filter(|z| z.is_finite())
             .reduce(f64::max)

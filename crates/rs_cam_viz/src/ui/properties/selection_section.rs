@@ -267,13 +267,21 @@ pub(crate) fn draw_selection_section(
 }
 
 /// The count of each kind the reader uses, and the islands: "14 closed
-/// loops · 3 islands · 2 circles". `None` when nothing is cut.
+/// loops · 3 islands · 2 circles". P3.4: the faces name their down count,
+/// "4 faces (1 down)", in the setup frame. `None` when nothing is cut.
 pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
     let mut parts: Vec<String> = report
         .counts
         .iter()
         .filter(|(_, n)| **n > 0)
-        .map(|(kind, n)| format!("{n} {}", kind_noun(*kind, *n)))
+        .map(|(kind, n)| {
+            let down = report.faces_by_facing.down;
+            if *kind == ItemKind::Face && down > 0 {
+                format!("{n} {} ({down} down)", kind_noun(*kind, *n))
+            } else {
+                format!("{n} {}", kind_noun(*kind, *n))
+            }
+        })
         .collect();
     if report.islands > 0 {
         let n = report.islands;

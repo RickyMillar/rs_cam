@@ -65,11 +65,40 @@ pub enum Facing {
 }
 
 impl Facing {
-    fn admits(self, normal_z: f64) -> bool {
+    /// True when a face with the normal Z part `normal_z` (SETUP frame)
+    /// points this way. The one facing rule: the face filter, the auto top
+    /// (`face_top_z`), the `FaceFacesDown` refusal and the facing counts
+    /// of the `selection_status` report read it (geometry selection P3.4).
+    pub fn admits(self, normal_z: f64) -> bool {
         match self {
             Facing::Up => normal_z > 0.0,
             Facing::Down => normal_z < 0.0,
             Facing::Either => true,
+        }
+    }
+}
+
+/// The faces of a selection by facing in the SETUP frame
+/// (`SelectionReport::faces_by_facing`, geometry selection P3.4). A face
+/// that a lateral setup turns on its side is in neither count.
+///
+/// The wire spelling: `{"up": 3, "down": 1}`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FacesByFacing {
+    /// The faces whose normal points up ([`Facing::Up`]).
+    pub up: usize,
+    /// The faces whose normal points down ([`Facing::Down`]).
+    pub down: usize,
+}
+
+impl FacesByFacing {
+    /// Count one face with the normal Z part `normal_z` (SETUP frame), by
+    /// [`Facing::admits`].
+    pub fn count(&mut self, normal_z: f64) {
+        if Facing::Up.admits(normal_z) {
+            self.up += 1;
+        } else if Facing::Down.admits(normal_z) {
+            self.down += 1;
         }
     }
 }

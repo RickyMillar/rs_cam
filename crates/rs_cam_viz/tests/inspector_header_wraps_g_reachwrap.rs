@@ -314,10 +314,20 @@ fn the_wrapped_helper_only_wraps() {
 fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
     let src = properties_src();
     let body = function_body(&src, "render_diagnostic_row");
-    // The LAST occurrence is the drawn line; the first one builds the hover.
-    let at = body
-        .rfind("format!(\"{prefix}{}\", d.message)")
-        .expect("the diagnostic message line moved");
+    // P4.D (L-2): the drawn line is `face`, the whole message or, for a
+    // selection refusal, one line that names the Selection section. The
+    // window starts at the drawn label, not at the message format.
+    let face_at = body
+        .find("let face = ")
+        .expect("the drawn diagnostic line moved");
+    assert!(
+        body[face_at..].contains("format!(\"{prefix}{}\", d.message)"),
+        "the drawn line no longer carries the message"
+    );
+    let at = face_at
+        + body[face_at..]
+            .find("egui::RichText::new(face)")
+            .expect("the drawn diagnostic label moved");
     let around = &body[at..(at + 400).min(body.len())];
     assert!(
         around.contains(".truncate()") && around.contains(".on_hover_text(hover)"),
@@ -341,6 +351,13 @@ fn the_validation_errors_are_constructed_wrapped() {
     let at = src
         .find("for err in &validation_errors {")
         .expect("the validation-error loop moved");
+    // P4.D (L-2): a selection refusal is one line that names the Selection
+    // section, and the branch ends with `continue`. Every other validator
+    // sentence follows it, and it must wrap.
+    let at = at
+        + src[at..]
+            .find("continue;")
+            .expect("the selection-refusal branch of the loop moved");
     let body = &src[at..(at + 500).min(src.len())];
     assert!(
         body.contains("wrapped_small_label("),
