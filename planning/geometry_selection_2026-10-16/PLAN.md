@@ -530,3 +530,11 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
 - Order: P3.4 first (selection only, no overlap with the tech-debt W4
   files), then P3.1 and P3.2 after the W4 commit (they touch
   `session/mod.rs` and `project_file.rs`).
+- P3.4 (6026eb37) accepted. The editor found that `stepped_block.step`
+  and `l_bracket.step` are triangulated inward (signed volume -48000 and
+  -36000 mm^3), so their top faces read as down. P3.4 turns the Face item
+  normals round for a closed inward mesh (`io::outward_sign`).
+  FOLLOW-UP (lead, structural): reverse the triangles of an inward shell
+  once in `step_input.rs`, so every reader of a STEP mesh sees outward
+  triangles, and delete `outward_sign`. Run G-OPGOLDEN and the 3D sentries
+  on those two files first: a slope or flat-face reader may move.
