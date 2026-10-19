@@ -123,14 +123,14 @@ fn scratch(name: &str) -> PathBuf {
 /// import tolerance clears both by a wide margin.
 fn drawing_with_hole(cx: f64, cy: f64) -> String {
     format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"120\">\
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200mm\" height=\"120mm\" viewBox=\"0 0 200 120\">\
          <circle cx=\"{cx}\" cy=\"{cy}\" r=\"10\"/></svg>"
     )
 }
 
 /// The same drawing with the hole DELETED — a rectangle and nothing else.
 fn drawing_with_no_hole() -> String {
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"120\">\
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200mm\" height=\"120mm\" viewBox=\"0 0 200 120\">\
      <rect x=\"10\" y=\"10\" width=\"160\" height=\"90\"/></svg>"
         .to_owned()
 }

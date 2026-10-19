@@ -3,35 +3,55 @@
 //! Uses usvg to parse and simplify SVG into basic path segments,
 //! then flattens bezier curves to polylines within a configurable tolerance.
 //!
-//! ### Unit handling (what the code does today)
-//! The door reads the path data of each node (`path.data()`) and does NOT
-//! apply `abs_transform()`. So the coordinates are the raw user units of
-//! the file: the units of the viewBox, or of the root when the file has no
-//! viewBox. The door takes one user unit as 1 mm, times `scale`. It ignores
-//! the declared `width` and `height`, and every group transform.
+//! ### Unit handling (operator ruling O-2, 2026-10-20)
+//! A file imports at the size it states. The door maps each path to mm in
+//! this order:
 //!
-//! The P4.0 probe (2026-10-19, `planning/geometry_selection_2026-10-16/PLAN.md`,
-//! "P4.0 SVG probe facts") measured a 100 x 50 rect at scale 1.0:
+//! 1. The group transforms of the path (every ancestor `<g>`, `<use>` and
+//!    nested `<svg>`), from `Path::abs_transform`.
+//! 2. The viewBox-to-viewport transform of the root, with
+//!    `preserveAspectRatio` (default `xMidYMid meet`), as usvg resolves it.
+//! 3. The viewport size in mm by the CSS absolute units: 96 px = 1 in =
+//!    25.4 mm, 1 pt = 1/72 in, 1 pc = 1/6 in. A unitless length is px (SVG
+//!    spec). With no `width` or `height`, the viewport is the viewBox size
+//!    in px. With no viewBox, one user unit is 1 px, whatever the declared
+//!    size: the declared size then sets only the viewport.
 //!
-//! | Input | Size (mm) |
-//! |---|---|
-//! | `width="100mm" viewBox="0 0 100 50"` | 100 x 50 |
-//! | `width="100"` (no units), no viewBox | 100 x 50 |
-//! | `width="100mm"`, no viewBox | 100 x 50 |
-//! | as row 1, in `<g transform="translate(10,5) scale(2)">` | 100 x 50 at (0, 0): the transform is LOST |
-//! | `width="100mm"`, viewBox in px (`0 0 377.95 188.98`) | 377.95 x 188.98 (3.78 x too large) |
+//! The door computes step 2 and step 3 in f64 from the root attributes
+//! ([`svg_declared_size`]), so a mm viewBox on an equal mm size maps 1:1
+//! with no rounding. usvg gives the transforms in f32; the door divides out
+//! the f32 root transform of usvg and keeps the group part. The door
+//! applies the map to the control points before it flattens a curve, so
+//! the flatten tolerance is in mm.
 //!
-//! So a modern Inkscape file (a mm viewBox, no group transform) imports at
-//! 1:1. The default scale is [`SVG_DEFAULT_UNITS`]: the operator has not
-//! ruled on O-2 (the SVG scale and the lost transforms). [`svg_declared_size`]
-//! reads the declared size, so the import dialog can show it beside the
-//! size of the import.
+//! A user scale (the import dialog, `ImportOptions` units) multiplies after
+//! this. [`SVG_DEFAULT_UNITS`] is 1:1 on the declared size.
+//!
+//! The P4.0 probe (2026-10-19) measured these sizes before O-2. The sentry
+//! `import_reports_joins_and_open_shapes_p4_8` holds the sizes after O-2:
+//!
+//! | Input (a 100 x 50 rect) | Before O-2 (mm) | After O-2 (mm) |
+//! |---|---|---|
+//! | `width="100mm" viewBox="0 0 100 50"` | 100 x 50 | 100 x 50 |
+//! | `width="100"` (no units), no viewBox | 100 x 50 | 26.458 x 13.229 |
+//! | `width="100mm"`, no viewBox | 100 x 50 | 26.458 x 13.229 |
+//! | as row 1, in `<g transform="translate(10,5) scale(2)">` | 100 x 50 at (0, 0) | 200 x 100 at (10, 5) |
+//! | `width="100mm"`, viewBox in px (`0 0 377.95 188.98`) | 377.95 x 188.98 | 100 x 50 |
+//!
+//! ### Circles under a transform
+//! The door finds circles after the transform and the user scale
+//! ([`circle_like_ring`], in mm). A uniform scale with a rotation keeps a
+//! circle round, so it stays a `Circle` with the scaled diameter. A
+//! non-uniform scale or a skew gives an ellipse. When the radius spread is
+//! more than the 2 % rule, the ring is a `Loop`.
 //!
 //! ### The join of open subpaths (P4.8, ruling O-5)
 //! The open subpaths of one layer join end to end where two ends meet
 //! within the join tolerance, with the DXF rule
-//! ([`crate::selection::join`]). The join runs in user units, before
-//! `scale`, as the DXF join runs before the declared units. A chain that
+//! ([`crate::selection::join`]). The join runs in the FILE frame: mm after
+//! the declared size and the transforms, before `scale` (the user scale),
+//! as the DXF join runs before the declared units. The P4.9 edit ledger is
+//! in the same frame. A chain that
 //! comes back to its start is a loop. Before P4.8 the door did not join, so
 //! an open subpath whose ends met stayed an open path.
 
@@ -67,37 +87,67 @@ pub enum SvgError {
 
 /// THE default units of an SVG import (P4.8). Every interactive door (the
 /// GUI import dialog, MCP `import_model` with no `units`) reads it through
-/// [`svg_default_units`]. Today it is 1:1: one user unit is 1 mm (see the
-/// module doc). Operator ruling O-2 changes this one value.
+/// [`crate::io::default_import_units`]. Since O-2 it is 1:1 on the declared
+/// size: the door gives mm at the size the file states (see the module
+/// doc), and this user scale multiplies after.
 pub const SVG_DEFAULT_UNITS: ModelUnits = ModelUnits::Millimeters;
 
-/// The default units for an SVG with this declared size. Today it is
-/// [`SVG_DEFAULT_UNITS`] for every file. The function takes the declared
-/// size so that an O-2 ruling that reads it changes this function only.
-pub fn svg_default_units(_declared: &SvgDeclaredSize) -> ModelUnits {
-    SVG_DEFAULT_UNITS
-}
+/// mm per CSS px. The CSS absolute units fix 96 px = 1 in = 25.4 mm (CSS
+/// Values and Units Level 3, "Absolute lengths"; `CREDITS.md`).
+pub const MM_PER_PX: f64 = 25.4 / 96.0;
 
 /// One declared length of the root `<svg>`: the text as written, and its
-/// value in mm when the unit is a physical one (mm, cm, in, pt, pc).
+/// value in mm by the CSS absolute units.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct DeclaredLength {
     /// The attribute text, for example `100mm`.
     pub text: String,
-    /// The length in mm. `None` for no unit, `px`, `%` or an unknown unit:
-    /// those name no physical size.
+    /// The length in mm: mm, cm, in, pt, pc, px, and no unit (px, SVG
+    /// spec). `None` for `%` or a unit that names no absolute size (`em`,
+    /// `ex`).
     pub mm: Option<f64>,
 }
 
-/// The size an SVG file declares on its root element: `width`, `height`
-/// and `viewBox`, as written. The door does not read them (module doc);
-/// the import dialog shows them beside the size of the import.
+/// The value of one length attribute.
+enum LengthValue {
+    Mm(f64),
+    Percent(f64),
+    Unknown,
+}
+
+fn length_value(text: &str) -> LengthValue {
+    let trimmed = text.trim();
+    let split = trimmed
+        .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
+        .unwrap_or(trimmed.len());
+    let (number, unit) = trimmed.split_at(split);
+    let Ok(n) = number.parse::<f64>() else {
+        return LengthValue::Unknown;
+    };
+    let mm_per_unit = match unit.trim() {
+        "mm" => 1.0,
+        "cm" => 10.0,
+        "in" => 25.4,
+        "pt" => 25.4 / 72.0,
+        "pc" => 25.4 / 6.0,
+        "px" | "" => MM_PER_PX,
+        "%" => return LengthValue::Percent(n),
+        _ => return LengthValue::Unknown,
+    };
+    LengthValue::Mm(n * mm_per_unit)
+}
+
+/// The size an SVG file declares on its root element: `width`, `height`,
+/// `viewBox` and `preserveAspectRatio`, as written. The door maps the
+/// drawing onto this size (module doc); the import dialog shows it.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct SvgDeclaredSize {
     pub width: Option<DeclaredLength>,
     pub height: Option<DeclaredLength>,
     /// `[min_x, min_y, width, height]` in user units.
     pub view_box: Option<[f64; 4]>,
+    /// The `preserveAspectRatio` text. `None` is `xMidYMid meet`.
+    pub preserve_aspect_ratio: Option<String>,
 }
 
 impl SvgDeclaredSize {
@@ -114,10 +164,257 @@ impl SvgDeclaredSize {
         if let Some([x, y, w, h]) = self.view_box {
             parts.push(format!("viewBox=\"{x} {y} {w} {h}\""));
         }
+        if let Some(aspect) = &self.preserve_aspect_ratio {
+            parts.push(format!("preserveAspectRatio=\"{aspect}\""));
+        }
         if parts.is_empty() {
             "no declared size".to_owned()
         } else {
             parts.join(" ")
+        }
+    }
+
+    /// The viewBox when usvg uses it: a width and a height above zero.
+    fn usable_view_box(&self) -> Option<[f64; 4]> {
+        self.view_box.filter(|[_, _, w, h]| *w > 0.0 && *h > 0.0)
+    }
+
+    /// The viewport size in mm, `(width, height)`. A missing length is
+    /// 100 % of the viewBox, and a `%` length is that part of the viewBox,
+    /// in px (the usvg rule). `None` when a length names no absolute size,
+    /// or when the file has no viewBox and no absolute size.
+    pub fn viewport_mm(&self) -> Option<(f64, f64)> {
+        let view_box = self.usable_view_box();
+        let axis = |length: &Option<DeclaredLength>, view_box_len: Option<f64>| match length
+            .as_ref()
+            .map(|l| length_value(&l.text))
+        {
+            Some(LengthValue::Mm(mm)) => Some(mm),
+            Some(LengthValue::Percent(p)) => view_box_len.map(|v| v * p / 100.0 * MM_PER_PX),
+            None => view_box_len.map(|v| v * MM_PER_PX),
+            Some(LengthValue::Unknown) => None,
+        };
+        Some((
+            axis(&self.width, view_box.map(|v| v[2]))?,
+            axis(&self.height, view_box.map(|v| v[3]))?,
+        ))
+    }
+
+    /// The root map from user units to mm, in f64: the viewBox-to-viewport
+    /// transform with `preserveAspectRatio`, then px to mm. With no
+    /// viewBox, one user unit is 1 px. `None` when the viewport has no
+    /// absolute size ([`Self::viewport_mm`]).
+    fn root_to_mm(&self) -> Option<Affine> {
+        let Some([vx, vy, vw, vh]) = self.usable_view_box() else {
+            return Some(Affine::scale(MM_PER_PX));
+        };
+        let (width, height) = self.viewport_mm()?;
+        let (align, slice) = parse_aspect(self.preserve_aspect_ratio.as_deref());
+        let (mut sx, mut sy) = (width / vw, height / vh);
+        if align.is_some() {
+            let s = if slice { sx.max(sy) } else { sx.min(sy) };
+            (sx, sy) = (s, s);
+        }
+        let (free_x, free_y) = (width - vw * sx, height - vh * sy);
+        let (fx, fy) = align.unwrap_or((0.0, 0.0));
+        Some(Affine {
+            sx,
+            kx: 0.0,
+            tx: -vx * sx + free_x * fx,
+            ky: 0.0,
+            sy,
+            ty: -vy * sy + free_y * fy,
+        })
+    }
+}
+
+/// Parse `preserveAspectRatio`: the align as the part of the free space on
+/// each axis (`None` for `none`), and `slice`. A text that does not parse
+/// is the default, `xMidYMid meet` (usvg takes the default too).
+fn parse_aspect(text: Option<&str>) -> (Option<(f64, f64)>, bool) {
+    const DEFAULT: (Option<(f64, f64)>, bool) = (Some((0.5, 0.5)), false);
+    let Some(text) = text else {
+        return DEFAULT;
+    };
+    let mut words = text.split_whitespace().peekable();
+    if words.peek() == Some(&"defer") {
+        words.next();
+    }
+    let part = |s: &str| match s {
+        "Min" => Some(0.0),
+        "Mid" => Some(0.5),
+        "Max" => Some(1.0),
+        _ => None,
+    };
+    let align = match words.next() {
+        Some("none") => None,
+        Some(a) if a.len() == 8 && a.starts_with('x') && a.get(4..5) == Some("Y") => {
+            match (a.get(1..4).and_then(part), a.get(5..8).and_then(part)) {
+                (Some(x), Some(y)) => Some((x, y)),
+                _ => return DEFAULT,
+            }
+        }
+        _ => return DEFAULT,
+    };
+    let slice = match words.next() {
+        None | Some("meet") => false,
+        Some("slice") => true,
+        Some(_) => return DEFAULT,
+    };
+    if words.next().is_some() {
+        return DEFAULT;
+    }
+    (align, slice)
+}
+
+/// An affine map in f64, with the field names of `tiny_skia` `Transform`:
+/// `x' = sx·x + kx·y + tx`, `y' = ky·x + sy·y + ty`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Affine {
+    sx: f64,
+    kx: f64,
+    tx: f64,
+    ky: f64,
+    sy: f64,
+    ty: f64,
+}
+
+impl Affine {
+    const IDENTITY: Affine = Affine {
+        sx: 1.0,
+        kx: 0.0,
+        tx: 0.0,
+        ky: 0.0,
+        sy: 1.0,
+        ty: 0.0,
+    };
+
+    fn scale(s: f64) -> Affine {
+        Affine {
+            sx: s,
+            sy: s,
+            ..Affine::IDENTITY
+        }
+    }
+
+    fn from_f32(t: usvg::Transform) -> Affine {
+        Affine {
+            sx: f64::from(t.sx),
+            kx: f64::from(t.kx),
+            tx: f64::from(t.tx),
+            ky: f64::from(t.ky),
+            sy: f64::from(t.sy),
+            ty: f64::from(t.ty),
+        }
+    }
+
+    /// `self` after `inner`: `self(inner(p))`. `self` has no skew (a root
+    /// map).
+    fn after_diagonal(self, inner: Affine) -> Affine {
+        Affine {
+            sx: self.sx * inner.sx,
+            kx: self.sx * inner.kx,
+            tx: self.sx * inner.tx + self.tx,
+            ky: self.sy * inner.ky,
+            sy: self.sy * inner.sy,
+            ty: self.sy * inner.ty + self.ty,
+        }
+    }
+
+    /// The `inner` of `self = outer(inner)`, with `outer` a scale and a
+    /// translation. When `self` equals `outer`, the result is the identity
+    /// with no rounding.
+    fn without_diagonal(self, outer: Affine) -> Affine {
+        Affine {
+            sx: self.sx / outer.sx,
+            kx: self.kx / outer.sx,
+            tx: (self.tx - outer.tx) / outer.sx,
+            ky: self.ky / outer.sy,
+            sy: self.sy / outer.sy,
+            ty: (self.ty - outer.ty) / outer.sy,
+        }
+    }
+
+    fn apply(&self, x: f32, y: f32) -> P2 {
+        let (x, y) = (f64::from(x), f64::from(y));
+        if *self == Affine::IDENTITY {
+            return P2::new(x, y);
+        }
+        P2::new(
+            self.sx * x + self.kx * y + self.tx,
+            self.ky * x + self.sy * y + self.ty,
+        )
+    }
+}
+
+/// Relative tolerance of the match between the f64 root map and the f32
+/// root group of usvg.
+const ROOT_MATCH_REL: f64 = 1e-5;
+
+/// How the door maps the `abs_transform` of a path to mm.
+enum PathMap {
+    /// The f64 root map after the group part of `abs_transform`. `wrapper`
+    /// is the f32 root group that usvg adds when its root transform is not
+    /// the identity; the door divides it out.
+    Exact {
+        root: Affine,
+        wrapper: Option<Affine>,
+    },
+    /// The root map is not known in f64 (a length in `em` or `%` with no
+    /// viewBox): the f32 `abs_transform` in px, times [`MM_PER_PX`].
+    Px,
+}
+
+impl PathMap {
+    fn new(declared: &SvgDeclaredSize, tree: &usvg::Tree) -> PathMap {
+        let Some(root) = declared.root_to_mm() else {
+            return PathMap::Px;
+        };
+        // The root map in px, as usvg computes it in f32.
+        let px = Affine {
+            sx: root.sx / MM_PER_PX,
+            sy: root.sy / MM_PER_PX,
+            tx: root.tx / MM_PER_PX,
+            ty: root.ty / MM_PER_PX,
+            ..Affine::IDENTITY
+        };
+        let near = |a: f64, b: f64, scale: f64| (a - b).abs() <= ROOT_MATCH_REL * scale.max(1.0);
+        let size = px.sx.abs().max(px.sy.abs());
+        let matches = |t: &Affine| {
+            t.kx == 0.0
+                && t.ky == 0.0
+                && t.sx != 0.0
+                && t.sy != 0.0
+                && near(t.sx, px.sx, px.sx.abs())
+                && near(t.sy, px.sy, px.sy.abs())
+                && near(t.tx, px.tx, px.tx.abs().max(size))
+                && near(t.ty, px.ty, px.ty.abs().max(size))
+        };
+        // usvg wraps the drawing in one group with no id when its root
+        // transform is not the identity.
+        let wrapper = match tree.root().children() {
+            [usvg::Node::Group(group)] if group.id().is_empty() => {
+                Some(Affine::from_f32(group.transform())).filter(matches)
+            }
+            _ => None,
+        };
+        if wrapper.is_none() && !matches(&Affine::IDENTITY) {
+            // usvg must have a root group here, and the door did not find
+            // it: keep the f32 map of usvg.
+            return PathMap::Px;
+        }
+        PathMap::Exact { root, wrapper }
+    }
+
+    /// The map of one path from its user units to mm.
+    fn of(&self, abs: usvg::Transform) -> Affine {
+        let abs = Affine::from_f32(abs);
+        match self {
+            PathMap::Exact { root, wrapper } => {
+                let group = wrapper.map_or(abs, |w| abs.without_diagonal(w));
+                root.after_diagonal(group)
+            }
+            PathMap::Px => Affine::scale(MM_PER_PX).after_diagonal(abs),
         }
     }
 }
@@ -125,27 +422,26 @@ impl SvgDeclaredSize {
 /// Parse one SVG length attribute.
 fn declared_length(text: &str) -> DeclaredLength {
     let trimmed = text.trim();
-    let split = trimmed
-        .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
-        .unwrap_or(trimmed.len());
-    let (number, unit) = trimmed.split_at(split);
-    let per_mm = match unit.trim() {
-        "mm" => Some(1.0),
-        "cm" => Some(10.0),
-        "in" => Some(25.4),
-        "pt" => Some(25.4 / 72.0),
-        "pc" => Some(25.4 / 6.0),
-        _ => None,
-    };
     DeclaredLength {
         text: trimmed.to_owned(),
-        mm: per_mm.and_then(|f| number.parse::<f64>().ok().map(|n| n * f)),
+        mm: match length_value(trimmed) {
+            LengthValue::Mm(mm) => Some(mm),
+            LengthValue::Percent(_) | LengthValue::Unknown => None,
+        },
     }
 }
 
 /// Read the declared size of SVG data (P4.8). It reads the root element
-/// only; it does not parse the drawing.
+/// only; it does not parse the drawing. A gzip file (`.svgz`) is read as
+/// usvg reads it.
 pub fn svg_declared_size(data: &[u8]) -> Result<SvgDeclaredSize, SvgError> {
+    let unzipped;
+    let data = if data.starts_with(&[0x1f, 0x8b]) {
+        unzipped = usvg::decompress_svgz(data)?;
+        &unzipped[..]
+    } else {
+        data
+    };
     let text = std::str::from_utf8(data).map_err(|e| SvgError::Size(e.to_string()))?;
     let doc = usvg::roxmltree::Document::parse(text).map_err(|e| SvgError::Size(e.to_string()))?;
     let root = doc.root_element();
@@ -164,6 +460,9 @@ pub fn svg_declared_size(data: &[u8]) -> Result<SvgDeclaredSize, SvgError> {
         width: root.attribute("width").map(declared_length),
         height: root.attribute("height").map(declared_length),
         view_box,
+        preserve_aspect_ratio: root
+            .attribute("preserveAspectRatio")
+            .map(|a| a.trim().to_owned()),
     })
 }
 
@@ -180,10 +479,11 @@ pub fn svg_declared_size_of_file(path: &Path) -> Result<SvgDeclaredSize, SvgErro
 
 /// Load the paths of an SVG file as selection items (P2.1).
 ///
-/// Bezier curves are flattened to line segments with the given tolerance
-/// (user units). `scale` moves user units to mm; the door applies it after
-/// the flattening and the join, and before it classifies circles, so the
-/// circle floor is in mm. See [`load_svg_data`] for the items.
+/// The door maps each path to mm at the declared size (module doc), then
+/// flattens the bezier curves to line segments with the given tolerance
+/// (mm). `scale` is the user scale; the door applies it after the
+/// flattening and the join, and before it classifies circles, so the
+/// circle floor is in model mm. See [`load_svg_data`] for the items.
 pub fn load_svg(
     path: &Path,
     tolerance: f64,
@@ -206,7 +506,8 @@ pub fn load_svg(
 /// - a closed subpath is a `Circle` when it is circle-like
 ///   ([`circle_like_ring`]), else a `Loop`;
 /// - the open subpaths of two or more points join end to end within
-///   `join_tolerance_mm` (user units, P4.8). A chain that comes back to its
+///   `join_tolerance_mm` (P4.8), in the file frame: mm at the declared size,
+///   before `scale`. A chain that comes back to its
 ///   start is a `Loop` (or a `Circle`), else a `Path` (P1): no chord joins
 ///   two ends that do not meet. A chain takes the place of its first
 ///   subpath;
@@ -215,8 +516,9 @@ pub fn load_svg(
 ///   id is the label this door can read. A shape outside such a group has
 ///   no layer.
 ///
-/// Containment does not run here (P2.1). The coordinates are the raw user
-/// units of the file times `scale` (see the module doc).
+/// Containment does not run here (P2.1). The coordinates are mm at the
+/// declared size of the file, with every transform, times `scale` (see the
+/// module doc).
 pub fn load_svg_data(
     data: &[u8],
     tolerance: f64,
@@ -225,10 +527,11 @@ pub fn load_svg_data(
 ) -> Result<DrawingImport, SvgError> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_data(data, &opt)?;
+    let map = PathMap::new(&svg_declared_size(data)?, &tree);
     let mut raw = Vec::new();
-    visit_group(tree.root(), None, tolerance, &mut raw);
-    // In user units: a closed ring is a loop; the open subpaths go to the
-    // join, each at its document index.
+    visit_group(tree.root(), None, &map, tolerance, &mut raw);
+    // In the file frame (mm at the declared size): a closed ring is a loop;
+    // the open subpaths go to the join, each at its document index.
     let mut shapes: Vec<(usize, Option<Arc<str>>, Polygon2)> = Vec::new();
     let mut pieces: Vec<OpenPiece> = Vec::new();
     for (index, (layer, poly)) in raw.into_iter().enumerate() {
@@ -280,6 +583,7 @@ type RawRing = (Option<Arc<str>>, Polygon2);
 fn visit_group(
     group: &usvg::Group,
     layer: Option<&Arc<str>>,
+    map: &PathMap,
     tolerance: f64,
     out: &mut Vec<RawRing>,
 ) {
@@ -287,7 +591,8 @@ fn visit_group(
         match node {
             usvg::Node::Path(path) => {
                 let mut polys = Vec::new();
-                extract_polygons_from_path(path.data(), tolerance, &mut polys);
+                let to_mm = map.of(path.abs_transform());
+                extract_polygons_from_path(path.data(), &to_mm, tolerance, &mut polys);
                 out.extend(polys.into_iter().map(|p| (layer.cloned(), p)));
             }
             usvg::Node::Group(child) => {
@@ -299,15 +604,18 @@ fn visit_group(
                     own = Arc::from(child.id());
                     Some(&own)
                 };
-                visit_group(child, child_layer, tolerance, out);
+                visit_group(child, child_layer, map, tolerance, out);
             }
             _ => {}
         }
     }
 }
 
+/// Flatten one path in mm. `to_mm` maps the control points before the
+/// flatten, so `tolerance` is in mm.
 fn extract_polygons_from_path(
     path_data: &usvg::tiny_skia_path::Path,
+    to_mm: &Affine,
     tolerance: f64,
     out: &mut Vec<Polygon2>,
 ) {
@@ -323,26 +631,26 @@ fn extract_polygons_from_path(
                 // Start a new subpath. An unclosed previous one is an open
                 // path (P1).
                 emit_open_subpath(&mut current_subpath, out);
-                let p = P2::new(pt.x as f64, pt.y as f64);
+                let p = to_mm.apply(pt.x, pt.y);
                 current_subpath.push(p);
                 subpath_start = p;
                 last = p;
             }
             PathSegment::LineTo(pt) => {
-                let p = P2::new(pt.x as f64, pt.y as f64);
+                let p = to_mm.apply(pt.x, pt.y);
                 current_subpath.push(p);
                 last = p;
             }
             PathSegment::QuadTo(ctrl, end) => {
-                let c = P2::new(ctrl.x as f64, ctrl.y as f64);
-                let e = P2::new(end.x as f64, end.y as f64);
+                let c = to_mm.apply(ctrl.x, ctrl.y);
+                let e = to_mm.apply(end.x, end.y);
                 flatten_quad(last, c, e, tolerance, &mut current_subpath);
                 last = e;
             }
             PathSegment::CubicTo(c1, c2, end) => {
-                let cp1 = P2::new(c1.x as f64, c1.y as f64);
-                let cp2 = P2::new(c2.x as f64, c2.y as f64);
-                let e = P2::new(end.x as f64, end.y as f64);
+                let cp1 = to_mm.apply(c1.x, c1.y);
+                let cp2 = to_mm.apply(c2.x, c2.y);
+                let e = to_mm.apply(end.x, end.y);
                 flatten_cubic(last, cp1, cp2, e, tolerance, &mut current_subpath);
                 last = e;
             }
@@ -499,25 +807,25 @@ mod tests {
     }
 
     fn simple_rect_svg() -> &'static [u8] {
-        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <rect x="10" y="10" width="80" height="60"/>
         </svg>"#
     }
 
     fn triangle_svg() -> &'static [u8] {
-        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <polygon points="50,10 90,90 10,90"/>
         </svg>"#
     }
 
     fn circle_svg() -> &'static [u8] {
-        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="40"/>
         </svg>"#
     }
 
     fn multi_path_svg() -> &'static [u8] {
-        br#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="200mm" height="200mm" viewBox="0 0 200 200">
             <rect x="10" y="10" width="80" height="60"/>
             <rect x="100" y="100" width="50" height="50"/>
         </svg>"#
@@ -579,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_empty_svg() {
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"></svg>"#;
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100"></svg>"#;
         let polys = load_polys(svg, 0.1);
         assert!(polys.is_empty());
     }
@@ -589,7 +897,7 @@ mod tests {
     /// that a later `M` ends, and for a 2-point line.
     #[test]
     fn an_open_svg_subpath_is_kept_open_p1() {
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <path d="M 10 10 L 90 10 L 90 90"/>
         </svg>"#;
         let polys = load_polys(svg, 0.1);
@@ -598,7 +906,7 @@ mod tests {
         assert_eq!(polys[0].exterior.len(), 3, "no closing point is added");
 
         // An open subpath, then a closed square, then a 2-point line.
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <path d="M 0 0 L 5 5 L 9 0 M 20 20 L 40 20 L 40 40 L 20 40 Z M 60 60 L 80 60"/>
         </svg>"#;
         let polys = load_polys(svg, 0.1);
@@ -638,7 +946,7 @@ mod tests {
     #[test]
     fn test_closed_path_with_curves() {
         // Path with cubic bezier (heart-like shape)
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
             <path d="M 50 80 C 50 80 10 50 10 30 C 10 10 30 10 50 30 C 70 10 90 10 90 30 C 90 50 50 80 50 80 Z"/>
         </svg>"#;
         let polys = load_polys(svg, 0.5);
@@ -655,7 +963,7 @@ mod tests {
 
     #[test]
     fn test_containment_rect_with_circle_hole() {
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 80 80">
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="80mm" height="80mm" viewBox="0 0 80 80">
             <rect x="5" y="5" width="70" height="70" rx="8" ry="8"/>
             <circle cx="40" cy="40" r="12"/>
         </svg>"#;
@@ -748,9 +1056,62 @@ mod tests {
         );
     }
 
+    fn bbox_of(svg: &str) -> [f64; 4] {
+        load_svg_data(svg.as_bytes(), 0.1, 1.0, CLOSE_TOL_MM)
+            .unwrap()
+            .items
+            .bbox()
+            .unwrap()
+    }
+
+    /// O-2, on purpose: a unitless length is px (SVG spec), and with no
+    /// viewBox one user unit is 1 px. The CSS units fix 96 px = 25.4 mm, so
+    /// the 100 x 50 rect is 100 x 25.4 / 96 = 26.458 mm by
+    /// 50 x 25.4 / 96 = 13.229 mm.
+    #[test]
+    fn a_unitless_width_is_px_o2() {
+        let [x0, y0, x1, y1] = bbox_of(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">
+                <rect x="0" y="0" width="100" height="50"/></svg>"#,
+        );
+        let mm_per_px = 25.4 / 96.0;
+        assert!((x1 - x0 - 100.0 * mm_per_px).abs() < 1e-9, "{x0} {x1}");
+        assert!((y1 - y0 - 50.0 * mm_per_px).abs() < 1e-9, "{y0} {y1}");
+        // The same with a viewBox and no size: the viewport is the viewBox
+        // in px.
+        let [x0, _, x1, _] = bbox_of(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">
+                <rect x="0" y="0" width="100" height="50"/></svg>"#,
+        );
+        assert!((x1 - x0 - 100.0 * mm_per_px).abs() < 1e-9, "{x0} {x1}");
+    }
+
+    /// O-2: `preserveAspectRatio` maps a 100 x 100 viewBox onto a
+    /// 100 x 50 mm viewport. `meet` (the default, `xMidYMid`) takes
+    /// s = min(100 / 100, 50 / 100) = 0.5: 50 x 50 mm, centred at
+    /// x = (100 - 50) / 2 = 25. `none` stretches to 100 x 50 at 0.
+    /// `xMinYMin slice` takes s = max = 1: 100 x 100 at 0.
+    #[test]
+    fn the_aspect_ratio_maps_the_view_box_o2() {
+        let file = |aspect: &str| {
+            format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="50mm"
+                    viewBox="0 0 100 100" {aspect}>
+                    <rect x="0" y="0" width="100" height="100"/></svg>"#
+            )
+        };
+        let close = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-9);
+        let meet = bbox_of(&file(""));
+        assert!(close(meet, [25.0, 0.0, 75.0, 50.0]), "{meet:?}");
+        let none = bbox_of(&file(r#"preserveAspectRatio="none""#));
+        assert!(close(none, [0.0, 0.0, 100.0, 50.0]), "{none:?}");
+        let slice = bbox_of(&file(r#"preserveAspectRatio="xMinYMin slice""#));
+        assert!(close(slice, [0.0, 0.0, 100.0, 100.0]), "{slice:?}");
+    }
+
     #[test]
     fn circle_inside_a_rect_is_one_circle_item() {
-        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="80mm" height="80mm" viewBox="0 0 80 80">
             <rect x="5" y="5" width="70" height="50"/>
             <circle cx="40" cy="30" r="10"/>
         </svg>"#;

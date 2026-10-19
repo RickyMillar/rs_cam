@@ -4,7 +4,8 @@
 //! of the import at that scale, the join tolerance and the join report. A
 //! committed change reads the file again (`AppEvent::ImportDialogEdit`);
 //! Import adds the model of that read. The default scale is core's
-//! `svg_default_units`: the operator has not ruled on O-2, so it is 1:1.
+//! `SVG_DEFAULT_UNITS`: since O-2 it is 1:1 on the declared size, so the
+//! "File size" row and the "Result" row agree for an ordinary file.
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::io::ImportOptions;
@@ -15,17 +16,13 @@ use crate::state::panels::{ImportDialog, NumberDrafts};
 use crate::ui::AppEvent;
 use crate::ui::components::{DataRow, DataTable, Role};
 
-/// The "File size" row text: the declared size in mm when both lengths
-/// carry a physical unit, then the attributes as written.
+/// The "File size" row text: the viewport size in mm (core
+/// `SvgDeclaredSize::viewport_mm`, by the CSS units: a unitless length is
+/// px), then the attributes as written.
 pub fn declared_text(declared: &SvgDeclaredSize) -> String {
-    let physical = declared
-        .width
-        .as_ref()
-        .and_then(|w| w.mm)
-        .zip(declared.height.as_ref().and_then(|h| h.mm));
-    match physical {
+    match declared.viewport_mm() {
         Some((w, h)) => format!("{w:.2} x {h:.2} mm  ({})", declared.summary_line()),
-        None => format!("{}  (no physical unit)", declared.summary_line()),
+        None => format!("{}  (no absolute size)", declared.summary_line()),
     }
 }
 
@@ -206,8 +203,9 @@ fn draw_body(
     match (&dialog.kind, &dialog.declared) {
         (ModelKind::Svg, Some(Ok(declared))) => {
             table = table.row(DataRow::value("File size", declared_text(declared)).hover(
-                "The size the file declares. The import does not read it today: one unit of \
-                 the file is 1 mm times the scale.",
+                "The size the file declares. The import maps the drawing onto this size \
+                 (96 px = 1 in = 25.4 mm; a number with no unit is px), then multiplies by \
+                 the scale.",
             ));
         }
         (ModelKind::Svg, Some(Err(reason))) => {

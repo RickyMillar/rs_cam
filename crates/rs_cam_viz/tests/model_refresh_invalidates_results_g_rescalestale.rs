@@ -107,7 +107,7 @@ fn scratch(name: &str) -> PathBuf {
 
 fn drawing(width: f64) -> String {
     format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"120\">\
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200mm\" height=\"120mm\" viewBox=\"0 0 200 120\">\
          <rect x=\"10\" y=\"10\" width=\"{width}\" height=\"60\"/></svg>"
     )
 }

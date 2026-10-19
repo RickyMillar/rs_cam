@@ -951,6 +951,22 @@ The relevant implementation and provenance entry points are:
 - `crates/rs_cam_core/src/feeds/vendor_lut.rs`
 - `crates/rs_cam_core/data/vendor_lut/source_manifest.json`
 
+### SVG import units (operator ruling O-2, 2026-10-20)
+
+The SVG door (`crates/rs_cam_core/src/io/svg_input.rs`) maps a file to mm
+with these published rules:
+
+- W3C, "CSS Values and Units Module Level 3", section "Absolute lengths":
+  1 in = 96 px = 2.54 cm = 25.4 mm, 1 pt = 1/72 in, 1 pc = 1/6 in. So
+  1 px = 25.4 / 96 mm (`svg_input::MM_PER_PX`).
+- W3C, "Scalable Vector Graphics (SVG) 1.1", section 7 "Coordinate Systems,
+  Transformations and Units": a length with no unit is in user units (px
+  on the root); the `viewBox` and `preserveAspectRatio` attributes map
+  user units onto the viewport.
+- The `usvg` crate (0.47) resolves the root size and the group transforms
+  (`Tree::size`, `Path::abs_transform`); the door repeats the root map in
+  f64 by the same rules.
+
 ## Research and terminology sources
 
 The repo also preserves longer-form research and terminology mapping here:

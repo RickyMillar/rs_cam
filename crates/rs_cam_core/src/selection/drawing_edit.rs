@@ -9,7 +9,8 @@
 //! ([`apply_drawing_edits`]), so a re-import keeps the edits.
 //!
 //! - The ledger is in FILE units: the frame of the P4.8 join tolerance,
-//!   the units of the file as the door reads it (a DXF after `$INSUNITS`),
+//!   the units of the file as the door reads it (a DXF after `$INSUNITS`,
+//!   an SVG in mm after its declared size and every transform, O-2),
 //!   before the declared units (the user scale). Each key, length and
 //!   tolerance of a stored edit is in that frame, so a rescale changes no
 //!   stored edit. [`DrawingEdit::scaled`] converts: the session door

@@ -14,9 +14,13 @@
 //! 4. The options go into the project file with the model, only when they
 //!    are not the default, and a reload reads the file with them: the same
 //!    items, the same report. An old file with no key loads the defaults.
-//! 5. The SVG default scale does not change (O-2 is open): the five P4.0
-//!    probe rows import at the sizes the probe measured, and the declared
-//!    size reads what each file declares.
+//! 5. Operator ruling O-2: the SVG door applies every transform and honours
+//!    the declared size. The five P4.0 probe rows import at the size the CSS
+//!    rules give (96 px = 1 in = 25.4 mm; a unitless length is px), the
+//!    declared size reads what each file declares, and a user scale
+//!    multiplies after.
+//! 6. A circle under a uniform scale with a rotation stays a `Circle` with
+//!    the scaled diameter; under a non-uniform scale or a skew it is a loop.
 
 #![allow(
     clippy::unwrap_used,
@@ -28,12 +32,11 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
-use rs_cam_core::io::svg_input::{
-    SVG_DEFAULT_UNITS, load_svg_data, svg_declared_size, svg_default_units,
-};
-use rs_cam_core::io::{ImportOptions, load_model_file};
-use rs_cam_core::selection::ItemKind;
+use rs_cam_core::geo::P2;
+use rs_cam_core::io::svg_input::{SVG_DEFAULT_UNITS, load_svg_data, svg_declared_size};
+use rs_cam_core::io::{ImportOptions, default_import_units, load_model_file};
 use rs_cam_core::selection::join::{CLOSE_TOL_MM, JoinCounts};
+use rs_cam_core::selection::{ItemKind, Shape};
 use rs_cam_core::session::{LoadedModel, ProjectSession};
 
 fn repo() -> PathBuf {
@@ -213,7 +216,8 @@ fn a_wider_tolerance_joins_a_dxf_gap() {
 /// Two open subpaths of one group meet end to end and close a square; a
 /// third, in another group, meets them but does not join (D14); a fourth
 /// stops 0.3 short of the third. Before P4.8 the door gave four paths.
-const JOIN_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+const JOIN_SVG: &[u8] =
+    br#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
     <g id="A">
         <path d="M 0 0 L 10 0 L 10 10"/>
         <path d="M 10 10 L 0 10 L 0 0.004"/>
@@ -350,10 +354,14 @@ fn a_file_with_no_options_loads_the_defaults_and_writes_no_key() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// ── 5. The SVG default scale and the declared size (P4.0 rows) ──────────
+// ── 5. The SVG door honours the declared size (O-2, the P4.0 rows) ────
+
+/// mm per CSS px, written here from the CSS absolute units (96 px = 1 in =
+/// 25.4 mm), not read from the door: a wrong door constant goes red.
+const MM_PER_PX: f64 = 25.4 / 96.0;
 
 /// The five P4.0 probe rows: the input, the declared width and height in mm
-/// (`None` = no physical unit), the declared viewBox, and the size and
+/// (`None` = no absolute size), the declared viewBox, and the size and
 /// origin of the import at the default scale.
 struct ProbeRow {
     svg: String,
@@ -365,10 +373,11 @@ struct ProbeRow {
 
 const RECT: &str = r#"<rect x="0" y="0" width="100" height="50"/>"#;
 
+fn svg(attrs: &str, body: &str) -> String {
+    format!(r#"<svg xmlns="http://www.w3.org/2000/svg" {attrs}>{body}</svg>"#)
+}
+
 fn probe_rows() -> Vec<ProbeRow> {
-    let svg = |attrs: &str, body: &str| {
-        format!(r#"<svg xmlns="http://www.w3.org/2000/svg" {attrs}>{body}</svg>"#)
-    };
     let row = |svg, declared_mm, view_box, size, origin| ProbeRow {
         svg,
         declared_mm,
@@ -376,7 +385,16 @@ fn probe_rows() -> Vec<ProbeRow> {
         size,
         origin,
     };
+    // Row 5: viewport 100 x 50 mm, viewBox 377.95 x 188.98 user units.
+    // sx = 100 / 377.95 = 0.2645852, sy = 50 / 188.98 = 0.2645782. The
+    // default `xMidYMid meet` takes s = min(sx, sy) = 50 / 188.98. The rect
+    // fills the viewBox: 377.95 s = 99.9974 mm wide, 188.98 s = 50 mm high,
+    // and the free 100 - 99.9974 = 0.0026 mm splits in half to the left.
+    // So the row is 100 x 50 within the 0.003 mm that the rounded viewBox
+    // leaves.
+    let s5 = (100.0 / 377.95_f64).min(50.0 / 188.98);
     vec![
+        // Row 1: viewBox 100 x 50 on 100 x 50 mm: 1 user unit = 1 mm.
         row(
             svg(r#"width="100mm" height="50mm" viewBox="0 0 100 50""#, RECT),
             (Some(100.0), Some(50.0)),
@@ -384,22 +402,27 @@ fn probe_rows() -> Vec<ProbeRow> {
             (100.0, 50.0),
             (0.0, 0.0),
         ),
+        // Row 2: a unitless length is px (SVG spec). No viewBox: 1 user
+        // unit = 1 px. 100 px x 25.4 / 96 = 26.458 mm; 50 px = 13.229 mm.
         row(
             svg(r#"width="100" height="50""#, RECT),
-            (None, None),
+            (Some(100.0 * MM_PER_PX), Some(50.0 * MM_PER_PX)),
             None,
-            (100.0, 50.0),
+            (100.0 * MM_PER_PX, 50.0 * MM_PER_PX),
             (0.0, 0.0),
         ),
+        // Row 3: the viewport is 100 x 50 mm, but with no viewBox 1 user
+        // unit is still 1 px. The rect is 100 x 50 px = 26.458 x 13.229 mm;
+        // the declared size only sets the viewport (lead ruling C).
         row(
             svg(r#"width="100mm" height="50mm""#, RECT),
             (Some(100.0), Some(50.0)),
             None,
-            (100.0, 50.0),
+            (100.0 * MM_PER_PX, 50.0 * MM_PER_PX),
             (0.0, 0.0),
         ),
-        // The group transform is LOST today (P4.0): the size and the
-        // origin of the untransformed rect. O-2 changes this row.
+        // Row 4: as row 1 (1 user unit = 1 mm), in a group. scale(2) makes
+        // the rect 200 x 100; translate(10,5) moves its corner to (10, 5).
         row(
             svg(
                 r#"width="100mm" height="50mm" viewBox="0 0 100 50""#,
@@ -407,11 +430,10 @@ fn probe_rows() -> Vec<ProbeRow> {
             ),
             (Some(100.0), Some(50.0)),
             Some([0.0, 0.0, 100.0, 50.0]),
-            (100.0, 50.0),
-            (0.0, 0.0),
+            (200.0, 100.0),
+            (10.0, 5.0),
         ),
-        // A px viewBox imports 3.78 times too large today. O-2 changes
-        // this row.
+        // Row 5: a px viewBox on a mm size (arithmetic above).
         row(
             svg(
                 r#"width="100mm" height="50mm" viewBox="0 0 377.95 188.98""#,
@@ -419,32 +441,65 @@ fn probe_rows() -> Vec<ProbeRow> {
             ),
             (Some(100.0), Some(50.0)),
             Some([0.0, 0.0, 377.95, 188.98]),
-            (377.95, 188.98),
-            (0.0, 0.0),
+            (377.95 * s5, 188.98 * s5),
+            ((100.0 - 377.95 * s5) / 2.0, 0.0),
         ),
     ]
 }
 
+/// Size and origin of the import, 1e-4 mm: the path data of usvg is f32.
+fn assert_bbox(
+    import: &rs_cam_core::io::DrawingImport,
+    size: (f64, f64),
+    origin: (f64, f64),
+    what: &str,
+) {
+    let [x0, y0, x1, y1] = import.items.bbox().unwrap();
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-4;
+    assert!(
+        close(x1 - x0, size.0) && close(y1 - y0, size.1),
+        "{what}: the import is {} x {}, the CSS rules give {size:?}",
+        x1 - x0,
+        y1 - y0,
+    );
+    assert!(
+        close(x0, origin.0) && close(y0, origin.1),
+        "{what}: origin ({x0}, {y0}), the CSS rules give {origin:?}"
+    );
+}
+
 #[test]
-fn the_five_p4_0_rows_keep_their_size_and_read_their_declared_size() {
-    assert_eq!(SVG_DEFAULT_UNITS, ModelUnits::Millimeters, "O-2 is open");
-    for row in probe_rows() {
+fn the_five_p4_0_rows_import_at_their_declared_size_o2() {
+    assert_eq!(
+        SVG_DEFAULT_UNITS,
+        ModelUnits::Millimeters,
+        "the default is 1:1 on the declared size"
+    );
+    assert_eq!(default_import_units(ModelKind::Svg), SVG_DEFAULT_UNITS);
+    let rows = probe_rows();
+    // Non-vacuity: row 5 is 100 x 50 within the rounding of its viewBox.
+    assert!((rows[4].size.0 - 100.0).abs() < 0.003 && (rows[4].size.1 - 50.0).abs() < 1e-9);
+    for row in rows {
         let svg = &row.svg;
         let declared = svg_declared_size(svg.as_bytes()).unwrap();
-        assert_eq!(
-            svg_default_units(&declared),
-            ModelUnits::Millimeters,
-            "the default scale stays 1:1 for every row: {svg}"
-        );
         let mm =
             |l: &Option<rs_cam_core::io::svg_input::DeclaredLength>| l.as_ref().and_then(|l| l.mm);
-        assert_eq!(
-            (mm(&declared.width), mm(&declared.height)),
-            row.declared_mm,
-            "{svg}"
+        let (w, h) = (mm(&declared.width), mm(&declared.height));
+        let close = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(a), Some(b)) => (a - b).abs() < 1e-9,
+            (a, b) => a == b,
+        };
+        assert!(
+            close(w, row.declared_mm.0) && close(h, row.declared_mm.1),
+            "{svg}: declared {w:?} x {h:?}"
         );
-        assert!(declared.width.is_some() && declared.height.is_some());
         assert_eq!(declared.view_box, row.view_box, "{svg}");
+        // The dialog's "File size" is the viewport.
+        let (vw, vh) = declared.viewport_mm().unwrap();
+        assert!(
+            close(Some(vw), row.declared_mm.0) && close(Some(vh), row.declared_mm.1),
+            "{svg}: viewport {vw} x {vh}"
+        );
 
         let import = load_svg_data(
             svg.as_bytes(),
@@ -453,24 +508,102 @@ fn the_five_p4_0_rows_keep_their_size_and_read_their_declared_size() {
             CLOSE_TOL_MM,
         )
         .unwrap();
-        let [x0, y0, x1, y1] = import.items.bbox().unwrap();
-        let close = |a: f64, b: f64| (a - b).abs() < 1e-3;
-        assert!(
-            close(x1 - x0, row.size.0) && close(y1 - y0, row.size.1),
-            "{svg}: the import is {} x {}, the P4.0 probe measured {:?}",
-            x1 - x0,
-            y1 - y0,
-            row.size
-        );
-        assert!(
-            close(x0, row.origin.0) && close(y0, row.origin.1),
-            "{svg}: origin ({x0}, {y0})"
-        );
+        assert_bbox(&import, row.size, row.origin, svg);
     }
+    // A user scale multiplies after the declared size: row 1 in inches.
+    let inches = load_svg_data(
+        probe_rows()[0].svg.as_bytes(),
+        0.1,
+        ModelUnits::Inches.scale_factor(),
+        CLOSE_TOL_MM,
+    )
+    .unwrap();
+    assert_bbox(
+        &inches,
+        (100.0 * 25.4, 50.0 * 25.4),
+        (0.0, 0.0),
+        "row 1 in inches",
+    );
     // The readout text keeps the units as written.
     let declared = svg_declared_size(probe_rows()[0].svg.as_bytes()).unwrap();
     assert_eq!(
         declared.summary_line(),
         r#"width="100mm" height="50mm" viewBox="0 0 100 50""#
     );
+    // For an ordinary file the "File size" and the "Result" agree.
+    let import = load_svg_data(probe_rows()[0].svg.as_bytes(), 0.1, 1.0, CLOSE_TOL_MM).unwrap();
+    let [x0, y0, x1, y1] = import.items.bbox().unwrap();
+    assert_eq!(declared.viewport_mm(), Some((x1 - x0, y1 - y0)));
+}
+
+// ── 6. A circle under a transform (O-2) ─────────────────────────────────
+
+/// A 1:1 file (1 user unit = 1 mm) with one circle of radius 5 at (20, 10)
+/// under the group transform `transform`.
+fn circle_in_group(transform: &str) -> String {
+    svg(
+        r#"width="100mm" height="100mm" viewBox="0 0 100 100""#,
+        &format!(r#"<g transform="{transform}"><circle cx="20" cy="10" r="5"/></g>"#),
+    )
+}
+
+fn circles(svg: &str) -> Vec<(P2, f64)> {
+    load_svg_data(svg.as_bytes(), 0.1, 1.0, CLOSE_TOL_MM)
+        .unwrap()
+        .items
+        .iter()
+        .filter_map(|i| match i.shape() {
+            Shape::Circle {
+                centre, diameter, ..
+            } => Some((*centre, *diameter)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_circle_under_a_uniform_scale_stays_a_circle_o2() {
+    // Control: with no transform the circle is a Circle of diameter 10.
+    let plain = circles(&circle_in_group("translate(0,0)"));
+    assert_eq!(plain.len(), 1, "{plain:?}");
+    assert!((plain[0].1 - 10.0).abs() < 0.02, "{plain:?}");
+    // rotate(30) after scale(2): the diameter is 2 x 2 x 5 = 20. The centre
+    // (20, 10) scales to (40, 20) and turns by 30 degrees:
+    // x = 40 cos 30 - 20 sin 30 = 34.641 - 10 = 24.641,
+    // y = 40 sin 30 + 20 cos 30 = 20 + 17.321 = 37.321.
+    let turned = circles(&circle_in_group("rotate(30) scale(2)"));
+    assert_eq!(
+        turned.len(),
+        1,
+        "a uniform scale with a rotation keeps the Circle"
+    );
+    let (centre, diameter) = turned[0];
+    let (s, c) = 30_f64.to_radians().sin_cos();
+    let (ex, ey) = (40.0 * c - 20.0 * s, 40.0 * s + 20.0 * c);
+    assert!((diameter - 20.0).abs() < 0.02, "diameter {diameter}");
+    assert!(
+        (centre.x - ex).abs() < 0.01 && (centre.y - ey).abs() < 0.01,
+        "centre {centre:?}, expected ({ex}, {ey})"
+    );
+}
+
+#[test]
+fn a_circle_under_a_non_uniform_scale_becomes_a_loop_o2() {
+    // scale(2,1) makes the r = 5 circle an ellipse with semi-axes 10 and 5;
+    // skewX(30) moves the top by tan 30 x y. Each radius spread is far
+    // above the 2 % circle rule, so each is a closed Loop.
+    for transform in ["scale(2,1)", "skewX(30)"] {
+        let svg = circle_in_group(transform);
+        assert!(circles(&svg).is_empty(), "{transform}: not a Circle");
+        let items = load_svg_data(svg.as_bytes(), 0.1, 1.0, CLOSE_TOL_MM)
+            .unwrap()
+            .items;
+        let kinds: Vec<ItemKind> = items.iter().map(|i| i.kind()).collect();
+        assert_eq!(kinds, [ItemKind::Loop], "{transform}");
+        if transform == "scale(2,1)" {
+            // The ellipse spans 2 x 2 x 5 = 20 in x and 2 x 5 = 10 in y.
+            let [x0, y0, x1, y1] = items.bbox().unwrap();
+            assert!((x1 - x0 - 20.0).abs() < 0.05 && (y1 - y0 - 10.0).abs() < 0.05);
+        }
+    }
 }

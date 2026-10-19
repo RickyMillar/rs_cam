@@ -65,10 +65,9 @@ pub(crate) fn import_request_model(p: &ImportModelParam) -> Result<(LoadedModel,
             "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
         })));
     };
-    let units = p.units.map_or_else(
-        || rs_cam_core::io::default_import_units(file_path, kind),
-        Into::into,
-    );
+    let units = p
+        .units
+        .map_or_else(|| rs_cam_core::io::default_import_units(kind), Into::into);
     let options = p
         .join_tolerance_mm
         .map_or_else(ImportOptions::default, |join_tolerance_mm| ImportOptions {

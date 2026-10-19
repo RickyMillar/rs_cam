@@ -68,7 +68,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 /// A closed 50 x 40 rectangle. Written to disk because the project file
 /// stores a model *path*: an in-memory synthetic model cannot survive
 /// the save/load this test is about.
-const RECT_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+const RECT_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
   <path d="M 10 10 L 60 10 L 60 50 L 10 50 Z" fill="black"/>
 </svg>
 "#;

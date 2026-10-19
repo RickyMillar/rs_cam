@@ -298,7 +298,8 @@ fn nested_rings(items: &rs_cam_core::selection::ItemSet) -> Vec<Polygon2> {
 #[test]
 fn svg_import_pocket_gcode() {
     // Minimal SVG with a rectangle: 10x10 at (5,5)
-    let svg_data = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    let svg_data =
+        br#"<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="40mm" viewBox="0 0 40 40">
   <rect x="5" y="5" width="30" height="20" fill="none" stroke="black" stroke-width="1" />
 </svg>"#;
 

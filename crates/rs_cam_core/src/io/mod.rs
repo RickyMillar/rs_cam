@@ -91,8 +91,9 @@ pub(crate) fn load_geometry(
         }
         ModelKind::Svg => {
             // P2.1: the door scales before it classifies circle-like rings,
-            // so the circle floor is in mm (G-DRILLCENTROID). P4.8: the
-            // join runs in user units, before the scale.
+            // so the circle floor is in mm (G-DRILLCENTROID). O-2: the door
+            // maps the file to mm at its declared size; the P4.8 join runs
+            // in that frame, before the user scale.
             let import =
                 crate::io::svg_input::load_svg(path, 0.1, scale, options.join_tolerance_mm)
                     .map_err(|e| format!("SVG load failed: {e}"))?;
@@ -137,15 +138,14 @@ pub(crate) fn load_geometry(
     }
 }
 
-/// The default declared units of a new import (P4.8). An SVG takes
-/// [`svg_input::svg_default_units`] of the size it declares, every other
-/// kind mm. The GUI import dialog and MCP `import_model` both read it, so
-/// the operator ruling O-2 (the SVG scale) changes one place.
-pub fn default_import_units(path: &Path, kind: ModelKind) -> ModelUnits {
+/// The default declared units (the user scale) of a new import (P4.8). An
+/// SVG takes [`svg_input::SVG_DEFAULT_UNITS`]: since O-2 the SVG door reads
+/// the declared size itself, so the default is 1:1 on that size. Every
+/// other kind takes mm. The GUI import dialog and MCP `import_model` both
+/// read it.
+pub fn default_import_units(kind: ModelKind) -> ModelUnits {
     match kind {
-        ModelKind::Svg => svg_input::svg_declared_size_of_file(path)
-            .map(|declared| svg_input::svg_default_units(&declared))
-            .unwrap_or(svg_input::SVG_DEFAULT_UNITS),
+        ModelKind::Svg => svg_input::SVG_DEFAULT_UNITS,
         _ => ModelUnits::Millimeters,
     }
 }

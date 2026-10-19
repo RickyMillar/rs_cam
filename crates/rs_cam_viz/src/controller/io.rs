@@ -142,7 +142,7 @@ impl<B: ComputeBackend> AppController<B> {
         let declared = (kind == ModelKind::Svg).then(|| {
             rs_cam_core::io::svg_input::svg_declared_size_of_file(path).map_err(|e| e.to_string())
         });
-        let units = rs_cam_core::io::default_import_units(path, kind);
+        let units = rs_cam_core::io::default_import_units(kind);
         let options = ImportOptions::default();
         let preview = import_preview(path, kind, units, options);
         self.state.panels.import_dialog = Some(crate::state::panels::ImportDialog {
