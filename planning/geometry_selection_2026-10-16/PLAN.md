@@ -510,3 +510,23 @@ P4.10.
   - the kind-filter and `+ Rule` wording (parked by the operator);
   - `session/CLAUDE.md` is over 40 lines with the tech-debt lines; the
     owner of the next session/ edit shortens it.
+
+## Lead rulings on P3_DESIGN.md (2026-10-20)
+
+The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
+
+- **O-1: refuse.** An old project with `depth`, or with a pinned Bottom Z
+  on Pocket, Profile, Zigzag or Adaptive 2D, refuses at load with a named
+  message (`RETIRED_OP_ENTRIES`). No conversion. Reason: the operator's
+  standing ruling of 2026-09-16 (no legacy, breaks OK, do not ask again)
+  and D9. A pin conversion would cut deeper with no warning. The lead
+  tells the operator which of their own job files need a hand edit
+  (`testpiece.toml`, `nz_south.toml`).
+- **O-2: (A), a hint.** A face pick under the default floor keeps the
+  floor; the floor row shows a hint to choose "Each picked face". Reason:
+  nothing cuts differently until the user chooses.
+- The operator can overturn O-1 or O-2 at the next check-in; both are
+  cheap to change before P3.7.
+- Order: P3.4 first (selection only, no overlap with the tech-debt W4
+  files), then P3.1 and P3.2 after the W4 commit (they touch
+  `session/mod.rs` and `project_file.rs`).
