@@ -95,7 +95,7 @@ pub(crate) fn run_curve<O: CurveOp>(
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
     let op_type: OperationType = prepared.op_type();
-    let curves = prepared.polygons()?;
+    let curves = prepared.curves()?.as_slice();
     let query = HeightQuery::Mesh {
         surface: prepared.mesh()?,
         cutter: ctx.tool_def,

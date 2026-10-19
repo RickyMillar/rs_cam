@@ -1180,12 +1180,15 @@ fn add_op_menu_item(
     use crate::state::toolpath::GeometryRequirement;
 
     let spec = op.spec();
-    let available = match spec.geometry {
-        GeometryRequirement::Stock => true,
-        GeometryRequirement::Polygons | GeometryRequirement::DrillTargets => has_polygons,
-        GeometryRequirement::Mesh => has_mesh,
-        GeometryRequirement::Both => has_polygons && has_mesh,
-    };
+    // Pin Drill reads items, but it runs with no model (its holes are the
+    // stock pins): `is_stock_based` says so.
+    let available = op.is_stock_based()
+        || match spec.geometry {
+            GeometryRequirement::Stock => true,
+            GeometryRequirement::Items => has_polygons,
+            GeometryRequirement::Mesh => has_mesh,
+            GeometryRequirement::ItemsAndMesh => has_polygons && has_mesh,
+        };
 
     if available {
         if ui
@@ -1199,11 +1202,9 @@ fn add_op_menu_item(
         }
     } else {
         let reason = match spec.geometry {
-            GeometryRequirement::Polygons | GeometryRequirement::DrillTargets => {
-                "Requires 2D geometry (SVG/DXF)"
-            }
+            GeometryRequirement::Items => "Requires 2D geometry (SVG/DXF)",
             GeometryRequirement::Mesh => "Requires 3D mesh (STL/STEP)",
-            GeometryRequirement::Both => "Requires both 2D curves and 3D mesh",
+            GeometryRequirement::ItemsAndMesh => "Requires both 2D curves and 3D mesh",
             GeometryRequirement::Stock => "",
         };
         ui.add_enabled(false, egui::Button::new(spec.label))

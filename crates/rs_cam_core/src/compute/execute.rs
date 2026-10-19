@@ -17,7 +17,6 @@ use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
 use crate::tool::ToolDefinition;
 use crate::trace::debug_trace::ToolpathDebugContext;
 use crate::trace::semantic_trace::ToolpathSemanticContext;
@@ -48,6 +47,10 @@ pub enum OperationError {
         /// The limit, in bytes.
         limit_bytes: u64,
     },
+    /// The op's selection refuses (geometry selection P2.3a, DESIGN 5.1):
+    /// nothing to cut, a lost pick, a kind the op cannot cut, and so on.
+    /// The prologue sets the op label with `SelectionRefusal::for_op`.
+    Selection(crate::selection::SelectionRefusal),
     /// Other operation failure.
     Other(String),
 }
@@ -149,8 +152,8 @@ pub struct GenerationFindings {
     /// `None` = not measured, or not deeper. Written by `run_curve`. See
     /// [`crate::compute::toolpath_stats::BuriedCurveFinding`].
     pub buried_curve: Option<crate::compute::toolpath_stats::BuriedCurveFinding>,
-    /// P1: the open paths a closed-region op left out. `None` = nothing
-    /// was left out. Written by the prologue. See
+    /// P1: the open paths an op left out, one note per layer. `None` =
+    /// no open path was left out. Written by the prologue. See
     /// [`crate::compute::toolpath_stats::SelectionNoteFinding`].
     pub selection_note: Option<crate::compute::toolpath_stats::SelectionNoteFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
@@ -227,6 +230,7 @@ impl std::fmt::Display for OperationError {
                 crate::budget::format_bytes(*need_bytes),
                 crate::budget::format_bytes(*limit_bytes)
             ),
+            Self::Selection(refusal) => write!(f, "{refusal}"),
             Self::Other(s) => write!(f, "{s}"),
         }
     }
@@ -321,7 +325,11 @@ pub struct ExecutionContext<'a> {
     pub findings: &'a std::cell::RefCell<GenerationFindings>,
     pub mesh: Option<&'a TriangleMesh>,
     pub index: Option<&'a SpatialIndex>,
-    pub polygons: Option<&'a [Polygon2]>,
+    /// Geometry selection (DESIGN 4.5, P2.3a): the resolved selection of
+    /// the op, in the emission frame. C3 pattern: only the prologue
+    /// (`execute/prologue.rs`) reads it; an adapter reads its items through
+    /// `Prepared::regions`, `Prepared::curves` or `Prepared::holes`.
+    pub selection: SelectionInputs<'a>,
     /// The model's pickable drill targets — DXF `POINT` entities and
     /// circle/arc centres — in model coordinates, like `selected_holes`.
     /// The `Drill` family's only hole source besides an explicit pick
@@ -343,7 +351,7 @@ pub struct ExecutionContext<'a> {
     /// The setup's world→local transform, or `None` for an identity setup.
     ///
     /// Everything else in this context arrives ALREADY in the emission
-    /// frame — `mesh`, `polygons` and the boundary inputs are transformed by the
+    /// frame — `mesh`, `selection` and the boundary inputs are transformed by the
     /// driver before generation, `stock_bbox` is the emission-frame bbox.
     /// The one class of input that cannot be pre-transformed that way is
     /// config-carried geometry: coordinates that live inside the
@@ -411,7 +419,7 @@ impl<'a> ExecutionContext<'a> {
     ///
     /// ```ignore
     /// let ctx = ExecutionContext {
-    ///     polygons: Some(&polys),
+    ///     selection: SelectionInputs::from_polygons(&polys),
     ///     ..ExecutionContext::new(&findings, &tool_def, &tool_cfg,
     ///                             &heights, &levels, &bbox, &cancel)
     /// };
@@ -465,7 +473,7 @@ impl<'a> ExecutionContext<'a> {
             findings,
             mesh: None,
             index: None,
-            polygons: None,
+            selection: SelectionInputs::default(),
             drill_targets: &[],
             alignment_pins: &[],
             tool_def,
@@ -572,7 +580,7 @@ pub(crate) use finish_3d::{
     generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
-pub use prologue::{MeshInput, Prepared};
+pub use prologue::{MeshInput, Prepared, SelectionInputs};
 pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
 pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};

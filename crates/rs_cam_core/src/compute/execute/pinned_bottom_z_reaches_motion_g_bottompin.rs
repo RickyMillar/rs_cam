@@ -109,7 +109,7 @@ fn emitted_floor_z(h: &ResolvedHeights, cutting_levels: &[f64]) -> f64 {
     let bbox = stock_bbox();
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
-        polygons: Some(polygons.as_slice()),
+        selection: crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice()),
         ..ExecutionContext::new(
             &findings,
             &tool_def,

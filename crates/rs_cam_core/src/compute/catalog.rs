@@ -46,21 +46,16 @@ pub enum OperationFamily {
 pub enum GeometryRequirement {
     /// The stock only. No model geometry.
     Stock,
-    /// A 2D drawing whose outlines the operation cuts. The generation
-    /// prologue refuses an absent or empty outline list. The op's
-    /// `Capabilities::item_use` says which outlines it gets: a `Regions` op
-    /// gets the closed ones only, a `Curves` op every one (P1).
-    Polygons,
-    /// A 2D drawing whose drill targets (DXF points, circle and arc
-    /// centres) the operation reads, not its outlines (W2.2). A drawing of
-    /// points only has no outline, so the prologue does not ask for one;
-    /// the drill adapter refuses on its own target count
-    /// (`drill_targets_refusal`).
-    DrillTargets,
+    /// The selected items of a drawing (geometry selection P2.3a; was
+    /// `Polygons` and `DrillTargets`). The prologue runs `selection::view`
+    /// with the op's `Capabilities::item_use`: a `Regions` op gets closed
+    /// areas, a `Curves` op lines, a `Holes` op hole positions. The view
+    /// refuses with a `SelectionRefusal` (`OperationError::Selection`).
+    Items,
     /// A 3D mesh and its spatial index.
     Mesh,
-    /// A 2D drawing and a 3D mesh.
-    Both,
+    /// The selected items of a drawing and a 3D mesh (was `Both`).
+    ItemsAndMesh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -489,6 +484,22 @@ impl OperationType {
         self.spec().geometry
     }
 
+    /// True when the op can run with no model: a `Stock` row (Face), or
+    /// an `Items` row whose item use may be empty (Pin Drill: the stock
+    /// pins are its holes, and a model only adds extra holes). The
+    /// session, the GUI and the model-reference check read this to decide
+    /// whether an op needs a model.
+    pub fn is_stock_based(self) -> bool {
+        match self.geometry_requirement() {
+            GeometryRequirement::Stock => true,
+            GeometryRequirement::Items => matches!(
+                self.capabilities().item_use,
+                ItemUse::Holes { may_be_empty: true }
+            ),
+            GeometryRequirement::Mesh | GeometryRequirement::ItemsAndMesh => false,
+        }
+    }
+
     /// Phase 1 registry accessor (architectural refactor 2026-06-06):
     /// THE single place to ask "what is this operation?". Exhaustive
     /// match — adding an `OperationType` variant does not compile until
@@ -545,7 +556,7 @@ impl OperationType {
     /// surface, even though its registry role is
     /// [`UiProcessRole::SemiFinish`]; `adaptive3d` is out because it is
     /// roughing; `project_curve` is out because its geometry requirement is
-    /// [`GeometryRequirement::Both`] and its reach question is about a
+    /// [`GeometryRequirement::ItemsAndMesh`] and its reach question is about a
     /// curve, not a surface.
     ///
     /// There is deliberately **no tool precondition.** The reach walk is a
@@ -998,12 +1009,13 @@ impl OperationConfig {
         self.family() == OperationFamily::ThreeD
     }
 
+    /// True when the op can run with no model ([`OperationType::is_stock_based`]).
     pub fn is_stock_based(&self) -> bool {
-        self.geometry_requirement() == GeometryRequirement::Stock
+        self.op_type().is_stock_based()
     }
 
     pub fn needs_both(&self) -> bool {
-        self.geometry_requirement() == GeometryRequirement::Both
+        self.geometry_requirement() == GeometryRequirement::ItemsAndMesh
     }
 
     pub fn feed_rate(&self) -> f64 {

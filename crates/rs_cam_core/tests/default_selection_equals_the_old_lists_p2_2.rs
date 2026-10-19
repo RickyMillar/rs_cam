@@ -21,9 +21,11 @@
 //! and the P1 sentry drawing.
 //!
 //! The claim does NOT hold everywhere. P2.2 measured three classes of
-//! difference; the two lists below freeze them, with the cause of each. A
-//! view that differs and is not in a list, or a listed view that is equal
-//! now, turns this sentry red. Every G-OPGOLDEN drawing is equal.
+//! difference; P2.3a closed the third (lead ruling "fix b": an open path
+//! keeps its drawn direction). The two lists below freeze the rest, with
+//! the cause of each. A view that differs and is not in a list, or a
+//! listed view that is equal now, turns this sentry red. Every G-OPGOLDEN
+//! drawing and the P1 drawing are equal.
 
 #![allow(
     clippy::unwrap_used,
@@ -262,11 +264,13 @@ fn assert_differences(diffs: &[Diff], expected: &[&str]) {
 ///    bridge nests before the scale; `view` nests after it.
 /// 2. SVG circle centre, 1 ULP at inches: the item centre is found in the
 ///    file units and then scaled; the bridge finds it on the scaled ring.
-/// 3. Open-path direction on a `Bottom` flip: `detect_containment`
-///    reverses an open path whose shoelace area is negative. The mirror
-///    flips that sign, so "move, then nest" (the frame door, then `view`)
-///    reverses the paths that "nest, then move" (generation before P2.3)
-///    kept, and the reverse.
+///
+/// A third class closed in P2.3a: `detect_containment` reversed an open
+/// path whose shoelace area is negative, and the mirror of a `Bottom` flip
+/// changed that sign, so the two orders (nest then move, move then nest)
+/// gave opposite directions. An open path now keeps its drawn direction
+/// (lead ruling "fix b"), so the two orders agree. A new entry of that
+/// class is a regression.
 const FIXTURE_FILE_DIFFERENCES: &[&str] = &[
     // 1. Tie order.
     "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Inches [model] curves",
@@ -275,35 +279,24 @@ const FIXTURE_FILE_DIFFERENCES: &[&str] = &[
     "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Inches [flipped] regions",
     "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Millimeters [flipped] curves",
     "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/holes.dxf Millimeters [flipped] regions",
+    // Two open paths of equal chord-closed area swap places (an 8-point
+    // and a 9-point path, lines 31 and 32 of the dump). Class 3 hid this
+    // entry until P2.3a closed it.
+    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters [flipped] curves",
+    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Inches [flipped] curves",
     // 2. SVG circle centre.
     "fixtures/demo_pocket.svg Inches [model] holes",
     "fixtures/demo_pocket.svg Inches [flipped] holes",
     "crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Inches [model] holes",
     "crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Inches [flipped] holes",
-    // 3. Open-path direction on a flip.
-    "crates/rs_cam_core/tests/fixtures/rivers_aligned.dxf Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/rivers_aligned.dxf Inches [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/wanaka100/lakes.dxf Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/wanaka100/lakes.dxf Inches [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/rivers.dxf Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/wanaka100/rivmap_export/rivers.dxf Inches [flipped] curves",
-    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters [flipped] curves",
-    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Inches [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Inches [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/inch.dxf Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/inch.dxf Inches [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Millimeters [flipped] curves",
-    "crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Inches [flipped] curves",
 ];
 
-/// The views that differ on the hand-built drawings. Every G-OPGOLDEN
-/// drawing is equal in both frames. The P1 drawing differs: a hand-built
-/// list (`ItemSet::from_polygons`) keeps its polygons as given, so its
-/// bridge holds the clockwise V as drawn, and `view` nests it, which
-/// reverses the V (start X 15 becomes X 35). Class 3 above, in the model
-/// frame.
-const GOLDEN_DRAWING_DIFFERENCES: &[&str] = &["p1_open_paths [model] curves"];
+/// The views that differ on the hand-built drawings: none. Every
+/// G-OPGOLDEN drawing is equal in both frames. The P1 drawing is equal
+/// too since P2.3a: `view` nests the clockwise V and keeps its drawn
+/// direction, so the V starts at X 15 as drawn (before "fix b", the
+/// nesting reversed it to start at X 35).
+const GOLDEN_DRAWING_DIFFERENCES: &[&str] = &[];
 
 /// Every file of the P2.1 baseline, at the units it names.
 fn baseline_files() -> Vec<(String, LoadedModel)> {
@@ -438,4 +431,38 @@ fn the_default_selection_gives_the_old_lists_on_the_golden_drawings() {
         diffs.extend(differences(label, model, Some(&info)));
     }
     assert_differences(&diffs, GOLDEN_DRAWING_DIFFERENCES);
+}
+
+/// Lead ruling "fix b": the clockwise V of the P1 drawing keeps its drawn
+/// direction through `view`, so it starts at X 15, as drawn. Before the
+/// ruling the nesting reversed it to start at X 35.
+#[test]
+fn an_open_path_keeps_its_drawn_direction_in_the_view() {
+    let model = p1_drawing();
+    let stock = BoundingBox3 {
+        min: P3::new(-1000.0, -1000.0, -50.0),
+        max: P3::new(1000.0, 1000.0, 50.0),
+    };
+    let resolved = resolve(
+        &Selection::drawing(),
+        &ResolveScope {
+            toolpath_model: Some(&model),
+            models: std::slice::from_ref(&model),
+            stock_bbox: &stock,
+            setup: None,
+        },
+    );
+    let (items, _) = view(&resolved, ItemUse::Curves).unwrap();
+    let v = items
+        .curves()
+        .unwrap()
+        .as_slice()
+        .iter()
+        .find(|p| !p.closed && p.exterior.len() == 3)
+        .expect("the V path is in the view");
+    assert_eq!(
+        v.exterior.first().map(|p| (p.x, p.y)),
+        Some((15.0, -10.0)),
+        "the V starts where it is drawn"
+    );
 }

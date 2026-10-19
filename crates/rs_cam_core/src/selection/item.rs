@@ -42,7 +42,8 @@ pub enum SourceRef {
 }
 
 /// The fieldless mirror of [`Shape`], for rules, keys and refusal text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// `Ord` keys the skipped-item counts of a view (`OpItems::skipped_by_kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemKind {
     Loop,

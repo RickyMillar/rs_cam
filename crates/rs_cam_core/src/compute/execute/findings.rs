@@ -375,11 +375,11 @@ impl RecordFindings for BuriedCurveFinding {
     }
 }
 
-/// P1: the open paths a closed-region op left out. The prologue records
-/// it once per generation; the note overwrites.
+/// P1: the open paths an op left out. The prologue records it once per
+/// generation; the finding overwrites.
 impl RecordFindings for SelectionNoteFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
-        findings.selection_note = Some(*self);
+        findings.selection_note = Some(self.clone());
     }
 }
 

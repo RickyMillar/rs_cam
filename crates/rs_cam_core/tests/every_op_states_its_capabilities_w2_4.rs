@@ -692,31 +692,77 @@ fn trace_compensation_picks_its_item_use_p1() {
     }
 }
 
-/// P1: the geometry a row requires and the items it cuts agree. The
-/// prologue reads polygons only for `Polygons` and `Both`, and it serves
-/// them only to a `Regions` or a `Curves` op. A drill reads its targets,
-/// and a stock or mesh op reads no item (Pin Drill: its holes come from
-/// the pins, so it may have none).
+/// P1, P2.3a (DESIGN 4.2): the geometry a row requires and the items it
+/// cuts agree. A row reads items (`Items`, `ItemsAndMesh`) if and only if
+/// its item use is not `None`. The prologue runs the selection view only
+/// for those rows. A stock or mesh op reads no item. Only Project Curve
+/// reads items and a mesh, and it follows lines.
+///
+/// P2.3a moved Drill (was `DrillTargets`) and Pin Drill (was `Stock`) to
+/// `Items`. Pin Drill may have no item (`Holes { may_be_empty: true }`):
+/// its holes come from the stock pins, so it runs with no model
+/// (`OperationType::is_stock_based`).
 #[test]
 fn the_geometry_and_the_item_use_agree_p1() {
     for &op in OperationType::ALL {
         let use_ = op.capabilities().item_use;
         let ok = match op.geometry_requirement() {
-            GeometryRequirement::Polygons | GeometryRequirement::Both => {
-                matches!(use_, ItemUse::Regions | ItemUse::Curves)
-            }
-            GeometryRequirement::DrillTargets => {
-                use_ == ItemUse::Holes {
-                    may_be_empty: false,
-                }
-            }
-            GeometryRequirement::Mesh => use_ == ItemUse::None,
-            GeometryRequirement::Stock => {
-                matches!(use_, ItemUse::None | ItemUse::Holes { may_be_empty: true })
-            }
+            GeometryRequirement::Items => use_ != ItemUse::None,
+            GeometryRequirement::ItemsAndMesh => use_ == ItemUse::Curves,
+            GeometryRequirement::Mesh | GeometryRequirement::Stock => use_ == ItemUse::None,
         };
         assert!(ok, "{op:?}: {:?} with {use_:?}", op.geometry_requirement());
     }
+}
+
+/// P2.3a: the frozen geometry column. Every row that read `Polygons` or
+/// `DrillTargets` reads `Items`, Project Curve (was `Both`) reads
+/// `ItemsAndMesh`, and Pin Drill moved from `Stock` to `Items`. Face stays
+/// `Stock` until P2.3b gives it the stock rule (DESIGN D5). The last
+/// column is `is_stock_based`: the ops that run with no model.
+#[test]
+fn every_row_states_its_geometry_p2_3a() {
+    use GeometryRequirement::{Items, ItemsAndMesh, Mesh, Stock};
+    let frozen: &[(&str, GeometryRequirement, bool)] = &[
+        ("face", Stock, true),
+        ("pocket", Items, false),
+        ("profile", Items, false),
+        ("adaptive", Items, false),
+        ("v_carve", Items, false),
+        ("inlay", Items, false),
+        ("inlay_plug", Items, false),
+        ("zigzag", Items, false),
+        ("trace", Items, false),
+        ("drill", Items, false),
+        ("chamfer", Items, false),
+        ("drop_cutter", Mesh, false),
+        ("adaptive3d", Mesh, false),
+        ("waterline", Mesh, false),
+        ("pencil", Mesh, false),
+        ("scallop", Mesh, false),
+        ("steep_shallow", Mesh, false),
+        ("ramp_finish", Mesh, false),
+        ("spiral_finish", Mesh, false),
+        ("radial_finish", Mesh, false),
+        ("horizontal_finish", Mesh, false),
+        ("unified_finish", Mesh, false),
+        ("project_curve", ItemsAndMesh, false),
+        ("alignment_pin_drill", Items, true),
+    ];
+    let mut got: Vec<(&str, GeometryRequirement, bool)> = OperationType::ALL
+        .iter()
+        .map(|op| {
+            (
+                op.kind_str(),
+                op.geometry_requirement(),
+                op.is_stock_based(),
+            )
+        })
+        .collect();
+    let mut want = frozen.to_vec();
+    got.sort_by_key(|row| row.0);
+    want.sort_by_key(|row| row.0);
+    assert_eq!(got, want, "the geometry column moved");
 }
 
 /// P1: every `Capabilities` field has a frozen column in one of the four

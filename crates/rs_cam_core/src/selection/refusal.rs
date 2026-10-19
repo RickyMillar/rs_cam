@@ -100,18 +100,36 @@ pub struct SelectionNote {
 
 impl fmt::Display for SelectionNote {
     /// "2 open paths on layer 'TEXT' are not cut: the op cuts closed areas
-    /// only (...). The first is an open path (...)."
+    /// only (...). The first: open path (...)." An open path also gets the
+    /// fix: "Use Trace or Project Curve for an open path, or close it in
+    /// the drawing."
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verb = if self.count == 1 { "is" } else { "are" };
         write!(
             f,
-            "{} {}{} {verb} not cut: the op {}. The first is a {}.",
+            "{} {}{} {verb} not cut: the op {}. The first: {}.",
             self.count,
             kind_noun(self.kind, self.count),
             layer_phrase(self.layer.as_deref()),
             use_phrase(self.item_use),
             self.first
-        )
+        )?;
+        if let Some(fix) = note_fix(self.kind) {
+            write!(f, " {fix}")?;
+        }
+        Ok(())
+    }
+}
+
+/// The fix a note gives for a skipped kind. Only an open path gets one:
+/// it is a likely drawing defect (lead ruling "notes", P2.2). The match
+/// has no wildcard, so a new kind states its answer.
+fn note_fix(kind: ItemKind) -> Option<&'static str> {
+    match kind {
+        ItemKind::Path => {
+            Some("Use Trace or Project Curve for an open path, or close it in the drawing.")
+        }
+        ItemKind::Loop | ItemKind::Point | ItemKind::Circle | ItemKind::Face => None,
     }
 }
 

@@ -295,13 +295,15 @@ pub(crate) trait LayeredOp {
     ) -> Result<Toolpath, OperationError>;
 
     /// The outlines the runner steps, one region each. The default is the
-    /// checked polygons of the op. Face overrides it: its one outline is
-    /// the facing rectangle of the stock (W3.3). Waterline overrides it:
-    /// its one input is the surface (W6.1).
+    /// closed areas of the op's selection (`Prepared::regions`, P2.3a).
+    /// Face overrides it: its one outline is the facing rectangle of the
+    /// stock (W3.3). Trace overrides it: it reads the lines
+    /// (`Prepared::curves`). Waterline overrides it: its one input is the
+    /// surface (W6.1).
     ///
     /// # Errors
     ///
-    /// The prologue's geometry mismatch when the op has no polygons.
+    /// The prologue's geometry mismatch when the op has no regions.
     fn outlines<'p>(
         &'p self,
         prepared: &'p Prepared<'p>,
@@ -310,8 +312,8 @@ pub(crate) trait LayeredOp {
         Self::Input: 'p,
     {
         prepared
-            .polygons()
-            .map(|polygons| Self::Input::from_polygons(Cow::Borrowed(polygons)))
+            .regions()
+            .map(|regions| Self::Input::from_polygons(Cow::Borrowed(regions.as_slice())))
     }
 
     /// The Z ladder, top first. The default is the 2.5D ladder of the
@@ -762,7 +764,7 @@ mod tests {
             let cancel = AtomicBool::new(false);
             let findings = RefCell::new(GenerationFindings::default());
             let ctx = ExecutionContext {
-                polygons: Some(&polys),
+                selection: crate::compute::execute::SelectionInputs::from_polygons(&polys),
                 ..ExecutionContext::new(
                     &findings,
                     &tool_def,

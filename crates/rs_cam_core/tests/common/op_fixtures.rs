@@ -9,11 +9,11 @@
 //!
 //! # The fixtures
 //!
-//! - Stock, Polygons, DrillTargets: a flat board below world Z0, a rectangle
-//!   outline with two drill targets, and one alignment pin on the stock.
-//! - Mesh, Both: a spherical cap on a flat ground (flats, a slope, and a
-//!   concave crease at the foot of the cap). `Both` adds a curve model that
-//!   the op projects onto the mesh.
+//! - Stock, Items: a flat board below world Z0, a rectangle outline with
+//!   two drill targets, and one alignment pin on the stock.
+//! - Mesh, ItemsAndMesh: a spherical cap on a flat ground (flats, a slope,
+//!   and a concave crease at the foot of the cap). `ItemsAndMesh` adds a
+//!   curve model that the op projects onto the mesh.
 //!
 //! The tool comes from the registry row (`ToolConstraintsDef`): the first
 //! required cutter kind, or a flat end mill when the row accepts any tool.
@@ -132,7 +132,7 @@ pub fn tool_for(op: OperationType) -> ToolConfig {
 pub fn on_mesh(op: OperationType) -> bool {
     matches!(
         op.spec().geometry,
-        GeometryRequirement::Mesh | GeometryRequirement::Both
+        GeometryRequirement::Mesh | GeometryRequirement::ItemsAndMesh
     )
 }
 
@@ -431,7 +431,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
     let (model_id, heights) = if mesh {
         let surface = if empty { plate_model() } else { cap_model() };
         let cap_id = builder.add_model(place(surface));
-        let model_id = if geometry == GeometryRequirement::Both {
+        let model_id = if geometry == GeometryRequirement::ItemsAndMesh {
             if let OperationConfig::ProjectCurve(cfg) = &mut op {
                 cfg.surface_model_id = Some(ModelId(cap_id));
             }

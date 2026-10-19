@@ -201,7 +201,7 @@ fn generate_with_findings(
     let ctx = ExecutionContext {
         mesh: Some(&mesh),
         index: Some(&index),
-        polygons: Some(polys.as_slice()),
+        selection: crate::compute::execute::SelectionInputs::from_polygons(polys.as_slice()),
         territory_inputs: TerritoryInputs::default()
             .stock(stock)
             .regions(regions.as_ref()),

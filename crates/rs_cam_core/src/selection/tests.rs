@@ -565,6 +565,30 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
     assert!(items.holes().unwrap().as_slice().is_empty());
 }
 
+/// Lead ruling "notes" (P2.2): a skipped point gives no note, only a
+/// count. `Empty` still names it.
+#[test]
+fn only_a_skipped_open_path_gives_a_note() {
+    let m = model(vec![
+        item("A", Shape::Loop(square(0.0, 0.0, 10.0))),
+        item("B", Shape::Point(P2::new(50.0, 50.0))),
+    ]);
+    let (items, notes) = view(&resolve_on(&Selection::drawing(), &m), ItemUse::Regions).unwrap();
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(items.skipped_by_kind().get(&ItemKind::Point), Some(&1));
+    let points = model(vec![item("B", Shape::Point(P2::new(50.0, 50.0)))]);
+    let refusal = view(
+        &resolve_on(&Selection::drawing(), &points),
+        ItemUse::Regions,
+    )
+    .unwrap_err();
+    let RefusalCause::Empty { skipped } = &refusal.cause else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].kind, ItemKind::Point);
+}
+
 #[test]
 fn the_holes_are_the_points_and_the_circle_centres() {
     let (items, notes) = view(
@@ -584,8 +608,18 @@ fn the_holes_are_the_points_and_the_circle_centres() {
         (holes[1].xy, holes[1].diameter),
         (P2::new(60.0, 60.0), Some(6.0))
     );
-    // The loop and the path are left out with a note each.
-    assert_eq!(notes.len(), 2);
+    // The loop and the path are left out. Both count; only the open path
+    // gives a note (lead ruling "notes", P2.2).
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].kind, ItemKind::Path);
+    assert_eq!(
+        items
+            .skipped_by_kind()
+            .iter()
+            .map(|(k, n)| (*k, *n))
+            .collect::<Vec<_>>(),
+        [(ItemKind::Loop, 1), (ItemKind::Path, 1)]
+    );
 }
 
 // ── Keys and the frame door ─────────────────────────────────────────────

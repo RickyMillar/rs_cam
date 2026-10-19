@@ -97,9 +97,10 @@ pub struct EmptyGenerationInputs<'a> {
     pub seeded_machined_stock: bool,
     /// Whether a 3D mesh reached the generator.
     pub has_mesh: bool,
-    /// How many 2D polygons reached the generator. `0` with no mesh and a
-    /// non-stock-driven op means there was no region to cut.
-    pub polygon_count: usize,
+    /// How many drawing items the op's selection resolved (P2.3a; was the
+    /// polygon count). `0` with no mesh and a non-stock-driven op means
+    /// there was no region to cut.
+    pub item_count: usize,
     /// Whether the enabled boundary's source is
     /// [`crate::compute::config::BoundarySource::DerivedRestRegions`].
     pub boundary_is_derived_rest_regions: bool,
@@ -296,8 +297,7 @@ pub fn classify(toolpath: &Toolpath, inputs: &EmptyGenerationInputs<'_>) -> Empt
         );
     }
 
-    let has_region =
-        inputs.has_mesh || inputs.polygon_count > 0 || inputs.operation.is_stock_based();
+    let has_region = inputs.has_mesh || inputs.item_count > 0 || inputs.operation.is_stock_based();
     if !has_region {
         return EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::NoInputRegion);
     }
@@ -348,7 +348,7 @@ mod tests {
             stock_source: StockSource::Fresh,
             seeded_machined_stock: false,
             has_mesh: true,
-            polygon_count: 0,
+            item_count: 0,
             boundary_is_derived_rest_regions: false,
         }
     }
@@ -438,7 +438,7 @@ mod tests {
         let op = OperationConfig::Pocket(PocketConfig::default());
         let mut i = inputs(&op, "Pocket");
         i.has_mesh = false;
-        i.polygon_count = 0;
+        i.item_count = 0;
         assert_eq!(
             classify(&empty_tp(), &i),
             EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::NoInputRegion)
@@ -450,7 +450,7 @@ mod tests {
         let op = OperationConfig::Pocket(PocketConfig::default());
         let mut i = inputs(&op, "Pocket");
         i.has_mesh = false;
-        i.polygon_count = 3;
+        i.item_count = 3;
         assert!(classify(&empty_tp(), &i).refusal().is_some());
     }
 

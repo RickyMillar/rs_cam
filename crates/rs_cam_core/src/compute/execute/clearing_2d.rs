@@ -350,6 +350,21 @@ impl LayeredOp for TracePass<'_> {
         self.rest_use
     }
 
+    /// The lines of the selection (P2.3a): closed loops and open paths on
+    /// the line (`ItemUse::Curves`), or the closed areas as lines with a
+    /// compensation (`ItemUse::Regions`, until the open offset of P6).
+    fn outlines<'p>(
+        &'p self,
+        prepared: &'p Prepared<'p>,
+    ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError>
+    where
+        Self::Input: 'p,
+    {
+        prepared
+            .curves()
+            .map(|curves| std::borrow::Cow::Borrowed(curves.as_slice()))
+    }
+
     /// The compensated rings are the tool centre, so the tool reaches one
     /// radius from them.
     // P1: an open path reads as closed here; the chord only widens the band (safe). P6: exact.
@@ -634,7 +649,7 @@ pub(crate) fn generate_adaptive(
     let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
     // K3: an area op plans around the obstacles (the territory rule).
     let polys = prepared.territory().area_outlines(
-        std::borrow::Cow::Borrowed(prepared.polygons()?),
+        std::borrow::Cow::Borrowed(prepared.regions()?.as_slice()),
         levels.iter().copied().fold(f64::INFINITY, f64::min),
     );
     let cancel_fn = ctx.cancel_fn();

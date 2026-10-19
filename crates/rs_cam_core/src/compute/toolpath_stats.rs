@@ -1030,96 +1030,38 @@ impl BuriedCurveFinding {
     }
 }
 
-/// P1 (geometry selection): the open paths of the drawing that a
-/// closed-region op left out.
+/// The open paths of the drawing that an op left out (P1; one type with
+/// the selection notes since P2.3a).
 ///
-/// A Pocket, a Profile or another `ItemUse::Regions` op cuts closed loops
-/// only. Before P1 such an op closed an open path with a chord in silence
-/// and cut that chord. The prologue now gives the op the closed polygons
-/// only and records this finding for the open paths it left out. When no
-/// closed polygon is left, the op refuses (the same words, as an error).
-///
-/// Lead ruling (DESIGN D2/D13): the default selection skips with a note; it
-/// does not refuse. P2.4 extends this note with the layer and the item
-/// kind of each skipped item.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// The prologue runs `selection::view` over the resolved selection of the
+/// op. The default rule leaves out the items the op cannot cut. Each
+/// skipped open path is a likely drawing defect (an outline that is not
+/// closed), so `view` gives a [`SelectionNote`](crate::selection::SelectionNote)
+/// for it, one per layer, and the prologue records them here. Other
+/// skipped kinds (a loop in a Drill, a point in a Pocket) are expected:
+/// `OpItems::skipped_by_kind` counts them, and they give no finding (lead
+/// ruling "notes", P2.2). When nothing is left to cut, the op refuses with
+/// `SelectionRefusal` `Empty`, which names every skipped item.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SelectionNoteFinding {
     /// The op label (`OperationType::label`).
     pub op: &'static str,
-    /// How many open paths the op left out. Never `0` on a recorded note.
-    pub skipped_open_paths: usize,
-    /// The first point of the first open path left out, mm, in the frame
-    /// the op cuts in.
-    pub first_start_xy: [f64; 2],
-    /// The length of the first open path left out, mm, along its points
-    /// (no closing chord).
-    pub first_length_mm: f64,
+    /// One note per layer, open paths only, in import order. Never empty
+    /// on a recorded finding.
+    pub notes: Vec<crate::selection::SelectionNote>,
 }
 
 impl SelectionNoteFinding {
-    /// The note for the open paths of `polygons` that a closed-region op
-    /// leaves out, or `None` when every polygon is closed.
-    #[must_use]
-    pub fn open_paths_left_out(
-        op: &'static str,
-        polygons: &[crate::polygon::Polygon2],
-    ) -> Option<Self> {
-        let mut open = polygons.iter().filter(|p| !p.closed);
-        let first = open.next()?;
-        let first_start_xy = first.exterior.first().map_or([f64::NAN; 2], |p| [p.x, p.y]);
-        let first_length_mm = first
-            .exterior
-            .windows(2)
-            .map(|w| match w {
-                [a, b] => (b - a).norm(),
-                _ => 0.0,
-            })
-            .sum();
-        Some(Self {
-            op,
-            skipped_open_paths: 1 + open.count(),
-            first_start_xy,
-            first_length_mm,
-        })
-    }
-
-    /// The facts and the fix, without the outcome. [`Self::message`] (the
-    /// op cut the closed loops) and [`Self::refusal`] (nothing closed was
-    /// left) add the outcome.
-    fn facts(&self) -> String {
-        let [x, y] = self.first_start_xy;
-        let paths = if self.skipped_open_paths == 1 {
-            "1 open path is".to_owned()
-        } else {
-            format!("{} open paths are", self.skipped_open_paths)
-        };
-        format!(
-            "{paths} not cut: {op} cuts closed loops only. The first starts at \
-             X {x:.3} Y {y:.3} and is {len:.3} mm long. Use Trace or Project \
-             Curve for an open path, or close it in the drawing.",
-            op = self.op,
-            len = self.first_length_mm,
-        )
-    }
-
-    /// The operator-facing sentence of the note. The diagnostic adapter
+    /// The operator-facing sentence of the finding. The diagnostic adapter
     /// adds the id and the severity.
     #[must_use]
     pub fn message(&self) -> String {
+        let notes: Vec<String> = self.notes.iter().map(ToString::to_string).collect();
         format!(
-            "{} [Counted at generation over the drawing this operation \
-             reads. The closed loops were cut.]",
-            self.facts()
-        )
-    }
-
-    /// The refusal text when no closed polygon is left to cut.
-    #[must_use]
-    pub fn refusal(&self) -> String {
-        format!(
-            "{op} has no closed loop to cut. {facts}",
-            op = self.op,
-            facts = self.facts()
+            "{}: {} [Counted at generation over the drawing this operation \
+             reads. The other items were cut.]",
+            self.op,
+            notes.join(" ")
         )
     }
 }

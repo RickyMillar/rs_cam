@@ -17,10 +17,14 @@
 //! once. [`Prepared::territory`] gives it to the adapter. K1: the territory
 //! carries the setup's obstacles for every op; K3: it pre-clips them.
 //!
-//! P1 (geometry selection): the op's [`ItemUse`] decides which polygons it
-//! gets. A `Regions` op gets the closed polygons only; the prologue records
-//! a [`SelectionNoteFinding`] for the open paths it left out, and refuses
-//! when no closed polygon is left. No op closes an open path with a chord
+//! Geometry selection (P1, P2.3a): the op's selection reaches the prologue
+//! as [`SelectionInputs`], resolved by the session. The prologue runs
+//! [`view`] with the op's [`ItemUse`] and gives the adapter the items it
+//! cuts: [`Prepared::regions`], [`Prepared::curves`] or
+//! [`Prepared::holes`]. A `Regions` op gets closed areas only; the
+//! prologue records a [`SelectionNoteFinding`] for the open paths that the
+//! default rule left out. A selection that refuses stops the op with
+//! [`OperationError::Selection`]. No op closes an open path with a chord
 //! in silence.
 
 use std::borrow::Cow;
@@ -28,7 +32,7 @@ use std::borrow::Cow;
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
+use crate::selection::{Curves, Holes, OpItems, Regions, ResolvedSelection, view};
 
 use super::territory::Territory;
 use super::{ExecutionContext, OperationError};
@@ -40,16 +44,57 @@ pub struct MeshInput<'a> {
     pub index: &'a SpatialIndex,
 }
 
+/// The resolved selection of the op (geometry selection DESIGN 4.5).
+///
+/// C3 pattern (as `TerritoryInputs`): the field is private to this file,
+/// so only the prologue reads it. An adapter reads the items through
+/// [`Prepared`], after the check; the compiler refuses an adapter that
+/// reads the resolved items around it.
+///
+/// The session resolves the selection in the setup frame
+/// (`resolve_generation_inputs`) and lends it here. The default is an
+/// empty selection: a caller that resolves no model gives the op nothing
+/// to cut, and an op that needs items then refuses with `Empty`.
+pub struct SelectionInputs<'a> {
+    resolved: Cow<'a, ResolvedSelection>,
+}
+
+impl Default for SelectionInputs<'_> {
+    fn default() -> Self {
+        Self {
+            resolved: Cow::Owned(ResolvedSelection::from_polygons(Vec::new())),
+        }
+    }
+}
+
+impl<'a> SelectionInputs<'a> {
+    /// The selection the session resolved, in the emission frame.
+    pub(crate) fn resolved(resolved: &'a ResolvedSelection) -> Self {
+        Self {
+            resolved: Cow::Borrowed(resolved),
+        }
+    }
+
+    /// Test only: the default rule over a hand-built polygon list
+    /// ([`ResolvedSelection::from_polygons`]). Every polygon gives its
+    /// items, and [`view`] nests the rings as it nests a drawing, so a
+    /// test drawing takes the same door as a session drawing.
+    #[cfg(test)]
+    pub(crate) fn from_polygons(polygons: &[crate::polygon::Polygon2]) -> SelectionInputs<'static> {
+        SelectionInputs {
+            resolved: Cow::Owned(ResolvedSelection::from_polygons(polygons.to_vec())),
+        }
+    }
+}
+
 /// The geometry the prologue checked, by the row's [`GeometryRequirement`].
-/// The polygons are the ones the op's [`ItemUse`] serves: borrowed when the
-/// op gets every polygon, owned when the prologue left open paths out.
 enum CheckedGeometry<'a> {
-    /// `Stock` and `DrillTargets`: no model geometry to check.
+    /// `Stock`: no model geometry to check.
     None,
-    Polygons(Cow<'a, [Polygon2]>),
+    Items(OpItems),
     Mesh(MeshInput<'a>),
-    Both {
-        polygons: Cow<'a, [Polygon2]>,
+    ItemsAndMesh {
+        items: OpItems,
         mesh: MeshInput<'a>,
     },
 }
@@ -67,22 +112,44 @@ pub struct Prepared<'a> {
 }
 
 impl<'a> Prepared<'a> {
-    /// The outlines the op's [`ItemUse`] serves. Never empty. A `Regions`
-    /// op gets closed polygons only (P1).
-    pub fn polygons(&self) -> Result<&[Polygon2], OperationError> {
+    /// The checked items of an `Items` or `ItemsAndMesh` row.
+    fn items(&self) -> Option<&OpItems> {
         match &self.geometry {
-            CheckedGeometry::Polygons(polygons) | CheckedGeometry::Both { polygons, .. } => {
-                Ok(polygons)
+            CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => {
+                Some(items)
             }
-            CheckedGeometry::None | CheckedGeometry::Mesh(_) => Err(self.mismatch("polygons")),
+            CheckedGeometry::None | CheckedGeometry::Mesh(_) => None,
         }
+    }
+
+    /// The closed areas of a `Regions` op, nested. Never empty.
+    pub fn regions(&self) -> Result<&Regions, OperationError> {
+        self.items()
+            .and_then(OpItems::regions)
+            .ok_or_else(|| self.mismatch("regions"))
+    }
+
+    /// The lines of a `Curves` op (closed and open), or the closed areas
+    /// of a `Regions` op as lines. Never empty.
+    pub fn curves(&self) -> Result<&Curves, OperationError> {
+        self.items()
+            .and_then(OpItems::curves)
+            .ok_or_else(|| self.mismatch("curves"))
+    }
+
+    /// The hole positions of a `Holes` op. P2.3c moves the drill adapters
+    /// onto it; until then they read `ExecutionContext::drill_targets`.
+    pub fn holes(&self) -> Result<&Holes, OperationError> {
+        self.items()
+            .and_then(OpItems::holes)
+            .ok_or_else(|| self.mismatch("holes"))
     }
 
     /// The mesh and its spatial index.
     pub fn mesh(&self) -> Result<MeshInput<'a>, OperationError> {
         match &self.geometry {
-            CheckedGeometry::Mesh(mesh) | CheckedGeometry::Both { mesh, .. } => Ok(*mesh),
-            CheckedGeometry::None | CheckedGeometry::Polygons(_) => Err(self.mismatch("a mesh")),
+            CheckedGeometry::Mesh(mesh) | CheckedGeometry::ItemsAndMesh { mesh, .. } => Ok(*mesh),
+            CheckedGeometry::None | CheckedGeometry::Items(_) => Err(self.mismatch("a mesh")),
         }
     }
 
@@ -128,13 +195,13 @@ pub(super) fn check_inputs<'a>(
     let name = op_type.name();
     let item_use = op.capabilities().item_use;
     let geometry = match op_type.geometry_requirement() {
-        GeometryRequirement::Stock | GeometryRequirement::DrillTargets => CheckedGeometry::None,
-        GeometryRequirement::Polygons => {
-            CheckedGeometry::Polygons(require_polygons(ctx, op_type, item_use)?)
+        GeometryRequirement::Stock => CheckedGeometry::None,
+        GeometryRequirement::Items => {
+            CheckedGeometry::Items(require_items(ctx, op_type, item_use)?)
         }
         GeometryRequirement::Mesh => CheckedGeometry::Mesh(require_mesh(ctx, name)?),
-        GeometryRequirement::Both => CheckedGeometry::Both {
-            polygons: require_polygons(ctx, op_type, item_use)?,
+        GeometryRequirement::ItemsAndMesh => CheckedGeometry::ItemsAndMesh {
+            items: require_items(ctx, op_type, item_use)?,
             mesh: require_mesh(ctx, name)?,
         },
     };
@@ -148,46 +215,35 @@ pub(super) fn check_inputs<'a>(
     })
 }
 
-/// CMP-13: the refusal names the operation. An empty list refuses as an
-/// absent one.
+/// The items the op cuts: [`view`] over the resolved selection with the
+/// op's [`ItemUse`]. A refusal names the op (CMP-13) and stops the op with
+/// [`OperationError::Selection`]. The open paths that the default rule
+/// left out go into ONE [`SelectionNoteFinding`] through `ctx.record`.
 ///
-/// P1: the op's [`ItemUse`] picks the polygons it gets (the match has no
-/// wildcard, so a new use states its answer):
-///
-/// - `Curves`: every polygon, closed and open.
-/// - `Regions`: the closed polygons only. The open paths left out go into
-///   ONE [`SelectionNoteFinding`] through `ctx.record`. With no closed
-///   polygon left, the op refuses with the same facts and the fix.
-/// - `None` and `Holes`: no op reads polygons with these uses
-///   (`every_op_states_its_capabilities_w2_4` holds the pairing), so the
-///   text is the registry mismatch.
-fn require_polygons<'a>(
-    ctx: &ExecutionContext<'a>,
+/// P2.3a, the drill families: the view of a `Holes` op is taken as one
+/// that may be empty. The drill adapters still read
+/// `ExecutionContext::drill_targets` and refuse on their own count
+/// (`drill_targets_refusal`) until P2.3c moves them onto
+/// [`Prepared::holes`]; an `Empty` refusal here would come first and
+/// break that refusal and the stale-pick rule.
+fn require_items(
+    ctx: &ExecutionContext<'_>,
     op_type: OperationType,
     item_use: ItemUse,
-) -> Result<Cow<'a, [Polygon2]>, OperationError> {
-    let op_name = op_type.name();
-    let polygons = ctx.polygons.filter(|p| !p.is_empty()).ok_or_else(|| {
-        OperationError::MissingGeometry(format!("{op_name} requires 2D geometry"))
-    })?;
-    match item_use {
-        ItemUse::Curves => Ok(Cow::Borrowed(polygons)),
-        ItemUse::Regions => {
-            let Some(note) = SelectionNoteFinding::open_paths_left_out(op_type.label(), polygons)
-            else {
-                return Ok(Cow::Borrowed(polygons));
-            };
-            let closed: Vec<Polygon2> = polygons.iter().filter(|p| p.closed).cloned().collect();
-            if closed.is_empty() {
-                return Err(OperationError::MissingGeometry(note.refusal()));
-            }
-            ctx.record(&note);
-            Ok(Cow::Owned(closed))
-        }
-        ItemUse::None | ItemUse::Holes { .. } => Err(OperationError::Other(format!(
-            "registry mismatch: {op_name} reads polygons, but its item use is {item_use:?}"
-        ))),
+) -> Result<OpItems, OperationError> {
+    let view_use = match item_use {
+        ItemUse::Holes { .. } => ItemUse::Holes { may_be_empty: true },
+        ItemUse::None | ItemUse::Regions | ItemUse::Curves => item_use,
+    };
+    let (items, notes) = view(&ctx.selection.resolved, view_use)
+        .map_err(|refusal| OperationError::Selection(refusal.for_op(op_type.label())))?;
+    if !notes.is_empty() {
+        ctx.record(&SelectionNoteFinding {
+            op: op_type.label(),
+            notes,
+        });
     }
+    Ok(items)
 }
 
 /// The mesh, then its spatial index. The two texts are the ones the

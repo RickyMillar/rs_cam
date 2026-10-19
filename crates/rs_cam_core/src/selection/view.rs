@@ -6,11 +6,14 @@
 //! kinds it cuts ([`Shape::serves`]):
 //!
 //! - An item that the default rule matched and that the op cannot cut is
-//!   left out. A [`SelectionNote`] counts it by kind and layer.
+//!   left out. [`OpItems::skipped_by_kind`] counts it. Only a skipped open
+//!   path gives a [`SelectionNote`] (by layer): an outline that is not
+//!   closed is a likely drawing defect. A loop in a Drill or a point in a
+//!   Pocket is expected, so it gives no note (lead ruling "notes", P2.2).
 //! - An item that the user named (a pick, or a rule that names its kind)
 //!   and that the op cannot cut refuses with `KindNotCut`.
-//! - With nothing left to cut, the op refuses with `Empty`, which names the
-//!   items left out. A Pin Drill (`Holes { may_be_empty: true }`) may be
+//! - With nothing left to cut, the op refuses with `Empty`, which names
+//!   every item left out, of every kind. A Pin Drill (`Holes { may_be_empty: true }`) may be
 //!   empty.
 //!
 //! Containment (`detect_containment`) runs here, over the selected loops,
@@ -19,6 +22,8 @@
 //!
 //! [`Regions`], [`Curves`] and [`Holes`] have private fields: only `view`
 //! builds them, so a `Regions` holds closed polygons only.
+
+use std::collections::BTreeMap;
 
 use crate::compute::catalog::ItemUse;
 use crate::geo::P2;
@@ -123,9 +128,18 @@ enum View {
 #[derive(Debug, Clone)]
 pub struct OpItems {
     view: View,
+    skipped_by_kind: BTreeMap<ItemKind, usize>,
 }
 
 impl OpItems {
+    /// The count of the items, by kind, that the default rule matched and
+    /// that the op left out. Every kind counts here; only an open path
+    /// also gives a [`SelectionNote`]. The `SelectionStatus` query (P2.4)
+    /// reads it.
+    pub fn skipped_by_kind(&self) -> &BTreeMap<ItemKind, usize> {
+        &self.skipped_by_kind
+    }
+
     /// The closed areas of a `Regions` op.
     pub fn regions(&self) -> Option<&Regions> {
         match &self.view {
@@ -154,7 +168,9 @@ impl OpItems {
 }
 
 /// The items of `resolved` that an op of `item_use` cuts, and the notes for
-/// the items the default rule matched and the op left out.
+/// the open paths the default rule matched and the op left out. The op
+/// left out other kinds too; [`OpItems::skipped_by_kind`] counts every
+/// kind.
 ///
 /// The refusals, in this order:
 ///
@@ -162,7 +178,8 @@ impl OpItems {
 /// 2. A lost pick (`LostPick`) or an ambiguous pick (`AmbiguousPick`).
 /// 3. A rule layer that names no item (`UnknownLayer`).
 /// 4. An item the user named and the op cannot cut (`KindNotCut`).
-/// 5. Nothing left to cut (`Empty`), unless the op may be empty.
+/// 5. Nothing left to cut (`Empty`), unless the op may be empty. `Empty`
+///    names the skipped items of every kind.
 ///
 /// The text has no op name: the caller adds it with
 /// [`SelectionRefusal::for_op`].
@@ -196,7 +213,10 @@ pub fn view(
         ));
     }
 
+    // One note per kind and layer, every kind: `Empty` names them all.
+    // The return keeps the open-path notes only.
     let mut notes: Vec<SelectionNote> = Vec::new();
+    let mut skipped_by_kind: BTreeMap<ItemKind, usize> = BTreeMap::new();
     let mut served: Vec<&Item> = Vec::new();
     for r in resolved.items() {
         let shape = r.item().shape();
@@ -214,6 +234,7 @@ pub fn view(
             ));
         }
         let kind = shape.kind();
+        *skipped_by_kind.entry(kind).or_insert(0) += 1;
         let layer = r.item().layer();
         match notes
             .iter_mut()
@@ -279,7 +300,14 @@ pub fn view(
             View::Holes(Holes { holes })
         }
     };
-    Ok((OpItems { view }, notes))
+    notes.retain(|n| n.kind == ItemKind::Path);
+    Ok((
+        OpItems {
+            view,
+            skipped_by_kind,
+        },
+        notes,
+    ))
 }
 
 /// The closed areas of the served shapes: the loops and circle rings nested

@@ -16,8 +16,11 @@
 //!   closed loops alone, and records ONE `SelectionNoteFinding` that counts
 //!   the open paths, gives the first one's start and length, and names the
 //!   fix. The diagnostics carry it as `geom.selection_note` (Caution).
+//!   P2.3a: the finding holds the `SelectionNote`s of the selection view
+//!   (one per layer; the first item named by its drawing key).
 //! - (b) with open paths only, it refuses, and the message names the open
-//!   paths and the fix.
+//!   paths and the fix. P2.3a: the refusal is the selection `Empty`
+//!   refusal (`OperationError::Selection`).
 //! - (c) Trace with compensation `None` (`ItemUse::Curves`) cuts an open
 //!   path on the line, with no chord, and cuts a 2-point line.
 //! - (d) Trace `Left` (`ItemUse::Regions`) is a closed-region op: (a) and
@@ -63,6 +66,7 @@ use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ops::trace_path::TraceCompensation;
 use rs_cam_core::polygon::Polygon2;
+use rs_cam_core::selection::ItemKind;
 use rs_cam_core::session::{ProjectSession, ToolpathConfig};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -102,7 +106,7 @@ fn region_ops() -> Vec<OperationConfig> {
     let mut ops: Vec<OperationConfig> = OperationType::ALL
         .iter()
         .filter(|op| {
-            op.geometry_requirement() == GeometryRequirement::Polygons
+            op.geometry_requirement() == GeometryRequirement::Items
                 && op.capabilities().item_use == ItemUse::Regions
         })
         .map(|&op| OperationConfig::new_default(op))
@@ -175,18 +179,26 @@ fn a_region_op_cuts_only_the_closed_loops_and_names_the_open_paths_p1() {
             "{label}: the open paths change nothing it cuts"
         );
         let stats = &mixed.get_result(0).expect("the result").stats;
-        let note = stats
+        let finding: &SelectionNoteFinding = stats
             .selection_note
+            .as_ref()
             .unwrap_or_else(|| panic!("{label}: the open paths are named"));
+        assert_eq!(finding.op, label);
+        // One note: both paths are on one layer (none).
+        assert_eq!(finding.notes.len(), 1, "{label}: {finding:?}");
+        let note = &finding.notes[0];
         assert_eq!(
-            note,
-            SelectionNoteFinding {
-                op: label,
-                skipped_open_paths: 2,
-                first_start_xy: V[0],
-                first_length_mm: 2.0 * 10.0_f64.hypot(20.0),
-            },
+            (note.kind, note.count, note.layer.as_deref()),
+            (ItemKind::Path, 2, None),
             "{label}"
+        );
+        // The first path left out is the V, named by its drawn start and
+        // its length.
+        assert_eq!(note.first.key.anchor, V[0], "{label}");
+        assert!(
+            (note.first.key.measure - 2.0 * 10.0_f64.hypot(20.0)).abs() < 1e-9,
+            "{label}: {}",
+            note.first.key.measure
         );
     }
 }
@@ -219,8 +231,8 @@ fn the_note_reaches_the_diagnostics_p1() {
         .expect("the diagnostics carry the note");
     assert_eq!(d.severity, Severity::Caution);
     for needle in [
-        "1 open path is not cut",
-        "Pocket cuts closed loops only",
+        "Pocket: 1 open path is not cut",
+        "cuts closed areas only",
         "X 15.000 Y -10.000",
         "Use Trace or Project Curve",
         "close it in the drawing",
@@ -238,7 +250,7 @@ fn a_region_op_given_only_open_paths_refuses_p1() {
         let err = generate(&mut session(&op, vec![open(&V), open(&LINE)], |_| {}))
             .expect_err("no closed loop: the op refuses");
         for needle in [
-            format!("{label} has no closed loop to cut"),
+            format!("{label}: nothing is left to cut"),
             "2 open paths are not cut".to_owned(),
             "Use Trace or Project Curve".to_owned(),
             "close it in the drawing".to_owned(),

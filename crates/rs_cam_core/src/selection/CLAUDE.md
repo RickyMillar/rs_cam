@@ -29,7 +29,9 @@ plan is `planning/geometry_selection_2026-10-16/` (DESIGN + PLAN rulings).
 - Two items with equal keys stay two items; a pick on them is ambiguous.
 - Do not read a source file here. A door in `io/` builds the items.
 - A face filter reads the SETUP frame (`ResolveScope::setup`); the frame door
-  does not move a stock item. P2.3 deletes the two `*_pre_selection` bridges.
+  does not move a stock item. P2.3b/c delete the two `*_pre_selection` bridges.
+- `view` gives a `SelectionNote` for a skipped open path only; `OpItems::skipped_by_kind`
+  counts every kind; `Empty` names every kind. `detect_containment` keeps an open path's direction.
 
 ## Sentries
 

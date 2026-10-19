@@ -122,6 +122,33 @@ pub struct ResolvedSelection {
 }
 
 impl ResolvedSelection {
+    /// The default rule over a hand-built polygon list: the items of
+    /// [`ItemSet::from_polygons`], each matched by the default rule, with
+    /// nothing lost or missing. No model is needed. [`super::view`] nests
+    /// the rings as it nests a drawing.
+    ///
+    /// Two callers (P2.3a): the session gives the face outline of a STEP
+    /// face pick to the op through it (until P2.3b and P2.4 resolve faces
+    /// as items), and `SelectionInputs::from_polygons` gives a hand-built
+    /// list to an `ExecutionContext` with no session.
+    pub(crate) fn from_polygons(polygons: Vec<Polygon2>) -> Self {
+        let items = ItemSet::from_polygons(polygons)
+            .iter()
+            .cloned()
+            .map(|item| ResolvedItem {
+                identity: item.key().clone(),
+                item,
+                by: MatchedBy::Default { rule: 0 },
+            })
+            .collect();
+        Self {
+            items,
+            lost: Vec::new(),
+            missing_sources: Vec::new(),
+            unmatched_layers: Vec::new(),
+        }
+    }
+
     pub fn items(&self) -> &[ResolvedItem] {
         &self.items
     }

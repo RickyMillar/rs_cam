@@ -382,11 +382,11 @@ fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
     }]
 }
 
-/// P1: a closed-region op left open paths of the drawing out. `Caution`:
+/// P1: an op left open paths of the drawing out. `Caution`:
 /// the toolpath is safe (a skip only removes cuts), but a line the drawing
 /// holds is not in the plan. Silent when nothing was left out.
 fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
-    let Some(f) = stats.selection_note else {
+    let Some(f) = &stats.selection_note else {
         return Vec::new();
     };
     vec![Diagnostic {

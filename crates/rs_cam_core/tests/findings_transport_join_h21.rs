@@ -39,6 +39,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::toolpath_stats::{
@@ -58,6 +59,7 @@ use rs_cam_core::finish::unified_finish::{
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::region_mask::RegionCapReport;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, MeasurementStage};
+use rs_cam_core::selection::{ItemKind, ItemRef, MatchKey, SelectionNote, SourceRef};
 use rs_cam_core::toolpath::Toolpath;
 
 /// A hand-traced move list with a known move count, cutting distance, rapid
@@ -181,13 +183,24 @@ fn every_finding_recorded() -> GenerationFindings {
             sampled_positions: 120,
             floor_mm: 0.01,
         }),
-        // P1. Recorded by the prologue when a closed-region op leaves open
-        // paths out.
+        // P1, P2.3a. Recorded by the prologue when the selection view of
+        // an op leaves open paths out: one selection note per layer.
         selection_note: Some(SelectionNoteFinding {
             op: "Pocket",
-            skipped_open_paths: 2,
-            first_start_xy: [12.0, 40.5],
-            first_length_mm: 86.2,
+            notes: vec![SelectionNote {
+                kind: ItemKind::Path,
+                layer: Some("TEXT".to_owned()),
+                count: 2,
+                first: ItemRef::new(MatchKey {
+                    source: SourceRef::ToolpathModel,
+                    kind: ItemKind::Path,
+                    layer: Some("TEXT".to_owned()),
+                    anchor: [12.0, 40.5],
+                    measure: 86.2,
+                    brep: None,
+                }),
+                item_use: ItemUse::Regions,
+            }],
         }),
         // Checkpoint C (Q1 / D-2). `Some(2)` rather than `Some(0)` on
         // purpose: this fixture's job is to make a dropped field read as its

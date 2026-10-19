@@ -54,7 +54,11 @@ pub(crate) use params::strip_outer_quotes;
 pub struct ResolvedGenInputs {
     tool: ToolConfig,
     mesh: Option<Arc<TriangleMesh>>,
-    polygons: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+    /// Geometry selection (P2.3a): the op's selection, resolved against
+    /// the items of its model and moved into the emission frame. The
+    /// prologue runs `selection::view` over it
+    /// (`ExecutionContext::selection`).
+    selection: crate::selection::ResolvedSelection,
     /// G-DRILLCENTROID: the target model's drill targets (DXF points and
     /// circle/arc centres), the `Drill` family's hole source when nothing
     /// is picked. Shared with the model, never transformed here — like
@@ -836,18 +840,29 @@ impl JobPhases<'_, '_> {
         let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
         // G-ADAPTPASSLOAD round 3: 2D Adaptive's helix entries stay inside
         // the machinable region (the same region its planner stamps from).
+        // The regions are the view the prologue gave the op: `view` is a
+        // pure function of the resolved selection and the item use.
         let entry_containment: Option<Vec<crate::polygon::Polygon2>> = self
             .context
             .transform_capabilities
             .helix_floor_lap
-            .then_some(self.inputs.polygons.as_deref())
+            .then(|| {
+                crate::selection::view(
+                    &self.inputs.selection,
+                    self.inputs.operation.capabilities().item_use,
+                )
+                .ok()
+            })
             .flatten()
-            .map(|polys| {
+            .and_then(|(items, _)| {
                 let r = self.inputs.tool_def.radius();
-                polys
-                    .iter()
-                    .flat_map(|p| crate::adaptive::tool_centre_pieces(p, r))
-                    .collect()
+                items.regions().map(|regions| {
+                    regions
+                        .as_slice()
+                        .iter()
+                        .flat_map(|p| crate::adaptive::tool_centre_pieces(p, r))
+                        .collect()
+                })
             });
         crate::compute::execute::apply_dressups(
             annotated,
@@ -1105,7 +1120,7 @@ impl JobPhases<'_, '_> {
                 stock_source: self.context.stock_source,
                 seeded_machined_stock: self.gen_initial_stock.is_some(),
                 has_mesh: self.inputs.mesh.is_some(),
-                polygon_count: self.inputs.polygons.as_deref().map_or(0, Vec::len),
+                item_count: self.inputs.selection.items().len(),
                 boundary_is_derived_rest_regions: matches!(
                     self.inputs.boundary_config.source,
                     crate::compute::config::BoundarySource::DerivedRestRegions { .. }
@@ -1255,7 +1270,7 @@ pub fn execute_generation(
     let ctx = crate::compute::execute::ExecutionContext {
         mesh: inputs.mesh.as_deref(),
         index: inputs.spatial_index(),
-        polygons: inputs.polygons.as_deref().map(|v| v.as_slice()),
+        selection: crate::compute::execute::SelectionInputs::resolved(&inputs.selection),
         drill_targets: &inputs.drill_targets,
         alignment_pins: &inputs.alignment_pins,
         setup_transform: inputs.setup_transform.as_ref(),
@@ -1580,7 +1595,7 @@ pub fn execute_recommend_clearing_strategy(
         let ctx = crate::compute::execute::ExecutionContext {
             mesh: resolved.mesh.as_deref(),
             index: resolved.spatial_index(),
-            polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
+            selection: crate::compute::execute::SelectionInputs::resolved(&resolved.selection),
             territory_inputs: crate::compute::execute::TerritoryInputs::default()
                 .boundary(resolved.pre_boundary.as_ref()),
             // Everything else stays at the constructor default. The probe

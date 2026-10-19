@@ -61,8 +61,10 @@ impl ProjectSession {
         let model = self.find_model_by_raw_id(tc.model_id);
 
         let mut mesh = model.and_then(|m| m.mesh.clone());
-        // P2.3 replaces the bridge with the resolved selection.
-        let mut polygons = model.and_then(|m| m.outlines_pre_selection());
+        // Geometry selection P2.3a: the op reads the items of its model
+        // through the resolved selection (below). P2.3b gives each config
+        // its own selection; until then every op takes the default rule.
+        let has_drawing = model.is_some_and(|m| m.items.has_drawing());
 
         // ProjectCurve optionally references a separate surface model for
         // the mesh (so polygons can come from a DXF while the projection
@@ -106,9 +108,6 @@ impl ProjectSession {
                     if top.is_finite() {
                         face_top_z = Some(top);
                     }
-                    if polygons.is_none() {
-                        polygons = Some(Arc::new(vec![poly.clone()]));
-                    }
                     face_boundary = Some(poly);
                 }
                 None => {
@@ -127,7 +126,11 @@ impl ProjectSession {
                 "Operation requires a 3D mesh (STL/STEP)".to_owned(),
             ));
         }
-        if !tc.operation.is_3d() && !tc.operation.is_stock_based() && polygons.is_none() {
+        if !tc.operation.is_3d()
+            && !tc.operation.is_stock_based()
+            && !has_drawing
+            && face_boundary.is_none()
+        {
             return Err(SessionError::MissingGeometry(
                 "Operation requires 2D geometry (SVG/DXF)".to_owned(),
             ));
@@ -184,16 +187,6 @@ impl ProjectSession {
                     &self.setup_transform_info(face_up, z_rotation),
                 ));
             }
-            if let Some(raw_polygons) = polygons.as_ref() {
-                // The model's DRAWING — consumed in the work plane of the
-                // setup that uses it. Distinct door from the footprints
-                // below; they differ only on lateral setups.
-                polygons = Some(Arc::new(self.transform_drawing_polygons_to_setup(
-                    raw_polygons,
-                    face_up,
-                    z_rotation,
-                )));
-            }
             // The face outline is drawing geometry too, and it is read
             // again by the boundary clip after generation, so it takes the
             // same door.
@@ -222,6 +215,40 @@ impl ProjectSession {
         // `stock.origin != 0` (heights/setup-frame audit 2026-06-12,
         // finding 4).
         let emission_stock_bbox = ctx.heights_stock_bbox;
+
+        // Geometry selection (DESIGN 4.1, P2.3a): resolve the selection of
+        // the op against the items of its model, then move the items into
+        // the setup frame through THE frame door (`to_setup_frame`, the
+        // same `apply_to_drawing_polygons` the drawing took before). The
+        // prologue runs `view` over it.
+        //
+        // Transitional until P2.3b: every op takes `Selection::drawing()`
+        // (no config holds a selection yet), on the model that
+        // `find_model_by_raw_id` gives (P2.4 refuses a missing model). A
+        // STEP face pick gives the face outline as one hand-built polygon
+        // when the model holds no drawing, as before (P2.3b and P2.4 make
+        // faces items of the selection).
+        let selection = if has_drawing {
+            let resolved = crate::selection::resolve(
+                &crate::selection::Selection::drawing(),
+                &crate::selection::ResolveScope {
+                    toolpath_model: model,
+                    models: &self.models,
+                    stock_bbox: &emission_stock_bbox,
+                    setup: ctx.local_to_global.as_ref(),
+                },
+            );
+            match ctx.local_to_global.as_ref() {
+                Some(info) => resolved
+                    .to_setup_frame(info)
+                    .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+                None => resolved,
+            }
+        } else {
+            crate::selection::ResolvedSelection::from_polygons(
+                face_boundary.iter().cloned().collect(),
+            )
+        };
 
         // F-028 (2026-05-25) established this frame for the height context
         // (heights.top_z anchors 2.5D depth stepping and must match where
@@ -477,7 +504,7 @@ impl ProjectSession {
             setup_transform: ctx.local_to_global,
             tool,
             mesh,
-            polygons,
+            selection,
             drill_targets: Arc::new(
                 model
                     .map(crate::session::LoadedModel::drill_targets_pre_selection)

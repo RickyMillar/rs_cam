@@ -674,12 +674,19 @@ fn missing_polygons_error_for_2d_operation() {
     };
     let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
 
+    // P2.3a: an op that reads items, with no selection resolved, refuses
+    // through its selection: nothing to cut (`Empty`), with the op name.
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, OperationError::MissingGeometry(_)),
-        "Expected MissingGeometry, got: {err:?}"
+        matches!(
+            &err,
+            OperationError::Selection(refusal)
+                if matches!(refusal.cause, crate::selection::RefusalCause::Empty { .. })
+        ),
+        "Expected a selection Empty refusal, got: {err:?}"
     );
+    assert!(err.to_string().starts_with("Profile: "), "{err}");
 }
 
 #[test]
@@ -723,7 +730,7 @@ fn invalid_tool_for_vcarve() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
-        polygons: Some(&polys),
+        selection: crate::compute::execute::SelectionInputs::from_polygons(&polys),
         ..ExecutionContext::new(
             &findings,
             &tool_def,
@@ -880,7 +887,10 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
         let ctx = ExecutionContext {
             mesh: mesh_and_index.map(|(mesh, _)| mesh),
             index: mesh_and_index.map(|(_, index)| index),
-            polygons,
+            selection: polygons.map_or_else(
+                crate::compute::execute::SelectionInputs::default,
+                crate::compute::execute::SelectionInputs::from_polygons,
+            ),
             alignment_pins: &pins,
             ..ExecutionContext::new(
                 &findings,
@@ -1097,7 +1107,7 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
         let ctx = ExecutionContext {
             mesh: Some(&mesh),
             index: Some(&index),
-            polygons: Some(polygons.as_slice()),
+            selection: crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice()),
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,
@@ -1150,7 +1160,9 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
             let ctx = ExecutionContext {
                 mesh: Some(&mesh),
                 index: Some(&index),
-                polygons: Some(polygons.as_slice()),
+                selection: crate::compute::execute::SelectionInputs::from_polygons(
+                    polygons.as_slice(),
+                ),
                 ..ExecutionContext::new(
                     &findings,
                     &tool_def,
@@ -1231,7 +1243,9 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
             let ctx = ExecutionContext {
                 mesh: Some(&mesh),
                 index: Some(&index),
-                polygons: Some(polygons.as_slice()),
+                selection: crate::compute::execute::SelectionInputs::from_polygons(
+                    polygons.as_slice(),
+                ),
                 ..ExecutionContext::new(
                     &findings,
                     &tool_def,
@@ -1266,7 +1280,7 @@ fn trace_annotated_output_has_depth_and_region_spans() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
-        polygons: Some(&polys),
+        selection: crate::compute::execute::SelectionInputs::from_polygons(&polys),
         ..ExecutionContext::new(
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
@@ -1358,7 +1372,7 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
-        polygons: Some(&polys),
+        selection: crate::compute::execute::SelectionInputs::from_polygons(&polys),
         semantic_ctx: Some(&ctx),
         ..ExecutionContext::new(
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,

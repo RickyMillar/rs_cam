@@ -299,6 +299,12 @@ fn a_step_block_has_an_up_top_and_a_down_bottom() {
 
 /// The canonical dump of the two bridge lists and the bbox. The text is the
 /// format of the probe that recorded the baseline; change nothing here.
+///
+/// One designed change (P2.3a, lead ruling "fix b"): `detect_containment`
+/// no longer reverses an open path whose shoelace area is negative, so an
+/// open path keeps its drawn direction. The dump writes an open path in
+/// the direction of the import before P2.1 (the same rule, over a list of
+/// two or more polygons), so the baseline holds every other bit.
 fn dump(m: &LoadedModel) -> String {
     let mut out = String::new();
     match m.outlines_pre_selection() {
@@ -307,7 +313,13 @@ fn dump(m: &LoadedModel) -> String {
             writeln!(out, " polygons {}", ps.len()).unwrap();
             for p in ps.iter() {
                 write!(out, "  P closed={} n={} :", p.closed, p.exterior.len()).unwrap();
-                for q in &p.exterior {
+                let reversed_before_fix_b = !p.closed && ps.len() > 1 && p.signed_area() < 0.0;
+                let exterior: Vec<_> = if reversed_before_fix_b {
+                    p.exterior.iter().rev().collect()
+                } else {
+                    p.exterior.iter().collect()
+                };
+                for q in exterior {
                     write!(out, " {:x},{:x}", q.x.to_bits(), q.y.to_bits()).unwrap();
                 }
                 writeln!(out).unwrap();

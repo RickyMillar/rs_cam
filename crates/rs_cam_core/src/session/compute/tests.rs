@@ -2050,7 +2050,7 @@ fn advisor_modulates_candidate_feeds_before_timing() {
     let ctx = crate::compute::execute::ExecutionContext {
         mesh: resolved.mesh.as_deref(),
         index: resolved.spatial_index(),
-        polygons: resolved.polygons.as_deref().map(|v| v.as_slice()),
+        selection: crate::compute::execute::SelectionInputs::resolved(&resolved.selection),
         territory_inputs: crate::compute::execute::TerritoryInputs::default()
             .boundary(resolved.pre_boundary.as_ref()),
         ..crate::compute::execute::ExecutionContext::new(

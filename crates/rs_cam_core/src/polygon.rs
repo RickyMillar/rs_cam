@@ -1571,14 +1571,20 @@ impl OffsetRingSet {
 /// 2. For each smaller polygon, checks if it's fully inside a larger one
 /// 3. If so, converts it to a hole of that polygon
 ///
+/// An open path stays top level and keeps its drawn direction.
+///
 /// Returns the nested polygons (outer boundaries with holes attached).
 pub fn detect_containment(mut polygons: Vec<Polygon2>) -> Vec<Polygon2> {
     if polygons.len() <= 1 {
         return polygons;
     }
 
-    // Ensure all have correct winding before containment test
-    for poly in &mut polygons {
+    // Ensure all closed rings have correct winding before containment test.
+    // An open path keeps its drawn direction: its signed area is the area
+    // of its chord-closed ring, which has no meaning, and the drawn
+    // direction sets its start point and its side (lead ruling "fix b",
+    // geometry selection P2.2).
+    for poly in polygons.iter_mut().filter(|p| p.closed) {
         poly.ensure_winding();
     }
 

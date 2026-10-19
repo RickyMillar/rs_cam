@@ -46,7 +46,7 @@ pub(crate) fn generate_inlay(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Inlay, "generate_inlay");
-    let polys = prepared.polygons()?;
+    let polys = prepared.regions()?.as_slice();
     let ha = vbit_half_angle(ctx.tool_cfg);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
@@ -89,7 +89,7 @@ pub(crate) fn generate_inlay_plug(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, InlayPlug, "generate_inlay_plug");
-    let polys = prepared.polygons()?;
+    let polys = prepared.regions()?.as_slice();
     let ha = vbit_half_angle(ctx.tool_cfg);
     if cfg.start_depth() <= 0.0 {
         return Err(OperationError::Other(format!(
@@ -135,7 +135,7 @@ pub(crate) fn generate_vcarve(
     let cfg = config_guard!(op, VCarve, "generate_vcarve");
     let pass = VCarvePass {
         field: VCarveField {
-            outlines: prepared.polygons()?,
+            outlines: prepared.regions()?.as_slice(),
         },
         params: crate::ops::vcarve::VCarveParams {
             half_angle: vbit_half_angle(ctx.tool_cfg),

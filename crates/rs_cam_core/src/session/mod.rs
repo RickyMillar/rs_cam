@@ -1966,11 +1966,9 @@ impl ProjectSession {
 
         // Only ops that actually consume a 2D drawing are affected; a 3D op
         // already requires the mesh, and a stock-based op reads no drawing.
-        if matches!(
-            operation.geometry_requirement(),
-            crate::compute::catalog::GeometryRequirement::Polygons
-                | crate::compute::catalog::GeometryRequirement::DrillTargets
-        ) && self.models.iter().all(|m| m.mesh.is_none())
+        if operation.geometry_requirement() == crate::compute::catalog::GeometryRequirement::Items
+            && !operation.is_stock_based()
+            && self.models.iter().all(|m| m.mesh.is_none())
         {
             return Err(SessionError::UnsupportedSetup(format!(
                 "setup '{}' is on the {face} face, but this project has no 3D model. \
