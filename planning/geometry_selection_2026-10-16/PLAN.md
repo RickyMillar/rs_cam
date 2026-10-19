@@ -382,7 +382,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1-P4.7 done; merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa | next: P4.8 without the SVG scale default; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1-P4.8 done (P4.8 without the SVG scale default); merge gate code-complete, waits for the operator look | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3 | next: P4.9 join and close tool; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
@@ -440,3 +440,9 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
   and the scale, and the default scale stays as today (1.0, raw viewBox
   units) until the operator rules O-2. The O-2 ruling is then a change of
   one default plus the transform fix.
+- P4.8 accepted: no new command (the surface reads the file again and
+  core adopts, as rescale, reload and relink do); the options are on the
+  replaced side of adopt; the join tolerance is in file units before the
+  user scale (DXF after `$INSUNITS`), and the dialog hover says so; the
+  dialog reads the file on the frame thread, on a committed value only.
+  SVG_DEFAULT_UNITS is the one place the O-2 ruling changes.
