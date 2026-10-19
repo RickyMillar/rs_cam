@@ -436,6 +436,7 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
         aspect: w / h,
         vw: w,
         vh: h,
+        visibility: &state.overlays.model_visibility,
     };
     let hit = pick_alignment_pins(&ctx, &stock_with_pin, &frame);
     assert!(

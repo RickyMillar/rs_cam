@@ -17,6 +17,8 @@
 //!    flipped and turned setup the marks draw where the loop draws, a click
 //!    on a mark picks that mark, and a click on the drawn loop gives the
 //!    model point of the loop under the pointer (the point an add stores).
+//!    A model that the eye of its row hides draws no loop, so the same
+//!    click then gives no loop (geometry selection P4.D follow-up).
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test the_tab_editor_writes_one_step_per_act_p4_6
@@ -56,9 +58,11 @@ use rs_cam_viz::interaction::picking::{
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
 use rs_cam_viz::state::job::SetupFrame;
+use rs_cam_viz::state::overlays::ModelVisibility;
 use rs_cam_viz::state::selection::Selection as UiSelection;
 use rs_cam_viz::state::toolpath::ToolpathId;
 use rs_cam_viz::ui::AppEvent;
+use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
 
 const VIEW_W: f32 = 800.0;
 const VIEW_H: f32 = 600.0;
@@ -422,7 +426,11 @@ fn drawn(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32;
         .expect("the point is in view")
 }
 
-fn ctx(camera: &OrbitCamera, at: [f32; 2]) -> PickContext<'_> {
+fn ctx<'a>(
+    camera: &'a OrbitCamera,
+    visibility: &'a ModelVisibility,
+    at: [f32; 2],
+) -> PickContext<'a> {
     PickContext {
         camera,
         screen_x: at[0],
@@ -430,6 +438,7 @@ fn ctx(camera: &OrbitCamera, at: [f32; 2]) -> PickContext<'_> {
         aspect: VIEW_W / VIEW_H,
         vw: VIEW_W,
         vh: VIEW_H,
+        visibility,
     }
 }
 
@@ -465,17 +474,46 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
             "the mark {tab:?} draws at {got:?}, the loop at {want:?}"
         );
         // A click on the mark picks it.
-        assert_eq!(pick_tab(&ctx(&camera, want), &scene), Some(tab.mark));
+        assert_eq!(
+            pick_tab(
+                &ctx(&camera, &c.state().overlays.model_visibility, want),
+                &scene
+            ),
+            Some(tab.mark)
+        );
     }
     // A click on the drawn bottom side, clear of every tab, gives the loop
     // and the model point under the pointer.
     let at = P2::new(18.0, 10.0);
     let click = drawn(&c, &camera, at);
-    let (key, p) = pick_tab_loop(&ctx(&camera, click), &c.state().session, id, &answer.loops)
-        .expect("the click is on the loop");
+    let (key, p) = pick_tab_loop(
+        &ctx(&camera, &c.state().overlays.model_visibility, click),
+        &c.state().session,
+        id,
+        &answer.loops,
+    )
+    .expect("the click is on the loop");
     assert_eq!(key, answer.loops[0]);
     assert!(
         (p[0] - at.x).abs() < 0.05 && (p[1] - at.y).abs() < 1e-6,
         "the add stores the model point {at:?}, not {p:?}"
     );
+
+    // P4.D follow-up: a hidden model draws no loop, so the click adds no
+    // tab. Red proof: the `ctx.shows` filter in `pick_tab_loop` removed;
+    // the click gave the loop of the hidden model.
+    let model_id = c.state().session.toolpath_configs()[0].model_id;
+    c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
+        SetModelVisibilityArgs {
+            model_id,
+            visible: false,
+        },
+    )));
+    let hidden = pick_tab_loop(
+        &ctx(&camera, &c.state().overlays.model_visibility, click),
+        &c.state().session,
+        id,
+        &answer.loops,
+    );
+    assert_eq!(hidden, None, "a click gave a loop of a hidden model");
 }

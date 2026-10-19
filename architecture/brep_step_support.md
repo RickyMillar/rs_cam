@@ -8,11 +8,13 @@ Reference: `research/09_parametric_geometry_and_brep.md`
 > deleted. A face pick is now a `MatchKey` pick of kind `Face` in the op
 > selection (`operation.params.selection`), sent by `AppEvent::TogglePick`
 > through `edit_toolpath_selection`. The key holds the face anchor, the
-> measure and the BREP id, with no Z. Only an op that holds a selection
-> (the 2.5D ops) takes a face pick; a Face op or a 3D op takes none, and a
-> 3D boundary of faces is `BoundarySource::Selection`. A file with the old
+> measure and the BREP id, with no Z. A 2.5D op and the Face op take a
+> face pick in their op selection (P4.2). A 3D op holds no op selection: a
+> face click writes its `BoundarySource::Selection` boundary (P4.1, P4.D).
+> An STL has faces too: its flat regions (P4.7). A file with the old
 > `face_selection` key refuses to load and names the key. The viewport
 > tests a face click in the frame it draws the face in (the setup frame).
+> `FEATURE_CATALOG.md` (Geometry selection) holds the current behaviour.
 > Sections that name `face_selection` below are the history of the design.
 
 ---

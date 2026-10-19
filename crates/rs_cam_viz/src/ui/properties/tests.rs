@@ -549,6 +549,65 @@ fn a_step_pocket_names_the_face_pick_fix_p4_d() {
     );
 }
 
+/// Geometry selection P4.D follow-up: the section shows ONE Pick button,
+/// in the action row, in the refused state (the fix line names the fix
+/// and has no button of its own) and after a face pick (no fix line).
+/// Red proof: the fix line with its own `Pick` button again: the refused
+/// state painted two.
+#[test]
+fn the_selection_section_shows_one_pick_p4_d() {
+    // A button paints its label more than once in this harness, so the
+    // test counts Pick against Reset, which the action row holds once.
+    let count = |texts: &[String], label: &str| texts.iter().filter(|t| *t == label).count();
+
+    let mut session = step_pocket_session();
+    let refused = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    assert!(
+        refused
+            .iter()
+            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
+        "fixture: the section is refused and names the fix: {refused:?}"
+    );
+    assert!(
+        count(&refused, "Reset") > 0,
+        "fixture: the action row paints Reset: {refused:?}"
+    );
+    assert_eq!(
+        count(&refused, "Pick"),
+        count(&refused, "Reset"),
+        "the refused section must show one Pick: {refused:?}"
+    );
+
+    let face = session.models()[0]
+        .items
+        .iter()
+        .find(|i| i.kind() == rs_cam_core::selection::ItemKind::Face)
+        .expect("fixture: the STEP model holds a face")
+        .key()
+        .clone();
+    let _ = session
+        .apply(rs_cam_core::session::Command::EditSelection(
+            rs_cam_core::session::EditSelectionArgs {
+                index: 0,
+                target: rs_cam_core::session::SelectionTarget::Op,
+                edit: rs_cam_core::selection::SelectionEdit::AddPick(face),
+            },
+        ))
+        .expect("the face pick applies");
+    let picked = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    assert!(
+        !picked
+            .iter()
+            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
+        "fixture: a face pick clears the fix line: {picked:?}"
+    );
+    assert_eq!(
+        count(&picked, "Pick"),
+        count(&picked, "Reset"),
+        "the section must show one Pick: {picked:?}"
+    );
+}
+
 /// Geometry selection P4.D, fix 4: the op Selection section is at the TOP
 /// of the Geometry tab, directly below the Input combo: before "Start
 /// from" and before "Machining Boundary". A 3D op shows "Pick faces" at

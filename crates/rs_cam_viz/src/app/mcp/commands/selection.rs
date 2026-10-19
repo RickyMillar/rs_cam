@@ -1016,6 +1016,98 @@ mod tests {
         );
     }
 
+    /// Geometry selection P4.D, MCP parity of a STEP face click: the MCP
+    /// door (`list_model_items { kind: face }`, then `add_pick` of the
+    /// listed key) and the GUI door (the click rule `face_pick_key` on the
+    /// face group under the pointer, then `pick_edit`) store one pick on a
+    /// Pocket of a STEP-only project, and the two `selection_status`
+    /// replies count one face and no refusal.
+    #[test]
+    fn an_mcp_face_pick_and_a_gui_click_give_one_pick_on_a_step_p4_d() {
+        fn step_project() -> ProjectSession {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/gui_step/stepped_block.step");
+            let model = rs_cam_core::io::load_model_file(
+                &path,
+                0,
+                ModelKind::Step,
+                ModelUnits::Millimeters,
+                Default::default(),
+            )
+            .expect("the STEP fixture loads");
+            let mut s = ProjectSession::new_empty();
+            let _ = apply(
+                &mut s,
+                Command::AddModel(AddModelArgs {
+                    model: Box::new(model),
+                }),
+            );
+            let tool_index = apply(
+                &mut s,
+                Command::AddTool(AddToolArgs {
+                    tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+                }),
+            )
+            .created
+            .unwrap();
+            let tool_id = s.tools()[tool_index].id.0;
+            let _ = add_op(&mut s, OperationType::Pocket, tool_id);
+            s
+        }
+
+        // GUI: the click hits the highest flat face group; the click rule
+        // names its item, and `pick_edit` gives the edit.
+        let mut gui = step_project();
+        let model_id = gui.models()[0].id;
+        let enriched = std::sync::Arc::clone(
+            gui.models()[0]
+                .enriched_mesh
+                .as_ref()
+                .expect("a STEP model has BREP faces"),
+        );
+        let tc = gui.get_toolpath_config(0).unwrap().clone();
+        let (face_id, click) = enriched
+            .face_groups
+            .iter()
+            .filter(|g| (g.bbox.max.z - g.bbox.min.z).abs() < 1e-9)
+            .max_by(|a, b| a.bbox.max.z.total_cmp(&b.bbox.max.z))
+            .map(|g| {
+                let key = gui
+                    .face_pick_key(&tc, model_id, g.id)
+                    .expect("a flat face has an item");
+                (g.id, key)
+            })
+            .expect("fixture: the block has a flat face");
+        let edit_of_click = gui.pick_edit(&tc, SelectionTarget::Op, click).unwrap();
+        edit(&mut gui, 0, edit_of_click);
+
+        // MCP: the faces of the model, then `add_pick` of the listed row
+        // of that face.
+        let mut mcp = step_project();
+        let faces: ListModelItemsParam =
+            serde_json::from_value(serde_json::json!({ "model_id": 0, "kind": "face" })).unwrap();
+        let reply = list_model_items_reply(&mcp, &faces);
+        let row = reply["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"]["brep"] == serde_json::json!(face_id.0))
+            .unwrap_or_else(|| panic!("the clicked face is listed: {reply}"))
+            .clone();
+        wire_edit(&mut mcp, 0, &serde_json::json!({ "add_pick": row["key"] }));
+
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one face is one pick");
+        assert_eq!(stored(&gui, 0).picks().len(), 1);
+        let status = selection_status_reply(&mcp, 0, SelectionTarget::Op);
+        assert_eq!(count(&status, "face"), 1, "{status}");
+        assert_eq!(status["refusal"], serde_json::Value::Null, "{status}");
+        assert_eq!(
+            selection_status_reply(&gui, 0, SelectionTarget::Op),
+            status,
+            "the two doors give one status"
+        );
+    }
+
     /// Geometry selection P4.6: the MCP `tab_layout` reply and the marks
     /// the GUI tab editor shows (`state::tab_edit::refresh_layout`, the
     /// layout the viewport draws and the controller edits) are one answer,

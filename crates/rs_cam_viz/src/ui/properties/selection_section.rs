@@ -66,7 +66,7 @@ pub(crate) const PICK_A_FACE_FIX: &str = "Fix: pick a face of the model.";
 
 /// The hover of [`PICK_A_FACE_FIX`].
 const PICK_A_FACE_HOVER: &str = "The default rule takes the items of a drawing, and this model \
-    holds faces only. Click Pick, then click a flat face in the viewport.";
+    holds faces only. Click Pick below, then click a flat face in the viewport.";
 
 /// True when the selection refuses with nothing to cut (`Empty`) and a
 /// face pick is a fix: the toolpath model holds faces, and the reader cuts
@@ -181,23 +181,18 @@ pub(crate) fn draw_selection_section(
         draw_findings(ui, inputs, report, events);
         // P4.D: a new 2D op on a STEP model starts with the default rule,
         // which takes no face (D2), so it has nothing to cut. The fix is a
-        // face pick; the line turns Pick on.
-        if wants_a_face_pick(inputs, report)
-            && line_with_action(
+        // face pick. The line names the fix and has no button: the one
+        // Pick is in the action row below, which also shows when Pick is
+        // on and turns it off.
+        if wants_a_face_pick(inputs, report) {
+            line_with_action(
                 ui,
                 "",
                 PICK_A_FACE_FIX,
                 tokens::TEXT_BODY,
                 PICK_A_FACE_HOVER,
-                Some(("Pick", PICK_HOVER)),
-            )
-            && !ui_state.pick_is_on(inputs.toolpath_id, inputs.target)
-        {
-            ui_state.set_pick(Some(PickMode::new(
-                inputs.toolpath_id,
-                inputs.target,
-                inputs.item_use,
-            )));
+                None,
+            );
         }
     }
 

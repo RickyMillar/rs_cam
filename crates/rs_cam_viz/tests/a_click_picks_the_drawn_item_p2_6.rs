@@ -21,6 +21,11 @@
 //! 2. Faces, on a `Bottom` setup: a click on the drawn top face of the
 //!    part hits the model face that the flip draws on top (the model's
 //!    DOWN face), and the `TogglePick` of its key adds that face pick.
+//! 3. `a_hidden_model_takes_no_click_p4_d` and the last arm of the face
+//!    test: a model that the eye of its row hides (`SetModelVisibility`)
+//!    draws no mesh, no drawing and no hole marker, so a click on its hole
+//!    marker or on its face hits neither (geometry selection P4.D
+//!    follow-up). The click falls through to the stock, as on empty space.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test a_click_picks_the_drawn_item_p2_6
@@ -59,6 +64,7 @@ use rs_cam_viz::state::job::SetupFrame;
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::state::viewport::ToolpathDrawFilter;
 use rs_cam_viz::ui::AppEvent;
+use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
 
 /// The pick threshold of a point marker (`picking::PICK_THRESHOLD_POINT`).
 const PICK_THRESHOLD_PX: f32 = 12.0;
@@ -222,6 +228,7 @@ fn click(
         aspect: VIEW_W / VIEW_H,
         vw: VIEW_W,
         vh: VIEW_H,
+        visibility: &state.overlays.model_visibility,
     };
     pick(
         &ctx,
@@ -412,4 +419,62 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
         .filter_map(|k| k.brep)
         .collect();
     assert_eq!(picks, vec![model_down.0], "the face pick did not land");
+
+    // P4.D follow-up: a hidden model draws no mesh, so the click hits no
+    // face of it. Red proof: the `ctx.shows` filter in `pick_model_face`
+    // removed; the click hit the hidden face.
+    hide(&mut c, model_id);
+    let hit = click(&c, &camera, screen(&camera, drawn), None);
+    assert!(
+        !matches!(hit, Some(PickHit::ModelFace { .. })),
+        "a click hit a face of a hidden model: {hit:?}"
+    );
+}
+
+/// Hide the model `model_id` through the eye of its row.
+fn hide(c: &mut AppController<SilentBackend>, model_id: usize) {
+    c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
+        SetModelVisibilityArgs {
+            model_id,
+            visible: false,
+        },
+    )));
+    assert!(!c.state().overlays.model_visibility.is_visible(model_id));
+}
+
+/// Geometry selection P4.D follow-up: a hidden model draws no hole marker,
+/// so a click on the place of a marker picks no hole. Red proof: the
+/// `ctx.shows` check in `pick_drill_targets` removed; the click picked the
+/// hole of the hidden model.
+#[test]
+fn a_hidden_model_takes_no_click_p4_d() {
+    let mut c = drill_controller(FaceUp::Top, ZRotation::Deg0);
+    let stock = c.state().session.stock_config().clone();
+    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let camera = camera(&frame, &stock);
+    let tc = c.state().session.toolpath_configs()[0].clone();
+    let item = c
+        .state()
+        .session
+        .hole_selection(&tc)
+        .unwrap()
+        .items
+        .swap_remove(0);
+    let drawn_xy = frame.transform_point(P3::new(item.xy.x, item.xy.y, 0.0), &stock);
+    let at = screen(
+        &camera,
+        P3::new(drawn_xy.x, drawn_xy.y, frame.effective_stock(&stock).2),
+    );
+    let hit = click(&c, &camera, at, Some(tc.id));
+    assert!(
+        matches!(hit, Some(PickHit::Item { .. })),
+        "fixture: the click hits the visible hole: {hit:?}"
+    );
+
+    hide(&mut c, tc.model_id);
+    let hit = click(&c, &camera, at, Some(tc.id));
+    assert!(
+        !matches!(hit, Some(PickHit::Item { .. })),
+        "a click picked a hole of a hidden model: {hit:?}"
+    );
 }

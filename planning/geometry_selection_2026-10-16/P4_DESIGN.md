@@ -964,21 +964,23 @@ only. The tool home: the model panel plus the viewport popover.
 
 ## 3. MCP parity (every UI action)
 
-| UI action | MCP | State |
-|---|---|---|
-| Add or remove a rule, Reset, Clear picks | `edit_toolpath_selection` | exists; P4.1 adds `target` |
-| Click an item (add or remove) | `list_model_items` (+ `near`, P4.5) then `edit_toolpath_selection` | `near` NEW |
-| Shift-click a layer | `edit_toolpath_selection` `add_rule` | exists |
-| Counts, notes, lost picks, refusal | `selection_status` | exists; + `target`, `item_states` |
-| Face pick (STEP, STL, Face op, 3D op) | `list_model_items {kind: face}` + `edit_toolpath_selection` (`target`) | STL faces NEW (P4.7) |
-| Boundary selection editor | `edit_toolpath_selection {target: boundary}`, `set_boundary_config` | target NEW |
-| "Show me" | `set_ui_view {frame_items}` + screenshot | NEW (P4.4) |
-| Overlay rows | `set_ui_view {overlays}` (registry) | automatic |
-| Tab add, drag, delete | `set_toolpath_param tab_points`; read `tab_layout` | `tab_layout` NEW |
-| Import with scale and join tolerance | `import_model {units, join_tolerance_mm}` | NEW params |
-| Change import options | `set_model_import_options` | NEW |
-| Join, close, move ends | `edit_model_drawing` | NEW |
-| Hover, pick mode, filter bar | none (GUI interaction) | parity on the result |
+| UI action | MCP | State | Pinned by (P4.10 closure, 2026-10-20) |
+|---|---|---|---|
+| Add or remove a rule, Reset, Clear picks | `edit_toolpath_selection` | exists; P4.1 adds `target` | one command: `the_selection_section_writes_edits_only_p4_3` (GUI sends only it), `mcp_core_and_gui_give_one_selection_status_p2_7` |
+| Click an item (add or remove) | `list_model_items` (+ `near`, P4.5) then `edit_toolpath_selection` | `near` NEW | `an_mcp_near_pick_and_a_gui_click_give_one_pick_p4_5` |
+| Shift-click a layer | `edit_toolpath_selection` `add_rule` | exists | `an_mcp_near_pick_and_a_gui_click_give_one_pick_p4_5` (shift-click arm: `layer_rule_edit` = one wire `replace`) |
+| Counts, notes, lost picks, refusal | `selection_status` | exists; + `target`, `item_states` | `mcp_core_and_gui_give_one_selection_status_p2_7`, `one_item_is_one_pick_p2_7` (core, `item_states`) |
+| Face pick (STEP, STL, Face op, 3D op) | `list_model_items {kind: face}` + `edit_toolpath_selection` (`target`) | STL faces NEW (P4.7) | STL: `an_mcp_face_pick_and_a_gui_click_give_one_pick_on_an_stl_p4_7`; STEP: `an_mcp_face_pick_and_a_gui_click_give_one_pick_on_a_step_p4_d` (added in P4.10); 3D op: `mcp_core_and_gui_give_one_boundary_status_p4_1` |
+| Boundary selection editor | `edit_toolpath_selection {target: boundary}`, `set_boundary_config` | target NEW | `mcp_core_and_gui_give_one_boundary_status_p4_1` |
+| Face click on a 3D op whose boundary is not a selection (P4.D, L-8 revised) | none: MCP has no click act; `set_boundary_config` then `edit_toolpath_selection` reaches the same state | accepted (P4.D) | GUI only: `w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d`; no parity test |
+| "Show me" | `set_ui_view {frame_items}` + screenshot | NEW (P4.4) | GAP: one function (`RsCamApp::frame_selection_items`) serves both; GUI side `show_me_frames_the_items_p4_4`; no wire test (no headless `RsCamApp`) |
+| Model eye (P4.D) | `set_ui_view {model_visibility}` | NEW (P4.D) | GAP: one command (`UiCommand::SetModelVisibility`; registry row `Skip("set_ui_view carries model_visibility instead")`); GUI side `a_dxf_draws_on_import_and_its_eye_hides_it_p4_d`; no wire test (no headless `RsCamApp`) |
+| Overlay rows | `set_ui_view {overlays}` (registry) | automatic | registry sentries (`overlays_registry`) |
+| Tab add, drag, delete | `set_toolpath_param tab_points`; read `tab_layout` | `tab_layout` NEW | `mcp_and_gui_give_one_tab_layout_p4_6` (the read); the write is one row (`set_toolpath_param`) |
+| Import with scale and join tolerance | `import_model {units, join_tolerance_mm}` | NEW params | `import_model_with_options_matches_the_dialog_p4_8` |
+| Change import options | `set_model_import_options` | NEW | `set_model_import_options_matches_the_model_panel_p4_8` |
+| Join, close, move ends | `edit_model_drawing` | NEW | `edit_model_drawing_matches_the_model_panel_p4_9` |
+| Hover, pick mode, filter bar | none (GUI interaction) | parity on the result | the click and shift-click rows above |
 
 Every NEW tool gets a wire type in `rs_cam_mcp/src/server.rs` whose JSON
 equals the project-file JSON, and a parity test in

@@ -1,24 +1,27 @@
 # `state/` — GUI state
 
-The view-side state. It is not an alternate data model; the core owns the
-project. The entry point is `state::AppState` in `mod.rs`.
+The view-side state; the core owns the project, so it is not an alternate data model. Entry: `state::AppState`.
 
 ## Files
 
 - `mod.rs` — `AppState` and the facade.
-- `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness` for the
-  simulation. Both DERIVED, never stored.
+- `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
-- `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries
-  and configuration support.
-- `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
-  lane state and the GUI-only runtime overlay state.
+- `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support.
+- `simulation.rs`, `job.rs`, `runtime.rs` — simulation state, job lane state, GUI-only runtime overlay state.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
-- `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport (P4.D `drawing_draws`: every visible drawing draws, the selected op's model with states), the selection, the dock and catalogue (P4.D `ModelVisibility`, the model eye; view state, not saved); `selection_highlight.rs` (P4.4: which report the viewport colours, its upload detector, the note keys).
-- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (P4.9 `ModelDrawingEdits`: the ledger before and after), the export
-  wizard and the planner.
-- `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts (P4.9 `join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of `committed_number`, ui09); settings; pin frame (C8); the shoe plan memo and run sheet (H2);
-  `pick.rs` — P4.3 `SelectionUi` on `GuiState`: the pick mode (one at a time, L-3) and the `+ Rule` draft; P4.5 `PickFilter` (`effective_kinds`: on, served, held); P4.7 `held_kinds(model)` holds `Face` for an STL. `selection_highlight::HoverDetector` uploads the hover on a change only. P4.6: `ViewportMode { Pick, Tabs }` (L-3 by type); `tab_edit.rs` (the `tab_layout` read per toolpath revision, `TabMarksDetector`; sentry `the_tab_editor_writes_one_step_per_act_p4_6`).
+- `viewport.rs` — `drawing_draws`: every visible drawing draws; the selected op's model draws its states.
+- `selection.rs` — the selection. `overlays.rs` — the dock and catalogue; `ModelVisibility` (the model
+  eye: view state, not saved).
+- `selection_highlight.rs` — the report the viewport colours, `ReportDetector`, `HoverDetector`, the note keys.
+- `pick.rs` — `SelectionUi` on `GuiState`: one `ViewportMode { Pick, Tabs }` at a time (L-3 by type) and
+  the `+ Rule` draft; `PickFilter::effective_kinds` (on, served, held); `held_kinds` holds `Face` for an STL.
+- `tab_edit.rs` — the `tab_layout` read per toolpath revision and `TabMarksDetector`.
+- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`: the ledger before and
+  after), the export wizard and the planner.
+- `panels.rs` — panel drafts (`join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of
+  `committed_number`, ui09). `app_settings.rs`; `pin_view.rs` (pin frame, C8);
+  `shoe_plan.rs` (the shoe plan memo and run sheet, H2).
 
 ## Invariants
 
@@ -26,15 +29,12 @@ project. The entry point is `state::AppState` in `mod.rs`.
   except in `SimFreshness::Released`. A cancel or a failure keeps it.
 - Every run captures the cut trace (ruling 2026-10-02). `save_cut_trace` decides the FILE only.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
-- `AppState::simulation_is_stale` is the ONE door onto simulation freshness.
-  The core answers project inputs. Never the counter.
+- `AppState::simulation_is_stale` is the ONE door onto simulation freshness: core inputs, never the counter.
 - A panel draft with CONTENT lives here, not in egui temporary memory. A
   view toggle or a drag index may stay in egui memory, named with a reason.
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --test freshness_surfaces_g_freshrender`
-- `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector`
-- `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
-- `cargo test -p rs_cam_viz -q --test load_requests_only_25d_regen_g_loadregen`
-- `cargo test -p rs_cam_viz -q --test panel_drafts_leave_egui_memory_ui09`
+- `cargo test -p rs_cam_viz -q --test <name>`: `freshness_surfaces_g_freshrender`, `connector_reads_edge_state_g_connector`,
+  `effects_are_stamped_wp19`, `load_requests_only_25d_regen_g_loadregen`, `panel_drafts_leave_egui_memory_ui09`,
+  `the_tab_editor_writes_one_step_per_act_p4_6`

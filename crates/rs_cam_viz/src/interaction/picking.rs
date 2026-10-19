@@ -1,6 +1,7 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
 use crate::state::job::{ModelId, ObstacleId, SetupFrame, SetupId, StockConfig};
+use crate::state::overlays::ModelVisibility;
 use crate::state::pick::PickFilter;
 use crate::state::pin_view::pin_display_points;
 use crate::state::runtime::GuiState;
@@ -65,6 +66,19 @@ pub struct PickContext<'a> {
     pub aspect: f32,
     pub vw: f32,
     pub vh: f32,
+    /// The models the viewport draws (the eye of each model row,
+    /// `OverlayPanelState::model_visibility`). A pick tests only what the
+    /// viewport draws, so no pick hits a hidden model: not its mesh, its
+    /// faces, its drawing items, its hole markers or its loops.
+    pub visibility: &'a ModelVisibility,
+}
+
+impl PickContext<'_> {
+    /// True when the viewport draws the model `model_id`, so a pick may
+    /// hit it.
+    fn shows(&self, model_id: usize) -> bool {
+        self.visibility.is_visible(model_id)
+    }
 }
 
 /// Run the picking pipeline for a viewport click.
@@ -182,7 +196,7 @@ pub fn pick(
     // flip, a turn and a shift), so the ray parameter `t` keeps its length
     // and compares with the other hits.
     if matches!(workspace, Workspace::Toolpaths)
-        && let Some((t, hit)) = pick_model_face(session, display_frame, origin, dir, false)
+        && let Some((t, hit)) = pick_model_face(ctx, session, display_frame, origin, dir, false)
         && t < best_t
     {
         best_hit = Some(hit);
@@ -216,6 +230,7 @@ pub fn pick(
 /// with the hit point in the model frame. A plain click does not test it,
 /// so a click on a terrain keeps its old meaning.
 fn pick_model_face(
+    ctx: &PickContext<'_>,
     session: &ProjectSession,
     display_frame: Option<&SetupFrame>,
     origin: P3,
@@ -232,7 +247,7 @@ fn pick_model_face(
         None => (origin, dir),
     };
     let mut best: Option<(f64, PickHit)> = None;
-    for model in session.models() {
+    for model in session.models().iter().filter(|m| ctx.shows(m.id)) {
         if let Some(enriched) = &model.enriched_mesh {
             let mesh = enriched.as_mesh();
             // Fast AABB rejection
@@ -302,6 +317,9 @@ pub fn pick_items(
     let stock = session.stock_config();
     let frame = toolpath_setup_frame(session, toolpath_id);
     let z = drawing_plane_z(session, tc, frame.as_ref());
+    // A hidden model draws no drawing, so none of its items is picked.
+    let shown = ctx.shows(model.id);
+    let items = model.items.iter().filter(|_| shown);
     let screen = |p: &P2| -> Option<[f64; 2]> {
         let q = item_display_xy(frame.as_ref(), stock, *p);
         ctx.camera
@@ -315,7 +333,7 @@ pub fn pick_items(
     };
     let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
     let mut best: Option<(f64, &rs_cam_core::selection::MatchKey)> = None;
-    for item in model.items.iter() {
+    for item in items {
         // A face is a surface, not a drawn line: the ray arm below.
         if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
             continue;
@@ -357,7 +375,7 @@ pub fn pick_items(
         ray_origin.z as f64,
     );
     let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
-    pick_model_face(session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+    pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
 }
 
 /// The Z (display frame) at which the drawing of `tc` draws, and at which a
@@ -638,7 +656,10 @@ pub fn pick_open_path(
     session: &ProjectSession,
     model_id: ModelId,
 ) -> Option<rs_cam_core::selection::MatchKey> {
-    let model = session.models().iter().find(|m| m.id == model_id.0)?;
+    let model = session
+        .models()
+        .iter()
+        .find(|m| m.id == model_id.0 && ctx.shows(m.id))?;
     let stock = session.stock_config();
     let frame = model_display_frame(session, model_id);
     let z = drawing_display_z(frame.as_ref(), stock);
@@ -696,7 +717,7 @@ fn pick_drill_targets(
     let tc = session
         .toolpath_configs()
         .iter()
-        .find(|tc| tc.id == toolpath_id)?;
+        .find(|tc| tc.id == toolpath_id && ctx.shows(tc.model_id))?;
     let holes = session.hole_selection(tc)?;
     if holes.items.is_empty() {
         return None;
@@ -1020,7 +1041,9 @@ pub fn pick_tab_loop(
     id: ToolpathId,
     loops: &[rs_cam_core::selection::MatchKey],
 ) -> Option<(rs_cam_core::selection::MatchKey, [f64; 2])> {
-    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let (_, tc) = session
+        .find_toolpath_config_by_id(id)
+        .filter(|(_, tc)| ctx.shows(tc.model_id))?;
     let stock = session.stock_config();
     let frame = toolpath_setup_frame(session, id);
     let z = drawing_plane_z(session, tc, frame.as_ref());

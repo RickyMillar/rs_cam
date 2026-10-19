@@ -1,19 +1,18 @@
 # `render/` — the wgpu draw pipelines
 
-Every viewport pipeline. The entry point is `render::mod`, called from
-`app/viewport.rs`.
+Every viewport pipeline. The entry point is `render::mod`, called from `app/viewport.rs`.
 
 ## Files
 
 - `mod.rs` — the pipeline facade.
 - `camera.rs` — the camera and its projection.
-- `toolpath_render.rs`, `sim_render.rs`, `stock_render.rs`,
-  `mesh_render.rs` — the four content pipelines.
+- `toolpath_render.rs`, `sim_render.rs`, `stock_render.rs`, `mesh_render.rs` — the four content pipelines.
 - `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference
   geometry.
-- `colors.rs` — every colour constant, including `COLLISION_POINT`. P4.4: a selection state colour is its UI token / 255 (`token_rgb`); P4.D `DRAWING_NEUTRAL`, a drawing with no drawn toolpath.
-- `mod.rs` `hover_lines` — P4.5: the pick hover ring, its own buffer, drawn after the drawing.
-- `mod.rs` `tab_lines` — P4.6: the tab marks of the tab editor, its own buffer; `TAB_AUTO`, `TAB_HAND`, `TAB_DRAGGED` in `colors.rs`.
+- `colors.rs` — every colour constant (`COLLISION_POINT` too). A selection state colour is its UI token
+  / 255 (`token_rgb`); `DRAWING_NEUTRAL` colours a drawing that no drawn toolpath reads.
+- `mod.rs` `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
+  `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe the tool
   ghost and the tool preview draw; a soft part draws lighter.
 - `upload_cache.rs` — the content-addressed keys for the GPU upload pass.

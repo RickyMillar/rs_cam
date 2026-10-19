@@ -463,6 +463,7 @@ mod an_stl_face_click_p4_7 {
             aspect: VIEW_W / VIEW_H,
             vw: VIEW_W,
             vh: VIEW_H,
+            visibility: &state.overlays.model_visibility,
         };
         pick_items(&ctx, &state.session, tc.id, &mode.filter, &kinds)
             .expect("the ray hits the mesh")

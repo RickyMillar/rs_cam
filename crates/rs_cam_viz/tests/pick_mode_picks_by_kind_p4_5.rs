@@ -22,6 +22,10 @@
 //! 4. `the_hover_uploads_once_per_hover_change_p4_5`: along a pointer path
 //!    the hover detector asks for one upload per change of the hovered
 //!    item, and none while the item stays the same.
+//! 5. `a_hidden_model_takes_no_pick_p4_d`: a model that the eye of its
+//!    row hides (`SetModelVisibility`) draws no drawing, so a pick-mode
+//!    click on its loop and a popover click on its open path pick nothing.
+//!    When the eye shows the model again, both clicks pick again.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test pick_mode_picks_by_kind_p4_5
@@ -57,15 +61,18 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::interaction::picking::{PickContext, PickHit, drawing_plane_z, pick_items};
+use rs_cam_viz::interaction::picking::{
+    PickContext, PickHit, drawing_plane_z, pick_items, pick_open_path,
+};
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
-use rs_cam_viz::state::job::SetupFrame;
+use rs_cam_viz::state::job::{ModelId, SetupFrame};
 use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
 use rs_cam_viz::state::selection::Selection as UiSelection;
 use rs_cam_viz::state::selection_highlight::HoverDetector;
 use rs_cam_viz::ui::AppEvent;
 use rs_cam_viz::ui::pick_bar::kind_chips;
+use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
 
 /// The pick threshold of a line (`picking::PICK_THRESHOLD_TOOLPATH`).
 const PICK_THRESHOLD_PX: f32 = 15.0;
@@ -293,6 +300,7 @@ fn pick_at(
         aspect: VIEW_W / VIEW_H,
         vw: VIEW_W,
         vh: VIEW_H,
+        visibility: &state.overlays.model_visibility,
     };
     match pick_items(&ctx, &state.session, tc.id, filter, &kinds)? {
         PickHit::Item { key, .. } => Some(key),
@@ -598,4 +606,87 @@ fn the_hover_uploads_once_per_hover_change_p4_5() {
         "one upload per change (loop, TEXT loop, nothing), none while the item stays"
     );
     assert_eq!(detector.hovered(), None);
+}
+
+/// The open path of model 0 under the pointer at `at`, as the P4.9
+/// popover click runs it.
+fn open_path_at(
+    c: &AppController<SilentBackend>,
+    camera: &OrbitCamera,
+    at: [f32; 2],
+) -> Option<MatchKey> {
+    let state = c.state();
+    let ctx = PickContext {
+        camera,
+        screen_x: at[0],
+        screen_y: at[1],
+        aspect: VIEW_W / VIEW_H,
+        vw: VIEW_W,
+        vh: VIEW_H,
+        visibility: &state.overlays.model_visibility,
+    };
+    pick_open_path(&ctx, &state.session, ModelId(0))
+}
+
+/// Show or hide model 0 through the eye of its row.
+fn set_visible(c: &mut AppController<SilentBackend>, visible: bool) {
+    c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
+        SetModelVisibilityArgs {
+            model_id: 0,
+            visible,
+        },
+    )));
+    assert_eq!(
+        c.state().overlays.model_visibility.is_visible(0),
+        visible,
+        "the eye command did not set the visibility"
+    );
+}
+
+/// Geometry selection P4.D follow-up: a hidden model takes no pick. Red
+/// proof: the `ctx.shows` checks in `pick_items` and `pick_open_path`
+/// removed; the clicks on the hidden drawing picked the loop and the path.
+#[test]
+fn a_hidden_model_takes_no_pick_p4_d() {
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let mode = pick_on(&mut c);
+    let camera = camera(&c);
+    let items: Vec<Item> = c.state().session.models()[0]
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    let (Shape::Loop(outline), Shape::Path(path)) = (items[0].shape(), items[2].shape()) else {
+        unreachable!("fixture: item 0 is a loop, item 2 an open path");
+    };
+    let on_loop = drawn(&c, &camera, mid(outline.exterior[0], outline.exterior[1]));
+    let on_path = drawn(&c, &camera, mid(path.exterior[0], path.exterior[1]));
+
+    // Visible: the clicks pick the loop and the open path.
+    let loop_key = pick_at(&c, &camera, &mode.filter, on_loop).expect("the loop picks");
+    assert!(loop_key.names_same_geometry(items[0].key()));
+    let path_key = open_path_at(&c, &camera, on_path).expect("the open path picks");
+    assert!(path_key.names_same_geometry(items[2].key()));
+
+    // Hidden: the viewport draws no drawing, so nothing picks.
+    set_visible(&mut c, false);
+    assert_eq!(
+        pick_at(&c, &camera, &mode.filter, on_loop),
+        None,
+        "a pick-mode click picked an item of a hidden model"
+    );
+    assert_eq!(
+        open_path_at(&c, &camera, on_path),
+        None,
+        "a popover click picked an open path of a hidden model"
+    );
+
+    // Shown again: the clicks pick again.
+    set_visible(&mut c, true);
+    assert!(pick_at(&c, &camera, &mode.filter, on_loop).is_some());
+    assert!(open_path_at(&c, &camera, on_path).is_some());
 }

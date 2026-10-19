@@ -32,6 +32,7 @@ impl RsCamApp {
             },
             vw: rect.width(),
             vh: rect.height(),
+            visibility: &self.controller.state().overlays.model_visibility,
         }
     }
 
@@ -343,6 +344,7 @@ impl RsCamApp {
             aspect: rect.width() / rect.height(),
             vw: rect.width(),
             vh: rect.height(),
+            visibility: &self.controller.state().overlays.model_visibility,
         };
 
         let workspace = self.controller.state().workspace;
@@ -692,6 +694,7 @@ impl RsCamApp {
                 },
                 vw: rect.width(),
                 vh: rect.height(),
+                visibility: &self.controller.state().overlays.model_visibility,
             };
             let state = self.controller.state();
             if let Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. }) =
@@ -734,6 +737,7 @@ impl RsCamApp {
                 },
                 vw: rect.width(),
                 vh: rect.height(),
+                visibility: &self.controller.state().overlays.model_visibility,
             };
             let state = self.controller.state();
             if let Some(crate::interaction::picking::PickHit::Toolpath { id, move_index }) =
