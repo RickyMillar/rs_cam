@@ -2687,3 +2687,22 @@ Known gaps:
    a decision.
 5. F034: the project and config loaders refuse every unknown key
    (`deny_unknown_fields`), under the no-legacy ruling.
+
+## 10. Progress
+
+| Wave | Commit | Findings closed | Notes |
+|---|---|---|---|
+| W1 Tool model | e67652e6 | F176, F029 step 1, F075, F210 (tool part) | Lead ruling: the tool domain holds only the bounds that the geometry gives; the old GUI literals are the editor drag range (`ui_range`) and refuse nothing. Left: ProjectSessionBuilder does not validate; `BullNoseEndmill` has pub fields (ToolShape end state, F182); `corner_radius_mm` and `corner_radius` are one concept stored twice. |
+| W3 Verdict surfaces | 5561dc37 | F113, F189, F117, F181 (reply part), F048 | F117 rule is `stepover > diameter`. Left: CLI `summary.json` collision_count is a holder-only sweep, the verdict count includes obstacles; F117 has no CLI generation-refusal door. Not seen on screen. |
+| W2 CLI boundary | 9fd4f3cb | F014, F028 (CLI part), F057, F116 step 1, F151 | Job tools with unset stickout and shank take the ToolConfig defaults (45 mm, 6.35 mm). Left: README "Verification gate" lists a workspace-wide `cargo test`; `sweep::write_gcode` calls raw `emit_gcode` (W5). |
+
+Pre-existing reds found during W1 (red at 82d8e926, not caused by a wave),
+for W14: viz `component_contracts_up2::the_raw_drag_value_allowance_is_not_vacuous_ui10`
+(`ui/properties/setup.rs` has 1 raw `DragValue`, the test expects 2) and viz
+`wizard_e2e::default_wizard_state_does_not_mutate_export` (the hand-built
+baseline has no feed-stage line since 66a81d77).
+
+Next, by REVIEW section 3: W4 (project file and tokens: the Z-datum refusal
+of ruling 1, `deny_unknown_fields` after selection P4 and P6), W5 (export
+door), W6 (param domains, after F206), then the waves that wait for the
+selection programme. F033 (ruling 2) waits for selection P3.
