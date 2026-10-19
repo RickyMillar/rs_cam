@@ -616,7 +616,6 @@ impl<B: ComputeBackend> AppController<B> {
             rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
             stock_source: crate::state::toolpath::StockSource::Fresh,
             coolant: rs_cam_core::gcode::CoolantMode::Off,
-            face_selection: None,
             debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
             planner_origin: None,

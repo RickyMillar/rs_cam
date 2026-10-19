@@ -45,7 +45,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::session::{polygon_model, single_op_session_with, stock_under};
+use common::session::{pick_faces, polygon_model, single_op_session_with, stock_under};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -453,21 +453,30 @@ fn step_stock() -> StockConfig {
     }
 }
 
-fn face_pick_session(face: u16) -> ProjectSession {
+fn face_session() -> ProjectSession {
     single_op_session_with(
         step_stock(),
         endmill_tool_config(TOOL_DIAMETER),
         step_part(),
         "p2_4 pocket",
         OperationConfig::Pocket(PocketConfig::default()),
-        |tc| tc.face_selection = Some(vec![FaceGroupId(face)]),
+        |_| {},
     )
 }
 
+fn face_pick_session(face: u16) -> ProjectSession {
+    let mut s = face_session();
+    pick_faces(&mut s, 0, &[face]).unwrap();
+    s
+}
+
+/// P2.6: a face that is not flat has no Face item, so it has no key. The
+/// pick refuses at the click (`face_pick_key`), with the same cause and
+/// text that generation gave when the face id was stored.
 #[test]
 fn face_not_flat() {
-    let mut s = face_pick_session(1);
-    let r = refusal_of(&mut s);
+    let mut s = face_session();
+    let r = pick_faces(&mut s, 0, &[1]).unwrap_err().for_op("Pocket");
     assert_eq!(
         r.cause,
         RefusalCause::FaceNotFlat {

@@ -172,15 +172,12 @@ impl ProjectSession {
         // the op (`OperationConfig::selection`) against the items of the
         // models and the stock, then move the items into the setup frame
         // through THE frame door (`to_setup_frame`). The prologue runs
-        // `view` over it. The picked faces join the selection as picks. An
-        // op that holds no selection (Face, a 3D op) resolves only its
-        // picked faces, for the auto top below; its prologue reads no item.
-        // N12 items 1 and 2: each picked BREP face enters the selection as
-        // a pick, so it reaches the op through `resolve` and `view` as any
-        // other item. P2.4: THE resolution (`resolve_selection_frames`) is
-        // the one the `selection_status` query reads, so the two give the
-        // same refusal. A picked face that is not flat refuses there
-        // (`FaceNotFlat`), by its face id.
+        // `view` over it. A face pick is a pick of the op selection (P2.6),
+        // so it reaches the op through `resolve` and `view` as any other
+        // item, and gives the auto top below. An op that holds no selection
+        // (Face, a 3D op) resolves to no item; its prologue reads no item.
+        // P2.4: THE resolution (`resolve_selection_frames`) is the one the
+        // `selection_status` query reads, so the two give the same refusal.
         let selection = self.resolve_selection_frames(tc, &ctx)?.setup;
         // DESIGN 7.2: the top of the picked faces, in the SETUP frame.
         let face_top_z = selection.face_top_z();

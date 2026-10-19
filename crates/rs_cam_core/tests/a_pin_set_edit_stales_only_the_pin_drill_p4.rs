@@ -54,7 +54,6 @@ fn tc(name: &str, op: OperationConfig, stock_source: StockSource) -> ToolpathCon
         boundary_inherit: true,
         stock_source,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),

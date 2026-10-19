@@ -56,8 +56,8 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
                     new_op: tc.operation.clone(),
                     old_dressups: tc.dressups.clone(),
                     new_dressups: tc.dressups.clone(),
-                    old_face_selection: None,
-                    new_face_selection: None,
+                    old_boundary: tc.boundary.clone(),
+                    new_boundary: tc.boundary.clone(),
                     old_feeds_provenance: tc.feeds_provenance.clone(),
                     new_feeds_provenance: tc.feeds_provenance.clone(),
                 }
@@ -257,8 +257,8 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
             },
             old_dressups: Default::default(),
             new_dressups: Default::default(),
-            old_face_selection: None,
-            new_face_selection: None,
+            old_boundary: Default::default(),
+            new_boundary: Default::default(),
             old_feeds_provenance: Default::default(),
             new_feeds_provenance: Default::default(),
         });
@@ -355,8 +355,8 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
             new_op: after_op,
             old_dressups: Default::default(),
             new_dressups: Default::default(),
-            old_face_selection: None,
-            new_face_selection: None,
+            old_boundary: Default::default(),
+            new_boundary: Default::default(),
             old_feeds_provenance: before_provenance.clone(),
             new_feeds_provenance: after_provenance.clone(),
         });

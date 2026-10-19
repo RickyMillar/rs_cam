@@ -23,15 +23,26 @@ type ReachOverlaySource = (Arc<rs_cam_core::mesh::TriangleMesh>, Arc<Vec<[f32; 3
 
 impl RsCamApp {
     /// Get selected BREP face IDs for rendering highlights.
-    /// Reads from the active toolpath's face_selection when a toolpath is selected,
-    /// or from the visual Selection::Face/Faces state otherwise.
+    /// Reads the faces that the op selection of the selected toolpath
+    /// resolves to (geometry selection P2.6: the `selection_status` memo,
+    /// so a face that a rule matches is lit too), or the visual
+    /// Selection::Face/Faces state otherwise.
     fn selected_face_ids(&self) -> Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
         let state = self.controller.state();
         match &state.selection {
             Selection::Toolpath(tp_id) => state
                 .session
                 .find_toolpath_config_by_id(*tp_id)
-                .and_then(|(_, tc)| tc.face_selection.clone())
+                .and_then(|(_, tc)| state.session.selection_status(tc).ok())
+                .map(|report| {
+                    report
+                        .selected
+                        .iter()
+                        .filter(|k| k.kind == rs_cam_core::selection::ItemKind::Face)
+                        .filter_map(|k| k.brep)
+                        .map(rs_cam_core::geometry::enriched_mesh::FaceGroupId)
+                        .collect()
+                })
                 .unwrap_or_default(),
             Selection::Face(_, face_id) => vec![*face_id],
             Selection::Faces(_, face_ids) => face_ids.clone(),
@@ -537,15 +548,10 @@ impl RsCamApp {
                     && model.id == *mid
                 {
                     for item in &holes.items {
-                        let (tx, ty) = if let Some(setup) = setup_ref {
-                            let tp = setup.transform_point(
-                                rs_cam_core::geo::P3::new(item.xy.x, item.xy.y, 0.0),
-                                &stock,
-                            );
-                            (tp.x, tp.y)
-                        } else {
-                            (item.xy.x, item.xy.y)
-                        };
+                        // P2.6: the one point the pick tests too.
+                        let at = crate::interaction::picking::hole_display_point(
+                            setup_ref, &stock, item.xy,
+                        );
                         // G-DRILLPICKSTALE: the loop is over the ITEMS of
                         // the model. A pick that names no item is drawn
                         // nowhere; the panel prints its refusal instead.
@@ -557,9 +563,9 @@ impl RsCamApp {
                         let radius = item.diameter.map_or(1.5, |d| (d / 2.0) as f32).max(1.0);
                         super::push_circle_vertices(
                             &mut verts,
-                            tx as f32,
-                            ty as f32,
-                            planar_z,
+                            at.x as f32,
+                            at.y as f32,
+                            at.z as f32,
                             radius,
                             marker_color,
                             16,

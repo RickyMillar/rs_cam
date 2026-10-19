@@ -200,23 +200,40 @@ impl RsCamApp {
             (_, PickHit::Toolpath { id, .. }) => {
                 self.controller.state_mut().selection = Selection::Toolpath(id);
             }
-            (Workspace::Toolpaths, PickHit::DrillTarget { toolpath_id, key }) => {
-                // Toggle this item in the drill op's selection (undo-tracked).
+            (Workspace::Toolpaths, PickHit::Item { toolpath_id, key }) => {
+                // Geometry selection P2.6: toggle this item in the op
+                // selection. The edit lands in `operation`, which the
+                // inspector undo snapshot covers.
                 self.controller
                     .events_mut()
-                    .push(crate::ui::AppEvent::ToggleDrillTarget { toolpath_id, key });
+                    .push(crate::ui::AppEvent::TogglePick { toolpath_id, key });
             }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
-                // Route face toggle through controller event for undo support.
-                // The controller handler also updates visual selection and pending_upload.
+                // A face pick is a `MatchKey` pick of the op selection
+                // (P2.6). The key comes from the Face item of the face; a
+                // face that is not flat has no item and is named.
                 if let Selection::Toolpath(tp_id) = self.controller.state().selection {
-                    self.controller
-                        .events_mut()
-                        .push(crate::ui::AppEvent::ToggleFaceSelection {
-                            toolpath_id: tp_id,
-                            model_id,
-                            face_id,
-                        });
+                    let key = {
+                        let session = &self.controller.state().session;
+                        session
+                            .find_toolpath_config_by_id(tp_id)
+                            .map(|(_, tc)| session.face_pick_key(tc, model_id.0, face_id))
+                    };
+                    match key {
+                        Some(Ok(key)) => {
+                            self.controller
+                                .events_mut()
+                                .push(crate::ui::AppEvent::TogglePick {
+                                    toolpath_id: tp_id,
+                                    key,
+                                });
+                        }
+                        Some(Err(refusal)) => self.controller.push_notification(
+                            format!("Could not pick the face: {refusal}"),
+                            crate::controller::Severity::Warning,
+                        ),
+                        None => {}
+                    }
                 }
             }
             _ => {}

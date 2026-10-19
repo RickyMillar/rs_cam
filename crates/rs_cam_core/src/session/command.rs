@@ -92,17 +92,17 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
-use super::selection_status::SelectionReport;
+use super::selection_status::{ModelItem, SelectionReport};
 use super::{
     GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
     ProjectSession, RecommendClearingStrategyHandle, SessionError, ToolpathComputeResult,
     ToolpathConfig,
 };
 use crate::compute::catalog::{OperationConfig, OperationSchema};
+use crate::compute::config::BoundaryConfig;
 use crate::compute::config::DressupConfig;
 use crate::compute::simulate::SimulationResult;
 use crate::feeds::FeedsProvenance;
-use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::machine::strategy_advisor::StrategyRecommendation;
 use crate::stock::simulation_cut::SimulationCutTrace;
 
@@ -550,6 +550,20 @@ macro_rules! for_each_command {
                      "the batch CLI reads no selection status; a refusal stops its run",
                  ),
              }),
+            (Query, ListItems, "list_model_items", ListItemsArgs, ListItemsAnswer,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI picks items in the viewport; the selection panel with an item \
+                      list comes in geometry selection P4",
+                 ),
+                 mcp: Reach::Skip(
+                     "the MCP selection tools come with the selection wire types (geometry \
+                      selection P2.7)",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI writes rules in its job file; it lists no items",
+                 ),
+             }),
             (Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,
              GetOperationSchemaAnswer,
              Surfaces {
@@ -584,16 +598,6 @@ macro_rules! for_each_command {
                  ),
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
-                 ),
-             }),
-            (Command, SetFaceSelection, "set_face_selection", SetFaceSelectionArgs, Effects,
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "no MCP tool picks BREP faces; the wire has no such mutation",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI picks no faces",
                  ),
              }),
             (Command, EditSelection, "edit_toolpath_selection",
@@ -992,7 +996,7 @@ impl std::fmt::Debug for AdoptSimulationArgs {
 /// The arguments of the `restore_toolpath_snapshot` command.
 ///
 /// The GUI undo stack and the GUI redo stack install a captured
-/// `(operation, dressups, face_selection)` triple on one toolpath. The
+/// `(operation, dressups, boundary)` triple on one toolpath. The
 /// payload also carries the feeds provenance of that triple, so one
 /// command writes the values and the stamp together.
 ///
@@ -1019,8 +1023,10 @@ pub struct RestoreToolpathSnapshotArgs {
     pub operation: Box<OperationConfig>,
     /// The dressup configuration to install.
     pub dressups: Box<DressupConfig>,
-    /// The BREP face selection to install.
-    pub face_selection: Option<Vec<FaceGroupId>>,
+    /// The machining boundary to install (geometry selection D11, P2.6).
+    /// A boundary can hold a selection, so a boundary pick is an edit the
+    /// user undoes. The op selection is inside `operation`.
+    pub boundary: Box<BoundaryConfig>,
     /// The feeds provenance to install.
     ///
     /// `None` means the caller restores no provenance. The toolpath
@@ -1711,6 +1717,27 @@ pub struct SelectionStatusArgs {
     pub index: usize,
 }
 
+/// The arguments of the `list_model_items` read (geometry selection
+/// DESIGN 10.2): the items of one model, the pick source of an agent.
+#[derive(Debug, Clone)]
+pub struct ListItemsArgs {
+    /// The project id of the model (`LoadedModel::id`), not an index.
+    pub model_id: usize,
+    /// Only the items on this layer. `None` = every layer.
+    pub layer: Option<String>,
+    /// Only the items of this kind. `None` = every kind.
+    pub kind: Option<crate::selection::ItemKind>,
+}
+
+/// The answer to the `list_model_items` read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListItemsAnswer {
+    /// The items in import order. Each key names its source as
+    /// `SourceRef::Model(model_id)`, so a pick that copies it reads this
+    /// model whatever the model of the toolpath is.
+    pub items: Vec<ModelItem>,
+}
+
 /// The arguments of the `get_operation_schema` read.
 #[derive(Debug, Clone)]
 pub struct GetOperationSchemaArgs {
@@ -1755,17 +1782,6 @@ pub struct ReorderToolpathArgs {
 pub struct RemoveModelArgs {
     /// The index of the model to remove.
     pub index: usize,
-}
-
-/// The arguments of the `set_face_selection` command.
-///
-/// `face_ids` is `None` when the operation machines the whole model.
-#[derive(Debug, Clone)]
-pub struct SetFaceSelectionArgs {
-    /// The index of the toolpath the command writes.
-    pub index: usize,
-    /// The BREP faces the operation machines.
-    pub face_ids: Option<Vec<FaceGroupId>>,
 }
 
 /// The arguments of the `edit_toolpath_selection` command (geometry
@@ -2518,7 +2534,6 @@ impl ProjectSession {
             // derives a stale set of its own.
             Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
             Command::RemoveModel(args) => self.remove_model(args.index),
-            Command::SetFaceSelection(args) => self.set_face_selection(args.index, args.face_ids),
             Command::EditSelection(args) => self.edit_toolpath_selection(args.index, args.edit),
             Command::AddObstacle(args) => self.add_obstacle(args.setup_index, *args.obstacle),
             Command::ReplaceObstacle(args) => {
@@ -2570,7 +2585,7 @@ impl ProjectSession {
                     index,
                     operation,
                     dressups,
-                    face_selection,
+                    boundary,
                     feeds_provenance,
                 } = args;
                 if index >= self.toolpath_count() {
@@ -2580,7 +2595,7 @@ impl ProjectSession {
                     if let Some(tc) = session.toolpath_configs.get_mut(index) {
                         tc.operation = *operation;
                         tc.dressups = *dressups;
-                        tc.face_selection = face_selection;
+                        tc.boundary = *boundary;
                         if let Some(provenance) = feeds_provenance {
                             tc.feeds_provenance = *provenance;
                         }
@@ -2678,6 +2693,15 @@ impl ProjectSession {
                 Ok(QueryAnswer::SelectionStatus(SelectionReport::clone(
                     &report,
                 )))
+            }
+            Query::ListItems(args) => {
+                let ListItemsArgs {
+                    model_id,
+                    layer,
+                    kind,
+                } = args;
+                let items = self.list_model_items(model_id, layer.as_deref(), kind)?;
+                Ok(QueryAnswer::ListItems(ListItemsAnswer { items }))
             }
             Query::GetOperationSchema(args) => {
                 let GetOperationSchemaArgs { operation_type } = args;

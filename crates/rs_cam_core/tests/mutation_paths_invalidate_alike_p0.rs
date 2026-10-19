@@ -168,7 +168,6 @@ fn tc(
         boundary_inherit: true,
         stock_source,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),
@@ -463,14 +462,14 @@ fn arm_snapshot() -> Observation {
     let mut op = s.toolpath_configs()[0].operation.clone();
     op.set_feed_rate(EDITED_FEED_RATE);
     let dressups = s.toolpath_configs()[0].dressups.clone();
-    let faces = s.toolpath_configs()[0].face_selection.clone();
+    let boundary = s.toolpath_configs()[0].boundary.clone();
     let _ = s
         .apply(Command::RestoreToolpathSnapshot(
             RestoreToolpathSnapshotArgs {
                 index: 0,
                 operation: Box::new(op),
                 dressups: Box::new(dressups),
-                face_selection: faces,
+                boundary: Box::new(boundary),
                 feeds_provenance: None,
             },
         ))

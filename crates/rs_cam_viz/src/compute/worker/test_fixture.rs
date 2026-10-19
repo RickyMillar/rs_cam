@@ -218,7 +218,6 @@ fn toolpath_config(
         boundary_inherit: false,
         stock_source: spec.stock_source,
         coolant: Default::default(),
-        face_selection: None,
         debug_options: spec.debug_options,
         feeds_provenance: Default::default(),
         rest_analysis: spec.rest_analysis.clone(),

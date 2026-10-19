@@ -55,7 +55,6 @@ fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         boundary_inherit: true,
         stock_source: crate::session::StockSource::Fresh,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: crate::feeds::FeedsProvenance::default(),
         rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
@@ -719,22 +718,33 @@ fn move_toolpath_invalid_target() {
     ));
 }
 
-// ── Face selection ───────────────────────────────────────────
+// ── Selection edit ───────────────────────────────────────────
 
 #[test]
-fn set_face_selection_invalidates() {
+fn a_face_pick_edit_invalidates() {
     let mut s = make_session();
     let _ = s.add_tool(make_tool());
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
     s.results.insert(0, fake_result());
 
-    let faces = vec![
-        crate::geometry::enriched_mesh::FaceGroupId(1),
-        crate::geometry::enriched_mesh::FaceGroupId(3),
-    ];
-    let _ = s.set_face_selection(0, Some(faces)).unwrap();
+    // P2.6: a face pick is a `MatchKey` pick of the op selection.
+    let key = crate::selection::MatchKey {
+        source: crate::selection::SourceRef::ToolpathModel,
+        kind: crate::selection::ItemKind::Face,
+        layer: None,
+        anchor: [10.0, 20.0],
+        measure: 5.0,
+        brep: Some(3),
+    };
+    let _ = s
+        .edit_toolpath_selection(0, crate::selection::SelectionEdit::AddPick(key.clone()))
+        .unwrap();
 
-    assert!(s.toolpath_configs()[0].face_selection.is_some());
+    let picks = s.toolpath_configs()[0]
+        .operation
+        .selection()
+        .map(|sel| sel.picks().to_vec());
+    assert_eq!(picks, Some(vec![key]));
     assert!(!s.results.contains_key(&0));
     assert!(s.simulation.is_none());
 }
@@ -1023,7 +1033,7 @@ fn adopt_result_after_apply_snapshot_restores_cache() {
             index: 0,
             operation: Box::new(OperationConfig::Pocket(PocketConfig::default())),
             dressups: Box::new(DressupConfig::default()),
-            face_selection: None,
+            boundary: Box::new(crate::compute::config::BoundaryConfig::default()),
             feeds_provenance: None,
         },
     ));

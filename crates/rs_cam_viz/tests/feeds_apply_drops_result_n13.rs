@@ -147,7 +147,6 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
         rest_analysis: Default::default(),
         stock_source,
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         planner_origin: None,

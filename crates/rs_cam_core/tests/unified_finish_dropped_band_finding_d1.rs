@@ -165,7 +165,6 @@ fn toolpath(heights: HeightsConfig, tool_id: usize, model_id: usize) -> Toolpath
         boundary_inherit: true,
         stock_source: StockSource::default(),
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),

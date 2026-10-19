@@ -9,7 +9,6 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::obstacle::{Obstacle, validate_obstacle};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::{FaceUp, ZRotation};
-use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ObstacleId;
 use crate::session::{Effects, ProjectSession, SessionError, SetupData, SimulationDropCause};
 
@@ -66,8 +65,10 @@ impl ProjectSession {
 
     /// Remove a model by index.
     ///
-    /// The removal drops no toolpath result. A toolpath binds a model by
-    /// id, so a bound toolpath refuses to generate rather than reading
+    /// The removal drops the results of every toolpath that reads the
+    /// model, with the same rule as a re-import (`drop_results_for_model`,
+    /// geometry selection P2.6). A toolpath binds a model by id, so a
+    /// reader of the removed model refuses to generate rather than reading
     /// the wrong geometry.
     #[instrument(skip(self))]
     pub(crate) fn remove_model(&mut self, index: usize) -> Result<Effects, SessionError> {
@@ -76,6 +77,17 @@ impl ProjectSession {
                 return Err(SessionError::MissingGeometry(format!(
                     "Model index {index} not found"
                 )));
+            }
+            // P2.6: the same rule as a re-import. Every toolpath that reads
+            // the model (its own model, a rule, a pick, a surface or a
+            // boundary: `ToolpathConfig::models_read`) loses its result
+            // and the results downstream of it. A reader whose OWN model
+            // is removed stays in the project; its next generation refuses
+            // `MissingSource` with the model id (P2.4), so no stale result
+            // of a removed model reaches an export.
+            let model_id = session.models.get(index).map(|m| m.id);
+            if let Some(model_id) = model_id {
+                session.drop_results_for_model(model_id);
             }
             session.models.remove(index);
             Ok(())
@@ -229,25 +241,6 @@ impl ProjectSession {
             pause_message: None,
         });
         idx
-    }
-
-    /// Set the BREP face selection for a toolpath, invalidating its cached result.
-    #[instrument(skip(self, face_ids))]
-    pub(crate) fn set_face_selection(
-        &mut self,
-        index: usize,
-        face_ids: Option<Vec<FaceGroupId>>,
-    ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
-            let tc = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            tc.face_selection = face_ids;
-            let enabled = tc.enabled;
-            session.invalidate_result_chain(index, enabled);
-            Ok(())
-        })
     }
 
     /// Apply one edit to the selection of a toolpath's op (geometry

@@ -230,3 +230,59 @@ fn a_reimport_stales_every_reader_of_the_model_p2_5() {
         );
     }
 }
+
+/// Geometry selection P2.6: a REMOVAL of model B stales the same readers
+/// as a re-import (one rule, `drop_results_for_model`). Before P2.6
+/// `remove_model` dropped no result, so a toolpath that read model B
+/// through a boundary, a rule, an exclude or a surface kept a result cut
+/// on a model that no longer exists.
+///
+/// The own-model reader (index 0) stays in the project. Its selection now
+/// names a model that does not exist, so `selection_status` (= generation)
+/// refuses `MissingSource` with the id.
+#[test]
+fn a_model_removal_stales_every_reader_p2_6() {
+    let mut session = fixture();
+    let index_of_b = session
+        .models()
+        .iter()
+        .position(|m| m.id == MODEL_B)
+        .unwrap();
+    let effects = session
+        .apply(Command::RemoveModel(
+            rs_cam_core::session::RemoveModelArgs { index: index_of_b },
+        ))
+        .expect("model B exists, so the removal applies");
+    let stale: Vec<usize> = effects.stale.iter().copied().collect();
+    assert_eq!(
+        stale,
+        vec![0, 1, 3, 4, 5],
+        "the removal must stale every reader of model B (own model, enabled \
+         boundary, op rule, surface model, op exclude), and no other"
+    );
+    for index in [0, 1, 3, 4, 5] {
+        assert!(
+            session.get_result(index).is_none(),
+            "toolpath {index} reads the removed model; its result must drop"
+        );
+    }
+    for index in [2, 6] {
+        assert!(
+            session.get_result(index).is_some(),
+            "toolpath {index} does not read model B; it keeps its result"
+        );
+    }
+    assert_eq!(session.toolpath_count(), 7, "a removal deletes no toolpath");
+    let own = session.toolpath_configs()[0].clone();
+    let refusal = session
+        .selection_status(&own)
+        .unwrap()
+        .refusal
+        .clone()
+        .expect("the own-model reader refuses");
+    assert_eq!(
+        refusal.cause,
+        rs_cam_core::selection::RefusalCause::MissingSource(SourceRef::Model(ModelId(MODEL_B))),
+        "the refusal names the removed model: {refusal}"
+    );
+}

@@ -102,7 +102,6 @@ fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) ->
         boundary_inherit: false,
         stock_source,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),

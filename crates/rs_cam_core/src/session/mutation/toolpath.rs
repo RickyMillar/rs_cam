@@ -627,7 +627,7 @@ impl ProjectSession {
             let enabled = tc.enabled;
             // A different cutter removes different material, so this is a
             // stock-chain change: same invalidation as
-            // `set_face_selection` and `set_heights_config`, not the
+            // `edit_toolpath_selection` and `set_heights_config`, not the
             // narrower `remove_result`.
             session.invalidate_result_chain(index, enabled);
             Ok(())
@@ -650,11 +650,10 @@ impl ProjectSession {
     /// may be pointed at a mesh). That precondition belongs to the refusal
     /// contract, not to this setter.
     ///
-    /// **Caveat this does not handle:** `face_selection` holds
-    /// [`FaceGroupId`]s of the model that was bound when the faces were
-    /// picked. A rebind leaves them in place, pointing into a different
-    /// mesh. Clearing them is a separate decision; the GUI's Input combo
-    /// does not clear them either.
+    /// A pick of the op selection names its item by geometry
+    /// (`MatchKey`), not by a face id. After a rebind each pick resolves
+    /// against the new model, and a pick that names no item there is
+    /// `LostPick` (geometry selection DESIGN 9.2).
     ///
     /// A rebind to the model already bound is a no-op and invalidates
     /// nothing.

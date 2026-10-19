@@ -100,7 +100,6 @@ fn toolpath(id: usize, name: &str, tool_id: usize, model_id: usize) -> ToolpathC
         boundary_inherit: true,
         stock_source: StockSource::Fresh,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),

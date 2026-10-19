@@ -37,7 +37,7 @@
 //! The other six stay unpinned, and the next phase must reach them with
 //! other fixtures:
 //!
-//! * **Items 1 and 2 — `face_selection` and a face-pick selection boundary
+//! * **Items 1 and 2 — a face pick of the op selection (P2.6) and a face-pick selection boundary
 //!   (`BoundarySource::Selection`, P2.5).** Both need a STEP model with picked BREP faces. This crate
 //!   has no in-memory STEP fixture, so no test here can build one.
 //! * **Item 4 — the dressup stock-top frame** (core `emission_stock_bbox.max.z`
@@ -179,7 +179,6 @@ fn fixture(feed_optimization: bool) -> Fixture {
         boundary_inherit: true,
         stock_source: Default::default(),
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),

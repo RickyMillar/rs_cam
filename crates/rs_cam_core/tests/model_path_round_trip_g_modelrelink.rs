@@ -254,7 +254,6 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             rest_analysis: Default::default(),
             stock_source: stock,
             coolant: Default::default(),
-            face_selection: None,
             debug_options: Default::default(),
             feeds_provenance: Default::default(),
             planner_origin: None,

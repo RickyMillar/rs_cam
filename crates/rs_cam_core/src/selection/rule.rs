@@ -328,6 +328,22 @@ impl Selection {
         &self.excludes
     }
 
+    /// The picks of a face (`ItemKind::Face`), in pick order.
+    pub fn face_picks(&self) -> impl Iterator<Item = &MatchKey> + '_ {
+        self.picks.iter().filter(|k| k.kind == ItemKind::Face)
+    }
+
+    /// True when the selection names a face: a face pick, or a rule whose
+    /// kinds hold `Face`. A face enters a selection by such an act only
+    /// ([`KindFilter::Served`] admits no face).
+    pub fn names_faces(&self) -> bool {
+        self.face_picks().next().is_some()
+            || self.rules.iter().any(|r| match &r.filter.kinds {
+                KindFilter::Served => false,
+                KindFilter::Only(kinds) => kinds.contains(&ItemKind::Face),
+            })
+    }
+
     /// Apply one edit. `op_default` is the default selection of the op
     /// that holds this selection; only [`SelectionEdit::Reset`] reads it.
     /// A selection does not know its op, so the caller gives it

@@ -1155,7 +1155,6 @@ fn execute_op_via_session(
                 rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
                 stock_source: StockSource::default(),
                 coolant: op.coolant,
-                face_selection: None,
                 debug_options,
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 planner_origin: None,

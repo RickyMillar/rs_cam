@@ -233,10 +233,6 @@ impl ProjectSession {
                         boundary_inherit: tc.boundary_inherit,
                         stock_source: tc.stock_source,
                         coolant: tc.coolant,
-                        face_selection: tc
-                            .face_selection
-                            .as_ref()
-                            .map(|ids| ids.iter().map(|fg| fg.0).collect()),
                         debug_options: tc.debug_options,
                         feeds_provenance: tc.feeds_provenance.clone(),
                         rest_analysis: tc.rest_analysis.clone(),
@@ -321,7 +317,6 @@ mod tests {
             boundary_inherit: true,
             stock_source: crate::session::StockSource::Fresh,
             coolant: crate::gcode::CoolantMode::Off,
-            face_selection: None,
             debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),

@@ -31,7 +31,7 @@ impl<B: ComputeBackend> AppController<B> {
                     tp_id,
                     old_op,
                     old_dressups,
-                    old_face_selection,
+                    old_boundary,
                     old_feeds_provenance,
                     ..
                 } => {
@@ -39,7 +39,7 @@ impl<B: ComputeBackend> AppController<B> {
                         tp_id,
                         old_op,
                         old_dressups,
-                        old_face_selection,
+                        old_boundary,
                         old_feeds_provenance,
                     );
                 }
@@ -103,7 +103,7 @@ impl<B: ComputeBackend> AppController<B> {
                     tp_id,
                     new_op,
                     new_dressups,
-                    new_face_selection,
+                    new_boundary,
                     new_feeds_provenance,
                     ..
                 } => {
@@ -111,7 +111,7 @@ impl<B: ComputeBackend> AppController<B> {
                         tp_id,
                         new_op,
                         new_dressups,
-                        new_face_selection,
+                        new_boundary,
                         new_feeds_provenance,
                     );
                 }
@@ -237,7 +237,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.invalidate_simulation();
     }
 
-    /// Install an operation, dressup, face and provenance snapshot.
+    /// Install an operation, dressup, boundary and provenance snapshot.
     ///
     /// `Command::RestoreToolpathSnapshot` drops the core result and bumps
     /// the revision, so the operation reads `EditedSince` afterwards —
@@ -259,7 +259,7 @@ impl<B: ComputeBackend> AppController<B> {
         tp_id: crate::state::toolpath::ToolpathId,
         operation: crate::state::toolpath::OperationConfig,
         dressups: crate::state::toolpath::DressupConfig,
-        face_selection: Option<Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId>>,
+        boundary: rs_cam_core::compute::config::BoundaryConfig,
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     ) {
         if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
@@ -268,7 +268,7 @@ impl<B: ComputeBackend> AppController<B> {
                     index: idx,
                     operation: Box::new(operation),
                     dressups: Box::new(dressups),
-                    face_selection,
+                    boundary: Box::new(boundary),
                     feeds_provenance: Some(Box::new(feeds_provenance)),
                 },
             ));

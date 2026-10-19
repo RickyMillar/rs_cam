@@ -8,8 +8,8 @@ mod toolpath;
 mod undo;
 
 use rs_cam_core::session::{
-    Command, EditSelectionArgs, Effects, ReplaceToolpathConfigArgs, SetFaceSelectionArgs,
-    SetPostConfigArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
+    Command, EditSelectionArgs, Effects, ReplaceToolpathConfigArgs, SetPostConfigArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -107,6 +107,30 @@ impl<B: ComputeBackend> AppController<B> {
                 Some(effects)
             }
             Err(_) => None,
+        }
+    }
+
+    /// Apply one edit to the op selection of `toolpath_id` (geometry
+    /// selection P2.6): the one door of the viewport pick and the panel
+    /// edits. A refusal (an op that holds no selection, for example a face
+    /// click on a 3D op) is named in a notification. N6 (WP8): the stamp
+    /// follows `Effects::stale`, which holds the downstream stock chain.
+    ///
+    /// The edit lands in `operation`, so the inspector undo snapshot of the
+    /// toolpath (`toolpath_snapshot`) covers it.
+    fn apply_selection_edit(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        edit: rs_cam_core::selection::SelectionEdit,
+    ) {
+        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+            return;
+        };
+        let command = Command::EditSelection(EditSelectionArgs { index, edit });
+        if self.apply_controller_command(command, "the selection") {
+            self.state.selection = Selection::Toolpath(toolpath_id);
+            self.state.gui.mark_edited();
+            self.pending_upload = true;
         }
     }
 
@@ -292,64 +316,28 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
 
-            // --- Face selection ---
-            AppEvent::ToggleFaceSelection {
-                toolpath_id,
-                model_id: _,
-                face_id,
-            } => {
-                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
-                {
-                    // Compute new face selection by toggling the given face_id
-                    let mut faces = tc.face_selection.clone().unwrap_or_default();
-                    if let Some(pos) = faces.iter().position(|f| *f == face_id) {
-                        faces.remove(pos);
-                    } else {
-                        faces.push(face_id);
-                    }
-                    let new_selection = if faces.is_empty() { None } else { Some(faces) };
-                    // WP15a: the row stamps every index `Effects::stale`
-                    // names. The site stamped this toolpath alone, and
-                    // the setter drops the downstream stock chain with
-                    // it — the WP8 shape.
-                    let command = Command::SetFaceSelection(SetFaceSelectionArgs {
-                        index: idx,
-                        face_ids: new_selection,
-                    });
-                    let _ = self.apply_quietly(command);
-                    self.state.selection = Selection::Toolpath(toolpath_id);
-                    self.state.gui.mark_edited();
-                    self.pending_upload = true;
+            // --- Geometry selection (P2.6) ---
+            AppEvent::TogglePick { toolpath_id, key } => {
+                // Lead ruling P2.2: no toggle edit. Resolve first through
+                // THE resolution (the `selection_status` memo), then send
+                // `AddPick` or `RemovePick`. A selected item that no pick
+                // names is a rule match; `RemovePick` excludes it.
+                let edit = self
+                    .state
+                    .session
+                    .find_toolpath_config_by_id(toolpath_id)
+                    .map(|(_, tc)| self.state.session.pick_edit(tc, key));
+                match edit {
+                    Some(Ok(edit)) => self.apply_selection_edit(toolpath_id, edit),
+                    Some(Err(error)) => self.push_notification(
+                        format!("Could not read the selection: {error}"),
+                        super::Severity::Warning,
+                    ),
+                    None => {}
                 }
             }
-
-            // --- Drill target selection ---
-            AppEvent::ToggleDrillTarget { toolpath_id, key } => {
-                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id)
-                {
-                    // Geometry selection P2.3c (lead ruling P2.2: no toggle
-                    // edit): resolve first, then send `AddPick` or
-                    // `RemovePick`. A selected item that no pick names is a
-                    // rule match; `RemovePick` excludes it from the rule.
-                    let selected = self.state.session.hole_selection(tc).is_some_and(|h| {
-                        h.items
-                            .iter()
-                            .any(|i| i.selected && i.key.names_same_geometry(&key))
-                    });
-                    let edit = if selected {
-                        rs_cam_core::selection::SelectionEdit::RemovePick(key)
-                    } else {
-                        rs_cam_core::selection::SelectionEdit::AddPick(key)
-                    };
-                    // N6 (WP8): the setter drops the downstream stock
-                    // chain, so the stamp follows `Effects::stale`
-                    // rather than naming this toolpath alone.
-                    let command = Command::EditSelection(EditSelectionArgs { index: idx, edit });
-                    let _ = self.apply_quietly(command);
-                    self.state.selection = Selection::Toolpath(toolpath_id);
-                    self.state.gui.mark_edited();
-                    self.pending_upload = true;
-                }
+            AppEvent::EditToolpathSelection { toolpath_id, edit } => {
+                self.apply_selection_edit(toolpath_id, edit);
             }
 
             // --- Undo / redo ---

@@ -941,7 +941,6 @@ fn coarse_steps_is_gone_from_the_wire() {
         boundary_inherit: true,
         stock_source: Default::default(),
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),

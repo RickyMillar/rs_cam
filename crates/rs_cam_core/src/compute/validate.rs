@@ -401,7 +401,6 @@ mod tests {
             boundary_inherit: true,
             stock_source: StockSource::Fresh,
             coolant: CoolantMode::Off,
-            face_selection: None,
             debug_options: ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),

@@ -36,7 +36,6 @@ pub mod workspace_bar;
 use crate::state::job::{ModelId, ObstacleId, SetupId, ToolConfig, ToolId, ToolType};
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::ui_command::UiCommand;
-use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use std::path::PathBuf;
 
 // NOTE (A-4, Checkpoint I-1, 2026-08-12): the `FeedsField` enum and the
@@ -339,18 +338,19 @@ pub enum AppEvent {
     // Collision
     RunCollisionCheck,
 
-    // Face selection
-    ToggleFaceSelection {
-        toolpath_id: ToolpathId,
-        model_id: ModelId,
-        face_id: FaceGroupId,
-    },
-
-    // Drill hole selection (a point or circle picked in the viewport). The
-    // key is the match key of the item (geometry selection P2.3c).
-    ToggleDrillTarget {
+    // Geometry selection P2.6: one viewport click on an item (a hole
+    // marker or a flat face) of the selected toolpath. `key` is the match
+    // key a pick of the item stores. The controller resolves first
+    // (`ProjectSession::pick_edit`), then sends `AddPick` or `RemovePick`.
+    TogglePick {
         toolpath_id: ToolpathId,
         key: rs_cam_core::selection::MatchKey,
+    },
+
+    // One edit of the op selection from a panel (the face Clear button).
+    EditToolpathSelection {
+        toolpath_id: ToolpathId,
+        edit: rs_cam_core::selection::SelectionEdit,
     },
 
     // Edit

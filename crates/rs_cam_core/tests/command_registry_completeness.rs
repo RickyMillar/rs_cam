@@ -219,6 +219,7 @@ fn query_answer_has_one_variant_per_query_row() {
         QueryAnswer::ToolpathCycleTime(_) => {}
         QueryAnswer::GetOperationSchema(_) => {}
         QueryAnswer::SelectionStatus(_) => {}
+        QueryAnswer::ListItems(_) => {}
     }
 }
 
@@ -247,7 +248,6 @@ fn tc(
         boundary_inherit: true,
         stock_source,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),

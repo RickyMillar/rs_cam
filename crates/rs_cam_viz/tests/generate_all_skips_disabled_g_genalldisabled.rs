@@ -85,7 +85,6 @@ fn toolpath(id: usize, enabled: bool) -> ToolpathConfig {
         rest_analysis: Default::default(),
         stock_source: StockSource::Fresh,
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         planner_origin: None,

@@ -81,12 +81,9 @@ fn session(ops: Vec<OperationConfig>) -> ProjectSession {
     builder.build()
 }
 
-/// The lines of a saved project that name a selection (a toolpath's
-/// `face_selection` is another field).
+/// The lines of a saved project that name a selection.
 fn selection_lines(text: &str) -> Vec<&str> {
-    text.lines()
-        .filter(|l| l.contains("selection") && !l.contains("face_selection"))
-        .collect()
+    text.lines().filter(|l| l.contains("selection")).collect()
 }
 
 #[test]

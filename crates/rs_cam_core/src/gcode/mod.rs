@@ -1673,7 +1673,6 @@ mod tests {
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
             stock_source: crate::compute::config::StockSource::Fresh,
             coolant: CoolantMode::Off,
-            face_selection: None,
             debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             planner_origin: None,

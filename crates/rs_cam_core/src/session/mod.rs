@@ -43,17 +43,17 @@ pub use command::{
     CommandKind, EditSelectionArgs, Effects, ForgetResultArgs, GenerateToolpathArgs,
     GetOperationSchemaAnswer, GetOperationSchemaArgs, ImportMachineSettingsArgs,
     InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs, InvalidateToolArgs,
-    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, MoveStockChangeArgs,
-    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, ListItemsAnswer, ListItemsArgs,
+    MoveStockChangeArgs, MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
     RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
     RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
-    SetMachineHeadArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs,
-    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
-    SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetDressupFieldArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
+    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
     SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces,
@@ -87,7 +87,7 @@ pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
-pub use selection_status::{HoleItem, HoleSelection, SelectionReport};
+pub use selection_status::{HoleItem, HoleSelection, ModelItem, SelectionReport};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -113,7 +113,7 @@ use crate::compute::toolpath_stats::ToolpathStats;
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
-use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use crate::geometry::enriched_mesh::EnrichedMesh;
 use crate::ids::ModelId;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
@@ -831,8 +831,6 @@ pub struct ToolpathConfig {
     pub stock_source: StockSource,
     /// Coolant mode for G-code output.
     pub coolant: CoolantMode,
-    /// Optional BREP face selection (for STEP/CAD models).
-    pub face_selection: Option<Vec<FaceGroupId>>,
     /// Debug trace options for this toolpath.
     pub debug_options: ToolpathDebugOptions,
     /// Per-dimension provenance of the feeds stored on `operation` — how each
@@ -912,7 +910,7 @@ impl ToolpathConfig {
     /// agree because they share this method.
     pub fn generation_inputs_signature(&self) -> String {
         format!(
-            "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}|{:?}",
+            "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}",
             serde_json::to_string(&self.operation).unwrap_or_default(),
             serde_json::to_string(&self.dressups).unwrap_or_default(),
             serde_json::to_string(&self.heights).unwrap_or_default(),
@@ -921,7 +919,6 @@ impl ToolpathConfig {
             self.tool_id,
             self.model_id,
             self.stock_source,
-            self.face_selection,
         )
     }
 }
@@ -1804,7 +1801,7 @@ impl ProjectSession {
     /// Mutable access to all toolpath configs.
     ///
     /// Prefer named mutation methods: [`set_toolpath_enabled()`](Self::set_toolpath_enabled),
-    /// [`set_face_selection()`](Self::set_face_selection),
+    /// [`edit_toolpath_selection()`](Self::edit_toolpath_selection),
     /// [`set_dressup_config()`](Self::set_dressup_config), etc.
     ///
     /// Crate-private since WP7; every surface mutates through
@@ -2082,7 +2079,6 @@ mod tests {
                     boundary_inherit: true,
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
-                    face_selection: None,
                     debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
@@ -2385,7 +2381,6 @@ mod tests {
                     boundary_inherit: true,
                     stock_source: crate::compute::config::StockSource::default(),
                     coolant: crate::gcode::CoolantMode::default(),
-                    face_selection: None,
                     debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
                     feeds_provenance: crate::feeds::FeedsProvenance::default(),
                     rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
@@ -2518,7 +2513,6 @@ mod tests {
             boundary_inherit: true,
             stock_source: crate::compute::config::StockSource::default(),
             coolant: crate::gcode::CoolantMode::default(),
-            face_selection: None,
             debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             rest_analysis: crate::compute::config::RestAnalysisConfig::default(),

@@ -261,7 +261,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         boundary_inherit: true,
         stock_source: Default::default(),
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),

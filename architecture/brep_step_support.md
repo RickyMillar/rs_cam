@@ -2,6 +2,19 @@
 
 Reference: `research/09_parametric_geometry_and_brep.md`
 
+> **Status (geometry selection P2.6, 2026-10-19).** The face selection of
+> this design (`ToolpathConfig.face_selection`, a list of `FaceGroupId`, the
+> `SetFaceSelection` command and the `ToggleFaceSelection` event) is
+> deleted. A face pick is now a `MatchKey` pick of kind `Face` in the op
+> selection (`operation.params.selection`), sent by `AppEvent::TogglePick`
+> through `edit_toolpath_selection`. The key holds the face anchor, the
+> measure and the BREP id, with no Z. Only an op that holds a selection
+> (the 2.5D ops) takes a face pick; a Face op or a 3D op takes none, and a
+> 3D boundary of faces is `BoundarySource::Selection`. A file with the old
+> `face_selection` key refuses to load and names the key. The viewport
+> tests a face click in the frame it draws the face in (the setup frame).
+> Sections that name `face_selection` below are the history of the design.
+
 ---
 
 ## 1. Problems / User Needs
@@ -73,8 +86,10 @@ For planar face groups, project boundary loops to 2D `Polygon2` for use as input
 2.5D operations and as machining containment regions.
 
 ### FR-7: Face selection persistence
-Face selections serialize to project file. Face IDs are stable across re-import of the same
-STEP file (topological order).
+Face selections serialize to project file. Since P2.6 a face pick is a geometry key
+(anchor, measure, BREP id), not a bare face ID: a face ID is topological order, so a
+changed STEP file could point it at another face. A key that no longer matches a face
+is a lost pick, which the op names.
 
 ### FR-8: Graceful degradation
 When `truck` can't parse a file, report clearly with actionable suggestions. Support partial

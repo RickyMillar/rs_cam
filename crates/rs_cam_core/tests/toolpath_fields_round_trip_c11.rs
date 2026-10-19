@@ -106,7 +106,6 @@ fn default_config(tool_id: usize, name: &str, operation: OperationConfig) -> Too
         rest_analysis: RestAnalysisConfig::default(),
         stock_source: StockSource::Fresh,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         planner_origin: None,

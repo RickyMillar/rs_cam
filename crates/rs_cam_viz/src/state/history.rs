@@ -1,14 +1,14 @@
 use super::job::{ObstacleId, PostConfig, SetupId, StockConfig, ToolConfig, ToolId};
 use super::toolpath::{DressupConfig, OperationConfig, ToolpathId};
+use rs_cam_core::compute::config::BoundaryConfig;
 use rs_cam_core::feeds::FeedsProvenance;
-use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine::head::{MachineHead, ShoeSetting};
 use rs_cam_core::session::{Obstacle, SetupData};
 
 /// A snapshot of undoable state.
 // SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig +
-// 2× FeedsProvenance, which is intentional — undo/redo needs the full state
+// 2× BoundaryConfig + 2× FeedsProvenance, which is intentional — undo/redo needs the full state
 // snapshot. The byte figure this comment used to carry (≈648) was measured
 // before WP8 added the provenance pair, so it is dropped rather than guessed
 // at. The surrounding code stores UndoAction in a bounded history Vec (not a
@@ -43,8 +43,11 @@ pub enum UndoAction {
         new_op: OperationConfig,
         old_dressups: DressupConfig,
         new_dressups: DressupConfig,
-        old_face_selection: Option<Vec<FaceGroupId>>,
-        new_face_selection: Option<Vec<FaceGroupId>>,
+        /// The boundary on both sides (geometry selection D11, P2.6): a
+        /// boundary can hold a selection, so a boundary pick undoes. The op
+        /// selection is inside `old_op` and `new_op`.
+        old_boundary: BoundaryConfig,
+        new_boundary: BoundaryConfig,
         old_feeds_provenance: FeedsProvenance,
         new_feeds_provenance: FeedsProvenance,
     },
@@ -77,7 +80,7 @@ pub enum UndoAction {
 }
 
 /// Snapshot of toolpath state captured before a parameter edit drag.
-/// Includes id, operation+dressup configs, the optional face selection,
+/// Includes id, operation+dressup configs, the boundary (D11),
 /// and the feeds provenance the edit starts from.
 ///
 /// The provenance is the fifth member since WP8. Without it the flush
@@ -87,7 +90,7 @@ pub(crate) type ToolpathSnapshot = (
     ToolpathId,
     OperationConfig,
     DressupConfig,
-    Option<Vec<FaceGroupId>>,
+    BoundaryConfig,
     FeedsProvenance,
 );
 

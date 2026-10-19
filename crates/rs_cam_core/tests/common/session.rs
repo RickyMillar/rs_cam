@@ -264,7 +264,6 @@ pub fn toolpath_config(
         boundary_inherit: true,
         stock_source: StockSource::default(),
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
@@ -338,4 +337,33 @@ pub fn generate(session: &mut ProjectSession, index: usize) {
     session
         .generate_toolpath(index, &cancel)
         .expect("generation must succeed");
+}
+
+/// Pick the BREP faces `faces` of the toolpath model into the op selection
+/// of toolpath `index` (geometry selection P2.6: a face pick is a
+/// `MatchKey` pick, sent through `edit_toolpath_selection` as the
+/// viewport sends it). `Err` is the refusal of a face that has no Face
+/// item (not flat), from `ProjectSession::face_pick_key`.
+pub fn pick_faces(
+    session: &mut ProjectSession,
+    index: usize,
+    faces: &[u16],
+) -> Result<(), rs_cam_core::selection::SelectionRefusal> {
+    for face in faces {
+        let tc = session.toolpath_configs()[index].clone();
+        let key = session.face_pick_key(
+            &tc,
+            tc.model_id,
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId(*face),
+        )?;
+        let _ = session
+            .apply(rs_cam_core::session::Command::EditSelection(
+                rs_cam_core::session::EditSelectionArgs {
+                    index,
+                    edit: rs_cam_core::selection::SelectionEdit::AddPick(key),
+                },
+            ))
+            .expect("the op holds a selection");
+    }
+    Ok(())
 }

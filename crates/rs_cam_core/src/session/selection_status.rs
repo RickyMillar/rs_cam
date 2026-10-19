@@ -12,10 +12,11 @@
 //! generator cannot give different refusals for one selection.
 //!
 //! The drill picker reads the MODEL frame: a stored pick is a key in the
-//! model frame, the viewport draws the drawing in the model frame, and the
-//! dowel-hole check measures a drawing hole against the stock pins in the
-//! stock-local frame of the part. The report keeps those lists in the
-//! model frame ([`SelectionReport::hole_items`], [`SelectionReport::holes`]).
+//! model frame, and the dowel-hole check measures a drawing hole against
+//! the stock pins in the stock-local frame of the part. The report keeps
+//! those lists in the model frame ([`SelectionReport::hole_items`],
+//! [`SelectionReport::holes`]). The viewport moves each item into the
+//! setup frame to draw it and to hit-test a click (P2.6).
 //!
 //! The memo: the GUI asks for the report on every frame (the drill panel,
 //! the viewport markers, the validator). The memo keeps one report per
@@ -23,8 +24,8 @@
 //! identity, as the tool-load memo does (`load_report.rs`). No key part is
 //! a counter, so no mutation path can forget to move it:
 //!
-//! - the selection of the op (serialized), the op type, its `ItemUse`, the
-//!   picked faces and the model id of the toolpath;
+//! - the selection of the op (serialized), the op type, its `ItemUse` and
+//!   the model id of the toolpath;
 //! - the item set of each model, by `Weak` identity (a re-import gives a
 //!   new `Arc`), and its id;
 //! - the setup orientation and the stock box in both frames (the face
@@ -50,41 +51,6 @@ use crate::selection::{
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
 use super::SetupEvalContext;
-
-/// The pick keys of the picked BREP faces of `model` (geometry selection
-/// P2.3b). Each key names the Face item whose BREP id is the picked id, on
-/// the toolpath model. The STEP door makes a Face item for each flat
-/// horizontal face only (`io::brep_face_items`), so a picked face with no
-/// Face item refuses `FaceNotFlat` and names the face. A toolpath model
-/// that does not exist refuses `MissingSource` with its id.
-fn face_pick_keys(
-    model: Result<&LoadedModel, ModelId>,
-    ids: &[FaceGroupId],
-) -> Result<Vec<MatchKey>, SelectionRefusal> {
-    let model = model.map_err(|id| {
-        SelectionRefusal::new(None, RefusalCause::MissingSource(SourceRef::Model(id)))
-    })?;
-    ids.iter()
-        .map(|id| {
-            model
-                .items
-                .iter()
-                .find(|item| match item.shape() {
-                    Shape::Face(face) => face.brep == Some(*id),
-                    Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
-                        false
-                    }
-                })
-                .map(|item| MatchKey {
-                    source: SourceRef::ToolpathModel,
-                    ..item.key().clone()
-                })
-                .ok_or_else(|| {
-                    SelectionRefusal::new(None, RefusalCause::FaceNotFlat { face: Some(*id) })
-                })
-        })
-        .collect()
-}
 
 /// One point or circle of a toolpath model, for the drill picker.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,6 +126,27 @@ pub struct SelectionReport {
     /// The holes that the op drills, in the MODEL frame. Empty for an op
     /// that drills no hole, and when the selection refuses.
     pub holes: Vec<Hole>,
+    /// The key of every item the selection holds (its `identity`, in the
+    /// frame and with the source of the drawing: `SourceRef::Model(id)` or
+    /// `SourceRef::Stock`), in resolution order. A viewport click reads it
+    /// to choose between `AddPick` and `RemovePick`
+    /// ([`ProjectSession::pick_edit`]); the face highlight reads its face
+    /// keys. Empty when the selection refuses before it resolves.
+    pub selected: Vec<MatchKey>,
+}
+
+/// One item of a model, as the `list_model_items` read gives it (geometry
+/// selection DESIGN 10.2): the pick source of an agent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelItem {
+    /// The key a pick of the item stores. Its source is
+    /// `SourceRef::Model(id)` of the listed model.
+    pub key: MatchKey,
+    pub kind: ItemKind,
+    pub layer: Option<String>,
+    /// The key measure: loop and face `sqrt(|area|)`, path length, circle
+    /// diameter, point 0 (mm).
+    pub measure: f64,
 }
 
 /// The two frames of one resolved selection.
@@ -172,46 +159,25 @@ pub(crate) struct SelectionFrames {
 
 impl ProjectSession {
     /// THE selection resolution of `tc`, for generation and for every
-    /// reader: the op's own selection (`OperationConfig::selection`) with
-    /// each picked face added as a pick, resolved against the items of the
-    /// models and the stock, then moved into the setup frame
-    /// (`to_setup_frame`).
+    /// reader: the op's own selection (`OperationConfig::selection`),
+    /// resolved against the items of the models and the stock, then moved
+    /// into the setup frame (`to_setup_frame`). A face pick is a pick of
+    /// that selection (geometry selection P2.6).
     ///
     /// `ctx` is the setup context of the toolpath: the stock in the
     /// emission frame (the stock source) and the setup transform (the face
     /// filter and the frame door). An op that holds no selection resolves
-    /// its picked faces only.
-    ///
-    /// A selection refusal at this step (a picked face that is not flat, a
-    /// toolpath model that does not exist under a face pick) is
-    /// [`SessionError::Selection`] with the op label.
+    /// to no item.
     pub(crate) fn resolve_selection_frames(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
     ) -> Result<SelectionFrames, SessionError> {
-        let label = tc.operation.op_type().label();
         let model = self.toolpath_model(tc);
-        let face_picks = match tc.face_selection.as_deref() {
-            Some(ids) if !ids.is_empty() => face_pick_keys(model, ids)
-                .map_err(|refusal| SessionError::Selection(refusal.for_op(label)))?,
-            Some(_) | None => Vec::new(),
-        };
-        let mut spec = tc
-            .operation
-            .selection()
-            .cloned()
-            .unwrap_or_else(Selection::empty);
-        let op_default = tc
-            .operation
-            .default_selection()
-            .unwrap_or_else(Selection::empty);
-        for key in face_picks {
-            spec.apply(SelectionEdit::AddPick(key), &op_default)
-                .map_err(|refusal| SessionError::Selection(refusal.for_op(label)))?;
-        }
+        let empty = Selection::empty();
+        let spec = tc.operation.selection().unwrap_or(&empty);
         let resolved = crate::selection::resolve(
-            &spec,
+            spec,
             &ResolveScope {
                 toolpath_model: model,
                 models: &self.models,
@@ -314,19 +280,16 @@ impl ProjectSession {
         let op_type = tc.operation.op_type();
         let label = op_type.label();
         let item_use = tc.operation.capabilities().item_use;
-        let frames = match self.resolve_selection_frames(tc, ctx) {
-            Ok(frames) => frames,
-            Err(SessionError::Selection(refusal)) => {
-                return Ok(SelectionReport {
-                    hole_items: self.hole_items(tc, None),
-                    refusal: Some(refusal),
-                    ..SelectionReport::default()
-                });
-            }
-            Err(error) => return Err(error),
-        };
+        let frames = self.resolve_selection_frames(tc, ctx)?;
+        let selected: Vec<MatchKey> = frames
+            .model
+            .items()
+            .iter()
+            .map(|r| r.identity().clone())
+            .collect();
         let mut report = SelectionReport {
-            hole_items: self.hole_items(tc, Some(&frames.model)),
+            hole_items: self.hole_items(tc, &selected),
+            selected,
             ..SelectionReport::default()
         };
         report.lost = frames
@@ -368,13 +331,9 @@ impl ProjectSession {
     }
 
     /// Every point and circle of the toolpath model of a drill op, in the
-    /// MODEL frame, each marked when `resolved` holds it. Empty for every
+    /// MODEL frame, each marked when `selected` holds it. Empty for every
     /// other op.
-    fn hole_items(
-        &self,
-        tc: &ToolpathConfig,
-        resolved: Option<&ResolvedSelection>,
-    ) -> Vec<HoleItem> {
+    fn hole_items(&self, tc: &ToolpathConfig, selected: &[MatchKey]) -> Vec<HoleItem> {
         match tc.operation.capabilities().item_use {
             ItemUse::Holes { .. } => {}
             ItemUse::None | ItemUse::Regions | ItemUse::Curves => return Vec::new(),
@@ -401,12 +360,7 @@ impl ProjectSession {
                     xy,
                     diameter,
                     layer: item.layer().map(str::to_owned),
-                    selected: resolved.is_some_and(|resolved| {
-                        resolved
-                            .items()
-                            .iter()
-                            .any(|r| r.identity().matches(item.key()))
-                    }),
+                    selected: selected.iter().any(|k| k.matches(item.key())),
                 })
             })
             .collect()
@@ -439,6 +393,112 @@ impl ProjectSession {
     }
 }
 
+impl ProjectSession {
+    /// The pick key of the BREP face `face` of model `model_id`, for a pick
+    /// in the selection of `tc` (geometry selection P2.6: a viewport face
+    /// click). The key names the Face item whose BREP id is `face`. Its
+    /// source is [`SourceRef::ToolpathModel`] when the model is the model of
+    /// `tc`, else [`SourceRef::Model`].
+    ///
+    /// The STEP door makes a Face item for each flat horizontal face only
+    /// (`io::brep_face_items`), so a face with no Face item refuses
+    /// `FaceNotFlat` and names the face. A model id that names no model
+    /// refuses `MissingSource`.
+    pub fn face_pick_key(
+        &self,
+        tc: &ToolpathConfig,
+        model_id: usize,
+        face: FaceGroupId,
+    ) -> Result<MatchKey, SelectionRefusal> {
+        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
+            SelectionRefusal::new(
+                None,
+                RefusalCause::MissingSource(SourceRef::Model(ModelId(model_id))),
+            )
+        })?;
+        let source = if model_id == tc.model_id {
+            SourceRef::ToolpathModel
+        } else {
+            SourceRef::Model(ModelId(model_id))
+        };
+        model
+            .items
+            .iter()
+            .find(|item| match item.shape() {
+                Shape::Face(f) => f.brep == Some(face),
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => false,
+            })
+            .map(|item| MatchKey {
+                source,
+                ..item.key().clone()
+            })
+            .ok_or_else(|| {
+                SelectionRefusal::new(None, RefusalCause::FaceNotFlat { face: Some(face) })
+            })
+    }
+
+    /// The edit that a viewport click on `key` sends to the selection of
+    /// `tc` (lead ruling P2.2: no toggle edit in the selection). It reads
+    /// THE resolution through the memo ([`Self::selection_status`]): an
+    /// item that the selection holds gives `RemovePick` (a rule match then
+    /// gets an exclude), any other item gives `AddPick`.
+    ///
+    /// `key` names its source as a stored pick does. The source
+    /// [`SourceRef::ToolpathModel`] reads as the model of `tc`.
+    pub fn pick_edit(
+        &self,
+        tc: &ToolpathConfig,
+        key: MatchKey,
+    ) -> Result<SelectionEdit, SessionError> {
+        let source = match key.source {
+            SourceRef::ToolpathModel => SourceRef::Model(ModelId(tc.model_id)),
+            other @ (SourceRef::Model(_) | SourceRef::Stock) => other,
+        };
+        let report = self.selection_status(tc)?;
+        let selected = report
+            .selected
+            .iter()
+            .any(|k| k.source == source && k.names_same_geometry(&key));
+        Ok(if selected {
+            SelectionEdit::RemovePick(key)
+        } else {
+            SelectionEdit::AddPick(key)
+        })
+    }
+
+    /// The items of the model with id `model_id`, in import order, with
+    /// an optional layer and kind filter: the `list_model_items` read.
+    pub fn list_model_items(
+        &self,
+        model_id: usize,
+        layer: Option<&str>,
+        kind: Option<ItemKind>,
+    ) -> Result<Vec<ModelItem>, SessionError> {
+        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
+            let known: Vec<String> = self.models.iter().map(|m| m.id.to_string()).collect();
+            SessionError::MissingGeometry(format!(
+                "No model has id {model_id}; the model ids are [{}]",
+                known.join(", ")
+            ))
+        })?;
+        Ok(model
+            .items
+            .iter()
+            .filter(|item| layer.is_none_or(|want| item.layer() == Some(want)))
+            .filter(|item| kind.is_none_or(|want| item.kind() == want))
+            .map(|item| ModelItem {
+                key: MatchKey {
+                    source: SourceRef::Model(ModelId(model_id)),
+                    ..item.key().clone()
+                },
+                kind: item.kind(),
+                layer: item.layer().map(str::to_owned),
+                measure: item.key().measure,
+            })
+            .collect())
+    }
+}
+
 /// True when the prologue of `op_type` runs `view` (its row reads items).
 fn reads_items(op_type: OperationType) -> bool {
     match op_type.geometry_requirement() {
@@ -464,7 +524,6 @@ struct StatusKey {
     selection: Vec<u8>,
     op_type: OperationType,
     item_use: ItemUse,
-    face_selection: Option<Vec<FaceGroupId>>,
     model_id: usize,
     models: Vec<(usize, Weak<ItemSet>)>,
     face_up: FaceUp,
@@ -485,7 +544,6 @@ impl StatusKey {
             selection: serde_json::to_vec(&tc.operation.selection()).ok()?,
             op_type: tc.operation.op_type(),
             item_use: tc.operation.capabilities().item_use,
-            face_selection: tc.face_selection.clone(),
             model_id: tc.model_id,
             models: session
                 .models
@@ -506,7 +564,6 @@ impl StatusKey {
         self.selection == now.selection
             && self.op_type == now.op_type
             && self.item_use == now.item_use
-            && self.face_selection == now.face_selection
             && self.model_id == now.model_id
             && self.face_up == now.face_up
             && self.z_rotation == now.z_rotation

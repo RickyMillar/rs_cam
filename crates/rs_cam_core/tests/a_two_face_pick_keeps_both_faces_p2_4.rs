@@ -32,14 +32,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::session::single_op_session_with;
+use common::session::{pick_faces, single_op_session_with};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::geo::{P3, V3};
 use rs_cam_core::geometry::enriched_mesh::{
-    FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+    FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
 };
 use rs_cam_core::io::brep_face_items;
 use rs_cam_core::selection::ItemKind;
@@ -119,8 +119,9 @@ fn a_two_face_pick_keeps_both_faces_p2_4() {
             depth_per_pass: POCKET_DEPTH,
             ..PocketConfig::default()
         }),
-        |tc| tc.face_selection = Some(vec![FaceGroupId(0), FaceGroupId(1)]),
+        |_| {},
     );
+    pick_faces(&mut s, 0, &[0, 1]).unwrap();
 
     let tc = s.toolpath_configs()[0].clone();
     let report = s.selection_status(&tc).unwrap();

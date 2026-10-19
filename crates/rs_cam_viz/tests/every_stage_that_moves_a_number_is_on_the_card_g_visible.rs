@@ -439,7 +439,6 @@ fn state_for(case: &Case) -> AppState {
         boundary_inherit: true,
         stock_source: Default::default(),
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),

@@ -243,7 +243,6 @@ fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> Too
         boundary_inherit: true,
         stock_source: Default::default(),
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         rest_analysis: Default::default(),

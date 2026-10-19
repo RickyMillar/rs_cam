@@ -265,7 +265,6 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
                 rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
                 stock_source: rs_cam_core::compute::config::StockSource::default(),
                 coolant: rs_cam_core::gcode::CoolantMode::Off,
-                face_selection: None,
                 debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
                 feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
                 planner_origin: None,

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span};
 
@@ -34,7 +33,6 @@ pub struct ToolpathEntryInit {
     pub post_gcode: String,
     pub stock_source: StockSource,
     pub auto_regen: Option<bool>,
-    pub face_selection: Option<Vec<FaceGroupId>>,
     pub debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions,
 }
 
@@ -65,7 +63,6 @@ impl ToolpathEntryInit {
             post_gcode: String::new(),
             stock_source: StockSource::Fresh,
             auto_regen: None,
-            face_selection: None,
             debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
         }
     }
@@ -125,7 +122,6 @@ impl ToolpathEntryInit {
             post_gcode: source.post_gcode.clone(),
             stock_source: source.stock_source,
             auto_regen: Some(source.auto_regen),
-            face_selection: source.face_selection.clone(),
             debug_options: source.debug_options,
         }
     }
@@ -153,7 +149,6 @@ pub struct ToolpathEntry {
     pub result: Option<ToolpathResult>,
     pub stale_since: Option<std::time::Instant>,
     pub auto_regen: bool,
-    pub face_selection: Option<Vec<FaceGroupId>>,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
     /// Per-dimension provenance of the stored feeds values (W2.1). Mirrors
     /// `ToolpathConfig::feeds_provenance`; round-trips via
@@ -236,7 +231,6 @@ impl ToolpathEntry {
             result: None,
             stale_since: None,
             auto_regen,
-            face_selection: init.face_selection,
             feeds_result: None,
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             pill_stamped_fields: Vec::new(),

@@ -200,12 +200,6 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
                 e.rest_analysis.enabled = !e.rest_analysis.enabled;
             }),
         ),
-        (
-            "face selection clear",
-            Box::new(|e: &mut crate::state::toolpath::ToolpathEntry| {
-                e.face_selection = Some(Vec::new());
-            }),
-        ),
     ];
 
     for (label, edit) in rows {

@@ -50,7 +50,6 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
         rest_analysis: Default::default(),
         stock_source: rs_cam_core::compute::config::StockSource::Fresh,
         coolant: Default::default(),
-        face_selection: None,
         debug_options: Default::default(),
         feeds_provenance: Default::default(),
         planner_origin: None,

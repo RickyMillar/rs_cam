@@ -94,7 +94,6 @@ fn drill_op(tool_id: usize, model_id: usize) -> rs_cam_core::session::ToolpathCo
         boundary_inherit: true,
         stock_source: StockSource::default(),
         coolant: rs_cam_core::gcode::CoolantMode::Off,
-        face_selection: None,
         debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),

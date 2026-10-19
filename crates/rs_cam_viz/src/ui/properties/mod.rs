@@ -296,7 +296,6 @@ pub fn toolpath_panel_snapshot(
         result: rt.result.clone(),
         stale_since: rt.stale_since,
         auto_regen: rt.auto_regen,
-        face_selection: tc.face_selection.clone(),
         feeds_result: rt.feeds_result.clone(),
         feeds_provenance: tc.feeds_provenance.clone(),
         planner_origin: tc.planner_origin.clone(),
@@ -790,7 +789,6 @@ pub(crate) fn project_entry_onto(
         Some(entry.post_gcode.clone())
     };
     config.stock_source = entry.stock_source;
-    config.face_selection = entry.face_selection.clone();
     config.debug_options = entry.debug_options;
     config.feeds_provenance = new_provenance;
     Box::new(config)
@@ -1442,7 +1440,7 @@ fn draw_toolpath_selection(
             id,
             tc.operation.clone(),
             tc.dressups.clone(),
-            tc.face_selection.clone(),
+            tc.boundary.clone(),
             tc.feeds_provenance.clone(),
         ));
     }

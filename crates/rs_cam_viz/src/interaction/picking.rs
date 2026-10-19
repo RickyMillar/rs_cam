@@ -5,7 +5,7 @@ use crate::state::pin_view::pin_display_points;
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
-use rs_cam_core::geo::{BoundingBox3, P3, V3};
+use rs_cam_core::geo::{BoundingBox3, P2, P3, V3};
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::mesh::ray_pick_triangle;
 use rs_cam_core::session::ProjectSession;
@@ -40,10 +40,10 @@ pub enum PickHit {
         model_id: ModelId,
         face_id: FaceGroupId,
     },
-    /// Hit a drill hole item (a point or a circle) while a drill toolpath is
-    /// the active selection. `key` is the match key a pick of the item
-    /// stores (geometry selection P2.3c).
-    DrillTarget {
+    /// Hit a drawn item of the active toolpath (geometry selection P2.6;
+    /// today the hole markers of a drill op: a point or a circle). `key` is
+    /// the match key a pick of the item stores.
+    Item {
         toolpath_id: ToolpathId,
         key: rs_cam_core::selection::MatchKey,
     },
@@ -165,16 +165,31 @@ pub fn pick(
         }
     }
 
-    // Model face picking (enriched mesh only, Toolpaths workspace)
+    // Model face picking (enriched mesh only, Toolpaths workspace).
+    //
+    // Geometry selection P2.6: the upload draws the enriched mesh moved by
+    // the display frame (`SetupFrame::transform_point`). The ray moves back
+    // into the model frame through the inverse of that one transform, so a
+    // click hits the face where it is drawn. The transform is rigid (a
+    // flip, a turn and a shift), so the ray parameter `t` keeps its length
+    // and compares with the other hits.
     if matches!(workspace, Workspace::Toolpaths) {
+        let (model_origin, model_dir) = match display_frame {
+            Some(frame) => {
+                let a = frame.inverse_transform_point(origin, stock);
+                let b = frame.inverse_transform_point(origin + dir, stock);
+                (a, b - a)
+            }
+            None => (origin, dir),
+        };
         for model in session.models() {
             if let Some(enriched) = &model.enriched_mesh {
                 let mesh = enriched.as_mesh();
                 // Fast AABB rejection
-                if mesh.bbox.ray_intersect(&origin, &dir).is_none() {
+                if mesh.bbox.ray_intersect(&model_origin, &model_dir).is_none() {
                     continue;
                 }
-                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &origin, &dir)
+                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
                     && t < best_t
                 {
                     best_t = t;
@@ -256,10 +271,45 @@ pub fn pick_alignment_pins(
     best_hit
 }
 
+/// The lift of a hole marker above the displayed stock top (mm), so the
+/// marker draws above the stock face. It is the lift of the drawing lines
+/// (`app/gpu_upload.rs`, `planar_z`), which the markers share.
+pub const HOLE_MARK_LIFT_MM: f64 = 0.05;
+
+/// Where the hole item at model point `xy` is drawn and picked: the setup
+/// transform of the point (`SetupFrame::transform_point`, the transform of
+/// the drawing lines), on the displayed stock top plus
+/// [`HOLE_MARK_LIFT_MM`]. `frame` is the setup of the drill toolpath;
+/// `None` draws the raw model point on the world stock top.
+///
+/// Geometry selection P2.6: the upload draws each marker here and
+/// [`pick`] tests a click here, so the two cannot disagree. The pick used
+/// the raw model XY on the world stock top, so on a flipped or rotated
+/// setup a click on a marker picked another hole or none.
+#[must_use]
+pub fn hole_display_point(frame: Option<&SetupFrame>, stock: &StockConfig, xy: P2) -> P3 {
+    match frame {
+        Some(frame) => {
+            let p = frame.transform_point(P3::new(xy.x, xy.y, 0.0), stock);
+            P3::new(p.x, p.y, frame.effective_stock(stock).2 + HOLE_MARK_LIFT_MM)
+        }
+        None => P3::new(xy.x, xy.y, stock.origin_z + stock.z + HOLE_MARK_LIFT_MM),
+    }
+}
+
+/// The setup frame of the toolpath `id`, or `None` when no setup owns it.
+#[must_use]
+pub fn toolpath_setup_frame(session: &ProjectSession, id: ToolpathId) -> Option<SetupFrame> {
+    session
+        .setup_of_toolpath_id(id)
+        .and_then(|index| session.list_setups().get(index))
+        .map(SetupFrame::of)
+}
+
 /// Pick the nearest hole item (a point or a circle centre) of the model
-/// referenced by the active drill toolpath, from the items the session's
-/// `hole_selection` lists (geometry selection P2.3c). Items are picked at
-/// the stock top plane in raw model XY.
+/// of the active drill toolpath, from the items the session's
+/// `hole_selection` lists (geometry selection P2.3c). Each item is tested
+/// where the viewport draws it ([`hole_display_point`], P2.6).
 fn pick_drill_targets(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -274,12 +324,13 @@ fn pick_drill_targets(
         return None;
     }
     let stock = session.stock_config();
-    let top_z = (stock.origin_z + stock.z) as f32;
+    let frame = toolpath_setup_frame(session, toolpath_id);
 
     let mut best_dist = PICK_THRESHOLD_POINT;
     let mut best: Option<rs_cam_core::selection::MatchKey> = None;
     for item in holes.items {
-        let world = [item.xy.x as f32, item.xy.y as f32, top_z];
+        let p = hole_display_point(frame.as_ref(), stock, item.xy);
+        let world = [p.x as f32, p.y as f32, p.z as f32];
         if let Some(screen) = ctx
             .camera
             .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
@@ -293,7 +344,7 @@ fn pick_drill_targets(
             }
         }
     }
-    best.map(|key| PickHit::DrillTarget { toolpath_id, key })
+    best.map(|key| PickHit::Item { toolpath_id, key })
 }
 
 // SAFETY: j bounded by 0..moves.len() via step_by loop

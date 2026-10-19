@@ -43,7 +43,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::session::toolpath_config;
+use common::session::{pick_faces, toolpath_config};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -51,7 +51,7 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::{P3, V3};
 use rs_cam_core::geometry::enriched_mesh::{
-    FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+    FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
 };
 use rs_cam_core::io::brep_face_items;
 use rs_cam_core::session::{
@@ -150,10 +150,10 @@ fn session(face: u16, face_up: FaceUp) -> ProjectSession {
         depth_per_pass: POCKET_DEPTH,
         ..PocketConfig::default()
     });
-    let mut cfg = toolpath_config("face pocket", op, tool_id, model_id);
-    cfg.face_selection = Some(vec![FaceGroupId(face)]);
+    let cfg = toolpath_config("face pocket", op, tool_id, model_id);
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut session = builder.build();
+    pick_faces(&mut session, 0, &[face]).unwrap();
     let _ = session
         .apply(Command::SetSetupFace(SetSetupFaceArgs {
             setup_index: 0,

@@ -511,8 +511,10 @@ pub(super) fn draw_geometry_wiring(
         );
     }
 
-    // Face selection (STEP models only)
-    if model_has_enriched {
+    // Face selection (STEP models only). Geometry selection P2.6: a face
+    // pick is a pick of the op selection, so an op that holds no selection
+    // (Face, a 3D op) shows no face picker.
+    if model_has_enriched && let Some(selection) = entry.operation.selection() {
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new("Face Selection")
@@ -524,7 +526,7 @@ pub(super) fn draw_geometry_wiring(
         // Clear, no tip line. The unconditional "Tip:" sentence is
         // removed — the placeholder + the live count updating as the
         // user clicks convey the action.
-        let face_count = entry.face_selection.as_ref().map(|f| f.len()).unwrap_or(0);
+        let face_count = selection.face_picks().count();
         if face_count > 0 {
             ui.horizontal(|ui| {
                 ui.label(format!(
@@ -533,8 +535,25 @@ pub(super) fn draw_geometry_wiring(
                     if face_count == 1 { "" } else { "s" }
                 ));
                 if ui.small_button("Clear").clicked() {
-                    entry.face_selection = None;
-                    entry.stale_since = Some(std::time::Instant::now());
+                    // One edit through the command door: the selection less
+                    // its face picks. A removed pick adds no exclude.
+                    let mut cleared = selection.clone();
+                    let op_default = entry
+                        .operation
+                        .default_selection()
+                        .unwrap_or_else(rs_cam_core::selection::Selection::empty);
+                    for key in selection.face_picks() {
+                        if let Err(refusal) = cleared.apply(
+                            rs_cam_core::selection::SelectionEdit::RemovePick(key.clone()),
+                            &op_default,
+                        ) {
+                            tracing::error!(%refusal, "face Clear: a selection edit refused");
+                        }
+                    }
+                    events.push(crate::ui::AppEvent::EditToolpathSelection {
+                        toolpath_id: entry.id,
+                        edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(cleared)),
+                    });
                 }
             });
         } else {

@@ -519,7 +519,7 @@ pub(super) fn flush_machine_snapshot(state: &mut AppState) {
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
 pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
-    if let Some((tp_id, old_op, old_dressups, old_faces, old_provenance)) =
+    if let Some((tp_id, old_op, old_dressups, old_boundary, old_provenance)) =
         state.history.toolpath_snapshot.take()
     {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
@@ -533,8 +533,8 @@ pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
                         new_op: tc.operation.clone(),
                         old_dressups,
                         new_dressups: tc.dressups.clone(),
-                        old_face_selection: old_faces,
-                        new_face_selection: tc.face_selection.clone(),
+                        old_boundary,
+                        new_boundary: tc.boundary.clone(),
                         old_feeds_provenance: old_provenance,
                         new_feeds_provenance: tc.feeds_provenance.clone(),
                     });
@@ -542,7 +542,7 @@ pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
             }
         } else {
             state.history.toolpath_snapshot =
-                Some((tp_id, old_op, old_dressups, old_faces, old_provenance));
+                Some((tp_id, old_op, old_dressups, old_boundary, old_provenance));
         }
     }
 }

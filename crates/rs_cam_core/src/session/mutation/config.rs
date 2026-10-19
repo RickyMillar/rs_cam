@@ -399,7 +399,7 @@ impl ProjectSession {
     /// selection (geometry selection P2.5). A reload of any of them moves
     /// the cut, so the toolpath drops. S2 adds a setup stock change whose
     /// geometry names the model. K1 adds a setup obstacle that names it.
-    fn drop_results_for_model(&mut self, model_id: usize) {
+    pub(super) fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
             .iter()

@@ -220,6 +220,12 @@ const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
          in P4, and each then reaches the row.",
     ),
     (
+        "list_model_items",
+        "Geometry selection P2.6 query row: the items of a model with their pick keys. It is \
+         the pick source of the MCP selection tools, which come in P2.7 and then reach the row; \
+         the GUI selection panel with an item list comes in P4.",
+    ),
+    (
         "set_toolpath_operation",
         "WP15a row. The registry's own GUI reason reads: no GUI control changes an operation kind in place. \
          MEASURED 2026-09-14: no production `Command` literal.",

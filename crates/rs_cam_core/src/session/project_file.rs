@@ -15,7 +15,6 @@ use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
-use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -137,6 +136,12 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       selection = { rules = [{ source = { model = 3 }, filter = { kinds = \
                       { only = [\"loop\", \"circle\"] } } }] }, and holes in place of \
                       model_outline.holes. Delete the key",
+    },
+    RetiredKey {
+        table: &["setups", "[]", "toolpaths", "[]"],
+        key: "face_selection",
+        replacement: "Removed (geometry selection P2.6): face picks are in \
+                      operation.params.selection. Re-pick the faces. Delete the key",
     },
     RetiredKey {
         table: &["setups", "[]", "toolpaths", "[]"],
@@ -716,9 +721,6 @@ pub struct ProjectToolpathSection {
     /// Coolant mode for G-code output.
     #[serde(default)]
     pub coolant: CoolantMode,
-    /// Optional BREP face selection (raw u16 IDs).
-    #[serde(default)]
-    pub face_selection: Option<Vec<u16>>,
     /// Debug trace options.
     #[serde(default)]
     pub debug_options: ToolpathDebugOptions,
@@ -1033,10 +1035,6 @@ fn toolpath_config_from_section(
         boundary_inherit: tp.boundary_inherit,
         stock_source: tp.stock_source,
         coolant: tp.coolant,
-        face_selection: tp
-            .face_selection
-            .as_ref()
-            .map(|ids| ids.iter().copied().map(FaceGroupId).collect()),
         debug_options: tp.debug_options,
         feeds_provenance: tp.feeds_provenance.clone(),
         rest_analysis: tp.rest_analysis.clone(),

@@ -85,7 +85,6 @@ fn tc(
         boundary_inherit: true,
         stock_source,
         coolant: CoolantMode::Off,
-        face_selection: None,
         debug_options: ToolpathDebugOptions::default(),
         feeds_provenance: FeedsProvenance::default(),
         rest_analysis: RestAnalysisConfig::default(),
@@ -202,13 +201,13 @@ fn restore(
     feeds_provenance: Option<FeedsProvenance>,
 ) -> Effects {
     let dressups = s.toolpath_configs()[0].dressups.clone();
-    let face_selection = s.toolpath_configs()[0].face_selection.clone();
+    let boundary = s.toolpath_configs()[0].boundary.clone();
     s.apply(Command::RestoreToolpathSnapshot(
         RestoreToolpathSnapshotArgs {
             index: 0,
             operation: Box::new(operation),
             dressups: Box::new(dressups),
-            face_selection,
+            boundary: Box::new(boundary),
             feeds_provenance: feeds_provenance.map(Box::new),
         },
     ))

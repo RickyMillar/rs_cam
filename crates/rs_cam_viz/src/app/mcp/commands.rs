@@ -956,7 +956,6 @@ impl RsCamApp {
             rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
             stock_source: rs_cam_core::compute::config::StockSource::default(),
             coolant: rs_cam_core::gcode::CoolantMode::default(),
-            face_selection: None,
             debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
             feeds_provenance,
             planner_origin: None,
@@ -1990,6 +1989,7 @@ impl RsCamApp {
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
             | CommandId::SelectionStatus
+            | CommandId::ListItems
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
@@ -2001,7 +2001,6 @@ impl RsCamApp {
             // eleven carry no caller at all.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
-            | CommandId::SetFaceSelection
             | CommandId::EditSelection
             | CommandId::AddObstacle
             | CommandId::RemoveObstacle
@@ -2899,6 +2898,7 @@ impl RsCamApp {
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
             | CommandId::SelectionStatus
+            | CommandId::ListItems
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
@@ -2910,7 +2910,6 @@ impl RsCamApp {
             // GUI dispatches twelve of them; eleven carry no caller.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
-            | CommandId::SetFaceSelection
             | CommandId::SetPinPartModels
             | CommandId::EditSelection
             | CommandId::AutoEnableRestAnalysis

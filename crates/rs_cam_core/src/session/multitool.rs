@@ -510,7 +510,6 @@ impl ProjectSession {
             // left. Tier 0's own predecessor is the roughing pass.
             stock_source: StockSource::FromRemainingStock,
             coolant: crate::gcode::CoolantMode::Off,
-            face_selection: None,
             debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
             operation,
             feeds_provenance,
