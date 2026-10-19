@@ -555,3 +555,17 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   Accepted deviations: `ToolpathHeights::from_context` is public (two
   ungated core tests use it); L-4 is a value on the answer, and generation
   refuses through `generation_heights`; `TopSource` has three flat arms.
+- P3.2 (6d403ac1) accepted, with the P3.1 export.rs swap. Notes:
+  - L-16 refuses an empty ladder on EVERY Layered op (Trace too), not
+    only the four floor ops. The safe direction; the operator is told.
+  - The floor is driver-set, so `get_operation_schema` lists no floor
+    and the W6a compile check does not reach its numbers (domains in
+    prose in `floor.rs`). P3.3 adds `set_toolpath_floor` and a schema
+    entry with domains.
+  - GUI until P3.7: the Heights-tab Bottom row of the four ops stays
+    editable and snaps back with no message; the diagram still says
+    "BZ (not used)". P3.7 owns both.
+  - FOR THE OPERATOR: `planning/rivmap_block_job/testpiece.toml` needs a
+    hand edit (depth -> floor); `nz_south.toml` still refuses at load
+    because of `[boundary.source.model_outline]` (retired in P2.5); its
+    generator `derive.py` is stale and a rerun reverts the rewrite.
