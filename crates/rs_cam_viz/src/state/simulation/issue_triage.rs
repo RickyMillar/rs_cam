@@ -77,22 +77,27 @@ impl SimulationState {
     }
 
     /// Build the triage and the project verdict when the cache key moved.
+    ///
+    /// F187: the evidence is built once. Its fingerprint and the build read
+    /// that same value, so the key cannot miss an evidence part the build
+    /// reads.
     fn refresh_triage_cache(&mut self, session: &ProjectSession) {
         let report = self.cached_load_report(session);
-        let evidence_fp = self.evidence_fingerprint();
-        if self
-            .debug
-            .triage_cache
-            .matches(&report, session, evidence_fp)
-        {
-            return;
-        }
         let start = std::time::Instant::now();
         // Scoped so the immutable `project_evidence` borrow of `self`
         // ends before the cache write below.
-        let (verdict, triage) = {
+        let (evidence_fp, built) = {
             let evidence = self.project_evidence();
-            session.verdict_and_triage_with_report(&evidence, &report)
+            let evidence_fp = Self::evidence_fingerprint(&evidence);
+            let built = (!self
+                .debug
+                .triage_cache
+                .matches(&report, session, evidence_fp))
+            .then(|| session.verdict_and_triage_with_report(&evidence, &report));
+            (evidence_fp, built)
+        };
+        let Some((verdict, triage)) = built else {
+            return;
         };
         let elapsed = start.elapsed();
         if elapsed > std::time::Duration::from_millis(8) {
@@ -142,74 +147,86 @@ impl SimulationState {
         }
     }
 
-    /// Fingerprint over every [`Self::project_evidence`] input that is **not**
+    /// Fingerprint over every [`Self::project_evidence`] part that is **not**
     /// the cut trace, for [`Self::cached_simulation_triage`]'s key.
     ///
-    /// The load report stamp covers the trace identity; these are the other
-    /// four evidence fields, none of which move the trace pointer:
+    /// F187: it reads the evidence value the triage build reads, and it
+    /// destructures that value with no `..`. A new evidence part is
+    /// therefore a compile error here until it is keyed. The load report
+    /// stamp covers the trace identity; the other parts move no trace
+    /// pointer:
     ///
     /// - `boundaries` — the move ranges the triage attributes findings through;
     /// - `rapid_collisions` and `rapid_collision_move_indices` — the
     ///   through-stock rapids the triage reports as `safety` findings;
-    /// - the holder-collision report's move indices, which is the whole of
-    ///   what [`Self::holder_collision_counts_by_tp`] reads. That report is
-    ///   written by a *separate async job* (`controller::events::compute`),
-    ///   long after the trace lands and with no counter bump: without this
-    ///   fingerprint, a holder report arriving while the Diagnostics header is
-    ///   open is never reflected in the cached triage;
+    /// - `obstacle_collisions` — the K1 obstacle hits the triage lists;
+    /// - `holder_collisions` — the holder counts. Their report is written by
+    ///   a *separate async job* (`controller::events::compute`), long after
+    ///   the trace lands and with no counter bump: without this fingerprint,
+    ///   a holder report arriving while the Diagnostics header is open is
+    ///   never reflected in the cached triage;
     /// - `resolution_mm`, which enriches a measurability abstention's reason —
     ///   the one field today's sole consumer (`ui::sim_diagnostics`'s
     ///   `NOT MEASURED` strip) actually renders.
     ///
-    /// Mirrors the `collision_fingerprint` the neighbouring `issue_cache_key`
-    /// has always folded in. `O(boundaries + collisions)` per frame, the same
-    /// order that key already pays.
-    fn evidence_fingerprint(&self) -> u64 {
+    /// `O(boundaries + collisions)` per frame, the same order that the
+    /// neighbouring `issue_cache_key` pays.
+    fn evidence_fingerprint(evidence: &rs_cam_core::session::ProjectEvidence<'_>) -> u64 {
+        let rs_cam_core::session::ProjectEvidence {
+            boundaries,
+            rapid_collisions,
+            rapid_collision_move_indices,
+            obstacle_collisions,
+            // The load report stamp holds the trace identity.
+            cut_trace: _,
+            holder_collisions,
+            resolution_mm,
+        } = evidence;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for boundary in self.boundaries() {
-            boundary.id.0.hash(&mut hasher);
-            boundary.start_move.hash(&mut hasher);
-            boundary.end_move.hash(&mut hasher);
-        }
-        self.checks.rapid_collisions.len().hash(&mut hasher);
-        for collision in &self.checks.rapid_collisions {
-            collision.move_index.hash(&mut hasher);
-            for coord in [
-                collision.start.x,
-                collision.start.y,
-                collision.start.z,
-                collision.end.x,
-                collision.end.y,
-                collision.end.z,
-            ] {
+        boundaries.hash(&mut hasher);
+        rapid_collisions.len().hash(&mut hasher);
+        for collision in *rapid_collisions {
+            let rs_cam_core::stock::collision::RapidCollision {
+                move_index,
+                start,
+                end,
+            } = collision;
+            move_index.hash(&mut hasher);
+            for coord in [start.x, start.y, start.z, end.x, end.y, end.z] {
                 coord.to_bits().hash(&mut hasher);
             }
         }
-        self.checks
-            .rapid_collision_move_indices
-            .len()
-            .hash(&mut hasher);
-        for &move_index in &self.checks.rapid_collision_move_indices {
+        rapid_collision_move_indices.hash(&mut hasher);
+        obstacle_collisions.len().hash(&mut hasher);
+        for hit in *obstacle_collisions {
+            let rs_cam_core::compute::obstacle::ObstacleCollision {
+                toolpath_id,
+                global_move,
+                event,
+            } = hit;
+            let rs_cam_core::stock::collision::CollisionEvent {
+                move_index,
+                position,
+                penetration_depth,
+                segment,
+                kind,
+            } = event;
+            toolpath_id.hash(&mut hasher);
+            global_move.hash(&mut hasher);
             move_index.hash(&mut hasher);
-        }
-        // The checked toolpath places every holder event (G-RAPIDFRAME).
-        self.checks.checked_scope.toolpath_id.hash(&mut hasher);
-        match self.checks.collision_report.as_ref() {
-            Some(report) => {
-                report.collisions.len().hash(&mut hasher);
-                for collision in &report.collisions {
-                    collision.move_index.hash(&mut hasher);
-                }
+            for value in [position.x, position.y, position.z, *penetration_depth] {
+                value.to_bits().hash(&mut hasher);
             }
-            // Distinguish "no report yet" from "report with no collisions":
-            // the async holder job replacing the former with the latter is
-            // exactly the transition this fingerprint exists to catch.
-            None => u64::MAX.hash(&mut hasher),
+            // No `Hash` on these two: their `Debug` text, the idiom of the
+            // core digests.
+            format!("{segment:?}|{kind:?}").hash(&mut hasher);
         }
-        self.results
-            .as_ref()
-            .map(|r| r.column_grid_cell_mm.to_bits())
-            .hash(&mut hasher);
+        holder_collisions.len().hash(&mut hasher);
+        for (toolpath_id, check) in holder_collisions {
+            toolpath_id.hash(&mut hasher);
+            format!("{check:?}").hash(&mut hasher);
+        }
+        resolution_mm.map(f64::to_bits).hash(&mut hasher);
         hasher.finish()
     }
 

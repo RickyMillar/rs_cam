@@ -22,8 +22,20 @@
 //!   the pass that nothing this resource reads has moved.
 //!
 //! The cost of that strength is that every input a resource reads must appear
-//! in its key. Each key below documents its inputs against the code that
-//! consumes them; adding a new input to a builder means adding it here.
+//! in its key. F132 makes that a rule of the types, not of this text:
+//!
+//! - each slot reads its inputs ONCE, into a value whose type implements
+//!   [`SlotInputs`] (`app/gpu_upload/`);
+//! - the key derives from that value ([`SlotInputs::key`]), and each impl
+//!   destructures the value with no `..`, so a new input is a compile error
+//!   in `key` until it is keyed or named as covered;
+//! - [`refresh`] is the only compare: it takes the inputs, not a key, and
+//!   hands the SAME inputs back to the build. The build of a slot takes
+//!   only its inputs and the GPU handles, never the app state.
+//!
+//! A key that was built from one read of the state and a build that read
+//! the state again (c84ef3be: caches keyed on `edit_counter`) cannot be
+//! written in this shape.
 //!
 //! Geometry that arrives behind an `Arc` (`TriangleMesh`, `EnrichedMesh`,
 //! `AnnotatedToolpath`, `SimulationCutTrace`) is keyed by object identity —
@@ -217,7 +229,7 @@ pub struct TierPreviewUploadKey {
 
 /// Key for the per-tool reach-map overlay (P5).
 ///
-/// Three inputs, each against its consumer in `RsCamApp::upload_gpu_data`:
+/// Three inputs, each against its consumer in `app/gpu_upload/`:
 ///
 /// - `generation` — the overlay state's counter, bumped only when a map
 ///   arrives that is not the one already held. A memo hit hands back the same
@@ -242,7 +254,7 @@ pub struct ReachOverlayUploadKey {
 /// generation" asks for; `annotated` *is* the result generation, since the
 /// compute worker publishes a fresh `Arc<AnnotatedToolpath>` per generate.
 ///
-/// Inputs, each against its consumer in `RsCamApp::upload_gpu_data`:
+/// Inputs, each against its consumer in `app/gpu_upload/`:
 ///
 /// - `annotated` — the geometry, and everything derived from it.
 /// - `palette_index` — the enumeration index passed to
@@ -286,21 +298,55 @@ pub struct AdvanceSource {
     pub report: ArcId<rs_cam_core::tool_load::ToolLoadReport>,
 }
 
-/// Compare a cache slot against the key this pass needs, adopt the new
-/// key, and answer whether the resource must be rebuilt (SHL-05).
+/// The inputs of one keyed upload slot (F132).
+///
+/// A value of this type is everything the slot's build reads. The key
+/// derives from it; [`refresh`] compares that key and hands the value back
+/// to the build. Implement `key` with an exhaustive destructure of `Self`
+/// (no `..`): bind each field the key holds, and bind `_` with a reason
+/// for a field the key covers another way (an identity, a counter).
+pub trait SlotInputs {
+    /// The stored key of the slot.
+    type Key: PartialEq;
+
+    /// The key of these inputs.
+    fn key(&self) -> Self::Key;
+}
+
+/// The answer of [`refresh`].
+pub enum Refresh<I> {
+    /// The stored key matches: keep the resource as it is.
+    Keep,
+    /// The key moved and was adopted: build the resource from these inputs,
+    /// or clear it for `None` (the pass does not draw it).
+    Build(Option<I>),
+}
+
+/// Compare a slot against the key of `inputs`, adopt that key, and say
+/// whether the resource must be rebuilt (SHL-05, F132).
 ///
 /// This is the compare-then-rebuild guard every keyed resource runs.
 /// `app/gpu_upload.rs` wrote it by hand once per resource, so each copy
 /// carried its own chance to compare the wrong slot, to forget the
-/// assignment, or to invert the test. `wanted` is `None` when the pass
+/// assignment, or to invert the test. `inputs` is `None` when the pass
 /// does not draw that resource — the slot then clears, and a later pass
 /// that wants the resource back reads a miss.
 ///
 /// The collision markers and the per-toolpath buffers keep their own
 /// shapes: the collision slot compares a borrowed position slice without
 /// allocating, and the toolpath buffers are a map keyed by toolpath id,
-/// not one slot.
-pub fn refresh_key<K: PartialEq>(slot: &mut Option<K>, wanted: Option<K>) -> bool {
+/// not one slot. Both still derive their key from a [`SlotInputs`] value.
+pub fn refresh<I: SlotInputs>(slot: &mut Option<I::Key>, inputs: Option<I>) -> Refresh<I> {
+    if refresh_key(slot, inputs.as_ref().map(SlotInputs::key)) {
+        Refresh::Build(inputs)
+    } else {
+        Refresh::Keep
+    }
+}
+
+/// The compare behind [`refresh`]. Private: a caller hands inputs, never a
+/// key it built itself.
+fn refresh_key<K: PartialEq>(slot: &mut Option<K>, wanted: Option<K>) -> bool {
     if *slot == wanted {
         return false;
     }

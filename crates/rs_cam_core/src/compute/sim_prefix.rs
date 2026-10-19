@@ -116,12 +116,11 @@
 //! `tests/sim_prefix_memo_s5.rs::tool_key_separates_every_shipped_shape` for
 //! the net that keeps it honest.
 //!
-//! Note that the *existing* provenance `tool_hashes`
-//! (`simulate.rs::build_simulation_provenance`) would **not** have been a sound
-//! key: it hashes diameter, length, shank, holder, stickout and flute count and
-//! carries **no cutter shape at all**, so a Ø6 flat and a Ø6 ball of the same
-//! length hash equal. The review's "provenance hashes already exist" is right
-//! that they exist and wrong that they close the input set.
+//! The provenance `tool_hashes` that `simulate.rs::build_simulation_provenance`
+//! once wrote would **not** have been a sound key: it hashed diameter, length,
+//! shank, stickout and flute count and carried **no cutter shape at all**, so a
+//! Ø6 flat and a Ø6 ball of the same length hashed equal. It had no reader, and
+//! F101 deleted it.
 //!
 //! # Phantom prior stock
 //!
@@ -377,8 +376,61 @@ impl GroupKey {
     }
 }
 
-fn hash_f64_bits(hasher: &mut DefaultHasher, value: f64) {
-    value.to_bits().hash(hasher);
+use digest::hash_f64_bits;
+
+/// The one content-digest helper of the simulation keys (F101).
+///
+/// Two hashers serve the recipes, and each recipe keeps its own, so no
+/// digest value moves:
+///
+/// - `DefaultHasher` (fixed keys) for the in-memory keys of this module,
+///   `simulate.rs`, `obstacle.rs`, `stock_change.rs` and `machine/head.rs`;
+/// - [`Fnv1a`] for `source_stock::carve_digest` and
+///   `toolpath_stats::StockSnapshotStamp::of`.
+///
+/// [`hash_f64_bits`] writes an `f64` through either hasher. It writes the
+/// bit pattern as one `u64`, so `-0.0` and `0.0` differ and a NaN keeps its
+/// payload. Both hashers are equal within one build, not across releases.
+pub(crate) mod digest {
+    use std::hash::{Hash, Hasher};
+
+    /// Write the bits of `value` to `hasher`, as one `u64`.
+    pub(crate) fn hash_f64_bits<H: Hasher>(hasher: &mut H, value: f64) {
+        value.to_bits().hash(hasher);
+    }
+
+    /// FNV-1a, 64 bit. The offset basis and the prime are the values that
+    /// `tests/common/fingerprint.rs` prints too (FNV-1a 64-bit parameters).
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    /// An FNV-1a [`Hasher`]. A `u64` goes in as its eight little-endian
+    /// bytes on every target, so a digest does not depend on the byte order
+    /// of the host.
+    pub(crate) struct Fnv1a(u64);
+
+    impl Fnv1a {
+        pub(crate) const fn new() -> Self {
+            Self(FNV_OFFSET_BASIS)
+        }
+    }
+
+    impl Hasher for Fnv1a {
+        fn write(&mut self, bytes: &[u8]) {
+            for byte in bytes {
+                self.0 ^= u64::from(*byte);
+                self.0 = self.0.wrapping_mul(FNV_PRIME);
+            }
+        }
+
+        fn write_u64(&mut self, word: u64) {
+            self.write(&word.to_le_bytes());
+        }
+
+        fn finish(&self) -> u64 {
+            self.0
+        }
+    }
 }
 
 /// Hash the observable surface of a cutter assembly.

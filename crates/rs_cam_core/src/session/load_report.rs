@@ -91,6 +91,101 @@ struct RowKey {
     drill_op: Option<Weak<DrillOp>>,
 }
 
+/// One toolpath row as the report builder reads it, borrowed (F187).
+///
+/// [`RowInputs::of`] is the one place that reads a row of the session.
+/// [`RowKey::capture`] and [`RowKey::answers`] both destructure this view
+/// with no `..`, so the stored key and the compare cannot read different
+/// parts, and a new part is a compile error in both until it is keyed.
+struct RowInputs<'a> {
+    id: crate::ids::ToolpathId,
+    enabled: bool,
+    tool_id: usize,
+    operation: &'a crate::compute::catalog::OperationConfig,
+    annotated: Option<&'a Arc<AnnotatedToolpath>>,
+    drill_op: Option<&'a Arc<DrillOp>>,
+}
+
+impl<'a> RowInputs<'a> {
+    /// Row `index` of `session`, whose config is `tc`.
+    fn of(session: &'a ProjectSession, index: usize, tc: &'a super::ToolpathConfig) -> Self {
+        // No `..`: a new `ToolpathConfig` field is a compile error here
+        // until someone decides whether the load report reads it.
+        let super::ToolpathConfig {
+            id,
+            enabled,
+            tool_id,
+            operation,
+            // A field that moves motion gives a new result `Arc`, which
+            // `annotated` holds; the report reads the motion, not these.
+            name: _,
+            dressups: _,
+            heights: _,
+            model_id: _,
+            pre_gcode: _,
+            post_gcode: _,
+            boundary: _,
+            boundary_inherit: _,
+            rest_analysis: _,
+            stock_source: _,
+            coolant: _,
+            debug_options: _,
+            feeds_provenance: _,
+            planner_origin: _,
+            shoe: _,
+        } = tc;
+        let result = session.results.get(&index);
+        Self {
+            id: *id,
+            enabled: *enabled,
+            tool_id: *tool_id,
+            operation,
+            annotated: result.map(|r| r.annotated()),
+            drill_op: result.and_then(|r| r.drill_op()),
+        }
+    }
+}
+
+impl RowKey {
+    /// The key of `row`, or `None` when its operation does not serialize.
+    fn capture(row: &RowInputs<'_>) -> Option<Self> {
+        let RowInputs {
+            id,
+            enabled,
+            tool_id,
+            operation,
+            annotated,
+            drill_op,
+        } = row;
+        Some(Self {
+            id: *id,
+            enabled: *enabled,
+            tool_id: *tool_id,
+            operation: serialized(*operation)?,
+            annotated: annotated.map(Arc::downgrade),
+            drill_op: drill_op.map(Arc::downgrade),
+        })
+    }
+
+    /// Does this key describe `row`?
+    fn answers(&self, row: &RowInputs<'_>) -> bool {
+        let RowInputs {
+            id,
+            enabled,
+            tool_id,
+            operation,
+            annotated,
+            drill_op,
+        } = row;
+        self.id == *id
+            && self.enabled == *enabled
+            && self.tool_id == *tool_id
+            && same_allocation(self.annotated.as_ref(), *annotated)
+            && same_allocation(self.drill_op.as_ref(), *drill_op)
+            && serialized(*operation).as_deref() == Some(self.operation.as_slice())
+    }
+}
+
 /// Every input [`crate::gcode::project_load_report`] reads.
 struct ReportKey {
     rows: Vec<RowKey>,
@@ -99,6 +194,40 @@ struct ReportKey {
     post: crate::gcode::PostConfig,
     machine: Vec<u8>,
     trace: Option<Weak<SimulationCutTrace>>,
+}
+
+/// The session parts the report builder reads, borrowed, built in one
+/// place (F187). See [`RowInputs`].
+struct ReportInputs<'a> {
+    session: &'a ProjectSession,
+    tools: &'a [ToolConfig],
+    material: &'a Material,
+    post: &'a crate::gcode::PostConfig,
+    machine: &'a crate::machine::MachineProfile,
+    trace: Option<&'a Arc<SimulationCutTrace>>,
+}
+
+impl<'a> ReportInputs<'a> {
+    fn of(session: &'a ProjectSession, trace: Option<&'a Arc<SimulationCutTrace>>) -> Self {
+        Self {
+            session,
+            tools: &session.tools,
+            material: &session.stock.material,
+            post: &session.post,
+            machine: &session.machine,
+            trace,
+        }
+    }
+
+    /// Each row, in session order.
+    fn rows(&self) -> impl Iterator<Item = RowInputs<'a>> + '_ {
+        let session = self.session;
+        session
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .map(move |(index, tc)| RowInputs::of(session, index, tc))
+    }
 }
 
 /// The serialized form of a key part, or `None` when serde refuses it.
@@ -110,58 +239,57 @@ fn serialized<T: serde::Serialize>(value: &T) -> Option<Vec<u8>> {
 impl ReportKey {
     /// Does this key describe `session` and `trace` as they are now?
     fn matches(&self, session: &ProjectSession, trace: Option<&Arc<SimulationCutTrace>>) -> bool {
-        if !same_allocation(self.trace.as_ref(), trace) {
+        let inputs = ReportInputs::of(session, trace);
+        let ReportInputs {
+            session: _,
+            tools,
+            material,
+            post,
+            machine,
+            trace,
+        } = &inputs;
+        if !same_allocation(self.trace.as_ref(), *trace) {
             return false;
         }
-        if self.material != session.stock.material
-            || self.post != session.post
-            || self.tools != session.tools
+        if self.material != **material || self.post != **post || self.tools != *tools {
+            return false;
+        }
+        if self.rows.len() != session.toolpath_configs.len() {
+            return false;
+        }
+        if !self
+            .rows
+            .iter()
+            .zip(inputs.rows())
+            .all(|(key, row)| key.answers(&row))
         {
             return false;
         }
-        let configs = &session.toolpath_configs;
-        if self.rows.len() != configs.len() {
-            return false;
-        }
-        for (index, (row, tc)) in self.rows.iter().zip(configs).enumerate() {
-            if row.id != tc.id || row.enabled != tc.enabled || row.tool_id != tc.tool_id {
-                return false;
-            }
-            let result = session.results.get(&index);
-            if !same_allocation(row.annotated.as_ref(), result.map(|r| r.annotated())) {
-                return false;
-            }
-            if !same_allocation(row.drill_op.as_ref(), result.and_then(|r| r.drill_op())) {
-                return false;
-            }
-            if serialized(&tc.operation).as_deref() != Some(row.operation.as_slice()) {
-                return false;
-            }
-        }
-        serialized(&session.machine).as_deref() == Some(self.machine.as_slice())
+        serialized(*machine).as_deref() == Some(self.machine.as_slice())
     }
 
     /// The key for `session` and `trace` as they are now, or `None` when a
     /// part does not serialize.
     fn capture(session: &ProjectSession, trace: Option<&Arc<SimulationCutTrace>>) -> Option<Self> {
-        let mut rows = Vec::with_capacity(session.toolpath_configs.len());
-        for (index, tc) in session.toolpath_configs.iter().enumerate() {
-            let result = session.results.get(&index);
-            rows.push(RowKey {
-                id: tc.id,
-                enabled: tc.enabled,
-                tool_id: tc.tool_id,
-                operation: serialized(&tc.operation)?,
-                annotated: result.map(|r| Arc::downgrade(r.annotated())),
-                drill_op: result.and_then(|r| r.drill_op()).map(Arc::downgrade),
-            });
-        }
+        let inputs = ReportInputs::of(session, trace);
+        let rows = inputs
+            .rows()
+            .map(|row| RowKey::capture(&row))
+            .collect::<Option<Vec<_>>>()?;
+        let ReportInputs {
+            session: _,
+            tools,
+            material,
+            post,
+            machine,
+            trace,
+        } = inputs;
         Some(Self {
             rows,
-            tools: session.tools.clone(),
-            material: session.stock.material.clone(),
-            post: session.post.clone(),
-            machine: serialized(&session.machine)?,
+            tools: tools.to_vec(),
+            material: material.clone(),
+            post: post.clone(),
+            machine: serialized(machine)?,
             trace: trace.map(Arc::downgrade),
         })
     }
@@ -345,9 +473,7 @@ mod tests {
                     tc.id,
                     crate::compute::simulate::hash_toolpath(toolpath),
                 )]),
-                tool_hashes: BTreeMap::new(),
                 operation_config_hashes: BTreeMap::new(),
-                stock_hash: 0,
                 machine_hash: 0,
             }),
             ..SimulationCutTrace::test_fixture()

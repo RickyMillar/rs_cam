@@ -1140,19 +1140,65 @@ impl ToolpathConfig {
     /// it either side of its own write before it calls
     /// [`ProjectSession::invalidate_toolpath_inputs`]. The two routes
     /// agree because they share this method.
+    ///
+    /// F065: destructured with no `..`, so a new field is a compile error
+    /// here until someone decides whether it moves motion. A serialise
+    /// failure is a defect: it used to fold to an empty string, so two
+    /// different configs could read as equal and keep a stale result.
     pub fn generation_inputs_signature(&self) -> String {
+        let Self {
+            operation,
+            dressups,
+            heights,
+            boundary,
+            rest_analysis,
+            tool_id,
+            model_id,
+            stock_source,
+            // The id names the row; it moves no motion.
+            id: _,
+            // R0.1 §4.3: these dirty the project but move no motion.
+            name: _,
+            coolant: _,
+            pre_gcode: _,
+            post_gcode: _,
+            debug_options: _,
+            // Its own transition keeps the toggled result for a re-enable.
+            enabled: _,
+            // Only the project file reads it; generation reads `boundary`.
+            boundary_inherit: _,
+            // Records how the feeds on `operation` were made; the feeds
+            // themselves are in `operation`.
+            feeds_provenance: _,
+            // Names the planner that emitted the op; it moves no motion.
+            planner_origin: _,
+            // H1: the shoe moves no toolpath (the field doc above).
+            shoe: _,
+        } = self;
         format!(
             "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}",
-            serde_json::to_string(&self.operation).unwrap_or_default(),
-            serde_json::to_string(&self.dressups).unwrap_or_default(),
-            serde_json::to_string(&self.heights).unwrap_or_default(),
-            self.boundary,
-            self.rest_analysis,
-            self.tool_id,
-            self.model_id,
-            self.stock_source,
+            signature_json(operation),
+            signature_json(dressups),
+            signature_json(heights),
+            boundary,
+            rest_analysis,
+            tool_id,
+            model_id,
+            stock_source,
         )
     }
+}
+
+/// The serde-json text of one part of
+/// [`ToolpathConfig::generation_inputs_signature`].
+fn signature_json<T: serde::Serialize>(value: &T) -> String {
+    // SAFETY: the three parts (`OperationConfig`, `DressupConfig`,
+    // `HeightsConfig`) derive `Serialize` and hold no map, so serde-json
+    // cannot refuse them (it refuses only a non-string map key or a custom
+    // impl's error). `tests/a_signature_serialises_every_op_f065.rs` signs
+    // the default of every operation type.
+    #[allow(clippy::expect_used)]
+    serde_json::to_string(value).expect("a generation input always serialises (F065)")
 }
 
 /// Result of generating a single toolpath.

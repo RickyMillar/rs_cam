@@ -83,6 +83,28 @@ fn source(relative: &str) -> String {
     text
 }
 
+/// The GPU upload pass as one text: `app/gpu_upload.rs` and every slot file
+/// in `app/gpu_upload/` (F132 split the pass by slot).
+fn upload_source() -> String {
+    let mut text = source("src/app/gpu_upload.rs");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/gpu_upload");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+        .collect();
+    files.sort();
+    assert!(!files.is_empty(), "{} holds no slot file", dir.display());
+    for file in files {
+        text.push('\n');
+        text.push_str(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("read {}: {e}", file.display())),
+        );
+    }
+    text
+}
+
 fn row(id: &str) -> &'static registry::OverlayRow {
     registry::row(id).unwrap_or_else(|| panic!("registry row `{id}` is gone"))
 }
@@ -725,7 +747,7 @@ fn the_mirrored_colours_match_the_render_literals_g_vpstate() {
         "the dressup tint moved"
     );
 
-    let upload = source("src/app/gpu_upload.rs");
+    let upload = upload_source();
     assert!(
         upload.contains("[0.95, 0.8 * (1.0 - t) + 0.1, 0.1 * (1.0 - t)]"),
         "the collision density ramp moved; update legend_rail::mirrored"

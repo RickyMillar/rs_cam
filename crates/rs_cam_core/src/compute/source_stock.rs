@@ -143,19 +143,13 @@ impl CarvedEntry {
 /// A digest of what a toolpath CARVES: every move's target, its kind, and an
 /// arc's centre offsets. Feeds are left out on purpose (module doc).
 ///
-/// FNV-1a, the hash `StockSnapshotStamp::of` uses. Equal within one build,
-/// not across releases.
+/// FNV-1a (`sim_prefix::digest::Fnv1a`), the hash `StockSnapshotStamp::of`
+/// uses. Equal within one build, not across releases.
 #[must_use]
 pub fn carve_digest(toolpath: &crate::toolpath::Toolpath) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut h: u64 = FNV_OFFSET_BASIS;
-    let mut eat = |word: u64| {
-        for byte in word.to_le_bytes() {
-            h ^= u64::from(byte);
-            h = h.wrapping_mul(FNV_PRIME);
-        }
-    };
+    use std::hash::Hasher as _;
+    let mut digest = crate::compute::sim_prefix::digest::Fnv1a::new();
+    let mut eat = |word: u64| digest.write_u64(word);
     eat(toolpath.moves.len() as u64);
     for motion in &toolpath.moves {
         eat(motion.target.x.to_bits());
@@ -176,7 +170,7 @@ pub fn carve_digest(toolpath: &crate::toolpath::Toolpath) -> u64 {
             }
         }
     }
-    h
+    digest.finish()
 }
 
 /// How one `prior_stocks` snapshot was made.

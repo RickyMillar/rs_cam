@@ -53,6 +53,28 @@ fn source(relative: &str) -> String {
     text
 }
 
+/// The GPU upload pass as one text: `app/gpu_upload.rs` and every slot file
+/// in `app/gpu_upload/` (F132 split the pass by slot).
+fn upload_source() -> String {
+    let mut text = source("src/app/gpu_upload.rs");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/gpu_upload");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+        .collect();
+    files.sort();
+    assert!(!files.is_empty(), "{} holds no slot file", dir.display());
+    for file in files {
+        text.push('\n');
+        text.push_str(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("read {}: {e}", file.display())),
+        );
+    }
+    text
+}
+
 /// Every line without its `//` comment.
 fn code_lines(text: &str) -> Vec<(usize, String)> {
     text.lines()
@@ -95,7 +117,7 @@ fn colour_literals(line: &str) -> Vec<String> {
 
 #[test]
 fn gpu_upload_holds_no_colour_literal_p4_4() {
-    let text = source("src/app/gpu_upload.rs");
+    let text = upload_source();
     let lines = code_lines(&text);
     // Non-vacuity: the scan must see the reads of the colour module.
     let reads = lines.iter().filter(|(_, l)| l.contains("colors::")).count();

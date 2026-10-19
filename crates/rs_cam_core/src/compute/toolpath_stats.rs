@@ -582,16 +582,9 @@ impl StockSnapshotStamp {
     /// at 0.25 mm): under a millisecond, against a ~1.3 s generation.
     #[must_use]
     pub fn of(stock: &crate::dexel_stock::TriDexelStock) -> Self {
-        const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-        const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-
-        let mut h: u64 = FNV_OFFSET_BASIS;
-        let mut eat = |word: u64| {
-            for byte in word.to_le_bytes() {
-                h ^= u64::from(byte);
-                h = h.wrapping_mul(FNV_PRIME);
-            }
-        };
+        use std::hash::Hasher as _;
+        let mut digest = crate::compute::sim_prefix::digest::Fnv1a::new();
+        let mut eat = |word: u64| digest.write_u64(word);
 
         let bb = stock.stock_bbox;
         for v in [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z] {
@@ -628,7 +621,7 @@ impl StockSnapshotStamp {
             cell_size_bits: stock.z_grid.cell_size.to_bits(),
             rows: stock.z_grid.rows,
             cols: stock.z_grid.cols,
-            digest: h,
+            digest: digest.finish(),
         }
     }
 }

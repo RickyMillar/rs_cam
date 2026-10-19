@@ -922,10 +922,6 @@ where
     hasher.finish()
 }
 
-fn hash_f64(hasher: &mut std::collections::hash_map::DefaultHasher, value: f64) {
-    value.to_bits().hash(hasher);
-}
-
 /// Hash of an [`OperationConfig`]. Captures *every* parameter that
 /// can influence cutting load — including ones whose edits don't
 /// change move geometry (e.g. `feed_rate`, `plunge_rate`, depth
@@ -938,10 +934,19 @@ fn hash_f64(hasher: &mut std::collections::hash_map::DefaultHasher, value: f64) 
 /// dep) and hashes the bytes. The op config enum derives
 /// `Serialize`/`Deserialize` so this is reliable; it's also
 /// future-proof against new fields on op-specific configs.
+///
+/// F065: a serialise failure is a defect, not an empty config. It used to
+/// fold to an empty byte string, so two different configs could hash
+/// equal and a config-only edit could keep a stale verdict.
 pub fn hash_operation_config(op: &crate::compute::catalog::OperationConfig) -> u64 {
     // serde-json output is stable for typed structs — field order is
     // determined by the struct definition, not by hash iteration.
-    let bytes = serde_json::to_vec(op).unwrap_or_default();
+    // SAFETY: `OperationConfig` derives `Serialize` and holds no map, so
+    // serde-json cannot refuse it (it refuses only a non-string map key or
+    // a custom impl's error). `tests/a_signature_serialises_every_op_f065.rs`
+    // serialises the default of every operation type.
+    #[allow(clippy::expect_used)]
+    let bytes = serde_json::to_vec(op).expect("an OperationConfig always serialises (F065)");
     hash_with(|hasher| {
         bytes.hash(hasher);
     })
@@ -952,69 +957,63 @@ pub fn hash_operation_config(op: &crate::compute::catalog::OperationConfig) -> u
 /// (to detect a stale cached trace by comparing the current toolpath
 /// hash against the value stored on the trace).
 pub(crate) fn hash_toolpath(toolpath: &Toolpath) -> u64 {
+    use crate::compute::sim_prefix::digest::hash_f64_bits;
     hash_with(|hasher| {
         toolpath.moves.len().hash(hasher);
         for motion in &toolpath.moves {
-            hash_f64(hasher, motion.target.x);
-            hash_f64(hasher, motion.target.y);
-            hash_f64(hasher, motion.target.z);
-            match motion.move_type {
+            // F101: destructured, `..`-free, so a new `Move` field is a
+            // compile error here until someone decides. The intent is not
+            // hashed: it moves no material, and a saved trace whose hash
+            // took it would read as stale.
+            let crate::toolpath::Move {
+                target,
+                move_type,
+                intent: _,
+            } = motion;
+            hash_f64_bits(hasher, target.x);
+            hash_f64_bits(hasher, target.y);
+            hash_f64_bits(hasher, target.z);
+            match *move_type {
                 crate::toolpath::MoveType::Rapid => {
                     0_u8.hash(hasher);
                 }
                 crate::toolpath::MoveType::Linear { feed_rate } => {
                     1_u8.hash(hasher);
-                    hash_f64(hasher, feed_rate);
+                    hash_f64_bits(hasher, feed_rate);
                 }
                 crate::toolpath::MoveType::ArcCW { i, j, feed_rate } => {
                     2_u8.hash(hasher);
-                    hash_f64(hasher, i);
-                    hash_f64(hasher, j);
-                    hash_f64(hasher, feed_rate);
+                    hash_f64_bits(hasher, i);
+                    hash_f64_bits(hasher, j);
+                    hash_f64_bits(hasher, feed_rate);
                 }
                 crate::toolpath::MoveType::ArcCCW { i, j, feed_rate } => {
                     3_u8.hash(hasher);
-                    hash_f64(hasher, i);
-                    hash_f64(hasher, j);
-                    hash_f64(hasher, feed_rate);
+                    hash_f64_bits(hasher, i);
+                    hash_f64_bits(hasher, j);
+                    hash_f64_bits(hasher, feed_rate);
                 }
             }
         }
     })
 }
+
+/// The provenance stamp of a run. F101: the per-toolpath tool hash and the
+/// stock hash had no reader, and the tool hash held no cutter shape (a Ø6
+/// flat and a Ø6 ball of one length hashed equal), so both are gone.
 fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvenance {
+    use crate::compute::sim_prefix::digest::hash_f64_bits;
     let mut toolpath_hashes = BTreeMap::new();
-    let mut tool_hashes = BTreeMap::new();
     let mut operation_config_hashes = BTreeMap::new();
     for group in &request.groups {
         for entry in &group.toolpaths {
             toolpath_hashes.insert(entry.id, hash_toolpath(&entry.annotated.toolpath));
-            tool_hashes.insert(
-                entry.id,
-                hash_with(|hasher| {
-                    hash_f64(hasher, entry.tool.diameter());
-                    hash_f64(hasher, entry.tool.length());
-                    hash_f64(hasher, entry.tool.shank_diameter);
-                    hash_f64(hasher, entry.tool.stickout);
-                    entry.tool.flute_count.hash(hasher);
-                }),
-            );
             operation_config_hashes.insert(entry.id, entry.operation_config_hash);
         }
     }
-    let stock_hash = hash_with(|hasher| {
-        hash_f64(hasher, request.stock_bbox.min.x);
-        hash_f64(hasher, request.stock_bbox.min.y);
-        hash_f64(hasher, request.stock_bbox.min.z);
-        hash_f64(hasher, request.stock_bbox.max.x);
-        hash_f64(hasher, request.stock_bbox.max.y);
-        hash_f64(hasher, request.stock_bbox.max.z);
-        hash_f64(hasher, request.stock_top_z);
-        hash_f64(hasher, request.resolution);
-    });
     let machine_hash = hash_with(|hasher| {
         request.spindle_rpm.hash(hasher);
-        hash_f64(hasher, request.rapid_feed_mm_min);
+        hash_f64_bits(hasher, request.rapid_feed_mm_min);
     });
     SimulationProvenance {
         trace_schema_version: SIMULATION_CUT_TRACE_SCHEMA_VERSION,
@@ -1022,9 +1021,7 @@ fn build_simulation_provenance(request: &SimulationRequest) -> SimulationProvena
         // 2026-10-02, "always capture").
         captured_arc_engagement: true,
         toolpath_hashes,
-        tool_hashes,
         operation_config_hashes,
-        stock_hash,
         machine_hash,
     }
 }

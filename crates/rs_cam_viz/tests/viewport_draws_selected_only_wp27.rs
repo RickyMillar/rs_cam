@@ -63,6 +63,28 @@ fn source(relative: &str) -> String {
     text
 }
 
+/// The GPU upload pass as one text: `app/gpu_upload.rs` and every slot file
+/// in `app/gpu_upload/` (F132 split the pass by slot).
+fn upload_source() -> String {
+    let mut text = source("src/app/gpu_upload.rs");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/gpu_upload");
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+        .collect();
+    files.sort();
+    assert!(!files.is_empty(), "{} holds no slot file", dir.display());
+    for file in files {
+        text.push('\n');
+        text.push_str(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("read {}: {e}", file.display())),
+        );
+    }
+    text
+}
+
 /// Strip every `//` comment from one source text.
 ///
 /// A scan that matches a doc comment reports a reader that does not exist.
@@ -221,7 +243,7 @@ fn nothing_selected_draws_nothing() {
 /// leaving a second draw rule beside the shared one.
 #[test]
 fn the_upload_and_the_pick_read_one_draw_rule() {
-    let upload = strip_comments(&source("src/app/gpu_upload.rs"));
+    let upload = strip_comments(&upload_source());
     let pick = strip_comments(&source("src/interaction/picking.rs"));
     assert!(
         upload.contains("toolpaths_to_draw"),
@@ -292,11 +314,7 @@ fn ur5_has_no_isolate_routes() {
             source("src/ui/sim_op_list.rs"),
             "show_all_toolpaths",
         ),
-        (
-            "GPU upload",
-            source("src/app/gpu_upload.rs"),
-            "toolpaths_to_draw",
-        ),
+        ("GPU upload", upload_source(), "toolpaths_to_draw"),
         (
             "picking",
             source("src/interaction/picking.rs"),
@@ -405,7 +423,7 @@ fn the_upload_key_carries_the_scope_and_the_selection() {
 
 #[test]
 fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
-    let upload = strip_comments(&source("src/app/gpu_upload.rs"));
+    let upload = strip_comments(&upload_source());
     // Geometry selection P4.D: the upload reads the drawing draw plan
     // (`drawing_draws`), and the plan asks the vector-source toolpath.
     let viewport = strip_comments(&source("src/state/viewport.rs"));

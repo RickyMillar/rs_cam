@@ -10,7 +10,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
   `set_model_import_options`), `drawing.rs` (`edit_model_drawing`), each with its GUI parity tests;
   `project.rs`, `generation.rs`, `diagnostics.rs`, `simulation.rs`, `view.rs` (screenshots, `set_ui_view`).
 - `export.rs` — the GUI export path. `simulation.rs` — per-frame simulation work. `input.rs` — app input.
-- `viewport.rs`, `gpu_upload.rs`, `pin_marks.rs` (P7 pins), `obstacle_marks.rs` (K2) — the frame and the upload.
+- `viewport.rs`, `gpu_upload.rs` + `gpu_upload/` (F132: a file per slot, key and build read one `SlotInputs`), `pin_marks.rs` (P7), `obstacle_marks.rs` (K2) — the frame and the upload.
   - The drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline.
     It uploads on a change of the report `Arc` (`ReportDetector`), never per frame.
   - A drawing that no drawn toolpath reads uploads as `neutral_drawing_vertices` (active setup frame).

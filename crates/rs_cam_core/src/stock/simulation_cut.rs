@@ -126,9 +126,6 @@ pub struct SimulationProvenance {
     pub trace_schema_version: u32,
     pub captured_arc_engagement: bool,
     pub toolpath_hashes: BTreeMap<ToolpathId, u64>,
-    /// Per-toolpath hash of the tool geometry used by that toolpath.
-    /// NB: keyed by **toolpath** id (like `toolpath_hashes`), not tool id.
-    pub tool_hashes: BTreeMap<ToolpathId, u64>,
     /// Hash of each toolpath's `OperationConfig` at sim time. New in
     /// PR-4 polish — lets [`crate::gcode::sim_trace_is_fresh`] catch
     /// config-only edits (e.g. `feed_rate` changes that don't change
@@ -138,7 +135,6 @@ pub struct SimulationProvenance {
     /// backward-compatibility.
     #[serde(default)]
     pub operation_config_hashes: BTreeMap<ToolpathId, u64>,
-    pub stock_hash: u64,
     pub machine_hash: u64,
 }
 

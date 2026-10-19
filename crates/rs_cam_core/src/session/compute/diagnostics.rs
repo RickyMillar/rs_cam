@@ -172,6 +172,140 @@ pub(super) fn plunge_stress_offenders_for_session(
     offenders
 }
 
+/// The session parts that the simulation triage reads, borrowed, built in
+/// ONE place ([`TriageView::of`]) (F187).
+///
+/// [`ProjectSession::triage_from_parts`] reads the session through this view
+/// only, and [`TriageSessionKey`] derives from the same view, so the key and
+/// the build cannot read different state. Each part is either in
+/// [`TriageSessionKey`] or in the load-report key
+/// ([`crate::session::LoadReportStamp`]); the destructures in
+/// [`TriageView::key`] and [`TriageView::rows`] have no `..`, so a new part
+/// is a compile error until someone names its key.
+///
+/// `stock` and `setups` are not read by the triage assembly itself. They are
+/// here because [`ProjectSession::diagnostics_with_evidence`] reads them (the
+/// alignment-pin findings and each setup's face) and the triage cache keys
+/// that read too. That pass still reads the whole session; its other reads
+/// are in the load-report key.
+pub(crate) struct TriageView<'a> {
+    toolpaths: &'a [crate::session::ToolpathConfig],
+    tools: &'a [crate::compute::tool_config::ToolConfig],
+    stock: &'a crate::compute::stock_config::StockConfig,
+    setups: &'a [crate::session::SetupData],
+    /// The current rest-against-fresh comparisons. Empty, and therefore
+    /// not allocated, when the session holds none.
+    rest_fresh:
+        std::collections::BTreeMap<ToolpathId, crate::compute::toolpath_stats::FreshTwinTime>,
+}
+
+/// One toolpath row as the triage reads it.
+pub(crate) struct TriageRow<'a> {
+    id: ToolpathId,
+    name: &'a str,
+    stock_source: crate::session::StockSource,
+    /// The bound tool, `None` for a missing tool id.
+    tool: Option<&'a crate::compute::tool_config::ToolConfig>,
+    operation: &'a crate::compute::catalog::OperationConfig,
+}
+
+impl<'a> TriageView<'a> {
+    /// The view of `session` as it is now. It allocates only when the
+    /// session holds a current rest-against-fresh comparison.
+    pub(crate) fn of(session: &'a ProjectSession) -> Self {
+        Self {
+            toolpaths: &session.toolpath_configs,
+            tools: &session.tools,
+            stock: &session.stock,
+            setups: &session.setups,
+            rest_fresh: session.current_rest_fresh_comparisons(),
+        }
+    }
+
+    /// Each toolpath row, in session order.
+    fn rows(&self) -> impl Iterator<Item = TriageRow<'a>> + '_ {
+        let tools = self.tools;
+        self.toolpaths.iter().map(move |tc| {
+            // No `..`: a new `ToolpathConfig` field is a compile error here
+            // until someone decides whether the triage reads it.
+            let crate::session::ToolpathConfig {
+                id,
+                name,
+                operation,
+                tool_id,
+                stock_source,
+                // In the load-report key (`RowKey::enabled`). The
+                // diagnostics pass reads it there.
+                enabled: _,
+                // Read by the generation, not by the triage. A field that
+                // moves motion gives a new result `Arc`, which the
+                // load-report key holds.
+                dressups: _,
+                heights: _,
+                model_id: _,
+                boundary: _,
+                boundary_inherit: _,
+                rest_analysis: _,
+                // Export and display fields: the triage reads none.
+                pre_gcode: _,
+                post_gcode: _,
+                coolant: _,
+                debug_options: _,
+                feeds_provenance: _,
+                planner_origin: _,
+                shoe: _,
+            } = tc;
+            TriageRow {
+                id: *id,
+                name,
+                stock_source: *stock_source,
+                tool: tools.iter().find(|t| t.id == ToolId(*tool_id)),
+                operation,
+            }
+        })
+    }
+
+    /// The key of this view: the parts the load-report key does not hold.
+    fn key(&self) -> TriageSessionKey {
+        let Self {
+            toolpaths: _,
+            // In the load-report key, by value.
+            tools: _,
+            stock,
+            setups,
+            rest_fresh,
+        } = self;
+        TriageSessionKey {
+            rows: self.rows().map(|row| row.key()).collect(),
+            rest_fresh: rest_fresh.clone(),
+            stock: (*stock).clone(),
+            faces: setups.iter().map(|setup| setup.face_up).collect(),
+        }
+    }
+}
+
+impl TriageRow<'_> {
+    /// The key part of this row.
+    fn key(&self) -> (ToolpathId, String, crate::session::StockSource) {
+        let TriageRow {
+            id,
+            name,
+            stock_source,
+            // In the load-report key: `RowKey::{tool_id, operation}` and
+            // the tool library by value.
+            tool: _,
+            operation: _,
+        } = self;
+        (*id, (*name).to_owned(), *stock_source)
+    }
+
+    /// Does `key` describe this row? It allocates nothing.
+    fn answers(&self, key: &(ToolpathId, String, crate::session::StockSource)) -> bool {
+        let (id, name, source) = key;
+        *id == self.id && name == self.name && *source == self.stock_source
+    }
+}
+
 /// The session parts the simulation triage reads that the load-report key
 /// does not hold.
 ///
@@ -184,6 +318,9 @@ pub(super) fn plunge_stress_offenders_for_session(
 ///    rest-against-fresh comparisons, the stock (its pins give the
 ///    alignment-pin findings) and each setup's face;
 /// 3. the evidence the caller gives (collisions, boundaries, resolution).
+///
+/// The key derives from [`TriageView`], the one view the triage reads the
+/// session through (F187).
 ///
 /// A result's `stats` travel with its annotated toolpath. Each write of a
 /// result gives a new `Arc`, and the report key compares that identity.
@@ -203,39 +340,150 @@ pub struct TriageSessionKey {
 impl TriageSessionKey {
     /// The key for `session` as it is now.
     pub fn of(session: &ProjectSession) -> Self {
-        Self {
-            rows: session
-                .toolpath_configs
-                .iter()
-                .map(|tc| (tc.id, tc.name.clone(), tc.stock_source))
-                .collect(),
-            rest_fresh: session.current_rest_fresh_comparisons(),
-            stock: session.stock.clone(),
-            faces: session.setups.iter().map(|setup| setup.face_up).collect(),
-        }
+        TriageView::of(session).key()
     }
 
     /// Does this key describe `session` as it is now? It allocates only
     /// when the session holds a rest-against-fresh comparison.
     pub fn matches(&self, session: &ProjectSession) -> bool {
-        self.rows.len() == session.toolpath_configs.len()
-            && self
-                .rows
+        self.answers(&TriageView::of(session))
+    }
+
+    /// Does this key describe `view`? The same parts as
+    /// [`TriageView::key`], compared in place.
+    fn answers(&self, view: &TriageView<'_>) -> bool {
+        let Self {
+            rows,
+            rest_fresh,
+            stock,
+            faces,
+        } = self;
+        rows.len() == view.toolpaths.len()
+            && rows
                 .iter()
-                .zip(&session.toolpath_configs)
-                .all(|((id, name, source), tc)| {
-                    *id == tc.id && *name == tc.name && *source == tc.stock_source
-                })
-            && self.stock == session.stock
-            && (self.rest_fresh.is_empty() && session.rest_fresh_comparisons.is_empty()
-                || self.rest_fresh == session.current_rest_fresh_comparisons())
-            && self.faces.len() == session.setups.len()
-            && self
-                .faces
+                .zip(view.rows())
+                .all(|(key, row)| row.answers(key))
+            && stock == view.stock
+            && *rest_fresh == view.rest_fresh
+            && faces.len() == view.setups.len()
+            && faces
                 .iter()
-                .zip(&session.setups)
+                .zip(view.setups)
                 .all(|(face, setup)| *face == setup.face_up)
     }
+}
+
+/// The one triage assembly behind
+/// [`ProjectSession::simulation_triage_with_diagnostics`] and
+/// [`ProjectSession::simulation_triage_with_report`]. The two differ only in
+/// where the kinematic readings come from.
+///
+/// F187: it reads the session only through `view`, and
+/// [`TriageSessionKey`] derives from the same view, so a part read here is
+/// in that key or in the load-report key by construction.
+/// [`ProjectSession::diagnostics_with_evidence`] still reads the session
+/// itself; `project_diagnostics` is its answer.
+fn triage_from_parts(
+    view: &TriageView<'_>,
+    evidence: &ProjectEvidence<'_>,
+    trace: &crate::stock::simulation_cut::SimulationCutTrace,
+    project_diagnostics: &ProjectDiagnostics,
+    kinematic_utilization: &std::collections::BTreeMap<
+        ToolpathId,
+        &crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
+    >,
+) -> crate::stock::sim_triage::SimulationTriage {
+    use crate::stock::sim_triage::{SimulationTriage, TriageInputs, commanded_step_mm};
+
+    let diagnostics =
+        crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
+            project_diagnostics,
+        );
+    let measurability = crate::stock::sim_measurability::MeasurabilityReport::from_trace(
+        trace,
+        evidence.resolution_mm,
+    );
+    let tool_diameters_mm = view
+        .rows()
+        .filter_map(|row| {
+            let tool_cfg = row.tool?;
+            // F029: no diameter for a tool outside its domain.
+            let cutter = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
+            Some((row.id, crate::tool::MillingCutter::diameter(&cutter)))
+        })
+        .collect();
+
+    // G-OVERCUTREF: the commanded step of each stepped toolpath, the
+    // reference of the standing-material rule. It reads each row's
+    // operation, and the load-report key holds the operation bytes
+    // (`RowKey::operation`), so an edit of the depth per pass makes a
+    // new triage. `TriageSessionKey` needs no new part.
+    let commanded_depth_per_pass_mm: std::collections::BTreeMap<ToolpathId, f64> = view
+        .rows()
+        .filter_map(|row| commanded_step_mm(row.operation).map(|step| (row.id, step)))
+        .collect();
+
+    // G-ENTRYLOAD scope: the same predicate that arms the pencil entry
+    // ramp (`gen_initial_stock`) — entries are graded only where they
+    // descend through rest material the entry planner had no stock
+    // reading for. Fresh-stock entry plunges are planned motion.
+    let rest_driven: std::collections::BTreeSet<crate::ids::ToolpathId> = view
+        .rows()
+        .filter(|row| row.stock_source == crate::session::StockSource::FromRemainingStock)
+        .map(|row| row.id)
+        .collect();
+
+    // G-LINKPLOUGH scope: a finishing op that is not rest-driven builds
+    // no link ceiling (`LinkCeilingNeed::WithRemainingStock`), so its
+    // links ride the mesh through the stock its passes cut. The link
+    // rule does not grade them.
+    let links_on_mesh: std::collections::BTreeSet<crate::ids::ToolpathId> = view
+        .rows()
+        .filter(|row| {
+            row.operation.capabilities().link_ceiling
+                == crate::compute::execute::LinkCeilingNeed::WithRemainingStock
+                && !rest_driven.contains(&row.id)
+        })
+        .map(|row| row.id)
+        .collect();
+
+    // Phase 4 — the plunge-class backstop's population
+    // (`kinematic_utilization`): every enabled toolpath with a result,
+    // drill ops included. The finding itself is NOT gated on
+    // `rest_driven`, because an untagged vertical descent is a defect on
+    // fresh stock exactly as it is on rest stock.
+
+    // G-RAPIDFRAME: the triage names the toolpath and the local move of
+    // each rapid collision from the ONE attribution, not from the bare
+    // local index.
+    let rapid_collisions = evidence.attributed_rapid_collisions();
+    let toolpath_names: std::collections::BTreeMap<crate::ids::ToolpathId, String> = view
+        .rows()
+        .map(|row| (row.id, row.name.to_owned()))
+        .collect();
+
+    // Operator ruling 2026-10-15: the rest-against-fresh comparisons a
+    // surface asked for, while they are current.
+    let fresh_twin = &view.rest_fresh;
+
+    SimulationTriage::build_with_rest_context(
+        &TriageInputs {
+            trace,
+            measurability: &measurability,
+            diagnostics: &diagnostics,
+            rapid_collisions: &rapid_collisions,
+            toolpath_names: &toolpath_names,
+            holder_collisions: &evidence.holder_collisions,
+            obstacle_collisions: evidence.obstacle_collisions,
+            tool_diameters_mm: &tool_diameters_mm,
+            commanded_depth_per_pass_mm: &commanded_depth_per_pass_mm,
+            kinematic_utilization,
+            region_of: None,
+        },
+        &rest_driven,
+        &links_on_mesh,
+        fresh_twin,
+    )
 }
 
 impl ProjectSession {
@@ -755,7 +1003,13 @@ impl ProjectSession {
         // which may hold a different run, or none.
         let owned = self.kinematic_utilizations(Some(trace));
         let kinematics = owned.iter().map(|(id, util)| (*id, util)).collect();
-        self.triage_from_parts(evidence, trace, project_diagnostics, &kinematics)
+        triage_from_parts(
+            &TriageView::of(self),
+            evidence,
+            trace,
+            project_diagnostics,
+            &kinematics,
+        )
     }
 
     /// [`Self::simulation_triage`] that takes the kinematic readings from
@@ -838,121 +1092,12 @@ impl ProjectSession {
             })
             .chain(missing.iter().map(|util| (util.toolpath_id, util)))
             .collect();
-        self.triage_from_parts(evidence, trace, project_diagnostics, &kinematics)
-    }
-
-    /// The one triage assembly behind [`Self::simulation_triage_with_diagnostics`]
-    /// and [`Self::simulation_triage_with_report`]. The two differ only in
-    /// where the kinematic readings come from.
-    ///
-    /// Every session part read here, or in [`Self::diagnostics_with_evidence`],
-    /// must be in the load-report key or in [`TriageSessionKey`]. The GUI
-    /// keys its triage cache on those two and on the evidence.
-    fn triage_from_parts(
-        &self,
-        evidence: &ProjectEvidence<'_>,
-        trace: &crate::stock::simulation_cut::SimulationCutTrace,
-        project_diagnostics: &ProjectDiagnostics,
-        kinematic_utilization: &std::collections::BTreeMap<
-            ToolpathId,
-            &crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
-        >,
-    ) -> crate::stock::sim_triage::SimulationTriage {
-        use crate::stock::sim_triage::{SimulationTriage, TriageInputs, commanded_step_mm};
-
-        let diagnostics =
-            crate::diagnostics::adapters::from_project_diagnostics::diagnostics_from_project(
-                project_diagnostics,
-            );
-        let measurability = crate::stock::sim_measurability::MeasurabilityReport::from_trace(
+        triage_from_parts(
+            &TriageView::of(self),
+            evidence,
             trace,
-            evidence.resolution_mm,
-        );
-        let tool_diameters_mm = self
-            .toolpath_configs
-            .iter()
-            .filter_map(|tc| {
-                let tool_cfg = self.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))?;
-                // F029: no diameter for a tool outside its domain.
-                let cutter = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
-                Some((tc.id, crate::tool::MillingCutter::diameter(&cutter)))
-            })
-            .collect();
-
-        // G-OVERCUTREF: the commanded step of each stepped toolpath, the
-        // reference of the standing-material rule. It reads each row's
-        // operation, and the load-report key holds the operation bytes
-        // (`RowKey::operation`), so an edit of the depth per pass makes a
-        // new triage. `TriageSessionKey` needs no new part.
-        let commanded_depth_per_pass_mm: std::collections::BTreeMap<ToolpathId, f64> = self
-            .toolpath_configs
-            .iter()
-            .filter_map(|tc| commanded_step_mm(&tc.operation).map(|step| (tc.id, step)))
-            .collect();
-
-        // G-ENTRYLOAD scope: the same predicate that arms the pencil entry
-        // ramp (`gen_initial_stock`) — entries are graded only where they
-        // descend through rest material the entry planner had no stock
-        // reading for. Fresh-stock entry plunges are planned motion.
-        let rest_driven: std::collections::BTreeSet<crate::ids::ToolpathId> = self
-            .toolpath_configs
-            .iter()
-            .filter(|tc| tc.stock_source == crate::session::StockSource::FromRemainingStock)
-            .map(|tc| tc.id)
-            .collect();
-
-        // G-LINKPLOUGH scope: a finishing op that is not rest-driven builds
-        // no link ceiling (`LinkCeilingNeed::WithRemainingStock`), so its
-        // links ride the mesh through the stock its passes cut. The link
-        // rule does not grade them.
-        let links_on_mesh: std::collections::BTreeSet<crate::ids::ToolpathId> = self
-            .toolpath_configs
-            .iter()
-            .filter(|tc| {
-                tc.operation.capabilities().link_ceiling
-                    == crate::compute::execute::LinkCeilingNeed::WithRemainingStock
-                    && !rest_driven.contains(&tc.id)
-            })
-            .map(|tc| tc.id)
-            .collect();
-
-        // Phase 4 — the plunge-class backstop's population
-        // (`kinematic_utilization`): every enabled toolpath with a result,
-        // drill ops included. The finding itself is NOT gated on
-        // `rest_driven`, because an untagged vertical descent is a defect on
-        // fresh stock exactly as it is on rest stock.
-
-        // G-RAPIDFRAME: the triage names the toolpath and the local move of
-        // each rapid collision from the ONE attribution, not from the bare
-        // local index.
-        let rapid_collisions = evidence.attributed_rapid_collisions();
-        let toolpath_names: std::collections::BTreeMap<crate::ids::ToolpathId, String> = self
-            .toolpath_configs
-            .iter()
-            .map(|tc| (tc.id, tc.name.clone()))
-            .collect();
-
-        // Operator ruling 2026-10-15: the rest-against-fresh comparisons a
-        // surface asked for, while they are current.
-        let fresh_twin = self.current_rest_fresh_comparisons();
-
-        SimulationTriage::build_with_rest_context(
-            &TriageInputs {
-                trace,
-                measurability: &measurability,
-                diagnostics: &diagnostics,
-                rapid_collisions: &rapid_collisions,
-                toolpath_names: &toolpath_names,
-                holder_collisions: &evidence.holder_collisions,
-                obstacle_collisions: evidence.obstacle_collisions,
-                tool_diameters_mm: &tool_diameters_mm,
-                commanded_depth_per_pass_mm: &commanded_depth_per_pass_mm,
-                kinematic_utilization,
-                region_of: None,
-            },
-            &rest_driven,
-            &links_on_mesh,
-            &fresh_twin,
+            project_diagnostics,
+            &kinematics,
         )
     }
 
